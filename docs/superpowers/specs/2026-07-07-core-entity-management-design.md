@@ -151,16 +151,23 @@ A single general mechanism, first designed against Users but intended to general
 - Rationale: Classroom rostering at real scale is normally driven by SIS (Student Information System) sync (PowerSchool, Infinite Campus, OneRoster, etc.), not manual admin bulk-editing — a genuinely different problem (integration with an external system of record) from everything else in this spec (IT admin directly manipulating Workspace directory objects). If revisited, treat it as its own separate project, likely centered on SIS sync rather than manual roster CRUD.
 - The one retained cross-reference: the Users suspend/delete bulk-action preview should flag if the target user owns active Classroom courses (see Users section above).
 
+## Sync & Freshness Strategy
+
+Polling-based; Google's push notifications (`watch`) require a publicly reachable HTTPS webhook, which fully on-prem/firewalled deployments can't guarantee, so push is not a core dependency (out of scope for v1; could be revisited as an optional accelerator later).
+
+- **Trigger model: view-driven + nightly backstop.** Opening a grid/view checks that entity type's cache freshness against its staleness threshold and enqueues a refresh if stale — quota spend concentrates on data admins actually look at. A **fixed nightly pass** (admin-configurable time, default off-hours ~2am local) runs a full sweep of every entity type unconditionally, so no entity type ever goes more than ~24h without refresh, by construction — no "scan for stale" bookkeeping needed.
+- **Freshness is per entity type, not per record.** One freshness timestamp per collection; a full sweep refreshes the whole collection anyway, so per-record freshness bookkeeping buys nothing. Single-record detail views may do a targeted `get` on open.
+- **Default staleness thresholds** (admin-tunable per install): Users **1h**, Devices **4h**, Groups + members **1h**, OrgUnits **12h** — reflecting how fast each actually changes (users/group-membership churn during enrollment windows; device inventory moves slowly; OU structure is near-static).
+- **Full sweep only in v1 — no delta/incremental path.** Every refresh is a full paginated list-sweep of the collection, upserted into Postgres. Bootstrap (first-ever sync into an empty database) is just the degenerate case of the same sweep — same codepath as view-triggered and nightly passes, with progress events surfaced on the setup screen. No etag/delta games; the complexity isn't worth it until mega-district scale, and quota pacing handles that pressure.
+- **Deletion detection: mark-and-sweep.** Every record touched by a sweep gets its `lastSyncAt` stamped. After a completed sweep, any record whose `lastSyncAt` predates the sweep start wasn't returned by Google → **soft delete**. New entities appear naturally as inserts. No tombstone tracking required.
+- **Concurrency: Redis in-flight marker + Pub/Sub events.** A per-entity-type in-flight key ensures a sync already running is *joined*, not duplicated (two admins opening the Users grid at once = one sync). Redis Pub/Sub carries progress/completion events; subscribed views live-update from Postgres on completion instead of polling or "refresh and pray."
+- **Quota pacing — `OPEN`:** per-API rate limits (Directory, Groups Settings, Chrome Management/Telemetry), pagination strategy for very large districts, backoff on 429/quota-exceeded, and how quota is shared between background sync and interactive/bulk-action traffic. Actual quota numbers to be grounded in live Google docs before locking.
+
 ## Open Questions (not yet decided)
 
-### Sync / Freshness Strategy — `OPEN`
-- Google's Directory API supports push notifications (`watch`) as an alternative to polling, but this requires a publicly reachable HTTPS webhook endpoint — not guaranteed for all self-hosted deployments (some will be fully on-prem/firewalled). **Working assumption: polling is the baseline; push notifications are an optional accelerator for deployments that can support them, not a core dependency.**
-- Still undecided: acceptable staleness for changes made *outside* Campus Commander (via Google's own console or other tools) before the cache catches up. Options under discussion: aggressive (~1–5 min polling), moderate (~15–30 min), or coarse (hourly+). Also undecided: whether freshness should differ between what an admin is actively viewing (fast/on-demand refresh) vs. a background full-cache sweep.
-- Also unaddressed: initial full-sync/bootstrap strategy for a brand-new deployment at scale, and rate-limit/quota-aware pagination for very large districts.
-
 ### Standardized Execution / Jobs Pipeline — `NOT YET STARTED`
-- Needed for: async device command tracking (poll/track command lifecycle per device), rate-limited multi-call operations (group/course membership changes, anything without a native bulk API method), and the bulk-action/import execution steps generally.
-- To be designed after the sync/freshness strategy is settled.
+- Needed for: entity sync sweeps (see Sync & Freshness Strategy above), the bootstrap scan-and-wait job (see Google Workspace Bootstrapping), async device command tracking (poll/track command lifecycle per device), rate-limited multi-call operations (group membership changes, anything without a native bulk API method), and the bulk-action/import execution steps generally.
+- To be designed together with the remaining quota-pacing question — one coherent design; sync is the pipeline's first tenant.
 
 ## Deferred / Explicitly Out of Scope for v1
 - Hosted LLM adapter for NL filtering (pluggable interface exists, but only the local-model implementation ships in v1).
