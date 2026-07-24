@@ -27,16 +27,24 @@ Open Questions in that spec. Done when both sections are written, reviewed, and 
   progress/completion events; per-entity-type freshness (Users 1h / Devices 4h /
   Groups 1h / OrgUnits 12h defaults); full-sweep-only in v1; mark-and-sweep soft
   deletion via lastSyncAt.
+- [Quota pacing](tickets/003-quota-pacing.md) — greedy first-come-first-serve (no shared
+  rate budget); two-level retry (NestJS per-request backoff + Kestra flow-level retry);
+  per-worker backoff tracking; Google-driven retry logic via 429 responses. (Decided
+  2026-07-22.)
+- [Sync and bulk-action write interaction](tickets/005-sync-bulk-write-interaction.md) —
+  post-job backfill to Postgres + Redis; Redis pub/sub notification to client; client
+  fetches updated values immediately from Redis cache. (Decided 2026-07-22.)
+- [Failure/observability surface](tickets/006-failure-observability-surface.md) — basic
+  job status only, modeled on Google Cloud Console pattern (status, duration, brief
+  errors). No advanced observability initially. (Decided 2026-07-22.)
+- [Google API quota numbers research](tickets/004-google-api-quota-research.md) —
+  documented limits captured in docs/research/google-api-quotas.md: Directory 2,400
+  QPM/user/project; Groups Settings 100k/day (no list endpoint — binding constraint);
+  Chrome Management QPM unpublished; 429 is per-customer and unraisable; exponential
+  backoff + jitter, no Retry-After.
 
 ## Not yet specified
 
-- Jobs pipeline architecture: what the worker/queue model looks like (BullMQ vs. custom on
-  Redis, job durability across restarts, scheduling/recurrence) — sharpens once the sync
-  design detail is down, since sync + bootstrap scan-and-wait + async device commands are
-  its known tenants.
-- How sync interacts with bulk-action writes (read-after-write freshness, cache
-  invalidation on our own mutations).
-- Failure/observability surface: what the admin sees when sync lags or quota is exhausted.
 
 ## Out of scope
 

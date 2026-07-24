@@ -1,6 +1,6 @@
 # Campus Commander — Spec 1: Core Entity Management
 
-**Status:** DRAFT — brainstorming in progress. Sections marked `OPEN` are still being decided; everything else reflects a settled decision from design discussion.
+**Status:** DRAFT — design discussion. Sections marked `OPEN` are still being decided; everything else reflects a settled decision from design discussion.
 
 ## Product Overview
 
@@ -125,7 +125,7 @@ A single general mechanism, first designed against Users but intended to general
 - **Remote commands (async, separate API surface — `customer.devices.chromeos.commands`):**
   - In scope for v1: **REBOOT**, **WIPE_USERS**, **REMOTE_POWERWASH**. The latter two are destructive (data loss) and get extra confirmation friction on top of the standard preview+confirm pattern.
   - Deferred/out of scope for v1: `TAKE_A_SCREENSHOT`/`SET_VOLUME` (Kiosk-only), `DEVICE_START_CRD_SESSION` (single-device/interactive, doesn't fit bulk), `CAPTURE_LOGS`/`FETCH_SUPPORT_PACKET`/`FETCH_CRD_AVAILABILITY_INFO` (diagnostic, not core).
-  - Commands are asynchronous: issuing returns an acknowledgment that the command was accepted, not that it executed. Lifecycle: `PENDING` → `SENT_TO_CLIENT` → `ACKED_BY_CLIENT` → `EXECUTED_BY_CLIENT`, or `EXPIRED`/`CANCELLED`, each with a `commandExpireTime`. This requires ongoing status polling/tracking per issued command — the motivating case for the standardized jobs/execution pipeline (see Open Questions).
+  - Commands are asynchronous: issuing returns an acknowledgment that the command was accepted, not that it executed. Lifecycle: `PENDING` → `SENT_TO_CLIENT` → `ACKED_BY_CLIENT` → `EXECUTED_BY_CLIENT`, or `EXPIRED`/`CANCELLED`, each with a `commandExpireTime`. This requires ongoing status polling/tracking per issued command — the motivating case for the standardized jobs/execution pipeline (see Standardized Execution / Jobs Pipeline).
 - **Telemetry (separate API — Chrome Management Telemetry API, `chromemanagement.googleapis.com`, requires Chrome Enterprise/Education Upgrade licensing on devices):**
   - In scope: battery health specifically (Google pre-buckets it: Normal >80% capacity, Replace Soon 75–80%, Replace Now <75%), plus openness to other telemetry values (CPU, memory, storage, network) as they prove valuable.
   - **Battery gets a bounded time-series**: raw readings kept for a rolling window, plus longer-retained periodic rollups (e.g. daily min/max/avg), since battery health is a slowly-degrading trend metric worth charting over time.
@@ -136,7 +136,7 @@ A single general mechanism, first designed against Users but intended to general
 - **Cached/filterable fields:** `email`, `name`, `description`, `directMembersCount`, `aliases[]`, plus Group Settings fields (join/post/moderation policy — exact field list TBD when this entity is implemented).
 - **Membership:** a distinct sub-resource per group — `email`, `role` (OWNER/MANAGER/MEMBER), `type` (USER/GROUP/CUSTOMER/EXTERNAL), `delivery_settings`.
 - **Actions:** create/delete/update group (identity + settings), add/remove members.
-- **No native bulk method for membership** — insert/delete are one-call-per-member. Bulk "add 200 students to a group" means 200 rate-limited individual calls — routed through the jobs/execution pipeline (see Open Questions).
+- **No native bulk method for membership** — insert/delete are one-call-per-member. Bulk "add 200 students to a group" means 200 rate-limited individual calls — routed through the jobs/execution pipeline (see Standardized Execution / Jobs Pipeline).
 
 ### OrgUnits
 - **Google resource:** Admin SDK Directory API `OrgUnits`.
@@ -161,13 +161,25 @@ Polling-based; Google's push notifications (`watch`) require a publicly reachabl
 - **Full sweep only in v1 — no delta/incremental path.** Every refresh is a full paginated list-sweep of the collection, upserted into Postgres. Bootstrap (first-ever sync into an empty database) is just the degenerate case of the same sweep — same codepath as view-triggered and nightly passes, with progress events surfaced on the setup screen. No etag/delta games; the complexity isn't worth it until mega-district scale, and quota pacing handles that pressure.
 - **Deletion detection: mark-and-sweep.** Every record touched by a sweep gets its `lastSyncAt` stamped. After a completed sweep, any record whose `lastSyncAt` predates the sweep start wasn't returned by Google → **soft delete**. New entities appear naturally as inserts. No tombstone tracking required.
 - **Concurrency: Redis in-flight marker + Pub/Sub events.** A per-entity-type in-flight key ensures a sync already running is *joined*, not duplicated (two admins opening the Users grid at once = one sync). Redis Pub/Sub carries progress/completion events; subscribed views live-update from Postgres on completion instead of polling or "refresh and pray."
-- **Quota pacing — `OPEN`:** per-API rate limits (Directory, Groups Settings, Chrome Management/Telemetry), pagination strategy for very large districts, backoff on 429/quota-exceeded, and how quota is shared between background sync and interactive/bulk-action traffic. Actual quota numbers to be grounded in live Google docs before locking.
+- **Quota pacing — resolved.** Per-API rate limits (Directory 2,400 QPM/user/project; Groups Settings 100k/day; Chrome Management QPM unpublished) are handled with a greedy first-come-first-serve model: workers do not coordinate on a shared rate budget, and backoff is driven reactively by Google's 429 responses. Two levels of retry apply: NestJS workers handle per-request backoff internally (fine-grained), and Kestra handles flow-level retry (coarse-grained, per-chunk). See `docs/research/google-api-quotas.md` for documented limits.
 
-## Open Questions (not yet decided)
+## Standardized Execution / Jobs Pipeline
 
-### Standardized Execution / Jobs Pipeline — `NOT YET STARTED`
-- Needed for: entity sync sweeps (see Sync & Freshness Strategy above), the bootstrap scan-and-wait job (see Google Workspace Bootstrapping), async device command tracking (poll/track command lifecycle per device), rate-limited multi-call operations (group membership changes, anything without a native bulk API method), and the bulk-action/import execution steps generally.
-- To be designed together with the remaining quota-pacing question — one coherent design; sync is the pipeline's first tenant.
+Needed for: entity sync sweeps (see Sync & Freshness Strategy above), the bootstrap scan-and-wait job (see Google Workspace Bootstrapping), async device command tracking (poll/track command lifecycle per device), rate-limited multi-call operations (group membership changes, anything without a native bulk API method), and the bulk-action/import execution steps generally.
+
+- **Orchestration layer: Kestra.** All jobs are defined as declarative YAML flows in a "Job Bank" — Kestra only defines the sequence of operations, guardrails (`concurrency`, `retries`, `timeout`), and input/output file pathways. It contains **zero business logic** and performs **no side effects** (no direct database writes, no Google API calls).
+- **Execution layer: NestJS.** NestJS exposes internal endpoints that Kestra calls to perform the actual work. NestJS workers read data from files, execute Google API calls, and write results back to files.
+- **File-driven pipeline for large-scale operations.** For operations involving >10k records, data passes through the filesystem rather than HTTP bodies. The pipeline has four phases:
+  1. **Ingestion:** Client passes a selection hash; NestJS writes an `init-job.json` to `/jobs/inbox/` and triggers the Kestra flow.
+  2. **Orchestration:** Kestra calls NestJS `/internal/chunk` endpoint, which reads entities from Postgres/cache and writes fixed-size chunk files (1000 records each) to `/jobs/work/`.
+  3. **Execution:** Kestra runs a parallel loop (concurrency: 10) of NestJS worker tasks, each processing one chunk file and writing a result file to `/jobs/out/`.
+  4. **Consolidation:** Kestra triggers NestJS `/internal/audit` endpoint, which aggregates all result files and writes a permanent audit log record to Postgres.
+- **Chunk size:** 1000 records per chunk — fits comfortably in NestJS memory and aligns with Google API batch limits.
+- **Concurrent workers:** 10 (configurable per flow in YAML) — prevents 429/quota-exceeded from Google.
+- **Retry strategy:** 2-3 retries per chunk at the NestJS level (with exponential backoff), plus Kestra flow-level retry for failed chunks.
+- **Audit retention:** All job executions are kept forever in both file form and Postgres audit logs for compliance/forensic purposes.
+- **Read-after-write freshness:** After a job completes, NestJS backfills Postgres and Redis with all successes, then updates a Redis pub/sub channel that the client is watching. The client immediately fetches the new values from Redis, ensuring instant consistency without hitting Postgres or Google APIs.
+- **Failure/observability surface:** Basic job status only, modeled on the Google Cloud Console pattern — shows job status (running/completed/failed), duration, and brief error messages. No advanced observability (quota exhaustion warnings, sync lag metrics) in v1.
 
 ## Deferred / Explicitly Out of Scope for v1
 - Hosted LLM adapter for NL filtering (pluggable interface exists, but only the local-model implementation ships in v1).

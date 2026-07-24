@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: campus
+      POSTGRES_PASSWORD: commander
+      POSTGRES_DB: campus_commander
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U campus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kestra:
+    image: kestra/kestra:0.20.0
+    command: server standalone
+    environment:
+      - KESTEA_DATABASE_TYPE=postgres
+      - KESTEA_DATABASE_POSTGRESQL_HOST=postgres
+      - KESTEA_DATABASE_POSTGRESQL_PORT=5432
+      - KESTEA_DATABASE_POSTGRESQL_DATABASE=campus_commander
+      - KESTEA_DATABASE_POSTGRESQL_USERNAME=campus
+      - KESTEA_DATABASE_POSTGRESQL_PASSWORD=commander
+      - KESTEA_REDIS_HOST=redis
+      - KESTEA_REDIS_PORT=6379
+    volumes:
+      - kestra_data:/app/data
+      - ./libs/kestra/flows:/app/flows
+      - kestra_jobs:/jobs
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://campus:commander@postgres:5432/campus_commander
+      - REDIS_URL=redis://redis:6379
+      - KESTRA_URL=http://kestra:8080
+      - GOOGLE_SERVICE_ACCOUNT_JSON=/secrets/service-account.json
+    volumes:
+      - kestra_jobs:/jobs
+      - ./secrets:/secrets:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kestra:
+        condition: service_started
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    ports:
+      - "4200:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+  kestra_data:
+  kestra_jobs:
