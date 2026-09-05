@@ -53,3 +53,14 @@ Thumbs.db
 __screenshots__/
 
 vitest.config.*.timestamp*
+
+# Local agent state and compiler caches
+.opencode/goals/
+.opencode/opencode-loop/
+*.tsbuildinfo
+
+# Local installation credentials
+.env
+.env.*
+!.env.example
+secrets/

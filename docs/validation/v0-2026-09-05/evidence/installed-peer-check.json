@@ -1,0 +1,202 @@
+{
+  "node": "v24.19.0",
+  "checkedAt": "2026-09-05T15:37:00.325Z",
+  "result": [
+    {
+      "package": "@angular/compiler-cli",
+      "dependency": "@angular/compiler",
+      "version": "22.0.8",
+      "range": "22.0.8",
+      "pass": true
+    },
+    {
+      "package": "@angular/compiler-cli",
+      "dependency": "typescript",
+      "version": "6.0.3",
+      "range": ">=6.0 <6.1",
+      "pass": true
+    },
+    {
+      "package": "@nx/angular",
+      "dependency": "@angular/build",
+      "version": "22.0.7",
+      "range": ">= 20.0.0 < 23.0.0",
+      "pass": true
+    },
+    {
+      "package": "@nx/angular",
+      "dependency": "@angular-devkit/core",
+      "version": "22.0.7",
+      "range": ">= 20.0.0 < 23.0.0",
+      "pass": true
+    },
+    {
+      "package": "@nx/angular",
+      "dependency": "@angular-devkit/schematics",
+      "version": "22.0.7",
+      "range": ">= 20.0.0 < 23.0.0",
+      "pass": true
+    },
+    {
+      "package": "@nx/angular",
+      "dependency": "@schematics/angular",
+      "version": "22.0.7",
+      "range": ">= 20.0.0 < 23.0.0",
+      "pass": true
+    },
+    {
+      "package": "@nx/angular",
+      "dependency": "rxjs",
+      "version": "7.8.2",
+      "range": "^6.5.3 || ^7.5.0",
+      "pass": true
+    },
+    {
+      "package": "@nestjs/core",
+      "dependency": "@nestjs/common",
+      "version": "11.1.28",
+      "range": "^11.0.0",
+      "pass": true
+    },
+    {
+      "package": "@nestjs/core",
+      "dependency": "@nestjs/platform-express",
+      "version": "11.1.28",
+      "range": "^11.0.0",
+      "pass": true
+    },
+    {
+      "package": "@nestjs/core",
+      "dependency": "reflect-metadata",
+      "version": "0.2.2",
+      "range": "^0.1.12 || ^0.2.0",
+      "pass": true
+    },
+    {
+      "package": "@nestjs/core",
+      "dependency": "rxjs",
+      "version": "7.8.2",
+      "range": "^7.1.0",
+      "pass": true
+    },
+    {
+      "package": "vite",
+      "dependency": "@types/node",
+      "version": "22.20.1",
+      "range": "^20.19.0 || >=22.12.0",
+      "pass": true
+    },
+    {
+      "package": "vite",
+      "dependency": "esbuild",
+      "version": "0.28.1",
+      "range": "^0.27.0 || ^0.28.0",
+      "pass": true
+    },
+    {
+      "package": "vite",
+      "dependency": "jiti",
+      "version": "2.7.0",
+      "range": ">=1.21.0",
+      "pass": true
+    },
+    {
+      "package": "vite",
+      "dependency": "less",
+      "version": "4.8.0",
+      "range": "^4.0.0",
+      "pass": true
+    },
+    {
+      "package": "vite",
+      "dependency": "sass",
+      "version": "1.101.6",
+      "range": "^1.70.0",
+      "pass": true
+    },
+    {
+      "package": "vite",
+      "dependency": "sass-embedded",
+      "version": "1.100.0",
+      "range": "^1.70.0",
+      "pass": true
+    },
+    {
+      "package": "vite",
+      "dependency": "terser",
+      "version": "5.49.0",
+      "range": "^5.16.0",
+      "pass": true
+    },
+    {
+      "package": "vite",
+      "dependency": "yaml",
+      "version": "2.9.0",
+      "range": "^2.4.2",
+      "pass": true
+    },
+    {
+      "package": "vitest",
+      "dependency": "@types/node",
+      "version": "22.20.1",
+      "range": "^20.0.0 || ^22.0.0 || >=24.0.0",
+      "pass": true
+    },
+    {
+      "package": "vitest",
+      "dependency": "jsdom",
+      "version": "27.4.0",
+      "range": "*",
+      "pass": true
+    },
+    {
+      "package": "vitest",
+      "dependency": "vite",
+      "version": "8.1.5",
+      "range": "^6.0.0 || ^7.0.0 || ^8.0.0",
+      "pass": true
+    },
+    {
+      "package": "vitest",
+      "dependency": "@vitest/coverage-v8",
+      "version": "4.1.10",
+      "range": "4.1.10",
+      "pass": true
+    },
+    {
+      "package": "vitest",
+      "dependency": "@vitest/ui",
+      "version": "4.1.10",
+      "range": "4.1.10",
+      "pass": true
+    },
+    {
+      "package": "@analogjs/vitest-angular",
+      "dependency": "@analogjs/vite-plugin-angular",
+      "version": "2.6.3",
+      "range": "*",
+      "pass": true
+    },
+    {
+      "package": "@analogjs/vitest-angular",
+      "dependency": "@angular-devkit/architect",
+      "version": "0.2200.7",
+      "range": ">=0.1700.0 < 0.2300.0 || >=0.2200.0 < 0.2300.0",
+      "pass": true
+    },
+    {
+      "package": "@analogjs/vitest-angular",
+      "dependency": "@angular-devkit/schematics",
+      "version": "22.0.7",
+      "range": ">=17.0.0",
+      "pass": true
+    },
+    {
+      "package": "@analogjs/vitest-angular",
+      "dependency": "vitest",
+      "version": "4.1.10",
+      "range": "^1.3.1 || ^2.0.0 || ^3.0.0 || ^4.0.0",
+      "pass": true
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "startedUnix": 1788622881.9771242,
+  "ttlSeconds": 300,
+  "key": "v0:HoldCrashProbe",
+  "observedUnix": 1788623421.6133063,
+  "elapsedSeconds": 539.636182308197,
+  "redisPttl": -2,
+  "result": "Key absent after more than 300 seconds without refresh",
+  "limitation": "No continuous observation of the precise expiration instant"
+}

@@ -1,0 +1,9 @@
+{
+  "extends": "../../../../frontend/tsconfig.app.json",
+  "compilerOptions": {
+    "emitDeclarationOnly": false,
+    "declaration": false,
+    "declarationMap": false,
+    "lib": ["ES2022", "DOM"]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "date": "2026-09-05T16:18:56.240Z",
+  "result": "PASS",
+  "browser": "151.0.7922.34",
+  "checks": [
+    "Server-side datasource rendered the synthetic device",
+    "Editable cell accepted and displayed a synthetic value",
+    "Row selection updated the accessible selected state"
+  ],
+  "errors": [],
+  "messages": [],
+  "limits": [
+    "One synthetic row in Chromium",
+    "Uses Angular JIT support for dependency linking in the disposable bundle",
+    "No production bundle, row eviction, draft persistence, screen-reader study, or capacity qualification"
+  ]
+}

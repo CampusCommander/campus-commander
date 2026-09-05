@@ -6,5 +6,8 @@
       "command": ["npx", "nx", "mcp"],
       "enabled": true
     }
-  }
+  },
+  "instructions": [
+    ".opencode/skills/ste-writing-skill/SKILL.md"
+  ]
 }

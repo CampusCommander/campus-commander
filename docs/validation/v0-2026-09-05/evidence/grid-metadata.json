@@ -1,0 +1,427 @@
+{
+  "checked": "2026-09-05T16:00:08.379000+00:00",
+  "packages": [
+    {
+      "package": "@libregrid/angular@1.3.0",
+      "exitCode": 0,
+      "metadata": {
+        "version": "1.3.0",
+        "peerDependencies": {
+          "@angular/core": ">=20.0.0",
+          "ag-grid-community": ">=36.1.0 <37"
+        },
+        "license": "MIT"
+      },
+      "error": ""
+    },
+    {
+      "package": "@libregrid/server-side-row-model@1.3.0",
+      "exitCode": 0,
+      "metadata": {
+        "version": "1.3.0",
+        "peerDependencies": {
+          "ag-grid-community": ">=36.1.0 <37"
+        },
+        "license": "MIT"
+      },
+      "error": ""
+    },
+    {
+      "package": "@libregrid/material@1.3.0",
+      "exitCode": 0,
+      "metadata": {
+        "version": "1.3.0",
+        "peerDependencies": {
+          "@angular/core": ">=20.0.0",
+          "@angular/common": ">=20.0.0",
+          "@angular/material": ">=20.0.0",
+          "@angular/cdk": ">=20.0.0",
+          "ag-grid-community": ">=36.1.0 <37"
+        },
+        "license": "MIT"
+      },
+      "error": ""
+    },
+    {
+      "package": "ag-grid-angular@36.1.0",
+      "exitCode": 0,
+      "metadata": {
+        "version": "36.1.0",
+        "peerDependencies": {
+          "@angular/common": ">= 20.0.0",
+          "@angular/core": ">= 20.0.0"
+        },
+        "license": "MIT"
+      },
+      "error": ""
+    },
+    {
+      "package": "ag-grid-community@36.1.0",
+      "exitCode": 0,
+      "metadata": {
+        "version": "36.1.0",
+        "license": "MIT"
+      },
+      "error": ""
+    },
+    {
+      "package": "@angular/material@22.0.8",
+      "exitCode": 1,
+      "metadata": {
+        "error": {
+          "code": "E404",
+          "summary": "No match found for version 22.0.8",
+          "detail": "The requested resource '@angular/material@22.0.8' could not be found or you do not have permission to access it.\n\nNote that you can also install from a\ntarball, folder, http url, or git url."
+        }
+      },
+      "error": "npm error code E404\nnpm error 404 No match found for version 22.0.8\nnpm error 404\nnpm error 404  The requested resource '@angular/material@22.0.8' could not be found or you do not have permission to access it.\nnpm error 404\nnpm error 404 Note that you can also install from a\nnpm error 404 tarball, folder, http url, or git url.\nnpm error A complete log of this run can be found in: /home/seaston/.npm/_logs/2026-09-05T16_00_07_146Z-debug-0.log"
+    },
+    {
+      "package": "@angular/cdk@22.0.8",
+      "exitCode": 1,
+      "metadata": {
+        "error": {
+          "code": "E404",
+          "summary": "No match found for version 22.0.8",
+          "detail": "The requested resource '@angular/cdk@22.0.8' could not be found or you do not have permission to access it.\n\nNote that you can also install from a\ntarball, folder, http url, or git url."
+        }
+      },
+      "error": "npm error code E404\nnpm error 404 No match found for version 22.0.8\nnpm error 404\nnpm error 404  The requested resource '@angular/cdk@22.0.8' could not be found or you do not have permission to access it.\nnpm error 404\nnpm error 404 Note that you can also install from a\nnpm error 404 tarball, folder, http url, or git url.\nnpm error A complete log of this run can be found in: /home/seaston/.npm/_logs/2026-09-05T16_00_07_777Z-debug-0.log"
+    },
+    {
+      "package": "@angular/material@22",
+      "exitCode": 0,
+      "metadata": [
+        {
+          "version": "22.0.0",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.0.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.1",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.0.1",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.2",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.0.2",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.3",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.0.3",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.4",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.0.4",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.5",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.0.5",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.6",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.0.6",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.7",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.0.7",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.0",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.1.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.1",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.1.1",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.2",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.1.2",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.3",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.1.3",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.4",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.1.4",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.5",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/cdk": "22.1.5",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "package": "@angular/cdk@22",
+      "exitCode": 0,
+      "metadata": [
+        {
+          "version": "22.0.0",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.1",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.2",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.3",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.4",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.5",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.6",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.0.7",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.0",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.1",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.2",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.3",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.4",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        },
+        {
+          "version": "22.1.5",
+          "peerDependencies": {
+            "rxjs": "^6.5.3 || ^7.4.0",
+            "@angular/core": "^22.0.0 || ^23.0.0",
+            "@angular/forms": "^22.0.0 || ^23.0.0",
+            "@angular/common": "^22.0.0 || ^23.0.0",
+            "@angular/platform-browser": "^22.0.0 || ^23.0.0"
+          },
+          "license": "MIT"
+        }
+      ],
+      "error": ""
+    },
+    {
+      "package": "@libregrid/server-side-selection@1.3.0",
+      "source": "installed published package.json",
+      "metadata": {
+        "version": "1.3.0",
+        "peerDependencies": {
+          "ag-grid-community": ">=36.1.0 <37"
+        },
+        "license": "MIT"
+      }
+    }
+  ],
+  "limit": "This file records metadata only. Separate grid-compiler.json and grid-browser.json record the subsequent measured checks."
+}

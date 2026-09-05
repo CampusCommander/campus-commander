@@ -1,0 +1,207 @@
+{
+  "method": "GET",
+  "date": "2026-09-05T15:58:20.857Z",
+  "kestraVersion": "1.3.37",
+  "executionId": "4sH4b8YKp2fTpGHF1OojyC",
+  "flowState": "WARNING",
+  "maxConcurrentAssignments": 3,
+  "events": [
+    {
+      "event": "started",
+      "id": 1,
+      "time": 1788623899123
+    },
+    {
+      "event": "started",
+      "id": 2,
+      "time": 1788623899124
+    },
+    {
+      "event": "started",
+      "id": 0,
+      "time": 1788623899126
+    },
+    {
+      "event": "settled",
+      "id": 0,
+      "outcome": "succeeded",
+      "operations": 500,
+      "time": 1788623899227
+    },
+    {
+      "event": "settled",
+      "id": 1,
+      "outcome": "succeeded",
+      "operations": 500,
+      "time": 1788623899324
+    },
+    {
+      "event": "settled",
+      "id": 2,
+      "outcome": "transport_failed",
+      "operations": 500,
+      "time": 1788623899424
+    },
+    {
+      "event": "started",
+      "id": 4,
+      "time": 1788623899664
+    },
+    {
+      "event": "started",
+      "id": 3,
+      "time": 1788623899664
+    },
+    {
+      "event": "settled",
+      "id": 3,
+      "outcome": "succeeded",
+      "operations": 500,
+      "time": 1788623899764
+    },
+    {
+      "event": "started",
+      "id": 5,
+      "time": 1788623899847
+    },
+    {
+      "event": "settled",
+      "id": 4,
+      "outcome": "completed_with_errors",
+      "operations": 500,
+      "time": 1788623899864
+    },
+    {
+      "event": "started",
+      "id": 6,
+      "time": 1788623899940
+    },
+    {
+      "event": "settled",
+      "id": 6,
+      "outcome": "succeeded",
+      "operations": 500,
+      "time": 1788623900040
+    },
+    {
+      "event": "started",
+      "id": 7,
+      "time": 1788623900133
+    },
+    {
+      "event": "settled",
+      "id": 5,
+      "outcome": "succeeded",
+      "operations": 500,
+      "time": 1788623900146
+    },
+    {
+      "event": "started",
+      "id": 8,
+      "time": 1788623900213
+    },
+    {
+      "event": "settled",
+      "id": 7,
+      "outcome": "succeeded",
+      "operations": 500,
+      "time": 1788623900333
+    },
+    {
+      "event": "started",
+      "id": 9,
+      "time": 1788623900396
+    },
+    {
+      "event": "duplicate_request",
+      "id": 2,
+      "time": 1788623900426
+    },
+    {
+      "event": "settled",
+      "id": 9,
+      "outcome": "succeeded",
+      "operations": 500,
+      "time": 1788623900496
+    },
+    {
+      "event": "settled",
+      "id": 8,
+      "outcome": "succeeded",
+      "operations": 500,
+      "time": 1788623900514
+    },
+    {
+      "event": "aggregate",
+      "settled": 10,
+      "time": 1788623900605
+    }
+  ],
+  "taskRuns": [
+    {
+      "taskId": "assignments",
+      "state": "WARNING"
+    },
+    {
+      "taskId": "worker",
+      "value": "0",
+      "state": "SUCCESS"
+    },
+    {
+      "taskId": "worker",
+      "value": "1",
+      "state": "SUCCESS"
+    },
+    {
+      "taskId": "worker",
+      "value": "2",
+      "state": "WARNING"
+    },
+    {
+      "taskId": "worker",
+      "value": "3",
+      "state": "SUCCESS"
+    },
+    {
+      "taskId": "worker",
+      "value": "4",
+      "state": "SUCCESS"
+    },
+    {
+      "taskId": "worker",
+      "value": "5",
+      "state": "SUCCESS"
+    },
+    {
+      "taskId": "worker",
+      "value": "6",
+      "state": "SUCCESS"
+    },
+    {
+      "taskId": "worker",
+      "value": "7",
+      "state": "SUCCESS"
+    },
+    {
+      "taskId": "worker",
+      "value": "8",
+      "state": "SUCCESS"
+    },
+    {
+      "taskId": "worker",
+      "value": "9",
+      "state": "SUCCESS"
+    },
+    {
+      "taskId": "aggregate",
+      "state": "SUCCESS"
+    }
+  ],
+  "limits": [
+    "Synthetic external worker service, no Google requests",
+    "In-memory deduplication proves protocol only. Production needs a durable ledger across worker restarts",
+    "Tests transport failure and domain failure collection, not Kestra crash recovery",
+    "One localhost worker endpoint and ten assignments, not district capacity",
+    "allowFailure permits aggregation; application result ledger still determines business outcome"
+  ]
+}

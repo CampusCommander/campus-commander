@@ -1,0 +1,43 @@
+{
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+  "logicalCpus": 16,
+  "memoryTotalKiB": "32865936",
+  "downloads": [
+    {
+      "file": "liblzf1_3.6-4build1_amd64.deb",
+      "sha256": "6a2aae75f9033bad511d093b25f82ab91f64ab20518d7c665066488b5211b711"
+    },
+    {
+      "file": "liburing2_2.14-1_amd64.deb",
+      "sha256": "c0f1ed55d2eaa6e5d1224513b787c71348c6ab983e9c4178a417a7ffac3a8a00"
+    },
+    {
+      "file": "libicu78_78.2-2ubuntu1_amd64.deb",
+      "sha256": "c8b97930f9e365d6d00978144b468ac8397ef07d2fb2c453869f05fc3a98c4ca"
+    },
+    {
+      "file": "postgresql-client-18_18.6-0ubuntu0.26.04.1_amd64.deb",
+      "sha256": "c46d1ace8f7d84a9648c63b566fff799b7ee3281db46ef6e7b99baf0fd7bd2e4"
+    },
+    {
+      "file": "postgresql-18_18.6-0ubuntu0.26.04.1_amd64.deb",
+      "sha256": "0536716204dee9152dee758c252936ba41c93b7330395f8abb0c5b86558aa658"
+    },
+    {
+      "file": "libpq5_18.6-0ubuntu0.26.04.1_amd64.deb",
+      "sha256": "7e9199f54290b04a28e9f136207624ca30b0988d613159977fd84e8b4467e0a4"
+    },
+    {
+      "file": "redis-tools_5%3a8.0.5-1_amd64.deb",
+      "sha256": "2f048152958913c7f7c3d697c82d2a6325f059a46e85deb13719dde45eb6be8f"
+    },
+    {
+      "file": "redis-server_5%3a8.0.5-1_amd64.deb",
+      "sha256": "796bf2bb1a9571d4e6c8bda81ece2ceb695c11e02f0b2fcd1761aa285f181e86"
+    },
+    {
+      "file": "kestra-1.3.37",
+      "sha256": "2a715bab22f2f6986debef9971f2529eff7394765662d8bf1b4d81d89e175c26"
+    }
+  ]
+}

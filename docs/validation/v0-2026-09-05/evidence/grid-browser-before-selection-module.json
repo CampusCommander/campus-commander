@@ -1,0 +1,17 @@
+{
+  "date": "2026-09-05T16:17:33.942Z",
+  "result": "FAIL",
+  "browser": "151.0.7922.34",
+  "checks": [
+    "Server-side datasource rendered the synthetic device",
+    "Editable cell accepted and displayed a synthetic value"
+  ],
+  "errors": [],
+  "messages": [],
+  "failure": "locator.check: Timeout 2000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.ag-row .ag-selection-checkbox input')\u001b[22m\n",
+  "limits": [
+    "One synthetic row in Chromium",
+    "Uses Angular JIT support for dependency linking in the disposable bundle",
+    "No production bundle, row eviction, draft persistence, screen-reader study, or capacity qualification"
+  ]
+}

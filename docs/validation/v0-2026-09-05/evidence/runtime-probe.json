@@ -1,0 +1,59 @@
+{
+  "date": "2026-09-05T15:45:57.318Z",
+  "postgres": "PostgreSQL 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0, 64-bit",
+  "redis": "8.0.5",
+  "checks": [
+    {
+      "name": "operation acceptance and outbox roll back together",
+      "pass": true,
+      "durationMs": 3.5
+    },
+    {
+      "name": "backoff overwrites ownership and renews the 300-second TTL",
+      "pass": true,
+      "durationMs": 4.97
+    },
+    {
+      "name": "concurrent ownership replacement cannot be deleted by previous-owner cleanup",
+      "pass": true,
+      "durationMs": 118.41
+    },
+    {
+      "name": "recovery requires owner and revision from the current backoff period",
+      "pass": true,
+      "durationMs": 2.65
+    },
+    {
+      "name": "atomic Redis gate blocks new admission and returns smallest pending job on release",
+      "pass": true,
+      "durationMs": 3.9
+    },
+    {
+      "name": "parallel assignments settle with failed operations without replaying successes",
+      "pass": true,
+      "durationMs": 22.29
+    },
+    {
+      "name": "worker process death after simulated provider acceptance preserves an unknown effect",
+      "pass": true,
+      "durationMs": 45.38
+    },
+    {
+      "name": "written artifacts remain unpublished after database publication rolls back",
+      "pass": true,
+      "durationMs": 3.85
+    },
+    {
+      "name": "integrity mismatch and stale attempt prevent authoritative publication",
+      "pass": true,
+      "durationMs": 1.17
+    }
+  ],
+  "limits": [
+    "Throwaway experiment, not production implementation",
+    "Provider effect is simulated in a separate committed table",
+    "Recovery counter test does not validate the complete event aggregation protocol",
+    "Redis admission reservation still requires PostgreSQL recovery design",
+    "Artifact checks use local disk and transaction rollback, not shared storage or host power loss"
+  ]
+}

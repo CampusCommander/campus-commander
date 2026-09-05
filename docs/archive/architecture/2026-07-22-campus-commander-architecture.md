@@ -11,6 +11,7 @@
 | Layer | Technology | Rationale |
 |---|---|---|
 | **Frontend** | Angular 20 (NgRx Signals + Angular Material + Tailwind CSS) | High opinionation = AI produces predictable, auditable output. Signals/RxJS handle complex entity state natively. Material + Tailwind = enterprise UI speed. |
+| **Grid** | ag-grid-community 36.x + LibreGrid (`@libregrid/*`) feature packages | SSRM, server-side selection, filters, Excel export, and charts as MIT-licensed modules on the Community registry. No enterprise license. See decision log 2026-08-29. |
 | **Backend API** | NestJS (TypeScript) | Strict DI, decorators, and module structure. Mirrors Angular architecture. Enforces type safety across the monorepo. |
 | **Orchestration** | Kestra (Declarative YAML Flows) | Self-hosted industrial orchestrator. Acts as the "Traffic Cop" for all jobs. No side effects, no business logic. |
 | **Primary Database** | Postgres | Entity cache, audit logs, RBAC, configuration. |
@@ -131,6 +132,7 @@ nx-workspace/
 | 2026-07-22 | File-driven pipeline for jobs | Handles 500k+ records. Eliminates memory/body crashes. Provides permanent audit trail |
 | 2026-07-22 | Postgres/Redis = Entity Cache | Fast UI reads. Jobs only write/audit. Clean separation of concerns |
 | 2026-07-22 | NestJS = Strict API Gateway | Validates everything. Exposes internal endpoints for Kesta. No direct Google API calls from routes |
+| 2026-08-29 | Grid = ag-grid-community + LibreGrid (`@libregrid/*`) | Enterprise feature set (SSRM, server-side selection, filters, Excel export, charts) as MIT-licensed modules. Matches the server-side selection design for 300k-row grids. Package mapping in planning checklist decision 17.17 |
 
 ---
 

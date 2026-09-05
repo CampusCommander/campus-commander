@@ -19,16 +19,22 @@ This is the first of three specs:
 
 ## Authentication & Authorization
 
+> **Superseded by Architecture A** (decision record 17.5, 17.12 in `docs/architecture/planning-review-topics.md`). The customer creates their own Google OAuth client and provides `CLIENT_ID`/`CLIENT_SECRET`. No service-account key exists. The app acts through a designated Google Super Admin user account via domain-wide delegation. A Platform Admin configures that account at install and can replace it in Customer Settings. See planning checklist Section 4 for the resolved model.
+
 - **Google-side auth:** a single service account with domain-wide delegation (DWD), configured once by the district's Google super admin. This service account is the sole actor against Google APIs.
 - **App-side auth/RBAC:** Campus Commander has its own internal roles/permissions system. Admins using the app do **not** need Google admin roles — their access is scoped by Campus Commander's own RBAC, decoupled from their actual Google Workspace privileges.
 - Rationale: avoids requiring every app user to hold Google admin rights, and DWD avoids per-user OAuth consent review burden vs. a refresh-token-per-admin model.
 
 ## Tech Stack
 
-- **Backend:** NestJS (TypeScript)
-- **Frontend:** React (TypeScript) — chosen over Angular specifically because the dashboard/widget-gallery specs (2 & 3) need a rich ecosystem for dynamically rendering generated UI/charts, where React dominates.
+_Reconciled against the decision record in `docs/architecture/planning-review-topics.md` on 2026-08-29. The architecture doc is authoritative for engineering decisions._
+
+- **Backend:** NestJS (TypeScript) — API server plus a separate worker service.
+- **Frontend:** Angular 20 (NgRx Signals + Angular Material + Tailwind CSS). Supersedes the earlier React choice (decision record, Section 1).
+- **Grid:** ag-grid-community 36.x + `@libregrid/*` feature packages (LibreGrid). See Grid Stack below.
 - **Database:** Postgres — primary cache/store for synced entity data.
-- **Queue/cache:** Redis + BullMQ — background sync jobs, bulk-action job queue.
+- **Orchestration:** Kestra — all job orchestration. No BullMQ (decision record, Section 1).
+- **Cache/session:** Redis — request caching, session storage, selection sets.
 - **Monorepo:** Nx — shares types (entity schemas, filter DSL, future widget data contracts) between backend and frontend.
 - **Deployment shape:** Docker Compose is the baseline self-host story (Postgres + Redis + API + Web + workers). See Deployment & Install Experience below.
 
@@ -47,6 +53,8 @@ Goal: the same artifact should work identically whether an admin is kicking the 
 - Considered and rejected for v1: single all-in-one container (API+worker+web+embedded Postgres/Redis in one image) — fights Docker/Postgres best practice around data durability, backups, and independent restart/scaling of workers vs. API; doesn't meaningfully reduce friction once a setup wizard exists.
 
 ## Google Workspace Bootstrapping
+
+> **Superseded by Architecture A** (decision record 17.5). Bootstrap is customer self-service. The customer creates their own OAuth client in their own Google Cloud project and provides the credentials at install. The one-time bootstrap OAuth requests `email profile` only. DWD scope grants in `admin.google.com` remain manual. The automated service-account provisioning described below does not ship.
 
 Goal: connecting Campus Commander to a district's Workspace domain should require as close to zero manual Google Cloud Console / Admin Console work as possible, be resumable across a wait that ranges from ~30 minutes (typical) to 10-12 hours (mega districts), and clearly distinguish the handful of steps Google's own security model makes irreducibly manual from everything else, which should be automated.
 
@@ -68,6 +76,30 @@ Goal: connecting Campus Commander to a district's Workspace domain should requir
 
 - Traditional chip-filter + data grid as the primary interface for browsing/selecting entities.
 - Grid supports **inline editing** of any writable field, in addition to bulk actions — single-cell edits write through the same path as a single-row bulk action.
+
+### Grid Stack
+
+The grid is `ag-grid-community` 36.x extended with LibreGrid (`@libregrid/*`) feature packages. LibreGrid is an MIT-licensed monorepo of modules that plug into the AG Grid Community module registry. The app registers only the modules it uses through `@libregrid/angular`. Packages are published to npm under the `@libregrid` scope at lockstep versions (current 1.3.0). Peer dependency: `ag-grid-community >=36.1.0 <37`. No AG Grid Enterprise dependency.
+
+| Requirement | Package(s) |
+|---|---|
+| Angular bootstrap, module registration, signal mirroring | `@libregrid/angular` |
+| Angular Material token to grid theme mapping | `@libregrid/material` |
+| Entity grids at 100k+ rows (Users, Devices, Groups) | `@libregrid/server-side-row-model` |
+| Server-side selection across filters, pages, and sessions | `@libregrid/server-side-selection` |
+| OrgUnits tree view with per-OU counts | `@libregrid/tree-data` |
+| Chip filter bar and column filters | `@libregrid/set-filter`, `@libregrid/multi-filter`, `@libregrid/advanced-filter`, `@libregrid/filters-tool-panel`, `@libregrid/find` |
+| Cell-range selection, copy/cut/paste | `@libregrid/cell-selection`, `@libregrid/clipboard` |
+| .xlsx export | `@libregrid/excel-export` |
+| Grid chrome (menus, side bar, columns panel, status bar) | `@libregrid/menu`, `@libregrid/side-bar`, `@libregrid/columns-tool-panel`, `@libregrid/status-bar` |
+| Telemetry time series (battery health trend charts) | `@libregrid/integrated-charts`, `@libregrid/sparklines` |
+
+Notes:
+
+- `@libregrid/server-side-row-model` pulls in `@libregrid/row-grouping` and `@libregrid/pivot` automatically. Both stay available for grouping (e.g., by school or OU) and for the reporting spec.
+- `@libregrid/server-side-selection` fills the selection seam that Community leaves empty on server-side grids. Its `ServerSideSelectionProvider` interface is where the Campus Commander selection API plugs in. The grid holds a compact selection spec plus per-row flags. This matches the Redis-backed selection model. No full entity ID list ever crosses the wire.
+- `@libregrid/batch-edit` stages edits on client-side row models only. Entity grids use server-side row models. Inline editing is therefore a per-cell write-through. One cell edit calls the same API path as a single-row bulk action.
+- CSV and Google Sheets export run through the API (server-side), not the grid. `@libregrid/excel-export` covers in-browser `.xlsx`.
 
 ## Natural Language Filtering
 

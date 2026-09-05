@@ -1,3 +1,16 @@
+# General Guidelines for communication and writing
+
+Apply the `ste-writing` skill to all prose output (docs, READMEs, PR descriptions, error messages, release notes, comments). See `.opencode/skills/ste-writing-skill/SKILL.md` for the full ruleset. Key rules:
+
+- One name for one thing; no synonym rotation.
+- No hedging ("might", "may", "could", "seems", "appears", "potentially", "likely", "possibly").
+- Active voice; no nominalizations, phrasal verbs, or stacked auxiliaries.
+- No marketing adjectives.
+- No run-on sentences; each independent clause gets its own sentence.
+- No semicolons, no contractions. Max 20 words per instruction sentence.
+- One topic per paragraph (max six sentences).
+
+
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
 

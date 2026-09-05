@@ -1,0 +1,39 @@
+{
+  "date": "2026-09-05T15:41:53.431Z",
+  "node": "v24.19.0",
+  "framework": {
+    "angular": "22.0.8",
+    "typescript": "6.0.3",
+    "nx": "23.1.0",
+    "nest": "11.1.28"
+  },
+  "builds": [
+    {
+      "project": "api",
+      "configuration": "existing",
+      "result": "PASS"
+    },
+    {
+      "project": "frontend",
+      "configuration": "existing",
+      "result": "FAIL",
+      "errors": [
+        "NG4006 emitDeclarationOnly unsupported",
+        "TS5069 emitDeclarationOnly lacks declaration/composite",
+        "TS2584 console absent without DOM lib"
+      ]
+    },
+    {
+      "project": "frontend",
+      "configuration": "experiments/frontend-tsconfig.json",
+      "result": "PASS",
+      "changes": [
+        "emitDeclarationOnly=false",
+        "declaration=false",
+        "declarationMap=false",
+        "lib=ES2022,DOM"
+      ]
+    }
+  ],
+  "gridQualification": "Separate strict compiler and one-row browser probes passed. See grid-compiler.json and grid-browser.json. Full product integration remains open."
+}

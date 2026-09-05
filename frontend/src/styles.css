@@ -1,1 +1,2 @@
-/* You can add global styles to this file, and also import other style files */
+/* Global styles entry point. Design tokens first; see theme/tokens.css for the source note. */
+@import "./theme/tokens.css";

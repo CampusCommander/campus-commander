@@ -1,0 +1,2 @@
+# Disposable validation experiments are not workspace projects.
+docs/validation/**/experiments/**

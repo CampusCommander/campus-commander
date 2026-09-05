@@ -1,0 +1,19 @@
+id: v0_all_settled
+namespace: campus.validation
+tasks:
+  - id: assignments
+    type: io.kestra.plugin.core.flow.ForEach
+    values: ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    concurrencyLimit: 3
+    tasks:
+      - id: worker
+        type: io.kestra.plugin.core.http.Request
+        uri: "http://127.0.0.1:58189/assignment/{{ taskrun.value }}"
+        method: POST
+        headers:
+          Idempotency-Key: "{{ execution.id }}:{{ taskrun.value }}"
+        allowFailure: true
+  - id: aggregate
+    type: io.kestra.plugin.core.http.Request
+    uri: "http://127.0.0.1:58189/aggregate"
+    method: GET
