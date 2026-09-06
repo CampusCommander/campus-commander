@@ -1,0 +1,49 @@
+{
+  "name": "deployment",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "deployment/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/dist/deployment"],
+      "options": {
+        "command": "tsc -p deployment/tsconfig.lib.json"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "options": {
+        "cwd": "deployment",
+        "command": "vitest run"
+      },
+      "dependsOn": ["build"]
+    },
+    "validate-examples": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node dist/deployment/cli.js --examples"
+      }
+    },
+    "validate": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node dist/deployment/cli.js"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "options": {
+        "command": "tsc -p deployment/tsconfig.spec.json --noEmit"
+      }
+    }
+  }
+}

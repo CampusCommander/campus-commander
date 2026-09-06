@@ -20,7 +20,8 @@
     "noUncheckedSideEffectImports": false,
     "types": ["*"],
     "paths": {
-      "shared": ["./libs/src/index.ts"]
+      "shared": ["./libs/src/index.ts"],
+      "deployment": ["./deployment/src/index.ts"]
     }
   }
 }

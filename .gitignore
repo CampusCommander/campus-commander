@@ -64,3 +64,6 @@ vitest.config.*.timestamp*
 .env.*
 !.env.example
 secrets/
+
+# District deployment configuration and local secret references
+/deployment/local/

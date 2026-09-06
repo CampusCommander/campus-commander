@@ -1,0 +1,352 @@
+{
+  "schemaVersion": 1,
+  "phase": 1,
+  "profile": "hybrid",
+  "host": {
+    "os": "linux",
+    "architecture": "amd64",
+    "workerHosts": 2
+  },
+  "images": {
+    "frontend": "registry.example.org/campus-commander/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "api": "registry.example.org/campus-commander/api@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "workers": "registry.example.org/campus-commander/workers@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "components": {
+    "qualification": "pending",
+    "followOn": "P1-T02/P1-T03/P1-T16"
+  },
+  "services": {
+    "frontend": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "https://frontend:8080",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "file",
+            "path": "/run/secrets/district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/"
+      },
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/frontend-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/frontend-private-key"
+        }
+      }
+    },
+    "api": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "https://api:3000",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "file",
+            "path": "/run/secrets/district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "bootstrapSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/bootstrap"
+      },
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/api-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/api-private-key"
+        }
+      }
+    },
+    "workers": {
+      "placement": {
+        "kind": "local",
+        "replicas": 2,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "https://workers:3001",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "file",
+            "path": "/run/secrets/district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "dispatchSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/worker-dispatch"
+      },
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/workers-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/workers-private-key"
+        }
+      }
+    },
+    "applicationDatabase": {
+      "placement": {
+        "kind": "external",
+        "operator": "district-platform"
+      },
+      "endpoint": {
+        "url": "postgresql://postgres.district.example.org:5432",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "file",
+            "path": "/run/secrets/district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "postgresql",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3
+      },
+      "database": "campus",
+      "role": "campus-owner",
+      "passwordSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/campus-database-password"
+      },
+      "migrationOwner": "application-installer",
+      "persistence": {
+        "kind": "external-managed",
+        "location": "/var/lib/campus-commander/campus-postgres",
+        "capacityGiB": 10,
+        "operator": "district-platform"
+      }
+    },
+    "kestraDatabase": {
+      "placement": {
+        "kind": "external",
+        "operator": "district-platform"
+      },
+      "endpoint": {
+        "url": "postgresql://postgres.district.example.org:5432",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "file",
+            "path": "/run/secrets/district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "postgresql",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3
+      },
+      "database": "kestra",
+      "role": "kestra-owner",
+      "passwordSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/kestra-database-password"
+      },
+      "migrationOwner": "kestra",
+      "persistence": {
+        "kind": "external-managed",
+        "location": "/var/lib/campus-commander/kestra-postgres",
+        "capacityGiB": 10,
+        "operator": "district-platform"
+      }
+    },
+    "redis": {
+      "placement": {
+        "kind": "external",
+        "operator": "district-platform"
+      },
+      "endpoint": {
+        "url": "rediss://redis.district.example.org:6379",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "file",
+            "path": "/run/secrets/district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "redis",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3
+      },
+      "passwordSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/redis-password"
+      },
+      "persistence": {
+        "kind": "external-managed",
+        "location": "/var/lib/campus-commander/redis",
+        "capacityGiB": 10,
+        "operator": "district-platform"
+      },
+      "restartPolicy": "discard-cache"
+    },
+    "kestra": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 500,
+          "cpuLimitMillis": 2000,
+          "memoryRequestMiB": 1024,
+          "memoryLimitMiB": 2048
+        }
+      },
+      "endpoint": {
+        "url": "https://kestra:8080",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "file",
+            "path": "/run/secrets/district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "authSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/kestra-auth"
+      },
+      "internalStorage": {
+        "kind": "shared-filesystem",
+        "location": "/var/lib/campus-commander/kestra-internal",
+        "capacityGiB": 10,
+        "operator": "district-storage"
+      },
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/kestra-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/kestra-private-key"
+        }
+      }
+    },
+    "edge": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "https://campus.example.org",
+        "tls": {
+          "mode": "system-ca"
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "bootstrapSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/bootstrap"
+      },
+      "access": "bootstrap-only",
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/edge-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/edge-private-key"
+        }
+      }
+    }
+  },
+  "artifacts": {
+    "kind": "shared-filesystem",
+    "location": "/var/lib/campus-commander/artifacts",
+    "capacityGiB": 10,
+    "operator": "district-storage"
+  }
+}

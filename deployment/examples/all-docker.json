@@ -1,0 +1,302 @@
+{
+  "schemaVersion": 1,
+  "phase": 1,
+  "profile": "all-docker",
+  "host": {
+    "os": "linux",
+    "architecture": "amd64",
+    "workerHosts": 1
+  },
+  "images": {
+    "frontend": "registry.example.org/campus-commander/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "api": "registry.example.org/campus-commander/api@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "workers": "registry.example.org/campus-commander/workers@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "components": {
+    "qualification": "pending",
+    "followOn": "P1-T02/P1-T03/P1-T16"
+  },
+  "services": {
+    "frontend": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "http://frontend:8080",
+        "tls": {
+          "mode": "disabled"
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/"
+      }
+    },
+    "api": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "http://api:3000",
+        "tls": {
+          "mode": "disabled"
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "bootstrapSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/bootstrap"
+      }
+    },
+    "workers": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "http://workers:3001",
+        "tls": {
+          "mode": "disabled"
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "dispatchSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/worker-dispatch"
+      }
+    },
+    "applicationDatabase": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 250,
+          "cpuLimitMillis": 1000,
+          "memoryRequestMiB": 512,
+          "memoryLimitMiB": 1024
+        }
+      },
+      "endpoint": {
+        "url": "postgresql://application-postgres:5432",
+        "tls": {
+          "mode": "disabled"
+        }
+      },
+      "health": {
+        "probe": "postgresql",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3
+      },
+      "database": "campus",
+      "role": "campus-owner",
+      "passwordSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/campus-database-password"
+      },
+      "migrationOwner": "application-installer",
+      "persistence": {
+        "kind": "local-volume",
+        "location": "/var/lib/campus-commander/campus-postgres",
+        "capacityGiB": 10,
+        "operator": "installation-operator"
+      }
+    },
+    "kestraDatabase": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 250,
+          "cpuLimitMillis": 1000,
+          "memoryRequestMiB": 512,
+          "memoryLimitMiB": 1024
+        }
+      },
+      "endpoint": {
+        "url": "postgresql://kestra-postgres:5432",
+        "tls": {
+          "mode": "disabled"
+        }
+      },
+      "health": {
+        "probe": "postgresql",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3
+      },
+      "database": "kestra",
+      "role": "kestra-owner",
+      "passwordSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/kestra-database-password"
+      },
+      "migrationOwner": "kestra",
+      "persistence": {
+        "kind": "local-volume",
+        "location": "/var/lib/campus-commander/kestra-postgres",
+        "capacityGiB": 10,
+        "operator": "installation-operator"
+      }
+    },
+    "redis": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "redis://redis:6379",
+        "tls": {
+          "mode": "disabled"
+        }
+      },
+      "health": {
+        "probe": "redis",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3
+      },
+      "passwordSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/redis-password"
+      },
+      "persistence": {
+        "kind": "local-volume",
+        "location": "/var/lib/campus-commander/redis",
+        "capacityGiB": 10,
+        "operator": "installation-operator"
+      },
+      "restartPolicy": "discard-cache"
+    },
+    "kestra": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 500,
+          "cpuLimitMillis": 2000,
+          "memoryRequestMiB": 1024,
+          "memoryLimitMiB": 2048
+        }
+      },
+      "endpoint": {
+        "url": "http://kestra:8080",
+        "tls": {
+          "mode": "disabled"
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "authSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/kestra-auth"
+      },
+      "internalStorage": {
+        "kind": "local-volume",
+        "location": "/var/lib/campus-commander/kestra-internal",
+        "capacityGiB": 10,
+        "operator": "installation-operator"
+      }
+    },
+    "edge": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "https://campus.example.org",
+        "tls": {
+          "mode": "system-ca"
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "bootstrapSecretRef": {
+        "provider": "file",
+        "path": "/run/secrets/bootstrap"
+      },
+      "access": "bootstrap-only",
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/edge-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "file",
+          "path": "/run/secrets/edge-private-key"
+        }
+      }
+    }
+  },
+  "artifacts": {
+    "kind": "local-volume",
+    "location": "/var/lib/campus-commander/artifacts",
+    "capacityGiB": 10,
+    "operator": "installation-operator"
+  }
+}

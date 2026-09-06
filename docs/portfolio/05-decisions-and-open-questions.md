@@ -211,6 +211,11 @@ A resolved direction still requires its stated implementation evidence.
 74. Select and qualify trial promotion, sample-data isolation, and production approval invalidation. Owner: deployment lead. Package P9.2.
 75. Verify source provenance and retention windows for external Google audit and battery classifications. Owner: capability lead. Packages P6.4/P10.2.
 
+## Phase 1 implementation decisions
+
+[D-CC-4](../../deployment/README.md#configuration-decision-d-cc-4-2026-09-06) defines the typed deployment configuration contract and three validated profiles.
+[CC-4 evidence](../../deployment/evidence.md) records configuration checks. Runtime qualification remains open under R07, R19, and R24.
+
 ## Use during execution
 
 Read current decisions before legacy IDs. Treat superseded rows as traceability only.

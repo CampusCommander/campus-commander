@@ -1,0 +1,430 @@
+{
+  "schemaVersion": 1,
+  "phase": 1,
+  "profile": "kubernetes",
+  "host": {
+    "os": "linux",
+    "architecture": "amd64",
+    "workerHosts": 2
+  },
+  "images": {
+    "frontend": "registry.example.org/campus-commander/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "api": "registry.example.org/campus-commander/api@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "workers": "registry.example.org/campus-commander/workers@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "components": {
+    "qualification": "pending",
+    "followOn": "P1-T02/P1-T03/P1-T16"
+  },
+  "services": {
+    "frontend": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "https://frontend.campus-commander.svc.cluster.local:8080",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "kubernetes",
+            "name": "campus-installation",
+            "key": "district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/"
+      },
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "frontend-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "frontend-private-key"
+        }
+      }
+    },
+    "api": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "https://api.campus-commander.svc.cluster.local:3000",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "kubernetes",
+            "name": "campus-installation",
+            "key": "district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "bootstrapSecretRef": {
+        "provider": "kubernetes",
+        "name": "campus-installation",
+        "key": "bootstrap"
+      },
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "api-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "api-private-key"
+        }
+      }
+    },
+    "workers": {
+      "placement": {
+        "kind": "local",
+        "replicas": 2,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "https://workers.campus-commander.svc.cluster.local:3001",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "kubernetes",
+            "name": "campus-installation",
+            "key": "district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "dispatchSecretRef": {
+        "provider": "kubernetes",
+        "name": "campus-installation",
+        "key": "worker-dispatch"
+      },
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "workers-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "workers-private-key"
+        }
+      }
+    },
+    "applicationDatabase": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 250,
+          "cpuLimitMillis": 1000,
+          "memoryRequestMiB": 512,
+          "memoryLimitMiB": 1024
+        }
+      },
+      "endpoint": {
+        "url": "postgresql://application-postgres.campus-commander.svc.cluster.local:5432",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "kubernetes",
+            "name": "campus-installation",
+            "key": "district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "postgresql",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3
+      },
+      "database": "campus",
+      "role": "campus-owner",
+      "passwordSecretRef": {
+        "provider": "kubernetes",
+        "name": "campus-installation",
+        "key": "campus-database-password"
+      },
+      "migrationOwner": "application-installer",
+      "persistence": {
+        "kind": "local-volume",
+        "location": "/var/lib/campus-commander/campus-postgres",
+        "capacityGiB": 10,
+        "operator": "installation-operator"
+      },
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "application-postgres-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "application-postgres-private-key"
+        }
+      }
+    },
+    "kestraDatabase": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 250,
+          "cpuLimitMillis": 1000,
+          "memoryRequestMiB": 512,
+          "memoryLimitMiB": 1024
+        }
+      },
+      "endpoint": {
+        "url": "postgresql://kestra-postgres.campus-commander.svc.cluster.local:5432",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "kubernetes",
+            "name": "campus-installation",
+            "key": "district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "postgresql",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3
+      },
+      "database": "kestra",
+      "role": "kestra-owner",
+      "passwordSecretRef": {
+        "provider": "kubernetes",
+        "name": "campus-installation",
+        "key": "kestra-database-password"
+      },
+      "migrationOwner": "kestra",
+      "persistence": {
+        "kind": "local-volume",
+        "location": "/var/lib/campus-commander/kestra-postgres",
+        "capacityGiB": 10,
+        "operator": "installation-operator"
+      },
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "kestra-postgres-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "kestra-postgres-private-key"
+        }
+      }
+    },
+    "redis": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "rediss://redis.campus-commander.svc.cluster.local:6379",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "kubernetes",
+            "name": "campus-installation",
+            "key": "district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "redis",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3
+      },
+      "passwordSecretRef": {
+        "provider": "kubernetes",
+        "name": "campus-installation",
+        "key": "redis-password"
+      },
+      "persistence": {
+        "kind": "local-volume",
+        "location": "/var/lib/campus-commander/redis",
+        "capacityGiB": 10,
+        "operator": "installation-operator"
+      },
+      "restartPolicy": "discard-cache",
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "redis-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "redis-private-key"
+        }
+      }
+    },
+    "kestra": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 500,
+          "cpuLimitMillis": 2000,
+          "memoryRequestMiB": 1024,
+          "memoryLimitMiB": 2048
+        }
+      },
+      "endpoint": {
+        "url": "https://kestra.campus-commander.svc.cluster.local:8080",
+        "tls": {
+          "mode": "private-ca",
+          "caSecretRef": {
+            "provider": "kubernetes",
+            "name": "campus-installation",
+            "key": "district-ca"
+          }
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "authSecretRef": {
+        "provider": "kubernetes",
+        "name": "campus-installation",
+        "key": "kestra-auth"
+      },
+      "internalStorage": {
+        "kind": "shared-filesystem",
+        "location": "/var/lib/campus-commander/kestra-internal",
+        "capacityGiB": 10,
+        "operator": "district-storage"
+      },
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "kestra-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "kestra-private-key"
+        }
+      }
+    },
+    "edge": {
+      "placement": {
+        "kind": "local",
+        "replicas": 1,
+        "resources": {
+          "cpuRequestMillis": 100,
+          "cpuLimitMillis": 500,
+          "memoryRequestMiB": 128,
+          "memoryLimitMiB": 512
+        }
+      },
+      "endpoint": {
+        "url": "https://campus.example.org",
+        "tls": {
+          "mode": "system-ca"
+        }
+      },
+      "health": {
+        "probe": "http",
+        "intervalSeconds": 10,
+        "timeoutSeconds": 3,
+        "startupGraceSeconds": 120,
+        "failureThreshold": 3,
+        "path": "/health"
+      },
+      "bootstrapSecretRef": {
+        "provider": "kubernetes",
+        "name": "campus-installation",
+        "key": "bootstrap"
+      },
+      "access": "bootstrap-only",
+      "serverTls": {
+        "certificateSecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "edge-certificate"
+        },
+        "privateKeySecretRef": {
+          "provider": "kubernetes",
+          "name": "campus-installation",
+          "key": "edge-private-key"
+        }
+      }
+    }
+  },
+  "artifacts": {
+    "kind": "shared-filesystem",
+    "location": "/var/lib/campus-commander/artifacts",
+    "capacityGiB": 10,
+    "operator": "district-storage"
+  }
+}

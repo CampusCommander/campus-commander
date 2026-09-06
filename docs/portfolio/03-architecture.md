@@ -406,6 +406,9 @@ Redis Pub/Sub alone cannot recover missed events. [Redis delivery semantics](htt
 | Hybrid Docker and district servers | Same images with per-service external endpoints and retained local components | Shared backend for cross-host artifact consumers |
 | Enterprise Kubernetes | Frontend, API, workers, and configured shared services on district-operated Kubernetes | Shared endpoints, qualified artifacts, and separately configured Kestra storage |
 
+[The CC-4 configuration contract](../../deployment/README.md) defines typed settings, profile examples, validation, service placement, and network assumptions.
+Its validation establishes configuration consistency. Component versions and runtime qualification remain follow-on work.
+
 Moving a database or adding worker hosts does not require Kubernetes.
 Preserve job, permission, and storage contracts across profiles.
 Shared services require independent resource, failover, backup, and access-control qualification.
