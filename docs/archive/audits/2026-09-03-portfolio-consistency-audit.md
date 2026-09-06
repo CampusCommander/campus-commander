@@ -14,9 +14,8 @@ The grooming corrected the wizard scope list in `docs/portfolio/03-architecture.
 | `docs/architecture/*` | Scopes described generically (identity-only bootstrap, manual DWD grant). No stale strings. | None needed. |
 | `docs/superpowers/specs/2026-07-07-core-entity-management-design.md` | References the DWD paste flow with a generic "scope list the wizard generated". No count, no strings. | None needed. |
 | `docs/research/admin-sdk-gap-analysis.md` | Section 1 table said "six scopes" as current state. | Fixed this audit: now "eight scopes (see Section 2)". |
-| Penpot Connection board | Still shows the old count. | Pending. Tracked as Track 12 item D-F in `06-work-breakdown.md`. Issue A4 in `07` says pending. |
 
-Conclusion: the only markdown drift was in the gap analysis itself, now fixed. The Penpot board remains the single outstanding location.
+Conclusion: the only markdown drift was in the gap analysis itself, now fixed.
 
 ## 2. Open-question wiring (05 ↔ 06)
 
@@ -49,10 +48,6 @@ Conclusion: no live copy drift. The design review file is a record of issues fou
 
 The review references boards as "Page — Board". The prototype-map uses a compact notation ("Settings: Overview, Diagnostics, Setup Wizard, Connection, Setup Waiting" and "Users states: …"). After normalizing notation, all referenced boards resolve. The single rename — "Users — Undo Snackbar" to "Run Result Snackbar" — is documented in both files. No naming drift.
 
-## 5. Penpot connection status
-
-The Penpot MCP bridge stayed broken through this audit: plugin shows connected, executions return nothing. Attempts covered plugin reconnect, a fresh file, a browser restart, and an opencode reload. The Connection board sync (D-F) remains blocked on the bridge, not on any design work. Nothing in the audit depends on Penpot access.
-
 ## Verdict
 
-The portfolio is internally consistent after the grooming pass. Open items carried forward: D-F (Penpot Connection board scope sync) and the unresolved issues in `07` (A1, A2, B1-B12, C3-C6, E1-E8, E10-E12 minus those groomed). The next grooming-relevant decision remains the Tier 1 items that did not graduate (T1-3, T1-4, T1-8, T1-9) and all Tier 2 items.
+The portfolio is internally consistent after the grooming pass. Unresolved product issues carried forward: the issues in `07` (A1, A2, B1-B12, C3-C6, E1-E8, E10-E12 minus those groomed). The next grooming-relevant decision remains the Tier 1 items that did not graduate (T1-3, T1-4, T1-8, T1-9) and all Tier 2 items.

@@ -29,7 +29,7 @@ These recommendations assume a small TypeScript team, no mandatory commercial li
 
 The review covered all seven current portfolio documents, their index, and the prototype map. It also examined relevant archived specifications, architecture decisions, research, and the previous consistency audit. Repository inspection included the package manifest, Nx configuration, Compose configuration, and CI workflow.
 
-The portfolio correctly treats existing scaffolding as a false start. This review follows that framing. It does not assess production implementation quality. The Penpot prototype map supplied interaction descriptions. This review did not inspect the live Penpot boards.
+The portfolio correctly treats existing scaffolding as a false start. This review follows that framing. It does not assess production implementation quality. The prototype map supplied interaction descriptions. This review did not inspect live prototype boards.
 
 The previous audit checked consistency between documents. Agreement between documents does not establish technical feasibility. This assessment checks the design against external constraints and the intended operating model.
 

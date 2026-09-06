@@ -1,6 +1,6 @@
 # Feature Review — Raw Brain Dumps (2026-09-03)
 
-Unstructured owner feedback captured while reviewing the Penpot prototype after the 2026-09-02 design review round. Recorded verbatim at capture time. Not groomed. When the dump is complete, groom this list and record the features into the appropriate design docs (`ui-design-guide.md`, `design-review` follow-up, spec updates).
+Unstructured owner feedback captured while reviewing the prototype after the 2026-09-02 design review round. Recorded verbatim at capture time. Not groomed. When the dump is complete, groom this list and record the features into the appropriate design docs (`ui-design-guide.md`, `design-review` follow-up, spec updates).
 
 ## Dumps
 

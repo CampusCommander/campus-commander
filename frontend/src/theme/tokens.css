@@ -1,7 +1,7 @@
 /* Campus Commander design tokens.
-   Source of truth: Penpot file "Campus Commander" (design.penpot.app),
-   token sets CC Color Light, CC Color Dark, CC Scale. Themes: Mode L / Mode D.
-   Regenerate with the Penpot MCP plugin if a token changes. See docs/archive/ux/ui-design-guide.md sections 5, 7, 15.
+   Design authority: docs/ui/tokens.json. Agent instructions: docs/ui/README.md.
+   This legacy subset predates the 2026-09-05 Figma revisions.
+   Reconcile values and missing tokens during theme implementation.
    Status *-text tokens differ in dark mode: brightened for contrast on dark surfaces. */
 
 :root {

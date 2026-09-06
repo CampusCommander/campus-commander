@@ -243,6 +243,5 @@ Conventions:
 - The workspace runs Angular 22. The architecture doc says "Angular 20". Version alignment remains an open item (planning checklist Section 1). This guide targets the workspace version.
 - `@angular/material`, `ag-grid-angular`, `ag-grid-community@~36.1`, and the `@libregrid/*` packages are not yet installed in `frontend`. The first grid slice installs them.
 - Roboto woff2 files land under `frontend/src/assets/fonts/` with a license notice file.
-- `frontend/src/theme/tokens.css` exports the Penpot token sets as CSS custom properties (`--cc-*`). The Penpot file is the source of truth. Dark mode activates with `data-theme="dark"` on a root element. Regenerate the file from the Penpot library when a token changes.
-- `docs/ux/prototype-map.md` maps every board, flow, and demo chain in the Penpot file. Update it when a board moves or a flow changes.
-
+- Current agent rules and exact design tokens live in [docs/ui](../../ui/README.md).
+- The current visual reference lives in the [Figma prototype map](../../portfolio/prototype-map.md).

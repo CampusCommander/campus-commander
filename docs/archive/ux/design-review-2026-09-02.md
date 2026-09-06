@@ -2,7 +2,7 @@
 
 **Status:** WORKLIST — findings plus a formal, agent-executable work list. Section 3 carries the contract for the executing UI/UX agent.
 **Date:** 2026-09-02
-**Scope:** All 68 boards on the page `Users — Grid Page` in the Penpot file `Campus Commander`. Each board was exported and inspected visually.
+**Scope:** All 68 boards on the page `Users — Grid Page` in the retired `Campus Commander` prototype. Each board was exported and inspected visually.
 **Sources of truth used as the critique baseline:**
 
 - `docs/superpowers/specs/2026-07-07-core-entity-management-design.md` (spec 1)
@@ -197,7 +197,7 @@ Notes below cover what section 1 does not already capture. Boards with no extra 
 
 Execution status (2026-09-03): gates G1 to G3 resolved. Work Package A complete (A1 to A16). Journey slice B complete (B1 to B6). Journey slice C complete (C1 to C4). Work Package D stays parked until the first unmoderated walkthrough. The two walkthrough criteria in the definition of done remain open until a human runs them.
 
-This section converts the findings and the PM assessment into executable work. The executor is the UI/UX agent working in the Penpot file. The product manager owns the three gate decisions. Sections 1 and 2 remain the rationale. This section is the contract.
+This section records the historical UI/UX work derived from the findings and PM assessment. The product manager owned the three gate decisions. Sections 1 and 2 preserve the rationale. Current implementation follows the repository UI contract.
 
 **Roles.** The UI/UX agent executes tickets and verifies each one against its "Done when" line. The PM resolves gate decisions G1 to G3. Spec owners confirm API facts when a ticket touches them. The executing agent updates `docs/ux/prototype-map.md` and `docs/ux/ui-design-guide.md` in the same change as any screen they describe.
 

@@ -11,6 +11,15 @@ Apply the `ste-writing` skill to all prose output (docs, READMEs, PR description
 - One topic per paragraph (max six sentences).
 
 
+## Client UI implementation
+
+For client pages, controls, feature flows, and UI reviews, read [docs/ui/README.md](docs/ui/README.md) first.
+Follow its shared rules, relevant patterns, and exact design tokens.
+Routine UI implementation must not require parsing Figma.
+Use Figma for requested visual design work or composition absent from the repository contract.
+Keep product behavior and phase availability consistent with [docs/portfolio/README.md](docs/portfolio/README.md).
+Include applicable rule IDs and validation evidence in the task handoff.
+
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
 

@@ -9,7 +9,8 @@ Partial experimental results do not complete implementation packages or the enti
 The owner adopted the ten-phase sequence below after the initial V0 experiments.
 This sequence replaces the earlier V1–V6 delivery order. V0 remains an evidence record and prerequisite workstream.
 Existing scaffolding is not a completed deliverable. Preserve unrelated files during any later scoped cleanup.
-The Penpot prototype remains a visual reference requiring alignment with [04](04-ux-ui-spec.md).
+The [agent UI contract](../ui/README.md) translates [04](04-ux-ui-spec.md) and the revised Figma design into implementation rules.
+The [prototype map](prototype-map.md) identifies current Figma flows and their validation limits.
 
 ## How packages work
 
@@ -630,7 +631,7 @@ Windows Docker Desktop was unavailable during this run. Isolated process tests d
 ## Track 12 — Interaction design
 
 Preserve board inventory in [prototype-map](prototype-map.md). Update [04](04-ux-ui-spec.md) and the map when prototype changes occur.
-No live Penpot boards were edited by this documentation integration.
+This documentation integration did not establish working-client acceptance.
 
 | ID | Design deliverable | Dependent package |
 |---|---|---|

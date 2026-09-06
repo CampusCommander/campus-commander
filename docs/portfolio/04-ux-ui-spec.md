@@ -3,8 +3,9 @@
 **Status:** current interaction design, revised 2026-09-05. Visual tokens remain provisional where marked.
 The contractor review and owner decisions replace conflicting behavior from earlier prototype boards.
 [03](03-architecture.md) defines runtime behavior. [05](05-decisions-and-open-questions.md) records current decisions.
-The [prototype map](prototype-map.md) preserves observed boards and lists pending alignment work.
-No live prototype edits occurred during this integration.
+The [prototype map](prototype-map.md) identifies the current Figma reference and its review flows.
+The [agent UI contract](../ui/README.md) supplies implementation rules without requiring agents to parse Figma.
+The September 5 Figma revision implements the design review. It does not establish working-client acceptance.
 
 ## Development milestones
 
@@ -38,7 +39,7 @@ Rules that serve both groups: plain-language action labels first, with technical
 ## 3. Brand
 
 - **Wordmark:** "Campus Commander" in Roboto Medium at the top of the left navigation panel. A graphical logomark is an open item (Section 16).
-- **Accent color:** one blue accent (`#1A73E8`, provisional pending brand confirmation) drives primary actions, active states, links, and focus rings. One accent only. Semantic colors never double as decorative accents.
+- **Accent color:** one blue accent (`#1A73E8`, provisional pending brand confirmation) drives primary fills and focus indication. Use the related `text/link` token for readable links and active labels. Semantic colors never double as decorative accents.
 - **Iconography:** Material Symbols is the only icon system. No emoji, no second icon set, no hand-drawn SVGs outside the grid theme. Sizes: 24px navigation and toolbars, 20px inline actions, 16px dense list contexts. Navigation icons use the outlined weight at rest and the filled weight on the active item. One weight per context.
 - **Brand presence:** wordmark in the nav header. Accent on all primary actions and active states. Branded empty states (wordmark + one sentence of guidance + one next action). App version in the footer.
 
@@ -70,6 +71,10 @@ Standard enterprise layout: a full-height left navigation panel, a header above 
 
 Light and dark from day one. Material `light-dark()` tokens define every color. The grid follows the app automatically through the `@libregrid/material` bridge.
 
+[tokens.json](../ui/tokens.json) defines exact design values and CSS names, including the September 5 contrast corrections.
+Use `text/link`, `status/*-text`, and `border/control` for links, semantic labels, and field boundaries.
+Status shape colors do not establish readable text colors. Check selected and hover backgrounds in both modes.
+
 ### Surfaces (neutral scale)
 
 | Token | Light | Dark | Use |
@@ -84,7 +89,7 @@ Light and dark from day one. Material `light-dark()` tokens define every color. 
 
 | Token | Light value | Use |
 |---|---|---|
-| `accent` | `#1A73E8` (provisional) | Primary actions, active nav, links, focus rings |
+| `accent` | `#1A73E8` (provisional) | Primary action fills and focus indication |
 | `text-primary` | `#202124` | Headings, body text |
 | `text-secondary` | `#5F6368` | Subtitles, metadata, footer |
 | `text-disabled` | `#9AA0A6` | Disabled controls |
@@ -136,10 +141,13 @@ Data columns in grids use tabular numerals (`font-variant-numeric: tabular-nums`
 
 Every entity page (Users, Devices, Groups) shares one canonical layout, top to bottom:
 
-1. **Chip filter bar.** Full width, 16px below the header. Active filters render as chips (field + value + remove `x`). A trailing "Add filter" control opens a field picker. Chips and saved filters use the same typed query contract. Optional later language assistance produces that contract.
-2. **Toolbar row.** Left: the bulk action menu (primary button, accent), enabled only when a selection exists. Right: the selection summary ("142 selected", or "All rows matching: suspended = yes"), view options (columns), export menu.
-3. **Grid card.** Card surface, 1px border. Server-side row model (`@libregrid/server-side-row-model`), compact rows. A checkbox column for selection. Writable fields show an edit affordance on hover. A single-cell edit creates a draft. Save prepares a preview, and confirmation creates an audited job. The card stretches to the footer. The status bar docks to the card bottom.
-4. **Status bar.** Bottom of the grid card, caption size: total row count ("128,431 users"), freshness indicator with status color ("Synced 2h ago"), sync progress while one runs. Count and freshness appear once, in the status bar. Page headers do not duplicate them.
+1. **Lookup.** Search identifiers through the qualified query contract. Offer supported import entry points beside lookup controls.
+2. **Chip filter bar.** Show field, value, and remove action. Add filter opens the shared field picker. Saved filters use the same typed query contract.
+3. **Selection toolbar.** Show selected count and scope beside supported actions. Enable selection-dependent actions only with eligible selection. Keep one primary continuation.
+4. **Grid card.** Use the qualified server-side row model, compact rows, selection checkboxes, and draft editing. Bound the scrolling viewport within the available height.
+5. **Status region.** Dock counts, freshness, and sync progress below the viewport. Keep this region visible. Do not duplicate counts and freshness in the page header.
+
+The [entity grid pattern](../ui/patterns.md#entity-grid) supplies the agent implementation recipe.
 
 **Selection visualization** follows decision 17.8 (server-side selection, Redis-backed):
 
@@ -171,7 +179,7 @@ Conventions:
 - Plain-language labels first: "Suspend users", not "Set suspended = true". Field-level technical names appear in tooltips and in the preview diff, not on the button.
 - Jargon fields (2SV, DWD, deprovision) carry an info icon with a one-sentence plain-language tooltip.
 - Dialogs: one scrim token (black at 32 percent). Titles are statements with counts ("Delete 12 archived users"), never questions.
-- Snackbar: run result ("Suspended 34 users") with a "View job" action. No Undo (gate decision G1).
+- Snackbar: accepted receipt with View job after submission. Use success wording only after confirmed effects. No Undo (gate decision G1).
 - Forms and wizards center at 720px max width. One question group per card. Multi-step flows show a progress indicator. The setup wizard follows the GAM7 pattern: one-click-copy values beside direct links, no menu hunting.
 - Jobs UI models Google Cloud Console: status chip, duration, brief error, expandable detail. "Completed with errors" is distinct from "Failed".
 
@@ -224,8 +232,10 @@ Generated dashboards and hosted model adapters require separate future design de
 - P0.1 qualifies compatible framework and grid versions. Historical Angular version differences do not establish a release baseline.
 - The first grid slice installs the qualified Angular Material, AG Grid Community, and LibreGrid package set.
 - Roboto woff2 files land under `frontend/src/assets/fonts/` with a license notice file.
-- `frontend/src/theme/tokens.css` exports the Penpot token sets as CSS custom properties (`--cc-*`). The Penpot file is the source of truth. Dark mode activates with `data-theme="dark"` on a root element. Regenerate the file from the Penpot library when a token changes.
-- `docs/portfolio/prototype-map.md` maps every board, flow, and demo chain in the Penpot file. Update it when a board moves or a flow changes.
+- `docs/ui/tokens.json` defines exact design tokens for agents. Feed these values into the shared Material theme and grid bridge.
+- `frontend/src/theme/tokens.css` contains a legacy subset. Reconcile its values and missing tokens during theme implementation.
+- Dark mode activates with `data-theme="dark"` on a root element. Preserve system preference and explicit user overrides.
+- `docs/portfolio/prototype-map.md` identifies current Figma flows. Update the relevant reference when designs change.
 
 ## 16. Open items
 
@@ -235,13 +245,18 @@ Generated dashboards and hosted model adapters require separate future design de
 
 ## 17. Prototype
 
-The Penpot file (`Campus Commander`, page "Users — Grid Page", 68 boards) is the visual reference for all of the above. `docs/portfolio/prototype-map.md` maps every board, flow, and the demo script for the safety chain. The recorded prototype reflects the earlier design-review work list: force password reset semantics, the former single-domain create-user flow, Groups without Dynamic/Static or Owning OU columns, the setup wizard scope list, restructured device command menu, Run Result Snackbar, one health model, compact-only density.
+The current visual reference is [Figma page 09 — Device Workflows · Revised](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=122-364).
+It contains prepared device workflows, confirmations, receipts, outcomes, and recovery states.
+Agents use [docs/ui](../ui/README.md) for routine implementation. Humans use Figma for visual review.
 
-**Prototype caveat:** boards also predate this review integration. Drafts, cross-entity search, account/domain context, credential setup, generated scopes, held jobs, and verification states require alignment. Track 12 owns that work. The current written specification takes precedence over conflicting boards.
+**Prototype caveat:** prepared values and navigation do not implement live permissions, provider calls, typing validation, or accessibility behavior.
+The current written specification takes precedence over conflicting prototype examples.
 
 ## 18. Design-system masters
 
-`Design System — Components` board holds the button masters (Primary, Secondary, Destructive (outlined), Confirm (filled)), state chips, filter chip, icon button, and dialog card. Work item D12 (design review) expands this into the build reference: control states, text fields, banners, snackbars, side sheet, table chrome, empty states.
+Figma Components & States contains control masters and specimens, including button, field, and checkbox states.
+The [agent rules](../ui/rules.md) define their implementation contract. Figma masters do not establish existing production components.
+Qualify and reuse shared client controls during implementation.
 
 
 ## 19. Drafts, previews, and result truth

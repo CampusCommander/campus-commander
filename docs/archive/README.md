@@ -2,6 +2,9 @@
 
 Files moved out of the active documentation set on 2026-09-03. Every file here was scanned before the move: its content either lives in the finalized portfolio (`docs/portfolio/`), is tracked as backlog (`06-work-breakdown.md`, `07-issues-and-opportunities.md`), or was deemed obsolete. Nothing unique was lost. Do not cite these files as current design truth. Do not edit them. The portfolio wins on any conflict.
 
+The owner requested removal of retired design-tool documentation on 2026-09-05.
+That cleanup removed obsolete setup instructions and platform references. Product findings remain historical review evidence.
+
 ## specs/
 
 | File | Disposition |
@@ -20,7 +23,7 @@ Files moved out of the active documentation set on 2026-09-03. Every file here w
 | File | Disposition |
 |---|---|
 | `ui-design-guide.md` | Folded into `04-ux-ui-spec.md` in full: token tables, measurements, component packages, states, open items, implementation notes. |
-| `design-review-2026-09-02.md` | Findings executed in Penpot during the 2026-09-02/03 review round. Gate decisions G1-G3 in `05` Part 1. Work items A-D mined into `06` (Track 12 D-E) and `04`. Historical record of the review round. |
+| `design-review-2026-09-02.md` | Findings from the 2026-09-02/03 prototype review round. Gate decisions G1-G3 in `05` Part 1. Work items A-D mined into `06` (Track 12 D-E) and `04`. Historical record of the review round. |
 | `feature-review-notes-2026-09-03.md` | Owner brain dumps, verbatim. Summarized in `02` (Owner brain dumps) and tracked as Track 12 items D-A to D-D in `06`. Kept verbatim for the record. |
 
 ## research/
@@ -29,7 +32,6 @@ Files moved out of the active documentation set on 2026-09-03. Every file here w
 |---|---|
 | `google-api-quotas.md` | Folded into `03-architecture.md` Appendix A (rate limits, page sizes, backoff semantics, quota-increase mechanics). |
 | `admin-sdk-gap-analysis.md` | Scope corrections S1/S2 became issues A7/A8 and the eight-scope decision in `05`. Graduated opportunities are E9-E12. The remaining catalog is `07` Section F. Constraint facts are `03` Appendix A. The full API inventory with primary-source citations lives here, kept for reference. |
-| `design-platforms-mcp-options.md` | Obsolete. Penpot was selected and implemented. Its operational notes (token export, logomark item) live in `04` Sections 15-16. |
 
 ## audits/
 
