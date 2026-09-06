@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "1.2.0",
+  "scope": "all-entity-grids",
+  "purpose": "Design metadata. These keys are not LibreGrid or provider API options.",
+  "source": {
+    "fileKey": "lqZx6qpWevsN3AAfWkworl",
+    "pageId": "94:2",
+    "revision": "1.4",
+    "updated": "2026-09-05"
+  },
+  "columnOrder": [
+    "selection",
+    "details",
+    "serial",
+    "model",
+    "assetTag",
+    "school",
+    "orgUnit",
+    "batteryClassification",
+    "deviceContact"
+  ],
+  "navigation": {
+    "column": "details",
+    "icon": "visibility",
+    "after": "selection",
+    "identity": "stableEntityId",
+    "accessibleName": "Open details for {entityLabel}",
+    "cellNavigation": false
+  },
+  "editing": {
+    "module": "@libregrid/batch-edit",
+    "readOnlyEditor": null,
+    "capabilityGate": "field-writable-and-row-authorized-and-online",
+    "draftKey": ["stableEntityId", "fieldId"],
+    "draftOutsideRowCache": true,
+    "toolbar": ["Save", "Clear", "Filter Changed", "Show All"],
+    "changedCellIndicators": ["tint", "border", "rollback-icon"],
+    "rollbackScope": "one-unsubmitted-field",
+    "clearScope": "all-unsubmitted-grid-fields",
+    "saveFlow": [
+      "validate",
+      "preview",
+      "confirm",
+      "durable-job-receipt",
+      "job",
+      "audited-result"
+    ],
+    "changedFilterScope": "all-draft-records-independent-of-current-query",
+    "showAllScope": "restore-original-query",
+    "rowModelQualification": "Publisher documents client-row-model-only support. Qualify or extend integration before server-side release.",
+    "editorPlacement": "replace-cell-content",
+    "dialogEditors": ["orgUnitTree", "date", "dateTime"],
+    "dropdownEditors": ["boolean", "enum"],
+    "stageKeys": ["Enter", "Tab"],
+    "cancelKey": "Escape",
+    "separateStageButton": false,
+    "draftPanelPosition": "between-filter-action-row-and-grid"
+  },
+  "editors": {
+    "text": {
+      "control": "textbox",
+      "placement": "in-cell"
+    },
+    "multilineText": {
+      "control": "textarea",
+      "placement": "in-cell"
+    },
+    "number": {
+      "control": "numeric-input",
+      "validation": ["finite", "field-range", "field-precision"],
+      "placement": "in-cell"
+    },
+    "date": {
+      "control": "date-picker",
+      "valueType": "date-only",
+      "placement": "specialized-picker-dialog"
+    },
+    "dateTime": {
+      "control": "date-time-picker",
+      "valueType": "timestamp",
+      "timezone": "explicit-district-timezone",
+      "placement": "specialized-picker-dialog"
+    },
+    "enum": {
+      "control": "dropdown",
+      "options": "qualified-field-enum",
+      "placement": "in-cell-dropdown"
+    },
+    "boolean": {
+      "control": "dropdown",
+      "falseIsUnset": false,
+      "placement": "in-cell-dropdown"
+    },
+    "orgUnitTree": {
+      "control": "searchable-tree-picker",
+      "valueType": "stable-org-unit-id",
+      "display": "derived-path",
+      "placement": "specialized-picker-dialog"
+    }
+  },
+  "filters": {
+    "entryLabel": "Add a filter",
+    "matchSectionOrder": ["matched-fields", "shortcut-matches"],
+    "chipParts": ["field", "operator", "value", "remove"],
+    "apply": "explicit-after-validation",
+    "clearPreserves": ["selection", "drafts", "sorting"],
+    "serialization": "typed-query-contract",
+    "typeControls": {
+      "text": "textbox",
+      "number": "numeric-input-or-range",
+      "date": "date-picker-or-range",
+      "dateTime": "date-time-picker-or-range",
+      "enum": "single-or-multiple-choice",
+      "boolean": "explicit-true-or-false",
+      "orgUnit": "tree-picker-with-explicit-descendant-operator"
+    },
+    "nullOperators": "Only expose is-unset or is-set when the field contract supports them.",
+    "entryBehavior": "replace-add-filter-control-with-autocomplete-in-filter-row",
+    "suggestionPlacement": "below-autocomplete",
+    "separateSearchBox": false
+  },
+  "deviceColumns": [
+    {
+      "fieldId": "serial",
+      "label": "Serial",
+      "dataType": "text",
+      "inGridEditor": null,
+      "filterable": true
+    },
+    {
+      "fieldId": "model",
+      "label": "Model",
+      "dataType": "text",
+      "inGridEditor": null,
+      "filterable": true
+    },
+    {
+      "fieldId": "assetTag",
+      "label": "Asset tag",
+      "dataType": "text",
+      "inGridEditor": "text",
+      "filterable": true
+    },
+    {
+      "fieldId": "school",
+      "label": "School",
+      "dataType": "text",
+      "inGridEditor": null,
+      "filterable": true,
+      "source": "qualified-derived-school-context"
+    },
+    {
+      "fieldId": "orgUnit",
+      "label": "Organization unit",
+      "dataType": "orgUnit",
+      "inGridEditor": "orgUnitTree",
+      "filterable": true
+    },
+    {
+      "fieldId": "batteryClassification",
+      "label": "Battery",
+      "dataType": "enum",
+      "inGridEditor": null,
+      "filterable": true,
+      "source": "qualified-telemetry-and-district-policy"
+    },
+    {
+      "fieldId": "deviceContact",
+      "label": "Device contact",
+      "dataType": "dateTime",
+      "inGridEditor": null,
+      "filterable": true,
+      "source": "qualified-device-contact-observation"
+    },
+    {
+      "fieldId": "annotatedLocation",
+      "label": "Annotated location",
+      "dataType": "text",
+      "inGridEditor": "text",
+      "filterable": true,
+      "defaultVisible": false
+    },
+    {
+      "fieldId": "notes",
+      "label": "Notes",
+      "dataType": "text",
+      "inGridEditor": "multilineText",
+      "filterable": true,
+      "defaultVisible": false
+    }
+  ],
+  "additionalFilterExamples": [
+    {
+      "fieldId": "batteryHealth",
+      "label": "Battery health",
+      "dataType": "number",
+      "unit": "percent-of-design-capacity",
+      "inGridEditor": null,
+      "availability": "requires-qualified-telemetry-query"
+    },
+    {
+      "fieldId": "autoRenewal",
+      "label": "Auto-renewal",
+      "dataType": "boolean",
+      "inGridEditor": null,
+      "availability": "requires-qualified-provider-field-and-query"
+    }
+  ],
+  "implementationRequirements": [
+    "Declare an explicit inGridEditor for every entity data column.",
+    "Resolve logical field IDs through the qualified API schema.",
+    "Obtain operators, nullability, limits, enum options, and permissions from the qualified field contract.",
+    "Do not infer provider support from prototype fields.",
+    "Preserve false, zero, empty, unset, and omitted values as distinct states."
+  ],
+  "anatomy": {
+    "order": [
+      "filter-action-row",
+      "conditional-draft-panel",
+      "entity-viewport",
+      "ag-grid-footer"
+    ],
+    "separateSearchBox": false,
+    "separateSelectionToolbar": false,
+    "filterRow": {
+      "left": ["filter-chips", "add-filter-autocomplete"],
+      "right": ["Refresh", "Bulk Actions"]
+    },
+    "draftPanelPosition": "between-filter-action-row-and-grid",
+    "footer": [
+      "selection-count",
+      "selection-scope",
+      "selection-controls",
+      "pagination",
+      "freshness"
+    ]
+  },
+  "menus": {
+    "Refresh": ["Refresh selected", "Refresh all"],
+    "Bulk Actions": [
+      "Import",
+      "Export",
+      "Update",
+      "Send command",
+      "Change status"
+    ],
+    "refreshAllScope": "authorized-current-district-entity-dataset",
+    "preserveOnRefresh": ["filters", "selection", "drafts", "focus"]
+  },
+  "selectionFooter": {
+    "reference": "https://libregrid.dev/server-side-selection",
+    "controls": ["Select All", "Deselect All", "Show All Selected"],
+    "restoreLabel": "Show All Rows",
+    "headerCheckboxScope": "current-viewport",
+    "selectAllScope": "current-filtered-query",
+    "deselectAllScope": "complete-browsing-selection-specification",
+    "selectedViewPredicate": "selected(spec) AND active-filters",
+    "distinctFromDraftFilter": true
+  }
+}

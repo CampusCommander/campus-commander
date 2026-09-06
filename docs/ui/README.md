@@ -1,12 +1,12 @@
 # Agent UI contract
 
-Version: 1.0.0. Updated: 2026-09-05.
+Version: 1.3.0. Updated: 2026-09-06.
 Scope: client pages, shared controls, feature flows, and UI reviews.
 Status: implementation requirements. Product implementation and owner acceptance remain separate evidence.
 
 Agents implement routine UI work from this directory without opening Figma.
 Figma remains the visual design workspace for humans.
-This contract translates the portfolio and the September 5 Figma revisions into implementation requirements.
+This contract translates the portfolio and the September 5–6 Figma revisions into implementation requirements.
 
 ## Read order
 
@@ -15,6 +15,14 @@ This contract translates the portfolio and the September 5 Figma revisions into 
 3. Read [tokens.json](tokens.json) when changing presentation or shared controls.
 4. Read the relevant domain, capability, and phase requirements in the [portfolio](../portfolio/README.md).
 5. Inspect existing client components before adding another implementation.
+
+For entity grids, also read [entity-grid-fields.json](entity-grid-fields.json).
+It defines detail navigation, explicit editor metadata, draft actions, and typed filter controls.
+Markdown defines behavior. JSON supplies structured metadata for agents. Neither requires a Figma parse.
+The batch-edit module requires server-side compatibility qualification before release. See GRID-05 in [patterns.md](patterns.md#draft-and-mutation).
+
+For Jobs, also read [jobs-grid.json](jobs-grid.json) and JOB-03 through JOB-04 in [patterns.md](patterns.md#jobs-and-recovery).
+Jobs use a read-only operational grid and dedicated detail pages.
 
 | Task                                       | Required pattern                                                              |
 | ------------------------------------------ | ----------------------------------------------------------------------------- |
@@ -68,7 +76,7 @@ Use `not-run` for missing evidence. Use `not-applicable` only with a reason.
 
 ```json
 {
-  "contractVersion": "1.0.0",
+  "contractVersion": "1.3.0",
   "page": "<route or component>",
   "primaryJob": "<one user task>",
   "pattern": "entity-grid | entity-detail | centered-form | split-pane | list-detail",
@@ -108,4 +116,5 @@ Record acceptance evidence separately from design updates.
 Do not export every Figma frame into agent instructions. Keep examples in Figma and reusable requirements here.
 
 Sources: [UX specification](../portfolio/04-ux-ui-spec.md), [domain model](../portfolio/02-domain-model.md), and [Figma revision record](../reviews/2026-09-05-figma-experience-review.md).
-Visual reference: [Figma review index](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=122-364), revision 1.2.
+Visual reference: [Figma review index](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=122-364), revision 1.5.
+The exact token export remains revision 1.2. Revisions 1.3 through 1.5 reuse those values.

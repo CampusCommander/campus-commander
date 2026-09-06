@@ -94,7 +94,7 @@ Rule IDs provide references for implementation plans, review findings, and accep
 - Require another approver when the governing policy requires one. Show the pending approval state explicitly.
 - Preserve access to the durable receipt and job after navigation or refresh.
 - Use ordinary Save for local preferences. Do not create Google jobs for theme or navigation choices.
-- Offer Reset only for unsubmitted drafts. Do not promise Undo or rollback of Google effects.
+- Offer Clear and per-cell rollback only for unsubmitted drafts. Do not promise rollback of Google effects.
 
 ## UI-08 — Required states
 

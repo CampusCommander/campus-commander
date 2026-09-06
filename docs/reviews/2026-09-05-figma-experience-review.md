@@ -17,18 +17,18 @@ See the [product brief](../portfolio/01-product-brief.md), [domain model](../por
 
 Priority P1 means resolve before accepting the affected workflow. Priority P2 means resolve before expanding the shared pattern.
 
-| Priority | Finding | User consequence |
-|---|---|---|
-| P1 | Device frames clip their right edge. | Controls, account context, and detail content disappear. |
-| P1 | Displayed filters, rows, and selection disagree. | Operators cannot reliably identify the affected devices. |
-| P1 | Draft and frozen-preview states are incomplete. | Operators cannot verify which values and targets they approved. |
-| P1 | Command confirmation omits consequences and result distinctions. | Operators receive incomplete warnings and ambiguous success evidence. |
-| P1 | Import review omits baseline values and coherent counts. | Operators cannot distinguish conflicts from unchanged data. |
-| P1 | Recovery remains guidance rather than designed workflows. | Operators lack demonstrated paths through holds, failures, and uncertain effects. |
-| P1 | Dark reference text fails contrast checks. | Status and links become difficult to read. |
-| P2 | Guide rules conflict with the current portfolio. | Designers and agents reproduce superseded behavior. |
-| P2 | Search, scope, and release availability need one shell. | Helpers lack a direct lookup path and clear permission context. |
-| P2 | Device density, detail hierarchy, and components diverge. | The experience becomes inconsistent across entity pages. |
+| Priority | Finding                                                          | User consequence                                                                  |
+| -------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| P1       | Device frames clip their right edge.                             | Controls, account context, and detail content disappear.                          |
+| P1       | Displayed filters, rows, and selection disagree.                 | Operators cannot reliably identify the affected devices.                          |
+| P1       | Draft and frozen-preview states are incomplete.                  | Operators cannot verify which values and targets they approved.                   |
+| P1       | Command confirmation omits consequences and result distinctions. | Operators receive incomplete warnings and ambiguous success evidence.             |
+| P1       | Import review omits baseline values and coherent counts.         | Operators cannot distinguish conflicts from unchanged data.                       |
+| P1       | Recovery remains guidance rather than designed workflows.        | Operators lack demonstrated paths through holds, failures, and uncertain effects. |
+| P1       | Dark reference text fails contrast checks.                       | Status and links become difficult to read.                                        |
+| P2       | Guide rules conflict with the current portfolio.                 | Designers and agents reproduce superseded behavior.                               |
+| P2       | Search, scope, and release availability need one shell.          | Helpers lack a direct lookup path and clear permission context.                   |
+| P2       | Device density, detail hierarchy, and components diverge.        | The experience becomes inconsistent across entity pages.                          |
 
 **1. Repair the device canvas before further review.**
 
@@ -152,13 +152,13 @@ The following calculations use Figma solid fills and composite the selected-row 
 All sampled text is 12 pixels. Normal text requires at least 4.5:1 under the [WCAG contrast criterion](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html).
 These measurements identify design defects. They do not certify application accessibility.
 
-| Text | Figma node | Contrast |
-|---|---|---|
-| Active, selected row | `9:84` | 2.90:1 |
-| Enrolled, selected row | `9:86` | 2.90:1 |
-| Email link, selected row | `9:82` | 3.23:1 |
-| Suspended, ordinary row | `9:102` | 3.49:1 |
-| Active, ordinary row | `9:111` | 3.32:1 |
+| Text                     | Figma node | Contrast |
+| ------------------------ | ---------- | -------- |
+| Active, selected row     | `9:84`     | 2.90:1   |
+| Enrolled, selected row   | `9:86`     | 2.90:1   |
+| Email link, selected row | `9:82`     | 3.23:1   |
+| Suspended, ordinary row  | `9:102`    | 3.49:1   |
+| Active, ordinary row     | `9:111`    | 3.32:1   |
 
 See the [Dark reference](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=9-2).
 Status text binds to shape colors instead of the existing success-text and error-text variables.
@@ -173,17 +173,17 @@ Test keyboard selection, focus restoration, dialogs, conflict choices, backgroun
 
 **8. Reconcile guide authority and release scope.**
 
-| Figma page | Required alignment |
-|---|---|
-| 00 — Start Here | Mark the guide against the September 5 baseline. Replace Users-only approval language with device acceptance status. |
-| 01 — Design Language | Retain the audience split, restrained surfaces, and explicit scope. Add recovery and verification to worked examples. |
-| 02 — Foundations | Correct warning labels. Apply text-specific semantic colors. Reconcile grid type and density guidance. |
-| 03 — Layout Templates | Replace Overview, Directory, and Policies navigation with the adopted release shell. Permit bounded grid scrolling. |
-| 04 — Components & States | Add expired selection, draft conflict, accepted receipt, held job, and unknown-result specimens. |
-| 05 — UX Rules | Replace mixed job terminology, fixed retention assumptions, and “Preview before upload.” Describe validation before mutation. |
-| 06 — Agent Build Checklist | Require the current portfolio, phase availability, frozen previews, actual screen states, and measured validation. |
-| 07 — Reference Screen | Correct filters, selection, dark contrast, and deferred language-assistance controls. |
-| 08 — Device Management | Resolve the workflow findings above and make Devices the acceptance reference. |
+| Figma page                 | Required alignment                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 00 — Start Here            | Mark the guide against the September 5 baseline. Replace Users-only approval language with device acceptance status.          |
+| 01 — Design Language       | Retain the audience split, restrained surfaces, and explicit scope. Add recovery and verification to worked examples.         |
+| 02 — Foundations           | Correct warning labels. Apply text-specific semantic colors. Reconcile grid type and density guidance.                        |
+| 03 — Layout Templates      | Replace Overview, Directory, and Policies navigation with the adopted release shell. Permit bounded grid scrolling.           |
+| 04 — Components & States   | Add expired selection, draft conflict, accepted receipt, held job, and unknown-result specimens.                              |
+| 05 — UX Rules              | Replace mixed job terminology, fixed retention assumptions, and “Preview before upload.” Describe validation before mutation. |
+| 06 — Agent Build Checklist | Require the current portfolio, phase availability, frozen previews, actual screen states, and measured validation.            |
+| 07 — Reference Screen      | Correct filters, selection, dark contrast, and deferred language-assistance controls.                                         |
+| 08 — Device Management     | Resolve the workflow findings above and make Devices the acceptance reference.                                                |
 
 Start Here and Agent Build Checklist provide different source orders.
 The source-order finding is resolved through the repository UI contract.
@@ -232,15 +232,15 @@ The next design delivery should follow this order:
 
 Use these tasks for the next usability review:
 
-| Participant | Task | Acceptance evidence |
-|---|---|---|
-| Occasional helper | Find a Chromebook from an imperfect identifier and explain its condition. | Correct device, school context, observation age, and no required assistance. |
-| District operator | Select filtered devices, change displayed filters, and review the retained selection. | Correct explanation of original criteria, exclusions, and affected count. |
-| District operator | Edit annotations, receive a concurrent update, and prepare a preview. | Drafts survive. The operator resolves the conflict and verifies final values. |
-| Occasional helper | Review Powerwash without submitting it. | Correct explanation of data loss, enrollment consequence, targets, and asynchronous outcome. |
-| District operator | Inspect a held job and a partial result with an unknown operation. | Correct distinction between waiting, success, failure, and required review. |
-| District operator | Reimport an edited CSV with conflicts and an expired-baseline variant. | Correct comparison, coherent counts, preserved current values, and safe recovery. |
-| Keyboard and screen-reader participants | Complete lookup, selection, editing, confirmation, and result review. | Reachable controls, visible focus, restored context, and understandable announcements. |
+| Participant                             | Task                                                                                  | Acceptance evidence                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Occasional helper                       | Find a Chromebook from an imperfect identifier and explain its condition.             | Correct device, school context, observation age, and no required assistance.                 |
+| District operator                       | Select filtered devices, change displayed filters, and review the retained selection. | Correct explanation of original criteria, exclusions, and affected count.                    |
+| District operator                       | Edit annotations, receive a concurrent update, and prepare a preview.                 | Drafts survive. The operator resolves the conflict and verifies final values.                |
+| Occasional helper                       | Review Powerwash without submitting it.                                               | Correct explanation of data loss, enrollment consequence, targets, and asynchronous outcome. |
+| District operator                       | Inspect a held job and a partial result with an unknown operation.                    | Correct distinction between waiting, success, failure, and required review.                  |
+| District operator                       | Reimport an edited CSV with conflicts and an expired-baseline variant.                | Correct comparison, coherent counts, preserved current values, and safe recovery.            |
+| Keyboard and screen-reader participants | Complete lookup, selection, editing, confirmation, and result review.                 | Reachable controls, visible focus, restored context, and understandable announcements.       |
 
 Record completion, errors, assistance, and understanding before approval.
 Treat these as proposed acceptance tasks until participants complete them in a prototype or working release.
@@ -289,3 +289,85 @@ It does not implement live search, file transfer, provider calls, or typed-confi
 Secondary controls outside the named example paths remain design specimens.
 Keyboard operation, focus return, screen-reader announcements, live authorization, provider behavior, and participant usability checks remain implementation acceptance work.
 No application code changed.
+
+## Revision 1.3 — Entity grid editing and filters
+
+The [grid revision index](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=183-4432) groups the new examples.
+Page 09 now contains 141 prepared screens and three review indexes.
+The original device studies remain available.
+
+- Added a details icon immediately after each selection checkbox.
+- Removed ordinary serial-cell navigation. Details icons use the corresponding device identity.
+- Tagged data columns with explicit editor identifiers or null.
+- Added organization-unit columns and a focused tree picker. Asset tags use text editors.
+- Added changed-cell tint, border, rollback icons, and invalid-input presentation.
+- Added Save, Clear, Filter Changed, and Show All in the grid header.
+- Added exact-target previews, confirmations, receipts, results, and grids with confirmed values.
+- Added Google Admin Console filter/chip interactions with matched fields above shortcut matches.
+- Added text, numeric, date, enum, boolean, and organization-unit filter examples.
+- Added editable chips, individual predicate removal, Clear filters, and draft-preserving filter examples.
+- Added shared icon, cell-state, filter-entry, and typed-filter editor components.
+- Updated the agent contract to version 1.1.0. Added structured field metadata without a Figma dependency.
+
+The publisher documents client-row-model support only for `@libregrid/batch-edit` version 1.3.0.
+Server-side integration requires qualification or extension before implementation release.
+The design preserves the portfolio's server-side grid and durable-draft requirements.
+The [agent pattern](../ui/patterns.md#draft-and-mutation) records the constraint and publisher source.
+
+Validation covers prepared Figma layouts, navigation destinations, icon order, cell boundaries, and disabled submission controls.
+Screenshots cover changed cells, matched-filter order, the calendar, and the organization-unit picker.
+The prototype uses fixed values and named example transitions. It does not implement live grid input or provider calls.
+Unwired choices remain component specimens. Runtime keyboard behavior, authorization, virtualization, and persistence still require implementation validation.
+No application code or dependency changed in this revision.
+
+## Revision 1.4 — Cell inputs and consolidated grid controls
+
+The [grid revision index](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=183-4432) includes the revised examples.
+This revision supersedes revision 1.3's text-edit popovers and separate lookup and selection toolbars.
+
+- Text and numeric editors replace cell content. Enter or Tab stages valid input. Escape cancels active input.
+- Boolean and enum cells use dropdowns. Specialized organization-unit and date/time pickers retain dialog support.
+- Removed the separate search row. Existing identifier criteria became filter chips.
+- Add a filter becomes an autocomplete input in the filter row. Column matches precede quick actions.
+- Refresh and Bulk Actions sit at the right of the filter row, in that order.
+- Refresh offers Refresh selected and Refresh all. Bulk Actions contains the entity actions.
+- Menus use transparent prototype overlays to preserve the underlying grid state. Click outside or press Escape to dismiss.
+- The conditional draft panel sits between the filter/action row and the grid.
+- Selection information and controls moved into the AG Grid footer, alongside pagination and freshness.
+- Footer controls follow the [LibreGrid selection example](https://libregrid.dev/server-side-selection).
+- Added editor-type references and prepared open-menu views for visual review.
+- Updated the agent contract to version 1.2.0 and structured metadata to design revision 1.4.
+
+The public selection example uses compact selection specifications and attaches the footer through its selection controller.
+Its selected-record view intersects the specification with active filters. The header checkbox affects the current viewport.
+These semantics remain separate from the draft Filter Changed view.
+
+Validation covers grid anatomy, actual input values, menu placement, footer placement, and prototype destinations.
+The prototype still uses prepared examples. Live input handling, provider refresh, accessibility, and persistence require client implementation.
+No application code or dependency changed in this revision.
+
+## Revision 1.5 — Jobs grid and operation details
+
+Updated September 6, 2026. Open the [Jobs review index](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=232-5274).
+
+- Replaced the Jobs placeholder with a full-width read-only grid and eight example jobs.
+- Added status, progress, exception counts, approved scope, actor, created time, and duration to job rows.
+- Linked each row's eye icon to its dedicated job detail page.
+- Added chip filters, in-row column autocomplete, field matches before shortcuts, and a prepared status-filter flow.
+- Added detail pages for running, held, queued, needs-review, completed-with-errors, completed, and cancelled jobs.
+- Added separate outcome counts, operation grids, baseline and requested values, entity links, and recent activity.
+- Added needs-attention views and outcome filters for failed and unknown operations.
+- Kept reconciliation separate from retry. Preserved the existing update-failure and unknown-outcome recovery destinations.
+- Added confirmation and request-receipt overlays for cancellation of pending work.
+- Added loading, no-jobs, no-matches, and offline references.
+- Updated the agent contract to version 1.3.0. Added structured Jobs metadata and JOB-03 through JOB-04.
+
+The Jobs grid represents operational records. Entity selection, editing, and Bulk Actions remain in entity grids.
+Job Refresh reads job state. It does not refresh device inventory or dispatch provider work.
+
+Validation covers prepared layouts, row-to-detail identity, operation links, filter placement, outcome counts, and confirmation wording.
+The design reuses the existing components and token values.
+Prepared filters use fixed choices. Other filter choices, pagination, and refresh controls remain visual references.
+The prototype does not implement live queries, SSE, cancellation, downloads, or provider calls.
+Runtime accessibility, query preservation, permissions, and recovery behavior require client validation.
+No application code or dependency changed in this revision.

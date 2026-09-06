@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "1.3.0",
+  "scope": "jobs-operational-grid",
+  "purpose": "Design metadata. These keys are not API options or backend status enums.",
+  "source": {
+    "fileKey": "lqZx6qpWevsN3AAfWkworl",
+    "pageId": "94:2",
+    "revision": "1.5",
+    "updated": "2026-09-06"
+  },
+  "anatomy": ["filter-action-row", "read-only-grid", "grid-footer"],
+  "navigation": {
+    "column": "details",
+    "icon": "visibility",
+    "identity": "durableApplicationJobId",
+    "accessibleName": "Open details for job {jobId}",
+    "destination": "dedicated-job-page",
+    "preserveReturnContext": ["query", "sort", "page", "scroll", "focus"]
+  },
+  "selection": false,
+  "batchEditing": false,
+  "entityBulkActions": false,
+  "defaultSort": [
+    {
+      "field": "createdAt",
+      "direction": "descending"
+    },
+    {
+      "field": "jobId",
+      "direction": "descending"
+    }
+  ],
+  "columns": [
+    {
+      "id": "jobId",
+      "label": "Job",
+      "dataType": "text",
+      "inGridEditor": null
+    },
+    {
+      "id": "action",
+      "label": "Action",
+      "dataType": "enum",
+      "inGridEditor": null
+    },
+    {
+      "id": "status",
+      "label": "Status",
+      "dataType": "enum",
+      "inGridEditor": null
+    },
+    {
+      "id": "progress",
+      "label": "Progress",
+      "dataType": "counts",
+      "inGridEditor": null
+    },
+    {
+      "id": "approvedScope",
+      "label": "Scope",
+      "dataType": "scope",
+      "inGridEditor": null
+    },
+    {
+      "id": "requestedBy",
+      "label": "Requested by",
+      "dataType": "identity",
+      "inGridEditor": null
+    },
+    {
+      "id": "createdAt",
+      "label": "Created",
+      "dataType": "dateTime",
+      "inGridEditor": null
+    },
+    {
+      "id": "duration",
+      "label": "Duration",
+      "dataType": "duration",
+      "inGridEditor": null
+    }
+  ],
+  "filters": {
+    "pattern": "GRID-04",
+    "separateSearchBox": false,
+    "autocompletePlacement": "filter-row",
+    "matchSectionOrder": ["matched-fields", "shortcut-matches"],
+    "fields": [
+      {
+        "id": "jobId",
+        "input": "text"
+      },
+      {
+        "id": "status",
+        "input": "enum-multiselect"
+      },
+      {
+        "id": "action",
+        "input": "enum-multiselect"
+      },
+      {
+        "id": "entityType",
+        "input": "enum-multiselect"
+      },
+      {
+        "id": "requestedBy",
+        "input": "identity-autocomplete"
+      },
+      {
+        "id": "createdAt",
+        "input": "date-time-range"
+      },
+      {
+        "id": "finishedAt",
+        "input": "date-time-range"
+      }
+    ],
+    "qualification": "Expose only fields and operators supported by the authorized server query contract.",
+    "apply": "explicit",
+    "queryScope": "complete-authorized-job-dataset"
+  },
+  "refresh": {
+    "label": "Refresh",
+    "alignment": "right",
+    "scope": "job-state-read",
+    "preserve": ["query", "sort", "page", "scroll", "focus"]
+  },
+  "footer": ["matching-count", "pagination", "freshness"],
+  "detail": {
+    "identity": [
+      "jobId",
+      "action",
+      "approvedScope",
+      "requestedBy",
+      "createdAt",
+      "startedAt",
+      "finishedAt",
+      "duration",
+      "status"
+    ],
+    "outcomeCounts": [
+      "succeeded",
+      "failed",
+      "unknown",
+      "pending",
+      "skipped",
+      "cancelled"
+    ],
+    "operationColumns": [
+      "entity",
+      "operation",
+      "baselineValue",
+      "requestedValue",
+      "outcome",
+      "updatedAt"
+    ],
+    "operationInGridEditor": null,
+    "operationIdentity": "stableOperationId",
+    "attentionFilter": ["failed", "unknown"],
+    "attentionPreservesOverallCounts": true,
+    "sections": [
+      "identity-and-scope",
+      "outcome-counts",
+      "operation-filter-row",
+      "operation-grid-and-footer",
+      "recent-activity"
+    ],
+    "actions": {
+      "failed": "inspect-evidence-before-eligible-retry",
+      "unknown": "reconcile-before-retry",
+      "pending": "confirm-cancellation-if-supported",
+      "download": "authorized-available-unexpired-result"
+    },
+    "cancellationReceipt": "requested-until-final-operation-evidence",
+    "providerAcceptanceProvesExecution": false
+  },
+  "requiredStates": [
+    "initial-loading",
+    "no-jobs",
+    "no-matches",
+    "unavailable",
+    "stale",
+    "offline"
+  ],
+  "designExampleWindow": "The Figma example uses Last 7 days. This is not a fixed backend retention requirement."
+}

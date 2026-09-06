@@ -6,16 +6,23 @@ Figma remains the human visual workspace. Written requirements govern behavior a
 
 ## Current Figma reference
 
-The September 5 revision contains 80 prepared screens, two review indexes, and five prototype starting points.
+Revision 1.5 replaces the Jobs placeholder with a read-only grid, filter chips, and dedicated operation details.
+The device grid retains revision 1.4 cell editors, action menus, and the AG Grid selection footer.
 The [revision record](../reviews/2026-09-05-figma-experience-review.md) records design changes and validation limits.
 
-| Starting point       | Reference                                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------------------------ |
-| Review index         | [Start here](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=122-364)     |
-| Inventory and update | [Devices](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-3)           |
-| CSV reconciliation   | [Import](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=106-426)         |
-| Commands             | [Choose command](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=106-156) |
-| Recovery states      | [Recovery index](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=122-370) |
+| Starting point           | Reference                                                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Review index             | [Start here](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=122-364)               |
+| Inventory and update     | [Devices](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-3)                     |
+| Grid editing and filters | [Revision 1.4 index](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=183-4432)      |
+| Changed cells            | [Two staged changes](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=171-1525)      |
+| Filter match order       | [Fields before shortcuts](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=175-1562) |
+| CSV reconciliation       | [Import](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=106-426)                   |
+| Commands                 | [Choose command](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=106-156)           |
+| Recovery states          | [Recovery index](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=122-370)           |
+| Jobs redesign            | [Jobs review index](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=232-5274)       |
+| Jobs list                | [All jobs](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=106-109)                 |
+| Job details              | [Operation results](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=104-209)        |
 
 Prepared values and navigation do not prove client behavior, permissions, provider support, or accessibility.
 The original device studies remain available for comparison.

@@ -6,18 +6,56 @@ Examples describe display requirements. They do not define new API payloads or b
 
 ## Entity grid
 
-**GRID-01 — Anatomy.** Compose lookup, filter chips, selection toolbar, entity viewport, and status region in that order.
+**GRID-01 — Anatomy.** Compose the filter/action row, conditional draft panel, entity viewport, and grid footer in that order.
 
-- Support exact and imperfect identifiers through the qualified search contract.
-- Distinguish entity lookup from find within loaded grid rows.
+- Route identifier and value searches through filter autocomplete and the qualified query contract.
+- Do not add a separate search box or selection toolbar above the grid.
 - Show each active filter as field, value, and remove action.
-- Provide Add filter through the shared typed query contract.
+- Place filter chips and Add a filter on the left of the filter/action row.
+- Right-align Refresh followed by Bulk Actions in that same row.
 - Separate search criteria from selection criteria when they differ.
-- Keep counts and freshness in one grid status region. Do not duplicate them in the page header.
+- Keep selection information, counts, pagination, and freshness in the AG Grid footer.
 - Include stable row identity, readable identifying attributes, selection, and relevant school or OU context.
-- Offer update, command, status, import, and export entry points only when supported and authorized.
+- Put Import, Export, Update, Send command, Change status, and other entity actions inside Bulk Actions.
+- Keep supported menu items visible. Disable unavailable actions and explain their selection, permission, or connectivity requirement.
+- Refresh contains Refresh selected and Refresh all. Disable Refresh selected when selection is empty.
+- Refresh all targets the authorized entity dataset in the current district. Preserve filters, selection, drafts, and focus.
+- Keep Save, Clear, and Filter Changed or Show All in the conditional draft panel.
 - Disable selection-dependent actions when the selection is empty.
 - Use server-side row models. Do not load the district dataset solely to render the grid.
+
+**GRID-03 — Cell roles.** Put a details icon immediately after each selection checkbox in every entity grid.
+
+- Use the eye icon to open details for that row's stable entity ID.
+- Keep selection, detail navigation, and cell editing as separate actions.
+- Give the icon an entity-specific accessible name and a tooltip.
+- Declare `inGridEditor` for every data column. Use an editor identifier or explicit JSON `null`.
+- Treat `null` as read-only metadata. It does not describe the cell's value.
+- Check field capability, row permissions, and connectivity before enabling an editor.
+- Use a subtle edit indicator for editable fields. Do not mark ordinary cells as navigation links.
+- Use the [field contract](entity-grid-fields.json) for editor identifiers and device examples.
+
+**GRID-04 — Typed filters.** Use the Google Admin Console filter/chip interaction with matched fields above shortcut matches.
+
+- Put the dashed **Add a filter** control beside active chips.
+- Clicking Add a filter replaces that control with an autocomplete input in the filter row.
+- Open column suggestions beneath that input. Do not put another search box inside the suggestion menu.
+- Typing filters column names. Show **Matched fields** first and quick actions under **Shortcut matches** second.
+- Match field labels and aliases independently from value shortcuts. Suppress empty sections.
+- Selecting a field opens its operator and datatype-specific input.
+- Selecting a shortcut opens its prefilled editor. Apply remains explicit.
+- Use text inputs, numeric controls, date pickers, enum choices, boolean choices, and organization-unit trees.
+- Offer only operators supported by that field's qualified query contract.
+- Disable Apply until the operator and value pass validation. Show the error beside the input.
+- Apply creates or updates a chip containing field, operator, and readable value.
+- Clicking the chip body reopens its editor. The remove button removes only that predicate.
+- **Clear filters** removes predicates, including identifier predicates. It preserves selection, drafts, and sorting.
+- Cancel or Escape closes the editor without changing predicates. Restore focus to its trigger.
+- Resolve queries through the server-side query contract. Do not filter only cached rows.
+- Preserve the existing AND/OR query semantics. The visual chip order does not change predicate meaning.
+- Treat false, zero, empty text, unset values, and absent predicates as distinct states.
+- Store typed values and stable field identifiers. Do not parse displayed chip text into queries.
+- Support arrow navigation, Enter, Escape, visible focus, and announcements for matches and applied changes.
 
 **GRID-02 — Qualification.** Reuse the approved Material and LibreGrid integration.
 Verify package compatibility and virtualization behavior during implementation.
@@ -30,11 +68,19 @@ Do not copy historical package versions from a design document.
 - Support explicit rows, all-filtered criteria, and exclusions through the selection contract.
 - Show original criteria and the API-provided count for all-filtered selections.
 - Preserve selection across scrolling, paging, sorting, filters, and refresh until its documented expiry.
-- Show a retained-selection banner when displayed results no longer represent the selected scope.
-- Provide Review selection and Clear selection actions.
+- Render selection count, original scope, and retained-selection explanations in the AG Grid footer.
+- Provide Select All, Deselect All, and Show All Selected through the durable selection footer.
+- Select All captures the current filtered scope. Deselect All clears the complete browsing selection specification.
+- Show All Selected displays selected records that match active filters. Show All Rows restores the ordinary dataset.
+- Preserve filters when changing the selected-record view. Keep this view distinct from Filter Changed.
+- The header checkbox selects the current viewport. Use footer Select All for the complete filtered scope.
 - Render row checkboxes and header indeterminate state from actual selection membership.
 - Show an expired-selection state and request reselection. Preserve existing approved jobs.
 - Do not let new query matches join an already approved job.
+
+Reference: [LibreGrid server-side selection example](https://libregrid.dev/server-side-selection).
+The example attaches its selection footer through `onReady` and `attachFooter`.
+Qualify the integration API against the installed package version.
 
 ## Entity detail
 
@@ -59,12 +105,54 @@ Do not copy historical package versions from a design document.
 Keep drafts outside the loaded grid row cache.
 
 - Preserve drafts across eviction, paging, sorting, filtering, refresh, and SSE resynchronization.
-- Show changed counts, pending records, Save, and Reset.
+- Show changed counts, pending records, Save, Clear, and Filter Changed or Show All.
 - Flag changed baseline fields as conflicts. Preserve the proposed values until the operator resolves the conflict.
 - Offer Leave unchanged and explicit Clear value as distinct operations where the field supports them.
 - Offer Prepend, Update, and Append only for compatible writable fields.
 - Compute final approved values during preview. Retries must not apply Append or Prepend again.
 - Stage large paste operations through the qualified draft contract.
+
+**DRAFT-02 — In-grid batch editing.** Use `@libregrid/batch-edit` for staged editing in all entity grids.
+
+- Begin editing with Enter, F2, or the supported pointer gesture on an editable cell.
+- Stage valid values without writing to Google. Escape cancels the active editor's uncommitted input.
+- Replace text and numeric cell content with an input inside that cell.
+- Do not open a dialog, popover form, or separate Stage button for ordinary text or numeric editing.
+- Use an in-cell dropdown for boolean and enum values. Anchor its options to the cell.
+- Only specialized editors, including organization-unit and date/time pickers, open dialogs.
+- Enter or Tab stages valid input. Escape cancels active input without discarding other staged changes.
+- Use the dedicated organization-unit tree for OU selection.
+- Resolve organization units by stable identity. Show the selected path and distinguish selection from descendant filtering.
+- Show a changed cell with a tint, visible border, and rollback icon. Do not rely on color alone.
+- Announce the field, proposed value, baseline value, and uncommitted state.
+- Each rollback icon restores that field's baseline and removes only that draft entry.
+- Remove unchanged entries when the operator restores their original values.
+- Show the draft panel during changed input or staged edits, between the filter/action row and the grid.
+- **Save** validates active editors, freezes changed targets, and opens preview. It does not submit a provider write.
+- **Clear** discards all unsubmitted grid changes, including offscreen changes. It preserves filters and selection.
+- **Filter Changed** shows records with drafts, including drafts outside the displayed query.
+- Label that scope explicitly. Keep the original query intact for **Show All**.
+- Count changed fields and changed records from the durable draft store, independently of selection and cached rows.
+- **Show All** returns to the original query. Neither toggle commits or discards changes.
+- **Clear value** is a field operation. It differs from toolbar Clear and cell rollback.
+- Preserve drafts on validation failure, preview failure, conflict, lost permission, offline state, and row eviction.
+- Disable Save when validation or authorization fails. Keep Clear and rollback available for local drafts.
+- Bind submitted values to the reviewed preview. Remove accepted draft entries only after durable job acceptance.
+- Preserve rejected draft entries and edits made after the submitted snapshot.
+- Keep accepted-job progress separate from unsubmitted drafts. Rollback never reverses accepted provider effects.
+
+**GRID-05 — Batch-edit integration qualification.** The package publisher documents client-row-model support only.
+The public registry README was checked on September 5, 2026, with latest version 1.3.0.
+The portfolio still requires server-side entity grids and drafts outside the row cache.
+
+- Qualify or extend the module integration before shipping server-side batch editing.
+- Verify cross-page draft persistence, eviction, resynchronization, validation, cell rollback, and changed-record retrieval.
+- Do not switch district inventory to an all-record client row model to satisfy this package constraint.
+- Do not treat `commitBatchEdit()` as provider submission or durable job acceptance.
+- Register the module through the qualified package integration. Pin versions from verified peer dependencies.
+- Keep the field contract independent of package APIs. `inGridEditor` is repository metadata, not a LibreGrid option.
+
+Publisher source: [package metadata and README](https://registry.npmjs.org/@libregrid%2fbatch-edit).
 
 **WRITE-01 — State sequence.** Use this progression for Google mutations:
 
@@ -171,6 +259,40 @@ Request resynchronization after a replay gap.
 Preserve drafts, selection, and focus in both paths.
 Coalesce background announcements and keep safe work available during synchronization.
 
+**JOB-03 — Jobs grid.** Use a full-width, read-only grid as the Jobs landing page.
+
+- Show one row per durable application job. Open its detail page through an eye icon.
+- Include job ID, action, status, progress, approved scope, requested-by actor, created time, and duration.
+- Sort by created time descending. Use stable job identity to break ties.
+- Show exception counts directly in progress cells. Distinguish failed operations from unknown outcomes.
+- Reuse GRID-04 filter chips, in-row autocomplete, matched-field ordering, and datatype-specific editors.
+- Support job ID, status, action, entity type, actor, created time, and finished time through qualified query capabilities.
+- Place filters on the left and Refresh on the right. Do not add a separate search box.
+- Refresh reads current job state. It does not dispatch provider work or refresh device inventory.
+- Keep counts, pagination, and freshness in the grid footer. Query the complete authorized job dataset.
+- Jobs are operational records. Do not expose entity selection, cell editing, draft actions, or entity Bulk Actions here.
+- Declare every Jobs data column with `inGridEditor: null`. See [jobs-grid.json](jobs-grid.json).
+- Keep navigation, filtering, paging, and scrolling stable when live events change job state.
+- Show distinct initial-loading, no-jobs, no-matches, unavailable, stale, and offline states.
+- Preserve visible results during refresh failures. Explain freshness and provide the supported recovery action.
+
+**JOB-04 — Job details.** Open a dedicated page with job identity, approved scope, operation results, and recent activity.
+
+- Preserve the Jobs query, sort, page, scroll position, and focused row when returning.
+- Show action, durable job ID, actor, timestamps, duration, and observed status together.
+- Separate succeeded, failed, unknown, pending, skipped, and cancelled counts. Derive counts from operation evidence.
+- Show entity identity, operation, baseline value, requested value, outcome, and update time in the results grid.
+- Link each eye icon to the correct entity. Give each operation a stable identity independent of its row index.
+- Filter operation results by qualified fields. Show needs-attention shortcuts and a clear return to all operations.
+- Keep overall job counts unchanged when filtering operation results. Label the filtered result count separately.
+- Place Inspect failure beside a failed operation and Reconcile beside an unknown outcome.
+- Show the next valid recovery action after inspecting evidence. Gate retries through the existing preview and capability rules.
+- Show command acceptance and verified command execution separately. An accepted request does not prove the command completed.
+- Offer Cancel pending work only when supported and authorized. Confirm the pending count and explain work already dispatched.
+- Show cancellation requested until operation evidence establishes the final outcome. Cancellation does not roll back completed changes.
+- Offer result downloads with authorization, availability, and expiry evidence. Keep durable audit records accessible separately.
+- Keep action-specific controls in job details. Do not expose device mutation controls in the Jobs grid.
+
 ## Forms and hierarchy
 
 **FORM-01 — Focused work.** Center ordinary settings and onboarding content within the shared form width.
@@ -183,6 +305,7 @@ Group related questions and show progress for multiple steps.
 - Generate scope text from enabled capabilities and the verified credential profile.
 
 **TREE-01 — Hierarchy.** Use a tree pane and adjacent detail and actions for organizational units.
-Use stable OU identity and derived paths. Keep the tree inside the OU page.
+Use stable OU identity and derived paths. Keep the management tree inside the OU page.
+Reuse a focused tree picker inside field editors and filters.
 For delete-with-contents, offer move to parent, root, a chosen OU, or cancel.
 Require explicit preview and confirmation for every mutation path.

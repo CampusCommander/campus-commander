@@ -77,33 +77,33 @@ Status shape colors do not establish readable text colors. Check selected and ho
 
 ### Surfaces (neutral scale)
 
-| Token | Light | Dark | Use |
-|---|---|---|---|
-| `surface-app` | `#F8FAFC` | `#121212` | App background behind cards |
-| `surface-card` | `#FFFFFF` | `#1E1E1E` | Cards, grids, panels |
-| `surface-hover` | `#F1F5F9` | `#2A2A2A` | Row hover, menu item hover |
-| `surface-selected` | accent at 8% opacity | accent at 14% opacity | Selected grid rows |
-| `border` | `#E2E8F0` | `#3A3A3A` | Card borders, dividers |
+| Token              | Light                | Dark                  | Use                         |
+| ------------------ | -------------------- | --------------------- | --------------------------- |
+| `surface-app`      | `#F8FAFC`            | `#121212`             | App background behind cards |
+| `surface-card`     | `#FFFFFF`            | `#1E1E1E`             | Cards, grids, panels        |
+| `surface-hover`    | `#F1F5F9`            | `#2A2A2A`             | Row hover, menu item hover  |
+| `surface-selected` | accent at 8% opacity | accent at 14% opacity | Selected grid rows          |
+| `border`           | `#E2E8F0`            | `#3A3A3A`             | Card borders, dividers      |
 
 ### Accent and text
 
-| Token | Light value | Use |
-|---|---|---|
-| `accent` | `#1A73E8` (provisional) | Primary action fills and focus indication |
-| `text-primary` | `#202124` | Headings, body text |
-| `text-secondary` | `#5F6368` | Subtitles, metadata, footer |
-| `text-disabled` | `#9AA0A6` | Disabled controls |
+| Token            | Light value             | Use                                       |
+| ---------------- | ----------------------- | ----------------------------------------- |
+| `accent`         | `#1A73E8` (provisional) | Primary action fills and focus indication |
+| `text-primary`   | `#202124`               | Headings, body text                       |
+| `text-secondary` | `#5F6368`               | Subtitles, metadata, footer               |
+| `text-disabled`  | `#9AA0A6`               | Disabled controls                         |
 
 Dark mode inverts the surfaces and lifts text to `#E8EAED` (primary) and `#9AA0A6` (secondary). The accent stays blue in both modes. The dark-mode contrast check happens during the theming pass.
 
 ### Semantic colors
 
-| Token | Light value | Meaning |
-|---|---|---|
-| `status-success` | `#188038` | Healthy, completed, passing |
-| `status-warning` | `#F9AB00` | Stale data, partial success, battery "Replace Soon" |
-| `status-error` | `#D93025` | Failed, suspended user, battery "Replace Now", failing capability |
-| `status-info` | `#1A73E8` | In progress, scheduled |
+| Token            | Light value | Meaning                                                           |
+| ---------------- | ----------- | ----------------------------------------------------------------- |
+| `status-success` | `#188038`   | Healthy, completed, passing                                       |
+| `status-warning` | `#F9AB00`   | Stale data, partial success, battery "Replace Soon"               |
+| `status-error`   | `#D93025`   | Failed, suspended user, battery "Replace Now", failing capability |
+| `status-info`    | `#1A73E8`   | In progress, scheduled                                            |
 
 Entity state chips: suspended → error, archived → neutral gray, battery "Replace Soon" → warning, battery "Replace Now" → error, healthy → success. A state chip is a small rounded pill with label text. Color never carries meaning alone: every colored indicator carries a text label (accessibility). Contrast floor: WCAG AA for all text and interactive elements in both modes.
 
@@ -112,12 +112,12 @@ Entity state chips: suspended → error, archived → neutral gray, battery "Rep
 - **Face:** Roboto, self-hosted as woff2 files inside the app bundle. No CDN fetch. Installs must work offline, so the fonts ship with the artifact.
 - Weights: 400 (body), 500 (titles, buttons, wordmark), 700 (page titles only).
 
-| Level | Size / line-height | Use |
-|---|---|---|
-| Display | 24px / 32px | Page titles |
-| Title | 16px / 24px | Card titles, dialog titles |
-| Body | 14px / 20px | Default text, grid cells |
-| Caption | 12px / 16px | Metadata, status bar, footer, chips |
+| Level   | Size / line-height | Use                                 |
+| ------- | ------------------ | ----------------------------------- |
+| Display | 24px / 32px        | Page titles                         |
+| Title   | 16px / 24px        | Card titles, dialog titles          |
+| Body    | 14px / 20px        | Default text, grid cells            |
+| Caption | 12px / 16px        | Metadata, status bar, footer, chips |
 
 Data columns in grids use tabular numerals (`font-variant-numeric: tabular-nums`) so digits align vertically. Identifiers, hashes, and file paths render in the system monospace stack at caption size. Use WCAG 2.2 AA as the engineering target. Verify target size or permitted spacing exceptions for compact controls. Require complete keyboard operation and representative screen-reader testing.
 
@@ -141,38 +141,52 @@ Data columns in grids use tabular numerals (`font-variant-numeric: tabular-nums`
 
 Every entity page (Users, Devices, Groups) shares one canonical layout, top to bottom:
 
-1. **Lookup.** Search identifiers through the qualified query contract. Offer supported import entry points beside lookup controls.
-2. **Chip filter bar.** Show field, value, and remove action. Add filter opens the shared field picker. Saved filters use the same typed query contract.
-3. **Selection toolbar.** Show selected count and scope beside supported actions. Enable selection-dependent actions only with eligible selection. Keep one primary continuation.
-4. **Grid card.** Use the qualified server-side row model, compact rows, selection checkboxes, and draft editing. Bound the scrolling viewport within the available height.
-5. **Status region.** Dock counts, freshness, and sync progress below the viewport. Keep this region visible. Do not duplicate counts and freshness in the page header.
+1. **Filter/action row.** Place filter chips and Add a filter on the left. Right-align Refresh followed by Bulk Actions. Add a filter becomes an autocomplete input. Typing filters column names and shows quick actions beneath them. Do not add a separate search box. Use typed field editors and predicates.
+2. **Draft panel.** Show Save, Clear, and Filter Changed or Show All when changed input or staged edits exist. Place this panel between the filter/action row and the grid.
+3. **Grid card.** Use the qualified server-side row model, compact rows, selection checkboxes, and draft editing. Put a details icon immediately after each checkbox. Declare an in-grid editor or explicit null for every data column. Text and numbers become inputs inside their cells. Booleans and enums use cell dropdowns. Only specialized pickers use dialogs. Bound the scrolling viewport within the available height.
+4. **Grid footer.** Render selection count, scope, selection controls, pagination, freshness, and sync progress in the AG Grid footer. Keep this region visible below the viewport. Do not duplicate selection information above the grid.
+
+Bulk Actions contains Import, Export, Update, Send command, Change status, and other supported entity actions.
+Refresh contains Refresh selected and Refresh all. Refresh all targets the authorized entity dataset in the current district.
+Preserve filters, selection, drafts, and focus during refresh. Disable actions that lack required selection, permission, or connectivity.
 
 The [entity grid pattern](../ui/patterns.md#entity-grid) supplies the agent implementation recipe.
+The [field contract](../ui/entity-grid-fields.json) defines navigation, editor metadata, and typed filter controls.
+Apply these rules to all entity grids.
 
 **Selection visualization** follows decision 17.8 (server-side selection, Redis-backed):
 
 - A selected row gets the `surface-selected` background. The grid renders per-row flags for the rows it currently caches (`@libregrid/server-side-selection`).
-- "Select all filtered" shows the criteria, not an ID list. The toolbar reads "All rows matching: [criteria]" with a count when the API returns one. A banner under the toolbar states the full criteria and offers "Clear selection".
+- The footer shows selection criteria and the provider-backed count. Include retained-selection explanations when the visible query differs.
+- Footer controls are Select All, Deselect All, and Show All Selected. The header checkbox affects the current viewport.
+- Show All Selected intersects the selection specification with active filters. Show All Rows restores the ordinary dataset.
+- Keep the selected-record view separate from Filter Changed. Follow the [LibreGrid selection example](https://libregrid.dev/server-side-selection).
 - Browsing selections survive page changes, displayed filter changes, and grid re-renders under the documented expiry policy. Show original selection criteria. Expiry prompts reselection. Approved manifests remain durable.
 
 **Org Units page:** a tree pane on the left (`@libregrid/tree-data`, Google OU picker pattern) with entity counts per node computed from the cache. A detail and actions panel sits on the right. The delete-with-contents flow offers move to parent, move to root, pick an OU, or cancel. Every path except cancel requires explicit confirmation.
 
 ## 10. Component conventions
 
-| Need | Component |
-|---|---|
-| Buttons, text fields, dialogs, menus, lists, tabs, tooltips | Angular Material |
+| Need                                                                | Component                                                                                                                               |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Buttons, text fields, dialogs, menus, lists, tabs, tooltips         | Angular Material                                                                                                                        |
 | Grid chrome (column menu, side bar, columns tool panel, status bar) | `@libregrid/menu`, `@libregrid/side-bar`, `@libregrid/columns-tool-panel`, `@libregrid/status-bar` with `@libregrid/material` renderers |
-| Entity grids | `ag-grid-angular` + `@libregrid/server-side-row-model` + `@libregrid/server-side-selection` |
-| Filters | `@libregrid/set-filter`, `@libregrid/multi-filter`, `@libregrid/advanced-filter`, `@libregrid/filters-tool-panel`, `@libregrid/find` |
-| Cell selection and clipboard | `@libregrid/cell-selection`, `@libregrid/clipboard` |
-| Org Units tree | `@libregrid/tree-data` |
-| .xlsx export | `@libregrid/excel-export`. CSV exports run in workers. Sheets requires a later authorization design |
-| Telemetry charts | `@libregrid/integrated-charts`, `@libregrid/sparklines` |
+| Entity grids                                                        | `ag-grid-angular` + `@libregrid/server-side-row-model` + `@libregrid/server-side-selection`                                             |
+| Filters                                                             | `@libregrid/set-filter`, `@libregrid/multi-filter`, `@libregrid/advanced-filter`, `@libregrid/filters-tool-panel`, `@libregrid/find`    |
+| Cell selection and clipboard                                        | `@libregrid/cell-selection`, `@libregrid/clipboard`                                                                                     |
+| In-grid staged editing                                              | `@libregrid/batch-edit` with application-owned durable drafts. Server-side compatibility requires qualification.                        |
+| Org Units tree                                                      | `@libregrid/tree-data`                                                                                                                  |
+| .xlsx export                                                        | `@libregrid/excel-export`. CSV exports run in workers. Sheets requires a later authorization design                                     |
+| Telemetry charts                                                    | `@libregrid/integrated-charts`, `@libregrid/sparklines`                                                                                 |
 
 **Grid registration:** LibreGrid is an MIT-licensed monorepo of modules that plug into the AG Grid Community module registry. The app registers only the modules it uses through `@libregrid/angular`. Qualify and pin compatible packages from their published peer dependencies. Historical version numbers do not establish the release baseline. No AG Grid Enterprise dependency. `@libregrid/server-side-row-model` pulls in `@libregrid/row-grouping` and `@libregrid/pivot` automatically. Both stay available for grouping (by school or OU) and for the reporting spec. Entity grids use server-side row models. Keep application drafts outside loaded grid rows. Qualify the chosen LibreGrid modules against this draft contract.
 
 Conventions:
+
+The publisher documents client-row-model support only for `@libregrid/batch-edit`.
+Version 1.3.0 carried that restriction when checked on September 5, 2026.
+Qualify or extend the integration before shipping server-side batch editing. Do not load all district records into a client row model.
+See [GRID-05](../ui/patterns.md#draft-and-mutation) for the qualification requirements and publisher source.
 
 - Primary buttons: accent fill, white text, 4px radius, medium weight. One primary button per view. Secondary buttons render outlined.
 - Destructive actions: outlined red (`status-error`) at rest. The confirmation dialog carries the filled red primary button.
@@ -181,7 +195,11 @@ Conventions:
 - Dialogs: one scrim token (black at 32 percent). Titles are statements with counts ("Delete 12 archived users"), never questions.
 - Snackbar: accepted receipt with View job after submission. Use success wording only after confirmed effects. No Undo (gate decision G1).
 - Forms and wizards center at 720px max width. One question group per card. Multi-step flows show a progress indicator. The setup wizard follows the GAM7 pattern: one-click-copy values beside direct links, no menu hunting.
-- Jobs UI models Google Cloud Console: status chip, duration, brief error, expandable detail. "Completed with errors" is distinct from "Failed".
+- Jobs uses a full-width read-only grid, filter chips, and dedicated detail pages. "Completed with errors" remains distinct from "Failed".
+- Job rows show ID, action, status, progress, approved scope, actor, created time, and duration. Eye icons open job details.
+- Reuse the chip filter interaction. Put Refresh at the right and counts, pagination, and freshness in the grid footer.
+- Job details show outcome counts, approved changes, a filterable operation grid, recent activity, and qualified recovery actions.
+- Jobs has no cell editing or entity Bulk Actions. Follow JOB-03 and JOB-04 in the [UI patterns](../ui/patterns.md#jobs-and-recovery).
 
 ## 11. Safety patterns
 
@@ -195,15 +213,15 @@ Conventions:
 
 ## 12. States
 
-| State | Treatment |
-|---|---|
-| Empty entity list | Branded empty state: wordmark, one sentence ("No users match these filters"), one action ("Clear filters") |
-| Loading grid data | Skeleton rows inside the grid card. The chip bar and toolbar stay interactive where safe |
-| Stale data | The freshness indicator turns `status-warning` with the age ("Synced 26h ago"). A "Refresh now" text action sits beside it. The stale flag comes from the API |
-| Sync in progress | Progress and coverage show in the status bar. Existing work continues under collection coordination. No global Cache Sync write freeze |
-| Capability failing | An inline banner on the affected page names the specific capability and links to Diagnostics. No generic error text |
-| Job running / done / failed | The Jobs page models GCP Console: status chip, duration, brief error, expandable detail. Failure states name the required admin action |
-| Live update (SSE) | Ordinary invalidations refresh affected rows. Replay gaps request resynchronization. Preserve drafts, selection, and focus in both paths |
+| State                       | Treatment                                                                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Empty entity list           | Branded empty state: wordmark, one sentence ("No users match these filters"), one action ("Clear filters")                                                    |
+| Loading grid data           | Skeleton rows inside the grid card. The chip bar and toolbar stay interactive where safe                                                                      |
+| Stale data                  | The freshness indicator turns `status-warning` with the age ("Synced 26h ago"). A "Refresh now" text action sits beside it. The stale flag comes from the API |
+| Sync in progress            | Progress and coverage show in the status bar. Existing work continues under collection coordination. No global Cache Sync write freeze                        |
+| Capability failing          | An inline banner on the affected page names the specific capability and links to Diagnostics. No generic error text                                           |
+| Job running / done / failed | Jobs grid and dedicated details show progress, operation outcomes, filters, and the required recovery action                                                  |
+| Live update (SSE)           | Ordinary invalidations refresh affected rows. Replay gaps request resynchronization. Preserve drafts, selection, and focus in both paths                      |
 
 ## 13. Optional language assistance
 
@@ -219,13 +237,13 @@ Generated dashboards and hosted model adapters require separate future design de
 
 ## 14. Reference map
 
-| Pattern | Modeled on |
-|---|---|
-| Jobs list and job detail page | Google Cloud Console operation pages (status, duration, brief errors) |
-| Setup wizard copy and layout | GAM7 onboarding (one-click-copy values, direct links, no menu hunting) |
-| Org Units tree with counts | Google Admin Console OU picker |
-| Bulk action preview + confirm | Google Admin Console bulk-edit flows |
-| Overall shell | Standard left-nav / header / content / footer admin console layout |
+| Pattern                       | Modeled on                                                             |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| Jobs list and job detail page | Google Cloud Console operation pages (status, duration, brief errors)  |
+| Setup wizard copy and layout  | GAM7 onboarding (one-click-copy values, direct links, no menu hunting) |
+| Org Units tree with counts    | Google Admin Console OU picker                                         |
+| Bulk action preview + confirm | Google Admin Console bulk-edit flows                                   |
+| Overall shell                 | Standard left-nav / header / content / footer admin console layout     |
 
 ## 15. Implementation notes
 
@@ -258,16 +276,19 @@ Figma Components & States contains control masters and specimens, including butt
 The [agent rules](../ui/rules.md) define their implementation contract. Figma masters do not establish existing production components.
 Qualify and reuse shared client controls during implementation.
 
-
 ## 19. Drafts, previews, and result truth
 
 Keep draft values and baseline versions by entity ID and field outside the grid row cache.
 Scrolling, filtering, sorting, paging, and SSE must preserve drafts.
 Flag changes to affected baseline fields as conflicts. Do not silently replace draft values.
 
-The draft toolbar shows changed counts, Save, Reset, and a pending-rows filter.
+The draft panel shows changed field and record counts, Save, Clear, and Filter Changed or Show All.
+Place the panel between the filter/action row and the grid.
+Each changed cell has a tint, border, and rollback icon. Rollback discards only that unsubmitted field change.
+Use text editors for ordinary text and a dedicated organization-unit tree picker for OU fields.
+Filter Changed includes offscreen drafts. Show All restores the original query.
 Save prepares a frozen preview. Confirmation creates the job.
-Reset discards unsubmitted changes. It does not undo Google effects.
+Clear discards all unsubmitted grid changes. It preserves filters and selection. It does not undo Google effects.
 Large paste stages edits server-side and returns a draft reference.
 
 Update device uses verified editable fields: annotated fields and OU movement where authorized.
@@ -275,16 +296,16 @@ Prepend, Update, and Append apply only to compatible fields.
 Compute final approved values during preview so retries do not repeat append or prepend operations.
 A one-field preview remains concise while retaining the same authorization and evidence contract.
 
-| Product state | Required presentation |
-|---|---|
+| Product state             | Required presentation                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Queued behind a type hold | Explain that other jobs are recovering from Google backoff. Show queue state without promising a fixed start time. |
-| Accepted job | Show a durable receipt and View job. Do not claim that Google changes already completed. |
-| Accepted field update | Show proposed value and verification status alongside observation age. |
-| Unknown effect | Show Needs review or reconciliation progress. Preserve successful counts and safe next actions. |
-| Device command accepted | Show pending command status. Execution requires provider evidence. |
-| Partial result | Show succeeded, failed, skipped, cancelled, and unknown counts without masking completed work. |
-| Storage failure | Explain unavailable inputs or results and the recovery action. Preserve existing job evidence. |
-| Expired export baseline | Explain that round-trip comparison expired. Offer a new export or explicit new-import path. |
+| Accepted job              | Show a durable receipt and View job. Do not claim that Google changes already completed.                           |
+| Accepted field update     | Show proposed value and verification status alongside observation age.                                             |
+| Unknown effect            | Show Needs review or reconciliation progress. Preserve successful counts and safe next actions.                    |
+| Device command accepted   | Show pending command status. Execution requires provider evidence.                                                 |
+| Partial result            | Show succeeded, failed, skipped, cancelled, and unknown counts without masking completed work.                     |
+| Storage failure           | Explain unavailable inputs or results and the recovery action. Preserve existing job evidence.                     |
+| Expired export baseline   | Explain that round-trip comparison expired. Offer a new export or explicit new-import path.                        |
 
 Pending jobs of a held type sort smallest first. Existing jobs continue.
 Keep Redis key names, lease revisions, and worker topology out of ordinary task flows.
