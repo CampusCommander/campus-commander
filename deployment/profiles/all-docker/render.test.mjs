@@ -134,3 +134,23 @@ test('stages private files per service without inheriting the installer identity
     'database-migrate-config:/run/config:ro',
   ]);
 });
+
+test('private source mounts reject missing daemon paths instead of creating directories', () => {
+  const compose = renderAllDocker(config, release);
+  assert.equal(compose.secrets, undefined);
+  for (const service of Object.values(compose.services)) {
+    assert.equal(service.secrets, undefined);
+    for (const mount of service.volumes ?? []) {
+      if (typeof mount !== 'object' || mount.type !== 'bind') continue;
+      assert.equal(mount.read_only, true);
+      assert.equal(mount.bind.create_host_path, false);
+    }
+  }
+  assert.ok(
+    compose.services['volume-permissions'].volumes.some(
+      (mount) =>
+        mount.source === './private/redis-password' &&
+        mount.target === '/run/secrets/redis-password',
+    ),
+  );
+});

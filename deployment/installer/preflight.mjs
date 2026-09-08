@@ -1,9 +1,17 @@
 import { execFile } from 'node:child_process';
-import { access, readFile, statfs } from 'node:fs/promises';
+import {
+  access,
+  readFile,
+  statfs,
+  mkdtemp,
+  writeFile,
+  rm,
+} from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { constants } from 'node:fs';
 import { arch, platform, totalmem } from 'node:os';
 import { promisify } from 'node:util';
-import { X509Certificate, createPrivateKey } from 'node:crypto';
+import { X509Certificate, createPrivateKey, randomBytes } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
@@ -15,10 +23,45 @@ import { probeHttp } from '../bootstrap/status.mjs';
 const exec = promisify(execFile);
 async function command(file, args) {
   const result = await exec(file, args, {
-    timeout: 10000,
+    timeout: file === 'docker' && args[0] === 'run' ? 300000 : 10000,
     maxBuffer: 1024 * 1024,
   });
   return result.stdout.trim();
+}
+
+export async function verifyDockerFilesystem(
+  installationRoot,
+  image,
+  run = command,
+) {
+  const directory = await mkdtemp(
+    join(resolve(installationRoot), '.docker-path-'),
+  );
+  const marker = randomBytes(32).toString('hex');
+  const path = join(directory, 'marker');
+  try {
+    await writeFile(path, marker, { mode: 0o600, flag: 'wx' });
+    await run('docker', [
+      'run',
+      '--rm',
+      '--network=none',
+      '--read-only',
+      '--user=0:0',
+      '--cap-drop=ALL',
+      '--cap-add=DAC_OVERRIDE',
+      '--security-opt=no-new-privileges:true',
+      '--mount',
+      `type=bind,source=${path},target=/probe-marker,readonly`,
+      '--entrypoint=node',
+      image,
+      '-e',
+      "const fs=require('node:fs');if(!fs.statSync('/probe-marker').isFile()||fs.readFileSync('/probe-marker','utf8')!==process.argv[1])process.exit(1)",
+      marker,
+    ]);
+    return true;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 /** Inspect prerequisites without starting services or changing active credentials. */
@@ -133,6 +176,11 @@ export async function preflight(
       'Install the qualified Docker Compose plugin.',
       async () =>
         Boolean(await run('docker', ['compose', 'version', '--short'])),
+    );
+    await check(
+      'docker-installation-filesystem',
+      'Run the installer on the Docker daemon host. A container with a mounted host Docker socket is not an installation host.',
+      () => verifyDockerFilesystem(installationRoot, config.images.api, run),
     );
     await check(
       'host-memory',

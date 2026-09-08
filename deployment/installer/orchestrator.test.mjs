@@ -528,3 +528,34 @@ test('generated worker fragments and namespace resources remain bound through in
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('daemon filesystem failure stops installation before Compose startup', async () => {
+  const f = await setup();
+  try {
+    f.dependencies.preflight = async () => ({
+      status: 'failed',
+      checks: [
+        {
+          name: 'docker-installation-filesystem',
+          status: 'failed',
+          instruction: 'Run the installer on the Docker daemon host.',
+        },
+      ],
+    });
+    await assert.rejects(
+      executeInstaller({
+        command: 'install',
+        operator: f.operator,
+        qualification: true,
+        dependencies: f.dependencies,
+      }),
+      { code: 'PREREQUISITES' },
+    );
+    assert.equal(
+      f.calls.some(([file, args]) => file === 'docker' && args.includes('up')),
+      false,
+    );
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});

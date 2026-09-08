@@ -521,6 +521,7 @@ function stageRuntimeFiles(compose) {
     source: './runtime',
     target: '/source/config',
     read_only: true,
+    bind: { create_host_path: false },
   });
   for (const [name, service] of Object.entries(compose.services)) {
     if (name === 'volume-permissions' || name.endsWith('-postgres')) continue;
@@ -584,6 +585,20 @@ function stageRuntimeFiles(compose) {
     target: name,
   }));
   initializer.command[2] = commands.join('\n');
+  for (const service of Object.values(compose.services)) {
+    for (const { source, target } of service.secrets ?? []) {
+      service.volumes ??= [];
+      service.volumes.push({
+        type: 'bind',
+        source: compose.secrets[source].file,
+        target: `/run/secrets/${target}`,
+        read_only: true,
+        bind: { create_host_path: false },
+      });
+    }
+    delete service.secrets;
+  }
+  delete compose.secrets;
 }
 
 export async function renderFiles(configPath, releasePath, outputPath) {
