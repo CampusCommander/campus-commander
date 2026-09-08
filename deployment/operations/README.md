@@ -39,6 +39,12 @@ The production runner checks their exact version and uses verified TLS for confi
 The operator host needs direct access to both databases and both source storage trees.
 Use the dedicated application migration role and Kestra database owner. Runtime services do not need superuser access.
 
+Run `npm exec nx run deployment:operations-native-integration` to qualify the native tools against an isolated PostgreSQL fixture.
+Place the exact tools on `PATH` before execution. The fixture creates and removes its own Docker database and volume.
+It uses the production runner without a Docker command adapter.
+It checks encrypted backup, isolated restore, configuration, artifact integrity, Kestra fixtures, and the fresh-Redis release requirement.
+The fixture uses loopback PostgreSQL without TLS. It does not qualify district endpoints or shared storage.
+
 Copy `operator.example.json` into a protected operator directory and replace every example value.
 Keep the backup directory outside all primary volumes and source trees.
 Use an encrypted backup destination on a separate storage system under district retention controls.

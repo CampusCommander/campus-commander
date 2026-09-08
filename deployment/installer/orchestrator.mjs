@@ -28,6 +28,7 @@ import { installationSecretPath, prepareSecrets } from './secrets.mjs';
 import { createSupportBundle } from './support.mjs';
 import { httpsStartup } from '../qualification/faults.mjs';
 import { connectDatabase } from '../postgres/index.mjs';
+import { normalizePostgresSecret } from '../postgres/secrets.mjs';
 import {
   generateBootstrapCredential,
   replaceBootstrap,
@@ -872,6 +873,25 @@ export async function executeInstaller({
               'SECRETS',
               'Create every required Kubernetes Secret key before installation.',
             );
+          for (const database of ['applicationDatabase', 'kestraDatabase']) {
+            if (config.services[database].placement.kind !== 'local') continue;
+            const ref = operator.kubernetes.databaseAdmins[database];
+            if (ref.name !== name) continue;
+            const bytes = Buffer.from(secret.data[ref.key], 'base64');
+            if (bytes.includes(10) || bytes.includes(13))
+              fail(
+                'SECRETS',
+                'Local PostgreSQL administrator Secrets require exact UTF-8 password bytes without CR or LF.',
+              );
+            try {
+              normalizePostgresSecret(bytes);
+            } catch {
+              fail(
+                'SECRETS',
+                'Local PostgreSQL administrator Secrets require non-empty UTF-8 password bytes.',
+              );
+            }
+          }
         }
         generated.set('kubernetes.json', list);
       } else {

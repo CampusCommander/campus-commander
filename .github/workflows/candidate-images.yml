@@ -100,7 +100,8 @@ jobs:
           cache: npm
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: candidate-api
+          pattern: candidate-*
+          merge-multiple: true
           path: image-evidence
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with:
@@ -108,16 +109,117 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - run: npm ci
-      - name: Verify bounded storage exhaustion
-        run: |
-          image_ref="$(cat image-evidence/api.reference)"
-          npm exec nx run deployment:capacity-integration -- --args="$image_ref $RUNNER_TEMP/capacity-result.json"
+      - run: npm exec nx run deployment:build
         env:
           NX_NO_CLOUD: 'true'
+      - name: Prepare and pull qualification images
+        env:
+          IMAGE_EVIDENCE: ${{ github.workspace }}/image-evidence
+          QUALIFICATION_RELEASE: ${{ runner.temp }}/capacity-release.json
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFile } from 'node:child_process';
+          import { readFile, writeFile } from 'node:fs/promises';
+          import { join } from 'node:path';
+          import { promisify } from 'node:util';
+          import {
+            kestraImage,
+            postgresImage,
+          } from './deployment/profiles/all-docker/render.mjs';
+          import { qualificationImages } from './deployment/qualification/images.mjs';
+          import { redisImage } from './deployment/redis/runtime.mjs';
+
+          const execute = promisify(execFile);
+          const references = {};
+          for (const [artifact, property] of [
+            ['frontend', 'frontend'],
+            ['api', 'api'],
+            ['worker', 'workers'],
+          ]) {
+            references[property] = (
+              await readFile(
+                join(process.env.IMAGE_EVIDENCE, `${artifact}.reference`),
+                'utf8',
+              )
+            ).trim();
+          }
+          const release = {
+            schemaVersion: 1,
+            architectures: ['linux/amd64'],
+            images: references,
+          };
+          await writeFile(
+            process.env.QUALIFICATION_RELEASE,
+            `${JSON.stringify(release, null, 2)}\n`,
+            { flag: 'wx', mode: 0o600 },
+          );
+          qualificationImages(undefined, process.env.QUALIFICATION_RELEASE);
+          for (const image of [
+            ...Object.values(references),
+            postgresImage,
+            kestraImage,
+            redisImage,
+          ]) {
+            await execute('docker', ['pull', image], {
+              maxBuffer: 8 * 1024 * 1024,
+            });
+            process.stdout.write(`Pulled ${image}\n`);
+          }
+          NODE
+      - name: Verify bounded storage exhaustion
+        env:
+          QUALIFICATION_RELEASE: ${{ runner.temp }}/capacity-release.json
+          CAPACITY_RESULT: ${{ runner.temp }}/capacity-result.json
+          NX_NO_CLOUD: 'true'
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { readFileSync } from 'node:fs';
+
+          const release = JSON.parse(
+            readFileSync(process.env.QUALIFICATION_RELEASE, 'utf8'),
+          );
+          execFileSync(
+            'npm',
+            [
+              'exec',
+              '--',
+              'nx',
+              'run',
+              'deployment:capacity-integration',
+              `--args=${release.images.api} ${process.env.CAPACITY_RESULT}`,
+            ],
+            { stdio: 'inherit' },
+          );
+          NODE
+      - name: Verify complete all-Docker capacity behavior
+        env:
+          CC_QUALIFICATION_RELEASE: ${{ runner.temp }}/capacity-release.json
+          PROFILE_CAPACITY_RESULT: ${{ runner.temp }}/profile-capacity-result.json
+          NX_NO_CLOUD: 'true'
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+
+          execFileSync(
+            'npm',
+            [
+              'exec',
+              '--',
+              'nx',
+              'run',
+              'deployment:profile-capacity-integration',
+              `--args=${process.env.PROFILE_CAPACITY_RESULT}`,
+            ],
+            { stdio: 'inherit' },
+          );
+          NODE
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: qualification-capacity
-          path: ${{ runner.temp }}/capacity-result.json
+          path: |
+            ${{ runner.temp }}/capacity-result.json
+            ${{ runner.temp }}/profile-capacity-result.json
           if-no-files-found: error
 
   bundle:

@@ -22,7 +22,7 @@ ENV NODE_ENV=production PORT=3001
 WORKDIR /app
 COPY --from=build --chown=node:node /workspace/dist/worker/main.js ./main.js
 COPY --from=runtime-dependencies --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /workspace/deployment/postgres/index.mjs /workspace/deployment/postgres/cli.mjs ./deployment/postgres/
+COPY --from=build --chown=node:node /workspace/deployment/postgres/index.mjs /workspace/deployment/postgres/cli.mjs /workspace/deployment/postgres/secrets.mjs ./deployment/postgres/
 COPY --from=build --chown=node:node /workspace/deployment/postgres/migrations ./deployment/postgres/migrations
 COPY --from=build --chown=node:node /workspace/deployment/redis/runtime.mjs /workspace/deployment/redis/probe.mjs ./deployment/redis/
 COPY --from=build --chown=node:node /workspace/deployment/storage/index.mjs /workspace/deployment/storage/cross-host.mjs ./deployment/storage/

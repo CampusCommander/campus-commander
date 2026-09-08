@@ -10,6 +10,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
+import { normalizePostgresSecret } from '../postgres/secrets.mjs';
 
 const environment = process.env;
 
@@ -97,9 +98,8 @@ await replaceProtected(
   `Authorization: Basic ${basicCredential}\n`,
 );
 
-const databasePassword = secretText(
-  await readFile(required('CC_KESTRA_DATABASE_PASSWORD_FILE'), 'utf8'),
-  'CC_KESTRA_DATABASE_PASSWORD_FILE',
+const databasePassword = normalizePostgresSecret(
+  await readFile(required('CC_KESTRA_DATABASE_PASSWORD_FILE')),
 );
 const databaseUrl = required('CC_KESTRA_DATABASE_URL');
 if (!databaseUrl.startsWith('jdbc:postgresql://')) {

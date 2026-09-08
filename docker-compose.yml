@@ -4,7 +4,7 @@
     {
       'volume-permissions':
         {
-          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5',
           'user': '0:0',
           'restart': 'no',
           'deploy':
@@ -111,7 +111,7 @@
         },
       'redis-config':
         {
-          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5',
           'user': '1000:1000',
           'restart': 'no',
           'read_only': true,
@@ -191,7 +191,7 @@
         },
       'database-provision':
         {
-          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5',
           'restart': 'no',
           'read_only': true,
           'security_opt': ['no-new-privileges:true'],
@@ -256,7 +256,7 @@
         },
       'database-migrate':
         {
-          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5',
           'restart': 'no',
           'read_only': true,
           'security_opt': ['no-new-privileges:true'],
@@ -303,7 +303,7 @@
         },
       'bootstrap-initialize':
         {
-          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5',
           'restart': 'no',
           'read_only': true,
           'security_opt': ['no-new-privileges:true'],
@@ -349,7 +349,7 @@
         },
       'kestra-config':
         {
-          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5',
           'restart': 'no',
           'read_only': true,
           'security_opt': ['no-new-privileges:true'],
@@ -476,7 +476,7 @@
         },
       'workers':
         {
-          'image': 'ghcr.io/campuscommander/campus-commander-worker@sha256:ff996977c7e017c853baabcadc329614f51ea306d1480eecdf406f042429df39',
+          'image': 'ghcr.io/campuscommander/campus-commander-worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a',
           'restart': 'unless-stopped',
           'read_only': true,
           'security_opt': ['no-new-privileges:true'],
@@ -539,7 +539,7 @@
         },
       'api':
         {
-          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5',
           'restart': 'unless-stopped',
           'read_only': true,
           'security_opt': ['no-new-privileges:true'],
@@ -607,7 +607,7 @@
         },
       'edge':
         {
-          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5',
           'restart': 'unless-stopped',
           'read_only': true,
           'security_opt': ['no-new-privileges:true'],

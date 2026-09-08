@@ -32,6 +32,17 @@ test('rendering is deterministic and preserves shared release images with multip
     );
   assert.equal(workload(list, 'api').spec.replicas, 2);
   assert.equal(workload(list, 'workers').spec.replicas, 2);
+  for (const key of ['api', 'edge'])
+    assert.ok(
+      workload(list, key)
+        .spec.template.spec.containers[0].readinessProbe.exec.command.join(' ')
+        .includes('/health/live'),
+    );
+  assert.ok(
+    workload(list, 'workers')
+      .spec.template.spec.containers[0].readinessProbe.exec.command.join(' ')
+      .includes('/health/ready'),
+  );
   assert.ok(
     workload(list, 'workers').spec.template.spec.containers[0].env.some(
       ({ name, value }) =>
@@ -47,6 +58,13 @@ test('rendering is deterministic and preserves shared release images with multip
     maxSurge: 0,
     maxUnavailable: 1,
   });
+  assert.ok(
+    workload(list, 'kestra').spec.template.spec.containers[0].env.some(
+      ({ name, value }) =>
+        name === 'ENV_CC_WORKER_BASE_URL' &&
+        value === profile.services.workers.endpoint.url,
+    ),
+  );
 });
 
 test('rendering rejects unmet replica, image, namespace, storage, and trust prerequisites', () => {

@@ -1,5 +1,22 @@
 # PostgreSQL foundation
 
+## Secret-file encoding
+
+PostgreSQL password files contain one non-empty UTF-8 line.
+One final LF or CRLF terminates that line. The password excludes that terminator.
+Every other space remains part of the password, including leading and trailing spaces.
+Embedded line endings, repeated final line endings, NUL bytes, and invalid UTF-8 fail with a fixed redacted error.
+`secrets.mjs` defines this policy for provisioning, migrations, runtime connections, native backup tools, and Kestra database configuration.
+Consumers pass original file bytes to the normalizer exactly once. Certificate files do not use this password policy.
+
+Local PostgreSQL administrator files have a stricter boundary because the upstream image reads `POSTGRES_PASSWORD_FILE` directly.
+Those files must contain exact UTF-8 password bytes without any CR or LF.
+The pinned image removes terminal LF bytes but preserves CR bytes from CRLF input.
+Generated local administrator files contain no line terminator.
+All-Docker preparation rejects reused administrator files containing CR or LF. It does not rewrite them or change database credentials.
+Kubernetes operators must provide local administrator Secret values without CR or LF before starting the PostgreSQL workload.
+Correct an existing database credential only through an approved credential replacement procedure. Editing its file alone does not update PostgreSQL.
+
 The [qualification manifest](qualification.json) pins PostgreSQL 18.6 and its immutable upstream image digest.
 The runtime adapter requires server version `180006`, UTF8, and roles without cluster administration privileges.
 Release upgrades require a new pin and a repeated qualification run.

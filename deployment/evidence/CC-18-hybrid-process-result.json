@@ -1,0 +1,443 @@
+{
+  "checkedAt": "2026-09-08T08:10:20.060Z",
+  "durationSeconds": 169.5,
+  "status": "PASS",
+  "sourceState": "uncommitted workspace",
+  "baseGitRevision": "3ab04fd95c48d2eb884b37191adf3e2815fa15f2",
+  "processFaults": {
+    "status": "passed",
+    "scope": "same-host-complete-hybrid-process-interruptions",
+    "qualifiesProfile": false,
+    "acceptedRelease": false,
+    "records": [
+      {
+        "component": "api",
+        "status": "passed",
+        "stoppedInstances": 1,
+        "elapsedMilliseconds": 6741,
+        "recoveryMilliseconds": 1751,
+        "recoveryBoundSeconds": 120,
+        "observed": {
+          "edge": {
+            "httpStatus": 401,
+            "status": "unavailable",
+            "checks": []
+          },
+          "namedChecks": []
+        },
+        "fixturesPreserved": true
+      },
+      {
+        "component": "workers",
+        "status": "passed",
+        "stoppedInstances": 2,
+        "elapsedMilliseconds": 7902,
+        "recoveryMilliseconds": 649,
+        "recoveryBoundSeconds": 120,
+        "observed": {
+          "edge": {
+            "httpStatus": 503,
+            "status": "not-ready",
+            "checks": [
+              {
+                "name": "application-database",
+                "status": "ready"
+              },
+              {
+                "name": "kestra-database",
+                "status": "ready"
+              },
+              {
+                "name": "redis",
+                "status": "ready"
+              },
+              {
+                "name": "frontend",
+                "status": "ready"
+              },
+              {
+                "name": "api",
+                "status": "ready"
+              },
+              {
+                "name": "workers",
+                "status": "not-ready"
+              },
+              {
+                "name": "artifacts",
+                "status": "ready"
+              },
+              {
+                "name": "kestra",
+                "status": "ready"
+              }
+            ]
+          },
+          "namedChecks": [
+            {
+              "name": "workers",
+              "status": "not-ready"
+            }
+          ]
+        },
+        "fixturesPreserved": true
+      },
+      {
+        "component": "kestra",
+        "status": "passed",
+        "stoppedInstances": 1,
+        "elapsedMilliseconds": 14257,
+        "recoveryMilliseconds": 5348,
+        "recoveryBoundSeconds": 120,
+        "observed": {
+          "edge": {
+            "httpStatus": 503,
+            "status": "not-ready",
+            "checks": [
+              {
+                "name": "application-database",
+                "status": "ready"
+              },
+              {
+                "name": "kestra-database",
+                "status": "ready"
+              },
+              {
+                "name": "redis",
+                "status": "ready"
+              },
+              {
+                "name": "frontend",
+                "status": "ready"
+              },
+              {
+                "name": "api",
+                "status": "ready"
+              },
+              {
+                "name": "workers",
+                "status": "ready"
+              },
+              {
+                "name": "artifacts",
+                "status": "ready"
+              },
+              {
+                "name": "kestra",
+                "status": "not-ready"
+              }
+            ]
+          },
+          "namedChecks": [
+            {
+              "name": "kestra",
+              "status": "not-ready"
+            }
+          ]
+        },
+        "fixturesPreserved": true
+      },
+      {
+        "component": "redis",
+        "status": "passed",
+        "stoppedInstances": 1,
+        "elapsedMilliseconds": 8816,
+        "recoveryMilliseconds": 1907,
+        "recoveryBoundSeconds": 120,
+        "observed": {
+          "edge": {
+            "httpStatus": 503,
+            "status": "not-ready",
+            "checks": [
+              {
+                "name": "application-database",
+                "status": "ready"
+              },
+              {
+                "name": "kestra-database",
+                "status": "ready"
+              },
+              {
+                "name": "redis",
+                "status": "not-ready"
+              },
+              {
+                "name": "frontend",
+                "status": "ready"
+              },
+              {
+                "name": "api",
+                "status": "ready"
+              },
+              {
+                "name": "workers",
+                "status": "ready"
+              },
+              {
+                "name": "artifacts",
+                "status": "ready"
+              },
+              {
+                "name": "kestra",
+                "status": "not-ready"
+              }
+            ]
+          },
+          "namedChecks": [
+            {
+              "name": "redis",
+              "status": "not-ready"
+            }
+          ]
+        },
+        "fixturesPreserved": true
+      },
+      {
+        "component": "postgresql",
+        "status": "passed",
+        "stoppedInstances": 1,
+        "elapsedMilliseconds": 8272,
+        "recoveryMilliseconds": 1744,
+        "recoveryBoundSeconds": 120,
+        "observed": {
+          "edge": {
+            "httpStatus": 401,
+            "status": "unavailable",
+            "checks": []
+          },
+          "namedChecks": [
+            {
+              "name": "application-database",
+              "status": "not-ready"
+            },
+            {
+              "name": "kestra-database",
+              "status": "not-ready"
+            }
+          ]
+        },
+        "fixturesPreserved": true
+      }
+    ],
+    "fixture": {
+      "database": {
+        "artifactId": "63d4ed31-2d70-4329-993f-1d6d953f8cdc",
+        "sha256": "2c076651b96c1a1320a42a547164b5e00425bf0c8f4b4dcdee8500a68b0611c2",
+        "ledgerSha256": "0cffa526898a6416312423cbadb4ee9555fb8cf47588762a68d9036acbfef70c",
+        "metadataSha256": "68b2f73ca4187718d43d026d909d2ec3ffdec3e3af2a96e88d243751754e888e"
+      },
+      "executionId": "5i3oJe8mFL35mjm8VEhDu1",
+      "executionSha256": "9182371a6d21a26b8baeb2743509cc07d71732e476659b8a18a41a9bbd374c2d",
+      "kestraFiles": [
+        {
+          "path": "main/campus/validation/cc11-external-worker/executions/5i3oJe8mFL35mjm8VEhDu1/tasks/persist-result/1WigU7D1jwSIjlNi2pTfq2/8485136506904016985.json",
+          "sha256": "9383c16c62c7ae9a5d38e02229d8793beff95719f883261c761c6f702d79fdac"
+        }
+      ]
+    },
+    "resources": [
+      {
+        "name": "cc-hybrid-full-665113-5929d59d-controller-frontend-1",
+        "cpu": "0.01%",
+        "memory": "19.45MiB / 512MiB",
+        "memoryPercent": "3.80%",
+        "pids": "11"
+      },
+      {
+        "name": "cc-hybrid-full-665113-5929d59d-controller-api-1",
+        "cpu": "1.30%",
+        "memory": "43.11MiB / 512MiB",
+        "memoryPercent": "8.42%",
+        "pids": "11"
+      },
+      {
+        "name": "cc-hybrid-full-665113-5929d59d-controller-kestra-1",
+        "cpu": "6.31%",
+        "memory": "487.4MiB / 2GiB",
+        "memoryPercent": "23.80%",
+        "pids": "61"
+      },
+      {
+        "name": "cc-hybrid-full-665113-5929d59d-controller-edge-1",
+        "cpu": "0.00%",
+        "memory": "25.16MiB / 512MiB",
+        "memoryPercent": "4.91%",
+        "pids": "11"
+      },
+      {
+        "name": "cc-hybrid-full-665113-5929d59d-worker-1-workers-1",
+        "cpu": "0.00%",
+        "memory": "15.38MiB / 512MiB",
+        "memoryPercent": "3.00%",
+        "pids": "7"
+      },
+      {
+        "name": "cc-hybrid-full-665113-5929d59d-worker-2-workers-1",
+        "cpu": "9.02%",
+        "memory": "15.45MiB / 512MiB",
+        "memoryPercent": "3.02%",
+        "pids": "7"
+      },
+      {
+        "name": "cc-hybrid-full-665113-5929d59d-district-postgres",
+        "cpu": "1.01%",
+        "memory": "52.36MiB / 31.34GiB",
+        "memoryPercent": "0.16%",
+        "pids": "21"
+      },
+      {
+        "name": "cc-hybrid-full-665113-5929d59d-district-redis",
+        "cpu": "0.20%",
+        "memory": "4.402MiB / 31.34GiB",
+        "memoryPercent": "0.01%",
+        "pids": "6"
+      }
+    ]
+  },
+  "images": {
+    "frontend": "localhost:15000/campus-commander/frontend@sha256:9ae5b788f8c21da072d1cf1b6cd506c0ed3abd1b5aab4d7e7110f97e144e5842",
+    "api": "localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5",
+    "worker": "localhost:15000/campus-commander/worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a",
+    "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+    "postgres": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "redis": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee"
+  },
+  "render": {
+    "controllerCompose": true,
+    "workerComposeFiles": 2,
+    "composeConfigAccepted": true,
+    "localReplacementPostgres": false,
+    "localReplacementRedis": false,
+    "productionPublishedServices": ["edge"],
+    "fixturePublishedServices": ["edge", "api", "kestra"]
+  },
+  "preparation": {
+    "runtimeFiles": [
+      "application.yaml",
+      "database-ca.pem",
+      "flow-secrets.env",
+      "probe-header",
+      "runtime-environment.json",
+      "server-ca.pem",
+      "server.p12",
+      "worker-truststore.p12"
+    ],
+    "credentialStatuses": ["created", "created", "created"],
+    "jdbcMode": "verify-full"
+  },
+  "startup": {
+    "componentContainers": [
+      "frontend",
+      "api",
+      "kestra",
+      "edge",
+      "worker-1",
+      "worker-2",
+      "postgresql",
+      "redis"
+    ],
+    "runningContainerCount": 8,
+    "imageHealth": {
+      "frontend": "healthy",
+      "api": "healthy",
+      "kestra": "healthy",
+      "edge": "healthy",
+      "worker-1": "healthy",
+      "worker-2": "healthy"
+    },
+    "readiness": {
+      "service": "api",
+      "status": "ready",
+      "checks": [
+        {
+          "name": "process-started",
+          "status": "ready"
+        },
+        {
+          "name": "application-database",
+          "status": "ready"
+        },
+        {
+          "name": "kestra-database",
+          "status": "ready"
+        },
+        {
+          "name": "redis",
+          "status": "ready"
+        },
+        {
+          "name": "frontend",
+          "status": "ready"
+        },
+        {
+          "name": "api",
+          "status": "ready"
+        },
+        {
+          "name": "workers",
+          "status": "ready"
+        },
+        {
+          "name": "artifacts",
+          "status": "ready"
+        },
+        {
+          "name": "kestra",
+          "status": "ready"
+        }
+      ]
+    }
+  },
+  "trust": {
+    "privateCa": true,
+    "edgeUnauthenticatedStatus": 401,
+    "edgeAuthorizedStatus": 200,
+    "kestraUnauthenticatedStatus": 401
+  },
+  "execution": {
+    "id": "5i3oJe8mFL35mjm8VEhDu1",
+    "correlationId": "hybrid-full-da5957bd8da37c5c",
+    "state": "SUCCESS",
+    "storageUriSha256": "9004cff1d12aa0aaa02f2039f8b43ff6ec49c8b20bf90d803077d508c6ba5e18"
+  },
+  "persistence": {
+    "sharedArtifactChecksum": "fe9cc411fb04c09a203e6404e807213716be2aa57ce720b2846d2973b01f76f2",
+    "workerChecksumsMatch": true,
+    "executionPreserved": true,
+    "internalStoragePreserved": true,
+    "databaseVolume": "cc-hybrid-full-665113-5929d59d-postgres-data"
+  },
+  "outages": {
+    "redis": {
+      "observed": true,
+      "recoverySeconds": 2
+    },
+    "postgres": {
+      "observed": true,
+      "recoverySeconds": 69
+    },
+    "finalReadiness": "ready"
+  },
+  "cleanupPolicy": {
+    "uniquePrefix": "cc-hybrid-full-665113-5929d59d",
+    "retainedForRestore": false,
+    "composeVolumesRemoved": false,
+    "oldCampusCommanderVolumesTouched": false
+  },
+  "limits": [
+    "All eight component containers ran on one Docker host.",
+    "The two worker Compose projects simulate separate worker hosts.",
+    "The shared directories use one host filesystem.",
+    "The check does not qualify district DNS, firewall, or storage infrastructure.",
+    "The check uses synthetic certificates and a harmless worker task."
+  ],
+  "acceptedRelease": false,
+  "qualifiesProfile": false,
+  "cleanupVerification": {
+    "freshFixtureContainersAbsent": true,
+    "freshFixtureDatabaseVolumeAbsent": true,
+    "freshFixtureNetworkAbsent": true,
+    "retainedRestoreSourceUntouched": true,
+    "oldCampusCommanderVolumesTouched": false
+  }
+}

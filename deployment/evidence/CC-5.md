@@ -122,7 +122,8 @@ The database qualification must retain this limitation.
 ## Unmet profile evidence
 
 - No second host or district shared mount was available for hybrid storage verification.
-- No Kubernetes context was available for pod rescheduling or ReadWriteMany verification.
+- No district Kubernetes context was available for shared-storage qualification.
+  Later CC-15 evidence records synthetic Kind rescheduling without district RWX qualification.
 - No district certificate was available for district trust verification.
 - No packet capture verified telemetry suppression.
 - The forced process-kill variant did not run.

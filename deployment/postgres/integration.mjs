@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import {
   checkReadiness,
@@ -131,6 +132,120 @@ try {
   );
   port = Number(docker('port', name, '5432/tcp').split(':').at(-1));
   let admin = await ready();
+  const cliConfig = JSON.parse(
+    await readFile(
+      new URL('../examples/all-docker.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  for (const [key, label] of [
+    ['applicationDatabase', 'app'],
+    ['kestraDatabase', 'kestra'],
+  ]) {
+    Object.assign(cliConfig.services[key], {
+      database: `cli-${label}`,
+      role: `cli-${label}`,
+      endpoint: {
+        url: 'postgresql://127.0.0.1:5432',
+        tls: { mode: 'disabled' },
+      },
+    });
+  }
+  const operator = {
+    adminDatabase: 'postgres',
+    adminRole: 'postgres',
+    adminPasswordSecretRef: {
+      provider: 'file',
+      path: '/run/secrets/cli-admin',
+    },
+    migrationRole: 'cli-migrator',
+    migrationPasswordSecretRef: {
+      provider: 'file',
+      path: '/run/secrets/cli-migrator',
+    },
+  };
+  await writeFile(join(directory, 'cli-admin'), `${password}\n`, {
+    mode: 0o600,
+  });
+  await writeFile(join(directory, 'cli-migrator'), `${password}\r\n`, {
+    mode: 0o600,
+  });
+  await writeFile(
+    join(directory, 'campus-database-password'),
+    ` ${password} \r\n`,
+    { mode: 0o600 },
+  );
+  await writeFile(
+    join(directory, 'kestra-database-password'),
+    `${password}\n`,
+    { mode: 0o600 },
+  );
+  await writeFile(
+    join(directory, 'cli-profile.json'),
+    JSON.stringify(cliConfig),
+  );
+  await writeFile(
+    join(directory, 'cli-operator.json'),
+    JSON.stringify(operator),
+  );
+  const nodeImage = (
+    await readFile(new URL('../images/api.Dockerfile', import.meta.url), 'utf8')
+  ).match(/^FROM (\S+)/m)[1];
+  const runCli = (command) =>
+    docker(
+      'run',
+      '--rm',
+      '--network',
+      `container:${name}`,
+      '--user',
+      '1000:1000',
+      '-v',
+      `${fileURLToPath(new URL('../../', import.meta.url))}:/workspace:ro`,
+      '-v',
+      `${directory}:/run/secrets:ro`,
+      '-w',
+      '/workspace',
+      nodeImage,
+      'node',
+      'deployment/postgres/cli.mjs',
+      command,
+      '/run/secrets/cli-profile.json',
+      '/run/secrets/cli-operator.json',
+    );
+  runCli('provision');
+  runCli('migrate');
+  const runtimeService = structuredClone(
+    cliConfig.services.applicationDatabase,
+  );
+  runtimeService.endpoint.url = `postgresql://127.0.0.1:${port}`;
+  const resolveCli = (ref) =>
+    readFile(join(directory, ref.path.split('/').at(-1)));
+  const cliRuntime = await connectDatabase(runtimeService, resolveCli);
+  clients.add(cliRuntime);
+  assert.equal(await checkReadiness(cliRuntime), true);
+  await writeFile(
+    join(directory, 'campus-database-password'),
+    'redacted-fixture-marker\n\n',
+    { mode: 0o600 },
+  );
+  assert.throws(
+    () => runCli('provision'),
+    (error) => {
+      assert.ok(!String(error.stderr).includes('redacted-fixture-marker'));
+      assert.match(String(error.stderr), /PostgreSQL command failed/);
+      return true;
+    },
+  );
+  await assert.rejects(connectDatabase(runtimeService, resolveCli), (error) => {
+    assert.equal(
+      error.message,
+      'Invalid PostgreSQL secret. Use one non-empty UTF-8 line.',
+    );
+    return true;
+  });
+  results.push(
+    'actual CLI provisioning and migration accept LF/CRLF secrets; runtime preserves spaces and connects; multiline secrets fail redacted: pass',
+  );
   await provision(admin, databaseSettings);
   await provision(admin, databaseSettings);
   const scopedSettings = {

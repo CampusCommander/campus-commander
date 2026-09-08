@@ -27,6 +27,7 @@ import {
   secretReferenceSchema,
 } from '../../dist/deployment/lib/deployment.js';
 import { connectDatabase, migrate } from '../postgres/index.mjs';
+import { normalizePostgresSecret } from '../postgres/secrets.mjs';
 import { secretPath } from '../redis/runtime.mjs';
 
 const databaseIdentity = (service) => {
@@ -265,7 +266,9 @@ export async function runPostgresTool(
     PGPORT: url.port || '5432',
     PGDATABASE: service.database,
     PGUSER: service.role,
-    PGPASSWORD: String(await resolveSecret(service.passwordSecretRef)),
+    PGPASSWORD: normalizePostgresSecret(
+      await resolveSecret(service.passwordSecretRef),
+    ),
     PGCONNECT_TIMEOUT: '5',
     PGSSLMODE:
       service.endpoint.tls.mode === 'disabled' ? 'disable' : 'verify-full',

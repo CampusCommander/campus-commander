@@ -27,6 +27,15 @@ import {
 
 const name = `cc-restore-${randomUUID()}`,
   root = await mkdtemp(join(tmpdir(), 'cc-restore-'));
+const native = process.env.CC_OPERATIONS_NATIVE === '1';
+const toolVersions = native
+  ? Object.fromEntries(
+      ['pg_dump', 'pg_restore'].map((tool) => [
+        tool,
+        execFileSync(tool, ['--version'], { encoding: 'utf8' }).trim(),
+      ]),
+    )
+  : undefined;
 const password = randomUUID(),
   encryptionKey = randomBytes(32);
 const docker = (...args) =>
@@ -48,7 +57,7 @@ const keyRecovery = {
 const resolveSecret = async (reference) =>
   reference.path === '/run/secrets/backup-key'
     ? encryptionKey
-    : Buffer.from(password);
+    : Buffer.from(`${password}\r\n`);
 let admin, pool, store;
 const clients = [];
 try {
@@ -187,7 +196,7 @@ try {
     role: 'migrator-source',
     passwordSecretRef: config.services.applicationDatabase.passwordSecretRef,
   };
-  const runTool = async (tool, { service, input, output }) => {
+  const dockerTool = async (tool, { service, input, output }) => {
     const env = { ...process.env, PGPASSWORD: password };
     const child = spawn(
       'docker',
@@ -236,6 +245,8 @@ try {
     );
     await Promise.all(tasks);
   };
+  // Undefined selects the production native runner without an injected adapter.
+  const runTool = native ? undefined : dockerTool;
   const quiesce = {
     operator: 'synthetic-operator',
     stoppedAt: new Date().toISOString(),
@@ -402,6 +413,19 @@ try {
     runTool,
   });
   assert.equal(report.status, 'verified-services-disabled');
+  assert.deepEqual(report.redisRecovery, {
+    policy: 'discard-cache',
+    releaseRequiresFreshRedis: true,
+  });
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(
+        join(targetDirectory, 'target-configuration.json'),
+        'utf8',
+      ),
+    ),
+    targetConfig,
+  );
   assert.ok(
     (
       await readFile(join(targetDirectory, 'RESTORE_DISABLED'), 'utf8')
@@ -458,6 +482,8 @@ try {
   console.log(
     JSON.stringify(
       {
+        runner: native ? 'default-native' : 'injected-docker',
+        toolVersions,
         backupMilliseconds: manifest.durationMilliseconds,
         restoreMilliseconds: report.durationMilliseconds,
         encryptedFiles: manifest.files.length,

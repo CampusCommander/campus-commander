@@ -118,3 +118,37 @@ docker compose -f docker-compose.worker-1.json down
 ```
 
 Actual district host transfer, endpoint routing, shared storage, and distributed restart qualification remain required acceptance checks.
+
+## Reproduce the isolated lifecycle fixture
+
+The integration target reads the tracked all-Docker example and generates fresh, private synthetic certificate files.
+It requires two readable release inventory files with different image digests.
+Each inventory must declare its source revision and `architectures: ["linux/amd64"]`.
+The fixture preserves supplied provenance fields and records its own source revision separately.
+Local candidate inventories must state their uncommitted or unattested source limitations.
+Provide immutable images that this host can retrieve. The fixture does not build application images.
+
+```sh
+CC_INSTALLER_RELEASE_A=/absolute/candidate-a.json \
+CC_INSTALLER_RELEASE_B=/absolute/candidate-b.json \
+CC_INSTALLER_EVIDENCE=/absolute/new-result.json \
+npm exec -- nx run deployment:installer-integration
+```
+
+For an explicit localhost HTTP registry fixture, also set `CC_INSTALLER_LOCAL_REGISTRY_HTTP=1`.
+Leave that exception unset for ordinary registry connections.
+The host requires Docker, Compose, Node.js, and OpenSSL.
+Each run uses a new project and private directory. It erases only its isolated target resources.
+
+Set `CC_INSTALLER_BROWSER=1` to load the real protected page with Chromium.
+Install the Playwright Chromium binary first and provide `PLAYWRIGHT_BROWSERS_PATH` when using a separate browser cache.
+This browser fixture disables certificate verification only for its synthetic UI check.
+It does not establish district browser trust or human acceptance.
+Set `CC_INSTALLER_FAULTS=1` to test expired and wrong-host certificates through separately verified HTTPS probes.
+The `installer-browser-integration` target enables both checks.
+
+Set `CC_INSTALLER_SECRET_LINE_ENDINGS=1` to qualify the PostgreSQL application secret-file policy after upgrade.
+The fixture adds LF/CRLF delimiters to application, Kestra database, and migration credentials.
+It reruns provisioning and migration, recreates dependent processes, and requires all eight checks to recover.
+Local database administrator files remain exact bytes without line endings.
+Use images that contain the shared PostgreSQL secret parser for this check.

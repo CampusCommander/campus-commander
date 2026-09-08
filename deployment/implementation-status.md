@@ -39,21 +39,57 @@ Human operator acceptance requires human records.
 
 ## Current evidence
 
-| Ticket | Implementation                                                  | Validation boundary                                                                                                                                           |
-| ------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CC-5   | Kestra OSS 1.3.37 selected and pinned                           | Authentication, verified TLS listener, and synthetic restart passed.                                                                                          |
-| CC-6   | Frontend, API, and worker images implemented                    | Local image checks passed. Final registry publication remains pending.                                                                                        |
-| CC-7   | PostgreSQL isolation and migrations implemented                 | Local PostgreSQL integration passed. District endpoints remain untested.                                                                                      |
-| CC-8   | Redis runtime and readiness probe implemented                   | Authentication, restart, ACL, and TLS fixture checks passed.                                                                                                  |
-| CC-9   | Local artifact publication implemented                          | Local durability and interrupted-publication checks passed.                                                                                                   |
-| CC-10  | Shared filesystem adapter and qualification harness implemented | Same-host process checks passed. Two-host district storage qualification remains not-run.                                                                     |
-| CC-11  | Authenticated worker dispatch implemented                       | Kestra retry after worker interruption, TLS, authentication, and persisted marker checks passed.                                                              |
-| CC-12  | Bootstrap lifecycle, HTTPS edge, and startup page implemented   | Bootstrap, HTTPS, six Chromium checks, and all-Docker runtime passed.                                                                                         |
-| CC-13  | All-Docker profile implemented                                  | Eight-component startup, persisted restart, CLI upgrade, encrypted restore, and seven process faults passed.                                                  |
-| CC-14  | Hybrid profile implemented                                      | Per-host rendering and same-host TLS execution/outage recovery passed. District qualification remains not-run.                                                |
-| CC-15  | Kubernetes profile implemented                                  | Semantic tests, server validation, all eight workloads, and artifact reads after cross-node rescheduling passed in Kind. District acceptance remains not-run. |
-| CC-16  | Installer orchestration implemented                             | Actual prepare, resume, restart, reinstall, backup-gated upgrade, and explicit fixture erasure passed. District profiles remain unqualified.                  |
-| CC-17  | Encrypted backup and restore implemented                        | Module checks and all-Docker restore preserved both databases, artifacts, and Kestra storage. District restore remains not-run.                               |
-| CC-18  | Fault qualification harness implemented                         | Seven limited-profile process faults and bounded storage exhaustion passed. Complete distributed profile qualification remains not-run.                       |
-| CC-19  | Candidate signing workflow and integrity gates implemented      | Local integrity checks passed. Workflow publication and profile promotion remain pending.                                                                     |
-| CC-20  | Walkthrough template prepared                                   | All three human walkthroughs remain not-run.                                                                                                                  |
+| Ticket | Implementation                                                  | Validation boundary                                                                                                                                                 |
+| ------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CC-5   | Kestra OSS 1.3.37 selected and pinned                           | Authentication, verified TLS listener, and synthetic restart passed.                                                                                                |
+| CC-6   | Frontend, API, and worker images implemented                    | Local image checks passed. Final registry publication remains pending.                                                                                              |
+| CC-7   | PostgreSQL isolation and migrations implemented                 | Local PostgreSQL integration passed. District endpoints remain untested.                                                                                            |
+| CC-8   | Redis runtime and readiness probe implemented                   | Authentication, restart, ACL, and TLS fixture checks passed.                                                                                                        |
+| CC-9   | Local artifact publication implemented                          | Local durability and interrupted-publication checks passed.                                                                                                         |
+| CC-10  | Shared filesystem adapter and qualification harness implemented | Same-host process checks passed. Two-host district storage qualification remains not-run.                                                                           |
+| CC-11  | Authenticated worker dispatch implemented                       | Kestra retry after worker interruption, TLS, authentication, and persisted marker checks passed.                                                                    |
+| CC-12  | Bootstrap lifecycle, HTTPS edge, and startup page implemented   | Bootstrap, HTTPS, six Chromium checks, and all-Docker runtime passed.                                                                                               |
+| CC-13  | All-Docker profile implemented                                  | Eight-component startup, persisted restart, CLI upgrade, encrypted restore, and seven process faults passed.                                                        |
+| CC-14  | Hybrid profile implemented                                      | Complete eight-container startup, TLS execution, shared artifacts, and database/cache recovery passed on one host. District qualification remains not-run.          |
+| CC-15  | Kubernetes profile implemented                                  | Semantic tests, server validation, all eight workloads, and artifact reads after cross-node rescheduling passed in Kind. District acceptance remains not-run.       |
+| CC-16  | Installer orchestration implemented                             | Actual prepare, resume, restart, reinstall, backup-gated upgrade, and explicit fixture erasure passed. District profiles remain unqualified.                        |
+| CC-17  | Encrypted backup and restore implemented                        | All-Docker, isolated hybrid data restore, and Kubernetes target startup preserved durable fixtures. District restore remains not-run.                               |
+| CC-18  | Fault qualification harness implemented                         | All-Docker faults, five hybrid process faults, six Kubernetes faults, TLS faults, and bounded full-profile capacity passed. District qualification remains not-run. |
+| CC-19  | Candidate signing workflow and integrity gates implemented      | Local integrity checks passed. Workflow publication and profile promotion remain pending.                                                                           |
+| CC-20  | Walkthrough template prepared                                   | All three human walkthroughs remain not-run.                                                                                                                        |
+
+## Completion audit after local implementation
+
+The final-image all-Docker installer repetition passed against committed installer source `1599aec`.
+[Its result](evidence/CC-16-final-images-result.json) records the final local image references and preserved fixtures.
+The default native PostgreSQL backup/restore runner also passed with version 18.6 tools.
+[Its result](evidence/CC-17-native-result.json) records that separate runner qualification.
+
+The rebuilt API and worker images passed installer upgrade, credential delimiter handling, certificate faults, and real browser checks.
+[The combined result](evidence/CC-16-secret-policy-profile-result.json) records the image inventory and synthetic fixture limitations.
+The complete hybrid profile also passed with eight containers and two separate worker Compose projects.
+[The hybrid result](profiles/hybrid/full-integration-result.json) records verified TLS, execution, persistence, and outage recovery.
+
+The [isolated hybrid restore](evidence/CC-17-hybrid.md) passed native backup and restore with source services stopped.
+Target application services retained the disabled marker after successful data verification.
+
+The [Kubernetes restore](evidence/CC-17-kubernetes-result.json) passed with fresh target PVCs and separate file roots.
+The restored target reached eight ready checks and preserved artifact and Kestra fixtures.
+
+The [hybrid process-fault run](evidence/CC-18-hybrid-process.md) passed all five cases with durable fixture preservation.
+The [complete all-Docker capacity run](evidence/CC-18-profile-capacity-result.json) passed bounded ENOSPC failure and recovery.
+Its 16 MiB synthetic tmpfs volume provides no persistence or district capacity guarantee.
+
+The [Kubernetes fault run](evidence/CC-18-kubernetes-result.json) passed six cases, including shared artifact access loss.
+The renderer now preserves API and edge diagnostic routing during dependency failure.
+
+Publication and acceptance still require:
+
+- Signed project-owned images, SBOMs, installation bundles, and actual GitHub Actions results.
+- Repetition across the published image inventory and remaining distributed qualification.
+- District shared storage, enforcing networking, trusted ingress, and declared capacity checks.
+- Clean-host installation records and three human operator walkthroughs.
+
+These local checks do not replace distinct-host storage, enforcing district networking, clean-host installation, or human walkthrough records.
+The push and candidate publication remain pending explicit approval after automatic approval review rejected the push.
+Phase 1 remains active and unaccepted.

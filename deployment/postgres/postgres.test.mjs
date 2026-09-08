@@ -1,6 +1,38 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { connectionOptions, loadMigrations } from './index.mjs';
+import { normalizePostgresSecret } from './secrets.mjs';
+
+test('PostgreSQL secrets accept one UTF-8 line and preserve password spaces', () => {
+  for (const suffix of ['', '\n', '\r\n']) {
+    assert.equal(
+      normalizePostgresSecret(Buffer.from(` École password ${suffix}`)),
+      ' École password ',
+    );
+  }
+  for (const value of [
+    '',
+    '\n',
+    'secret\n\n',
+    'secret\r\n\r\n',
+    'secret\r',
+    'secret\nmarker',
+    'secret\0marker',
+    Buffer.from([0xc3, 0x28]),
+    '\ud800',
+  ]) {
+    assert.throws(
+      () => normalizePostgresSecret(value),
+      (error) => {
+        assert.equal(
+          error.message,
+          'Invalid PostgreSQL secret. Use one non-empty UTF-8 line.',
+        );
+        return true;
+      },
+    );
+  }
+});
 
 const service = {
   placement: { kind: 'external' },

@@ -76,3 +76,50 @@ npm exec nx run deployment:capacity-integration -- --args="<repository@sha256:di
 The fixture uses private credential files and a loopback-only database port.
 It removes its generated container and network after execution.
 Its result covers the artifact adapter. It does not qualify a complete deployment profile.
+
+## Complete all-Docker capacity fault
+
+`profile-capacity-integration.mjs` creates a complete disposable all-Docker installation.
+It preserves the rendered artifact mounts while replacing the artifact volume with a 16 MiB local tmpfs volume.
+The harness verifies the filesystem type and capacity before exhausting the volume.
+It checks all eight protected startup checks before the fault and after recovery.
+It also verifies publication state, ready rows, the original artifact checksum, and owned-resource cleanup.
+
+Run the fixture through Nx with a new absolute report path:
+
+```sh
+npm exec nx run deployment:profile-capacity-integration -- --args="/absolute/new-profile-capacity-report.json"
+```
+
+The fixture uses no host mount or privileged loop device.
+Its ephemeral tmpfs volume makes no persistence claim.
+The result qualifies only the all-Docker artifact capacity fault.
+
+## Explicit application image inventory
+
+The complete hybrid and complete-profile capacity fixtures accept `CC_QUALIFICATION_RELEASE`.
+Set it to an absolute release inventory path to override their pinned local fixture images.
+The inventory must contain immutable `images.frontend`, `images.api`, and `images.workers` references.
+The helper rejects missing images and mutable tags before fixture preparation.
+This input selects test images. It does not establish release signatures or acceptance.
+Each fixture records the selected image references in its result.
+
+```sh
+CC_QUALIFICATION_RELEASE=/absolute/release.json npm exec -- nx run deployment:hybrid-process-fault-integration
+CC_QUALIFICATION_RELEASE=/absolute/release.json npm exec -- nx run deployment:profile-capacity-integration --args="/absolute/new-capacity-profile-report.json"
+```
+
+The image references must already exist in the local Docker image store for fixtures with pull policy `never`.
+Use the release verification procedure before selecting a published candidate.
+
+## Candidate workflow capacity gate
+
+The candidate workflow downloads all three candidate image artifacts after publication.
+It writes their immutable references into an explicit release inventory.
+It pulls the candidate images and the renderer's pinned upstream images before qualification.
+
+The capacity job runs both storage checks.
+The adapter check isolates storage publication behavior.
+The complete-profile check starts all eight all-Docker components.
+The job uploads both machine result files as `qualification-capacity`.
+Bundle creation depends on this job's success.

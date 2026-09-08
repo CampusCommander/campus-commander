@@ -8,6 +8,7 @@ import { renderKubernetes } from './render.mjs';
 // This adapter targets only the explicitly named disposable Kind cluster.
 const kubeconfig = '/tmp/cc-kube-workload-kubeconfig';
 const namespace = 'cc-kube-synthetic';
+const restoreNamespace = 'cc-kube-restore-synthetic';
 const kube = (args, input) =>
   execFileSync(
     'kubectl',
@@ -57,10 +58,10 @@ config.services.edge.endpoint.tls = structuredClone(
 );
 config.images = {
   frontend:
-    'localhost:15000/campus-commander/frontend@sha256:b04173623f38f71f11fcab57d9fb7e98ef19ecca4bb9d593741e423c74b3cbf2',
-  api: 'localhost:15000/campus-commander/api@sha256:84486fed9aca5654dc3f951c619f24186626f1f4a5f5f43f7c7d04078187ddcb',
+    'localhost:15000/campus-commander/frontend@sha256:9ae5b788f8c21da072d1cf1b6cd506c0ed3abd1b5aab4d7e7110f97e144e5842',
+  api: 'localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5',
   workers:
-    'localhost:15000/campus-commander/worker@sha256:ff996977c7e017c853baabcadc329614f51ea306d1480eecdf406f042429df39',
+    'localhost:15000/campus-commander/worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a',
 };
 const operator = JSON.parse(
   await readFile(new URL('./operator.example.json', import.meta.url), 'utf8'),
@@ -166,6 +167,10 @@ for (const [name, service] of Object.entries(config.services)) {
     put(service.dispatchSecretRef, randomBytes(32).toString('base64url'));
   if (!service.serverTls) continue;
   const host = new URL(service.endpoint.url).hostname;
+  const restoreHost = host.replace(`.${namespace}.`, `.${restoreNamespace}.`);
+  const alternativeNames = [host];
+  if (restoreHost !== host) alternativeNames.push(restoreHost);
+  if (name.endsWith('Database')) alternativeNames.push('localhost');
   openssl(
     'req',
     '-new',
@@ -181,7 +186,7 @@ for (const [name, service] of Object.entries(config.services)) {
   );
   await writeFile(
     join(root, `${name}.ext`),
-    `subjectAltName=DNS:${host}\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n`,
+    `subjectAltName=${alternativeNames.map((name) => `DNS:${name}`).join(',')}\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n`,
   );
   openssl(
     'x509',

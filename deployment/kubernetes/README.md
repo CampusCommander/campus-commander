@@ -64,6 +64,9 @@ It never embeds raw credentials or creates Secret objects.
 Every service receives only its selected credentials and trust material.
 Administration and migration credentials remain outside ordinary API, frontend, worker, and edge pods.
 The edge receives listener material and API/frontend trust. It verifies bootstrap credentials through the API.
+Local PostgreSQL administrator Secret values must contain exact UTF-8 bytes without CR or LF characters.
+The installer rejects reused administrator values with either line ending before applying resources.
+It does not rewrite or log those values.
 
 Generate Kestra runtime files with [the Kestra renderer](../kestra/README.md) on the operator workstation.
 Use `CC_KESTRA_PROFILE=kubernetes` and `CC_KESTRA_RUNTIME_MOUNT_PATH=/run/kestra-runtime`.
@@ -133,6 +136,10 @@ Kestra management port 8081 has no Service or ingress policy.
 Node HTTPS probes connect to loopback while verifying the configured hostname and CA.
 PostgreSQL probes use `sslmode=verify-full`. Kestra probes verify HTTPS and authentication.
 TCP liveness probes test process reachability for stateful services. They do not establish dependency readiness.
+API and edge readiness probes test their process listeners.
+This keeps dependency diagnostics routable while another component fails.
+The protected startup report remains the installation readiness gate across all eight components.
+Worker and stateful readiness probes continue to test their required dependencies.
 
 ## Rescheduling evidence
 
@@ -150,11 +157,27 @@ Do not accept a Pending replacement pod or a same-node restart as cross-node rec
 
 ## Qualification boundary
 
-Six semantic tests and server-side validation passed against the disposable Kubernetes 1.35.8 fixture.
-That fixture used Kind 0.33.0 with two worker nodes.
-Its default CNI does not enforce NetworkPolicy. Its local-path storage does not qualify RWX storage.
-The server dry run did not deploy the application topology.
-District installation, LoadBalancer behavior, policy enforcement, shared storage, and cross-node artifact recovery remain untested.
+Six semantic tests and server-side validation passed against Kubernetes 1.35.8.
+The workload fixture used Kind 0.33.0 with one control-plane node and two worker nodes.
+Both synthetic namespaces reached eight ready Deployments through verified TLS.
+Two API replicas and two worker replicas ran concurrently.
+A replacement worker on another node read an existing artifact with the recorded checksum.
+
+The restore adapter stopped every source writer before invoking the operations module.
+It backed up both PostgreSQL databases, artifacts, Kestra internal storage, configuration, and release metadata.
+It restored them into a separate namespace with fresh PVC identities and file roots.
+The restored worker verified the artifact checksum.
+The restored Kestra service exposed the flow and internal marker.
+The restored Redis cache did not contain the source marker.
+
+The adapter used one verified TLS database session per `kubectl port-forward` process.
+It ran PostgreSQL 18.6 dump and restore tools inside the pinned database pods.
+Separate evidence qualifies the operations module default native PostgreSQL 18.6 runner.
+
+Kind hostPath mounts share one Docker host and do not qualify district RWX storage.
+Kind's default CNI does not enforce NetworkPolicy.
+The fixture did not qualify district CSI recovery or LoadBalancer behavior.
+Local unpublished images do not qualify a signed release.
 
 Kestra Open Source 1.3.37 runs one standalone replica. No Kestra high availability is claimed.
 Its Flyway version warns that PostgreSQL 18.6 exceeds the tested range despite successful synthetic migrations.
@@ -178,5 +201,7 @@ Its private temporary directory contains fixture credentials. Do not include tha
 The adapter provisions synthetic RWX claims over one shared host directory.
 Their declared capacity does not measure available space or establish production capacity.
 The executed fixture reached eight ready Deployments and preserved an artifact after a cross-node worker replacement.
+`restore-integration.mjs` restores the source into `cc-kube-restore-synthetic` with fresh storage identities.
+It records exact source and target mappings in `CC-17-kubernetes-result.json`.
 See [CC-15 evidence](../evidence/CC-15.md) for the exact qualification boundary.
 The [Kind local registry procedure](https://kind.sigs.k8s.io/docs/user/local-registry/) defines the containerd registry connection.

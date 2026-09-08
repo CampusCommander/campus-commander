@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { checkServerIdentity } from 'node:tls';
 import pg from 'pg';
+import { normalizePostgresSecret } from './secrets.mjs';
 
 export const POSTGRES_VERSION = '18.6';
 const LOCK = '7240173007';
@@ -47,7 +48,9 @@ export async function connectionOptions(service, resolveSecret) {
     port: Number(url.port || 5432),
     database: service.database,
     user: service.role,
-    password: String(await resolveSecret(service.passwordSecretRef)),
+    password: normalizePostgresSecret(
+      await resolveSecret(service.passwordSecretRef),
+    ),
     ssl,
     connectionTimeoutMillis: 5000,
     statement_timeout: 60000,

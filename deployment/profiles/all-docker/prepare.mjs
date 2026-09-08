@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseDeploymentConfig } from '../../../dist/deployment/lib/deployment.js';
 import { prepareSecrets } from '../../installer/secrets.mjs';
+import { normalizePostgresSecret } from '../../postgres/secrets.mjs';
 
 async function ensureCredential(path) {
   let file;
@@ -58,6 +59,14 @@ export async function prepareAllDocker(configPath, outputRoot) {
       reference: name,
       status: await ensureCredential(resolve(privateRoot, name)),
     });
+    if (name.endsWith('-admin-password')) {
+      const bytes = await readFile(resolve(privateRoot, name));
+      normalizePostgresSecret(bytes);
+      if (bytes.includes(10) || bytes.includes(13))
+        throw new Error(
+          'Local PostgreSQL administrator files require exact UTF-8 password bytes without CR or LF.',
+        );
+    }
   }
   const operator = {
     adminDatabase: 'postgres',

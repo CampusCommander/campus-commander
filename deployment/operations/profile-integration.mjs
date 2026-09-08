@@ -13,6 +13,7 @@ import {
   postgresToolArguments,
 } from './index.mjs';
 import { connectDatabase } from '../postgres/index.mjs';
+import { normalizePostgresSecret } from '../postgres/secrets.mjs';
 import {
   generateBootstrapCredential,
   replaceBootstrap,
@@ -214,7 +215,9 @@ try {
       {
         env: {
           ...process.env,
-          PGPASSWORD: String(await resolveSecret(service.passwordSecretRef)),
+          PGPASSWORD: normalizePostgresSecret(
+            await resolveSecret(service.passwordSecretRef),
+          ),
         },
         stdio: ['pipe', 'pipe', 'pipe'],
       },

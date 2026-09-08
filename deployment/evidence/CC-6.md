@@ -158,3 +158,13 @@ Browser checks cover dependency changes, empty report rejection, stale connectio
 - Run the candidate publication workflow with its package-write `GITHUB_TOKEN`.
 - Capture project-owned GHCR repository digests from the workflow run.
 - Qualify the final published image set across all supported profiles.
+
+## PostgreSQL secret policy rebuild
+
+The API and worker images were rebuilt after the PostgreSQL secret-file parser correction.
+Both include `deployment/postgres/secrets.mjs` in their selective runtime file inventory.
+[The new local inventory](CC-6-secret-policy-images.json) records their exact manifest digests.
+The frontend image did not change.
+Earlier image results remain historical evidence for the references that those results name.
+The root Compose example now names the corresponding intended GHCR digests.
+Those project-owned references still require actual publication and verification.

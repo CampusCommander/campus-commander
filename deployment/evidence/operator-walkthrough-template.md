@@ -6,8 +6,10 @@ Copy one record for the all-Docker, hybrid, and Kubernetes walkthroughs.
 Set every field to `not-run` before execution.
 Use `pass`, `fail`, or `blocked` only after the operator performs the step.
 Use `blocked` with the owning ticket when the published procedure is absent.
-CC-16 supplies the pending installation procedures.
-CC-19 supplies the pending release integrity procedures.
+Use the [installer procedure](../installer/README.md) for installation and lifecycle commands.
+Use the [release procedure](../release/README.md) for integrity verification.
+Use the [operations procedure](../operations/README.md) for backup and restore.
+Published candidate artifacts remain pending CC-19.
 CC-19 supplies the release digest and source revision.
 Record no credential values, network account names, endpoint credentials, or secret values.
 Do not infer human acceptance from this template.
@@ -28,22 +30,28 @@ Do not infer human acceptance from this template.
 
 ### Operation evidence
 
-| Field                     | Value   |
-| ------------------------- | ------- |
-| Protected startup status  | not-run |
-| Restart fixture integrity | not-run |
-| Restore verification      | not-run |
-| Release integrity         | not-run |
+| Field                          | Value   |
+| ------------------------------ | ------- |
+| Protected startup status       | not-run |
+| Restart fixture integrity      | not-run |
+| Restore verification           | not-run |
+| Interrupted install recovery   | not-run |
+| Backup-gated upgrade           | not-run |
+| Redacted support diagnostics   | not-run |
+| Preserved data after uninstall | not-run |
+| Release integrity              | not-run |
 
-| Service    | Operational status |
-| ---------- | ------------------ |
-| Frontend   | not-run            |
-| API        | not-run            |
-| Workers    | not-run            |
-| PostgreSQL | not-run            |
-| Redis      | not-run            |
-| Kestra     | not-run            |
-| Storage    | not-run            |
+| Service                | Operational status |
+| ---------------------- | ------------------ |
+| Frontend               | not-run            |
+| API                    | not-run            |
+| Workers                | not-run            |
+| Application PostgreSQL | not-run            |
+| Kestra PostgreSQL      | not-run            |
+| HTTPS edge             | not-run            |
+| Redis                  | not-run            |
+| Kestra                 | not-run            |
+| Storage                | not-run            |
 
 ### Findings and handoff
 
@@ -51,6 +59,8 @@ Do not infer human acceptance from this template.
 | ----------------------------- | ------- |
 | Defects                       | not-run |
 | Explicit decision             | not-run |
+| Operator sign-off and date    | not-run |
+| Reviewer sign-off and date    | not-run |
 | Application structure handoff | not-run |
 | Authentication handoff        | not-run |
 | Login handoff                 | not-run |
@@ -74,22 +84,28 @@ Do not infer human acceptance from this template.
 
 ### Operation evidence
 
-| Field                     | Value   |
-| ------------------------- | ------- |
-| Protected startup status  | not-run |
-| Restart fixture integrity | not-run |
-| Restore verification      | not-run |
-| Release integrity         | not-run |
+| Field                          | Value   |
+| ------------------------------ | ------- |
+| Protected startup status       | not-run |
+| Restart fixture integrity      | not-run |
+| Restore verification           | not-run |
+| Interrupted install recovery   | not-run |
+| Backup-gated upgrade           | not-run |
+| Redacted support diagnostics   | not-run |
+| Preserved data after uninstall | not-run |
+| Release integrity              | not-run |
 
-| Service    | Operational status |
-| ---------- | ------------------ |
-| Frontend   | not-run            |
-| API        | not-run            |
-| Workers    | not-run            |
-| PostgreSQL | not-run            |
-| Redis      | not-run            |
-| Kestra     | not-run            |
-| Storage    | not-run            |
+| Service                | Operational status |
+| ---------------------- | ------------------ |
+| Frontend               | not-run            |
+| API                    | not-run            |
+| Workers                | not-run            |
+| Application PostgreSQL | not-run            |
+| Kestra PostgreSQL      | not-run            |
+| HTTPS edge             | not-run            |
+| Redis                  | not-run            |
+| Kestra                 | not-run            |
+| Storage                | not-run            |
 
 ### Findings and handoff
 
@@ -97,6 +113,8 @@ Do not infer human acceptance from this template.
 | ----------------------------- | ------- |
 | Defects                       | not-run |
 | Explicit decision             | not-run |
+| Operator sign-off and date    | not-run |
+| Reviewer sign-off and date    | not-run |
 | Application structure handoff | not-run |
 | Authentication handoff        | not-run |
 | Login handoff                 | not-run |
@@ -120,22 +138,28 @@ Do not infer human acceptance from this template.
 
 ### Operation evidence
 
-| Field                     | Value   |
-| ------------------------- | ------- |
-| Protected startup status  | not-run |
-| Restart fixture integrity | not-run |
-| Restore verification      | not-run |
-| Release integrity         | not-run |
+| Field                          | Value   |
+| ------------------------------ | ------- |
+| Protected startup status       | not-run |
+| Restart fixture integrity      | not-run |
+| Restore verification           | not-run |
+| Interrupted install recovery   | not-run |
+| Backup-gated upgrade           | not-run |
+| Redacted support diagnostics   | not-run |
+| Preserved data after uninstall | not-run |
+| Release integrity              | not-run |
 
-| Service    | Operational status |
-| ---------- | ------------------ |
-| Frontend   | not-run            |
-| API        | not-run            |
-| Workers    | not-run            |
-| PostgreSQL | not-run            |
-| Redis      | not-run            |
-| Kestra     | not-run            |
-| Storage    | not-run            |
+| Service                | Operational status |
+| ---------------------- | ------------------ |
+| Frontend               | not-run            |
+| API                    | not-run            |
+| Workers                | not-run            |
+| Application PostgreSQL | not-run            |
+| Kestra PostgreSQL      | not-run            |
+| HTTPS edge             | not-run            |
+| Redis                  | not-run            |
+| Kestra                 | not-run            |
+| Storage                | not-run            |
 
 ### Findings and handoff
 
@@ -143,6 +167,8 @@ Do not infer human acceptance from this template.
 | ----------------------------- | ------- |
 | Defects                       | not-run |
 | Explicit decision             | not-run |
+| Operator sign-off and date    | not-run |
+| Reviewer sign-off and date    | not-run |
 | Application structure handoff | not-run |
 | Authentication handoff        | not-run |
 | Login handoff                 | not-run |

@@ -63,6 +63,128 @@ async function setup() {
   };
   return { root, config, release, operator, dependencies, calls };
 }
+
+test('Kubernetes installation rejects local administrator line endings before apply without changing Secrets', async () => {
+  const f = await setup();
+  try {
+    const config = JSON.parse(
+      await readFile(
+        new URL('../examples/kubernetes.json', import.meta.url),
+        'utf8',
+      ),
+    );
+    const kubernetes = JSON.parse(
+      await readFile(
+        new URL('../kubernetes/operator.example.json', import.meta.url),
+        'utf8',
+      ),
+    );
+    kubernetes.namespace = 'cc-installer-kube-admin';
+    config.services.api.placement.replicas = 2;
+    for (const [name, service] of Object.entries(config.services)) {
+      if (name !== 'edge')
+        service.endpoint.url = service.endpoint.url.replace(
+          '.campus-commander.svc.',
+          `.${kubernetes.namespace}.svc.`,
+        );
+    }
+    f.operator.kubernetes = kubernetes;
+    f.operator.cluster = { context: 'synthetic-qualified-context' };
+    await writeFile(f.operator.configurationPath, JSON.stringify(config));
+    const data = {};
+    const collectStrings = (value) => {
+      if (typeof value === 'string')
+        data[value] = Buffer.from('synthetic-service-value\r\n').toString(
+          'base64',
+        );
+      else if (value && typeof value === 'object')
+        Object.values(value).forEach(collectStrings);
+    };
+    collectStrings(config);
+    collectStrings(kubernetes);
+    const adminName = kubernetes.databaseAdmins.applicationDatabase.name;
+    const valid = 'private-fixture-marker-kept-redacted';
+    let adminData = {};
+    f.dependencies.run = async (file, args) => {
+      f.calls.push([file, args]);
+      if (
+        file === 'kubectl' &&
+        args.includes('get') &&
+        args.includes('secret')
+      ) {
+        return JSON.stringify({
+          data: { ...data, ...(args.includes(adminName) ? adminData : {}) },
+        });
+      }
+      return '';
+    };
+    for (const database of ['applicationDatabase', 'kestraDatabase']) {
+      for (const delimiter of ['\n', '\r\n']) {
+        adminData = Object.fromEntries(
+          Object.values(kubernetes.databaseAdmins).map((ref) => [
+            ref.key,
+            Buffer.from(valid).toString('base64'),
+          ]),
+        );
+        adminData[kubernetes.databaseAdmins[database].key] = Buffer.from(
+          valid + delimiter,
+        ).toString('base64');
+        const original = JSON.stringify(adminData);
+        f.calls.length = 0;
+        await assert.rejects(
+          executeInstaller({
+            command: 'install',
+            operator: f.operator,
+            qualification: true,
+            dependencies: f.dependencies,
+          }),
+          (error) => {
+            assert.equal(error.code, 'SECRETS');
+            assert.match(error.message, /without CR or LF/);
+            assert.ok(!error.message.includes(valid));
+            return true;
+          },
+        );
+        assert.ok(
+          !f.calls.some(
+            ([file, args]) => file === 'kubectl' && args.includes('apply'),
+          ),
+        );
+        assert.equal(JSON.stringify(adminData), original);
+        assert.ok(
+          !f.calls.some(
+            ([file, args]) =>
+              file === 'kubectl' &&
+              ['patch', 'replace', 'create'].some((command) =>
+                args.includes(command),
+              ),
+          ),
+        );
+      }
+    }
+    adminData = Object.fromEntries(
+      Object.values(kubernetes.databaseAdmins).map((ref) => [
+        ref.key,
+        Buffer.from(valid).toString('base64'),
+      ]),
+    );
+    const result = await executeInstaller({
+      command: 'install',
+      operator: f.operator,
+      qualification: true,
+      dependencies: f.dependencies,
+    });
+    assert.equal(result.status, 'ready');
+    assert.ok(
+      f.calls.some(
+        ([file, args]) => file === 'kubectl' && args.includes('apply'),
+      ),
+    );
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
 test('interruption resumes with existing secrets and rejects changed inputs', async () => {
   const f = await setup();
   try {

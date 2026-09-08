@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
+import { normalizePostgresSecret } from './secrets.mjs';
 import { parseDeploymentConfig } from '../../dist/deployment/index.js';
 import {
   checkReadiness,
@@ -22,7 +23,7 @@ async function resolveSecret(reference) {
   ) {
     throw new Error('Mount database secrets as files under /run/secrets.');
   }
-  return (await readFile(path, 'utf8')).replace(/\r?\n$/, '');
+  return readFile(path);
 }
 
 let client;
@@ -54,16 +55,20 @@ try {
         application: {
           database: app.database,
           role: app.role,
-          password: await resolveSecret(app.passwordSecretRef),
+          password: normalizePostgresSecret(
+            await resolveSecret(app.passwordSecretRef),
+          ),
           migrationRole: operator.migrationRole,
-          migrationPassword: await resolveSecret(
-            operator.migrationPasswordSecretRef,
+          migrationPassword: normalizePostgresSecret(
+            await resolveSecret(operator.migrationPasswordSecretRef),
           ),
         },
         kestra: {
           database: kestra.database,
           role: kestra.role,
-          password: await resolveSecret(kestra.passwordSecretRef),
+          password: normalizePostgresSecret(
+            await resolveSecret(kestra.passwordSecretRef),
+          ),
         },
       };
       const scopes =

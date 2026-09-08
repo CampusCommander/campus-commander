@@ -489,7 +489,10 @@ export function renderKubernetes(input, operatorInput) {
       if (key === 'edge')
         container.command = ['node', '/app/deployment/bootstrap/main.mjs'];
       container.livenessProbe = nodeProbe(service, '/health/live');
-      container.readinessProbe = nodeProbe(service, '/health/ready');
+      container.readinessProbe = nodeProbe(
+        service,
+        ['api', 'edge'].includes(key) ? '/health/live' : '/health/ready',
+      );
       container.startupProbe = {
         ...nodeProbe(service, '/health/live'),
         failureThreshold: Math.ceil(
@@ -670,6 +673,10 @@ export function renderKubernetes(input, operatorInput) {
         '/run/kestra-runtime/application.yaml',
       ];
       container.env = [
+        {
+          name: 'ENV_CC_WORKER_BASE_URL',
+          value: config.services.workers.endpoint.url,
+        },
         {
           name: 'SECRET_CC_WORKER_DISPATCH_TOKEN',
           valueFrom: {

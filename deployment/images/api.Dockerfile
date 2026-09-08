@@ -24,7 +24,7 @@ COPY --from=build --chown=node:node /workspace/dist/api ./
 COPY --from=runtime-dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /workspace/deployment/bootstrap/access.mjs /workspace/deployment/bootstrap/api-runtime.mjs /workspace/deployment/bootstrap/cli.mjs /workspace/deployment/bootstrap/edge.mjs /workspace/deployment/bootstrap/main.mjs /workspace/deployment/bootstrap/status.mjs ./deployment/bootstrap/
 COPY --from=build --chown=node:node /workspace/deployment/kestra/render-config.mjs ./deployment/kestra/
-COPY --from=build --chown=node:node /workspace/deployment/postgres/index.mjs /workspace/deployment/postgres/cli.mjs ./deployment/postgres/
+COPY --from=build --chown=node:node /workspace/deployment/postgres/index.mjs /workspace/deployment/postgres/cli.mjs /workspace/deployment/postgres/secrets.mjs ./deployment/postgres/
 COPY --from=build --chown=node:node /workspace/deployment/postgres/migrations ./deployment/postgres/migrations
 COPY --from=build --chown=node:node /workspace/deployment/redis/runtime.mjs /workspace/deployment/redis/probe.mjs ./deployment/redis/
 COPY --from=build --chown=node:node /workspace/deployment/storage/index.mjs ./deployment/storage/

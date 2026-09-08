@@ -47,6 +47,10 @@ Configure district DNS for the worker endpoint across all worker addresses. Perm
 
 The `egress` network serves district endpoints. Enforce the configured PostgreSQL, Redis, Kestra, and worker allowlist in the host firewall.
 
+The `ingress` network accepts the published edge HTTPS listener.
+Restrict the edge host port to approved district clients through the host firewall.
+Keep every other controller port unpublished.
+
 ## Readiness contract
 
 The storage preflight checks UID 1000 access without changing ownership. Database migration completes before bootstrap initialization.
@@ -74,3 +78,26 @@ The recorded run recovered three seconds after PostgreSQL restarted.
 The completed execution and Kestra internal-storage files remained available.
 The run used one Docker host and synthetic certificates.
 It does not qualify the complete profile or distinct-host shared storage.
+
+Run the complete same-host fixture through Nx:
+
+```sh
+npm exec nx -- run deployment:hybrid-full-integration --skip-nx-cache
+```
+
+Set `CC_HYBRID_KEEP_FIXTURE=true` to retain the unique fixture for restore testing.
+The default run removes only its unique containers, network, volume, and files.
+
+The recorded complete run passed in 61.8 seconds.
+It started all eight component containers from the pinned local image set.
+The API reported all eight protected dependency checks ready.
+The process liveness check also reported ready.
+Edge access returned 401 without the bootstrap credential and 200 with it.
+Kestra returned 401 without its Basic Auth credential.
+The synthetic worker execution reached `SUCCESS` and created internal storage.
+Both worker Compose projects read the same shared artifact checksum.
+Redis recovered in two seconds, and PostgreSQL recovered in three seconds.
+The execution, internal storage, and shared artifact survived both outages.
+
+[`full-integration-result.json`](full-integration-result.json) records the redacted machine result.
+This same-host fixture does not qualify separate hosts, district DNS, firewall rules, or shared storage infrastructure.

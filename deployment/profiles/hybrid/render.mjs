@@ -92,6 +92,23 @@ function configureApplicationTls(compose, config) {
   }
 }
 
+function configureEdgeHealth(compose, service) {
+  const host = new URL(service.endpoint.url).hostname;
+  const ca = caReference(service);
+  compose.services.edge.healthcheck = {
+    test: [
+      'CMD',
+      'node',
+      '-e',
+      `const fs=require('node:fs'),https=require('node:https'),host=${JSON.stringify(host)},request=https.get({hostname:'127.0.0.1',port:8443,path:'/health',servername:host${ca ? `,ca:fs.readFileSync('/run/secrets/${secretName(ca)}')` : ''},timeout:3000},response=>{response.resume();process.exit(response.statusCode===200?0:1)});request.on('timeout',()=>request.destroy());request.on('error',()=>process.exit(1))`,
+    ],
+    interval: '10s',
+    timeout: '5s',
+    retries: 12,
+    start_period: '10s',
+  };
+}
+
 function configurePostgresTls(service, config) {
   const certificate = config.serverTls.certificateSecretRef;
   const privateKey = config.serverTls.privateKeySecretRef;
@@ -307,6 +324,7 @@ function renderBase(input, release) {
   }
 
   configureApplicationTls(compose, config);
+  configureEdgeHealth(compose, services.edge);
   compose.services.frontend.secrets = secretsFor(
     services.frontend.serverTls.certificateSecretRef,
     services.frontend.serverTls.privateKeySecretRef,
@@ -339,6 +357,7 @@ function renderBase(input, release) {
   compose.services.edge.secrets = secretsFor(
     services.edge.serverTls.certificateSecretRef,
     services.edge.serverTls.privateKeySecretRef,
+    caReference(services.edge),
     caReference(services.frontend),
     caReference(services.api),
   );
@@ -390,7 +409,6 @@ function renderBase(input, release) {
     ]),
   );
 
-  compose.networks.ingress.internal = true;
   compose.networks.egress = {
     driver: 'bridge',
     labels: {

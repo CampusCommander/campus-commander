@@ -34,8 +34,16 @@ test('renders a placement-aware controller with verified TLS', () => {
   assert.equal(compose.services.api.environment.TLS_SERVER_NAME, 'api');
   assert.equal(compose.services.api.healthcheck, undefined);
   assert.equal(compose.services.frontend.healthcheck, undefined);
+  assert.match(
+    compose.services.edge.healthcheck.test.at(-1),
+    /hostname:'127\.0\.0\.1'.*servername:host.*timeout:3000/,
+  );
+  assert.doesNotMatch(
+    compose.services.edge.healthcheck.test.at(-1),
+    /edge-certificate/,
+  );
   assert.equal(compose.networks.internal.internal, true);
-  assert.equal(compose.networks.ingress.internal, true);
+  assert.equal(compose.networks.ingress.internal, undefined);
   assert.equal(compose.networks.egress.driver, 'bridge');
   assert.equal(
     compose.services.api.volumes[1].target,
@@ -50,6 +58,20 @@ test('renders a placement-aware controller with verified TLS', () => {
     Object.values(compose.services).some((service) => 'build' in service),
     false,
   );
+});
+
+test('uses the endpoint private CA for the edge health check', () => {
+  const privateEdge = structuredClone(config);
+  privateEdge.services.edge.endpoint.tls = {
+    mode: 'private-ca',
+    caSecretRef: { provider: 'file', path: '/run/secrets/district-ca' },
+  };
+  const compose = renderHybrid(privateEdge, release);
+  assert.match(
+    compose.services.edge.healthcheck.test.at(-1),
+    /ca:fs\.readFileSync\('\/run\/secrets\/district-ca'\)/,
+  );
+  assert.equal(mounted(compose.services.edge).has('district-ca'), true);
 });
 
 test('mounts only credentials required by each process', () => {

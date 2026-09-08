@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { createReadStream, existsSync } from 'node:fs';
+import {
+  appendFile,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import net from 'node:net';
@@ -12,7 +19,25 @@ import {
   backupFoundation,
   postgresToolArguments,
 } from '../operations/index.mjs';
+import { normalizePostgresSecret } from '../postgres/secrets.mjs';
+import { runEdgeTlsFaults } from '../qualification/edge-tls-faults.mjs';
 
+const releasePaths = [
+  process.env.CC_INSTALLER_RELEASE_A,
+  process.env.CC_INSTALLER_RELEASE_B,
+];
+if (releasePaths.some((path) => !path))
+  throw new Error(
+    'Set CC_INSTALLER_RELEASE_A and CC_INSTALLER_RELEASE_B to two image inventory files.',
+  );
+const harnessRevision = execFileSync('git', ['rev-parse', 'HEAD'], {
+  encoding: 'utf8',
+}).trim();
+const sourceState = execFileSync('git', ['status', '--porcelain'], {
+  encoding: 'utf8',
+}).trim()
+  ? 'uncommitted-candidate'
+  : 'clean';
 const root = await mkdtemp(join(tmpdir(), 'cc-installer-')),
   project = `cc-installer-${randomUUID().slice(0, 10)}`;
 const docker = (args, input) =>
@@ -55,20 +80,21 @@ await new Promise((done) => server.listen(0, '127.0.0.1', done));
 const port = server.address().port;
 await new Promise((done) => server.close(done));
 const config = JSON.parse(
-  await readFile('/tmp/cc13-render/runtime/profile.json', 'utf8'),
+  await readFile(
+    new URL('../examples/all-docker.json', import.meta.url),
+    'utf8',
+  ),
 );
 const releases = [];
-for (const name of ['a', 'b']) {
-  const release = JSON.parse(
-    await readFile(`/tmp/cc16-release-${name}.json`, 'utf8'),
-  );
-  release.sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], {
-    encoding: 'utf8',
-  }).trim();
-  release.architectures = ['linux/amd64'];
-  release.workingTree = 'uncommitted-candidate';
+for (const path of releasePaths) {
+  const release = JSON.parse(await readFile(path, 'utf8'));
   releases.push(release);
 }
+assert.notDeepEqual(
+  releases[0].images,
+  releases[1].images,
+  'Upgrade qualification requires different image inventories.',
+);
 config.images = releases[0].images;
 config.services.edge.endpoint.url = `https://campus.example.org:${port}`;
 const operator = {
@@ -79,7 +105,7 @@ const operator = {
   project,
   connectAddress: '127.0.0.1',
   bindAddress: '127.0.0.1',
-  localRegistryHttp: true,
+  localRegistryHttp: process.env.CC_INSTALLER_LOCAL_REGISTRY_HTTP === '1',
   preflightExceptions: [
     {
       name: 'district-dns',
@@ -110,8 +136,29 @@ const writeInputs = async () => {
   });
 };
 await mkdir(join(root, 'private'), { mode: 0o700 });
+execFileSync(
+  'openssl',
+  [
+    'req',
+    '-x509',
+    '-newkey',
+    'rsa:2048',
+    '-nodes',
+    '-keyout',
+    join(root, 'private/edge-private-key'),
+    '-out',
+    join(root, 'private/edge-certificate'),
+    '-days',
+    '2',
+    '-subj',
+    '/CN=campus.example.org',
+    '-addext',
+    'subjectAltName=DNS:campus.example.org',
+  ],
+  { stdio: 'ignore', timeout: 30000 },
+);
 for (const name of ['edge-certificate', 'edge-private-key'])
-  await cp(`/tmp/cc13-render/private/${name}`, join(root, 'private', name));
+  await chmod(join(root, 'private', name), 0o600);
 const proxies = [];
 let prepared = false;
 try {
@@ -224,7 +271,9 @@ try {
       {
         env: {
           ...process.env,
-          PGPASSWORD: String(await resolveSecret(service.passwordSecretRef)),
+          PGPASSWORD: normalizePostgresSecret(
+            await resolveSecret(service.passwordSecretRef),
+          ),
         },
         stdio: ['pipe', 'pipe', 'pipe'],
       },
@@ -288,22 +337,115 @@ try {
   config.images = releases[1].images;
   await writeInputs();
   assert.equal(cli('upgrade').status, 'ready');
+  let secretLineEndings;
+  if (process.env.CC_INSTALLER_SECRET_LINE_ENDINGS === '1') {
+    const cases = [
+      [
+        'applicationDatabase',
+        basename(config.services.applicationDatabase.passwordSecretRef.path),
+        '\n',
+      ],
+      [
+        'kestraDatabase',
+        basename(config.services.kestraDatabase.passwordSecretRef.path),
+        '\r\n',
+      ],
+      ['migration', 'postgres-migrator', '\r\n'],
+    ];
+    for (const [, name, ending] of cases) {
+      const path = join(root, 'private', name);
+      assert.equal(/[\r\n]/.test(await readFile(path, 'utf8')), false);
+      await appendFile(path, ending);
+    }
+    compose('run', '--rm', 'database-provision');
+    compose('run', '--rm', 'database-migrate');
+    compose('up', '-d', '--force-recreate', 'api', 'workers', 'kestra');
+    assert.equal(cli('resume').status, 'ready');
+    secretLineEndings = {
+      status: 'passed',
+      credentials: cases.map(([name, , ending]) => ({
+        name,
+        delimiter: ending === '\n' ? 'LF' : 'CRLF',
+      })),
+      localAdminFiles: 'unchanged exact bytes',
+      readiness:
+        'eight components ready after provisioning and process recreation',
+    };
+  }
   const after = JSON.parse(
     docker(['exec', '-i', id('api'), 'node', '--input-type=module'], probe),
   );
   assert.deepEqual(after, before);
   assert.deepEqual(await readFile(join(root, 'private/bootstrap')), secret);
+  const faults =
+    process.env.CC_INSTALLER_FAULTS === '1'
+      ? await runEdgeTlsFaults(
+          {
+            qualificationOnly: true,
+            root,
+            project,
+            url: config.services.edge.endpoint.url,
+            connectAddress: '127.0.0.1',
+            images: releases[1].images,
+            sourceState: {
+              baseGitRevision: harnessRevision,
+              workingTree: execFileSync('git', ['status', '--porcelain'], {
+                encoding: 'utf8',
+              }).trim()
+                ? 'uncommitted-candidate'
+                : 'clean',
+            },
+          },
+          {
+            compose,
+            verifyFixtures: async () =>
+              assert.deepEqual(
+                JSON.parse(
+                  docker(
+                    ['exec', '-i', id('api'), 'node', '--input-type=module'],
+                    probe,
+                  ),
+                ),
+                before,
+              ),
+          },
+        )
+      : undefined;
+  const browser =
+    process.env.CC_INSTALLER_BROWSER === '1'
+      ? await (
+          await import('../qualification/profile-browser.mjs')
+        ).runProfileBrowser({
+          url: config.services.edge.endpoint.url,
+          bootstrapFile: join(root, 'private', 'bootstrap'),
+        })
+      : undefined;
+  assert.deepEqual(
+    JSON.parse(await readFile(join(root, 'release.json'), 'utf8')),
+    JSON.parse(await readFile(releasePaths[1], 'utf8')),
+    'Installation must preserve the supplied release inventory.',
+  );
   const report = {
     status: 'passed',
     project,
     profile: 'all-docker',
     acceptedRelease: false,
-    workingTree: 'uncommitted-candidate',
-    baseGitRevision: releases[1].sourceRevision,
+    workingTree: sourceState,
+    baseGitRevision: harnessRevision,
     artifact,
     before,
     after,
     releaseB: releases[1].images,
+    releaseInventories: releases.map((release) => ({
+      sourceRevision: release.sourceRevision,
+      architectures: release.architectures,
+      workingTree: release.workingTree,
+      sourceRevisionMeaning: release.sourceRevisionMeaning,
+      images: release.images,
+    })),
+    secretLineEndings,
+    faults,
+    browser,
     checks: [
       'actual CLI prepare and resume',
       'stop and resume preserve data',
@@ -311,6 +453,7 @@ try {
       'encrypted backup verified before upgrade',
       'different image digests upgrade with artifact and ledger preservation',
       'active secrets preserved',
+      'input release inventory metadata preserved',
     ],
     prerequisiteExceptions: operator.preflightExceptions,
   };
@@ -356,6 +499,8 @@ try {
   throw error;
 } finally {
   for (const name of proxies) docker(['rm', '-f', name]);
-  if (prepared) compose('down', '--volumes');
-  else compose('down');
+  if (existsSync(join(root, 'docker-compose.json'))) {
+    if (prepared) compose('down', '--volumes');
+    else compose('down');
+  }
 }

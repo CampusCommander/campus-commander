@@ -223,6 +223,78 @@
       "options": {
         "command": "node deployment/profiles/hybrid/integration.mjs"
       }
+    },
+    "operations-native-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "CC_OPERATIONS_NATIVE=1 node deployment/operations/integration.mjs"
+      }
+    },
+    "hybrid-full-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/profiles/hybrid/full-integration.mjs"
+      }
+    },
+    "installer-tls-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "CC_INSTALLER_FAULTS=1 node deployment/installer/integration.mjs"
+      }
+    },
+    "kubernetes-restore-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/kubernetes/restore-integration.mjs"
+      }
+    },
+    "installer-browser-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "CC_INSTALLER_FAULTS=1 CC_INSTALLER_BROWSER=1 node deployment/installer/integration.mjs"
+      }
+    },
+    "hybrid-restore-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/profiles/hybrid/restore-integration.mjs"
+      }
+    },
+    "profile-capacity-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/qualification/profile-capacity-integration.mjs"
+      }
+    },
+    "hybrid-process-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "CC_HYBRID_PROCESS_FAULTS=true node deployment/profiles/hybrid/full-integration.mjs"
+      }
+    },
+    "kubernetes-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/kubernetes/fault-integration.mjs"
+      }
     }
   }
 }
