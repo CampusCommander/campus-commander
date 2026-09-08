@@ -198,7 +198,7 @@ try {
       '--network',
       `container:${name}`,
       '--user',
-      '1000:1000',
+      `${process.getuid()}:${process.getgid()}`,
       '-v',
       `${fileURLToPath(new URL('../../', import.meta.url))}:/workspace:ro`,
       '-v',
