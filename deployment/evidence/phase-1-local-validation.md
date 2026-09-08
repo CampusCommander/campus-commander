@@ -31,6 +31,11 @@ The installer and hybrid runs used the rebuilt API and worker images recorded in
 The browser run used a synthetic certificate exception.
 The hybrid run used one Docker host and separate worker Compose projects.
 
+The [committed bundle isolation check](CC-19-final-bundle-result.json) passed against source commit `7b218fe`.
+It verified 1,060 inventoried files and imported the installer with bundled dependencies.
+Promotion rejected the candidate because profile acceptance evidence remains incomplete.
+The assembly test used explicit synthetic provenance inputs and published nothing.
+
 ## Remaining acceptance
 
 Published image qualification, district infrastructure checks, distributed fault coverage, and three human walkthroughs remain incomplete.

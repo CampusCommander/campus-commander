@@ -1,0 +1,14 @@
+{
+  "status": "passed",
+  "sourceRevision": "7b218fecae27619ff0b06e3c7d6f7b1847b501ce",
+  "sourceCheckout": "clean detached worktree",
+  "inventoryFiles": 1060,
+  "archiveExtracted": true,
+  "installerImportedWithBundledDependencies": true,
+  "fileIntegrityVerified": true,
+  "productionPromotionRejected": true,
+  "signedReleaseQualified": false,
+  "provenanceInputs": "explicit synthetic placeholders; no SBOM or signature claim",
+  "published": false,
+  "ownedTemporaryResourcesRemoved": true
+}
