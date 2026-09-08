@@ -13,6 +13,8 @@ if (!/^.+@sha256:[a-f0-9]{64}$/.test(image ?? '') || !reportPath)
   );
 const name = `cc-fault-capacity-${randomUUID()}`;
 const root = await mkdtemp(join(tmpdir(), 'cc-capacity-'));
+const uid = process.getuid();
+const gid = process.getgid();
 const password = randomBytes(32).toString('hex');
 const adminPassword = randomBytes(32).toString('hex');
 const docker = (...args) =>
@@ -133,8 +135,10 @@ try {
     'ALL',
     '--security-opt',
     'no-new-privileges:true',
+    '--user',
+    `${uid}:${gid}`,
     '--tmpfs',
-    '/bounded-artifacts:rw,size=8m,uid=1000,gid=1000,mode=0700',
+    `/bounded-artifacts:rw,size=8m,uid=${uid},gid=${gid},mode=0700`,
     '--mount',
     `type=bind,source=${root}/runtime,target=/run/secrets/password,readonly`,
     image,
