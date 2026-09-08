@@ -24,3 +24,7 @@ node deployment/profiles/all-docker/erase.mjs --confirm-data-loss /absolute/inst
 ```
 
 Only the edge service publishes a host port. All other services use the internal Compose network.
+
+The installer retains ownership of private host files. The `volume-permissions` initialization service copies each required file into a service-specific volume. It sets application copies to UID and GID `1000`, with directory mode `0700` and file mode `0600`. Each application service mounts only its assigned volumes, read-only, and runs as UID `1000`. This process supports root and non-root installer accounts without changing host file permissions.
+
+The PostgreSQL entrypoint reads its administrator password as root, then starts PostgreSQL as its database user. The initialization service exits before dependent application services start. Docker administrators can access the original files and Docker volumes. Protect Docker access accordingly.

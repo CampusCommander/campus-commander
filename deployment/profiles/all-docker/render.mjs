@@ -152,7 +152,7 @@ export function renderAllDocker(
     },
   ];
 
-  return {
+  const compose = {
     name: 'campus-commander',
     services: {
       'volume-permissions': {
@@ -505,6 +505,85 @@ export function renderAllDocker(
     },
     secrets,
   };
+  if (profile === 'all-docker') stageRuntimeFiles(compose);
+  return compose;
+}
+
+function stageRuntimeFiles(compose) {
+  const initializer = compose.services['volume-permissions'];
+  const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
+  const commands = [initializer.command[2], 'umask 077'];
+  const sourceSecrets = new Set();
+  initializer.command[1] = '-ec';
+  initializer.read_only = true;
+  initializer.volumes.push({
+    type: 'bind',
+    source: './runtime',
+    target: '/source/config',
+    read_only: true,
+  });
+  for (const [name, service] of Object.entries(compose.services)) {
+    if (name === 'volume-permissions' || name.endsWith('-postgres')) continue;
+    service.user = '1000:1000';
+    const configFiles = [];
+    service.volumes = (service.volumes ?? []).filter((mount) => {
+      if (
+        typeof mount !== 'string' &&
+        mount.target.startsWith('/run/config/')
+      ) {
+        configFiles.push(basename(mount.target));
+        return false;
+      }
+      return true;
+    });
+    const files = (service.secrets ?? []).map(({ source, target }) => {
+      sourceSecrets.add(source);
+      return { source: `/run/secrets/${source}`, target };
+    });
+    for (const [kind, entries] of [
+      ['secrets', files],
+      [
+        'config',
+        configFiles.map((file) => ({
+          source: `/source/config/${file}`,
+          target: file,
+        })),
+      ],
+    ]) {
+      if (!entries.length) continue;
+      const volume = `${name}-${kind}`;
+      const destination = `/staged/${volume}`;
+      compose.volumes[volume] = {};
+      initializer.volumes.push(`${volume}:${destination}`);
+      service.volumes.push(`${volume}:/run/${kind}:ro`);
+      commands.push(
+        `mkdir -p ${quote(destination)}`,
+        `find ${quote(destination)} -mindepth 1 -delete`,
+      );
+      for (const entry of entries) {
+        const path = quote(`${destination}/${entry.target}`);
+        commands.push(
+          `rm -f ${path}`,
+          `cp ${quote(entry.source)} ${path}`,
+          `chmod 600 ${path}`,
+        );
+      }
+      commands.push(
+        `chown -R 1000:1000 ${quote(destination)}`,
+        `chmod 700 ${quote(destination)}`,
+      );
+      service.depends_on ??= {};
+      service.depends_on['volume-permissions'] = {
+        condition: 'service_completed_successfully',
+      };
+    }
+    delete service.secrets;
+  }
+  initializer.secrets = [...sourceSecrets].map((name) => ({
+    source: name,
+    target: name,
+  }));
+  initializer.command[2] = commands.join('\n');
 }
 
 export async function renderFiles(configPath, releasePath, outputPath) {

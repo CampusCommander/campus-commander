@@ -85,3 +85,52 @@ test('normalizes runtime images without mutating operator input', () => {
   assert.deepEqual(effective.images, release.images);
   assert.deepEqual(config.images, original);
 });
+
+test('stages private files per service without inheriting the installer identity', () => {
+  const compose = renderAllDocker(config, release);
+  const initializer = compose.services['volume-permissions'];
+  assert.equal(initializer.user, '0:0');
+  assert.equal(initializer.read_only, true);
+  assert.deepEqual(initializer.cap_add, ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']);
+  for (const [name, service] of Object.entries(compose.services)) {
+    if (name === 'volume-permissions' || name.endsWith('-postgres')) continue;
+    assert.equal(service.user, '1000:1000');
+    assert.equal(service.secrets, undefined);
+    assert.equal(
+      service.volumes.some((mount) => typeof mount === 'object'),
+      false,
+    );
+    for (const kind of ['secrets', 'config']) {
+      const volume = `${name}-${kind}`;
+      if (!(volume in compose.volumes)) continue;
+      assert.ok(service.volumes.includes(`${volume}:/run/${kind}:ro`));
+      assert.ok(initializer.volumes.includes(`${volume}:/staged/${volume}`));
+      assert.ok(
+        initializer.command[2].includes(
+          `chown -R 1000:1000 '/staged/${volume}'`,
+        ),
+      );
+      assert.equal(
+        service.depends_on['volume-permissions'].condition,
+        'service_completed_successfully',
+      );
+    }
+  }
+  assert.ok(
+    initializer.command[2].includes(
+      "chmod 600 '/staged/database-migrate-secrets/postgres-migrator'",
+    ),
+  );
+  assert.equal(
+    initializer.command[2].includes('/staged/api-secrets/postgres-migrator'),
+    false,
+  );
+  assert.equal(
+    initializer.command[2].includes('/staged/workers-secrets/redis-password'),
+    false,
+  );
+  assert.deepEqual(compose.services['database-migrate'].volumes, [
+    'database-migrate-secrets:/run/secrets:ro',
+    'database-migrate-config:/run/config:ro',
+  ]);
+});
