@@ -7,6 +7,10 @@ The workflow signs an installation bundle and its candidate manifest.
 GitHub Actions stores the bundle under the source revision artifact name.
 The workflow also publishes a project prerelease tagged `phase-1-candidate-<revision12>`.
 
+The workflow pins [cosign-installer 4.1.2](https://github.com/sigstore/cosign-installer/tree/6f9f17788090df1f26f669e9d70d6ae9567deba6) to its commit.
+The installer verifies the Cosign binary through keyless and KMS signature bundles.
+[Cosign 3.1.3](https://github.com/sigstore/cosign/releases/tag/v3.1.3) publishes these bundles instead of detached `.sig` files.
+
 The signing identity is the repository workflow identity:
 
 ```text
