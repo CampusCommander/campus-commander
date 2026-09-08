@@ -1,0 +1,15 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraMounts:
+      - hostPath: /tmp/cc-kube-synthetic-shared
+        containerPath: /var/local/cc-synthetic-shared
+  - role: worker
+    extraMounts:
+      - hostPath: /tmp/cc-kube-synthetic-shared
+        containerPath: /var/local/cc-synthetic-shared
+  - role: worker
+    extraMounts:
+      - hostPath: /tmp/cc-kube-synthetic-shared
+        containerPath: /var/local/cc-synthetic-shared

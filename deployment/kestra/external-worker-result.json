@@ -1,0 +1,63 @@
+{
+  "checkedAt": "2026-09-08T06:10:37Z",
+  "startedAt": "2026-09-08T06:10:06Z",
+  "status": "PASS",
+  "images": {
+    "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+    "workerTag": "campus-commander/worker:cc-6",
+    "workerLocalImageId": "sha256:783cadff46d82db53e52f8cde22672bcdac523b8d22cb75b72a155b503db6f65"
+  },
+  "controlPlane": {
+    "protocol": "https",
+    "unauthenticatedStatus": 401,
+    "authenticatedStatus": 200,
+    "restartAuthenticatedStatus": 200
+  },
+  "workerTrust": {
+    "protocol": "https",
+    "untrustedTlsExit": 60,
+    "unauthenticatedStatus": 401,
+    "wrongSecretStatus": 401,
+    "unknownFieldStatus": 400,
+    "privateCaTrustStore": true
+  },
+  "execution": {
+    "id": "rfFiBuUzuB0bbsi1QtzL9",
+    "correlationId": "cc11-22167-528719",
+    "flowUploadStatus": 200,
+    "finalState": "SUCCESS",
+    "dispatchAttempts": 2,
+    "workerAcceptCount": 2,
+    "workerCompleteCount": 1,
+    "storageUri": "kestra:///campus/validation/cc11-external-worker/executions/rfFiBuUzuB0bbsi1QtzL9/tasks/persist-result/43lbYOwBxJZ4CaDpkzMpBF/11421281452168577432.json"
+  },
+  "interruption": {
+    "type": "worker SIGKILL during bounded synthetic delay",
+    "recoverySeconds": 13,
+    "settlementLimit": "3 attempts or 30 seconds",
+    "finalState": "SUCCESS"
+  },
+  "persistence": {
+    "namespaceUploadStatus": 200,
+    "namespaceDirectoryStatus": 200,
+    "markerChecksumBefore": "0f0e0c3a4a44d4a3c179e13512ce9352f1674331ea8657ecb7fae405f2d57add",
+    "markerChecksumAfter": "0f0e0c3a4a44d4a3c179e13512ce9352f1674331ea8657ecb7fae405f2d57add",
+    "sameChecksumAfterKestraRestart": true,
+    "databaseVolume": "cc11-18456-528719-postgres-data",
+    "storageVolume": "cc11-18456-528719-kestra-storage",
+    "sameVolumesAfterRestart": true
+  },
+  "startup": {
+    "designatedDatasourceCount": 1,
+    "postgres18FlywayWarningCount": 2,
+    "secretsRecorded": false
+  },
+  "limits": [
+    "The check uses synthetic certificates and one Docker host.",
+    "The check does not prove shared-filesystem behavior across distinct hosts.",
+    "The worker endpoint supports a harmless synthetic payload only.",
+    "Task retry provides at-least-once dispatch and no exactly-once guarantee.",
+    "The worker keeps no durable deduplication record.",
+    "PostgreSQL 18.6 exceeds the Flyway logged supported version 17."
+  ]
+}

@@ -1,0 +1,16 @@
+**
+!package.json
+!package-lock.json
+!nx.json
+!tsconfig.base.json
+!eslint.config.mjs
+!api/**
+!deployment/project.json
+!deployment/tsconfig.json
+!deployment/tsconfig.lib.json
+!deployment/src/**
+!deployment/bootstrap/**
+!deployment/kestra/**
+!deployment/postgres/**
+!deployment/redis/**
+!deployment/storage/**

@@ -4,6 +4,18 @@ CC-4 defines configuration and validation for all Docker, hybrid Docker with dis
 This contract covers startup behavior only. Phase 2 supplies application authentication, the shell, and protected utilities.
 Google credentials, entity contracts, and district capacity guarantees remain outside CC-4.
 
+## Runtime implementation
+
+CC-5 through CC-20 extend this contract with runtime services, deployment profiles, recovery tools, and release gates.
+[Implementation status](implementation-status.md) records completed checks and outstanding acceptance requirements.
+Use the ticket evidence in `deployment/evidence/` to distinguish local fixtures from district qualification.
+
+- [Application images](images/README.md) and [Kestra qualification](kestra/README.md).
+- [PostgreSQL isolation](postgres/README.md), [Redis behavior](redis/README.md), and [artifact storage](storage/README.md).
+- [HTTPS bootstrap](bootstrap/README.md), [all-Docker profile](profiles/all-docker/README.md), and [Kubernetes profile](kubernetes/README.md).
+- [Encrypted backup and restore](operations/README.md).
+- [Fault qualification](qualification/README.md) and [release verification](release/README.md).
+
 ## Contract and commands
 
 [The schema](src/lib/deployment.ts) defines `DeploymentConfig`, `DeploymentProfile`, and `SecretReference` through Zod type inference.

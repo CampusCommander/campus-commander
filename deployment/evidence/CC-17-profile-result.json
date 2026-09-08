@@ -1,0 +1,114 @@
+{
+  "status": "passed",
+  "profile": "all-docker",
+  "sourceProject": "cc-fault-cc13",
+  "targetProject": "cc-restore-88da0a55-dd3",
+  "images": {
+    "frontend": "localhost:15000/campus-commander/frontend@sha256:0dec92e116af875e794a6c77f9f6d060bab7312503ecde9bd3dbd20b3e5adc37",
+    "api": "localhost:15000/campus-commander/api@sha256:3808d66d5ed973993f083bb3139429c9f9b9c446394f2f12503f31416e52993e",
+    "workers": "localhost:15000/campus-commander/worker@sha256:f5fe051fa54730425074319b6512c70f0a1e7f86a890594c89ca46bf4fc60f26"
+  },
+  "backupMilliseconds": 378,
+  "restoreMilliseconds": 358,
+  "encryptedFiles": 7,
+  "before": {
+    "migrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ],
+    "bootstrap": [
+      {
+        "id": 1,
+        "generation": "1",
+        "expires_at": "2026-09-08T06:52:14.801Z",
+        "revoked_at": null
+      }
+    ],
+    "artifact": {
+      "artifactId": "f6da72b2-49e9-4e72-9162-dca955114726",
+      "sizeBytes": 21,
+      "sha256": "23023db1291377d4a62e4c54984d4a5d59d69ba37283864d930826ed5127a2f1"
+    },
+    "kestra": {
+      "id": "cc11_external_worker",
+      "namespace": "campus.validation",
+      "revision": 1,
+      "markerSha256": "d5bb789977ee9743b5a12de17cb76aceaa09f6608b50e99473b972e71972a1c0"
+    }
+  },
+  "after": {
+    "migrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ],
+    "bootstrap": [
+      {
+        "id": 1,
+        "generation": "2",
+        "expires_at": "2026-09-08T07:07:09.365Z",
+        "revoked_at": null
+      }
+    ],
+    "artifact": {
+      "artifactId": "f6da72b2-49e9-4e72-9162-dca955114726",
+      "sizeBytes": 21,
+      "sha256": "23023db1291377d4a62e4c54984d4a5d59d69ba37283864d930826ed5127a2f1"
+    },
+    "kestra": {
+      "id": "cc11_external_worker",
+      "namespace": "campus.validation",
+      "revision": 1,
+      "markerSha256": "d5bb789977ee9743b5a12de17cb76aceaa09f6608b50e99473b972e71972a1c0"
+    }
+  },
+  "startup": {
+    "phase": 1,
+    "status": "ready",
+    "checks": [
+      {
+        "name": "application-database",
+        "status": "ready"
+      },
+      {
+        "name": "kestra-database",
+        "status": "ready"
+      },
+      {
+        "name": "redis",
+        "status": "ready"
+      },
+      {
+        "name": "frontend",
+        "status": "ready"
+      },
+      {
+        "name": "api",
+        "status": "ready"
+      },
+      {
+        "name": "workers",
+        "status": "ready"
+      },
+      {
+        "name": "artifacts",
+        "status": "ready"
+      },
+      {
+        "name": "kestra",
+        "status": "ready"
+      }
+    ]
+  },
+  "sourceRedisFixtureWritten": true,
+  "redisFixtureExists": 0,
+  "freshRedisTmpfs": true,
+  "sourceStopped": true,
+  "baseGitRevision": "556cee09ba72dee24f14787828b31af969c0ea0f",
+  "workingTree": "uncommitted-candidate",
+  "provenance": "Source snapshot image pins normalized from retained release. Base Git revision does not identify committed candidate code.",
+  "districtQualification": false
+}

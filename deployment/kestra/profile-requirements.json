@@ -1,0 +1,38 @@
+{
+  "all-docker": {
+    "process": "one standalone Compose container",
+    "database": "dedicated local PostgreSQL database and role",
+    "databaseTransport": "private container network",
+    "internalStorage": "persistent local volume mounted read-write at /app/storage",
+    "controlPlane": "internal HTTP with Basic Auth behind the HTTPS edge",
+    "workerPath": "Kestra calls the independent worker service on its internal endpoint"
+  },
+  "hybrid": {
+    "process": "one standalone Compose container",
+    "database": "dedicated district PostgreSQL database and role",
+    "databaseTransport": "verified TLS with district CA trust",
+    "internalStorage": "district shared filesystem mounted read-write at /app/storage",
+    "controlPlane": "internal HTTPS with Basic Auth",
+    "workerPath": "Kestra calls every independent worker endpoint through verified HTTPS"
+  },
+  "kubernetes": {
+    "process": "one standalone pod with one replica",
+    "database": "dedicated PostgreSQL database and role",
+    "databaseTransport": "verified TLS with Kubernetes Secret based CA trust",
+    "internalStorage": "ReadWriteMany persistent volume mounted read-write at /app/storage",
+    "controlPlane": "ClusterIP HTTPS service with Basic Auth",
+    "workerPath": "Kestra calls independent worker services through verified cluster HTTPS"
+  },
+  "shared": {
+    "image": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+    "repository": "postgres",
+    "queue": "postgres",
+    "internalStorageAdapter": "local",
+    "internalStoragePath": "/app/storage",
+    "authentication": "Basic Auth from the profile secret reference",
+    "telemetry": "server and UI anonymous usage disabled",
+    "managementPort": "internal only",
+    "replicas": 1,
+    "highAvailability": false
+  }
+}

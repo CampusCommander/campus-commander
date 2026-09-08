@@ -1,0 +1,67 @@
+{
+  "checkedAt": "2026-09-08T05:09:31Z",
+  "status": "PASS",
+  "image": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+  "startedAt": "2026-09-08T05:08:44Z",
+  "stoppedAt": "2026-09-08T05:08:56Z",
+  "startup": {
+    "version": "1.3.37",
+    "basicAuthInitialized": true,
+    "corePluginCount": 107,
+    "externalPluginCount": 0,
+    "processStartCount": 2,
+    "postgres18FlywayWarningCount": 2,
+    "schemaVersion157AfterRestartCount": 1,
+    "secretsRecorded": false
+  },
+  "credentialChecks": {
+    "unauthenticatedStatus": 401,
+    "wrongCredentialStatus": 401,
+    "authenticatedStatus": 200,
+    "flowUploadStatus": 200,
+    "restartAuthenticatedStatus": 200
+  },
+  "execution": {
+    "id": "jgJtMKnO2LSIgSlqGkHIM",
+    "stateBeforeStop": "RUNNING",
+    "finalState": "SUCCESS",
+    "stateHistory": [
+      {
+        "state": "CREATED",
+        "date": "2026-09-08T05:08:52.913728Z"
+      },
+      {
+        "state": "RUNNING",
+        "date": "2026-09-08T05:08:52.961114Z"
+      },
+      {
+        "state": "SUCCESS",
+        "date": "2026-09-08T05:09:31.114236Z"
+      }
+    ],
+    "taskRuns": [
+      {
+        "taskId": "remain_active_during_stop",
+        "attempts": 2,
+        "state": "SUCCESS"
+      },
+      {
+        "taskId": "prove_recovery",
+        "attempts": 1,
+        "state": "SUCCESS"
+      }
+    ]
+  },
+  "persistence": {
+    "databaseVolume": "cc5-21493-451945-postgres-data",
+    "storageVolume": "cc5-21493-451945-kestra-storage",
+    "sameVolumesAfterRestart": true
+  },
+  "limits": [
+    "Qualification uses a three-second termination grace period.",
+    "Production retains the five-minute default until shutdown timing qualification.",
+    "The check restarts one standalone process on one Docker host.",
+    "SUCCESS proves metadata recovery for one synthetic core-task execution.",
+    "The check does not establish exactly-once external effects or high availability."
+  ]
+}

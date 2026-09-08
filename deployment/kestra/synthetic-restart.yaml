@@ -1,0 +1,10 @@
+id: cc5_restart
+namespace: campus.qualification
+
+tasks:
+  - id: remain_active_during_stop
+    type: io.kestra.plugin.core.flow.Sleep
+    duration: PT20S
+  - id: prove_recovery
+    type: io.kestra.plugin.core.log.Log
+    message: 'CC-5 execution {{ execution.id }} recovered after process restart.'

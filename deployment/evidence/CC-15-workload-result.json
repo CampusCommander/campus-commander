@@ -1,0 +1,91 @@
+{
+  "scope": "synthetic-kind-shared-host-directory",
+  "qualifiesDistrictStorage": false,
+  "writerPod": "workers-6fd479686f-7fdzc",
+  "writerNode": "cc-workload-validation-worker2",
+  "readerPod": "workers-6fd479686f-89kn9",
+  "readerNode": "cc-workload-validation-worker",
+  "descriptor": {
+    "artifactId": "cccc4687-eb69-4010-a449-632b91142679",
+    "attemptId": "c02b59b0-88b1-4c27-b2d8-13c8f479cdb3",
+    "schemaVersion": 1,
+    "sizeBytes": 8388608,
+    "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd",
+    "writerHost": "workers-6fd479686f-7fdzc",
+    "writtenAt": "2026-09-08T06:32:56.680Z",
+    "operatorTwoHostAttestationRequired": true
+  },
+  "read": {
+    "artifactId": "cccc4687-eb69-4010-a449-632b91142679",
+    "attemptId": "c02b59b0-88b1-4c27-b2d8-13c8f479cdb3",
+    "schemaVersion": 1,
+    "sizeBytes": 8388608,
+    "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd",
+    "writerHost": "workers-6fd479686f-7fdzc",
+    "writtenAt": "2026-09-08T06:32:56.680Z",
+    "operatorTwoHostAttestationRequired": true,
+    "readerHost": "workers-6fd479686f-89kn9",
+    "readAt": "2026-09-08T06:32:57.290Z",
+    "integrity": "pass"
+  },
+  "rescheduledRead": {
+    "artifactId": "cccc4687-eb69-4010-a449-632b91142679",
+    "attemptId": "c02b59b0-88b1-4c27-b2d8-13c8f479cdb3",
+    "schemaVersion": 1,
+    "sizeBytes": 8388608,
+    "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd",
+    "writerHost": "workers-6fd479686f-7fdzc",
+    "writtenAt": "2026-09-08T06:32:56.680Z",
+    "operatorTwoHostAttestationRequired": true,
+    "readerHost": "workers-6fd479686f-qww72",
+    "readAt": "2026-09-08T06:33:56.585Z",
+    "integrity": "pass"
+  },
+  "replacementNode": "cc-workload-validation-control-plane",
+  "workloads": [
+    {
+      "name": "api",
+      "desired": 2,
+      "ready": 2
+    },
+    {
+      "name": "application-postgres",
+      "desired": 1,
+      "ready": 1
+    },
+    {
+      "name": "edge",
+      "desired": 1,
+      "ready": 1
+    },
+    {
+      "name": "frontend",
+      "desired": 1,
+      "ready": 1
+    },
+    {
+      "name": "kestra",
+      "desired": 1,
+      "ready": 1
+    },
+    {
+      "name": "kestra-postgres",
+      "desired": 1,
+      "ready": 1
+    },
+    {
+      "name": "redis",
+      "desired": 1,
+      "ready": 1
+    },
+    {
+      "name": "workers",
+      "desired": 2,
+      "ready": 2
+    }
+  ],
+  "testedAt": "2026-09-08T06:33:56.648Z",
+  "networkPolicyEnforced": false,
+  "loadBalancerQualified": false,
+  "sourceState": "uncommitted-implementation"
+}

@@ -5,6 +5,89 @@
   "projectType": "library",
   "tags": [],
   "targets": {
+    "installer-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node --test deployment/installer/*.test.mjs"
+      }
+    },
+    "kubernetes-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node --test deployment/kubernetes/*.test.mjs"
+      }
+    },
+    "kubernetes-render": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/kubernetes/cli.mjs"
+      }
+    },
+    "release-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test deployment/release/*.test.mjs"
+      }
+    },
+    "storage-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test deployment/storage/*.test.mjs"
+      }
+    },
+    "storage-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node deployment/storage/integration.mjs"
+      }
+    },
+    "bootstrap-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node --test deployment/bootstrap/*.test.mjs"
+      }
+    },
+    "redis-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node --test deployment/redis/*.test.mjs"
+      }
+    },
+    "postgres-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test deployment/postgres/*.test.mjs"
+      }
+    },
+    "postgres-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node deployment/postgres/integration.mjs"
+      }
+    },
+    "qualify-redis": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/redis/qualify.mjs"
+      }
+    },
     "build": {
       "executor": "nx:run-commands",
       "cache": true,
@@ -43,6 +126,102 @@
       "cache": true,
       "options": {
         "command": "tsc -p deployment/tsconfig.spec.json --noEmit"
+      }
+    },
+    "profiles-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node --test deployment/profiles/*/*.test.mjs"
+      }
+    },
+    "profiles-render": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/profiles/all-docker/render.mjs"
+      }
+    },
+    "operations-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node --test deployment/operations/*.test.mjs"
+      }
+    },
+    "operations-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/operations/integration.mjs"
+      }
+    },
+    "qualification-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node --test deployment/qualification/*.test.mjs"
+      }
+    },
+    "operations-profile-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/operations/profile-integration.mjs"
+      }
+    },
+    "qualification-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/qualification/cli.mjs"
+      }
+    },
+    "capacity-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/qualification/capacity-integration.mjs"
+      }
+    },
+    "installer-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/installer/integration.mjs"
+      }
+    },
+    "kubernetes-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/kubernetes/integration.mjs"
+      }
+    },
+    "hybrid-render": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/profiles/hybrid/render.mjs"
+      }
+    },
+    "hybrid-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/profiles/hybrid/integration.mjs"
       }
     }
   }

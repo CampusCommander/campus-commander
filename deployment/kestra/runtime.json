@@ -1,0 +1,33 @@
+{
+  "checkedAt": "2026-09-08",
+  "edition": "Open Source",
+  "license": "Apache-2.0",
+  "version": "1.3.37",
+  "image": {
+    "repository": "docker.io/kestra/kestra",
+    "tag": "v1.3.37-no-plugins",
+    "indexDigest": "sha256:a36e82403b6a6908bc96bfc6cdac10139ff0ba144235999bbe0264a8c45d05f9",
+    "platform": "linux/amd64",
+    "platformDigest": "sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+    "coreSha256": "2a715bab22f2f6986debef9971f2529eff7394765662d8bf1b4d81d89e175c26"
+  },
+  "plugins": {
+    "external": [],
+    "automaticInstallation": false,
+    "coreTasksVersion": "1.3.37",
+    "requiredCoreTasks": [
+      "io.kestra.plugin.core.flow.Sleep",
+      "io.kestra.plugin.core.http.Request",
+      "io.kestra.plugin.core.log.Log",
+      "io.kestra.plugin.core.storage.Write"
+    ]
+  },
+  "telemetry": {
+    "serverAnonymousUsage": false,
+    "uiAnonymousUsage": false
+  },
+  "availability": {
+    "kestraReplicas": 1,
+    "highAvailability": false
+  }
+}

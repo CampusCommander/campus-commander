@@ -1,0 +1,57 @@
+{
+  "checkedAt": "2026-09-08T06:49:07.889Z",
+  "status": "PASS",
+  "sourceState": "uncommitted workspace",
+  "nxTargetDurationSeconds": 21.6,
+  "images": {
+    "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+    "postgres": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "worker": "campus-commander/worker:cc-6",
+    "workerImageId": "sha256:ff996977c7e017c853baabcadc329614f51ea306d1480eecdf406f042429df39"
+  },
+  "preparation": {
+    "runtimeFiles": [
+      "application.yaml",
+      "database-ca.pem",
+      "flow-secrets.env",
+      "probe-header",
+      "runtime-environment.json",
+      "server-ca.pem",
+      "server.p12",
+      "worker-truststore.p12"
+    ],
+    "credentialStatuses": ["created", "created", "created"],
+    "jdbcMode": "verify-full"
+  },
+  "placement": {
+    "localKestra": true,
+    "localReplacementDatabase": false,
+    "localReplacementRedis": false,
+    "simulatedHosts": 1
+  },
+  "trust": {
+    "databaseTls": "verified private CA",
+    "kestraTls": "verified private CA",
+    "workerTls": "verified private CA",
+    "controlPlaneUnauthenticatedStatus": 401,
+    "workerAuthenticatedStatus": 200
+  },
+  "execution": {
+    "id": "akK8MPWNFl7Stu7h0ZNNg",
+    "correlationId": "hybrid-4287d9f8a3f89062",
+    "state": "SUCCESS",
+    "storageUriSha256": "775f1887b2c2801d28ebc96e639990957dadcf545a7dc187eba18dfc02b02e12"
+  },
+  "outage": {
+    "dependency": "district PostgreSQL",
+    "observed": true,
+    "recoverySeconds": 3,
+    "preservedExecutionState": true,
+    "preservedInternalStorage": true
+  },
+  "limits": [
+    "The check simulates district endpoints on one Docker host.",
+    "The check does not satisfy the distinct-host acceptance criterion.",
+    "The check uses synthetic certificates and a harmless worker task."
+  ]
+}

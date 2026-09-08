@@ -1,21 +1,57 @@
-/**
- * This is not a production server yet!
- * This is only a minimal backend to get started.
- */
-
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import 'pg';
+import 'zod';
 import { AppModule } from './app/app.module';
+import type {
+  StartupRuntime,
+  StartupRuntimeModule,
+} from './app/startup-runtime.contract';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  const globalPrefix = 'api';
-  app.setGlobalPrefix(globalPrefix);
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
+  const runtime = await createRuntime();
+  const certificatePath = process.env.TLS_CERT_FILE;
+  const keyPath = process.env.TLS_KEY_FILE;
+  if ((certificatePath || keyPath) && !(certificatePath && keyPath)) {
+    throw new Error(
+      'TLS certificate and key files must be configured together.',
+    );
+  }
+  const httpsOptions =
+    certificatePath && keyPath
+      ? {
+          cert: readFileSync(certificatePath),
+          key: readFileSync(keyPath),
+        }
+      : undefined;
+  const app = await NestFactory.create(
+    AppModule.register(runtime),
+    httpsOptions ? { httpsOptions } : undefined,
+  );
+  app.enableShutdownHooks(['SIGINT', 'SIGTERM']);
+  const port = Number(process.env.PORT ?? 3000);
+  await app.listen(port, '0.0.0.0');
   Logger.log(
-    `🚀 Application is running on: http://localhost:${port}/${globalPrefix}`,
+    `API listening with ${certificatePath ? 'HTTPS' : 'HTTP'} on port ${port}`,
   );
 }
 
-bootstrap();
+async function createRuntime(): Promise<StartupRuntime | undefined> {
+  const configPath = process.env.CC_CONFIG_FILE;
+  if (!configPath) return undefined;
+  const moduleUrl = pathToFileURL(
+    resolve(process.cwd(), 'deployment/bootstrap/api-runtime.mjs'),
+  ).href;
+  const runtimeModule = (await import(
+    /* webpackIgnore: true */ moduleUrl
+  )) as StartupRuntimeModule;
+  return runtimeModule.createStartupRuntime(configPath);
+}
+
+void bootstrap().catch(() => {
+  Logger.error('API startup failed');
+  process.exitCode = 1;
+});

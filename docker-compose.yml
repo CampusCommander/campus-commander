@@ -1,87 +1,689 @@
-services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: campus
-      POSTGRES_PASSWORD: commander
-      POSTGRES_DB: campus_commander
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U campus"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  kestra:
-    image: kestra/kestra:0.20.0
-    command: server standalone
-    environment:
-      - KESTEA_DATABASE_TYPE=postgres
-      - KESTEA_DATABASE_POSTGRESQL_HOST=postgres
-      - KESTEA_DATABASE_POSTGRESQL_PORT=5432
-      - KESTEA_DATABASE_POSTGRESQL_DATABASE=campus_commander
-      - KESTEA_DATABASE_POSTGRESQL_USERNAME=campus
-      - KESTEA_DATABASE_POSTGRESQL_PASSWORD=commander
-      - KESTEA_REDIS_HOST=redis
-      - KESTEA_REDIS_PORT=6379
-    volumes:
-      - kestra_data:/app/data
-      - ./libs/kestra/flows:/app/flows
-      - kestra_jobs:/jobs
-    ports:
-      - "8080:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-    environment:
-      - DATABASE_URL=postgresql://campus:commander@postgres:5432/campus_commander
-      - REDIS_URL=redis://redis:6379
-      - KESTRA_URL=http://kestra:8080
-      - GOOGLE_SERVICE_ACCOUNT_JSON=/secrets/service-account.json
-    volumes:
-      - kestra_jobs:/jobs
-      - ./secrets:/secrets:ro
-    ports:
-      - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kestra:
-        condition: service_started
-
-  frontend:
-    build:
-      context: .
-      dockerfile: apps/frontend/Dockerfile
-    ports:
-      - "4200:80"
-    depends_on:
-      - api
-
-volumes:
-  postgres_data:
-  redis_data:
-  kestra_data:
-  kestra_jobs:
+{
+  'name': 'campus-commander',
+  'services':
+    {
+      'volume-permissions':
+        {
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'user': '0:0',
+          'restart': 'no',
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '0.5', 'memory': '512M' },
+                  'reservations': { 'cpus': '0.1', 'memory': '128M' },
+                },
+            },
+          'command':
+            [
+              '/bin/sh',
+              '-c',
+              'mkdir -p /artifacts /kestra-storage /kestra-runtime /redis-runtime && chown -R 1000:1000 /artifacts /kestra-storage /kestra-runtime /redis-runtime && chmod 700 /artifacts /kestra-storage /kestra-runtime /redis-runtime',
+            ],
+          'cap_drop': ['ALL'],
+          'cap_add': ['CHOWN', 'DAC_OVERRIDE', 'FOWNER'],
+          'security_opt': ['no-new-privileges:true'],
+          'volumes':
+            [
+              'artifacts:/artifacts',
+              'kestra-storage:/kestra-storage',
+              'kestra-runtime:/kestra-runtime',
+              'redis-runtime:/redis-runtime',
+            ],
+          'networks': ['internal'],
+        },
+      'application-postgres':
+        {
+          'image': 'postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280',
+          'restart': 'unless-stopped',
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '1', 'memory': '1024M' },
+                  'reservations': { 'cpus': '0.25', 'memory': '512M' },
+                },
+            },
+          'shm_size': '256mb',
+          'environment':
+            {
+              'POSTGRES_PASSWORD_FILE': '/run/secrets/application-postgres-admin-password',
+            },
+          'secrets':
+            [
+              {
+                'source': 'application-postgres-admin-password',
+                'target': 'application-postgres-admin-password',
+              },
+            ],
+          'volumes': ['application-postgres:/var/lib/postgresql'],
+          'networks': ['internal'],
+          'healthcheck':
+            {
+              'test': ['CMD-SHELL', 'pg_isready -U postgres -d postgres'],
+              'interval': '10s',
+              'timeout': '3s',
+              'retries': 12,
+              'start_period': '10s',
+            },
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'cap_add': ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETGID', 'SETUID'],
+        },
+      'kestra-postgres':
+        {
+          'image': 'postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280',
+          'restart': 'unless-stopped',
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '1', 'memory': '1024M' },
+                  'reservations': { 'cpus': '0.25', 'memory': '512M' },
+                },
+            },
+          'shm_size': '256mb',
+          'environment':
+            {
+              'POSTGRES_PASSWORD_FILE': '/run/secrets/kestra-postgres-admin-password',
+            },
+          'secrets':
+            [
+              {
+                'source': 'kestra-postgres-admin-password',
+                'target': 'kestra-postgres-admin-password',
+              },
+            ],
+          'volumes': ['kestra-postgres:/var/lib/postgresql'],
+          'networks': ['internal'],
+          'healthcheck':
+            {
+              'test': ['CMD-SHELL', 'pg_isready -U postgres -d postgres'],
+              'interval': '10s',
+              'timeout': '3s',
+              'retries': 12,
+              'start_period': '10s',
+            },
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'cap_add': ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETGID', 'SETUID'],
+        },
+      'redis-config':
+        {
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'user': '1000:1000',
+          'restart': 'no',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '0.5', 'memory': '512M' },
+                  'reservations': { 'cpus': '0.1', 'memory': '128M' },
+                },
+            },
+          'command':
+            [
+              '/bin/sh',
+              '-c',
+              'rm -f /run/redis/redis.conf && exec node /app/deployment/redis/runtime.mjs /run/config/profile.json /run/redis/redis.conf',
+            ],
+          'depends_on':
+            {
+              'volume-permissions':
+                { 'condition': 'service_completed_successfully' },
+            },
+          'secrets':
+            [{ 'source': 'redis-password', 'target': 'redis-password' }],
+          'volumes':
+            [
+              {
+                'type': 'bind',
+                'source': './runtime/profile.json',
+                'target': '/run/config/profile.json',
+                'read_only': true,
+              },
+              'redis-runtime:/run/redis',
+            ],
+          'networks': ['internal'],
+        },
+      'redis':
+        {
+          'image': 'redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee',
+          'user': '1000:1000',
+          'restart': 'unless-stopped',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '0.5', 'memory': '512M' },
+                  'reservations': { 'cpus': '0.1', 'memory': '128M' },
+                },
+            },
+          'command': ['redis-server', '/run/redis/redis.conf'],
+          'depends_on':
+            {
+              'redis-config': { 'condition': 'service_completed_successfully' },
+            },
+          'volumes': ['redis-runtime:/run/redis:ro'],
+          'tmpfs': ['/data:uid=1000,gid=1000,mode=0700'],
+          'networks': ['internal'],
+          'healthcheck':
+            {
+              'test':
+                [
+                  'CMD-SHELL',
+                  'REDISCLI_AUTH="$$(cat /run/secrets/redis-password)" redis-cli --no-auth-warning ping | grep -qx PONG',
+                ],
+              'interval': '10s',
+              'timeout': '3s',
+              'retries': 12,
+              'start_period': '5s',
+            },
+          'secrets':
+            [{ 'source': 'redis-password', 'target': 'redis-password' }],
+        },
+      'database-provision':
+        {
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'restart': 'no',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '1', 'memory': '1024M' },
+                  'reservations': { 'cpus': '0.25', 'memory': '512M' },
+                },
+            },
+          'command':
+            [
+              'node',
+              '/app/deployment/postgres/cli.mjs',
+              'provision',
+              '/run/config/profile.json',
+              '/run/config/operator.json',
+            ],
+          'depends_on':
+            {
+              'application-postgres': { 'condition': 'service_healthy' },
+              'kestra-postgres': { 'condition': 'service_healthy' },
+            },
+          'secrets':
+            [
+              {
+                'source': 'campus-database-password',
+                'target': 'campus-database-password',
+              },
+              {
+                'source': 'kestra-database-password',
+                'target': 'kestra-database-password',
+              },
+              {
+                'source': 'application-postgres-admin-password',
+                'target': 'application-postgres-admin-password',
+              },
+              {
+                'source': 'kestra-postgres-admin-password',
+                'target': 'kestra-postgres-admin-password',
+              },
+              { 'source': 'postgres-migrator', 'target': 'postgres-migrator' },
+            ],
+          'volumes':
+            [
+              {
+                'type': 'bind',
+                'source': './runtime/profile.json',
+                'target': '/run/config/profile.json',
+                'read_only': true,
+              },
+              {
+                'type': 'bind',
+                'source': './runtime/operator.json',
+                'target': '/run/config/operator.json',
+                'read_only': true,
+              },
+            ],
+          'networks': ['internal'],
+        },
+      'database-migrate':
+        {
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'restart': 'no',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '0.5', 'memory': '512M' },
+                  'reservations': { 'cpus': '0.1', 'memory': '128M' },
+                },
+            },
+          'command':
+            [
+              'node',
+              '/app/deployment/postgres/cli.mjs',
+              'migrate',
+              '/run/config/profile.json',
+              '/run/config/operator.json',
+            ],
+          'depends_on':
+            {
+              'database-provision':
+                { 'condition': 'service_completed_successfully' },
+            },
+          'secrets':
+            [{ 'source': 'postgres-migrator', 'target': 'postgres-migrator' }],
+          'volumes':
+            [
+              {
+                'type': 'bind',
+                'source': './runtime/profile.json',
+                'target': '/run/config/profile.json',
+                'read_only': true,
+              },
+              {
+                'type': 'bind',
+                'source': './runtime/operator.json',
+                'target': '/run/config/operator.json',
+                'read_only': true,
+              },
+            ],
+          'networks': ['internal'],
+        },
+      'bootstrap-initialize':
+        {
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'restart': 'no',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '0.5', 'memory': '512M' },
+                  'reservations': { 'cpus': '0.1', 'memory': '128M' },
+                },
+            },
+          'command':
+            [
+              'node',
+              '/app/deployment/bootstrap/cli.mjs',
+              'initialize',
+              '/run/config/profile.json',
+            ],
+          'depends_on':
+            {
+              'database-migrate':
+                { 'condition': 'service_completed_successfully' },
+            },
+          'secrets':
+            [
+              {
+                'source': 'campus-database-password',
+                'target': 'campus-database-password',
+              },
+              { 'source': 'bootstrap', 'target': 'bootstrap' },
+            ],
+          'volumes':
+            [
+              {
+                'type': 'bind',
+                'source': './runtime/profile.json',
+                'target': '/run/config/profile.json',
+                'read_only': true,
+              },
+            ],
+          'networks': ['internal'],
+        },
+      'kestra-config':
+        {
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'restart': 'no',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '2', 'memory': '2048M' },
+                  'reservations': { 'cpus': '0.5', 'memory': '1024M' },
+                },
+            },
+          'command': ['node', '/app/deployment/kestra/render-config.mjs'],
+          'environment':
+            {
+              'CC_KESTRA_PROFILE': 'all-docker',
+              'CC_KESTRA_RUNTIME_DIR': '/run/kestra-runtime',
+              'CC_KESTRA_RUNTIME_MOUNT_PATH': '/run/kestra-runtime',
+              'CC_KESTRA_AUTH_FILE': '/run/secrets/kestra-auth',
+              'CC_KESTRA_DATABASE_PASSWORD_FILE': '/run/secrets/kestra-database-password',
+              'CC_KESTRA_DATABASE_URL': 'jdbc:postgresql://kestra-postgres:5432/kestra',
+              'CC_KESTRA_DATABASE_USERNAME': 'kestra-owner',
+              'CC_KESTRA_URL': 'http://kestra:8080',
+              'CC_KESTRA_STORAGE_PATH': '/app/storage',
+              'CC_KESTRA_WORKER_BASE_URL': 'http://workers:3001',
+              'CC_KESTRA_WORKER_DISPATCH_SECRET_FILE': '/run/secrets/worker-dispatch',
+            },
+          'depends_on':
+            {
+              'volume-permissions':
+                { 'condition': 'service_completed_successfully' },
+              'database-provision':
+                { 'condition': 'service_completed_successfully' },
+            },
+          'secrets':
+            [
+              { 'source': 'kestra-auth', 'target': 'kestra-auth' },
+              {
+                'source': 'kestra-database-password',
+                'target': 'kestra-database-password',
+              },
+              { 'source': 'worker-dispatch', 'target': 'worker-dispatch' },
+            ],
+          'volumes': ['kestra-runtime:/run/kestra-runtime'],
+          'networks': ['internal'],
+        },
+      'kestra':
+        {
+          'image': 'docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114',
+          'restart': 'unless-stopped',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '2', 'memory': '2048M' },
+                  'reservations': { 'cpus': '0.5', 'memory': '1024M' },
+                },
+            },
+          'entrypoint': ['/bin/sh', '-c'],
+          'command':
+            [
+              'set -a; . /run/kestra-runtime/flow-secrets.env; set +a; exec docker-entrypoint.sh server standalone --config /run/kestra-runtime/application.yaml',
+            ],
+          'depends_on':
+            {
+              'kestra-config':
+                { 'condition': 'service_completed_successfully' },
+              'kestra-postgres': { 'condition': 'service_healthy' },
+            },
+          'volumes':
+            [
+              'kestra-runtime:/run/kestra-runtime:ro',
+              'kestra-storage:/app/storage',
+            ],
+          'tmpfs': ['/tmp:uid=1000,gid=1000,mode=0700'],
+          'networks': ['internal'],
+          'healthcheck':
+            {
+              'test':
+                [
+                  'CMD-SHELL',
+                  'curl --fail --silent --header @/run/kestra-runtime/probe-header "http://localhost:8080/api/v1/main/flows/search?size=1" >/dev/null',
+                ],
+              'interval': '15s',
+              'timeout': '5s',
+              'retries': 20,
+              'start_period': '60s',
+            },
+        },
+      'frontend':
+        {
+          'image': 'ghcr.io/campuscommander/campus-commander-frontend@sha256:9ae5b788f8c21da072d1cf1b6cd506c0ed3abd1b5aab4d7e7110f97e144e5842',
+          'restart': 'unless-stopped',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '0.5', 'memory': '512M' },
+                  'reservations': { 'cpus': '0.1', 'memory': '128M' },
+                },
+            },
+          'networks': ['ingress', 'internal'],
+          'healthcheck':
+            {
+              'test':
+                [
+                  'CMD',
+                  'node',
+                  '-e',
+                  "fetch('http://127.0.0.1:8080/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+                ],
+              'interval': '10s',
+              'timeout': '3s',
+              'retries': 12,
+              'start_period': '10s',
+            },
+          'tmpfs': ['/tmp'],
+        },
+      'workers':
+        {
+          'image': 'ghcr.io/campuscommander/campus-commander-worker@sha256:ff996977c7e017c853baabcadc329614f51ea306d1480eecdf406f042429df39',
+          'restart': 'unless-stopped',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '0.5', 'memory': '512M' },
+                  'reservations': { 'cpus': '0.1', 'memory': '128M' },
+                },
+            },
+          'networks': ['internal'],
+          'healthcheck':
+            {
+              'test':
+                [
+                  'CMD',
+                  'node',
+                  '-e',
+                  "fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+                ],
+              'interval': '10s',
+              'timeout': '3s',
+              'retries': 12,
+              'start_period': '10s',
+            },
+          'tmpfs': ['/tmp'],
+          'environment':
+            {
+              'PORT': '3001',
+              'WORKER_DISPATCH_SECRET_FILE': '/run/secrets/worker-dispatch',
+              'CC_CONFIG_FILE': '/run/config/profile.json',
+            },
+          'secrets':
+            [
+              { 'source': 'worker-dispatch', 'target': 'worker-dispatch' },
+              {
+                'source': 'campus-database-password',
+                'target': 'campus-database-password',
+              },
+            ],
+          'volumes':
+            [
+              {
+                'type': 'bind',
+                'source': './runtime/profile.json',
+                'target': '/run/config/profile.json',
+                'read_only': true,
+              },
+              'artifacts:/var/lib/campus-commander/artifacts',
+            ],
+          'depends_on':
+            {
+              'database-migrate':
+                { 'condition': 'service_completed_successfully' },
+              'volume-permissions':
+                { 'condition': 'service_completed_successfully' },
+            },
+        },
+      'api':
+        {
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'restart': 'unless-stopped',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '0.5', 'memory': '512M' },
+                  'reservations': { 'cpus': '0.1', 'memory': '128M' },
+                },
+            },
+          'networks': ['ingress', 'internal'],
+          'healthcheck':
+            {
+              'test':
+                [
+                  'CMD',
+                  'node',
+                  '-e',
+                  "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+                ],
+              'interval': '10s',
+              'timeout': '3s',
+              'retries': 12,
+              'start_period': '10s',
+            },
+          'tmpfs': ['/tmp'],
+          'environment':
+            { 'PORT': '3000', 'CC_CONFIG_FILE': '/run/config/profile.json' },
+          'secrets':
+            [
+              {
+                'source': 'campus-database-password',
+                'target': 'campus-database-password',
+              },
+              {
+                'source': 'kestra-database-password',
+                'target': 'kestra-database-password',
+              },
+              { 'source': 'redis-password', 'target': 'redis-password' },
+              { 'source': 'kestra-auth', 'target': 'kestra-auth' },
+            ],
+          'volumes':
+            [
+              {
+                'type': 'bind',
+                'source': './runtime/profile.json',
+                'target': '/run/config/profile.json',
+                'read_only': true,
+              },
+              'artifacts:/var/lib/campus-commander/artifacts',
+            ],
+          'depends_on':
+            {
+              'database-migrate':
+                { 'condition': 'service_completed_successfully' },
+              'bootstrap-initialize':
+                { 'condition': 'service_completed_successfully' },
+              'redis': { 'condition': 'service_healthy' },
+              'kestra': { 'condition': 'service_healthy' },
+              'frontend': { 'condition': 'service_healthy' },
+              'workers': { 'condition': 'service_healthy' },
+            },
+        },
+      'edge':
+        {
+          'image': 'ghcr.io/campuscommander/campus-commander-api@sha256:034279d344e03fe1243e1f46b1d352ebece7a2cab60c49d826c9b926abf82e38',
+          'restart': 'unless-stopped',
+          'read_only': true,
+          'security_opt': ['no-new-privileges:true'],
+          'cap_drop': ['ALL'],
+          'deploy':
+            {
+              'resources':
+                {
+                  'limits': { 'cpus': '0.5', 'memory': '512M' },
+                  'reservations': { 'cpus': '0.1', 'memory': '128M' },
+                },
+            },
+          'networks': ['ingress'],
+          'ports': ['443:8443'],
+          'tmpfs': ['/tmp'],
+          'command': ['node', '/app/deployment/bootstrap/main.mjs'],
+          'environment':
+            { 'PORT': '8443', 'CC_CONFIG_FILE': '/run/config/profile.json' },
+          'secrets':
+            [
+              { 'source': 'bootstrap', 'target': 'bootstrap' },
+              { 'source': 'edge-certificate', 'target': 'edge-certificate' },
+              { 'source': 'edge-private-key', 'target': 'edge-private-key' },
+            ],
+          'volumes':
+            [
+              {
+                'type': 'bind',
+                'source': './runtime/profile.json',
+                'target': '/run/config/profile.json',
+                'read_only': true,
+              },
+            ],
+          'depends_on': { 'api': { 'condition': 'service_healthy' } },
+          'healthcheck':
+            {
+              'test':
+                [
+                  'CMD',
+                  'node',
+                  '-e',
+                  'const fs=require(''node:fs''),https=require(''node:https''),host="campus.example.org";https.get({hostname:''127.0.0.1'',port:8443,path:''/health'',servername:host,ca:fs.readFileSync(''/run/secrets/edge-certificate'')},r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on(''error'',()=>process.exit(1))',
+                ],
+              'interval': '10s',
+              'timeout': '3s',
+              'retries': 12,
+              'start_period': '10s',
+            },
+        },
+    },
+  'networks': { 'ingress': {}, 'internal': { 'internal': true } },
+  'volumes':
+    {
+      'application-postgres': {},
+      'kestra-postgres': {},
+      'artifacts': {},
+      'kestra-storage': {},
+      'kestra-runtime': {},
+      'redis-runtime': {},
+    },
+  'secrets':
+    {
+      'bootstrap': { 'file': './private/bootstrap' },
+      'worker-dispatch': { 'file': './private/worker-dispatch' },
+      'campus-database-password':
+        { 'file': './private/campus-database-password' },
+      'kestra-database-password':
+        { 'file': './private/kestra-database-password' },
+      'redis-password': { 'file': './private/redis-password' },
+      'kestra-auth': { 'file': './private/kestra-auth' },
+      'edge-certificate': { 'file': './private/edge-certificate' },
+      'edge-private-key': { 'file': './private/edge-private-key' },
+      'application-postgres-admin-password':
+        { 'file': './private/application-postgres-admin-password' },
+      'kestra-postgres-admin-password':
+        { 'file': './private/kestra-postgres-admin-password' },
+      'postgres-migrator': { 'file': './private/postgres-migrator' },
+    },
+}

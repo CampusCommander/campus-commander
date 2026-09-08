@@ -1,0 +1,31 @@
+datasources:
+  postgres:
+    url: '${CC_KESTRA_DATABASE_URL}'
+    driverClassName: org.postgresql.Driver
+    username: '${CC_KESTRA_DATABASE_USERNAME}'
+    password: '${CC_KESTRA_DATABASE_PASSWORD}'
+
+kestra:
+  server:
+    basic-auth:
+      username: '${CC_KESTRA_ADMIN_USERNAME}'
+      password: '${CC_KESTRA_ADMIN_PASSWORD}'
+    termination-grace-period: '${CC_KESTRA_TERMINATION_GRACE_PERIOD:5m}'
+  repository:
+    type: postgres
+  queue:
+    type: postgres
+  storage:
+    type: local
+    local:
+      base-path: /app/storage
+  tasks:
+    tmp-dir:
+      path: /tmp/kestra-wd/tmp
+  anonymous-usage-report:
+    enabled: false
+  ui-anonymous-usage-report:
+    enabled: false
+  tutorialFlows:
+    enabled: false
+  url: '${CC_KESTRA_URL}'

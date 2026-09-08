@@ -1,0 +1,14 @@
+**
+!package.json
+!package-lock.json
+!nx.json
+!tsconfig.base.json
+!eslint.config.mjs
+!worker/**
+!deployment/project.json
+!deployment/tsconfig.json
+!deployment/tsconfig.lib.json
+!deployment/src/**
+!deployment/postgres/**
+!deployment/redis/**
+!deployment/storage/**

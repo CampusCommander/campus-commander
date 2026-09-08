@@ -63,6 +63,13 @@
           "buildTarget": "api:build:production"
         }
       }
+    },
+    "image": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "docker build --platform linux/amd64 --provenance=false --build-arg SOURCE_DATE_EPOCH=0 --file deployment/images/api.Dockerfile --tag campus-commander/api:cc-6 ."
+      }
     }
   },
   "tags": []

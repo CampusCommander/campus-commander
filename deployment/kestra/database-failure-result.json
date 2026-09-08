@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-09-08T06:13:59Z",
+  "status": "PASS",
+  "image": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+  "datasource": {
+    "count": 1,
+    "database": "kestra",
+    "role": "kestra"
+  },
+  "failure": {
+    "startupExit": 124,
+    "boundedBySeconds": 20,
+    "harnessTermination": true,
+    "matchedReason": "PostgreSQL rejected the Kestra role password."
+  },
+  "secretsRecorded": false,
+  "limits": [
+    "The check validates one authentication failure path.",
+    "The check does not enumerate every PostgreSQL or storage startup failure."
+  ]
+}

@@ -1,0 +1,714 @@
+{
+  "schemaVersion": 1,
+  "profile": "all-docker",
+  "scope": "component-interruption-only",
+  "qualifiesProfile": false,
+  "status": "passed",
+  "records": [
+    {
+      "component": "api",
+      "status": "passed",
+      "elapsedMilliseconds": 9181,
+      "observed": {
+        "status": "unavailable",
+        "checks": []
+      },
+      "containers": [
+        {
+          "service": "api",
+          "state": "running",
+          "health": "starting"
+        },
+        {
+          "service": "application-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "edge",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "frontend",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "redis",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "workers",
+          "state": "running",
+          "health": "healthy"
+        }
+      ]
+    },
+    {
+      "component": "workers",
+      "status": "passed",
+      "elapsedMilliseconds": 11381,
+      "observed": {
+        "status": "not-ready",
+        "checks": [
+          {
+            "name": "process-started",
+            "status": "ready"
+          },
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "not-ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "ready"
+          }
+        ]
+      },
+      "containers": [
+        {
+          "service": "api",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "application-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "edge",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "frontend",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "redis",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "workers",
+          "state": "running",
+          "health": "starting"
+        }
+      ]
+    },
+    {
+      "component": "redis",
+      "status": "passed",
+      "elapsedMilliseconds": 9803,
+      "observed": {
+        "status": "not-ready",
+        "checks": [
+          {
+            "name": "process-started",
+            "status": "ready"
+          },
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "not-ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "ready"
+          }
+        ]
+      },
+      "containers": [
+        {
+          "service": "api",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "application-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "edge",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "frontend",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "redis",
+          "state": "running",
+          "health": "starting"
+        },
+        {
+          "service": "workers",
+          "state": "running",
+          "health": "healthy"
+        }
+      ]
+    },
+    {
+      "component": "application-database",
+      "status": "passed",
+      "elapsedMilliseconds": 7648,
+      "observed": {
+        "status": "unavailable",
+        "checks": [
+          {
+            "name": "process-started",
+            "status": "ready"
+          },
+          {
+            "name": "application-database",
+            "status": "not-ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "ready"
+          }
+        ]
+      },
+      "containers": [
+        {
+          "service": "api",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "application-postgres",
+          "state": "running",
+          "health": "starting"
+        },
+        {
+          "service": "edge",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "frontend",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "redis",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "workers",
+          "state": "running",
+          "health": "healthy"
+        }
+      ]
+    },
+    {
+      "component": "kestra-database",
+      "status": "passed",
+      "elapsedMilliseconds": 12178,
+      "observed": {
+        "status": "unavailable",
+        "checks": [
+          {
+            "name": "process-started",
+            "status": "ready"
+          },
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "not-ready"
+          },
+          {
+            "name": "redis",
+            "status": "not-ready"
+          },
+          {
+            "name": "frontend",
+            "status": "not-ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "not-ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "not-ready"
+          }
+        ]
+      },
+      "containers": [
+        {
+          "service": "api",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "application-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "edge",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "frontend",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra-postgres",
+          "state": "running",
+          "health": "starting"
+        },
+        {
+          "service": "redis",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "workers",
+          "state": "running",
+          "health": "healthy"
+        }
+      ]
+    },
+    {
+      "component": "kestra",
+      "status": "passed",
+      "elapsedMilliseconds": 15012,
+      "observed": {
+        "status": "not-ready",
+        "checks": [
+          {
+            "name": "process-started",
+            "status": "ready"
+          },
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "not-ready"
+          }
+        ]
+      },
+      "containers": [
+        {
+          "service": "api",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "application-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "edge",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "frontend",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "redis",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "workers",
+          "state": "running",
+          "health": "healthy"
+        }
+      ]
+    },
+    {
+      "component": "artifacts",
+      "status": "passed",
+      "elapsedMilliseconds": 1202,
+      "observed": {
+        "status": "not-ready",
+        "checks": [
+          {
+            "name": "process-started",
+            "status": "ready"
+          },
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "not-ready"
+          },
+          {
+            "name": "kestra",
+            "status": "ready"
+          }
+        ]
+      },
+      "containers": [
+        {
+          "service": "api",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "application-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "edge",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "frontend",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "kestra-postgres",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "redis",
+          "state": "running",
+          "health": "healthy"
+        },
+        {
+          "service": "workers",
+          "state": "running",
+          "health": "healthy"
+        }
+      ]
+    }
+  ],
+  "recordedAt": "2026-09-08T06:12:11.862Z",
+  "fixtures": {
+    "migrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ],
+    "bootstrap": [
+      {
+        "id": 1,
+        "generation": "1",
+        "expires_at": "2026-09-08T06:52:14.801Z",
+        "revoked_at": null
+      }
+    ],
+    "artifact": {
+      "artifactId": "f6da72b2-49e9-4e72-9162-dca955114726",
+      "sizeBytes": 21,
+      "sha256": "23023db1291377d4a62e4c54984d4a5d59d69ba37283864d930826ed5127a2f1"
+    },
+    "kestra": {
+      "id": "cc11_external_worker",
+      "namespace": "campus.validation",
+      "revision": 1,
+      "markerSha256": "d5bb789977ee9743b5a12de17cb76aceaa09f6608b50e99473b972e71972a1c0"
+    }
+  },
+  "fixtureChecks": 14,
+  "baseGitRevision": "556cee09ba72dee24f14787828b31af969c0ea0f",
+  "workingTree": "uncommitted-candidate",
+  "images": {
+    "frontend": "localhost:15000/campus-commander/frontend@sha256:b04173623f38f71f11fcab57d9fb7e98ef19ecca4bb9d593741e423c74b3cbf2",
+    "api": "localhost:15000/campus-commander/api@sha256:cdcf59da8b4a382ec2eb40de21e16184f17c4286189d23076004aa5bfc78c49c",
+    "workers": "localhost:15000/campus-commander/worker@sha256:783cadff46d82db53e52f8cde22672bcdac523b8d22cb75b72a155b503db6f65"
+  },
+  "resourceObservation": [
+    {
+      "BlockIO": "0B / 0B",
+      "CPUPerc": "0.01%",
+      "Container": "20cdc69963de3341a577598f0c49997127e9ec65af771bf53dfd0ec8c7e4b691",
+      "ID": "20cdc69963de",
+      "MemPerc": "4.80%",
+      "MemUsage": "24.55MiB / 512MiB",
+      "Name": "cc-fault-cc13-edge-1",
+      "NetIO": "68.5kB / 70.7kB",
+      "PIDs": "11"
+    },
+    {
+      "BlockIO": "0B / 164kB",
+      "CPUPerc": "0.00%",
+      "Container": "ceea1688dbb97035b2302c17aed361daded937b0efa4365d1e6238a9f4b60cb6",
+      "ID": "ceea1688dbb9",
+      "MemPerc": "7.29%",
+      "MemUsage": "37.32MiB / 512MiB",
+      "Name": "cc-fault-cc13-api-1",
+      "NetIO": "300kB / 201kB",
+      "PIDs": "11"
+    },
+    {
+      "BlockIO": "0B / 0B",
+      "CPUPerc": "0.01%",
+      "Container": "8656a00ca20db3cfd8a8f9cb4445cf76c25774ef78ada93a781e47d8ae487ced",
+      "ID": "8656a00ca20d",
+      "MemPerc": "2.98%",
+      "MemUsage": "15.27MiB / 512MiB",
+      "Name": "cc-fault-cc13-workers-1",
+      "NetIO": "18.2kB / 18kB",
+      "PIDs": "7"
+    },
+    {
+      "BlockIO": "0B / 0B",
+      "CPUPerc": "40.34%",
+      "Container": "3ce4a20de7b7ab976fa0aa0cddaee0450f3d8d6c1e87ae35a1f7151608dc23e0",
+      "ID": "3ce4a20de7b7",
+      "MemPerc": "21.49%",
+      "MemUsage": "440.1MiB / 2GiB",
+      "Name": "cc-fault-cc13-kestra-1",
+      "NetIO": "967kB / 1.35MB",
+      "PIDs": "62"
+    },
+    {
+      "BlockIO": "0B / 0B",
+      "CPUPerc": "0.24%",
+      "Container": "92b13c10a967dde7e2e3d0bb2eb2be35502c5c0d548e272324ed146786c02c98",
+      "ID": "92b13c10a967",
+      "MemPerc": "0.92%",
+      "MemUsage": "4.711MiB / 512MiB",
+      "Name": "cc-fault-cc13-redis-1",
+      "NetIO": "15.3kB / 7.84kB",
+      "PIDs": "6"
+    },
+    {
+      "BlockIO": "0B / 414kB",
+      "CPUPerc": "12.00%",
+      "Container": "88063cf28efd71e8485146eebb7ee561ee271aea475ee011ccfff852e627999b",
+      "ID": "88063cf28efd",
+      "MemPerc": "5.76%",
+      "MemUsage": "58.98MiB / 1GiB",
+      "Name": "cc-fault-cc13-kestra-postgres-1",
+      "NetIO": "1.47MB / 1.24MB",
+      "PIDs": "20"
+    },
+    {
+      "BlockIO": "0B / 442kB",
+      "CPUPerc": "0.03%",
+      "Container": "c0a617a79999fe83f740d71515d544888668e698dedc996ca22d18615b053bd6",
+      "ID": "c0a617a79999",
+      "MemPerc": "2.80%",
+      "MemUsage": "28.67MiB / 1GiB",
+      "Name": "cc-fault-cc13-application-postgres-1",
+      "NetIO": "38.3kB / 42.8kB",
+      "PIDs": "10"
+    },
+    {
+      "BlockIO": "0B / 0B",
+      "CPUPerc": "0.01%",
+      "Container": "a6b4c1c34dbfe0d1314fb2764548b28ae3187a99d22f105529e92888c37fd184",
+      "ID": "a6b4c1c34dbf",
+      "MemPerc": "3.65%",
+      "MemUsage": "18.69MiB / 512MiB",
+      "Name": "cc-fault-cc13-frontend-1",
+      "NetIO": "30.6kB / 103kB",
+      "PIDs": "11"
+    }
+  ]
+}
