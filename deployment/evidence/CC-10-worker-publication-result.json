@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-09-09T17:15:08.643998+00:00",
+  "issue": "CC-10",
+  "status": "passed",
+  "operation": "Worker A publishes through the artifact adapter. Worker B reads through the artifact adapter.",
+  "artifact": {
+    "schemaVersion": 1,
+    "sizeBytes": 44,
+    "sha256": "58e6e91fc90e2fb7b791424e2dca391350c12b292df7210864a6f8e86c491ab7"
+  },
+  "identityAndDatabaseRecordsMatch": true,
+  "workerCount": 2,
+  "distinctDockerDaemons": true,
+  "runtimeUsersNonRoot": true,
+  "images": {
+    "worker": [
+      "ghcr.io/campuscommander/campus-commander-worker@sha256:50a1f86f3471ef5dd096a167c4e3427a8757962ff3917e0bb932aa80e94ea7ec"
+    ]
+  },
+  "backend": "Shared POSIX artifact directory on one physical Docker host",
+  "limitations": [
+    "Distinct Docker hosts and daemons share one physical host",
+    "No NFS or network-filesystem qualification",
+    "No physical failure-domain independence",
+    "This result covers worker-origin publication and cross-host read only"
+  ],
+  "cleanup": {
+    "temporaryContainerCountRemoved": 4,
+    "dataVolumesPreserved": true,
+    "unrelatedWorkloadsPreserved": true
+  }
+}

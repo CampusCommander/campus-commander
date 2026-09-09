@@ -1,6 +1,9 @@
 # Two-host shared-storage qualification
 
-Status: **not-run**. No district hosts or shared mount were supplied.
+Synthetic worker-host qualification passed on 2026-09-09.
+Worker A published through the artifact adapter. Worker B read matching bytes through a separate Docker daemon.
+See the [CC-10 evidence](../evidence/CC-10.md) for the result and topology limits.
+District filesystem qualification remains separate from this synthetic result.
 This procedure produces synthetic evidence without copying artifacts between hosts.
 
 ## Prerequisites
@@ -67,7 +70,7 @@ Do not disrupt an existing installation.
 10. Repeat interrupted-write and metadata-rollback tests against the actual shared mount before release acceptance.
 
 The repository integration suite supplies local fault evidence for the same adapter code.
-Steps against the actual shared mount require district infrastructure and remain pending.
+Steps against a district shared mount require district infrastructure and remain pending.
 
 After recording acceptance evidence:
 

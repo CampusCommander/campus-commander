@@ -32,7 +32,7 @@ The [acceptance matrix](../../deployment/implementation-status.md) records compl
 Hosted installation and resume passed across all three profiles.
 Those results do not establish every lifecycle, network, fault, or human acceptance gate.
 
-CC-10 needs publication from worker host A and readback from worker host B.
+CC-10 passed worker-host publication and cross-host readback after the initial review.
 CC-15 needs allowed and denied connection checks with an enforcing Kubernetes network plugin.
 CC-16 needs complete hybrid and Kubernetes lifecycle and backup-gated upgrade evidence.
 CC-18 needs the remaining hybrid and Kubernetes storage and certificate fault cells.
