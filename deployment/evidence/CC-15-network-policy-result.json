@@ -2,6 +2,8 @@
   "schemaVersion": 1,
   "ticket": "CC-15",
   "status": "passed",
+  "checkedAt": "2026-09-09T18:17:14.296Z",
+  "durationMs": 47048,
   "scope": "synthetic-kind-enforcing-network-policy",
   "testedReleaseSourceRevision": "3e6a6a67a2c3d29dda9546d7141bc58d3127bc84",
   "images": {
@@ -24,7 +26,8 @@
     "deploymentCount": 8,
     "allDeploymentsReady": true,
     "dnsAllowedForEveryProbe": true,
-    "allowedPathsPassed": 17,
+    "allowedServicePathsPassed": 11,
+    "dnsPathsPassed": 6,
     "deniedPathsPassed": 12
   },
   "networkChecks": [

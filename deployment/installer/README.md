@@ -62,7 +62,13 @@ The private installation directory contains atomic `installer-state.json` and a 
 State records configuration, release, ownership, and generated manifest hashes. It contains no secret values.
 Generated primary and worker manifests include an owned volume or PVC inventory.
 Lifecycle commands reject changed manifests before invoking Docker or Kubernetes.
+Kubernetes upgrades retain verified manifest history for resources with release-specific names.
+Uninstall removes both current and retired installer resources. It preserves the namespace, claims, and external Secrets.
+Erase removes the recorded installer-owned claims after workloads stop.
+Preserve `kubernetes-history-*.json` with installer state until the installation is retired.
+History cannot recover manifests overwritten by older installers. Previously orphaned resources require a separate ownership review before removal.
 Pending hashes preserve interrupted rendering without accepting unverified changes.
+Resume interrupted Kubernetes rendering before stopping, uninstalling, or erasing an installation with an uncommitted manifest.
 Resume requires identical inputs and preserves existing credential files.
 A failed command retains state for diagnosis and resume. It does not delete service data.
 Remove a stale lock only after confirming that its installer process stopped.
@@ -171,3 +177,48 @@ The fixture adds LF/CRLF delimiters to application, Kestra database, and migrati
 It reruns provisioning and migration, recreates dependent processes, and requires all eight checks to recover.
 Local database administrator files remain exact bytes without line endings.
 Use images that contain the shared PostgreSQL secret parser for this check.
+
+## Prepared hybrid and Kubernetes lifecycle fixtures
+
+These targets operate only on disposable qualification fixtures. They do not create customer acceptance records.
+Prepare two verified releases with different application image inventories before execution.
+Keep the fixture credentials, descriptors, snapshots, and raw results in a private directory outside Git.
+
+The hybrid runner requires a prepared controller and two worker hosts.
+Its fixture descriptor identifies the hosts, installation directory, verified releases, and private backup and probe procedures.
+The runner invokes the installer CLI and performs the required worker actions on each host.
+
+```sh
+CC_HYBRID_LIFECYCLE_FIXTURE=/absolute/private/descriptor.json \
+npm exec nx run deployment:hybrid-lifecycle-integration
+```
+
+The Kubernetes runner requires a ready `cc-closeout-kube` fixture and a matching isolated context.
+Its installation directory must reside under `/tmp/cc-closeout-kube*/install`.
+Keep the fixture edge port-forward available throughout stop, resume, and upgrade.
+
+The private JSON descriptor contains these fields:
+
+| Field               | Required value                                          |
+| ------------------- | ------------------------------------------------------- |
+| `qualificationOnly` | `true`                                                  |
+| `operatorPath`      | Prepared installer operator file                        |
+| `kubeconfig`        | Isolated cluster configuration file                     |
+| `releaseBRoot`      | Verified replacement release directory                  |
+| `artifactSnapshot`  | Private artifact snapshot destination                   |
+| `kestraSnapshot`    | Private Kestra snapshot destination                     |
+| `snapshotCommand`   | Trusted local fixture command and arguments as an array |
+| `reportPath`        | New private result file                                 |
+
+The snapshot command runs after API, workers, and Kestra stop.
+It copies the fixture storage bytes into the two snapshot directories.
+Database certificates must include `localhost` for verified backup connections through private port-forwards.
+
+```sh
+npm exec nx run deployment:kubernetes-lifecycle-integration --args="/absolute/private/descriptor.json"
+```
+
+The runners verify fixture preservation after stop, resume, uninstall, and a backup-gated image change.
+The final erase removes installer-owned resources and checks external resource preservation.
+The fixture owner removes the disposable hosts or cluster after recording the results.
+An interrupted runner preserves its failed fixture for diagnosis.

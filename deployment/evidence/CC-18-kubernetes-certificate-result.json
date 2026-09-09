@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "ticket": "CC-18",
+  "status": "passed",
+  "checkedAt": "2026-09-09T18:15:17.194Z",
+  "durationMs": 64998,
+  "scope": "kubernetes-edge-certificate-faults",
+  "qualifiesProfile": false,
+  "execution": {
+    "helperKind": "private-fixture",
+    "helperSha256": "d82ef0cea3e5e3838b3b0900f175dcfb261f2f93ea26530c876fb824644890d3",
+    "privateResultSha256": "f58cd3c39f7d478c80a222de6c5cc79e90361ec1c2bd92ef0e4167eb3b5ff66e"
+  },
+  "testedReleaseSourceRevision": "3e6a6a67a2c3d29dda9546d7141bc58d3127bc84",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:bd3a6b3226e2c6592d27487db2c42e93728ba37ea163cd81aaf1edbe64e8d113",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:d2f47641f21f4f4db1a683a3379d4601fc542c24a0085880bd77e9670094c344",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:50a1f86f3471ef5dd096a167c4e3427a8757962ff3917e0bb932aa80e94ea7ec"
+  },
+  "platform": {
+    "kubernetesVersion": "v1.35.8",
+    "controlPlaneNodeCount": 1,
+    "workerNodeCount": 2,
+    "deploymentCount": 8
+  },
+  "assertions": {
+    "baselineReadyChecks": 8,
+    "matchingKeyTlsAccepted": true,
+    "faultsPassed": 2,
+    "durableProbeCalls": 5,
+    "durableComparisonsPassed": 4,
+    "originalSecretBytesRestored": true,
+    "finalReadyChecks": 8
+  },
+  "durableFixtures": {
+    "artifact": {
+      "sizeBytes": 54,
+      "sha256": "eb16d8ec0cc7df837ad135c9c427d86b06a5dd5bbc8e6d537843d82152724001",
+      "publicationState": "ready"
+    },
+    "kestra": {
+      "revision": 1,
+      "markerSha256": "32dbf72e635dd33142bbe6d288329290e107fdd67cef92ac86e82e9cd79c1217"
+    }
+  },
+  "records": [
+    {
+      "fault": "expired",
+      "expected": "CERT_HAS_EXPIRED",
+      "observed": "CERT_HAS_EXPIRED",
+      "recovery": "ready",
+      "durableFixtureSha256": "2d39495ee72b63fef6fbda3144bfff2e71aaa6f5df532fa53d9efb6f5fe30964",
+      "elapsedMilliseconds": 16961
+    },
+    {
+      "fault": "wrong-host",
+      "expected": "ERR_TLS_CERT_ALTNAME_INVALID",
+      "observed": "ERR_TLS_CERT_ALTNAME_INVALID",
+      "recovery": "ready",
+      "durableFixtureSha256": "2d39495ee72b63fef6fbda3144bfff2e71aaa6f5df532fa53d9efb6f5fe30964",
+      "elapsedMilliseconds": 17140
+    }
+  ],
+  "boundaries": [
+    "The fixture runs on one Docker host.",
+    "The result qualifies the Kubernetes certificate cell only.",
+    "The near-full Kubernetes storage cell remains separate.",
+    "The recorded run used the private helper identified by execution.helperSha256.",
+    "The parameterized repository helper preserves this procedure for future runs and did not generate this result."
+  ]
+}

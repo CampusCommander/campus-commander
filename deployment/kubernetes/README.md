@@ -133,6 +133,34 @@ No HTTP Ingress controller or TLS verification bypass is required.
 Internal Services remain ClusterIP services.
 Network policies allow only declared component paths and DNS.
 Kestra management port 8081 has no Service or ingress policy.
+
+## Isolated network qualification
+
+The `kubernetes-network-integration` target checks the prepared three-node closeout fixture with Calico enforcement.
+It uses existing workload pods for trusted service connections.
+It creates one temporary untrusted probe outside the ready Service endpoints and removes that probe after testing.
+The checks cover 11 allowed service paths, six DNS paths, and 12 denied paths.
+
+Create a private JSON descriptor with these fields:
+
+| Field               | Value                                    |
+| ------------------- | ---------------------------------------- |
+| `qualificationOnly` | `true`                                   |
+| `kubeconfig`        | Isolated cluster configuration file      |
+| `context`           | Matching `kind-cc-closeout-kube` context |
+| `namespace`         | Matching `cc-closeout-kube` namespace    |
+| `operatorPath`      | Prepared installer operator file         |
+| `detailPath`        | New private detailed result file         |
+| `resultPath`        | New private aggregate result file        |
+
+Keep all fixture paths under the private `/tmp/cc-closeout-kube` directory.
+Run the target only when all eight Deployments report ready replicas.
+
+```sh
+npm exec -- nx run deployment:kubernetes-network-integration --args="/absolute/private/descriptor.json"
+```
+
+The result qualifies the synthetic network fixture. It does not qualify a district CNI or external firewall.
 Node HTTPS probes connect to loopback while verifying the configured hostname and CA.
 PostgreSQL probes use `sslmode=verify-full`. Kestra probes verify HTTPS and authentication.
 TCP liveness probes test process reachability for stateful services. They do not establish dependency readiness.
@@ -205,3 +233,42 @@ The executed fixture reached eight ready Deployments and preserved an artifact a
 It records exact source and target mappings in `CC-17-kubernetes-result.json`.
 See [CC-15 evidence](../evidence/CC-15.md) for the exact qualification boundary.
 The [Kind local registry procedure](https://kind.sigs.k8s.io/docs/user/local-registry/) defines the containerd registry connection.
+
+## Isolated certificate fault qualification
+
+`certificate-integration.mjs` tests expired and wrong-host edge certificates in a disposable Kubernetes fixture.
+It first installs a matching test CA, certificate, and private key.
+An in-pod HTTPS request proves that the matching key pair serves TLS.
+Each invalid certificate must produce its exact Node.js TLS rejection code.
+
+The helper restarts only the fixture edge pod.
+It verifies eight ready checks after each recovery.
+It also compares prepared database, artifact, and Kestra fixture metadata after every recovery.
+Final cleanup restores the original CA, certificate, and private key byte-for-byte.
+The helper stores the original trust material in a private recovery directory before mutation.
+It removes that directory only after successful restoration.
+It prints the retained recovery path when restoration fails.
+
+Create a private JSON descriptor with these fields:
+
+| Field               | Value                                    |
+| ------------------- | ---------------------------------------- |
+| `qualificationOnly` | `true`                                   |
+| `operatorPath`      | Prepared installer operator file         |
+| `kubeconfig`        | Isolated cluster configuration file      |
+| `connectAddress`    | `127.0.0.1`                              |
+| `durableProbePath`  | Private JavaScript durable-fixture probe |
+| `resultPath`        | New private result file                  |
+
+Keep every descriptor path under the fixture root.
+Keep a reconnecting loopback edge port forward active throughout the run.
+Run the helper from the repository root:
+
+```sh
+node deployment/kubernetes/certificate-integration.mjs /absolute/private/descriptor.json
+```
+
+The durable probe must return stable artifact metadata and Kestra marker checksums.
+The helper rejects an artifact row unless its publication state equals `ready`.
+Review and sanitize the private result before publishing evidence.
+The recorded fixture result covers the Kubernetes certificate fault cell only.

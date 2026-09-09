@@ -1,0 +1,360 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-09-09T18:07:33.411Z",
+  "durationSeconds": 111.9,
+  "status": "PASS",
+  "sourceState": "uncommitted workspace",
+  "baseGitRevision": "d47efdb69e4225f4333fcc3cc859b0eef9e5b47d",
+  "releaseSourceRevision": "e940f20ab7d56b17c096e129368c9819d012f994",
+  "postRunEnvironment": {
+    "observedAt": "2026-09-09T18:13:52Z",
+    "relationship": "Read-only version observation from the same Docker daemon after the run. The matrix did not record these versions.",
+    "dockerEngine": "29.7.2",
+    "dockerCompose": "5.5.0"
+  },
+  "acceptedRelease": false,
+  "qualifiesProfile": false,
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ed60da2ecb278fc9def24eddce8a6d9f09af74eed6c4c168bf7102f660c4f865",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+    "worker": "ghcr.io/campuscommander/campus-commander-worker@sha256:8cf2cc43342be8df114c41efd0d98b855c103251dff23c268d8044b43ceb17f3",
+    "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+    "postgres": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "redis": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee"
+  },
+  "topology": {
+    "profile": "hybrid",
+    "componentCount": 8,
+    "components": [
+      "frontend",
+      "api",
+      "kestra",
+      "edge",
+      "worker-1",
+      "worker-2",
+      "postgresql",
+      "redis"
+    ],
+    "workerInstances": 2,
+    "artifactVolumeType": "tmpfs",
+    "artifactVolumeCapacityBytes": 16777216,
+    "artifactConsumers": [
+      "controller-api",
+      "controller-storage-preflight",
+      "worker-1",
+      "worker-1-storage-preflight",
+      "worker-2",
+      "worker-2-storage-preflight"
+    ]
+  },
+  "startup": {
+    "status": "ready",
+    "checks": [
+      {
+        "name": "process-started",
+        "status": "ready"
+      },
+      {
+        "name": "application-database",
+        "status": "ready"
+      },
+      {
+        "name": "kestra-database",
+        "status": "ready"
+      },
+      {
+        "name": "redis",
+        "status": "ready"
+      },
+      {
+        "name": "frontend",
+        "status": "ready"
+      },
+      {
+        "name": "api",
+        "status": "ready"
+      },
+      {
+        "name": "workers",
+        "status": "ready"
+      },
+      {
+        "name": "artifacts",
+        "status": "ready"
+      },
+      {
+        "name": "kestra",
+        "status": "ready"
+      }
+    ]
+  },
+  "render": {
+    "controllerCompose": true,
+    "workerComposeFiles": 2,
+    "composeConfigAccepted": true,
+    "localReplacementPostgres": false,
+    "localReplacementRedis": false,
+    "productionPublishedServices": ["edge"],
+    "fixturePublishedServices": ["edge", "api", "kestra"]
+  },
+  "preparation": {
+    "runtimeFiles": [
+      "application.yaml",
+      "database-ca.pem",
+      "flow-secrets.env",
+      "probe-header",
+      "runtime-environment.json",
+      "server-ca.pem",
+      "server.p12",
+      "worker-truststore.p12"
+    ],
+    "credentialStatuses": ["created", "created", "created"],
+    "jdbcMode": "verify-full"
+  },
+  "trust": {
+    "privateCa": true,
+    "edgeUnauthenticatedStatus": 401,
+    "edgeAuthorizedStatus": 200,
+    "kestraUnauthenticatedStatus": 401
+  },
+  "faultCells": [
+    {
+      "cell": "artifact-access-loss",
+      "status": "passed",
+      "observed": [
+        {
+          "name": "artifacts",
+          "status": "not-ready"
+        }
+      ],
+      "elapsedMilliseconds": 883,
+      "recoveryMilliseconds": 708,
+      "originalFixturesPreserved": true
+    },
+    {
+      "cell": "artifact-capacity",
+      "status": "passed",
+      "filesystem": {
+        "filesystemType": 16914836,
+        "totalBytes": 16777216,
+        "writtenBytes": 16769024,
+        "availableBytesBefore": 16769024,
+        "availableBytesAfter": 0
+      },
+      "observed": [
+        {
+          "name": "artifacts",
+          "status": "not-ready"
+        }
+      ],
+      "publicationRejected": true,
+      "failedAttemptRemoved": true,
+      "elapsedMilliseconds": 1588,
+      "recoveryMilliseconds": 1078,
+      "originalFixturesPreserved": true
+    },
+    {
+      "cell": "database-certificate-rejection",
+      "status": "passed",
+      "fault": "valid private-CA certificate with the wrong server name",
+      "serviceProof": {
+        "injectedCertificateServed": true,
+        "districtHostnameRejected": true,
+        "rejectionCode": "ERR_TLS_CERT_ALTNAME_INVALID"
+      },
+      "observed": [
+        {
+          "name": "application-database",
+          "status": "not-ready"
+        },
+        {
+          "name": "kestra-database",
+          "status": "not-ready"
+        }
+      ],
+      "elapsedMilliseconds": 7995,
+      "recoveryMilliseconds": 3401,
+      "originalFixturesPreserved": true
+    }
+  ],
+  "processFaults": [
+    {
+      "component": "api",
+      "status": "passed",
+      "stoppedInstances": 1,
+      "elapsedMilliseconds": 6202,
+      "recoveryMilliseconds": 1667,
+      "recoveryBoundSeconds": 120,
+      "observedStatus": "unavailable",
+      "observedChecks": [],
+      "fixturesPreserved": true
+    },
+    {
+      "component": "workers",
+      "status": "passed",
+      "stoppedInstances": 2,
+      "elapsedMilliseconds": 7779,
+      "recoveryMilliseconds": 617,
+      "recoveryBoundSeconds": 120,
+      "observedStatus": "not-ready",
+      "observedChecks": [
+        {
+          "name": "workers",
+          "status": "not-ready"
+        }
+      ],
+      "fixturesPreserved": true
+    },
+    {
+      "component": "kestra",
+      "status": "passed",
+      "stoppedInstances": 1,
+      "elapsedMilliseconds": 14188,
+      "recoveryMilliseconds": 6388,
+      "recoveryBoundSeconds": 120,
+      "observedStatus": "not-ready",
+      "observedChecks": [
+        {
+          "name": "kestra",
+          "status": "not-ready"
+        }
+      ],
+      "fixturesPreserved": true
+    },
+    {
+      "component": "redis",
+      "status": "passed",
+      "stoppedInstances": 1,
+      "elapsedMilliseconds": 8486,
+      "recoveryMilliseconds": 1808,
+      "recoveryBoundSeconds": 120,
+      "observedStatus": "not-ready",
+      "observedChecks": [
+        {
+          "name": "redis",
+          "status": "not-ready"
+        }
+      ],
+      "fixturesPreserved": true
+    },
+    {
+      "component": "postgresql",
+      "status": "passed",
+      "stoppedInstances": 1,
+      "elapsedMilliseconds": 8195,
+      "recoveryMilliseconds": 1892,
+      "recoveryBoundSeconds": 120,
+      "observedStatus": "unavailable",
+      "observedChecks": [
+        {
+          "name": "application-database",
+          "status": "not-ready"
+        },
+        {
+          "name": "kestra-database",
+          "status": "not-ready"
+        }
+      ],
+      "fixturesPreserved": true
+    }
+  ],
+  "fixtureChecksums": {
+    "databaseArtifactSha256": "2c076651b96c1a1320a42a547164b5e00425bf0c8f4b4dcdee8500a68b0611c2",
+    "migrationLedgerSha256": "0cffa526898a6416312423cbadb4ee9555fb8cf47588762a68d9036acbfef70c",
+    "artifactMetadataSha256": "680983121ef8ebb75bd015ddf51f5cd8f89b77b577c04f09c26edfd7d963cfb2",
+    "readyArtifactRows": 1,
+    "executionSha256": "e8889d7f3cb1cab82ab04a756d1d4294d2cde65fb174e39b0905f1ef1dabcec0",
+    "kestraFileSha256": [
+      "5d83773ed6cef88d49b303b5e48100228d0d7521888523c22700a067290cd1da"
+    ],
+    "sharedArtifactSha256": "86053d258045e94db49905a4d09f5a94d9e9582e4f8235800c9769da1d633f21",
+    "executionStorageUriSha256": "d3f8fac0fb27b16e93af5524d1fd436735d93f722d34e20ee22e1e1fcfa1b245"
+  },
+  "persistence": {
+    "workerChecksumsMatch": true,
+    "executionPreserved": true,
+    "internalStoragePreserved": true
+  },
+  "dependencyOutages": {
+    "redis": {
+      "observed": true,
+      "recoverySeconds": 2
+    },
+    "postgres": {
+      "observed": true,
+      "recoverySeconds": 3
+    },
+    "finalReadiness": "ready"
+  },
+  "resourceMeasurements": [
+    {
+      "component": "frontend",
+      "cpu": "0.00%",
+      "memory": "18.99MiB / 512MiB",
+      "memoryPercent": "3.71%",
+      "pids": "11"
+    },
+    {
+      "component": "api",
+      "cpu": "0.00%",
+      "memory": "41.97MiB / 512MiB",
+      "memoryPercent": "8.20%",
+      "pids": "11"
+    },
+    {
+      "component": "kestra",
+      "cpu": "6.28%",
+      "memory": "488.8MiB / 2GiB",
+      "memoryPercent": "23.87%",
+      "pids": "63"
+    },
+    {
+      "component": "edge",
+      "cpu": "0.01%",
+      "memory": "25.04MiB / 512MiB",
+      "memoryPercent": "4.89%",
+      "pids": "11"
+    },
+    {
+      "component": "worker-1",
+      "cpu": "9.49%",
+      "memory": "15.41MiB / 512MiB",
+      "memoryPercent": "3.01%",
+      "pids": "7"
+    },
+    {
+      "component": "worker-2",
+      "cpu": "7.88%",
+      "memory": "30.79MiB / 512MiB",
+      "memoryPercent": "6.01%",
+      "pids": "14"
+    },
+    {
+      "component": "postgresql",
+      "cpu": "0.63%",
+      "memory": "52.78MiB / 31.34GiB",
+      "memoryPercent": "0.16%",
+      "pids": "21"
+    },
+    {
+      "component": "redis",
+      "cpu": "0.22%",
+      "memory": "4.668MiB / 31.34GiB",
+      "memoryPercent": "0.01%",
+      "pids": "6"
+    }
+  ],
+  "cleanup": {
+    "retainedForRestore": false,
+    "composeVolumesRemoved": true,
+    "ownedResourcesRemoved": true,
+    "oldCampusCommanderVolumesTouched": false
+  },
+  "limits": [
+    "All eight component containers ran on one Docker host.",
+    "The two worker Compose projects simulate separate worker hosts.",
+    "The shared artifact filesystem uses one bounded tmpfs volume on one Docker host.",
+    "The check does not qualify district DNS, firewall, or storage infrastructure.",
+    "The check uses synthetic certificates and a harmless worker task."
+  ]
+}
