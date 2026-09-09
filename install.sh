@@ -11,7 +11,7 @@ main() {
   cc_profile=
   cc_root=
   cc_answers=
-  cc_command=install
+  cc_command=
   cc_qualification=no
   cc_accept_license=no
   cc_dependencies=ask
@@ -72,7 +72,7 @@ HELP
   done
   [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || cc_fail 'Use a Linux amd64 installation host.'
   case "$cc_profile" in ''|all-docker|hybrid|kubernetes) ;; *) cc_fail 'Select all-docker, hybrid, or kubernetes.' ;; esac
-  case "$cc_command" in install|resume|status) ;; *) cc_fail 'Select install, resume, or status.' ;; esac
+  case "$cc_command" in ''|install|resume|status) ;; *) cc_fail 'Select install, resume, or status.' ;; esac
   if [ -n "$cc_release" ]; then
     printf '%s\n' "$cc_release" | LC_ALL=C grep -Eq '^phase-1-candidate-[a-f0-9]{12}$' || cc_fail 'Use a complete immutable candidate tag.'
   fi
@@ -126,6 +126,31 @@ HELP
     PATH="$cc_stage/tools:$PATH"
     export PATH
   fi
+  cc_existing=no
+  cc_existing_root=${cc_root:-$HOME/.campus-commander}
+  node -e '
+    const fs=require("node:fs"),path=require("node:path");
+    process.on("uncaughtException",e=>{console.error(e.message);process.exit(1)});
+    const root=process.argv[1],out=process.argv[2];
+    const operator=path.join(root,"operator.json"),pending=path.join(root,"setup-pending.json");
+    const file=fs.existsSync(operator)?operator:fs.existsSync(pending)?pending:null;
+    if(!file){fs.writeFileSync(out,"{}");process.exit(0);}
+    const info=fs.lstatSync(file);
+    if(!info.isFile()||info.isSymbolicLink()||(info.mode&0o077)||fs.realpathSync(file)!==file)throw Error("Existing setup must use a private regular file");
+    const data=JSON.parse(fs.readFileSync(file));const o=file===operator?data:data.plan?.operator;
+    if(!o||o.installationRoot!==root||o.configurationPath!==path.join(root,"deployment.json")||!path.isAbsolute(o.releaseRoot))throw Error("Existing installation binding differs");
+    const manifest=JSON.parse(fs.readFileSync(path.join(o.releaseRoot,"release-manifest.json")));
+    if(!/^[a-f0-9]{40}$/.test(manifest.sourceRevision))throw Error("Existing release identity is invalid");
+    fs.writeFileSync(out,JSON.stringify({downloads:path.dirname(o.releaseRoot),tag:"phase-1-candidate-"+manifest.sourceRevision.slice(0,12)}));
+  ' "$cc_existing_root" "$cc_stage/existing.json" || cc_fail 'Inspect the existing installation before resuming.'
+  cc_saved_downloads=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).downloads||""' "$cc_stage/existing.json")
+  if [ -n "$cc_saved_downloads" ]; then
+    cc_saved_release=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).tag' "$cc_stage/existing.json")
+    [ -z "$cc_release" ] || [ "$cc_release" = "$cc_saved_release" ] || cc_fail 'Use the installed release for resume. Use the documented upgrade procedure to change releases.'
+    cc_release=$cc_saved_release
+    cc_existing=yes
+    cc_say "Using the original verified release for $cc_existing_root."
+  fi
   if [ -z "$cc_release" ]; then
     cc_download "https://api.github.com/repos/$cc_repo/releases?per_page=100" "$cc_stage/releases.json"
     cc_release=$(node -e '
@@ -139,7 +164,11 @@ HELP
   fi
   cc_say "Downloading $cc_release."
   for cc_asset in phase-1-candidate.tar.gz phase-1-candidate.sigstore.json release-manifest.json release-manifest.sigstore.json; do
-    cc_download "https://github.com/$cc_repo/releases/download/$cc_release/$cc_asset" "$cc_stage/$cc_asset" || cc_fail "Download failed for $cc_asset."
+    if [ "$cc_existing" = yes ]; then
+      cp -- "$cc_saved_downloads/$cc_asset" "$cc_stage/$cc_asset" || cc_fail 'The original verified release files are missing.'
+    else
+      cc_download "https://github.com/$cc_repo/releases/download/$cc_release/$cc_asset" "$cc_stage/$cc_asset" || cc_fail "Download failed for $cc_asset."
+    fi
   done
   cc_say 'Verifying the archive and release manifest signatures.'
   cosign verify-blob --bundle "$cc_stage/phase-1-candidate.sigstore.json" --certificate-identity "$cc_identity" --certificate-oidc-issuer "$cc_issuer" "$cc_stage/phase-1-candidate.tar.gz" || cc_fail 'Archive signature verification failed.'
@@ -179,10 +208,12 @@ HELP
       const image=manifest.images?.[key];if(typeof image!=="string"||!new RegExp("^ghcr\\.io/campuscommander/campus-commander-"+name+"@sha256:[a-f0-9]{64}$").test(image))throw Error("Unexpected application image");images.push(image);}
     fs.writeFileSync(root+"/images.txt",images.join("\n")+"\n",{mode:0o600});
   ' "$cc_stage" "$cc_release" || cc_fail 'Release integrity verification failed.'
+  if [ "$cc_existing" != yes ] || [ "$cc_verify_only" = yes ]; then
   while IFS= read -r cc_image; do
     cc_say "Verifying $cc_image"
     cosign verify --certificate-identity "$cc_identity" --certificate-oidc-issuer "$cc_issuer" "$cc_image" > "$cc_stage/image-verification.json" || cc_fail 'Image signature verification failed. Confirm registry access and retry.'
   done < "$cc_stage/images.txt"
+  fi
   cp "$cc_stage/release-manifest.sigstore.json" "$cc_stage/bundle/release-manifest.sigstore.json"
   cc_say 'Release signatures and file checksums passed.'
   if [ "$cc_verify_only" = yes ]; then
@@ -225,6 +256,11 @@ HELP
     cc_as_root apt-get update
     cc_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y openssl ca-certificates
   fi
+  if [ "$cc_profile" = hybrid ] && ! command -v keytool >/dev/null 2>&1; then
+    cc_allow_packages 'A Java runtime with keytool is required for hybrid service certificates.'
+    cc_as_root apt-get update
+    cc_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y default-jre-headless
+  fi
   if [ "$cc_profile" = kubernetes ]; then
     if ! command -v kubectl >/dev/null 2>&1; then
       cc_fetch_tool kubectl-v1.35.8 https://dl.k8s.io/release/v1.35.8/bin/linux/amd64/kubectl 874d5e72dbb819f43cff16bcd1e4f8bac5b7f2361fe1e55049b0a6c676fb0cbf
@@ -248,10 +284,20 @@ HELP
     if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then cc_as_root systemctl start docker; fi
   fi
   if [ "$cc_profile" != kubernetes ]; then
+    if ! docker version --format '{{.Server.Version}}' >/dev/null 2>&1 && [ "$(id -u)" != 0 ] && [ -x /usr/bin/docker ] && command -v sudo >/dev/null 2>&1; then
+      cc_say 'Docker requires elevated access. The installer will use sudo for Docker commands only.'
+      if [ -n "$cc_answers" ]; then sudo -n true || cc_fail 'Authorize sudo before unattended installation.';
+      else sudo -v </dev/tty || cc_fail 'Docker access requires sudo authorization.'; fi
+      printf '#!/bin/sh\nexec sudo -n /usr/bin/docker "$@"\n' > "$cc_stage/tools/docker"
+      chmod 700 "$cc_stage/tools/docker"
+      PATH="$cc_stage/tools:$PATH"
+      export PATH
+    fi
     docker version --format '{{.Server.Version}}' >/dev/null 2>&1 || cc_fail 'Start Docker and grant this operator access to its socket, then repeat the command.'
     docker compose version --short >/dev/null 2>&1 || cc_fail 'Install the Docker Compose plugin, then repeat the command.'
   fi
-  set -- --release-root "$cc_stage/bundle" --profile "$cc_profile" --command "$cc_command"
+  set -- --release-root "$cc_stage/bundle" --profile "$cc_profile"
+  if [ -n "$cc_command" ]; then set -- "$@" --command "$cc_command"; fi
   if [ -n "$cc_root" ]; then set -- "$@" --root "$cc_root"; fi
   if [ -n "$cc_answers" ]; then set -- "$@" --answers "$cc_answers"; fi
   if [ "$cc_qualification" = yes ]; then set -- "$@" --qualification; fi

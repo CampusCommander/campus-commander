@@ -18,6 +18,8 @@ import {
   createQuestions,
   parseArguments,
   runSetup,
+  prepareLabCertificate,
+  verifyClusterSecrets,
 } from './setup.mjs';
 
 const releaseRoot = resolve(import.meta.dirname, '../..');
@@ -378,4 +380,129 @@ test('hybrid preparation pauses for workers and status reports nested readiness'
     { installer, output: (line) => lines.push(line) },
   );
   assert.ok(lines.some((line) => line.startsWith('Readiness: degraded.')));
+});
+
+test('certificate publication recovers its matching staged key after interruption', async (t) => {
+  const root = await fixture(t);
+  const stage = join(root, 'private/.setup-certificate');
+  await mkdir(stage, { recursive: true, mode: 0o700 });
+  const cert = Buffer.from('original certificate'),
+    key = Buffer.from('original matching private key');
+  await writeFile(join(stage, 'certificate'), cert, { mode: 0o600 });
+  await writeFile(join(stage, 'key'), key, { mode: 0o600 });
+  await writeFile(
+    join(stage, 'ready.json'),
+    JSON.stringify({ hostname: 'localhost' }),
+    { mode: 0o600 },
+  );
+  await writeFile(join(root, 'private/edge-certificate'), cert, {
+    mode: 0o600,
+  });
+  await prepareLabCertificate(root, 'localhost', () =>
+    assert.fail('Do not generate another certificate'),
+  );
+  assert.deepEqual(
+    await readFile(join(root, 'private/edge-certificate')),
+    cert,
+  );
+  assert.deepEqual(await readFile(join(root, 'private/edge-private-key')), key);
+  await assert.rejects(readFile(join(stage, 'ready.json')), { code: 'ENOENT' });
+});
+
+test('Kubernetes verification binds private credential bytes to explicit cluster references', async (t) => {
+  const root = await fixture(t);
+  await mkdir(join(root, 'private/existing'), { recursive: true, mode: 0o700 });
+  const bytes = Buffer.from('bootstrap-credential-value-must-remain-private');
+  await writeFile(join(root, 'private/existing/bootstrap'), bytes, {
+    mode: 0o600,
+  });
+  const reference = {
+    provider: 'kubernetes',
+    name: 'existing',
+    key: 'bootstrap',
+  };
+  const config = {
+    services: {
+      edge: { bootstrapSecretRef: reference },
+      api: { bootstrapSecretRef: reference },
+    },
+  };
+  const operator = {
+    installationRoot: root,
+    cluster: { context: 'district' },
+    kubernetes: { namespace: 'cc-school' },
+  };
+  let calls = 0;
+  await verifyClusterSecrets(config, operator, async (file, args) => {
+    calls++;
+    assert.equal(file, 'kubectl');
+    assert.deepEqual(args, [
+      '--context',
+      'district',
+      '-n',
+      'cc-school',
+      'get',
+      'secret',
+      'existing',
+      '-o',
+      'json',
+    ]);
+    return {
+      stdout: JSON.stringify({ data: { bootstrap: bytes.toString('base64') } }),
+    };
+  });
+  assert.equal(calls, 1);
+  await assert.rejects(
+    verifyClusterSecrets(config, operator, async () => ({
+      stdout: JSON.stringify({
+        data: { bootstrap: Buffer.from('different-secret').toString('base64') },
+      }),
+    })),
+    (error) => {
+      assert.match(error.message, /Match every protected credential/);
+      assert.ok(!error.message.includes(bytes.toString()));
+      assert.ok(!error.message.includes('different-secret'));
+      return true;
+    },
+  );
+  await assert.rejects(
+    verifyClusterSecrets(config, operator, async () => {
+      throw new Error(bytes.toString());
+    }),
+    (error) => !error.message.includes(bytes.toString()),
+  );
+});
+
+test('reruns reject public or symbolic setup configuration files', async (t) => {
+  const root = await fixture(t);
+  const operator = {
+    installationRoot: root,
+    configurationPath: join(root, 'deployment.json'),
+  };
+  await writeFile(join(root, 'operator.json'), JSON.stringify(operator), {
+    mode: 0o600,
+  });
+  await writeFile(join(root, 'deployment.json'), '{}', { mode: 0o644 });
+  await assert.rejects(
+    runSetup(
+      { root, releaseRoot, command: 'status' },
+      {
+        installer: () =>
+          assert.fail('Do not execute with public configuration'),
+      },
+    ),
+    /private regular setup file/,
+  );
+  const { symlink } = await import('node:fs/promises');
+  const source = join(root, 'private-source.json');
+  await writeFile(source, '{}', { mode: 0o600 });
+  await rm(join(root, 'deployment.json'));
+  await symlink(source, join(root, 'deployment.json'));
+  await assert.rejects(
+    runSetup(
+      { root, releaseRoot, command: 'status' },
+      { installer: () => assert.fail('Do not follow configuration symlinks') },
+    ),
+    /private regular setup file/,
+  );
 });

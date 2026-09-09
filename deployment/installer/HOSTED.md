@@ -71,8 +71,8 @@ Review [Kubernetes preparation](../kubernetes/README.md) and [hybrid preparation
 ## Repeat, resume, and inspect
 
 Use the same installation directory when repeating the command.
-Existing configuration and credentials remain authoritative. Repeating installation resumes that installation.
-A newly downloaded release does not silently upgrade it.
+Existing configuration and credentials remain authoritative. Choose resume or status when prompted.
+The script selects the installation’s original cached release. It does not silently upgrade that installation.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/main/install.sh |

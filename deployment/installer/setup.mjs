@@ -10,7 +10,6 @@ import {
   realpath,
   link,
   rm,
-  mkdtemp,
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isIP } from 'node:net';
@@ -34,6 +33,19 @@ const fail = (message) => {
   throw new SetupError(message);
 };
 const readJson = async (path) => JSON.parse(await readFile(path, 'utf8'));
+async function protectedJson(path) {
+  const stat = await lstat(path);
+  if (
+    !stat.isFile() ||
+    stat.isSymbolicLink() ||
+    stat.mode & 0o077 ||
+    stat.size > 4 * 1024 * 1024 ||
+    (await realpath(path)) !== path
+  )
+    fail('Use a private regular setup file without symbolic links.');
+  return readJson(path);
+}
+
 const exists = async (path) =>
   lstat(path).then(
     () => true,
@@ -162,10 +174,19 @@ async function persistJson(path, value) {
       );
     return;
   }
+  await atomicPrivate(path, bytes);
+}
+async function atomicPrivate(path, bytes) {
   const temporary = `${path}.${randomUUID()}`;
   try {
     await createPrivate(temporary, bytes);
     await link(temporary, path);
+    const directory = await open(dirname(path), 'r');
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
   } finally {
     await rm(temporary, { force: true });
   }
@@ -196,7 +217,117 @@ async function copyPrivate(source, target) {
       fail(
         'Preserve existing credentials. The supplied file differs or has unsafe permissions.',
       );
-  } else await createPrivate(target, bytes);
+  } else await atomicPrivate(target, bytes);
+}
+
+export async function prepareLabCertificate(root, hostname, run = execute) {
+  if (!/^[a-zA-Z0-9.-]+$/.test(hostname) || isIP(hostname))
+    fail('Use a DNS hostname for the lab certificate.');
+  const privateRoot = join(root, 'private');
+  const cert = join(privateRoot, 'edge-certificate'),
+    key = join(privateRoot, 'edge-private-key');
+  await privateDirectory(privateRoot);
+  const stage = join(privateRoot, '.setup-certificate');
+  if ((await exists(cert)) && (await exists(key))) {
+    await copyPrivate(cert, cert);
+    await copyPrivate(key, key);
+    return;
+  }
+  if (!(await exists(stage)) && ((await exists(cert)) || (await exists(key))))
+    fail('Restore the existing certificate pair before resuming.');
+  await privateDirectory(stage);
+  const stagedCert = join(stage, 'certificate'),
+    stagedKey = join(stage, 'key');
+  const readyPath = join(stage, 'ready.json');
+  if (!(await exists(readyPath))) {
+    if ((await exists(cert)) || (await exists(key)))
+      fail('Restore the protected certificate stage before resuming.');
+    await rm(stagedCert, { force: true });
+    await rm(stagedKey, { force: true });
+    await run(
+      'openssl',
+      [
+        'req',
+        '-x509',
+        '-newkey',
+        'rsa:2048',
+        '-nodes',
+        '-keyout',
+        stagedKey,
+        '-days',
+        '30',
+        '-subj',
+        `/CN=${hostname}`,
+        '-addext',
+        `subjectAltName=DNS:${hostname}`,
+        '-out',
+        stagedCert,
+      ],
+      { timeout: 30000 },
+    );
+    const { chmod } = await import('node:fs/promises');
+    await chmod(stagedCert, 0o600);
+    await chmod(stagedKey, 0o600);
+    await persistJson(readyPath, { hostname });
+  } else if ((await protectedJson(readyPath)).hostname !== hostname)
+    fail('Use the hostname recorded in the pending certificate stage.');
+  await copyPrivate(stagedCert, cert);
+  await copyPrivate(stagedKey, key);
+  await rm(stage, { recursive: true });
+}
+
+export async function verifyClusterSecrets(config, operator, run = execute) {
+  const references = new Map();
+  const visit = (value) => {
+    if (!value || typeof value !== 'object') return;
+    if (value.provider === 'kubernetes') {
+      references.set(`${value.name}/${value.key}`, value);
+      return;
+    }
+    for (const child of Object.values(value)) visit(child);
+  };
+  visit(config.services);
+  const secrets = new Map();
+  try {
+    for (const ref of references.values()) {
+      if (!secrets.has(ref.name)) {
+        const result = await run(
+          'kubectl',
+          [
+            '--context',
+            operator.cluster.context,
+            '-n',
+            operator.kubernetes.namespace,
+            'get',
+            'secret',
+            ref.name,
+            '-o',
+            'json',
+          ],
+          { timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
+        );
+        secrets.set(
+          ref.name,
+          JSON.parse(typeof result === 'string' ? result : result.stdout),
+        );
+      }
+      const value = secrets.get(ref.name).data?.[ref.key];
+      const path = refPath(join(operator.installationRoot, 'private'), ref);
+      await copyPrivate(path, path);
+      if (
+        typeof value !== 'string' ||
+        !Buffer.from(value, 'base64').equals(await readFile(path))
+      )
+        fail(
+          'Match every protected credential file to its existing Kubernetes Secret before installation.',
+        );
+    }
+  } catch (error) {
+    if (error instanceof SetupError) throw error;
+    fail(
+      'Verify cluster Secret access and matching protected credential files before installation.',
+    );
+  }
 }
 
 export async function configure({
@@ -626,14 +757,14 @@ export async function runSetup(
     const stat = await lstat(operatorPath);
     if (!stat.isFile() || stat.isSymbolicLink() || stat.mode & 0o077)
       fail('Use a private regular operator file.');
-    operator = await readJson(operatorPath);
+    operator = await protectedJson(operatorPath);
     if (
       operator.installationRoot !== root ||
       operator.configurationPath !== join(root, 'deployment.json')
     )
       fail('Use the authoritative installation directory.');
-    config = await readJson(operator.configurationPath);
-    const setup = await readJson(join(root, 'setup-record.json'));
+    config = await protectedJson(operator.configurationPath);
+    const setup = await protectedJson(join(root, 'setup-record.json'));
     qualification = setup.qualification;
     if (
       (options.profile && config.profile !== options.profile) ||
@@ -671,7 +802,7 @@ export async function runSetup(
         pendingStat.mode & 0o077
       )
         fail('Use a private regular pending setup record.');
-      const pending = await readJson(pendingPath);
+      const pending = await protectedJson(pendingPath);
       plan = { ...pending.plan, files: new Map(pending.plan.files) };
       qualification = pending.qualification;
       if (
@@ -751,52 +882,12 @@ export async function runSetup(
     });
     for (const [target, source] of plan.files)
       await copyPrivate(source, target);
-    if (plan.lab) {
-      const cert = join(root, 'private/edge-certificate'),
-        key = join(root, 'private/edge-private-key');
-      const hostname = new URL(plan.config.services.edge.endpoint.url).hostname;
-      if (!/^[a-zA-Z0-9.-]+$/.test(hostname) || isIP(hostname))
-        fail('Use a DNS hostname for the lab certificate.');
-      await privateDirectory(join(root, 'private'));
-      if (!(await exists(cert)) && !(await exists(key))) {
-        const temporary = await mkdtemp(join(root, 'private/.certificate-'));
-        const temporaryCert = join(temporary, 'certificate'),
-          temporaryKey = join(temporary, 'key');
-        try {
-          await run(
-            'openssl',
-            [
-              'req',
-              '-x509',
-              '-newkey',
-              'rsa:2048',
-              '-nodes',
-              '-days',
-              '30',
-              '-subj',
-              `/CN=${hostname}`,
-              '-addext',
-              `subjectAltName=DNS:${hostname}`,
-              '-keyout',
-              temporaryKey,
-              '-out',
-              temporaryCert,
-            ],
-            { timeout: 30000 },
-          );
-          const { chmod } = await import('node:fs/promises');
-          await chmod(temporaryCert, 0o600);
-          await chmod(temporaryKey, 0o600);
-          await copyPrivate(temporaryCert, cert);
-          await copyPrivate(temporaryKey, key);
-        } finally {
-          await rm(temporary, { recursive: true, force: true });
-        }
-      } else if (!(await exists(cert)) || !(await exists(key)))
-        fail(
-          'Preserve the incomplete certificate pair and restore both files before resuming.',
-        );
-    }
+    if (plan.lab)
+      await prepareLabCertificate(
+        root,
+        new URL(plan.config.services.edge.endpoint.url).hostname,
+        run,
+      );
     if (plan.migration)
       await persistJson(join(root, 'runtime/operator.json'), plan.migration);
     await persistJson(plan.operator.configurationPath, plan.config);
@@ -827,8 +918,26 @@ export async function runSetup(
       'Mount the configured shared storage on every declared worker host. Preserve identical paths and permissions.',
     );
     output(
-      `Securely copy ${join(root, 'runtime/profile.json')} and ${join(root, 'private')} to the same paths on each worker host.`,
+      `Securely copy ${join(root, 'runtime/profile.json')} to the same path on each worker host.`,
     );
+    output(
+      'Create private directories with mode 700. Copy these worker credential files with mode 600 to identical paths:',
+    );
+    const worker = config.services.workers,
+      database = config.services.applicationDatabase;
+    const references = [
+      worker.dispatchSecretRef,
+      worker.serverTls.certificateSecretRef,
+      worker.serverTls.privateKeySecretRef,
+      database.passwordSecretRef,
+      database.endpoint.tls.caSecretRef,
+      worker.endpoint.tls.caSecretRef,
+    ].filter(Boolean);
+    for (const path of new Set(
+      references.map((ref) => refPath(join(root, 'private'), ref)),
+    ))
+      output(path);
+
     const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
     for (let i = 0; i < config.host.workerHosts; i++) {
       const fragment = join(root, `docker-compose.worker-${i + 1}.json`);
@@ -855,6 +964,8 @@ export async function runSetup(
       return { status: 'prepared-workers-pending', operatorPath };
     }
   }
+  if (config.profile === 'kubernetes' && command !== 'status')
+    await verifyClusterSecrets(config, operator, run);
   const result = await installer({ command, operator, qualification });
   output(
     `Readiness: ${result.readiness?.status ?? result.status ?? result.state?.phase ?? 'unknown'}. URL: ${config.services.edge.endpoint.url}`,

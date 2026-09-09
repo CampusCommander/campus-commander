@@ -192,3 +192,65 @@ test('entry refuses a symlink download directory', async (t) => {
   assert.notEqual(r.status, 0);
   assert.equal(await f.trace(), '');
 });
+
+test('entry reuses original release assets for status instead of querying the newest release', async (t) => {
+  const f = await fixture(t);
+  const root = join(f.root, 'installation');
+  const first = f.run([
+    '--release',
+    tag,
+    '--profile',
+    'all-docker',
+    '--root',
+    root,
+    '--answers',
+    f.answers,
+    '--accept-license',
+  ]);
+  assert.equal(first.status, 0, first.stderr);
+  const args = JSON.parse(await f.executed());
+  const releaseRoot = args[args.indexOf('--release-root') + 1];
+  await mkdir(root, { mode: 0o700 });
+  await writeFile(
+    join(root, 'operator.json'),
+    JSON.stringify({
+      installationRoot: root,
+      configurationPath: join(root, 'deployment.json'),
+      releaseRoot,
+    }),
+    { mode: 0o600 },
+  );
+  const before = (await f.trace())
+    .split('\n')
+    .filter((x) => x.startsWith('download'));
+  const second = f.run([
+    '--profile',
+    'all-docker',
+    '--root',
+    root,
+    '--answers',
+    f.answers,
+    '--accept-license',
+    '--command',
+    'status',
+  ]);
+  assert.equal(second.status, 0, second.stderr);
+  const after = (await f.trace())
+    .split('\n')
+    .filter((x) => x.startsWith('download'));
+  assert.deepEqual(after, before);
+  assert.match(second.stderr, /Using the original verified release/);
+  const switched = f.run([
+    '--release',
+    `phase-1-candidate-${'c'.repeat(12)}`,
+    '--profile',
+    'all-docker',
+    '--root',
+    root,
+    '--answers',
+    f.answers,
+    '--accept-license',
+  ]);
+  assert.notEqual(switched.status, 0);
+  assert.match(switched.stderr, /documented upgrade procedure/);
+});
