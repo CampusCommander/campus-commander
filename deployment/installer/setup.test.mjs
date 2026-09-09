@@ -1,4 +1,6 @@
 import test from 'node:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
 import {
   mkdtemp,
@@ -505,4 +507,35 @@ test('reruns reject public or symbolic setup configuration files', async (t) => 
     ),
     /private regular setup file/,
   );
+});
+
+
+test('CLI rejects public and symbolic answers files before setup', async (t) => {
+  const root = await fixture(t);
+  const { chmod, symlink } = await import('node:fs/promises');
+  const source = join(root, 'answers.json');
+  await writeFile(source, '{}');
+  await chmod(source, 0o644);
+  const invoke = promisify(execFile);
+  const rejectsBeforeSetup = async (path) => {
+    await assert.rejects(
+      invoke(process.execPath, [
+        join(releaseRoot, 'deployment/installer/setup.mjs'),
+        '--release-root', releaseRoot,
+        '--root', join(root, 'installation'),
+        '--answers', path,
+      ]),
+      (error) => {
+        assert.equal(error.code, 1);
+        assert.match(error.stderr, /private regular setup file/);
+        return true;
+      },
+    );
+    await assert.rejects(stat(join(root, 'installation')), { code: 'ENOENT' });
+  };
+  await rejectsBeforeSetup(source);
+  await chmod(source, 0o600);
+  const symbolic = join(root, 'linked-answers.json');
+  await symlink(source, symbolic);
+  await rejectsBeforeSetup(symbolic);
 });

@@ -992,7 +992,7 @@ if (
   try {
     const options = parseArguments(process.argv.slice(2));
     const answers = options.answersPath
-      ? await readJson(options.answersPath)
+      ? await protectedJson(options.answersPath)
       : {};
     if (!options.answersPath && !process.stdin.isTTY)
       fail(
