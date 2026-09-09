@@ -23,7 +23,7 @@ The matrix below follows each ticket's actual criteria. It does not add district
 | CC-12  | Complete   | HTTPS, bootstrap lifecycle, protected startup, route denial, and Chromium checks                  |
 | CC-13  | Complete   | All-Docker installation, restart, lifecycle, upgrade, restore, and fault fixtures                 |
 | CC-14  | Complete   | Hosted hybrid controller, external TLS services, two worker daemons, and resume                   |
-| CC-15  | Open       | Prove allowed and denied connections with an enforcing Kubernetes network plugin                  |
+| CC-15  | Complete   | Calico enforced 29 DNS, allowed-service, and denied-service connection checks                     |
 | CC-16  | Open       | Complete hybrid and Kubernetes lifecycle and backup-gated upgrade evidence                        |
 | CC-17  | Complete   | Isolated synthetic restores for all-Docker, hybrid, and Kubernetes                                |
 | CC-18  | Open       | Complete hybrid artifact/capacity/certificate faults and Kubernetes capacity/certificate faults   |
