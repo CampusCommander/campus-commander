@@ -78,7 +78,8 @@
       "cache": false,
       "options": {
         "command": "node deployment/postgres/integration.mjs"
-      }
+      },
+      "dependsOn": ["build"]
     },
     "qualify-redis": {
       "executor": "nx:run-commands",
