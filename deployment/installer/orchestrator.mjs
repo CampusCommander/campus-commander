@@ -74,11 +74,15 @@ export class InstallerError extends Error {
 const fail = (code, message) => {
   throw new InstallerError(code, message);
 };
-export async function runCommand(file, args) {
+export async function runCommand(file, args, { input } = {}) {
   try {
-    return (
-      await exec(file, args, { timeout: 300000, maxBuffer: 4 * 1024 * 1024 })
-    ).stdout.trim();
+    const execution = exec(file, args, {
+      timeout: 300000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    execution.child.stdin.on('error', () => undefined);
+    execution.child.stdin.end(input);
+    return (await execution).stdout.trim();
   } catch {
     fail(
       'COMMAND_FAILED',
@@ -86,6 +90,43 @@ export async function runCommand(file, args) {
     );
   }
 }
+
+async function recoverBootstrap(client, token, expectedGeneration) {
+  const current = (
+    await client.query(
+      'SELECT generation,credential_hash FROM cc.bootstrap_access WHERE id=1',
+    )
+  ).rows[0];
+  if (
+    current &&
+    BigInt(current.generation) === BigInt(expectedGeneration) + 1n &&
+    current.credential_hash === createHash('sha256').update(token).digest('hex')
+  )
+    return { generation: current.generation };
+  return replaceBootstrap(client, token, expectedGeneration);
+}
+
+// Reuse installed image modules so recovery also supports existing release images.
+const composeBootstrapReset = `
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { connectDatabase } from '/app/deployment/postgres/index.mjs';
+import { secretPath } from '/app/deployment/redis/runtime.mjs';
+import { replaceBootstrap } from '/app/deployment/bootstrap/access.mjs';
+const recoverBootstrap = ${recoverBootstrap.toString()};
+let input = '';
+for await (const chunk of process.stdin) input += chunk;
+const { token, expectedGeneration } = JSON.parse(input);
+const config = JSON.parse(await readFile('/run/config/profile.json', 'utf8'));
+const client = await connectDatabase(config.services.applicationDatabase, ref => readFile(secretPath(ref)));
+try {
+  const result = await recoverBootstrap(client, token, expectedGeneration);
+  process.stdout.write(JSON.stringify(result));
+} finally {
+  await client.end();
+}
+`;
+
 async function exists(path) {
   try {
     await lstat(path);
@@ -635,18 +676,14 @@ export async function executeInstaller({
           readiness: await readiness(),
         });
       if (command === 'reset-bootstrap') {
-        if (!operator.expectedBootstrapGeneration)
+        if (!/^[1-9][0-9]*$/.test(String(operator.expectedBootstrapGeneration)))
           fail(
             'BOOTSTRAP',
             'Provide the current bootstrap generation for controlled replacement.',
           );
-        const client = await connectDatabase(
-          {
-            ...config.services.applicationDatabase,
-            ...operator.migrationCredentials,
-          },
-          resolveSecret,
-        );
+        if (config.profile === 'all-docker')
+          await verifyGeneratedManifests({ root, state, project });
+        let client;
         try {
           const path = installationSecretPath(
               secretRoot,
@@ -679,25 +716,60 @@ export async function executeInstaller({
               'Inspect the protected pending bootstrap credential before recovery.',
             );
           const token = await readFile(pending, 'utf8');
-          const current = (
-            await client.query(
-              'SELECT generation,credential_hash FROM cc.bootstrap_access WHERE id=1',
-            )
-          ).rows[0];
           let result;
-          if (
-            current &&
-            BigInt(current.generation) ===
-              BigInt(operator.expectedBootstrapGeneration) + 1n &&
-            current.credential_hash === hash(token)
-          )
-            result = { generation: current.generation };
-          else
-            result = await replaceBootstrap(
+          if (config.profile === 'all-docker') {
+            result = JSON.parse(
+              await run(
+                'docker',
+                [
+                  'compose',
+                  '-f',
+                  composeFile,
+                  '-p',
+                  project,
+                  'run',
+                  '--rm',
+                  '--no-deps',
+                  '-T',
+                  '--entrypoint',
+                  'node',
+                  'bootstrap-initialize',
+                  '--input-type=module',
+                  '-e',
+                  composeBootstrapReset,
+                ],
+                {
+                  input: JSON.stringify({
+                    token,
+                    expectedGeneration: String(
+                      operator.expectedBootstrapGeneration,
+                    ),
+                  }),
+                },
+              ),
+            );
+            if (
+              String(result.generation) !==
+              String(BigInt(operator.expectedBootstrapGeneration) + 1n)
+            )
+              fail(
+                'BOOTSTRAP',
+                'The recovery command returned an unexpected bootstrap generation.',
+              );
+          } else {
+            client = await connectDatabase(
+              {
+                ...config.services.applicationDatabase,
+                ...operator.migrationCredentials,
+              },
+              resolveSecret,
+            );
+            result = await recoverBootstrap(
               client,
               token,
               operator.expectedBootstrapGeneration,
             );
+          }
           await rename(pending, path);
           const directory = await open(dirname(path), 'r');
           try {
@@ -707,7 +779,7 @@ export async function executeInstaller({
           }
           return { status: 'replaced', generation: result.generation };
         } finally {
-          await client.end();
+          await client?.end();
         }
       }
       if (['stop', 'uninstall', 'erase'].includes(command)) {

@@ -86,7 +86,11 @@ Kubernetes erasure deletes declared PVCs after workloads stop. It does not delet
 Review the storage provider's reclaim policy before explicit PVC erasure.
 
 `support` writes a redacted support bundle to a new `supportDirectory`.
-`reset-bootstrap` requires operator database connectivity, `migrationCredentials`, and the current `expectedBootstrapGeneration`.
+`reset-bootstrap` requires the current `expectedBootstrapGeneration`.
+All-Docker runs recovery through the verified Compose `bootstrap-initialize` service on its internal network.
+Recovery requires a running application database and the installed service configuration and secret volumes.
+The installer sends the pending credential through standard input. Command arguments and output contain no credential values.
+Hybrid and Kubernetes require operator database connectivity and the configured database credentials or `migrationCredentials`.
 It stages and synchronizes a private pending credential before the database generation change.
 It atomically replaces the active file after that change.
 Retry with the same expected generation to complete an interrupted pending replacement.

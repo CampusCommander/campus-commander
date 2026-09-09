@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import {
   lstat,
   mkdtemp,
@@ -11,10 +11,12 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { replaceBootstrap } from '../bootstrap/access.mjs';
 import {
   authenticateRelease,
   executeInstaller,
   generatedManifestRecord,
+  runCommand,
   verifyGeneratedManifests,
 } from './orchestrator.mjs';
 
@@ -558,4 +560,188 @@ test('daemon filesystem failure stops installation before Compose startup', asyn
   } finally {
     await rm(f.root, { recursive: true, force: true });
   }
+});
+
+test('reset-bootstrap reaches an internal-only database through the bound Compose service', async () => {
+  const f = await setup();
+  try {
+    f.config.services.applicationDatabase.endpoint.url =
+      'postgresql://application-postgres:5432';
+    await writeFile(f.operator.configurationPath, JSON.stringify(f.config));
+    await executeInstaller({
+      command: 'install',
+      operator: f.operator,
+      qualification: true,
+      dependencies: f.dependencies,
+    });
+    const manifest = JSON.parse(
+      await readFile(
+        join(f.operator.installationRoot, 'docker-compose.json'),
+        'utf8',
+      ),
+    );
+    assert.deepEqual(manifest.services['bootstrap-initialize'].networks, [
+      'internal',
+    ]);
+    assert.equal(manifest.services['application-postgres'].ports, undefined);
+    let current = { generation: '1', credential_hash: 'expired' };
+    let updates = 0;
+    let disconnects = 0;
+    let interrupt = true;
+    const pending = join(
+      f.operator.installationRoot,
+      'private/bootstrap.pending',
+    );
+    const active = join(f.operator.installationRoot, 'private/bootstrap');
+    const previous = await readFile(active, 'utf8');
+    f.dependencies.run = async (file, args, options) => {
+      assert.equal(file, 'docker');
+      assert.deepEqual(args.slice(0, 6), [
+        'compose',
+        '-f',
+        join(f.operator.installationRoot, 'docker-compose.json'),
+        '-p',
+        f.operator.project,
+        'run',
+      ]);
+      assert.ok(args.includes('--no-deps'));
+      assert.ok(args.includes('--rm'));
+      assert.ok(args.includes('-T'));
+      assert.ok(args.includes('bootstrap-initialize'));
+      const token = await readFile(pending, 'utf8');
+      assert.ok(!args.join(' ').includes(token));
+      assert.equal((await lstat(pending)).mode & 0o777, 0o600);
+      await assert.rejects(
+        executeInstaller({
+          command: 'reset-bootstrap',
+          operator: { ...f.operator, expectedBootstrapGeneration: '1' },
+          qualification: true,
+          dependencies: f.dependencies,
+        }),
+        { code: 'BUSY' },
+      );
+      let output = '';
+      const syntheticProcess = {
+        stdin: (async function* () {
+          yield options.input;
+        })(),
+        stdout: {
+          write: (value) => {
+            output += value;
+          },
+        },
+      };
+      const connect = async (service) => {
+        assert.equal(
+          new URL(service.endpoint.url).hostname,
+          'application-postgres',
+        );
+        return {
+          query: async (sql, parameters) => {
+            if (sql.startsWith('SELECT')) return { rows: [current] };
+            assert.match(sql, /WHERE id = 1 AND generation = \$3/);
+            if (String(parameters[2]) !== current.generation)
+              return { rowCount: 0, rows: [] };
+            updates++;
+            current = {
+              generation: String(BigInt(current.generation) + 1n),
+              credential_hash: parameters[0],
+            };
+            return { rowCount: 1, rows: [current] };
+          },
+          end: async () => {
+            disconnects++;
+          },
+        };
+      };
+      const source = args.at(-1).replace(/^import .*;$/gm, '');
+      const AsyncFunction = Object.getPrototypeOf(
+        async () => undefined,
+      ).constructor;
+      await new AsyncFunction(
+        'process',
+        'readFile',
+        'connectDatabase',
+        'secretPath',
+        'createHash',
+        'replaceBootstrap',
+        source,
+      )(
+        syntheticProcess,
+        async () => JSON.stringify(f.config),
+        connect,
+        (ref) => ref.path,
+        createHash,
+        replaceBootstrap,
+      );
+      if (interrupt) {
+        interrupt = false;
+        throw new Error('Simulated lost command response');
+      }
+      return output;
+    };
+    const reset = (generation = '1') =>
+      executeInstaller({
+        command: 'reset-bootstrap',
+        operator: { ...f.operator, expectedBootstrapGeneration: generation },
+        qualification: true,
+        dependencies: f.dependencies,
+      });
+    await assert.rejects(reset(), { code: 'INSTALLATION_FAILED' });
+    assert.equal(updates, 1);
+    assert.equal(await readFile(active, 'utf8'), previous);
+    const token = await readFile(pending, 'utf8');
+    assert.deepEqual(await reset(), { status: 'replaced', generation: '2' });
+    assert.equal(updates, 1);
+    assert.equal(disconnects, 2);
+    assert.equal(await readFile(active, 'utf8'), token);
+    await assert.rejects(lstat(pending), { code: 'ENOENT' });
+    await assert.rejects(reset(), { code: 'INSTALLATION_FAILED' });
+    assert.equal(updates, 1);
+    assert.equal(await readFile(active, 'utf8'), token);
+    manifest.services['bootstrap-initialize'].networks = ['ingress'];
+    await writeFile(
+      join(f.operator.installationRoot, 'docker-compose.json'),
+      JSON.stringify(manifest),
+    );
+    await assert.rejects(reset('2'), { code: 'MANIFEST_BINDING' });
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
+test('command runner sends recovery input through stdin and redacts process failures', async () => {
+  const input = 'private-recovery-credential';
+  assert.equal(
+    await runCommand(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
+    import { createHash } from 'node:crypto';
+    let value = '';
+    for await (const chunk of process.stdin) value += chunk;
+    process.stdout.write(createHash('sha256').update(value).digest('hex'));
+  `,
+      ],
+      { input },
+    ),
+    createHash('sha256').update(input).digest('hex'),
+  );
+  await assert.rejects(
+    runCommand(
+      process.execPath,
+      [
+        '-e',
+        'process.stdin.pipe(process.stderr); process.stdin.on("end", () => process.exit(1))',
+      ],
+      { input },
+    ),
+    (error) => {
+      assert.equal(error.code, 'COMMAND_FAILED');
+      assert.ok(!error.message.includes(input));
+      return true;
+    },
+  );
 });
