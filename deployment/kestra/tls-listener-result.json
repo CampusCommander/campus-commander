@@ -1,0 +1,22 @@
+{
+  "checkedAt": "2026-09-08T05:14:28Z",
+  "status": "PASS",
+  "image": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+  "listener": {
+    "protocol": "https",
+    "port": 8080,
+    "certificateTrust": "synthetic CA file"
+  },
+  "unauthenticatedStatus": 401,
+  "authenticatedStatus": 200,
+  "generatedFiles": {
+    "configurationMode": "0600",
+    "keyStoreMode": "0600"
+  },
+  "secretsRecorded": false,
+  "limits": [
+    "The check used a one-day synthetic certificate.",
+    "District certificate and trust integration remain untested.",
+    "The check ran on one Docker host."
+  ]
+}

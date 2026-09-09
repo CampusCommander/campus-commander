@@ -76,6 +76,13 @@
         "staticFilePath": "dist/frontend/browser",
         "spa": true
       }
+    },
+    "image": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "docker build --platform linux/amd64 --provenance=false --build-arg SOURCE_DATE_EPOCH=0 --file deployment/images/frontend.Dockerfile --tag campus-commander/frontend:cc-6 ."
+      }
     }
   }
 }

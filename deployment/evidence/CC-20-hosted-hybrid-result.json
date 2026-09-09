@@ -1,0 +1,67 @@
+{
+  "profile": "hybrid",
+  "release": "phase-1-candidate-3e6a6a67a2c3",
+  "validationDate": "2026-09-09",
+  "execution": "agent-operated hosted installer",
+  "acceptedRelease": false,
+  "install": "ready",
+  "resume": "ready",
+  "http": {
+    "unauthenticated": 401,
+    "authenticated": 200,
+    "readiness": {
+      "phase": 1,
+      "status": "ready",
+      "checks": [
+        {
+          "name": "application-database",
+          "status": "ready"
+        },
+        {
+          "name": "kestra-database",
+          "status": "ready"
+        },
+        {
+          "name": "redis",
+          "status": "ready"
+        },
+        {
+          "name": "frontend",
+          "status": "ready"
+        },
+        {
+          "name": "api",
+          "status": "ready"
+        },
+        {
+          "name": "workers",
+          "status": "ready"
+        },
+        {
+          "name": "artifacts",
+          "status": "ready"
+        },
+        {
+          "name": "kestra",
+          "status": "ready"
+        }
+      ]
+    },
+    "hidden": {
+      "/kestra": 404,
+      "/workers": 404,
+      "/api/jobs": 404
+    }
+  },
+  "artifactMigrationBootstrapUnchanged": true,
+  "fixtureSnapshotSha256": "b46b4578cdc43a10c6db9a592014bf1bf3c1ce511c95f582bdfef39dd02f7e94",
+  "artifact": {
+    "artifactId": "aaff2374-e923-4f2e-abfd-a3a0886efae6",
+    "attemptId": "920c0060-a4a6-4df3-ba98-2e49bf7cfc60",
+    "schemaVersion": 1,
+    "sizeBytes": 50,
+    "sha256": "4e0f5dd6d54c2baa94a2df77352f50f539bd268fb133829a2189673b7f544851"
+  },
+  "environmentRemovedAfterValidation": true,
+  "workerArtifactReaders": 2
+}

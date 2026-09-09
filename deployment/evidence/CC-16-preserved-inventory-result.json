@@ -1,0 +1,106 @@
+{
+  "status": "passed",
+  "project": "cc-installer-e739ff45-0",
+  "profile": "all-docker",
+  "acceptedRelease": false,
+  "workingTree": "uncommitted-candidate",
+  "baseGitRevision": "3ab04fd95c48d2eb884b37191adf3e2815fa15f2",
+  "artifact": {
+    "artifactId": "19d3b3cf-d085-4fce-aade-5791018cadab",
+    "attemptId": "12da2d90-4790-4bf7-a102-9c30c3530f95",
+    "schemaVersion": 1,
+    "sizeBytes": 28,
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7"
+  },
+  "before": {
+    "artifactId": "19d3b3cf-d085-4fce-aade-5791018cadab",
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "ledger": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ]
+  },
+  "after": {
+    "artifactId": "19d3b3cf-d085-4fce-aade-5791018cadab",
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "ledger": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ]
+  },
+  "releaseB": {
+    "frontend": "localhost:15000/campus-commander/frontend@sha256:9ae5b788f8c21da072d1cf1b6cd506c0ed3abd1b5aab4d7e7110f97e144e5842",
+    "api": "localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5",
+    "workers": "localhost:15000/campus-commander/worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a"
+  },
+  "releaseInventories": [
+    {
+      "sourceRevision": "3ab04fd95c48d2eb884b37191adf3e2815fa15f2",
+      "architectures": ["linux/amd64"],
+      "workingTree": "uncommitted-candidate",
+      "sourceRevisionMeaning": "Harness base revision only. These local images have no signed source attestation.",
+      "images": {
+        "frontend": "localhost:15000/campus-commander/frontend@sha256:9ae5b788f8c21da072d1cf1b6cd506c0ed3abd1b5aab4d7e7110f97e144e5842",
+        "api": "localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5",
+        "workers": "localhost:15000/campus-commander/worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a"
+      }
+    },
+    {
+      "sourceRevision": "3ab04fd95c48d2eb884b37191adf3e2815fa15f2",
+      "architectures": ["linux/amd64"],
+      "workingTree": "uncommitted-candidate",
+      "sourceRevisionMeaning": "Harness base revision only. These local images have no signed source attestation.",
+      "images": {
+        "frontend": "localhost:15000/campus-commander/frontend@sha256:9ae5b788f8c21da072d1cf1b6cd506c0ed3abd1b5aab4d7e7110f97e144e5842",
+        "api": "localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5",
+        "workers": "localhost:15000/campus-commander/worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a"
+      }
+    }
+  ],
+  "secretLineEndings": {
+    "status": "passed",
+    "credentials": [
+      {
+        "name": "applicationDatabase",
+        "delimiter": "LF"
+      },
+      {
+        "name": "kestraDatabase",
+        "delimiter": "CRLF"
+      },
+      {
+        "name": "migration",
+        "delimiter": "CRLF"
+      }
+    ],
+    "localAdminFiles": "unchanged exact bytes",
+    "readiness": "eight components ready after provisioning and process recreation"
+  },
+  "checks": [
+    "actual CLI prepare and resume",
+    "stop and resume preserve data",
+    "uninstall and resume preserve volumes",
+    "encrypted backup verified before upgrade",
+    "different image digests upgrade with artifact and ledger preservation",
+    "active secrets preserved",
+    "input release inventory metadata preserved"
+  ],
+  "prerequisiteExceptions": [
+    {
+      "name": "district-dns",
+      "reason": "Synthetic hostname resolves through explicit loopback connection override."
+    },
+    {
+      "name": "time-synchronization",
+      "reason": "Disposable development host does not expose district time-service evidence."
+    },
+    {
+      "name": "storage-capacity",
+      "reason": "Synthetic fixture uses small data rather than declared district capacity reservation."
+    }
+  ]
+}

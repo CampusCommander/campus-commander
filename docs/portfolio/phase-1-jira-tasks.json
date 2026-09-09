@@ -3,7 +3,7 @@
   "target": {
     "provider": "Jira",
     "spaceName": "Campus-Commander",
-    "projectKey": "KAN",
+    "projectKey": "CC",
     "issueType": "Task",
     "cloudId": "47ac035a-97b0-44e7-afda-2f6d747540f7",
     "siteUrl": "https://easton-consulting.atlassian.net",
@@ -23,11 +23,7 @@
       "id": "P1-T01",
       "title": "Define and validate the Phase 1 deployment configuration contract",
       "owner": "Platform lead",
-      "packages": [
-        "P0.1",
-        "P1.1",
-        "P9.2"
-      ],
+      "packages": ["P0.1", "P1.1", "P9.2"],
       "dependsOn": [],
       "scope": "Define one configuration contract for all Docker, hybrid Docker with district servers, and enterprise Kubernetes. Cover frontend, API, workers, PostgreSQL, Redis, Kestra, artifact storage, and the HTTPS edge. Make each dependency's local or external placement explicit.",
       "acceptance": [
@@ -40,21 +36,16 @@
       ],
       "evidence": "Three validated example configurations, a rejected-config demonstration, service placement matrix, and a recorded configuration decision.",
       "excludes": "Google credentials, entity contracts, full application auth, and district capacity guarantees.",
-      "jiraKey": "KAN-4",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-4",
+      "jiraKey": "CC-4",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-4",
       "jiraId": "10013"
     },
     {
       "id": "P1-T02",
       "title": "Qualify the Kestra edition, runtime version, and deployment topology",
       "owner": "Orchestration and platform lead",
-      "packages": [
-        "P0.1",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T01"
-      ],
+      "packages": ["P0.1", "P9.4"],
+      "dependsOn": ["P1-T01"],
       "scope": "Establish an executable Kestra deployment choice for each Phase 1 profile. Verify the retained edition's capabilities and recovery behavior before manifests depend on them. Use V0's 1.3.37 result as evidence to assess, not as automatic release qualification.",
       "acceptance": [
         "Record the chosen Kestra version, plugin versions, image digest, edition, license obligations, and supported topology.",
@@ -66,20 +57,16 @@
       ],
       "evidence": "Topology decision, pinned runtime inventory, redacted startup evidence, synthetic restart result, and unresolved limitations.",
       "excludes": "Google mutation flows, JobService admission policy, and a replacement orchestration engine.",
-      "jiraKey": "KAN-5",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-5",
+      "jiraKey": "CC-5",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-5",
       "jiraId": "10014"
     },
     {
       "id": "P1-T03",
       "title": "Build minimal frontend, API, and worker release images",
       "owner": "Application foundation and build lead",
-      "packages": [
-        "P0.1"
-      ],
-      "dependsOn": [
-        "P1-T01"
-      ],
+      "packages": ["P0.1"],
+      "dependsOn": ["P1-T01"],
       "scope": "Produce runnable Phase 1 images from the retained Nx workspace. Preserve existing root-level frontend and API projects. Add the minimal independent worker entry point needed for startup and synthetic infrastructure probes.",
       "acceptance": [
         "Correct the V0 frontend compiler inheritance defect through scoped application configuration.",
@@ -92,21 +79,16 @@
       ],
       "evidence": "Ordinary Nx build results, image digests, container startup checks, and a list of scoped scaffold changes.",
       "excludes": "Full API module implementation, application login, EntityCache, and mutation workers.",
-      "jiraKey": "KAN-6",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-6",
+      "jiraKey": "CC-6",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-6",
       "jiraId": "10015"
     },
     {
       "id": "P1-T04",
       "title": "Bootstrap isolated application and Kestra databases",
       "owner": "Database and platform lead",
-      "packages": [
-        "P1.2",
-        "P9.2"
-      ],
-      "dependsOn": [
-        "P1-T01"
-      ],
+      "packages": ["P1.2", "P9.2"],
+      "dependsOn": ["P1-T01"],
       "scope": "Supply repeatable PostgreSQL provisioning and application migration startup for local and external database configurations. Keep Kestra migrations under Kestra's ownership.",
       "acceptance": [
         "Qualify and pin the PostgreSQL release used by the supported deployment profiles.",
@@ -119,21 +101,16 @@
       ],
       "evidence": "Fresh provisioning, concurrent migration, denied cross-database access, restart, and external-connection results.",
       "excludes": "Entity inventory schema, operation ledgers, and future application feature migrations.",
-      "jiraKey": "KAN-7",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-7",
+      "jiraKey": "CC-7",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-7",
       "jiraId": "10016"
     },
     {
       "id": "P1-T05",
       "title": "Bootstrap Redis with explicit security and restart behavior",
       "owner": "Platform lead",
-      "packages": [
-        "P9.2",
-        "P9.3"
-      ],
-      "dependsOn": [
-        "P1-T01"
-      ],
+      "packages": ["P9.2", "P9.3"],
+      "dependsOn": ["P1-T01"],
       "scope": "Provide a pinned Redis deployment and connection configuration for local containers and district endpoints. Specify which future data classes are persistent or rebuildable without implementing the Phase 5 hold protocol.",
       "acceptance": [
         "Qualify and pin Redis and configure authentication and internal network access.",
@@ -145,22 +122,16 @@
       ],
       "evidence": "Redis configuration, authenticated probe, restart result, and public-port denial check.",
       "excludes": "Job hold ownership, recovery aggregation, production sessions, and admission reservation implementation.",
-      "jiraKey": "KAN-8",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-8",
+      "jiraKey": "CC-8",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-8",
       "jiraId": "10017"
     },
     {
       "id": "P1-T06",
       "title": "Implement the local artifact storage foundation",
       "owner": "Storage lead",
-      "packages": [
-        "P1.1",
-        "P2.4"
-      ],
-      "dependsOn": [
-        "P1-T01",
-        "P1-T04"
-      ],
+      "packages": ["P1.1", "P2.4"],
+      "dependsOn": ["P1-T01", "P1-T04"],
       "scope": "Implement the initial job-storage interface and persistent local adapter using opaque artifact IDs and publication metadata. Prove a complete synthetic write, verification, publication, and read path before business jobs exist.",
       "acceptance": [
         "Define stage, inspect, publish, openRead, and remove contracts with artifact identity, size, checksum, and attempt locator.",
@@ -172,21 +143,16 @@
       ],
       "evidence": "Adapter contract and integration results for normal publication, corruption, interruption, restart, and invalid locators.",
       "excludes": "Google operation payloads, final mutation result consolidation, and full retention automation.",
-      "jiraKey": "KAN-9",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-9",
+      "jiraKey": "CC-9",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-9",
       "jiraId": "10018"
     },
     {
       "id": "P1-T07",
       "title": "Qualify one shared artifact backend across separate worker hosts",
       "owner": "Storage and platform lead",
-      "packages": [
-        "P2.4",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T06"
-      ],
+      "packages": ["P2.4", "P9.4"],
+      "dependsOn": ["P1-T06"],
       "scope": "Choose and implement one shared filesystem or S3-compatible adapter under the existing storage contract. Demonstrate actual cross-host access needed by hybrid and Kubernetes workers.",
       "acceptance": [
         "Record the selected backend, prerequisites, supported operations, and reason for the choice.",
@@ -199,24 +165,16 @@
       ],
       "evidence": "Backend decision, two-host test results, fault evidence, and deployment configuration.",
       "excludes": "Implementing both shared backend options, provisioning an entire district storage platform, and automatic artifact migration.",
-      "jiraKey": "KAN-10",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-10",
+      "jiraKey": "CC-10",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-10",
       "jiraId": "10019"
     },
     {
       "id": "P1-T08",
       "title": "Run authenticated Kestra with independent workers and qualified internal storage",
       "owner": "Orchestration lead",
-      "packages": [
-        "P0.1",
-        "P9.2",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T02",
-        "P1-T03",
-        "P1-T04"
-      ],
+      "packages": ["P0.1", "P9.2", "P9.4"],
+      "dependsOn": ["P1-T02", "P1-T03", "P1-T04"],
       "scope": "Package the chosen Kestra topology with its real repository, queue, authentication, and internal-storage configuration. Execute a harmless synthetic worker task outside the interactive API.",
       "acceptance": [
         "Replace the invalid KESTEA configuration approach with settings verified against the selected release.",
@@ -229,23 +187,16 @@
       ],
       "evidence": "Pinned deployment configuration, synthetic external-worker execution, storage checks, and restart evidence.",
       "excludes": "Business JobService, Google requests, production admission holds, and claims of exactly-once external effects.",
-      "jiraKey": "KAN-11",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-11",
+      "jiraKey": "CC-11",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-11",
       "jiraId": "10020"
     },
     {
       "id": "P1-T09",
       "title": "Protect the startup page with HTTPS and installation bootstrap access",
       "owner": "Platform security and frontend lead",
-      "packages": [
-        "P0.1",
-        "P9.1",
-        "P9.2"
-      ],
-      "dependsOn": [
-        "P1-T01",
-        "P1-T03"
-      ],
+      "packages": ["P0.1", "P9.1", "P9.2"],
+      "dependsOn": ["P1-T01", "P1-T03"],
       "scope": "Provide a restricted installation surface and HTTPS edge for Phase 1. Generate installation secrets and protect the startup page before Phase 2 supplies application sign-in.",
       "acceptance": [
         "Serve the minimal installation page through the configured district hostname and certificate.",
@@ -258,25 +209,16 @@
       ],
       "evidence": "HTTPS browser demonstration, access-denial checks, redacted startup status, and secret lifecycle tests.",
       "excludes": "Application OIDC, delegated platform users, OAuth onboarding, and Phase 2 utility routes.",
-      "jiraKey": "KAN-12",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-12",
+      "jiraKey": "CC-12",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-12",
       "jiraId": "10021"
     },
     {
       "id": "P1-T10",
       "title": "Deliver the complete all-Docker installation profile",
       "owner": "Platform lead",
-      "packages": [
-        "P9.2"
-      ],
-      "dependsOn": [
-        "P1-T03",
-        "P1-T04",
-        "P1-T05",
-        "P1-T06",
-        "P1-T08",
-        "P1-T09"
-      ],
+      "packages": ["P9.2"],
+      "dependsOn": ["P1-T03", "P1-T04", "P1-T05", "P1-T06", "P1-T08", "P1-T09"],
       "scope": "Replace the scaffold Compose configuration with a complete installation of the Phase 1 topology using published image references, internal networks, and persistent volumes.",
       "acceptance": [
         "Start edge, frontend, API, independent workers, PostgreSQL, Redis, Kestra, and configured local artifact storage.",
@@ -288,22 +230,16 @@
       ],
       "evidence": "Clean-host installation transcript, reachable startup page, component checks, restart results, and retained-volume inventory.",
       "excludes": "Google onboarding, sample entity management, and metropolitan capacity certification.",
-      "jiraKey": "KAN-13",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-13",
+      "jiraKey": "CC-13",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-13",
       "jiraId": "10022"
     },
     {
       "id": "P1-T11",
       "title": "Deliver the hybrid Docker and district-server installation profile",
       "owner": "Platform integration lead",
-      "packages": [
-        "P9.2",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T07",
-        "P1-T10"
-      ],
+      "packages": ["P9.2", "P9.4"],
+      "dependsOn": ["P1-T07", "P1-T10"],
       "scope": "Run the same release images with district-hosted dependencies and retained local containers. External service ownership must be explicit for PostgreSQL, Redis, Kestra, worker placement, and artifact storage.",
       "acceptance": [
         "Document supported local/external combinations and validate each advertised external endpoint contract.",
@@ -315,23 +251,16 @@
       ],
       "evidence": "Supported placement matrix, representative cross-host installations, endpoint tests, and outage/recovery results.",
       "excludes": "Requiring Kubernetes for hybrid installation and automatic administration of arbitrary district infrastructure.",
-      "jiraKey": "KAN-14",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-14",
+      "jiraKey": "CC-14",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-14",
       "jiraId": "10023"
     },
     {
       "id": "P1-T12",
       "title": "Deliver the enterprise Kubernetes installation profile",
       "owner": "Kubernetes platform lead",
-      "packages": [
-        "P9.2",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T07",
-        "P1-T08",
-        "P1-T09"
-      ],
+      "packages": ["P9.2", "P9.4"],
+      "dependsOn": ["P1-T07", "P1-T08", "P1-T09"],
       "scope": "Package and run the complete Phase 1 topology on a district-operated Kubernetes cluster using the shared image and configuration contracts.",
       "acceptance": [
         "Deploy frontend, API, workers, and the declared local or external shared services from pinned image references.",
@@ -344,22 +273,16 @@
       ],
       "evidence": "Repeatable cluster installation, rendered configuration, multi-node artifact proof, rescheduling results, and declared platform limitations.",
       "excludes": "Building a district Kubernetes cluster, full JobService failover tests, and unmeasured metropolitan throughput guarantees.",
-      "jiraKey": "KAN-15",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-15",
+      "jiraKey": "CC-15",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-15",
       "jiraId": "10024"
     },
     {
       "id": "P1-T13",
       "title": "Deliver repeatable preflight, install, resume, and upgrade commands",
       "owner": "Installer lead",
-      "packages": [
-        "P9.2"
-      ],
-      "dependsOn": [
-        "P1-T10",
-        "P1-T11",
-        "P1-T12"
-      ],
+      "packages": ["P9.2"],
+      "dependsOn": ["P1-T10", "P1-T11", "P1-T12"],
       "scope": "Provide an operator workflow that selects a deployment mode, checks prerequisites, installs the release, and resumes after interruption. Keep shared configuration authoritative across deployment tools.",
       "acceptance": [
         "Check runtime, architecture, ports, hostname, certificates, storage, permissions, resources, time synchronization, and required egress.",
@@ -372,22 +295,16 @@
       ],
       "evidence": "Successful installation in each mode, injected interruption/resume, failed-preflight examples, and a fixture upgrade result.",
       "excludes": "The Phase 3 Google onboarding wizard and production Google credential replacement.",
-      "jiraKey": "KAN-16",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-16",
+      "jiraKey": "CC-16",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-16",
       "jiraId": "10025"
     },
     {
       "id": "P1-T14",
       "title": "Restore the foundational state into an isolated installation",
       "owner": "Operations and storage lead",
-      "packages": [
-        "P9.3"
-      ],
-      "dependsOn": [
-        "P1-T10",
-        "P1-T11",
-        "P1-T12"
-      ],
+      "packages": ["P9.3"],
+      "dependsOn": ["P1-T10", "P1-T11", "P1-T12"],
       "scope": "Back up and restore the application and Kestra databases, application artifacts, Kestra internal storage, and necessary configuration. Document Redis recovery and separately protected secret recovery.",
       "acceptance": [
         "Inventory every durable component and define a consistent backup procedure for the Phase 1 topology.",
@@ -400,23 +317,16 @@
       ],
       "evidence": "Restore runbooks, fixture manifests, checksum comparisons, timings, and missing-component failure results.",
       "excludes": "Live Google reconciliation and automatic replay of future mutation jobs.",
-      "jiraKey": "KAN-17",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-17",
+      "jiraKey": "CC-17",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-17",
       "jiraId": "10026"
     },
     {
       "id": "P1-T15",
       "title": "Qualify restart, outage, and resource failure behavior across all profiles",
       "owner": "Reliability lead",
-      "packages": [
-        "P9.3",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T10",
-        "P1-T11",
-        "P1-T12"
-      ],
+      "packages": ["P9.3", "P9.4"],
+      "dependsOn": ["P1-T10", "P1-T11", "P1-T12"],
       "scope": "Run a repeatable synthetic fault matrix against the complete Phase 1 release. Verify truthful readiness, bounded recovery, and durable fixture preservation.",
       "acceptance": [
         "Test API, worker, Redis, PostgreSQL, and Kestra process interruption against each applicable deployment mode.",
@@ -429,23 +339,16 @@
       ],
       "evidence": "Fault matrix, reproducible injection procedure, component readiness observations, integrity checks, and resource baseline.",
       "excludes": "Phase 5 admission and Google-effect recovery, stress tests against real districts, and destructive tests on production services.",
-      "jiraKey": "KAN-18",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-18",
+      "jiraKey": "CC-18",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-18",
       "jiraId": "10027"
     },
     {
       "id": "P1-T16",
       "title": "Publish verified Phase 1 release artifacts and gate profile regressions in CI",
       "owner": "Build and release lead",
-      "packages": [
-        "P0.1",
-        "P9.2"
-      ],
-      "dependsOn": [
-        "P1-T13",
-        "P1-T14",
-        "P1-T15"
-      ],
+      "packages": ["P0.1", "P9.2"],
+      "dependsOn": ["P1-T13", "P1-T14", "P1-T15"],
       "scope": "Publish the release package and its verification material. Connect existing build and deployment checks to reproducible CI gates for the supported installation profiles.",
       "acceptance": [
         "Build through Nx and record image digests, supported architectures, dependency versions, and source revision.",
@@ -458,21 +361,16 @@
       ],
       "evidence": "Published release candidate, integrity verification, CI results, and linked profile/fault/restore evidence.",
       "excludes": "Signing-key disclosure, adopting a new mandatory cloud platform, and treating skipped integration checks as passed.",
-      "jiraKey": "KAN-19",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-19",
+      "jiraKey": "CC-19",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-19",
       "jiraId": "10028"
     },
     {
       "id": "P1-T17",
       "title": "Accept the Phase 1 release through operator walkthroughs",
       "owner": "Staff Tech Lead with UX and district operators",
-      "packages": [
-        "P9.2",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T16"
-      ],
+      "packages": ["P9.2", "P9.4"],
+      "dependsOn": ["P1-T16"],
       "scope": "Demonstrate the released Phase 1 product from clean installation through restart and foundational restore in all three modes. Establish the handoff boundary for Phase 2.",
       "acceptance": [
         "Have an occasional IT helper follow the all-Docker instructions and record assistance, failed steps, and hands-on time.",
@@ -485,190 +383,190 @@
       ],
       "evidence": "Three walkthrough records, participant roles, observed setup times, defect list, and Phase 1 completion decision.",
       "excludes": "Claiming Google administration is available or substituting developer familiarity for novice installation evidence.",
-      "jiraKey": "KAN-20",
-      "jiraUrl": "https://easton-consulting.atlassian.net/browse/KAN-20",
+      "jiraKey": "CC-20",
+      "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-20",
       "jiraId": "10029"
     }
   ],
   "jiraDependencyLinks": [
     {
-      "blocker": "KAN-4",
-      "blocked": "KAN-5",
+      "blocker": "CC-4",
+      "blocked": "CC-5",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-4",
-      "blocked": "KAN-6",
+      "blocker": "CC-4",
+      "blocked": "CC-6",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-4",
-      "blocked": "KAN-7",
+      "blocker": "CC-4",
+      "blocked": "CC-7",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-4",
-      "blocked": "KAN-8",
+      "blocker": "CC-4",
+      "blocked": "CC-8",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-4",
-      "blocked": "KAN-9",
+      "blocker": "CC-4",
+      "blocked": "CC-9",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-7",
-      "blocked": "KAN-9",
+      "blocker": "CC-7",
+      "blocked": "CC-9",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-9",
-      "blocked": "KAN-10",
+      "blocker": "CC-9",
+      "blocked": "CC-10",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-5",
-      "blocked": "KAN-11",
+      "blocker": "CC-5",
+      "blocked": "CC-11",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-6",
-      "blocked": "KAN-11",
+      "blocker": "CC-6",
+      "blocked": "CC-11",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-7",
-      "blocked": "KAN-11",
+      "blocker": "CC-7",
+      "blocked": "CC-11",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-4",
-      "blocked": "KAN-12",
+      "blocker": "CC-4",
+      "blocked": "CC-12",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-6",
-      "blocked": "KAN-12",
+      "blocker": "CC-6",
+      "blocked": "CC-12",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-6",
-      "blocked": "KAN-13",
+      "blocker": "CC-6",
+      "blocked": "CC-13",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-7",
-      "blocked": "KAN-13",
+      "blocker": "CC-7",
+      "blocked": "CC-13",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-8",
-      "blocked": "KAN-13",
+      "blocker": "CC-8",
+      "blocked": "CC-13",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-9",
-      "blocked": "KAN-13",
+      "blocker": "CC-9",
+      "blocked": "CC-13",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-11",
-      "blocked": "KAN-13",
+      "blocker": "CC-11",
+      "blocked": "CC-13",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-12",
-      "blocked": "KAN-13",
+      "blocker": "CC-12",
+      "blocked": "CC-13",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-10",
-      "blocked": "KAN-14",
+      "blocker": "CC-10",
+      "blocked": "CC-14",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-13",
-      "blocked": "KAN-14",
+      "blocker": "CC-13",
+      "blocked": "CC-14",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-10",
-      "blocked": "KAN-15",
+      "blocker": "CC-10",
+      "blocked": "CC-15",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-11",
-      "blocked": "KAN-15",
+      "blocker": "CC-11",
+      "blocked": "CC-15",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-12",
-      "blocked": "KAN-15",
+      "blocker": "CC-12",
+      "blocked": "CC-15",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-13",
-      "blocked": "KAN-16",
+      "blocker": "CC-13",
+      "blocked": "CC-16",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-14",
-      "blocked": "KAN-16",
+      "blocker": "CC-14",
+      "blocked": "CC-16",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-15",
-      "blocked": "KAN-16",
+      "blocker": "CC-15",
+      "blocked": "CC-16",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-13",
-      "blocked": "KAN-17",
+      "blocker": "CC-13",
+      "blocked": "CC-17",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-14",
-      "blocked": "KAN-17",
+      "blocker": "CC-14",
+      "blocked": "CC-17",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-15",
-      "blocked": "KAN-17",
+      "blocker": "CC-15",
+      "blocked": "CC-17",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-13",
-      "blocked": "KAN-18",
+      "blocker": "CC-13",
+      "blocked": "CC-18",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-14",
-      "blocked": "KAN-18",
+      "blocker": "CC-14",
+      "blocked": "CC-18",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-15",
-      "blocked": "KAN-18",
+      "blocker": "CC-15",
+      "blocked": "CC-18",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-16",
-      "blocked": "KAN-19",
+      "blocker": "CC-16",
+      "blocked": "CC-19",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-17",
-      "blocked": "KAN-19",
+      "blocker": "CC-17",
+      "blocked": "CC-19",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-18",
-      "blocked": "KAN-19",
+      "blocker": "CC-18",
+      "blocked": "CC-19",
       "type": "Blocks"
     },
     {
-      "blocker": "KAN-19",
-      "blocked": "KAN-20",
+      "blocker": "CC-19",
+      "blocked": "CC-20",
       "type": "Blocks"
     }
   ],
@@ -678,23 +576,23 @@
     "dependencyLinkCount": 36,
     "method": "Jira readback of summaries, Task types, complete prepared descriptions, dependency keys, blocking-link direction, status, and assignees.",
     "issueKeys": [
-      "KAN-4",
-      "KAN-5",
-      "KAN-6",
-      "KAN-7",
-      "KAN-8",
-      "KAN-9",
-      "KAN-10",
-      "KAN-11",
-      "KAN-12",
-      "KAN-13",
-      "KAN-14",
-      "KAN-15",
-      "KAN-16",
-      "KAN-17",
-      "KAN-18",
-      "KAN-19",
-      "KAN-20"
+      "CC-4",
+      "CC-5",
+      "CC-6",
+      "CC-7",
+      "CC-8",
+      "CC-9",
+      "CC-10",
+      "CC-11",
+      "CC-12",
+      "CC-13",
+      "CC-14",
+      "CC-15",
+      "CC-16",
+      "CC-17",
+      "CC-18",
+      "CC-19",
+      "CC-20"
     ]
   }
 }

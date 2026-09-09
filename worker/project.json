@@ -1,0 +1,34 @@
+{
+  "name": "worker",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "worker/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "webpack-cli build",
+        "cwd": "worker",
+        "env": { "NODE_ENV": "production" }
+      }
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "worker:build",
+        "runBuildTargetDependencies": false
+      }
+    },
+    "lint": { "executor": "@nx/eslint:lint" },
+    "image": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "docker build --platform linux/amd64 --provenance=false --build-arg SOURCE_DATE_EPOCH=0 --file deployment/images/worker.Dockerfile --tag campus-commander/worker:cc-6 ."
+      }
+    }
+  },
+  "tags": []
+}

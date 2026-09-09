@@ -1,0 +1,129 @@
+{
+  "checkedAt": "2026-09-08T07:38:49.795Z",
+  "durationSeconds": 61.8,
+  "status": "PASS",
+  "sourceState": "uncommitted workspace",
+  "images": {
+    "frontend": "localhost:15000/campus-commander/frontend@sha256:9ae5b788f8c21da072d1cf1b6cd506c0ed3abd1b5aab4d7e7110f97e144e5842",
+    "api": "localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5",
+    "worker": "localhost:15000/campus-commander/worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a",
+    "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+    "postgres": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "redis": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee"
+  },
+  "render": {
+    "controllerCompose": true,
+    "workerComposeFiles": 2,
+    "composeConfigAccepted": true,
+    "localReplacementPostgres": false,
+    "localReplacementRedis": false,
+    "productionPublishedServices": ["edge"],
+    "fixturePublishedServices": ["edge", "api", "kestra"]
+  },
+  "preparation": {
+    "runtimeFiles": [
+      "application.yaml",
+      "database-ca.pem",
+      "flow-secrets.env",
+      "probe-header",
+      "runtime-environment.json",
+      "server-ca.pem",
+      "server.p12",
+      "worker-truststore.p12"
+    ],
+    "credentialStatuses": ["created", "created", "created"],
+    "jdbcMode": "verify-full"
+  },
+  "startup": {
+    "componentContainers": [
+      "frontend",
+      "api",
+      "kestra",
+      "edge",
+      "worker-1",
+      "worker-2",
+      "postgresql",
+      "redis"
+    ],
+    "runningContainerCount": 8,
+    "imageHealth": {
+      "frontend": "healthy",
+      "api": "healthy",
+      "kestra": "healthy",
+      "edge": "healthy",
+      "worker-1": "healthy",
+      "worker-2": "healthy"
+    },
+    "readiness": {
+      "service": "api",
+      "status": "ready",
+      "checks": [
+        { "name": "process-started", "status": "ready" },
+        { "name": "application-database", "status": "ready" },
+        { "name": "kestra-database", "status": "ready" },
+        { "name": "redis", "status": "ready" },
+        { "name": "frontend", "status": "ready" },
+        { "name": "api", "status": "ready" },
+        { "name": "workers", "status": "ready" },
+        { "name": "artifacts", "status": "ready" },
+        { "name": "kestra", "status": "ready" }
+      ]
+    }
+  },
+  "trust": {
+    "privateCa": true,
+    "edgeUnauthenticatedStatus": 401,
+    "edgeAuthorizedStatus": 200,
+    "kestraUnauthenticatedStatus": 401
+  },
+  "execution": {
+    "id": "6gOEg26XGUODc7Zd1E4tap",
+    "correlationId": "hybrid-full-845812004c77dfe5",
+    "state": "SUCCESS",
+    "storageUriSha256": "91559467414325b17b165a676e158e6cc6125d50af0d67f89cf218596e697556"
+  },
+  "persistence": {
+    "sharedArtifactChecksum": "c57c31144ecf340691f0c766452e0c39d3a237401c06883e406f5a14172cff78",
+    "workerChecksumsMatch": true,
+    "executionPreserved": true,
+    "internalStoragePreserved": true,
+    "databaseVolume": "cc-hybrid-full-631216-5e8470c8-postgres-data"
+  },
+  "outages": {
+    "redis": { "observed": true, "recoverySeconds": 2 },
+    "postgres": { "observed": true, "recoverySeconds": 3 },
+    "finalReadiness": "ready"
+  },
+  "cleanupPolicy": {
+    "uniquePrefix": "cc-hybrid-full-631216-5e8470c8",
+    "retainedForRestore": true,
+    "composeVolumesRemoved": false,
+    "oldCampusCommanderVolumesTouched": false
+  },
+  "reusableFixture": {
+    "root": "/tmp/cc-hybrid-full-631216-5e8470c8-eqtxmQ",
+    "controllerFile": "/tmp/cc-hybrid-full-631216-5e8470c8-eqtxmQ/docker-compose.controller.yml",
+    "workerFiles": [
+      "/tmp/cc-hybrid-full-631216-5e8470c8-eqtxmQ/docker-compose.worker-1.yml",
+      "/tmp/cc-hybrid-full-631216-5e8470c8-eqtxmQ/docker-compose.worker-2.yml"
+    ],
+    "projects": {
+      "controller": "cc-hybrid-full-631216-5e8470c8-controller",
+      "workers": [
+        "cc-hybrid-full-631216-5e8470c8-worker-1",
+        "cc-hybrid-full-631216-5e8470c8-worker-2"
+      ]
+    },
+    "externalNetwork": "cc-hybrid-full-631216-5e8470c8-district",
+    "databaseContainer": "cc-hybrid-full-631216-5e8470c8-district-postgres",
+    "redisContainer": "cc-hybrid-full-631216-5e8470c8-district-redis",
+    "databaseVolume": "cc-hybrid-full-631216-5e8470c8-postgres-data"
+  },
+  "limits": [
+    "All eight component containers ran on one Docker host.",
+    "The two worker Compose projects simulate separate worker hosts.",
+    "The shared directories use one host filesystem.",
+    "The check does not qualify district DNS, firewall, or storage infrastructure.",
+    "The check uses synthetic certificates and a harmless worker task."
+  ]
+}

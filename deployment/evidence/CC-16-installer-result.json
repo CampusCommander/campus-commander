@@ -1,0 +1,64 @@
+{
+  "status": "passed",
+  "project": "cc-installer-4dfcd880-0",
+  "profile": "all-docker",
+  "acceptedRelease": false,
+  "workingTree": "uncommitted-candidate",
+  "baseGitRevision": "556cee09ba72dee24f14787828b31af969c0ea0f",
+  "artifact": {
+    "artifactId": "365e27d6-ecbf-471e-9c1d-4cbcdad552d1",
+    "attemptId": "096ab0a6-8c9b-4892-a38b-41fd5c86a814",
+    "schemaVersion": 1,
+    "sizeBytes": 28,
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7"
+  },
+  "before": {
+    "artifactId": "365e27d6-ecbf-471e-9c1d-4cbcdad552d1",
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "ledger": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ]
+  },
+  "after": {
+    "artifactId": "365e27d6-ecbf-471e-9c1d-4cbcdad552d1",
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "ledger": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ]
+  },
+  "releaseB": {
+    "frontend": "localhost:15000/campus-commander/frontend@sha256:b04173623f38f71f11fcab57d9fb7e98ef19ecca4bb9d593741e423c74b3cbf2",
+    "api": "localhost:15000/campus-commander/api@sha256:84486fed9aca5654dc3f951c619f24186626f1f4a5f5f43f7c7d04078187ddcb",
+    "workers": "localhost:15000/campus-commander/worker@sha256:ff996977c7e017c853baabcadc329614f51ea306d1480eecdf406f042429df39"
+  },
+  "checks": [
+    "actual CLI prepare and resume",
+    "stop and resume preserve data",
+    "uninstall and resume preserve volumes",
+    "encrypted backup verified before upgrade",
+    "different image digests upgrade with artifact and ledger preservation",
+    "active secrets preserved"
+  ],
+  "prerequisiteExceptions": [
+    {
+      "name": "district-dns",
+      "reason": "Synthetic hostname resolves through explicit loopback connection override."
+    },
+    {
+      "name": "time-synchronization",
+      "reason": "Disposable development host does not expose district time-service evidence."
+    },
+    {
+      "name": "storage-capacity",
+      "reason": "Synthetic fixture uses small data rather than declared district capacity reservation."
+    }
+  ],
+  "explicitErasureVerified": true,
+  "generatedManifestBindingVerified": true
+}

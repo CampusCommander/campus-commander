@@ -1,0 +1,282 @@
+name: Phase 1 candidate images
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - implementation/cc-5-through-cc-20
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm exec nx run-many -- -t build,lint,test -p deployment,frontend,api,worker
+        env:
+          NX_NO_CLOUD: 'true'
+      - run: npm exec nx run-many -- -t bootstrap-test,redis-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test -p deployment
+      - run: npm exec nx run-many -- -t qualify-redis,postgres-integration,storage-integration,operations-integration -p deployment --parallel=2
+        env:
+          NX_NO_CLOUD: 'true'
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [frontend, api, worker]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm ci
+      - run: npm exec nx run ${{ matrix.service }}:image
+        env:
+          NX_NO_CLOUD: 'true'
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Publish immutable candidate reference
+        id: publish
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: |
+          candidate_image="ghcr.io/campuscommander/campus-commander-${SERVICE}:candidate-${GITHUB_SHA}"
+          docker tag "campus-commander/${SERVICE}:cc-6" "$candidate_image"
+          docker push "$candidate_image"
+          digest="$(docker buildx imagetools inspect "$candidate_image" --format '{{.Manifest.Digest}}')"
+          reference="${candidate_image%%:candidate-*}@${digest}"
+          printf 'reference=%s\n' "$reference" >> "$GITHUB_OUTPUT"
+          mkdir -p candidate
+          printf '%s\n' "$reference" > "candidate/${SERVICE}.reference"
+          cosign sign --yes "$reference"
+          cosign verify "$reference" --certificate-identity="https://github.com/${GITHUB_WORKFLOW_REF}" --certificate-oidc-issuer=https://token.actions.githubusercontent.com > "candidate/${SERVICE}.verification.json"
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610
+        with:
+          image: ${{ steps.publish.outputs.reference }}
+          syft-version: v1.51.1
+          format: spdx-json
+          output-file: candidate/${{ matrix.service }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candidate-${{ matrix.service }}
+          path: candidate/
+          if-no-files-found: error
+
+  capacity:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: candidate-*
+          merge-multiple: true
+          path: image-evidence
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm ci
+      - run: npm exec nx run deployment:build
+        env:
+          NX_NO_CLOUD: 'true'
+      - name: Prepare and pull qualification images
+        env:
+          IMAGE_EVIDENCE: ${{ github.workspace }}/image-evidence
+          QUALIFICATION_RELEASE: ${{ runner.temp }}/capacity-release.json
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFile } from 'node:child_process';
+          import { readFile, writeFile } from 'node:fs/promises';
+          import { join } from 'node:path';
+          import { promisify } from 'node:util';
+          import {
+            kestraImage,
+            postgresImage,
+          } from './deployment/profiles/all-docker/render.mjs';
+          import { qualificationImages } from './deployment/qualification/images.mjs';
+          import { redisImage } from './deployment/redis/runtime.mjs';
+
+          const execute = promisify(execFile);
+          const references = {};
+          for (const [artifact, property] of [
+            ['frontend', 'frontend'],
+            ['api', 'api'],
+            ['worker', 'workers'],
+          ]) {
+            references[property] = (
+              await readFile(
+                join(process.env.IMAGE_EVIDENCE, `${artifact}.reference`),
+                'utf8',
+              )
+            ).trim();
+          }
+          const release = {
+            schemaVersion: 1,
+            architectures: ['linux/amd64'],
+            images: references,
+          };
+          await writeFile(
+            process.env.QUALIFICATION_RELEASE,
+            `${JSON.stringify(release, null, 2)}\n`,
+            { flag: 'wx', mode: 0o600 },
+          );
+          qualificationImages(undefined, process.env.QUALIFICATION_RELEASE);
+          for (const image of [
+            ...Object.values(references),
+            postgresImage,
+            kestraImage,
+            redisImage,
+          ]) {
+            await execute('docker', ['pull', image], {
+              maxBuffer: 8 * 1024 * 1024,
+            });
+            process.stdout.write(`Pulled ${image}\n`);
+          }
+          NODE
+      - name: Verify bounded storage exhaustion
+        env:
+          QUALIFICATION_RELEASE: ${{ runner.temp }}/capacity-release.json
+          CAPACITY_RESULT: ${{ runner.temp }}/capacity-result.json
+          NX_NO_CLOUD: 'true'
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { readFileSync } from 'node:fs';
+
+          const release = JSON.parse(
+            readFileSync(process.env.QUALIFICATION_RELEASE, 'utf8'),
+          );
+          execFileSync(
+            'npm',
+            [
+              'exec',
+              '--',
+              'nx',
+              'run',
+              'deployment:capacity-integration',
+              `--args=${release.images.api} ${process.env.CAPACITY_RESULT}`,
+            ],
+            { stdio: 'inherit' },
+          );
+          NODE
+      - name: Verify complete all-Docker capacity behavior
+        env:
+          CC_QUALIFICATION_RELEASE: ${{ runner.temp }}/capacity-release.json
+          PROFILE_CAPACITY_RESULT: ${{ runner.temp }}/profile-capacity-result.json
+          NX_NO_CLOUD: 'true'
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+
+          execFileSync(
+            'npm',
+            [
+              'exec',
+              '--',
+              'nx',
+              'run',
+              'deployment:profile-capacity-integration',
+              `--args=${process.env.PROFILE_CAPACITY_RESULT}`,
+            ],
+            { stdio: 'inherit' },
+          );
+          NODE
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qualification-capacity
+          path: |
+            ${{ runner.temp }}/capacity-result.json
+            ${{ runner.temp }}/profile-capacity-result.json
+          if-no-files-found: error
+
+  bundle:
+    needs: [publish, capacity]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: candidate-*
+          merge-multiple: true
+          path: image-evidence
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - run: npm ci
+      - run: npm exec nx run deployment:build
+        env:
+          NX_NO_CLOUD: 'true'
+      - name: Assemble and sign candidate bundle
+        run: |
+          node deployment/release/candidate.mjs candidate-bundle image-evidence "$GITHUB_SHA"
+          source_time="$(git show -s --format=%ct "$GITHUB_SHA")"
+          tar --sort=name --mtime="@${source_time}" --owner=0 --group=0 --numeric-owner -cf phase-1-candidate.tar -C candidate-bundle .
+          gzip -n phase-1-candidate.tar
+          smoke_root="$(mktemp -d "$RUNNER_TEMP/cc-bundle-smoke-XXXXXX")"
+          tar -xzf phase-1-candidate.tar.gz -C "$smoke_root"
+          CC_BUNDLE_ROOT="$smoke_root" node --input-type=module -e 'import {pathToFileURL} from "node:url"; import {readFile} from "node:fs/promises"; const root=process.env.CC_BUNDLE_ROOT; await import(pathToFileURL(`${root}/deployment/installer/orchestrator.mjs`)); const {verifyReleaseFiles}=await import(pathToFileURL(`${root}/deployment/release/integrity.mjs`)); await verifyReleaseFiles(root,JSON.parse(await readFile(`${root}/release-manifest.json`)));'
+          cosign sign-blob --yes --bundle phase-1-candidate.sigstore.json phase-1-candidate.tar.gz
+          cosign verify-blob --bundle phase-1-candidate.sigstore.json --certificate-identity="https://github.com/${GITHUB_WORKFLOW_REF}" --certificate-oidc-issuer=https://token.actions.githubusercontent.com phase-1-candidate.tar.gz
+          cosign sign-blob --yes --bundle candidate-bundle/release-manifest.sigstore.json candidate-bundle/release-manifest.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase-1-candidate-${{ github.sha }}
+          path: |
+            phase-1-candidate.tar.gz
+            phase-1-candidate.sigstore.json
+            candidate-bundle/release-manifest.json
+            candidate-bundle/release-manifest.sigstore.json
+          if-no-files-found: error
+
+      - name: Publish project candidate release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          candidate_tag="phase-1-candidate-${GITHUB_SHA:0:12}"
+          cat > candidate-notes.md <<'NOTES'
+          This candidate contains signed Linux amd64 application images and an installation bundle.
+          The manifest records image digests, source revision, file checksums, and SBOMs.
+          Profile qualification remains incomplete. Do not treat this candidate as an accepted Phase 1 release.
+          Verify the bundle signature and the independently trusted workflow identity before extraction.
+          NOTES
+          gh release create "$candidate_tag" --target "$GITHUB_SHA" --prerelease --title "Phase 1 candidate ${GITHUB_SHA:0:12}" --notes-file candidate-notes.md phase-1-candidate.tar.gz phase-1-candidate.sigstore.json candidate-bundle/release-manifest.json candidate-bundle/release-manifest.sigstore.json

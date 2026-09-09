@@ -1,0 +1,43 @@
+id: cc11_external_worker
+namespace: campus.validation
+
+inputs:
+  - id: correlationId
+    type: STRING
+  - id: marker
+    type: STRING
+  - id: delayMilliseconds
+    type: INT
+    defaults: 0
+
+tasks:
+  - id: dispatch
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/synthetic'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "correlationId": inputs.correlationId,
+        "marker": inputs.marker,
+        "delayMilliseconds": inputs.delayMilliseconds
+      } | json }}
+    timeout: PT30S
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT15S
+    retry:
+      type: constant
+      interval: PT2S
+      maxDuration: PT30S
+      maxAttempts: 3
+      warningOnRetry: false
+
+  - id: persist_result
+    type: io.kestra.plugin.core.storage.Write
+    content: '{{ outputs.dispatch.body | json }}'
+    extension: .json

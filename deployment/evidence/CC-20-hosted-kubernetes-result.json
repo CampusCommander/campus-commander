@@ -1,0 +1,45 @@
+{
+  "release": "phase-1-candidate-3e6a6a67a2c3",
+  "profile": "kubernetes",
+  "install": "ready",
+  "publicStatus": "ready",
+  "publicResume": "ready",
+  "qualificationExceptions": [],
+  "artifactMigrationBootstrapUnchanged": true,
+  "workerArtifactReaders": 2,
+  "https": [
+    {
+      "path": "/api/startup",
+      "authenticated": false,
+      "status": 401
+    },
+    {
+      "path": "/api/startup",
+      "authenticated": true,
+      "status": 200
+    },
+    {
+      "path": "/kestra",
+      "authenticated": true,
+      "status": 404
+    },
+    {
+      "path": "/workers",
+      "authenticated": true,
+      "status": 404
+    },
+    {
+      "path": "/api/health/ready",
+      "authenticated": true,
+      "status": 404
+    }
+  ],
+  "generatedManifestSha256": "6972ad15702f7000f27afc7ba40ec63a80ebc9566236eeeafa4738dac68c3517",
+  "limitations": [
+    "One physical host and shared hostPath backing",
+    "Stock Kind CNI does not establish NetworkPolicy enforcement",
+    "Localhost port-forward replaces production LoadBalancer routing",
+    "No independent host failure, rescheduling, restore, or upgrade tested",
+    "Candidate qualification does not establish release acceptance"
+  ]
+}

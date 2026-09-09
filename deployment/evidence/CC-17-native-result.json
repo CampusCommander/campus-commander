@@ -1,0 +1,29 @@
+{
+  "runner": "default-native",
+  "toolVersions": {
+    "pg_dump": "pg_dump (PostgreSQL) 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)",
+    "pg_restore": "pg_restore (PostgreSQL) 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)"
+  },
+  "backupMilliseconds": 230,
+  "restoreMilliseconds": 118,
+  "encryptedFiles": 6,
+  "results": [
+    "actual connection quiescence enforced",
+    "both database dumps restored",
+    "artifact identity and Unicode bytes restored",
+    "Kestra synthetic state and internal files restored",
+    "missing/wrong keys rejected",
+    "corrupt and missing backup files rejected",
+    "backup inside primary volume rejected",
+    "nonempty target rejected",
+    "absent source volume rejected",
+    "failed restore retains disabled marker without success report",
+    "services remain disabled; Redis requires fresh instance"
+  ],
+  "hybrid": "not-run: district shared mount absent",
+  "kubernetes": "not-run: qualified RWX storage absent",
+  "date": "2026-09-08",
+  "scope": "native operator tools; synthetic loopback PostgreSQL; separate temporary file trees",
+  "toolAcquisition": "Ubuntu packages extracted into /tmp; no system package installation",
+  "postgresTls": "disabled only for isolated loopback fixture"
+}

@@ -1,0 +1,14 @@
+{
+  "installationRoot": "/opt/campus-commander",
+  "configurationPath": "/protected/deployment.json",
+  "releasePath": "/verified-release/release-manifest.json",
+  "releaseRoot": "/verified-release",
+  "project": "campus-commander",
+  "trust": {
+    "kind": "cosign",
+    "bundlePath": "/verified-release/release-manifest.sigstore.json",
+    "identity": "https://github.com/CampusCommander/campus-commander/.github/workflows/candidate-images.yml@refs/heads/implementation/cc-5-through-cc-20",
+    "issuer": "https://token.actions.githubusercontent.com"
+  },
+  "restoreDirectories": []
+}

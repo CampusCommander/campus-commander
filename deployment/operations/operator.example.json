@@ -1,0 +1,30 @@
+{
+  "configurationPath": "/protected-operator/deployment.json",
+  "releaseInventoryPath": "/protected-operator/release.integrity.json",
+  "backupDirectory": "/separate-backups/installation-20260908",
+  "sourceRoots": {
+    "artifacts": "/primary/artifacts",
+    "kestraInternal": "/primary/kestra-internal"
+  },
+  "targetDirectory": "/isolated-restore/installation-20260908",
+  "keyRecovery": {
+    "id": "district-foundation-backup",
+    "version": 1,
+    "reference": {
+      "provider": "file",
+      "path": "/run/secrets/backup-key"
+    }
+  },
+  "applicationCredentials": {
+    "role": "campus_migrator",
+    "passwordSecretRef": {
+      "provider": "file",
+      "path": "/run/secrets/application-migration-password"
+    }
+  },
+  "quiesce": {
+    "operator": "REPLACE_WITH_OPERATOR_ID",
+    "stoppedAt": "REPLACE_WITH_CURRENT_ISO_TIMESTAMP_AFTER_STOP",
+    "stoppedServices": ["api", "workers", "kestra"]
+  }
+}

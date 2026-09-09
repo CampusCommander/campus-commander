@@ -1,0 +1,1185 @@
+{
+  "schemaVersion": 1,
+  "status": "pass",
+  "profile": "kubernetes",
+  "scope": "synthetic-kind-process-and-shared-artifact-interruption",
+  "qualifiesProfile": false,
+  "cluster": "cc-workload-validation",
+  "context": "kind-cc-workload-validation",
+  "kubeconfig": "/tmp/cc-kube-workload-kubeconfig",
+  "namespace": "cc-kube-restore-synthetic",
+  "images": {
+    "frontend": "localhost:15000/campus-commander/frontend@sha256:9ae5b788f8c21da072d1cf1b6cd506c0ed3abd1b5aab4d7e7110f97e144e5842",
+    "api": "localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5",
+    "worker": "localhost:15000/campus-commander/worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a"
+  },
+  "kubernetesVersion": "v1.35.8",
+  "baselineStartup": {
+    "status": "ready",
+    "checks": [
+      {
+        "name": "application-database",
+        "status": "ready"
+      },
+      {
+        "name": "kestra-database",
+        "status": "ready"
+      },
+      {
+        "name": "redis",
+        "status": "ready"
+      },
+      {
+        "name": "frontend",
+        "status": "ready"
+      },
+      {
+        "name": "api",
+        "status": "ready"
+      },
+      {
+        "name": "workers",
+        "status": "ready"
+      },
+      {
+        "name": "artifacts",
+        "status": "ready"
+      },
+      {
+        "name": "kestra",
+        "status": "ready"
+      }
+    ]
+  },
+  "baselineDeployments": [
+    {
+      "name": "api",
+      "replicas": 2,
+      "ready": 2,
+      "image": "localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5",
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "readinessPath": "/health/live"
+    },
+    {
+      "name": "application-postgres",
+      "replicas": 1,
+      "ready": 1,
+      "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+      "resources": {
+        "limits": {
+          "cpu": "1",
+          "memory": "1Gi"
+        },
+        "requests": {
+          "cpu": "250m",
+          "memory": "512Mi"
+        }
+      },
+      "readinessPath": "export PGPASSWORD=\"$(cat \"$POSTGRES_PASSWORD_FILE\")\"; exec psql 'host=application-postgres.cc-kube-restore-synthetic.svc.cluster.local hostaddr=127.0.0.1 port=5432 user=postgres dbname=postgres sslmode=verify-full sslrootcert=/run/secrets/campus-installation/district-ca' -tAc 'SELECT 1'"
+    },
+    {
+      "name": "edge",
+      "replicas": 1,
+      "ready": 1,
+      "image": "localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5",
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "readinessPath": "/health/live"
+    },
+    {
+      "name": "frontend",
+      "replicas": 1,
+      "ready": 1,
+      "image": "localhost:15000/campus-commander/frontend@sha256:9ae5b788f8c21da072d1cf1b6cd506c0ed3abd1b5aab4d7e7110f97e144e5842",
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "readinessPath": "/health/ready"
+    },
+    {
+      "name": "kestra",
+      "replicas": 1,
+      "ready": 1,
+      "image": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+      "resources": {
+        "limits": {
+          "cpu": "2",
+          "memory": "2Gi"
+        },
+        "requests": {
+          "cpu": "500m",
+          "memory": "1Gi"
+        }
+      },
+      "readinessPath": "https://kestra.cc-kube-restore-synthetic.svc.cluster.local:8080/api/v1/main/flows/search?size=1"
+    },
+    {
+      "name": "kestra-postgres",
+      "replicas": 1,
+      "ready": 1,
+      "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+      "resources": {
+        "limits": {
+          "cpu": "1",
+          "memory": "1Gi"
+        },
+        "requests": {
+          "cpu": "250m",
+          "memory": "512Mi"
+        }
+      },
+      "readinessPath": "export PGPASSWORD=\"$(cat \"$POSTGRES_PASSWORD_FILE\")\"; exec psql 'host=kestra-postgres.cc-kube-restore-synthetic.svc.cluster.local hostaddr=127.0.0.1 port=5432 user=postgres dbname=postgres sslmode=verify-full sslrootcert=/run/secrets/campus-installation/district-ca' -tAc 'SELECT 1'"
+    },
+    {
+      "name": "redis",
+      "replicas": 1,
+      "ready": 1,
+      "image": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee",
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "readinessPath": "export REDISCLI_AUTH=\"$(cat '/run/secrets/campus-installation/redis-password')\"; exec redis-cli --tls --cacert '/run/secrets/campus-installation/district-ca' --sni 'redis.cc-kube-restore-synthetic.svc.cluster.local' -h 127.0.0.1 -p '6379' PING"
+    },
+    {
+      "name": "workers",
+      "replicas": 2,
+      "ready": 2,
+      "image": "localhost:15000/campus-commander/worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a",
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "readinessPath": "/health/ready"
+    }
+  ],
+  "baselinePods": [
+    {
+      "name": "api-c576d95c-nj74d",
+      "node": "cc-workload-validation-worker2",
+      "restarts": 0
+    },
+    {
+      "name": "api-c576d95c-rk5fn",
+      "node": "cc-workload-validation-control-plane",
+      "restarts": 0
+    },
+    {
+      "name": "application-postgres-6575989f88-2k5tv",
+      "node": "cc-workload-validation-worker",
+      "restarts": 0
+    },
+    {
+      "name": "edge-7456b48b97-pl6n4",
+      "node": "cc-workload-validation-worker2",
+      "restarts": 0
+    },
+    {
+      "name": "frontend-86854b76b5-rqfsw",
+      "node": "cc-workload-validation-worker",
+      "restarts": 0
+    },
+    {
+      "name": "kestra-798bc794d6-x7gq6",
+      "node": "cc-workload-validation-worker",
+      "restarts": 0
+    },
+    {
+      "name": "kestra-postgres-fb84c9cb8-bcmnj",
+      "node": "cc-workload-validation-worker2",
+      "restarts": 0
+    },
+    {
+      "name": "redis-796f5b686c-bd4lg",
+      "node": "cc-workload-validation-worker2",
+      "restarts": 0
+    },
+    {
+      "name": "workers-6b885ff798-2vzjc",
+      "node": "cc-workload-validation-worker2",
+      "restarts": 0
+    },
+    {
+      "name": "workers-6b885ff798-ckl2g",
+      "node": "cc-workload-validation-control-plane",
+      "restarts": 0
+    }
+  ],
+  "baselineFixtures": {
+    "artifact": {
+      "artifactId": "ff2944b0-0c99-4ee8-b597-0f0c804d045b",
+      "sizeBytes": 8388608,
+      "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd"
+    },
+    "kestra": {
+      "flow": "campus.validation/cc11_external_worker",
+      "markerSha256": "587dd72c8d1fdb2481dd0658acd5d0c28746b6d10161a867ce0b25efe80a848a"
+    }
+  },
+  "finalFixtures": {
+    "artifact": {
+      "artifactId": "ff2944b0-0c99-4ee8-b597-0f0c804d045b",
+      "sizeBytes": 8388608,
+      "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd"
+    },
+    "kestra": {
+      "flow": "campus.validation/cc11_external_worker",
+      "markerSha256": "587dd72c8d1fdb2481dd0658acd5d0c28746b6d10161a867ce0b25efe80a848a"
+    }
+  },
+  "records": [
+    {
+      "component": "api",
+      "deployment": "api",
+      "status": "pass",
+      "apiDiagnosticAvailable": false,
+      "failure": {
+        "public": {
+          "status": "unavailable",
+          "checks": []
+        },
+        "diagnostic": null
+      },
+      "recovery": {
+        "status": "ready",
+        "checks": [
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "ready"
+          }
+        ]
+      },
+      "recoveryMilliseconds": 19941,
+      "fixtures": {
+        "artifact": {
+          "artifactId": "ff2944b0-0c99-4ee8-b597-0f0c804d045b",
+          "sizeBytes": 8388608,
+          "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd"
+        },
+        "kestra": {
+          "flow": "campus.validation/cc11_external_worker",
+          "markerSha256": "587dd72c8d1fdb2481dd0658acd5d0c28746b6d10161a867ce0b25efe80a848a"
+        }
+      },
+      "logs": [
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[InstanceLoader] \u001b[39m\u001b[32mAppModule dependencies initialized\u001b[39m\u001b[38;5;3m +45ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RoutesResolver] \u001b[39m\u001b[32mAppController {/api}:\u001b[39m\u001b[38;5;3m +27ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/api, GET} route\u001b[39m\u001b[38;5;3m +3ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RoutesResolver] \u001b[39m\u001b[32mBootstrapController {/api}:\u001b[39m\u001b[38;5;3m +0ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/api/bootstrap/verify, GET} route\u001b[39m\u001b[38;5;3m +1ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/api/startup, GET} route\u001b[39m\u001b[38;5;3m +0ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RoutesResolver] \u001b[39m\u001b[32mHealthController {/health}:\u001b[39m\u001b[38;5;3m +0ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/health, GET} route\u001b[39m\u001b[38;5;3m +1ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/health/live, GET} route\u001b[39m\u001b[38;5;3m +0ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/health/ready, GET} route\u001b[39m\u001b[38;5;3m +0ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[NestApplication] \u001b[39m\u001b[32mNest application successfully started\u001b[39m\u001b[38;5;3m +2ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[32mAPI listening with HTTPS on port 3000\u001b[39m"
+      ]
+    },
+    {
+      "component": "workers",
+      "deployment": "workers",
+      "status": "pass",
+      "apiDiagnosticAvailable": true,
+      "failure": {
+        "public": {
+          "status": "not-ready",
+          "checks": [
+            {
+              "name": "application-database",
+              "status": "ready"
+            },
+            {
+              "name": "kestra-database",
+              "status": "ready"
+            },
+            {
+              "name": "redis",
+              "status": "ready"
+            },
+            {
+              "name": "frontend",
+              "status": "ready"
+            },
+            {
+              "name": "api",
+              "status": "ready"
+            },
+            {
+              "name": "workers",
+              "status": "not-ready"
+            },
+            {
+              "name": "artifacts",
+              "status": "ready"
+            },
+            {
+              "name": "kestra",
+              "status": "ready"
+            }
+          ]
+        },
+        "diagnostic": {
+          "status": "not-ready",
+          "checks": [
+            {
+              "name": "application-database",
+              "status": "ready"
+            },
+            {
+              "name": "kestra-database",
+              "status": "ready"
+            },
+            {
+              "name": "redis",
+              "status": "ready"
+            },
+            {
+              "name": "frontend",
+              "status": "ready"
+            },
+            {
+              "name": "api",
+              "status": "ready"
+            },
+            {
+              "name": "workers",
+              "status": "not-ready"
+            },
+            {
+              "name": "artifacts",
+              "status": "ready"
+            },
+            {
+              "name": "kestra",
+              "status": "ready"
+            }
+          ]
+        }
+      },
+      "recovery": {
+        "status": "ready",
+        "checks": [
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "ready"
+          }
+        ]
+      },
+      "recoveryMilliseconds": 18082,
+      "fixtures": {
+        "artifact": {
+          "artifactId": "ff2944b0-0c99-4ee8-b597-0f0c804d045b",
+          "sizeBytes": 8388608,
+          "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd"
+        },
+        "kestra": {
+          "flow": "campus.validation/cc11_external_worker",
+          "markerSha256": "587dd72c8d1fdb2481dd0658acd5d0c28746b6d10161a867ce0b25efe80a848a"
+        }
+      },
+      "logs": ["Worker probe listening with HTTPS on port 3001"]
+    },
+    {
+      "component": "redis",
+      "deployment": "redis",
+      "status": "pass",
+      "apiDiagnosticAvailable": true,
+      "failure": {
+        "public": {
+          "status": "not-ready",
+          "checks": [
+            {
+              "name": "application-database",
+              "status": "ready"
+            },
+            {
+              "name": "kestra-database",
+              "status": "ready"
+            },
+            {
+              "name": "redis",
+              "status": "not-ready"
+            },
+            {
+              "name": "frontend",
+              "status": "ready"
+            },
+            {
+              "name": "api",
+              "status": "ready"
+            },
+            {
+              "name": "workers",
+              "status": "ready"
+            },
+            {
+              "name": "artifacts",
+              "status": "ready"
+            },
+            {
+              "name": "kestra",
+              "status": "ready"
+            }
+          ]
+        },
+        "diagnostic": {
+          "status": "not-ready",
+          "checks": [
+            {
+              "name": "application-database",
+              "status": "ready"
+            },
+            {
+              "name": "kestra-database",
+              "status": "ready"
+            },
+            {
+              "name": "redis",
+              "status": "not-ready"
+            },
+            {
+              "name": "frontend",
+              "status": "ready"
+            },
+            {
+              "name": "api",
+              "status": "ready"
+            },
+            {
+              "name": "workers",
+              "status": "ready"
+            },
+            {
+              "name": "artifacts",
+              "status": "ready"
+            },
+            {
+              "name": "kestra",
+              "status": "ready"
+            }
+          ]
+        }
+      },
+      "recovery": {
+        "status": "ready",
+        "checks": [
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "ready"
+          }
+        ]
+      },
+      "recoveryMilliseconds": 18334,
+      "fixtures": {
+        "artifact": {
+          "artifactId": "ff2944b0-0c99-4ee8-b597-0f0c804d045b",
+          "sizeBytes": 8388608,
+          "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd"
+        },
+        "kestra": {
+          "flow": "campus.validation/cc11_external_worker",
+          "markerSha256": "587dd72c8d1fdb2481dd0658acd5d0c28746b6d10161a867ce0b25efe80a848a"
+        }
+      },
+      "logs": [
+        "1:M 08 Sep 2026 08:32:50.339 * <ReJSON> version: 80001 git sha: unknown branch: unknown",
+        "1:M 08 Sep 2026 08:32:50.339 * <ReJSON> Exported RedisJSON_V1 API",
+        "1:M 08 Sep 2026 08:32:50.339 * <ReJSON> Exported RedisJSON_V2 API",
+        "1:M 08 Sep 2026 08:32:50.339 * <ReJSON> Exported RedisJSON_V3 API",
+        "1:M 08 Sep 2026 08:32:50.339 * <ReJSON> Exported RedisJSON_V4 API",
+        "1:M 08 Sep 2026 08:32:50.339 * <ReJSON> Exported RedisJSON_V5 API",
+        "1:M 08 Sep 2026 08:32:50.339 * <ReJSON> Enabled diskless replication",
+        "1:M 08 Sep 2026 08:32:50.339 * <ReJSON> Initialized shared string cache, thread safe: false.",
+        "1:M 08 Sep 2026 08:32:50.339 * Module 'ReJSON' loaded from /usr/local/lib/redis/modules//rejson.so",
+        "1:M 08 Sep 2026 08:32:50.339 * <search> Acquired RedisJSON_V5 API",
+        "1:M 08 Sep 2026 08:32:50.378 * Server initialized",
+        "1:M 08 Sep 2026 08:32:50.378 * Ready to accept connections tls"
+      ]
+    },
+    {
+      "component": "application-database",
+      "deployment": "application-postgres",
+      "status": "pass",
+      "apiDiagnosticAvailable": true,
+      "failure": {
+        "public": {
+          "status": "unavailable",
+          "checks": []
+        },
+        "diagnostic": {
+          "status": "not-ready",
+          "checks": [
+            {
+              "name": "process-started",
+              "status": "ready"
+            },
+            {
+              "name": "application-database",
+              "status": "not-ready"
+            },
+            {
+              "name": "kestra-database",
+              "status": "ready"
+            },
+            {
+              "name": "redis",
+              "status": "ready"
+            },
+            {
+              "name": "frontend",
+              "status": "ready"
+            },
+            {
+              "name": "api",
+              "status": "ready"
+            },
+            {
+              "name": "workers",
+              "status": "ready"
+            },
+            {
+              "name": "artifacts",
+              "status": "ready"
+            },
+            {
+              "name": "kestra",
+              "status": "ready"
+            }
+          ]
+        }
+      },
+      "recovery": {
+        "status": "ready",
+        "checks": [
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "ready"
+          }
+        ]
+      },
+      "recoveryMilliseconds": 22486,
+      "fixtures": {
+        "artifact": {
+          "artifactId": "ff2944b0-0c99-4ee8-b597-0f0c804d045b",
+          "sizeBytes": 8388608,
+          "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd"
+        },
+        "kestra": {
+          "flow": "campus.validation/cc11_external_worker",
+          "markerSha256": "587dd72c8d1fdb2481dd0658acd5d0c28746b6d10161a867ce0b25efe80a848a"
+        }
+      },
+      "logs": [
+        "chmod: changing permissions of '/var/run/postgresql': Operation not permitted",
+        "PostgreSQL Database directory appears to contain a database; Skipping initialization",
+        "2026-09-08 08:33:12.484 UTC [1] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+        "2026-09-08 08:33:12.495 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432",
+        "2026-09-08 08:33:12.506 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432",
+        "2026-09-08 08:33:12.516 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"",
+        "2026-09-08 08:33:12.522 UTC [23] LOG:  database system was shut down at 2026-09-08 08:33:02 UTC",
+        "2026-09-08 08:33:12.528 UTC [1] LOG:  database system is ready to accept connections"
+      ]
+    },
+    {
+      "component": "kestra",
+      "deployment": "kestra",
+      "status": "pass",
+      "apiDiagnosticAvailable": true,
+      "failure": {
+        "public": {
+          "status": "not-ready",
+          "checks": [
+            {
+              "name": "application-database",
+              "status": "ready"
+            },
+            {
+              "name": "kestra-database",
+              "status": "ready"
+            },
+            {
+              "name": "redis",
+              "status": "ready"
+            },
+            {
+              "name": "frontend",
+              "status": "ready"
+            },
+            {
+              "name": "api",
+              "status": "ready"
+            },
+            {
+              "name": "workers",
+              "status": "ready"
+            },
+            {
+              "name": "artifacts",
+              "status": "ready"
+            },
+            {
+              "name": "kestra",
+              "status": "not-ready"
+            }
+          ]
+        },
+        "diagnostic": {
+          "status": "not-ready",
+          "checks": [
+            {
+              "name": "application-database",
+              "status": "ready"
+            },
+            {
+              "name": "kestra-database",
+              "status": "ready"
+            },
+            {
+              "name": "redis",
+              "status": "ready"
+            },
+            {
+              "name": "frontend",
+              "status": "ready"
+            },
+            {
+              "name": "api",
+              "status": "ready"
+            },
+            {
+              "name": "workers",
+              "status": "ready"
+            },
+            {
+              "name": "artifacts",
+              "status": "ready"
+            },
+            {
+              "name": "kestra",
+              "status": "not-ready"
+            }
+          ]
+        }
+      },
+      "recovery": {
+        "status": "ready",
+        "checks": [
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "ready"
+          }
+        ]
+      },
+      "recoveryMilliseconds": 22065,
+      "fixtures": {
+        "artifact": {
+          "artifactId": "ff2944b0-0c99-4ee8-b597-0f0c804d045b",
+          "sizeBytes": 8388608,
+          "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd"
+        },
+        "kestra": {
+          "flow": "campus.validation/cc11_external_worker",
+          "markerSha256": "587dd72c8d1fdb2481dd0658acd5d0c28746b6d10161a867ce0b25efe80a848a"
+        }
+      },
+      "logs": [
+        "08:33:40.322 \u001b[34mINFO \u001b[0;39m \u001b[35mstandalone  \u001b[0;39m \u001b[36mi.kestra.core.plugins.PluginScanner\u001b[0;39m Registered 0 plugins from 0 groups (scan done in 6ms)",
+        "08:33:41.258 \u001b[34mINFO \u001b[0;39m \u001b[35mstandalone  \u001b[0;39m \u001b[36mio.kestra.cli.AbstractCommand\u001b[0;39m Main server is running at https://kestra-798bc794d6-x7gq6:8080, management server at https://kestra-798bc794d6-x7gq6:8081",
+        "08:33:41.442 \u001b[34mINFO \u001b[0;39m \u001b[35mstandalone  \u001b[0;39m \u001b[36mio.kestra.cli.AbstractCommand\u001b[0;39m Health endpoint is available at https://kestra-798bc794d6-x7gq6:8081/health",
+        "08:33:41.289 \u001b[34mINFO \u001b[0;39m \u001b[35mstandalone-runner_1\u001b[0;39m \u001b[36mio.kestra.worker.DefaultWorker\u001b[0;39m Worker started with 16 thread(s)",
+        "08:33:41.763 \u001b[34mINFO \u001b[0;39m \u001b[35mstandalone-runner_3\u001b[0;39m \u001b[36mio.kestra.jdbc.runner.JdbcIndexer\u001b[0;39m Indexer started",
+        "08:33:41.756 \u001b[34mINFO \u001b[0;39m \u001b[35mstandalone-runner_0\u001b[0;39m \u001b[36mio.kestra.jdbc.runner.JdbcExecutor\u001b[0;39m Executor started with 4 thread(s)",
+        "08:33:41.075 \u001b[34mINFO \u001b[0;39m \u001b[35mstandalone-runner_2\u001b[0;39m \u001b[36mi.kestra.scheduler.AbstractScheduler\u001b[0;39m Scheduler started",
+        "08:33:44.592 \u001b[34mINFO \u001b[0;39m \u001b[35mdefault-eventLoopGroup-2-1\u001b[0;39m \u001b[36mio.kestra.webserver.access\u001b[0;39m 2026-09-08T08:33:43.844Z | GET /api/v1/main/flows/search?size=1 HTTP/1.1 | status: 200 | ip: 127.0.0.1 | length: 1277 | duration: 281",
+        "08:33:44.368 \u001b[34mINFO \u001b[0;39m \u001b[35mdefault-eventLoopGroup-2-2\u001b[0;39m \u001b[36mio.kestra.webserver.access\u001b[0;39m 2026-09-08T08:33:44.211Z | GET /api/v1/main/flows/search?size=1 HTTP/1.1 | status: 200 | ip: 127.0.0.1 | length: 1277 | duration: 6",
+        "08:33:45.590 \u001b[34mINFO \u001b[0;39m \u001b[35mdefault-eventLoopGroup-2-1\u001b[0;39m \u001b[36mio.kestra.webserver.access\u001b[0;39m 2026-09-08T08:33:45.470Z | GET /api/v1/main/flows/search?size=1 HTTP/1.1 | status: 200 | ip: 10.244.0.21 | length: 1277 | duration: 5",
+        "08:33:46.784 \u001b[34mINFO \u001b[0;39m \u001b[35mdefault-eventLoopGroup-2-2\u001b[0;39m \u001b[36mio.kestra.webserver.access\u001b[0;39m 2026-09-08T08:33:46.168Z | GET /api/v1/main/flows/campus.validation/cc11_external_worker HTTP/1.1 | status: 200 | ip: 127.0.0.1 | length: 1253 | duration: 8",
+        "08:33:46.307 \u001b[34mINFO \u001b[0;39m \u001b[35mdefault-eventLoopGroup-2-2\u001b[0;39m \u001b[36mio.kestra.webserver.access\u001b[0;39m 2026-09-08T08:33:46.180Z | GET /api/v1/main/namespaces/campus.validation/files?path=/cc17-kubernetes-marker.bin HTTP/1.1 | status: 200 | ip: 127.0.0.1 | length: 256 | duration: 37"
+      ]
+    },
+    {
+      "component": "artifacts",
+      "deployment": null,
+      "status": "pass",
+      "apiDiagnosticAvailable": true,
+      "failure": {
+        "public": {
+          "status": "not-ready",
+          "checks": [
+            {
+              "name": "application-database",
+              "status": "ready"
+            },
+            {
+              "name": "kestra-database",
+              "status": "ready"
+            },
+            {
+              "name": "redis",
+              "status": "ready"
+            },
+            {
+              "name": "frontend",
+              "status": "ready"
+            },
+            {
+              "name": "api",
+              "status": "ready"
+            },
+            {
+              "name": "workers",
+              "status": "ready"
+            },
+            {
+              "name": "artifacts",
+              "status": "not-ready"
+            },
+            {
+              "name": "kestra",
+              "status": "ready"
+            }
+          ]
+        },
+        "diagnostic": {
+          "status": "not-ready",
+          "checks": [
+            {
+              "name": "application-database",
+              "status": "ready"
+            },
+            {
+              "name": "kestra-database",
+              "status": "ready"
+            },
+            {
+              "name": "redis",
+              "status": "ready"
+            },
+            {
+              "name": "frontend",
+              "status": "ready"
+            },
+            {
+              "name": "api",
+              "status": "ready"
+            },
+            {
+              "name": "workers",
+              "status": "ready"
+            },
+            {
+              "name": "artifacts",
+              "status": "not-ready"
+            },
+            {
+              "name": "kestra",
+              "status": "ready"
+            }
+          ]
+        }
+      },
+      "recovery": {
+        "status": "ready",
+        "checks": [
+          {
+            "name": "application-database",
+            "status": "ready"
+          },
+          {
+            "name": "kestra-database",
+            "status": "ready"
+          },
+          {
+            "name": "redis",
+            "status": "ready"
+          },
+          {
+            "name": "frontend",
+            "status": "ready"
+          },
+          {
+            "name": "api",
+            "status": "ready"
+          },
+          {
+            "name": "workers",
+            "status": "ready"
+          },
+          {
+            "name": "artifacts",
+            "status": "ready"
+          },
+          {
+            "name": "kestra",
+            "status": "ready"
+          }
+        ]
+      },
+      "recoveryMilliseconds": 2035,
+      "fixtures": {
+        "artifact": {
+          "artifactId": "ff2944b0-0c99-4ee8-b597-0f0c804d045b",
+          "sizeBytes": 8388608,
+          "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd"
+        },
+        "kestra": {
+          "flow": "campus.validation/cc11_external_worker",
+          "markerSha256": "587dd72c8d1fdb2481dd0658acd5d0c28746b6d10161a867ce0b25efe80a848a"
+        }
+      },
+      "logs": [
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[InstanceLoader] \u001b[39m\u001b[32mAppModule dependencies initialized\u001b[39m\u001b[38;5;3m +45ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RoutesResolver] \u001b[39m\u001b[32mAppController {/api}:\u001b[39m\u001b[38;5;3m +27ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/api, GET} route\u001b[39m\u001b[38;5;3m +3ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RoutesResolver] \u001b[39m\u001b[32mBootstrapController {/api}:\u001b[39m\u001b[38;5;3m +0ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/api/bootstrap/verify, GET} route\u001b[39m\u001b[38;5;3m +1ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/api/startup, GET} route\u001b[39m\u001b[38;5;3m +0ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RoutesResolver] \u001b[39m\u001b[32mHealthController {/health}:\u001b[39m\u001b[38;5;3m +0ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/health, GET} route\u001b[39m\u001b[38;5;3m +1ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/health/live, GET} route\u001b[39m\u001b[38;5;3m +0ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RouterExplorer] \u001b[39m\u001b[32mMapped {/health/ready, GET} route\u001b[39m\u001b[38;5;3m +0ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[NestApplication] \u001b[39m\u001b[32mNest application successfully started\u001b[39m\u001b[38;5;3m +2ms\u001b[39m",
+        "\u001b[32m[Nest] 1  - \u001b[39m09/08/2026, 8:32:16 AM \u001b[32m    LOG\u001b[39m \u001b[32mAPI listening with HTTPS on port 3000\u001b[39m"
+      ]
+    }
+  ],
+  "limitations": [
+    "Kind hostPath shares one Docker host and does not qualify district RWX storage.",
+    "Kind default networking does not qualify an enforcing district CNI.",
+    "The fixture did not exercise a district LoadBalancer.",
+    "The run used local immutable images from an uncommitted worktree."
+  ],
+  "testedAt": "2026-09-08T08:33:49.174Z",
+  "sourceNamespace": "cc-kube-synthetic",
+  "sourcePreserved": true,
+  "baselineArtifactMode": "700",
+  "finalArtifactMode": "700",
+  "finalDeployments": [
+    {
+      "name": "api",
+      "replicas": 2,
+      "ready": 2,
+      "image": "localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5",
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "readinessPath": "/health/live"
+    },
+    {
+      "name": "application-postgres",
+      "replicas": 1,
+      "ready": 1,
+      "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+      "resources": {
+        "limits": {
+          "cpu": "1",
+          "memory": "1Gi"
+        },
+        "requests": {
+          "cpu": "250m",
+          "memory": "512Mi"
+        }
+      },
+      "readinessPath": "export PGPASSWORD=\"$(cat \"$POSTGRES_PASSWORD_FILE\")\"; exec psql 'host=application-postgres.cc-kube-restore-synthetic.svc.cluster.local hostaddr=127.0.0.1 port=5432 user=postgres dbname=postgres sslmode=verify-full sslrootcert=/run/secrets/campus-installation/district-ca' -tAc 'SELECT 1'"
+    },
+    {
+      "name": "edge",
+      "replicas": 1,
+      "ready": 1,
+      "image": "localhost:15000/campus-commander/api@sha256:73cd46ece723ff04d0369ad755c202debb1b07e59527e65a25abc53c1ae3f6f5",
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "readinessPath": "/health/live"
+    },
+    {
+      "name": "frontend",
+      "replicas": 1,
+      "ready": 1,
+      "image": "localhost:15000/campus-commander/frontend@sha256:9ae5b788f8c21da072d1cf1b6cd506c0ed3abd1b5aab4d7e7110f97e144e5842",
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "readinessPath": "/health/ready"
+    },
+    {
+      "name": "kestra",
+      "replicas": 1,
+      "ready": 1,
+      "image": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+      "resources": {
+        "limits": {
+          "cpu": "2",
+          "memory": "2Gi"
+        },
+        "requests": {
+          "cpu": "500m",
+          "memory": "1Gi"
+        }
+      },
+      "readinessPath": "https://kestra.cc-kube-restore-synthetic.svc.cluster.local:8080/api/v1/main/flows/search?size=1"
+    },
+    {
+      "name": "kestra-postgres",
+      "replicas": 1,
+      "ready": 1,
+      "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+      "resources": {
+        "limits": {
+          "cpu": "1",
+          "memory": "1Gi"
+        },
+        "requests": {
+          "cpu": "250m",
+          "memory": "512Mi"
+        }
+      },
+      "readinessPath": "export PGPASSWORD=\"$(cat \"$POSTGRES_PASSWORD_FILE\")\"; exec psql 'host=kestra-postgres.cc-kube-restore-synthetic.svc.cluster.local hostaddr=127.0.0.1 port=5432 user=postgres dbname=postgres sslmode=verify-full sslrootcert=/run/secrets/campus-installation/district-ca' -tAc 'SELECT 1'"
+    },
+    {
+      "name": "redis",
+      "replicas": 1,
+      "ready": 1,
+      "image": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee",
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "readinessPath": "export REDISCLI_AUTH=\"$(cat '/run/secrets/campus-installation/redis-password')\"; exec redis-cli --tls --cacert '/run/secrets/campus-installation/district-ca' --sni 'redis.cc-kube-restore-synthetic.svc.cluster.local' -h 127.0.0.1 -p '6379' PING"
+    },
+    {
+      "name": "workers",
+      "replicas": 2,
+      "ready": 2,
+      "image": "localhost:15000/campus-commander/worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a",
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "readinessPath": "/health/ready"
+    }
+  ],
+  "originalReplicasRestored": true,
+  "resourceObservation": {
+    "configuredRequestsAndLimits": true,
+    "metricsServerAvailable": false
+  },
+  "nodeImage": "kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0",
+  "nodes": [
+    "cc-workload-validation-control-plane",
+    "cc-workload-validation-worker",
+    "cc-workload-validation-worker2"
+  ],
+  "sourceRevision": "3ab04fd95c48d2eb884b37191adf3e2815fa15f2",
+  "sourceState": "uncommitted-implementation"
+}

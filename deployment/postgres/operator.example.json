@@ -1,0 +1,13 @@
+{
+  "adminDatabase": "postgres",
+  "adminRole": "postgres",
+  "adminPasswordSecretRef": {
+    "provider": "file",
+    "path": "/run/secrets/postgres-admin"
+  },
+  "migrationRole": "cc-app-migrator",
+  "migrationPasswordSecretRef": {
+    "provider": "file",
+    "path": "/run/secrets/postgres-migrator"
+  }
+}

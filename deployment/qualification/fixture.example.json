@@ -1,0 +1,12 @@
+{
+  "qualificationOnly": true,
+  "project": "cc-fault-example",
+  "composeFile": "/absolute/disposable-install/docker-compose.yml",
+  "recoveryTimeoutSeconds": 180,
+  "edge": {
+    "url": "https://campus.example.org:14443",
+    "connectAddress": "127.0.0.1",
+    "caFile": "/absolute/disposable-install/private/edge-certificate",
+    "bootstrapFile": "/absolute/disposable-install/private/bootstrap"
+  }
+}

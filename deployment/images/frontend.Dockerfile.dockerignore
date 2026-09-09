@@ -1,0 +1,9 @@
+**
+!package.json
+!package-lock.json
+!nx.json
+!tsconfig.base.json
+!eslint.config.mjs
+!frontend/**
+!deployment/images/frontend-server.mjs
+!LICENSE.md

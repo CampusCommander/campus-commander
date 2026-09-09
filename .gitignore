@@ -56,8 +56,42 @@ vitest.config.*.timestamp*
 
 # Local agent state and compiler caches
 .opencode/goals/
+.opencode/goal-locks/
 .opencode/opencode-loop/
+.opencode/logs/
+.opencode/storage/
+.opencode/*.local.*
+.agents/*.local.*
+.claude/projects/
+.claude/sessions/
+.claude/todos/
+.claude/history.json
+.claude/statsig/
+.claude/*.local.*
+.codex/sessions/
+.codex/auth.json
+.codex/*.local.*
+.cursor/projects/
+.cursor/*.local.*
+.gemini/tmp/
+.gemini/*.local.*
 *.tsbuildinfo
+
+# Local tool folders
+.cache/
+.firebase/
+.netlify/
+.next/
+.nuxt/
+.parcel-cache/
+.pnpm-store/
+.svelte-kit/
+.turbo/
+.vercel/
+.wrangler/
+.yarn/
+.npm/
+.pnp.*
 
 # Local installation credentials
 .env
@@ -67,3 +101,6 @@ secrets/
 
 # District deployment configuration and local secret references
 /deployment/local/
+
+# Generated local test certificates
+/Test_Environment_Scripts/certs/

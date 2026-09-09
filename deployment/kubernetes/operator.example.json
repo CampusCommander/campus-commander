@@ -1,0 +1,50 @@
+{
+  "namespace": "campus-commander",
+  "clusterDomain": "cluster.local",
+  "workerNodeCount": 2,
+  "storageClasses": {
+    "postgres": "district-rwo",
+    "artifacts": "district-rwx",
+    "kestraInternal": "district-rwx"
+  },
+  "release": {
+    "schemaVersion": 1,
+    "sourceRevision": "1111111111111111111111111111111111111111",
+    "architectures": ["linux/amd64"],
+    "images": {
+      "frontend": "registry.example.org/campus-commander/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "api": "registry.example.org/campus-commander/api@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "workers": "registry.example.org/campus-commander/workers@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  },
+  "migrationRole": "campus-migrator",
+  "migrationPasswordSecretRef": {
+    "provider": "kubernetes",
+    "name": "campus-migration",
+    "key": "password"
+  },
+  "databaseAdmins": {
+    "applicationDatabase": {
+      "provider": "kubernetes",
+      "name": "campus-database-admin",
+      "key": "application"
+    },
+    "kestraDatabase": {
+      "provider": "kubernetes",
+      "name": "campus-database-admin",
+      "key": "kestra"
+    }
+  },
+  "kestraRuntime": {
+    "name": "campus-kestra-runtime",
+    "applicationKey": "application-yaml",
+    "keyStoreKey": "server-p12",
+    "probeHeaderKey": "probe-header",
+    "workerTrustStoreKey": "worker-truststore-p12",
+    "javaOptionsKey": "java-options",
+    "dispatchTokenKey": "dispatch-token"
+  },
+  "edgeIngress": { "sourceRanges": ["192.0.2.0/24"], "annotations": {} },
+  "externalEgress": {},
+  "dns": { "namespace": "kube-system", "podLabels": { "k8s-app": "kube-dns" } }
+}

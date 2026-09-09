@@ -4,6 +4,18 @@ CC-4 defines configuration and validation for all Docker, hybrid Docker with dis
 This contract covers startup behavior only. Phase 2 supplies application authentication, the shell, and protected utilities.
 Google credentials, entity contracts, and district capacity guarantees remain outside CC-4.
 
+## Runtime implementation
+
+CC-5 through CC-20 extend this contract with runtime services, deployment profiles, recovery tools, and release gates.
+[Implementation status](implementation-status.md) records completed checks and outstanding acceptance requirements.
+Use the ticket evidence in `deployment/evidence/` to distinguish local fixtures from district qualification.
+
+- [Application images](images/README.md) and [Kestra qualification](kestra/README.md).
+- [PostgreSQL isolation](postgres/README.md), [Redis behavior](redis/README.md), and [artifact storage](storage/README.md).
+- [HTTPS bootstrap](bootstrap/README.md), [all-Docker profile](profiles/all-docker/README.md), and [Kubernetes profile](kubernetes/README.md).
+- [Encrypted backup and restore](operations/README.md).
+- [Fault qualification](qualification/README.md) and [release verification](release/README.md).
+
 ## Contract and commands
 
 [The schema](src/lib/deployment.ts) defines `DeploymentConfig`, `DeploymentProfile`, and `SecretReference` through Zod type inference.
@@ -127,8 +139,12 @@ Other operating systems and image architectures remain unqualified.
 | Runtime health checker   | Each service                        | Declared probe protocol and HTTP path, using the service TLS policy        |
 | Installation hosts       | District DNS, time source, registry | Name resolution, time synchronization, and verified image retrieval        |
 
-Only the HTTPS edge receives browser traffic. Keep databases, Redis, Kestra, and worker endpoints off published host ports.
-Network policies and district firewalls must restrict internal paths to the named consumers.
+Only the HTTPS edge receives browser traffic.
+All-Docker keeps databases, Redis, Kestra, and workers on internal container networks.
+Hybrid worker hosts publish their TLS listener on the declared private district interface for controller and Kestra access.
+District firewalls must restrict that listener to the declared consumers. A private bind address does not establish a firewall allowlist.
+Kubernetes NetworkPolicy and district firewalls must restrict internal paths to the named consumers.
+The installer does not administer or certify an external district firewall. Record firewall verification during infrastructure qualification.
 Shared filesystem ports depend on the district backend. P1-T07 records those ports and validates cross-host access.
 Phase 1 requires no Google egress or Google credentials.
 The example resource values are synthetic startup allocations. They do not establish minimum hardware or district workload capacity.

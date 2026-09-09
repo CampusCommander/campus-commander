@@ -1,1 +1,69 @@
-<app-nx-welcome></app-nx-welcome>
+<header class="startup-header">
+  <span class="wordmark">Campus Commander</span>
+  <span class="phase">Phase 1 startup</span>
+</header>
+
+<main>
+  <section class="startup-card" aria-labelledby="startup-title">
+    <span class="status" role="status">
+      <span class="status-dot" aria-hidden="true"></span>
+      Frontend process running
+    </span>
+    <h1 id="startup-title">Application service started</h1>
+    <p>
+      This page confirms that the frontend image serves startup content.
+      Installation setup follows this startup check. Google Workspace features
+      arrive in later phases.
+    </p>
+    <p class="probe-note">
+      Installation probes check API and worker health separately.
+    </p>
+
+    <div
+      class="installation-status"
+      role="status"
+      aria-live="polite"
+      [attr.aria-busy]="startup().status === 'loading'"
+    >
+      @switch (startup().status) { @case ('loading') {
+      <h2>Checking installation status</h2>
+      <p>The protected startup service has not returned a result.</p>
+      } @case ('ready') {
+      <h2>Installation checks ready</h2>
+      <ul>
+        @for (check of startup().checks; track check.name) {
+        <li><span aria-hidden="true">✓</span> {{ check.name }}</li>
+        }
+      </ul>
+      } @case ('not-ready') {
+      <h2>Installation needs attention</h2>
+      <ul>
+        @for (check of startup().checks; track check.name) {
+        <li>{{ check.name }}: {{ check.status }}</li>
+        }
+      </ul>
+      } @case ('unavailable') {
+      <h2>Installation status unavailable</h2>
+      <p>
+        Use the installation health checks to inspect the protected startup
+        service. This page retries automatically.
+      </p>
+      @if (startup().checks.length > 0) {
+      <p>Previous checks are stale.</p>
+      <ul>
+        @for (check of startup().checks; track check.name) {
+        <li>{{ check.name }}: {{ check.status }} (previous observation)</li>
+        }
+      </ul>
+      } } } @if (observationTimestamp(); as timestamp) {
+      <p>
+        <time [attr.datetime]="timestamp" [attr.title]="timestamp"
+          >Last observed {{ observationAgeSeconds() }} seconds ago</time
+        >
+      </p>
+      }
+    </div>
+  </section>
+</main>
+
+<footer>Campus Commander startup service</footer>

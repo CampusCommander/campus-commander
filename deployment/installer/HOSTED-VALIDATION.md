@@ -14,11 +14,11 @@ The script verifies release signatures, file checksums, and application image si
 Anonymous verification passed after the package owner enabled public GHCR access.
 Node and Cosign downloads used the script's pinned versions and checksums.
 
-| Profile | Signed candidate | Actual result |
-| --- | --- | --- |
+| Profile    | Signed candidate                 | Actual result                                                           |
+| ---------- | -------------------------------- | ----------------------------------------------------------------------- |
 | All-Docker | `phase-1-candidate-4e1d7caaddc0` | Interactive installation, stop/resume, and interruption recovery passed |
-| Hybrid | `phase-1-candidate-3e6a6a67a2c3` | Controller, two remote workers, and stop/resume passed |
-| Kubernetes | `phase-1-candidate-3e6a6a67a2c3` | Installation, status, resume, and cross-node artifact reads passed |
+| Hybrid     | `phase-1-candidate-3e6a6a67a2c3` | Controller, two remote workers, and stop/resume passed                  |
+| Kubernetes | `phase-1-candidate-3e6a6a67a2c3` | Installation, status, resume, and cross-node artifact reads passed      |
 
 The [all-Docker publication workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34357487042) passed.
 The [hybrid and Kubernetes publication workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34359354716) also passed.
@@ -117,3 +117,11 @@ Kubernetes used shared hostPath backing on one physical host.
 The stock Kind network plugin does not establish NetworkPolicy enforcement.
 A localhost port-forward supplied HTTPS access instead of a production LoadBalancer.
 These hosted checks did not test independent host failure, rescheduling, backup restore, or upgrade.
+
+## Retained evidence and cleanup
+
+Machine records preserve the [all-Docker result](../evidence/CC-20-hosted-all-docker-result.json),
+[hybrid result](../evidence/CC-20-hosted-hybrid-result.json), and [Kubernetes result](../evidence/CC-20-hosted-kubernetes-result.json).
+The operator requested Docker cleanup after these tests.
+Cleanup removed the test containers and unused images. It preserved all attached named volumes.
+The environment names above identify the completed tests. They do not identify currently running installations.

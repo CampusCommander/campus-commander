@@ -21,23 +21,23 @@ curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/ma
 The installer verifies the signed release and guides configuration for all-Docker, hybrid, or Kubernetes installation.
 Select candidate mode for disposable testing. Approve prerequisite exceptions only when they describe your test environment.
 
-Read the [hosted installation guide](https://github.com/CampusCommander/campus-commander/blob/implementation/cc-5-through-cc-20/deployment/installer/HOSTED.md) for prerequisites and recovery commands.
+Read the [hosted installation guide](deployment/installer/HOSTED.md) for prerequisites and recovery commands.
 Use the [Kubernetes test procedure](deployment/installer/HOSTED-KUBERNETES-TEST.md) to prepare a disposable cluster fixture.
 Use [published releases](https://github.com/CampusCommander/campus-commander/releases) for signed artifacts.
-The implementation branch contains the current Phase 1 source and validation records.
+Read the [hosted validation record](deployment/installer/HOSTED-VALIDATION.md) for tested behavior and laboratory limits.
 
 ## Retained technology
 
-| Responsibility | Technology |
-|---|---|
-| Interface | Angular, NgRx Signals, Angular Material, Tailwind |
-| Grid | AG Grid Community and LibreGrid |
-| API and workers | NestJS and TypeScript, with worker execution outside the API |
-| Orchestration | Kestra jobs, steps, and parallel assignments |
-| Durable data | PostgreSQL |
-| Cache and coordination | Redis, including job-service admission holds |
-| Artifacts | Job-storage interface with persistent local storage and one qualified shared backend in Phase 1 |
-| Workspace | Nx and npm |
+| Responsibility         | Technology                                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| Interface              | Angular, NgRx Signals, Angular Material, Tailwind                                               |
+| Grid                   | AG Grid Community and LibreGrid                                                                 |
+| API and workers        | NestJS and TypeScript, with worker execution outside the API                                    |
+| Orchestration          | Kestra jobs, steps, and parallel assignments                                                    |
+| Durable data           | PostgreSQL                                                                                      |
+| Cache and coordination | Redis, including job-service admission holds                                                    |
+| Artifacts              | Job-storage interface with persistent local storage and one qualified shared backend in Phase 1 |
+| Workspace              | Nx and npm                                                                                      |
 
 Exact compatible versions require qualification before implementation.
 One installation serves one Workspace customer account, including its supported domains.
@@ -45,11 +45,11 @@ Every mutation follows preview, confirmation, job execution, and file-backed aud
 
 ## Deployment direction
 
-| Profile | Placement |
-|---|---|
-| Single server | Compose runs application, workers, Kestra, PostgreSQL, and Redis with persistent local artifacts. |
+| Profile           | Placement                                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| Single server     | Compose runs application, workers, Kestra, PostgreSQL, and Redis with persistent local artifacts.    |
 | Separate services | The same images use district-managed databases, Redis, or worker hosts through configured endpoints. |
-| Kubernetes | District-operated API/worker replicas use shared services and qualified artifact storage. |
+| Kubernetes        | District-operated API/worker replicas use shared services and qualified artifact storage.            |
 
 Compose is the default. Kubernetes is optional. Distributed workers require a shared backend before activation.
 Kestra availability, shared-service recovery, and district capacity remain qualification gates.
@@ -73,11 +73,11 @@ Published candidates provide prebuilt images and an installer. Customers do not 
 ## Work tracking
 
 GitHub records source changes, planning documents, validation evidence, and pull requests.
-Jira records implementation tasks and dependencies in the Campus-Commander project, key `KAN`.
-The [Phase 1 backlog](docs/portfolio/phase-1-jira-tasks.md) maps local planning references to KAN-4 through KAN-20.
+Jira records implementation tasks and dependencies in the Campus-Commander project, key `CC`.
+The [Phase 1 backlog](docs/portfolio/phase-1-jira-tasks.md) maps local planning references to CC-4 through CC-20.
 
 Include the Jira issue key in implementation branch names, commit messages, and pull request titles.
-For example, use `KAN-4-deployment-contract` for the configuration contract task.
+For example, use `CC-4-deployment-contract` for the configuration contract task.
 Link the Jira task and describe validation evidence in each implementation pull request.
 Update task status only when its acceptance criteria have supporting evidence.
 

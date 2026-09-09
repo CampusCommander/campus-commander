@@ -1,2 +1,14 @@
 /* Global styles entry point. Design tokens first; see theme/tokens.css for the source note. */
-@import "./theme/tokens.css";
+@import './theme/tokens.css';
+
+html {
+  background: var(--cc-surface-app);
+}
+
+body {
+  margin: 0;
+}
+
+* {
+  box-sizing: border-box;
+}

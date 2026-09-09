@@ -3,7 +3,7 @@
 **Publication status: 17 tasks and 36 dependency links created and verified in Jira.**
 
 Target: the **Campus-Commander** Jira space. Requested issue type: **Task**.
-Atlassian Rovo resolved Campus-Commander to project **KAN** and confirmed the **Task** issue type.
+Atlassian Rovo resolved Campus-Commander to project **CC** and confirmed the **Task** issue type.
 The project contained no duplicate Phase 1 tasks or existing Phase 1 parent. Jira supplied its default fields.
 The local identifiers below are planning references. They are not Jira issue keys.
 
@@ -18,29 +18,30 @@ Phase 1 ends with frontend, API, independent workers, PostgreSQL, Redis, Kestra,
 Minimal frontend and API startup behavior belongs here. Full application auth, login, shell, and utility routes belong to Phase 2.
 Google onboarding follows in Phase 3. EntityCache and mutation JobService follow in Phases 4 and 5.
 Bootstrap protection, durable storage, basic operations, and foundational recovery are required now.
-All checks use synthetic data. All tasks remain unimplemented until evidence establishes their acceptance criteria.
+All checks use synthetic data.
+The [implementation status](../../deployment/implementation-status.md) records current evidence and unresolved acceptance gates.
 
 ## Task index
 
-| Local ID | Task | Blocked by |
-|---|---|---|
-| P1-T01 | Define and validate the Phase 1 deployment configuration contract | None |
-| P1-T02 | Qualify the Kestra edition, runtime version, and deployment topology | P1-T01 |
-| P1-T03 | Build minimal frontend, API, and worker release images | P1-T01 |
-| P1-T04 | Bootstrap isolated application and Kestra databases | P1-T01 |
-| P1-T05 | Bootstrap Redis with explicit security and restart behavior | P1-T01 |
-| P1-T06 | Implement the local artifact storage foundation | P1-T01, P1-T04 |
-| P1-T07 | Qualify one shared artifact backend across separate worker hosts | P1-T06 |
-| P1-T08 | Run authenticated Kestra with independent workers and qualified internal storage | P1-T02, P1-T03, P1-T04 |
-| P1-T09 | Protect the startup page with HTTPS and installation bootstrap access | P1-T01, P1-T03 |
-| P1-T10 | Deliver the complete all-Docker installation profile | P1-T03, P1-T04, P1-T05, P1-T06, P1-T08, P1-T09 |
-| P1-T11 | Deliver the hybrid Docker and district-server installation profile | P1-T07, P1-T10 |
-| P1-T12 | Deliver the enterprise Kubernetes installation profile | P1-T07, P1-T08, P1-T09 |
-| P1-T13 | Deliver repeatable preflight, install, resume, and upgrade commands | P1-T10, P1-T11, P1-T12 |
-| P1-T14 | Restore the foundational state into an isolated installation | P1-T10, P1-T11, P1-T12 |
-| P1-T15 | Qualify restart, outage, and resource failure behavior across all profiles | P1-T10, P1-T11, P1-T12 |
-| P1-T16 | Publish verified Phase 1 release artifacts and gate profile regressions in CI | P1-T13, P1-T14, P1-T15 |
-| P1-T17 | Accept the Phase 1 release through operator walkthroughs | P1-T16 |
+| Local ID | Task                                                                             | Blocked by                                     |
+| -------- | -------------------------------------------------------------------------------- | ---------------------------------------------- |
+| P1-T01   | Define and validate the Phase 1 deployment configuration contract                | None                                           |
+| P1-T02   | Qualify the Kestra edition, runtime version, and deployment topology             | P1-T01                                         |
+| P1-T03   | Build minimal frontend, API, and worker release images                           | P1-T01                                         |
+| P1-T04   | Bootstrap isolated application and Kestra databases                              | P1-T01                                         |
+| P1-T05   | Bootstrap Redis with explicit security and restart behavior                      | P1-T01                                         |
+| P1-T06   | Implement the local artifact storage foundation                                  | P1-T01, P1-T04                                 |
+| P1-T07   | Qualify one shared artifact backend across separate worker hosts                 | P1-T06                                         |
+| P1-T08   | Run authenticated Kestra with independent workers and qualified internal storage | P1-T02, P1-T03, P1-T04                         |
+| P1-T09   | Protect the startup page with HTTPS and installation bootstrap access            | P1-T01, P1-T03                                 |
+| P1-T10   | Deliver the complete all-Docker installation profile                             | P1-T03, P1-T04, P1-T05, P1-T06, P1-T08, P1-T09 |
+| P1-T11   | Deliver the hybrid Docker and district-server installation profile               | P1-T07, P1-T10                                 |
+| P1-T12   | Deliver the enterprise Kubernetes installation profile                           | P1-T07, P1-T08, P1-T09                         |
+| P1-T13   | Deliver repeatable preflight, install, resume, and upgrade commands              | P1-T10, P1-T11, P1-T12                         |
+| P1-T14   | Restore the foundational state into an isolated installation                     | P1-T10, P1-T11, P1-T12                         |
+| P1-T15   | Qualify restart, outage, and resource failure behavior across all profiles       | P1-T10, P1-T11, P1-T12                         |
+| P1-T16   | Publish verified Phase 1 release artifacts and gate profile regressions in CI    | P1-T13, P1-T14, P1-T15                         |
+| P1-T17   | Accept the Phase 1 release through operator walkthroughs                         | P1-T16                                         |
 
 ## Execution guidance
 
@@ -71,7 +72,7 @@ This structured draft is a planning format. It is not a claim about the Jira plu
 **Responsible role:** Platform lead  
 **Planning packages:** P0.1, P1.1, P9.2  
 **Blocked by:** None  
-**Jira issue:** [KAN-4](https://easton-consulting.atlassian.net/browse/KAN-4)
+**Jira issue:** [CC-4](https://easton-consulting.atlassian.net/browse/CC-4)
 
 ### What to build
 
@@ -100,7 +101,7 @@ Exclude: Google credentials, entity contracts, full application auth, and distri
 **Responsible role:** Orchestration and platform lead  
 **Planning packages:** P0.1, P9.4  
 **Blocked by:** P1-T01  
-**Jira issue:** [KAN-5](https://easton-consulting.atlassian.net/browse/KAN-5)
+**Jira issue:** [CC-5](https://easton-consulting.atlassian.net/browse/CC-5)
 
 ### What to build
 
@@ -129,7 +130,7 @@ Exclude: Google mutation flows, JobService admission policy, and a replacement o
 **Responsible role:** Application foundation and build lead  
 **Planning packages:** P0.1  
 **Blocked by:** P1-T01  
-**Jira issue:** [KAN-6](https://easton-consulting.atlassian.net/browse/KAN-6)
+**Jira issue:** [CC-6](https://easton-consulting.atlassian.net/browse/CC-6)
 
 ### What to build
 
@@ -159,7 +160,7 @@ Exclude: Full API module implementation, application login, EntityCache, and mut
 **Responsible role:** Database and platform lead  
 **Planning packages:** P1.2, P9.2  
 **Blocked by:** P1-T01  
-**Jira issue:** [KAN-7](https://easton-consulting.atlassian.net/browse/KAN-7)
+**Jira issue:** [CC-7](https://easton-consulting.atlassian.net/browse/CC-7)
 
 ### What to build
 
@@ -189,7 +190,7 @@ Exclude: Entity inventory schema, operation ledgers, and future application feat
 **Responsible role:** Platform lead  
 **Planning packages:** P9.2, P9.3  
 **Blocked by:** P1-T01  
-**Jira issue:** [KAN-8](https://easton-consulting.atlassian.net/browse/KAN-8)
+**Jira issue:** [CC-8](https://easton-consulting.atlassian.net/browse/CC-8)
 
 ### What to build
 
@@ -218,7 +219,7 @@ Exclude: Job hold ownership, recovery aggregation, production sessions, and admi
 **Responsible role:** Storage lead  
 **Planning packages:** P1.1, P2.4  
 **Blocked by:** P1-T01, P1-T04  
-**Jira issue:** [KAN-9](https://easton-consulting.atlassian.net/browse/KAN-9)
+**Jira issue:** [CC-9](https://easton-consulting.atlassian.net/browse/CC-9)
 
 ### What to build
 
@@ -247,7 +248,7 @@ Exclude: Google operation payloads, final mutation result consolidation, and ful
 **Responsible role:** Storage and platform lead  
 **Planning packages:** P2.4, P9.4  
 **Blocked by:** P1-T06  
-**Jira issue:** [KAN-10](https://easton-consulting.atlassian.net/browse/KAN-10)
+**Jira issue:** [CC-10](https://easton-consulting.atlassian.net/browse/CC-10)
 
 ### What to build
 
@@ -277,7 +278,7 @@ Exclude: Implementing both shared backend options, provisioning an entire distri
 **Responsible role:** Orchestration lead  
 **Planning packages:** P0.1, P9.2, P9.4  
 **Blocked by:** P1-T02, P1-T03, P1-T04  
-**Jira issue:** [KAN-11](https://easton-consulting.atlassian.net/browse/KAN-11)
+**Jira issue:** [CC-11](https://easton-consulting.atlassian.net/browse/CC-11)
 
 ### What to build
 
@@ -307,7 +308,7 @@ Exclude: Business JobService, Google requests, production admission holds, and c
 **Responsible role:** Platform security and frontend lead  
 **Planning packages:** P0.1, P9.1, P9.2  
 **Blocked by:** P1-T01, P1-T03  
-**Jira issue:** [KAN-12](https://easton-consulting.atlassian.net/browse/KAN-12)
+**Jira issue:** [CC-12](https://easton-consulting.atlassian.net/browse/CC-12)
 
 ### What to build
 
@@ -337,7 +338,7 @@ Exclude: Application OIDC, delegated platform users, OAuth onboarding, and Phase
 **Responsible role:** Platform lead  
 **Planning packages:** P9.2  
 **Blocked by:** P1-T03, P1-T04, P1-T05, P1-T06, P1-T08, P1-T09  
-**Jira issue:** [KAN-13](https://easton-consulting.atlassian.net/browse/KAN-13)
+**Jira issue:** [CC-13](https://easton-consulting.atlassian.net/browse/CC-13)
 
 ### What to build
 
@@ -366,7 +367,7 @@ Exclude: Google onboarding, sample entity management, and metropolitan capacity 
 **Responsible role:** Platform integration lead  
 **Planning packages:** P9.2, P9.4  
 **Blocked by:** P1-T07, P1-T10  
-**Jira issue:** [KAN-14](https://easton-consulting.atlassian.net/browse/KAN-14)
+**Jira issue:** [CC-14](https://easton-consulting.atlassian.net/browse/CC-14)
 
 ### What to build
 
@@ -395,7 +396,7 @@ Exclude: Requiring Kubernetes for hybrid installation and automatic administrati
 **Responsible role:** Kubernetes platform lead  
 **Planning packages:** P9.2, P9.4  
 **Blocked by:** P1-T07, P1-T08, P1-T09  
-**Jira issue:** [KAN-15](https://easton-consulting.atlassian.net/browse/KAN-15)
+**Jira issue:** [CC-15](https://easton-consulting.atlassian.net/browse/CC-15)
 
 ### What to build
 
@@ -425,7 +426,7 @@ Exclude: Building a district Kubernetes cluster, full JobService failover tests,
 **Responsible role:** Installer lead  
 **Planning packages:** P9.2  
 **Blocked by:** P1-T10, P1-T11, P1-T12  
-**Jira issue:** [KAN-16](https://easton-consulting.atlassian.net/browse/KAN-16)
+**Jira issue:** [CC-16](https://easton-consulting.atlassian.net/browse/CC-16)
 
 ### What to build
 
@@ -455,7 +456,7 @@ Exclude: The Phase 3 Google onboarding wizard and production Google credential r
 **Responsible role:** Operations and storage lead  
 **Planning packages:** P9.3  
 **Blocked by:** P1-T10, P1-T11, P1-T12  
-**Jira issue:** [KAN-17](https://easton-consulting.atlassian.net/browse/KAN-17)
+**Jira issue:** [CC-17](https://easton-consulting.atlassian.net/browse/CC-17)
 
 ### What to build
 
@@ -485,7 +486,7 @@ Exclude: Live Google reconciliation and automatic replay of future mutation jobs
 **Responsible role:** Reliability lead  
 **Planning packages:** P9.3, P9.4  
 **Blocked by:** P1-T10, P1-T11, P1-T12  
-**Jira issue:** [KAN-18](https://easton-consulting.atlassian.net/browse/KAN-18)
+**Jira issue:** [CC-18](https://easton-consulting.atlassian.net/browse/CC-18)
 
 ### What to build
 
@@ -515,7 +516,7 @@ Exclude: Phase 5 admission and Google-effect recovery, stress tests against real
 **Responsible role:** Build and release lead  
 **Planning packages:** P0.1, P9.2  
 **Blocked by:** P1-T13, P1-T14, P1-T15  
-**Jira issue:** [KAN-19](https://easton-consulting.atlassian.net/browse/KAN-19)
+**Jira issue:** [CC-19](https://easton-consulting.atlassian.net/browse/CC-19)
 
 ### What to build
 
@@ -545,7 +546,7 @@ Exclude: Signing-key disclosure, adopting a new mandatory cloud platform, and tr
 **Responsible role:** Staff Tech Lead with UX and district operators  
 **Planning packages:** P9.2, P9.4  
 **Blocked by:** P1-T16  
-**Jira issue:** [KAN-20](https://easton-consulting.atlassian.net/browse/KAN-20)
+**Jira issue:** [CC-20](https://easton-consulting.atlassian.net/browse/CC-20)
 
 ### What to build
 
