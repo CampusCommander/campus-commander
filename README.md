@@ -66,4 +66,11 @@ Update task status only when its acceptance criteria have supporting evidence.
 
 ## License
 
-MIT
+Campus Commander uses the [Campus Commander Community License 1.0.0](LICENSE.md).
+Public K–12 schools, their districts, and public colleges and universities qualify worldwide.
+Other nonprofits qualify only when all their services are free of charge.
+Eligible organizations receive perpetual rights for their own institutional use, subject to the license terms.
+Paid contractors can act solely on an eligible organization's behalf.
+Other uses require a separate paid agreement before use begins.
+Contact Spencer Easton at spencer@easton-consulting.com for paid licensing.
+The license includes warranty and liability limitations. Third-party components retain their own licenses.
