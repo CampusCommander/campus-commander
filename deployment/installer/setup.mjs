@@ -459,11 +459,11 @@ export async function configure({
     }
   }
   const storage = async (value, key, required) => {
-    value.location = await q(
-      `${key}.location`,
-      `${key} storage path or managed storage identifier`,
-      required ? undefined : join(root, 'data', key.replaceAll('.', '-')),
-    );
+    if (required)
+      value.location = await q(
+        `${key}.location`,
+        `${key} storage path or managed storage identifier`,
+      );
     value.capacityGiB = Number(
       await q(
         `${key}.capacityGiB`,

@@ -39,6 +39,8 @@ For an all-Docker laboratory installation:
 8. Enter a specific reason for each exception.
 9. Review the remaining database names, storage capacities, and operator labels.
 
+All-Docker storage uses managed Docker volumes. The installer retains their container paths automatically.
+
 A disposable container usually lacks a host time service.
 Use `time-synchronization` only when that applies to your environment.
 The supported exception names are `district-dns`, `time-synchronization`, `storage-capacity`, and `host-memory`.

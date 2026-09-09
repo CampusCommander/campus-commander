@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
+import { renderAllDocker } from '../profiles/all-docker/render.mjs';
 import { renderHybrid } from '../profiles/hybrid/render.mjs';
 import { renderKubernetes } from '../kubernetes/render.mjs';
 import {
@@ -71,6 +72,68 @@ test('automation rejects unknown answers and missing required answers', async ()
   const exact = createQuestions({ count: 2 });
   assert.equal(await exact('count', 'Count', 1, (v) => v === 2), 2);
   exact.finish();
+});
+
+test('guided all-docker storage matches writable application volume mounts', async () => {
+  const prompts = [];
+  const questions = createQuestions(
+    { labCertificate: 'yes' },
+    async (label) => {
+      prompts.push(label);
+      return '';
+    },
+  );
+  const plan = await configure({
+    releaseRoot,
+    root: '/opt/cc-hosted-live',
+    profile: 'all-docker',
+    qualification: true,
+    questions,
+    manifest,
+  });
+  questions.finish();
+  const compose = renderAllDocker(plan.config, manifest);
+  for (const name of ['api', 'workers']) {
+    const mount = compose.services[name].volumes.find((value) =>
+      typeof value === 'string'
+        ? value.split(':')[1] === plan.config.artifacts.location
+        : value.target === plan.config.artifacts.location,
+    );
+    assert.ok(mount, `${name} must mount the configured artifact directory`);
+    if (typeof mount === 'string') {
+      assert.equal(mount.split(':')[0], 'artifacts');
+      assert.notEqual(mount.split(':')[2], 'ro');
+    } else {
+      assert.equal(mount.type, 'volume');
+      assert.equal(mount.source, 'artifacts');
+      assert.notEqual(mount.read_only, true);
+    }
+  }
+  assert.ok(
+    prompts.every(
+      (label) => !label.includes('storage path or managed storage identifier'),
+    ),
+  );
+  assert.equal(
+    plan.config.artifacts.location,
+    '/var/lib/campus-commander/artifacts',
+  );
+  assert.equal(
+    plan.config.services.applicationDatabase.persistence.location,
+    '/var/lib/campus-commander/campus-postgres',
+  );
+  assert.equal(
+    plan.config.services.kestraDatabase.persistence.location,
+    '/var/lib/campus-commander/kestra-postgres',
+  );
+  assert.equal(
+    plan.config.services.redis.persistence.location,
+    '/var/lib/campus-commander/redis',
+  );
+  assert.equal(
+    plan.config.services.kestra.internalStorage.location,
+    '/var/lib/campus-commander/kestra-internal',
+  );
 });
 
 test('all-docker lab requires explicit certificate and exception choices', async () => {
@@ -509,7 +572,6 @@ test('reruns reject public or symbolic setup configuration files', async (t) => 
   );
 });
 
-
 test('CLI rejects public and symbolic answers files before setup', async (t) => {
   const root = await fixture(t);
   const { chmod, symlink } = await import('node:fs/promises');
@@ -521,9 +583,12 @@ test('CLI rejects public and symbolic answers files before setup', async (t) => 
     await assert.rejects(
       invoke(process.execPath, [
         join(releaseRoot, 'deployment/installer/setup.mjs'),
-        '--release-root', releaseRoot,
-        '--root', join(root, 'installation'),
-        '--answers', path,
+        '--release-root',
+        releaseRoot,
+        '--root',
+        join(root, 'installation'),
+        '--answers',
+        path,
       ]),
       (error) => {
         assert.equal(error.code, 1);

@@ -54,3 +54,38 @@ The existing customer installation was not changed.
 - Complete Kubernetes installation using existing cluster Secrets and storage.
 
 Earlier source harness results do not prove these hosted installation paths.
+
+
+## Public package verification completed
+
+On 2026-09-09, the package owner enabled public visibility for all three application packages.
+Anonymous token requests returned HTTP 200 for API, frontend, and worker images.
+
+The clean container then ran the public entry command for `phase-1-candidate-81ad8c492b80` with `--verify-only`.
+The command exited with status 0.
+Both release signatures, archive file checksums, and all three image signatures passed.
+The container required no registry credentials.
+
+This resolves the anonymous registry blocker recorded above.
+It does not establish successful application installation.
+The isolated runtime still requires corrected cgroup configuration before full hosted installation testing.
+
+
+## First complete hosted installation attempt
+
+The approved isolated host uses its own Docker data volume and the dedicated cgroup parent `/cc-installer-host`.
+A container with 128 MiB memory and 0.25 CPU reported `memory.max=134217728` and `cpu.max=25000 100000`.
+
+The public installer ran candidate `81ad8c492b80` with all-Docker qualification answers and no registry credentials.
+Release and image verification passed. Database provisioning, migration, and bootstrap initialization exited successfully.
+All API dependency checks passed except artifact storage.
+
+Setup selected `/opt/cc-hosted-live/data/artifacts`.
+The generated Compose file mounted artifact storage at `/var/lib/campus-commander/artifacts`.
+That mounted directory had UID/GID 1000 and mode 700. The configured directory did not exist.
+The installer exited with `COMMAND_FAILED` while waiting for API readiness.
+The failed fixture remains preserved with its services stopped.
+
+A regression at the configuration-to-Compose boundary reproduces the missing artifact mount.
+The correction retains managed runtime storage paths for all-Docker installations.
+A new published candidate must pass the same complete hosted installation test before this issue is closed.
