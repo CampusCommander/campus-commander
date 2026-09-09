@@ -2,7 +2,11 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { effectiveConfig, renderAllDocker } from '../all-docker/render.mjs';
+import {
+  effectiveConfig,
+  renderAllDocker,
+  stageRuntimeFiles,
+} from '../all-docker/render.mjs';
 
 const secretName = (reference) =>
   reference.provider === 'file' ? basename(reference.path) : reference.name;
@@ -443,8 +447,50 @@ function renderBase(input, release) {
   return compose;
 }
 
+function stageHybridRuntime(compose, image, network) {
+  compose.volumes ??= {};
+  compose.services['runtime-files'] = {
+    image,
+    user: '0:0',
+    restart: 'no',
+    ...hardening,
+    cap_add: ['CHOWN', 'DAC_OVERRIDE', 'FOWNER'],
+    command: ['/bin/sh', '-ec', 'true'],
+    volumes: [],
+    networks: [network],
+  };
+  stageRuntimeFiles(compose, {
+    initializerName: 'runtime-files',
+    directoryFiles: compose.services.kestra
+      ? [
+          {
+            service: 'kestra',
+            kind: 'runtime-files',
+            source: './runtime/kestra',
+            target: '/run/kestra-runtime',
+            files: [
+              'application.yaml',
+              'database-ca.pem',
+              'flow-secrets.env',
+              'probe-header',
+              'server-ca.pem',
+              'server.p12',
+              'worker-truststore.p12',
+            ],
+          },
+        ]
+      : [],
+  });
+  return compose;
+}
+
 export function renderHybrid(input, release) {
-  return renderBase(input, release);
+  const compose = renderBase(input, release);
+  return stageHybridRuntime(
+    compose,
+    effectiveConfig(input, release).images.api,
+    'internal',
+  );
 }
 
 function validateBindAddress(value) {
@@ -508,24 +554,28 @@ export function renderWorkerHost(input, release, { hostIndex, bindAddress }) {
   const references = uniqueReferences(collectReferences(config)).filter(
     (reference) => usedSecretNames.has(secretName(reference)),
   );
-  return {
-    name: `campus-commander-worker-${hostIndex + 1}`,
-    services: { 'storage-preflight': preflight, workers: worker },
-    networks: {
-      egress: {
-        driver: 'bridge',
-        labels: {
-          'com.campus-commander.scope': 'district-endpoints-only',
+  return stageHybridRuntime(
+    {
+      name: `campus-commander-worker-${hostIndex + 1}`,
+      services: { 'storage-preflight': preflight, workers: worker },
+      networks: {
+        egress: {
+          driver: 'bridge',
+          labels: {
+            'com.campus-commander.scope': 'district-endpoints-only',
+          },
         },
       },
+      secrets: Object.fromEntries(
+        references.map((reference) => [
+          secretName(reference),
+          { file: `./private/${secretName(reference)}` },
+        ]),
+      ),
     },
-    secrets: Object.fromEntries(
-      references.map((reference) => [
-        secretName(reference),
-        { file: `./private/${secretName(reference)}` },
-      ]),
-    ),
-  };
+    config.images.api,
+    'egress',
+  );
 }
 
 export async function renderFiles(

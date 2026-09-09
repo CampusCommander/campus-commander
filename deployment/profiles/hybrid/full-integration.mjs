@@ -584,7 +584,7 @@ export async function qualifyFullHybrid() {
       workerDocuments.some(
         (document) =>
           Object.keys(document.services).sort().join(',') !==
-          'storage-preflight,workers',
+          'runtime-files,storage-preflight,workers',
       )
     ) {
       throw new Error('Rendered ownership differs from the hybrid placement.');

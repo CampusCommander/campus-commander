@@ -89,3 +89,34 @@ The failed fixture remains preserved with its services stopped.
 A regression at the configuration-to-Compose boundary reproduces the missing artifact mount.
 The correction retains managed runtime storage paths for all-Docker installations.
 A new published candidate must pass the same complete hosted installation test before this issue is closed.
+
+
+## Interactive all-Docker installation passed
+
+Candidate `4e1d7caaddc0` passed its signed workflow and the interactive public installation test.
+The operator used the piped public script without an answers file or registry credentials.
+License acceptance, profile selection, candidate acknowledgment, certificate generation, and remaining prompts completed through the terminal.
+The installer reported `Readiness: ready` and exited with status 0.
+
+Authenticated HTTPS startup returned HTTP 200 and eight ready components. Unauthenticated access returned HTTP 401.
+The protected `/kestra`, `/workers`, and `/api/jobs` paths returned HTTP 404.
+Artifact publication and readback succeeded with matching size and SHA-256.
+The database contained one migration record and one bootstrap record.
+
+The fixture uses project `cc-hosted-fixed` and installation root `/opt/cc-hosted-fixed` inside `cc-installer-host`.
+Its only prerequisite exception is the disposable container's absent host time service.
+This remains qualification evidence, not production release acceptance.
+
+## Hybrid credential staging correction
+
+Root-created hybrid configuration and credential files were unreadable by UID 1000 application containers.
+Controller and remote worker manifests now stage required files through a dedicated initializer into private named volumes.
+The change preserves source ownership, source modes, source hashes, shared storage mounts, networks, and worker port bindings.
+
+Focused runtime probes used the signed API image from candidate `81ad8c492b80`.
+Six controller consumers and the worker consumer read their staged files as UID 1000 through read-only mounts.
+Staged files had mode 600. Their directories had mode 700.
+All 22 controller source files and seven worker source files retained their original ownership, modes, and hashes.
+Only the probe's own resources were removed.
+Installer tests, profile tests, and deployment lint passed.
+Complete hosted hybrid installation remains unverified.

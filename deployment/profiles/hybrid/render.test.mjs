@@ -14,8 +14,16 @@ const release = {
   platform: 'linux/amd64',
   images: config.images,
 };
-const mounted = (service) =>
-  new Set(service.secrets.map(({ source }) => source));
+const mounted = (compose, name) =>
+  new Set(
+    compose.services['runtime-files'].command[2]
+      .split('\n')
+      .filter(
+        (line) =>
+          line.startsWith('cp ') && line.includes(`'/staged/${name}-secrets/`),
+      )
+      .map((line) => line.match(/^cp '\/run\/secrets\/([^']+)'/)[1]),
+  );
 
 test('renders a placement-aware controller with verified TLS', () => {
   const compose = renderHybrid(config, release);
@@ -46,14 +54,21 @@ test('renders a placement-aware controller with verified TLS', () => {
   assert.equal(compose.networks.ingress.internal, undefined);
   assert.equal(compose.networks.egress.driver, 'bridge');
   assert.equal(
-    compose.services.api.volumes[1].target,
+    compose.services.api.volumes.find(
+      (mount) =>
+        mount.type === 'bind' && mount.source === config.artifacts.location,
+    ).target,
     config.artifacts.location,
   );
   assert.equal(
     compose.services['storage-preflight'].command[2].includes('chown'),
     false,
   );
-  assert.equal(compose.services.kestra.volumes[0].source, './runtime/kestra');
+  assert.ok(
+    compose.services.kestra.volumes.includes(
+      'kestra-runtime-files:/run/kestra-runtime:ro',
+    ),
+  );
   assert.equal(
     Object.values(compose.services).some((service) => 'build' in service),
     false,
@@ -71,23 +86,23 @@ test('uses the endpoint private CA for the edge health check', () => {
     compose.services.edge.healthcheck.test.at(-1),
     /ca:fs\.readFileSync\('\/run\/secrets\/district-ca'\)/,
   );
-  assert.equal(mounted(compose.services.edge).has('district-ca'), true);
+  assert.equal(mounted(compose, 'edge').has('district-ca'), true);
 });
 
 test('mounts only credentials required by each process', () => {
   const compose = renderHybrid(config, release);
   assert.deepEqual(
-    mounted(compose.services.frontend),
+    mounted(compose, 'frontend'),
     new Set(['frontend-certificate', 'frontend-private-key', 'district-ca']),
   );
   assert.deepEqual(
-    mounted(compose.services.edge),
+    mounted(compose, 'edge'),
     new Set(['edge-certificate', 'edge-private-key', 'district-ca']),
   );
-  assert.equal(mounted(compose.services.api).has('bootstrap'), false);
-  assert.equal(mounted(compose.services.api).has('worker-dispatch'), false);
+  assert.equal(mounted(compose, 'api').has('bootstrap'), false);
+  assert.equal(mounted(compose, 'api').has('worker-dispatch'), false);
   assert.deepEqual(
-    mounted(compose.services['database-migrate']),
+    mounted(compose, 'database-migrate'),
     new Set(['postgres-migrator', 'district-ca']),
   );
 });
@@ -108,11 +123,14 @@ test('renders one district-bound worker fragment for each host', () => {
   assert.equal(first.services.workers.environment.REQUIRE_TLS, 'true');
   assert.equal(first.services.workers.healthcheck, undefined);
   assert.equal(
-    first.services.workers.volumes[1].target,
+    first.services.workers.volumes.find(
+      (mount) =>
+        mount.type === 'bind' && mount.source === config.artifacts.location,
+    ).target,
     config.artifacts.location,
   );
   assert.deepEqual(
-    mounted(first.services.workers),
+    mounted(first, 'workers'),
     new Set([
       'worker-dispatch',
       'workers-certificate',
@@ -173,8 +191,8 @@ test('keeps a selected local Redis service and TLS material', () => {
   const compose = renderHybrid(localRedis, release);
   assert.ok(compose.services.redis);
   assert.ok(compose.services['redis-config']);
-  assert.equal(mounted(compose.services.redis).has('redis-certificate'), true);
-  assert.equal(mounted(compose.services.redis).has('redis-private-key'), true);
+  assert.equal(mounted(compose, 'redis').has('redis-certificate'), true);
+  assert.equal(mounted(compose, 'redis').has('redis-private-key'), true);
 });
 
 test('keeps a supported local PostgreSQL pair on one host', () => {
@@ -245,4 +263,82 @@ test('rejects unsafe or incomplete distributed worker layouts', () => {
     () => renderHybrid(replicaMismatch, release),
     /one worker replica per declared worker host/,
   );
+});
+
+test('controller and remote workers stage private files before nonroot startup', () => {
+  const controller = renderHybrid(config, release);
+  const worker = renderWorkerHost(config, release, {
+    hostIndex: 0,
+    bindAddress: '10.20.30.41',
+  });
+  for (const [compose, consumers] of [
+    [
+      controller,
+      [
+        'frontend',
+        'api',
+        'edge',
+        'kestra',
+        'database-migrate',
+        'bootstrap-initialize',
+      ],
+    ],
+    [worker, ['workers']],
+  ]) {
+    const initializer = compose.services['runtime-files'];
+    assert.ok(
+      initializer,
+      'A root initializer must stage private source files',
+    );
+    assert.equal(initializer.user, '0:0');
+    assert.equal(initializer.read_only, true);
+    assert.deepEqual(initializer.cap_add, ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']);
+    assert.ok(
+      initializer.volumes
+        .filter((mount) => typeof mount === 'object')
+        .every(
+          (mount) => mount.read_only && mount.bind.create_host_path === false,
+        ),
+    );
+    for (const name of consumers) {
+      const service = compose.services[name];
+      assert.equal(service.user, '1000:1000');
+      assert.equal(service.secrets, undefined);
+      assert.equal(
+        service.depends_on['runtime-files'].condition,
+        'service_completed_successfully',
+      );
+      assert.ok(
+        service.volumes.every(
+          (mount) =>
+            typeof mount === 'string' || !mount.target.startsWith('/run/'),
+        ),
+      );
+    }
+  }
+  assert.ok(
+    controller.services.kestra.volumes.includes(
+      'kestra-runtime-files:/run/kestra-runtime:ro',
+    ),
+  );
+  assert.ok(
+    controller.services.api.volumes.some(
+      (mount) =>
+        mount.type === 'bind' &&
+        mount.source === config.artifacts.location &&
+        mount.target === config.artifacts.location,
+    ),
+  );
+  assert.ok(
+    worker.services.workers.volumes.some(
+      (mount) =>
+        mount.type === 'bind' &&
+        mount.source === config.artifacts.location &&
+        mount.target === config.artifacts.location,
+    ),
+  );
+  assert.deepEqual(worker.services.workers.ports, ['10.20.30.41:3001:3001']);
+  assert.deepEqual(worker.services.workers.networks, ['egress']);
+  assert.deepEqual(worker.services['runtime-files'].networks, ['egress']);
+  assert.equal(controller.networks.internal.internal, true);
 });

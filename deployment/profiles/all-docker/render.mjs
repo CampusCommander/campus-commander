@@ -509,8 +509,11 @@ export function renderAllDocker(
   return compose;
 }
 
-function stageRuntimeFiles(compose) {
-  const initializer = compose.services['volume-permissions'];
+export function stageRuntimeFiles(
+  compose,
+  { initializerName = 'volume-permissions', directoryFiles = [] } = {},
+) {
+  const initializer = compose.services[initializerName];
   const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
   const commands = [initializer.command[2], 'umask 077'];
   const sourceSecrets = new Set();
@@ -524,7 +527,12 @@ function stageRuntimeFiles(compose) {
     bind: { create_host_path: false },
   });
   for (const [name, service] of Object.entries(compose.services)) {
-    if (name === 'volume-permissions' || name.endsWith('-postgres')) continue;
+    if (
+      name === initializerName ||
+      name.endsWith('-postgres') ||
+      service.user === '0:0'
+    )
+      continue;
     service.user = '1000:1000';
     const configFiles = [];
     service.volumes = (service.volumes ?? []).filter((mount) => {
@@ -541,7 +549,23 @@ function stageRuntimeFiles(compose) {
       sourceSecrets.add(source);
       return { source: `/run/secrets/${source}`, target };
     });
-    for (const [kind, entries] of [
+    const directories = directoryFiles.filter(
+      (entry) => entry.service === name,
+    );
+    for (const directory of directories) {
+      service.volumes = service.volumes.filter(
+        (mount) =>
+          typeof mount === 'string' || mount.target !== directory.target,
+      );
+      initializer.volumes.push({
+        type: 'bind',
+        source: directory.source,
+        target: `/source/${name}-${directory.kind}`,
+        read_only: true,
+        bind: { create_host_path: false },
+      });
+    }
+    for (const [kind, entries, target = `/run/${kind}`] of [
       ['secrets', files],
       [
         'config',
@@ -550,13 +574,21 @@ function stageRuntimeFiles(compose) {
           target: file,
         })),
       ],
+      ...directories.map((directory) => [
+        directory.kind,
+        directory.files.map((file) => ({
+          source: `/source/${name}-${directory.kind}/${file}`,
+          target: file,
+        })),
+        directory.target,
+      ]),
     ]) {
       if (!entries.length) continue;
       const volume = `${name}-${kind}`;
       const destination = `/staged/${volume}`;
       compose.volumes[volume] = {};
       initializer.volumes.push(`${volume}:${destination}`);
-      service.volumes.push(`${volume}:/run/${kind}:ro`);
+      service.volumes.push(`${volume}:${target}:ro`);
       commands.push(
         `mkdir -p ${quote(destination)}`,
         `find ${quote(destination)} -mindepth 1 -delete`,
@@ -574,7 +606,7 @@ function stageRuntimeFiles(compose) {
         `chmod 700 ${quote(destination)}`,
       );
       service.depends_on ??= {};
-      service.depends_on['volume-permissions'] = {
+      service.depends_on[initializerName] = {
         condition: 'service_completed_successfully',
       };
     }
