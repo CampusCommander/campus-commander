@@ -33,6 +33,20 @@ function certificateResult(url, ca, connectAddress) {
   });
 }
 
+export async function replaceEdgeTlsSecrets({
+  compose,
+  certPath,
+  keyPath,
+  cert,
+  key,
+}) {
+  compose('stop', '--timeout', '5', 'edge');
+  await writeFile(certPath, cert);
+  await writeFile(keyPath, key);
+  compose('run', '--rm', '--no-deps', 'volume-permissions');
+  compose('start', 'edge');
+}
+
 /** Qualify edge certificate rejection inside a disposable complete installation. */
 export async function runEdgeTlsFaults(options, { compose, verifyFixtures }) {
   const { root, project, url, connectAddress } = options;
@@ -82,10 +96,13 @@ export async function runEdgeTlsFaults(options, { compose, verifyFixtures }) {
     throw new Error('TLS fixture recovery did not restore eight ready checks.');
   };
   const replace = async (cert, key) => {
-    compose('stop', '--timeout', '5', 'edge');
-    await writeFile(certPath, cert);
-    await writeFile(keyPath, key);
-    compose('start', 'edge');
+    await replaceEdgeTlsSecrets({
+      compose,
+      certPath,
+      keyPath,
+      cert,
+      key,
+    });
   };
   const records = [];
   try {
