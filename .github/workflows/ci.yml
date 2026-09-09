@@ -30,15 +30,22 @@ jobs:
       - run: npm exec nx run-many -- -t lint,test,build,typecheck -p deployment,frontend,api,worker
         env:
           NX_NO_CLOUD: ${{ vars.NX_CLOUD_ENABLED != 'true' }}
+      - run: npm exec nx run api-e2e:e2e
       - run: npm exec nx run deployment:validate-examples
-      - run: npm exec nx run-many -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test -p deployment
+      - run: npm exec nx run-many -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test -p deployment
 
   foundation-integration:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        target: [qualify-redis, postgres-integration, storage-integration]
+        target:
+          [
+            qualify-redis,
+            postgres-integration,
+            storage-integration,
+            operations-integration,
+          ]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444

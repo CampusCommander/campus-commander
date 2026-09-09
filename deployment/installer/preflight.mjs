@@ -19,6 +19,7 @@ import { secretPath } from '../redis/runtime.mjs';
 import { connectDatabase } from '../postgres/index.mjs';
 import { probeRedis } from '../redis/probe.mjs';
 import { probeHttp } from '../bootstrap/status.mjs';
+import { evaluatePlatformVersion } from './platforms.mjs';
 
 const exec = promisify(execFile);
 async function command(file, args) {
@@ -79,11 +80,18 @@ export async function preflight(
   const checks = [];
   const check = async (name, instruction, operation) => {
     try {
-      const passed = await operation();
+      const outcome = await operation();
+      const result =
+        typeof outcome === 'object' && outcome !== null
+          ? outcome
+          : { passed: outcome === true };
       checks.push({
         name,
-        status: passed === true ? 'passed' : 'failed',
-        ...(passed === true ? {} : { instruction }),
+        status: result.passed === true ? 'passed' : 'failed',
+        ...Object.fromEntries(
+          Object.entries(result).filter(([key]) => key !== 'passed'),
+        ),
+        ...(result.passed === true ? {} : { instruction }),
       });
     } catch {
       checks.push({ name, status: 'failed', instruction });
@@ -117,6 +125,21 @@ export async function preflight(
       'cluster-context',
       'Select the explicitly named district test cluster context.',
       () => contextMatches,
+    );
+    await check(
+      'cluster-version',
+      'Install Kubernetes 1.35.8 or newer within major version 1 on the selected cluster.',
+      async () => {
+        if (!contextMatches)
+          return evaluatePlatformVersion('kubernetes', undefined);
+        const version = JSON.parse(
+          await run('kubectl', ['version', '--output=json']),
+        );
+        return evaluatePlatformVersion(
+          'kubernetes',
+          version.serverVersion?.gitVersion,
+        );
+      },
     );
     await check(
       'cluster-nodes',
@@ -165,17 +188,21 @@ export async function preflight(
     );
     await check(
       'docker-engine',
-      'Install Docker Engine and grant the operator access to its socket.',
+      'Install Docker Engine 29.7.2 or newer within major version 29 and grant socket access.',
       async () =>
-        Boolean(
+        evaluatePlatformVersion(
+          'dockerEngine',
           await run('docker', ['version', '--format', '{{.Server.Version}}']),
         ),
     );
     await check(
       'docker-compose',
-      'Install the qualified Docker Compose plugin.',
+      'Install Docker Compose 5.5.0 or newer within major version 5.',
       async () =>
-        Boolean(await run('docker', ['compose', 'version', '--short'])),
+        evaluatePlatformVersion(
+          'dockerCompose',
+          await run('docker', ['compose', 'version', '--short']),
+        ),
     );
     await check(
       'docker-installation-filesystem',

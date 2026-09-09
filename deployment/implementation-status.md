@@ -1,95 +1,60 @@
-# Phase 1 implementation status
+# Phase 1 closeout status
 
-The owner requested CC-5 through CC-20 on 2026-09-08.
-Jira reports CC-4 complete. The remaining tickets require implementation and acceptance evidence.
-The current Jira project key is CC. Earlier portfolio links retain the former KAN key.
+Audit date: 2026-09-09.
+Phase 1 source is implemented. Required acceptance gates remain open.
+The public installer passed hosted installation and resume checks for all three profiles.
+The candidate remains unaccepted. Phase 2 application work has not started.
 
-## Execution order
+The current Jira project key is `CC`. [CC-21](https://easton-consulting.atlassian.net/browse/CC-21) tracks Phase 1.
+The matrix below follows each ticket's actual criteria. It does not add district production guarantees to synthetic test requirements.
 
-| Tickets                | Work                                                    | Prerequisites                   |
-| ---------------------- | ------------------------------------------------------- | ------------------------------- |
-| CC-5, CC-6, CC-7, CC-8 | Kestra qualification, images, database isolation, Redis | CC-4                            |
-| CC-9                   | Local artifact publication                              | CC-7                            |
-| CC-10                  | Shared filesystem qualification                         | CC-9                            |
-| CC-11                  | Authenticated orchestration and independent workers     | CC-5, CC-6, CC-7                |
-| CC-12                  | HTTPS and bootstrap lifecycle                           | CC-6                            |
-| CC-13                  | All-Docker profile                                      | CC-6 through CC-9, CC-11, CC-12 |
-| CC-14                  | Hybrid profile                                          | CC-10, CC-13                    |
-| CC-15                  | Kubernetes profile                                      | CC-10, CC-11, CC-12             |
-| CC-16, CC-17, CC-18    | Installer, restore, fault qualification                 | CC-13, CC-14, CC-15             |
-| CC-19                  | Signed release and CI gates                             | CC-16, CC-17, CC-18             |
-| CC-20                  | Human operator walkthroughs                             | CC-19                           |
+## Acceptance matrix
 
-## Assignment policy
+| Ticket | Assessment | Evidence or remaining action                                                                    |
+| ------ | ---------- | ----------------------------------------------------------------------------------------------- |
+| CC-4   | Complete   | Configuration contract, three examples, rejection checks, and placement decision                |
+| CC-5   | Complete   | Kestra runtime, authentication, telemetry policy, and synthetic restart                         |
+| CC-6   | Complete   | Nx image builds, signed publication, anonymous verification, and hosted startup                 |
+| CC-7   | Complete   | Database isolation, migrations, TLS, restart, and hosted profiles                               |
+| CC-8   | Complete   | Redis authentication, ACLs, TLS, restart, and readiness                                         |
+| CC-9   | Complete   | Artifact publication, integrity, interruption, and failure checks                               |
+| CC-10  | Open       | Publish on worker host A and verify the artifact from worker host B                             |
+| CC-11  | Complete   | Controller-owned Kestra internal-file restart and authenticated external workers                |
+| CC-12  | Complete   | HTTPS, bootstrap lifecycle, protected startup, route denial, and Chromium checks                |
+| CC-13  | Complete   | All-Docker installation, restart, lifecycle, upgrade, restore, and fault fixtures               |
+| CC-14  | Complete   | Hosted hybrid controller, external TLS services, two worker daemons, and resume                 |
+| CC-15  | Open       | Prove allowed and denied connections with an enforcing Kubernetes network plugin                |
+| CC-16  | Open       | Complete hybrid and Kubernetes lifecycle and backup-gated upgrade evidence                      |
+| CC-17  | Complete   | Isolated synthetic restores for all-Docker, hybrid, and Kubernetes                              |
+| CC-18  | Open       | Complete hybrid artifact/capacity/certificate faults and Kubernetes capacity/certificate faults |
+| CC-19  | Complete   | Signed candidate publication, rejection gates, and report-content binding regression tests      |
+| CC-20  | Open       | Independent human walkthroughs, required records, and completion decision                       |
 
-Sol 5.6 high handles complex application and deployment tasks.
-Astra medium handles database isolation, artifact publication, and other foundational interfaces.
-Local-flash handles bounded documentation work with explicit source files and output ownership.
-Workers preserve concurrent edits and report shared interface changes before implementation.
-The orchestrator integrates changes and checks acceptance evidence before reporting completion.
+Ticket evidence resides under [evidence](evidence/).
+The [hosted validation record](installer/HOSTED-VALIDATION.md) links retained machine results.
+The [operator record](evidence/CC-20.md) distinguishes the assisted customer session from agent execution.
+The [walkthrough template](evidence/operator-walkthrough-template.md) defines the remaining human records.
 
-## Acceptance constraints
+## Code and documentation cleanup
 
-Docker Engine 29.7.2 is accessible through approved tool execution.
-The initial Kubernetes check returned no current context.
-Cross-host environments and human walkthrough participants require owner-supplied information.
-Synthetic example digests do not establish published release artifacts.
-Unexecuted integration checks remain `not-run`.
-Human operator acceptance requires human records.
+The closeout combines the implementation branch with public installer documentation.
+It corrects obsolete publication statements and updates Jira references from `KAN` to `CC`.
+Generated local test credentials are excluded from Git.
+The unused Angular library placeholder was removed.
+The generated Jest API test was replaced with a built-server test for startup, access denial, and shutdown.
+Main CI now includes API end-to-end, operations, and qualification checks.
 
-## Current evidence
+The code review identified runtime-version validation and release-evidence binding gaps.
+Both corrections passed regression tests, including the complete 43-test installer suite.
+The network documentation now distinguishes internal all-Docker services from private hybrid worker listeners.
+External firewall verification remains an infrastructure-operator responsibility.
 
-| Ticket | Implementation                                                  | Validation boundary                                                                                                                                                 |
-| ------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CC-5   | Kestra OSS 1.3.37 selected and pinned                           | Authentication, verified TLS listener, and synthetic restart passed.                                                                                                |
-| CC-6   | Frontend, API, and worker images implemented                    | Local image checks passed. Final registry publication remains pending.                                                                                              |
-| CC-7   | PostgreSQL isolation and migrations implemented                 | Local PostgreSQL integration passed. District endpoints remain untested.                                                                                            |
-| CC-8   | Redis runtime and readiness probe implemented                   | Authentication, restart, ACL, and TLS fixture checks passed.                                                                                                        |
-| CC-9   | Local artifact publication implemented                          | Local durability and interrupted-publication checks passed.                                                                                                         |
-| CC-10  | Shared filesystem adapter and qualification harness implemented | Same-host process checks passed. Two-host district storage qualification remains not-run.                                                                           |
-| CC-11  | Authenticated worker dispatch implemented                       | Kestra retry after worker interruption, TLS, authentication, and persisted marker checks passed.                                                                    |
-| CC-12  | Bootstrap lifecycle, HTTPS edge, and startup page implemented   | Bootstrap, HTTPS, six Chromium checks, and all-Docker runtime passed.                                                                                               |
-| CC-13  | All-Docker profile implemented                                  | Eight-component startup, persisted restart, CLI upgrade, encrypted restore, and seven process faults passed.                                                        |
-| CC-14  | Hybrid profile implemented                                      | Complete eight-container startup, TLS execution, shared artifacts, and database/cache recovery passed on one host. District qualification remains not-run.          |
-| CC-15  | Kubernetes profile implemented                                  | Semantic tests, server validation, all eight workloads, and artifact reads after cross-node rescheduling passed in Kind. District acceptance remains not-run.       |
-| CC-16  | Installer orchestration implemented                             | Actual prepare, resume, restart, reinstall, backup-gated upgrade, and explicit fixture erasure passed. District profiles remain unqualified.                        |
-| CC-17  | Encrypted backup and restore implemented                        | All-Docker, isolated hybrid data restore, and Kubernetes target startup preserved durable fixtures. District restore remains not-run.                               |
-| CC-18  | Fault qualification harness implemented                         | All-Docker faults, five hybrid process faults, six Kubernetes faults, TLS faults, and bounded full-profile capacity passed. District qualification remains not-run. |
-| CC-19  | Candidate signing workflow and integrity gates implemented      | Local integrity checks passed. Workflow publication and profile promotion remain pending.                                                                           |
-| CC-20  | Walkthrough template prepared                                   | All three human walkthroughs remain not-run.                                                                                                                        |
+A duplicated secret-path mapping remains a nonblocking maintenance observation.
+A broad path-module refactor is not required to establish the current storage and credential contracts.
 
-## Completion audit after local implementation
+## Phase 2 boundary
 
-The final-image all-Docker installer repetition passed against committed installer source `1599aec`.
-[Its result](evidence/CC-16-final-images-result.json) records the final local image references and preserved fixtures.
-The default native PostgreSQL backup/restore runner also passed with version 18.6 tools.
-[Its result](evidence/CC-17-native-result.json) records that separate runner qualification.
-
-The rebuilt API and worker images passed installer upgrade, credential delimiter handling, certificate faults, and real browser checks.
-[The combined result](evidence/CC-16-secret-policy-profile-result.json) records the image inventory and synthetic fixture limitations.
-The complete hybrid profile also passed with eight containers and two separate worker Compose projects.
-[The hybrid result](profiles/hybrid/full-integration-result.json) records verified TLS, execution, persistence, and outage recovery.
-
-The [isolated hybrid restore](evidence/CC-17-hybrid.md) passed native backup and restore with source services stopped.
-Target application services retained the disabled marker after successful data verification.
-
-The [Kubernetes restore](evidence/CC-17-kubernetes-result.json) passed with fresh target PVCs and separate file roots.
-The restored target reached eight ready checks and preserved artifact and Kestra fixtures.
-
-The [hybrid process-fault run](evidence/CC-18-hybrid-process.md) passed all five cases with durable fixture preservation.
-The [complete all-Docker capacity run](evidence/CC-18-profile-capacity-result.json) passed bounded ENOSPC failure and recovery.
-Its 16 MiB synthetic tmpfs volume provides no persistence or district capacity guarantee.
-
-The [Kubernetes fault run](evidence/CC-18-kubernetes-result.json) passed six cases, including shared artifact access loss.
-The renderer now preserves API and edge diagnostic routing during dependency failure.
-
-Publication and acceptance still require:
-
-- Signed project-owned images, SBOMs, installation bundles, and actual GitHub Actions results.
-- Repetition across the published image inventory and remaining distributed qualification.
-- District shared storage, enforcing networking, trusted ingress, and declared capacity checks.
-- Clean-host installation records and three human operator walkthroughs.
-
-These local checks do not replace distinct-host storage, enforcing district networking, clean-host installation, or human walkthrough records.
-The push and candidate publication remain pending explicit approval after automatic approval review rejected the push.
-Phase 1 remains active and unaccepted.
+Phase 2 begins after required Phase 1 gates pass and the owner records the completion decision.
+Its scope includes application structure, authentication, login, shell, and service utilities.
+Preserve installer behavior and all three deployment profiles.
+Keep Google onboarding in Phase 3. Keep EntityCache and mutation JobService in their later phases.

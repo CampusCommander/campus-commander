@@ -4,6 +4,21 @@ The CLI uses the validated deployment configuration as its authoritative input.
 It renders pinned images without source builds, AI services, or Google credentials.
 Phase 1 remains incomplete until all three profiles pass their operator acceptance gates.
 
+## Qualified installation platforms
+
+Preflight enforces minimum versions before installation.
+Docker hosts require Docker Engine 29.7.2 or newer within major version 29.
+They require Docker Compose 5.5.0 or newer within major version 5.
+Kubernetes clusters require server version 1.35.8 or newer within major version 1.
+The evidence covers Docker Engine 29.7.2 and 29.8.0.
+It covers Docker Compose 5.5.0 and 5.5.1.
+It covers Kubernetes 1.35.8 and 1.37.0.
+Other minor and patch versions within these bounds are compatible, but remain untested.
+This contract does not qualify every vendor distribution.
+Preflight records the observed and minimum versions in `installer-state.json`.
+Existing capability checks still verify the Docker filesystem, cluster nodes, storage classes, and required runtime access.
+Qualification cannot exempt a malformed or unsupported platform version.
+
 ```sh
 node deployment/installer/cli.mjs validate /protected/operator.json
 node deployment/installer/cli.mjs preflight /protected/operator.json

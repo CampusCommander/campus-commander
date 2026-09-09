@@ -4,10 +4,7 @@ import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  replaceEdgeTlsSecrets,
-  runEdgeTlsFaults,
-} from './edge-tls-faults.mjs';
+import { replaceEdgeTlsSecrets, runEdgeTlsFaults } from './edge-tls-faults.mjs';
 
 test('edge TLS faults reject ordinary projects before accessing secrets or Docker', async () => {
   let commands = 0;

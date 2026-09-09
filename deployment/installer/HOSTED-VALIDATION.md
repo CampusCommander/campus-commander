@@ -1,122 +1,127 @@
 # Hosted installer validation
 
-This record covers source revision `5346e739e175760180b669d00dae6cdc4d9a1448`.
-The public entry script was published on `main` in commit `f396baa`.
-Its SHA-256 matches the implementation script: `d4552b67bae63e2f68db814f455f398d4b77cde2019458d1b9b512c4755dec45`.
-The release remains a qualification candidate. This record does not establish release acceptance.
+The public installer passed actual all-Docker, hybrid, and Kubernetes installation tests on 2026-09-09.
+These tests used published, signed candidates without registry credentials or a customer source checkout.
+Every installation retains `acceptedRelease: false`. This record does not establish production release acceptance.
 
-## Published build
-
-[Candidate workflow 34304764309](https://github.com/CampusCommander/campus-commander/actions/runs/34304764309) passed every job.
-Those jobs cover validation, three image publications, capacity checks, and signed bundle publication.
-The [candidate release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-1-candidate-5346e739e175) contains four assets:
-
-- `phase-1-candidate.tar.gz`
-- `phase-1-candidate.sigstore.json`
-- `release-manifest.json`
-- `release-manifest.sigstore.json`
-
-## Anonymous entry test
-
-The test used an Ubuntu 24.04 container without GitHub credentials or a source checkout.
-It executed this command:
+## Public entry
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/main/install.sh |
-  sh -s -- --release phase-1-candidate-5346e739e175 --verify-only
+curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/main/install.sh | sh
 ```
 
-The script obtained its private Node and Cosign tools.
-The archive signature and manifest signature both reported `Verified OK`.
-Archive and manifest inventory checks completed before image verification.
-Frontend image signature verification returned `UNAUTHORIZED: authentication required` from GHCR.
-The script exited with status 1 before configuration or installation.
+The script verifies release signatures, file checksums, and application image signatures before executing release code.
+Anonymous verification passed after the package owner enabled public GHCR access.
+Node and Cosign downloads used the script's pinned versions and checksums.
 
-Anonymous GHCR token requests also returned HTTP 401.
-Public repository visibility has not established anonymous container image access.
-The package owner must enable public visibility for all three application packages before this test can pass.
+| Profile    | Signed candidate                 | Actual result                                                           |
+| ---------- | -------------------------------- | ----------------------------------------------------------------------- |
+| All-Docker | `phase-1-candidate-4e1d7caaddc0` | Interactive installation, stop/resume, and interruption recovery passed |
+| Hybrid     | `phase-1-candidate-3e6a6a67a2c3` | Controller, two remote workers, and stop/resume passed                  |
+| Kubernetes | `phase-1-candidate-3e6a6a67a2c3` | Installation, status, resume, and cross-node artifact reads passed      |
 
-## Test host prerequisites
+The [all-Docker publication workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34357487042) passed.
+The [hybrid and Kubernetes publication workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34359354716) also passed.
+Installer tests, profile tests, and deployment lint passed before the publications.
 
-The isolated Docker daemon reports version 29.8.0 and cgroup v2.
-Nested overlay storage failed. The isolated daemon was configured with VFS storage.
-A container with memory and CPU limits still failed because its parent cgroup was in an invalid state.
-This host does not yet qualify for application installation testing.
-The existing customer installation was not changed.
+## All-Docker
 
-## Remaining evidence
+The operator ran the public command interactively in an isolated Ubuntu 24.04 host.
+License acceptance, profile selection, candidate acknowledgment, certificate generation, and configuration prompts completed through the terminal.
+The command required no answers file. It reported `Readiness: ready` and exited with status 0.
 
-- Repeat anonymous verification after package visibility changes.
-- Verify container memory and CPU limits on the corrected test host.
-- Complete interactive all-Docker installation through the public command.
-- Exercise status, interruption recovery, and credential preservation through the same entry command.
-- Complete hybrid installation using external services and worker hosts.
-- Complete Kubernetes installation using existing cluster Secrets and storage.
-
-Earlier source harness results do not prove these hosted installation paths.
-
-
-## Public package verification completed
-
-On 2026-09-09, the package owner enabled public visibility for all three application packages.
-Anonymous token requests returned HTTP 200 for API, frontend, and worker images.
-
-The clean container then ran the public entry command for `phase-1-candidate-81ad8c492b80` with `--verify-only`.
-The command exited with status 0.
-Both release signatures, archive file checksums, and all three image signatures passed.
-The container required no registry credentials.
-
-This resolves the anonymous registry blocker recorded above.
-It does not establish successful application installation.
-The isolated runtime still requires corrected cgroup configuration before full hosted installation testing.
-
-
-## First complete hosted installation attempt
-
-The approved isolated host uses its own Docker data volume and the dedicated cgroup parent `/cc-installer-host`.
-A container with 128 MiB memory and 0.25 CPU reported `memory.max=134217728` and `cpu.max=25000 100000`.
-
-The public installer ran candidate `81ad8c492b80` with all-Docker qualification answers and no registry credentials.
-Release and image verification passed. Database provisioning, migration, and bootstrap initialization exited successfully.
-All API dependency checks passed except artifact storage.
-
-Setup selected `/opt/cc-hosted-live/data/artifacts`.
-The generated Compose file mounted artifact storage at `/var/lib/campus-commander/artifacts`.
-That mounted directory had UID/GID 1000 and mode 700. The configured directory did not exist.
-The installer exited with `COMMAND_FAILED` while waiting for API readiness.
-The failed fixture remains preserved with its services stopped.
-
-A regression at the configuration-to-Compose boundary reproduces the missing artifact mount.
-The correction retains managed runtime storage paths for all-Docker installations.
-A new published candidate must pass the same complete hosted installation test before this issue is closed.
-
-
-## Interactive all-Docker installation passed
-
-Candidate `4e1d7caaddc0` passed its signed workflow and the interactive public installation test.
-The operator used the piped public script without an answers file or registry credentials.
-License acceptance, profile selection, candidate acknowledgment, certificate generation, and remaining prompts completed through the terminal.
-The installer reported `Readiness: ready` and exited with status 0.
-
-Authenticated HTTPS startup returned HTTP 200 and eight ready components. Unauthenticated access returned HTTP 401.
-The protected `/kestra`, `/workers`, and `/api/jobs` paths returned HTTP 404.
-Artifact publication and readback succeeded with matching size and SHA-256.
+Authenticated HTTPS startup returned HTTP 200 and eight ready checks. Unauthenticated startup returned HTTP 401.
+The `/kestra`, `/workers`, and `/api/jobs` paths returned HTTP 404.
+Artifact publication and readback preserved 50 bytes with SHA-256 `4e0f5dd6d54c2baa94a2df77352f50f539bd268fb133829a2189673b7f544851`.
 The database contained one migration record and one bootstrap record.
 
-The fixture uses project `cc-hosted-fixed` and installation root `/opt/cc-hosted-fixed` inside `cc-installer-host`.
-Its only prerequisite exception is the disposable container's absent host time service.
-This remains qualification evidence, not production release acceptance.
+The test stopped the project's containers and resumed through the public command.
+Resume selected the original verified release and returned ready.
+The artifact, migration record, and bootstrap record remained identical.
+The test preserved project `cc-hosted-fixed` at `/opt/cc-hosted-fixed` inside `cc-installer-host`.
 
-## Hybrid credential staging correction
+The test then sent SIGTERM to the installer process group after it recorded `prepared` during resume.
+The interrupted process stopped. Its state remained `prepared`, and its lock remained present.
+A public resume attempt correctly failed with `BUSY`.
+The test confirmed that no installer process remained before removing the empty stale lock.
+Public resume then returned ready and preserved the same artifact, migration record, and bootstrap record.
+This recovery requires the documented stale-lock procedure. It is not automatic lock recovery.
 
-Root-created hybrid configuration and credential files were unreadable by UID 1000 application containers.
-Controller and remote worker manifests now stage required files through a dedicated initializer into private named volumes.
-The change preserves source ownership, source modes, source hashes, shared storage mounts, networks, and worker port bindings.
+## Hybrid
 
-Focused runtime probes used the signed API image from candidate `81ad8c492b80`.
-Six controller consumers and the worker consumer read their staged files as UID 1000 through read-only mounts.
-Staged files had mode 600. Their directories had mode 700.
-All 22 controller source files and seven worker source files retained their original ownership, modes, and hashes.
-Only the probe's own resources were removed.
-Installer tests, profile tests, and deployment lint passed.
-Complete hosted hybrid installation remains unverified.
+The public command configured the controller and paused for remote worker deployment.
+The test copied the generated fragments and their required private files to two separate worker hosts.
+Both hosts used separate Docker daemons and unchanged worker fragments.
+Public resume then returned ready with eight ready checks.
+
+External PostgreSQL and Redis required TLS and authentication.
+District fixture DNS resolved the controller, external services, and both worker addresses.
+Application containers read staged configuration and credentials as UID 1000 through read-only mounts.
+The hosted dependency installer installed the required Java tools.
+
+Authenticated HTTPS startup returned HTTP 200. Unauthenticated startup returned HTTP 401.
+The `/kestra`, `/workers`, and `/api/jobs` paths returned HTTP 404.
+The API published an artifact. Both remote workers read the same bytes and database records.
+The test stopped the controller and resumed through the public command.
+Resume returned ready and preserved the artifact, migration record, and bootstrap record exactly.
+
+The test preserved controller project `cc-hosted-hybrid` at `/opt/cc-hosted-hybrid` inside `cc-installer-host`.
+Worker hosts `cc-hosted-worker-1` and `cc-hosted-worker-2` remain separate from the controller host.
+External services belong to the dedicated `cc-hosted-hybrid-fixture` project.
+
+## Kubernetes
+
+The test followed the [hosted Kubernetes procedure](HOSTED-KUBERNETES-TEST.md) using a dedicated three-node Kind cluster.
+It prepared existing private Secrets, verified certificates, and shared storage before running the public command.
+The installation used the published signed candidate and required no prerequisite exceptions.
+The command exited with status 0 and reported eight ready checks.
+
+Two API replicas and two worker replicas ran across both worker nodes. All four persistent volume claims bound successfully.
+The database preparation Job retried during database startup and completed.
+The test made no changes to generated application manifests.
+
+Authenticated HTTPS startup returned HTTP 200. Unauthenticated startup returned HTTP 401.
+The `/kestra`, `/workers`, and `/api/health/ready` paths returned HTTP 404.
+The API published a Unicode artifact. Workers on both nodes read the same artifact through the storage and database interfaces.
+Public status and resume commands returned ready.
+The artifact descriptor, migration record, and bootstrap record remained identical after resume.
+
+The test preserved cluster `cc-hosted-kube` and its dedicated kubeconfig under `/tmp/cc-hosted-kube-fixture`.
+The generated manifest SHA-256 was `6972ad15702f7000f27afc7ba40ec63a80ebc9566236eeeafa4738dac68c3517`.
+
+## Defects found and corrected
+
+An earlier all-Docker attempt configured an artifact path outside the generated storage mount.
+Commit `4e1d7caaddc0` retains managed runtime paths for all-Docker storage.
+A configuration-to-renderer regression reproduced the defect before the correction.
+The subsequent interactive installation and artifact checks passed.
+
+Hybrid configuration and credential files initially retained root ownership in application bind mounts.
+Commit `3e6a6a67a2c3` stages those files into private volumes for UID 1000 application users.
+Regression tests and runtime probes verified file readability without changing source ownership, modes, or hashes.
+The subsequent hosted hybrid installation passed without generated manifest edits.
+
+## Laboratory boundaries
+
+The controller host uses its own Docker data volume and dedicated cgroup parent.
+A resource probe reported `memory.max=134217728` and `cpu.max=25000 100000`.
+Each remote worker also passed the memory and CPU probe with its own Docker daemon.
+The hosts share one physical Docker Desktop machine. These tests do not establish physical host fault tolerance.
+
+All-Docker and hybrid record a qualification exception for the disposable host's absent time service.
+Hybrid shared storage uses a dedicated shared volume directory with UID/GID 1000 and mode 700.
+This proves access from separate worker daemons. It does not qualify a production network storage provider.
+The tests preserve private fixture files and never include credential values in this record.
+
+Kubernetes used shared hostPath backing on one physical host.
+The stock Kind network plugin does not establish NetworkPolicy enforcement.
+A localhost port-forward supplied HTTPS access instead of a production LoadBalancer.
+These hosted checks did not test independent host failure, rescheduling, backup restore, or upgrade.
+
+## Retained evidence and cleanup
+
+Machine records preserve the [all-Docker result](../evidence/CC-20-hosted-all-docker-result.json),
+[hybrid result](../evidence/CC-20-hosted-hybrid-result.json), and [Kubernetes result](../evidence/CC-20-hosted-kubernetes-result.json).
+The operator requested Docker cleanup after these tests.
+Cleanup removed the test containers and unused images. It preserved all attached named volumes.
+The environment names above identify the completed tests. They do not identify currently running installations.

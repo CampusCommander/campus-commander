@@ -3,25 +3,28 @@
 Campus Commander is a locally hosted Google Workspace administration tool for K–12 districts.
 It supports entity discovery, inventory insight, and small or district-wide updates with durable audit evidence.
 
-**Status: Phase 1 candidate testing.** Published candidates do not establish an accepted production release.
+**Status: Phase 1 candidate testing.** Published candidates are not accepted production releases.
 The [design portfolio](docs/portfolio/README.md) incorporates the contractor review and owner decisions as of 2026-09-05.
 Follow its [ten development phases](docs/portfolio/06-work-breakdown.md#delivery-sequence) and resolve the V0 findings required by each phase.
 Phase 1 supplies all Docker, hybrid Docker with district services, and enterprise Kubernetes installations.
 Each later phase delivers a working version that preserves those deployment modes and earlier capabilities.
 
-## Install a Phase 1 candidate
+## Try the published installer
 
-Use a clean Linux amd64 installation host with curl and CA certificates.
-Run the hosted installer from a terminal:
+Use a Linux amd64 test host with `curl`, CA certificates, `sh`, and `tar`.
+Run this command in a terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/main/install.sh | sh
 ```
 
-Select all-Docker, hybrid, or Kubernetes and follow the questions.
-The installer downloads a signed release and writes the configuration files for you.
-Current releases require explicit candidate acknowledgment and are for disposable testing.
-See the [customer installation instructions](deployment/installer/HOSTED.md) for prerequisites, profile preparation, resume, and verification.
+The installer verifies the signed release and guides configuration for all-Docker, hybrid, or Kubernetes installation.
+Select candidate mode for disposable testing. Approve prerequisite exceptions only when they describe your test environment.
+
+Read the [hosted installation guide](deployment/installer/HOSTED.md) for prerequisites and recovery commands.
+Use the [Kubernetes test procedure](deployment/installer/HOSTED-KUBERNETES-TEST.md) to prepare a disposable cluster fixture.
+Use [published releases](https://github.com/CampusCommander/campus-commander/releases) for signed artifacts.
+Read the [hosted validation record](deployment/installer/HOSTED-VALIDATION.md) for tested behavior and laboratory limits.
 
 ## Retained technology
 
@@ -50,7 +53,7 @@ Every mutation follows preview, confirmation, job execution, and file-backed aud
 
 Compose is the default. Kubernetes is optional. Distributed workers require a shared backend before activation.
 Kestra availability, shared-service recovery, and district capacity remain qualification gates.
-Published release manifests record the acceptance status of each deployment profile.
+The existing Compose scaffold is not a supported installation release.
 
 ## Repository layout
 
@@ -70,11 +73,11 @@ Published candidates provide prebuilt images and an installer. Customers do not 
 ## Work tracking
 
 GitHub records source changes, planning documents, validation evidence, and pull requests.
-Jira records implementation tasks and dependencies in the Campus-Commander project, key `KAN`.
-The [Phase 1 backlog](docs/portfolio/phase-1-jira-tasks.md) maps local planning references to KAN-4 through KAN-20.
+Jira records implementation tasks and dependencies in the Campus-Commander project, key `CC`.
+The [Phase 1 backlog](docs/portfolio/phase-1-jira-tasks.md) maps local planning references to CC-4 through CC-20.
 
 Include the Jira issue key in implementation branch names, commit messages, and pull request titles.
-For example, use `KAN-4-deployment-contract` for the configuration contract task.
+For example, use `CC-4-deployment-contract` for the configuration contract task.
 Link the Jira task and describe validation evidence in each implementation pull request.
 Update task status only when its acceptance criteria have supporting evidence.
 

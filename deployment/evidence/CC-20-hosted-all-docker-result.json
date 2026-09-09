@@ -1,0 +1,75 @@
+{
+  "profile": "all-docker",
+  "release": "phase-1-candidate-4e1d7caaddc0",
+  "validationDate": "2026-09-09",
+  "execution": "agent-operated hosted installer",
+  "acceptedRelease": false,
+  "install": "ready",
+  "resume": "ready",
+  "http": {
+    "unauthenticated": 401,
+    "authenticated": 200,
+    "readiness": {
+      "phase": 1,
+      "status": "ready",
+      "checks": [
+        {
+          "name": "application-database",
+          "status": "ready"
+        },
+        {
+          "name": "kestra-database",
+          "status": "ready"
+        },
+        {
+          "name": "redis",
+          "status": "ready"
+        },
+        {
+          "name": "frontend",
+          "status": "ready"
+        },
+        {
+          "name": "api",
+          "status": "ready"
+        },
+        {
+          "name": "workers",
+          "status": "ready"
+        },
+        {
+          "name": "artifacts",
+          "status": "ready"
+        },
+        {
+          "name": "kestra",
+          "status": "ready"
+        }
+      ]
+    },
+    "hidden": {
+      "/kestra": 404,
+      "/workers": 404,
+      "/api/jobs": 404
+    }
+  },
+  "artifactMigrationBootstrapUnchanged": true,
+  "fixtureSnapshotSha256": "e80ba36e4a0d8b9b69237bb5dbf0f935b01cb785478ed3699f99918c17af40c5",
+  "artifact": {
+    "artifactId": "6166ad30-ce81-4a4e-b118-aba4c028ae24",
+    "attemptId": "00313d2e-3eb7-46b5-b4b1-4d81c21c72ee",
+    "schemaVersion": 1,
+    "sizeBytes": 50,
+    "sha256": "4e0f5dd6d54c2baa94a2df77352f50f539bd268fb133829a2189673b7f544851"
+  },
+  "environmentRemovedAfterValidation": true,
+  "interruption": {
+    "interrupted": true,
+    "observed": "prepared",
+    "code": null,
+    "signal": "SIGTERM",
+    "state": "prepared",
+    "lockExists": true
+  },
+  "recovery": "ready after confirmed stale-lock removal"
+}

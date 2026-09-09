@@ -47,7 +47,9 @@ Image integrity does not establish deployment acceptance.
 `integrity.mjs` checks file sizes, SHA-256 checksums, paths, duplicate entries, and signature integrity.
 Its Ed25519 verifier requires an independently trusted public key.
 Production qualification requires passed install, resume, upgrade, restore, and fault records for all three profiles.
-Each record must match the manifest source revision and application image digests.
+Each record names one unique inventoried JSON report and its SHA-256 checksum.
+The report must identify its profile, check, source revision, application images, and passed status.
+Release verification reads each report and matches those claims against the signed manifest.
 Distributed profiles also require distinct worker-host identifiers.
 The signer must review the truth of those records.
 

@@ -6,10 +6,11 @@ Copy one record for the all-Docker, hybrid, and Kubernetes walkthroughs.
 Set every field to `not-run` before execution.
 Use `pass`, `fail`, or `blocked` only after the operator performs the step.
 Use `blocked` with the owning ticket when the published procedure is absent.
-Use the [installer procedure](../installer/README.md) for installation and lifecycle commands.
+Use the [hosted installer procedure](../installer/HOSTED.md) for installation.
+Use the [installer CLI procedure](../installer/README.md) for lifecycle commands.
 Use the [release procedure](../release/README.md) for integrity verification.
 Use the [operations procedure](../operations/README.md) for backup and restore.
-Published candidate artifacts remain pending CC-19.
+Published candidate artifacts are available through [project releases](https://github.com/CampusCommander/campus-commander/releases).
 CC-19 supplies the release digest and source revision.
 Record no credential values, network account names, endpoint credentials, or secret values.
 Do not infer human acceptance from this template.

@@ -9,7 +9,9 @@ Each runtime uses the `node` account and supports bounded graceful termination.
 Each service exposes liveness and process readiness endpoints.
 
 The application image set remains a candidate.
-Project-owned registry publication awaits the candidate workflow.
+Project-owned GHCR publication passed the [signed candidate workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34359354716).
+Anonymous signature verification and hosted startup passed for all three profiles.
+See the [hosted validation record](../installer/HOSTED-VALIDATION.md).
 The candidate includes the CC-11 worker dispatch contract.
 
 ## Scoped changes

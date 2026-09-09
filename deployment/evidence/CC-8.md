@@ -1,5 +1,13 @@
 # CC-8 evidence
 
+## Closeout assessment, 2026-09-09
+
+Hosted all-Docker, hybrid, and Kubernetes checks passed on 2026-09-09.
+The hybrid fixture used an external TLS Redis service. Earlier component-test limits remain historical.
+See the [hosted validation record](../installer/HOSTED-VALIDATION.md).
+
+## Historical component evidence
+
 Date: 2026-09-08. Scope: isolated Redis foundation.
 
 The Docker registry resolved Redis 8.0.5 Alpine to:

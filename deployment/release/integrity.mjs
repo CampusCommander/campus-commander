@@ -6,6 +6,15 @@ export const sha256 = (bytes) =>
   createHash('sha256').update(bytes).digest('hex');
 const digestReference = /^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$/;
 const profiles = ['all-docker', 'hybrid', 'kubernetes'];
+const checks = ['install', 'resume', 'upgrade', 'restore', 'faults'];
+const imageNames = ['frontend', 'api', 'workers'];
+
+const matchingImages = (actual, expected) =>
+  actual &&
+  typeof actual === 'object' &&
+  !Array.isArray(actual) &&
+  Object.keys(actual).length === imageNames.length &&
+  imageNames.every((name) => actual[name] === expected[name]);
 
 export function assertReleaseEvidence(manifest) {
   if (
@@ -15,27 +24,30 @@ export function assertReleaseEvidence(manifest) {
     throw new Error('Release identity is invalid.');
   if (JSON.stringify(manifest.architectures) !== '["linux/amd64"]')
     throw new Error('Release architecture is unqualified.');
-  for (const name of ['frontend', 'api', 'workers']) {
+  for (const name of imageNames) {
     if (!digestReference.test(manifest.images?.[name]))
       throw new Error('Application image digest is missing.');
   }
+  const reportPaths = new Set();
   for (const profile of profiles) {
-    for (const check of ['install', 'resume', 'upgrade', 'restore', 'faults']) {
+    for (const check of checks) {
       const evidence = manifest.evidence?.[profile]?.[check];
+      const report = manifest.files?.find(
+        (file) => file.path === evidence?.reportPath,
+      );
       if (
         evidence?.status !== 'passed' ||
         evidence.sourceRevision !== manifest.sourceRevision ||
+        typeof evidence.reportPath !== 'string' ||
+        reportPaths.has(evidence.reportPath) ||
         !/^[a-f0-9]{64}$/.test(evidence.reportSha256) ||
-        !manifest.files?.some((file) => file.sha256 === evidence.reportSha256)
+        report?.sha256 !== evidence.reportSha256
       ) {
         throw new Error('Release requires matching profile evidence.');
       }
-      for (const name of ['frontend', 'api', 'workers']) {
-        if (evidence.images?.[name] !== manifest.images[name])
-          throw new Error(
-            'Profile evidence uses different application images.',
-          );
-      }
+      reportPaths.add(evidence.reportPath);
+      if (!matchingImages(evidence.images, manifest.images))
+        throw new Error('Profile evidence uses different application images.');
     }
     if (profile !== 'all-docker') {
       const hosts = manifest.evidence[profile].workerHosts;
@@ -49,6 +61,41 @@ export function assertReleaseEvidence(manifest) {
           'Distributed profiles require distinct worker-host evidence.',
         );
       }
+    }
+  }
+}
+
+export async function verifyReleaseEvidence(root, manifest) {
+  assertReleaseEvidence(manifest);
+  for (const profile of profiles) {
+    for (const check of checks) {
+      const evidence = manifest.evidence[profile][check];
+      const inventory = manifest.files.find(
+        (file) => file.path === evidence.reportPath,
+      );
+      const bytes = await releaseFile(root, evidence.reportPath);
+      if (
+        bytes.length !== inventory.sizeBytes ||
+        sha256(bytes) !== evidence.reportSha256
+      )
+        throw new Error('Release evidence report integrity failed.');
+      let report;
+      try {
+        report = JSON.parse(bytes.toString('utf8'));
+      } catch {
+        throw new Error('Release evidence report must contain JSON.');
+      }
+      if (
+        !report ||
+        typeof report !== 'object' ||
+        Array.isArray(report) ||
+        report.status !== 'passed' ||
+        report.profile !== profile ||
+        report.check !== check ||
+        report.sourceRevision !== manifest.sourceRevision ||
+        !matchingImages(report.images, manifest.images)
+      )
+        throw new Error('Release evidence report claims do not match.');
     }
   }
 }
@@ -115,7 +162,7 @@ export async function verifyRelease({
   )
     throw new Error('Release signature verification failed.');
   const manifest = JSON.parse(manifestBytes.toString('utf8'));
-  assertReleaseEvidence(manifest);
+  await verifyReleaseEvidence(root, manifest);
   await verifyReleaseFiles(root, manifest);
   return manifest;
 }

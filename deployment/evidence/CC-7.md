@@ -1,5 +1,13 @@
 # CC-7 PostgreSQL qualification
 
+## Closeout assessment, 2026-09-09
+
+Hosted all-Docker, external TLS PostgreSQL in hybrid, and Kubernetes installations passed on 2026-09-09.
+The earlier environment limitations below describe the initial component tests.
+See the [hosted validation record](../installer/HOSTED-VALIDATION.md).
+
+## Historical component evidence
+
 Date: 2026-09-08. Fixture: isolated Docker container, unique named volume, generated passwords, and a temporary certificate.
 The test removed its container, volume, and certificate directory after execution.
 No existing database received test queries or changes.

@@ -13,8 +13,8 @@ import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
 import {
-  assertReleaseEvidence,
   verifyRelease,
+  verifyReleaseEvidence,
   verifyReleaseFiles,
 } from '../release/integrity.mjs';
 import { renderAllDocker } from '../profiles/all-docker/render.mjs';
@@ -348,7 +348,7 @@ export async function authenticateRelease(
       issuer,
       operator.releasePath,
     ]);
-    assertReleaseEvidence(manifest);
+    await verifyReleaseEvidence(operator.releaseRoot, manifest);
     await verifyReleaseFiles(operator.releaseRoot, manifest);
     for (const image of Object.values(manifest.images))
       await run('cosign', [
