@@ -3,24 +3,38 @@
 Campus Commander is a locally hosted Google Workspace administration tool for K–12 districts.
 It supports entity discovery, inventory insight, and small or district-wide updates with durable audit evidence.
 
-**Status: preimplementation planning.** Existing scaffolding and prototype assets do not establish a working production application.
+**Status: Phase 1 candidate testing.** Published candidates do not establish an accepted production release.
 The [design portfolio](docs/portfolio/README.md) incorporates the contractor review and owner decisions as of 2026-09-05.
 Follow its [ten development phases](docs/portfolio/06-work-breakdown.md#delivery-sequence) and resolve the V0 findings required by each phase.
 Phase 1 supplies all Docker, hybrid Docker with district services, and enterprise Kubernetes installations.
 Each later phase delivers a working version that preserves those deployment modes and earlier capabilities.
 
+## Install a Phase 1 candidate
+
+Use a clean Linux amd64 installation host with curl and CA certificates.
+Run the hosted installer from a terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/main/install.sh | sh
+```
+
+Select all-Docker, hybrid, or Kubernetes and follow the questions.
+The installer downloads a signed release and writes the configuration files for you.
+Current releases require explicit candidate acknowledgment and are for disposable testing.
+See the [customer installation instructions](deployment/installer/HOSTED.md) for prerequisites, profile preparation, resume, and verification.
+
 ## Retained technology
 
-| Responsibility | Technology |
-|---|---|
-| Interface | Angular, NgRx Signals, Angular Material, Tailwind |
-| Grid | AG Grid Community and LibreGrid |
-| API and workers | NestJS and TypeScript, with worker execution outside the API |
-| Orchestration | Kestra jobs, steps, and parallel assignments |
-| Durable data | PostgreSQL |
-| Cache and coordination | Redis, including job-service admission holds |
-| Artifacts | Job-storage interface with persistent local storage and one qualified shared backend in Phase 1 |
-| Workspace | Nx and npm |
+| Responsibility         | Technology                                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| Interface              | Angular, NgRx Signals, Angular Material, Tailwind                                               |
+| Grid                   | AG Grid Community and LibreGrid                                                                 |
+| API and workers        | NestJS and TypeScript, with worker execution outside the API                                    |
+| Orchestration          | Kestra jobs, steps, and parallel assignments                                                    |
+| Durable data           | PostgreSQL                                                                                      |
+| Cache and coordination | Redis, including job-service admission holds                                                    |
+| Artifacts              | Job-storage interface with persistent local storage and one qualified shared backend in Phase 1 |
+| Workspace              | Nx and npm                                                                                      |
 
 Exact compatible versions require qualification before implementation.
 One installation serves one Workspace customer account, including its supported domains.
@@ -28,15 +42,15 @@ Every mutation follows preview, confirmation, job execution, and file-backed aud
 
 ## Deployment direction
 
-| Profile | Placement |
-|---|---|
-| Single server | Compose runs application, workers, Kestra, PostgreSQL, and Redis with persistent local artifacts. |
+| Profile           | Placement                                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| Single server     | Compose runs application, workers, Kestra, PostgreSQL, and Redis with persistent local artifacts.    |
 | Separate services | The same images use district-managed databases, Redis, or worker hosts through configured endpoints. |
-| Kubernetes | District-operated API/worker replicas use shared services and qualified artifact storage. |
+| Kubernetes        | District-operated API/worker replicas use shared services and qualified artifact storage.            |
 
 Compose is the default. Kubernetes is optional. Distributed workers require a shared backend before activation.
 Kestra availability, shared-service recovery, and district capacity remain qualification gates.
-The existing Compose scaffold is not a supported installation release.
+Published release manifests record the acceptance status of each deployment profile.
 
 ## Repository layout
 
@@ -45,7 +59,7 @@ The planning documents define future worker, contract, domain, database, Google,
 Do not create a second `apps/` tree from historical diagrams.
 
 Use npm-prefixed Nx tasks when working with existing projects. Inspect available targets before running a task.
-Future production releases will provide prebuilt images and an installer. Customers will not compile this repository.
+Published candidates provide prebuilt images and an installer. Customers do not compile this repository.
 
 ## Documentation
 

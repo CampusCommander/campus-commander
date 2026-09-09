@@ -14,6 +14,8 @@ ENV NODE_ENV=production PORT=8080
 WORKDIR /app
 COPY --chown=node:node deployment/images/frontend-server.mjs ./server.mjs
 COPY --from=build --chown=node:node /workspace/dist/frontend/browser ./browser
+COPY --chown=node:node LICENSE.md ./LICENSE.md
+LABEL org.opencontainers.image.licenses="LicenseRef-Campus-Commander-Community-1.0.0"
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 CMD ["node", "-e", "const fs=require('node:fs'),https=require('node:https');const tls=process.env.TLS_CERT_FILE;if(!tls){fetch('http://127.0.0.1:8080/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1));}else{https.get({hostname:'127.0.0.1',port:8080,path:'/health',servername:process.env.TLS_SERVER_NAME,ca:fs.readFileSync(process.env.TLS_CA_FILE||tls)},r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1));}"]

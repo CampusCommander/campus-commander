@@ -38,10 +38,20 @@ export async function assembleCandidate({
     throw new Error('Candidate output must remain outside deployment sources.');
   await mkdir(output, { recursive: false, mode: 0o700 });
   const paths = (
-    await run('git', ['ls-files', '-z', 'deployment'], { cwd: root })
+    await run(
+      'git',
+      ['ls-files', '-z', 'deployment', 'LICENSE.md', 'install.sh'],
+      { cwd: root },
+    )
   ).stdout
     .split('\0')
     .filter(Boolean);
+  for (const required of ['LICENSE.md', 'install.sh']) {
+    if (!paths.includes(required))
+      throw new Error(
+        'Candidate requires the committed license and hosted installer.',
+      );
+  }
   const files = [];
   const add = async (source, path) => {
     const stat = await lstat(source);

@@ -12,3 +12,4 @@
 !deployment/postgres/**
 !deployment/redis/**
 !deployment/storage/**
+!LICENSE.md

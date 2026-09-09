@@ -6,3 +6,4 @@
 !eslint.config.mjs
 !frontend/**
 !deployment/images/frontend-server.mjs
+!LICENSE.md

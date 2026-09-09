@@ -31,11 +31,15 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       join(root, 'dist/deployment/cli.js'),
       'export const schema = 1;\n',
     );
+    await writeFile(join(root, 'LICENSE.md'), 'Synthetic test license\n');
+    await writeFile(join(root, 'install.sh'), '#!/bin/sh\nexit 0\n');
     execFileSync('git', ['init', '--quiet', root]);
     execFileSync(
       'git',
       [
         'add',
+        'LICENSE.md',
+        'install.sh',
         'deployment/runtime.mjs',
         'deployment/release/runtime/package.json',
         'deployment/release/runtime/package-lock.json',
@@ -81,6 +85,8 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       manifest.files.some((file) => file.path.includes('private-token')),
       false,
     );
+    for (const path of ['LICENSE.md', 'install.sh'])
+      assert.ok(manifest.files.some((file) => file.path === path));
     await verifyReleaseFiles(output, manifest);
     assert.throws(
       () => assertReleaseEvidence(manifest),
