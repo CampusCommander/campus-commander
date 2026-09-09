@@ -22,6 +22,7 @@ The installer verifies the signed release and guides configuration for all-Docke
 Select candidate mode for disposable testing. Approve prerequisite exceptions only when they describe your test environment.
 
 Read the [hosted installation guide](https://github.com/CampusCommander/campus-commander/blob/implementation/cc-5-through-cc-20/deployment/installer/HOSTED.md) for prerequisites and recovery commands.
+Use the [Kubernetes test procedure](deployment/installer/HOSTED-KUBERNETES-TEST.md) to prepare a disposable cluster fixture.
 Use [published releases](https://github.com/CampusCommander/campus-commander/releases) for signed artifacts.
 The implementation branch contains the current Phase 1 source and validation records.
 
