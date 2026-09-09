@@ -3,11 +3,27 @@
 Campus Commander is a locally hosted Google Workspace administration tool for K–12 districts.
 It supports entity discovery, inventory insight, and small or district-wide updates with durable audit evidence.
 
-**Status: preimplementation planning.** Existing scaffolding and prototype assets do not establish a working production application.
+**Status: Phase 1 candidate testing.** Published candidates are not accepted production releases.
 The [design portfolio](docs/portfolio/README.md) incorporates the contractor review and owner decisions as of 2026-09-05.
 Follow its [ten development phases](docs/portfolio/06-work-breakdown.md#delivery-sequence) and resolve the V0 findings required by each phase.
 Phase 1 supplies all Docker, hybrid Docker with district services, and enterprise Kubernetes installations.
 Each later phase delivers a working version that preserves those deployment modes and earlier capabilities.
+
+## Try the published installer
+
+Use a Linux amd64 test host with `curl`, CA certificates, `sh`, and `tar`.
+Run this command in a terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/main/install.sh | sh
+```
+
+The installer verifies the signed release and guides configuration for all-Docker, hybrid, or Kubernetes installation.
+Select candidate mode for disposable testing. Approve prerequisite exceptions only when they describe your test environment.
+
+Read the [hosted installation guide](https://github.com/CampusCommander/campus-commander/blob/implementation/cc-5-through-cc-20/deployment/installer/HOSTED.md) for prerequisites and recovery commands.
+Use [published releases](https://github.com/CampusCommander/campus-commander/releases) for signed artifacts.
+The implementation branch contains the current Phase 1 source and validation records.
 
 ## Retained technology
 
@@ -45,7 +61,7 @@ The planning documents define future worker, contract, domain, database, Google,
 Do not create a second `apps/` tree from historical diagrams.
 
 Use npm-prefixed Nx tasks when working with existing projects. Inspect available targets before running a task.
-Future production releases will provide prebuilt images and an installer. Customers will not compile this repository.
+Published candidates provide prebuilt images and an installer. Customers do not compile this repository.
 
 ## Documentation
 
