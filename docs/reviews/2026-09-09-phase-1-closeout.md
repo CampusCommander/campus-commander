@@ -26,16 +26,26 @@ An operator must verify the external firewall allowlist. The installer does not 
 Duplicated secret-path mapping remains a nonblocking maintenance observation.
 No broad path-module refactor was required for this closeout.
 
+The subsequent lifecycle review found that Kubernetes upgrades discarded manifests for retired ConfigMaps and preparation Jobs.
+The correction archives verified committed manifests before replacement.
+Uninstall includes their owned resources and preserves external Secrets and claims.
+Interrupted renders cannot add an unapplied pending manifest to cleanup history.
+Regression tests cover persisted interruption states, changed renders, tampering, and ownership boundaries.
+
+Fault-harness review rejected a certificate result caused by a certificate and private-key mismatch.
+The corrected test proved server availability before asserting hostname rejection.
+Cleanup now tracks ownership before container startup and retains recovery files when teardown fails.
+
 ## Spec
 
 The [acceptance matrix](../../deployment/implementation-status.md) records completed and open criteria.
 Hosted installation and resume passed across all three profiles.
 Those results do not establish every lifecycle, network, fault, or human acceptance gate.
 
-CC-10 needs publication from worker host A and readback from worker host B.
-CC-15 needs allowed and denied connection checks with an enforcing Kubernetes network plugin.
-CC-16 needs complete hybrid and Kubernetes lifecycle and backup-gated upgrade evidence.
-CC-18 needs the remaining hybrid and Kubernetes storage and certificate fault cells.
+CC-10 passed worker-host publication and cross-host readback after the initial review.
+CC-15 passed 29 connection checks with Calico enforcement after the initial review.
+CC-16 passed hybrid and Kubernetes lifecycle checks, including backup-gated image upgrades and owned erasure.
+CC-18 passed hybrid faults and Kubernetes certificate preservation. Bounded Kubernetes capacity testing remains pending.
 CC-20 needs the specified human walkthrough records and completion decision.
 
 The assisted customer session remains recorded separately from agent-operated tests.
@@ -55,6 +65,7 @@ Main CI now runs that test and includes operations and qualification checks.
 
 The release and installer regression suites passed after both corrections.
 The complete installer suite passed 43 tests.
+The Kubernetes manifest-history correction passed the expanded 45-test installer suite.
 The startup page passed six Chromium checks after installation of the pinned browser runtime.
 The initial browser attempt failed because that runtime was absent.
 

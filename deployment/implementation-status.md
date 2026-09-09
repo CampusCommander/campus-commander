@@ -10,25 +10,25 @@ The matrix below follows each ticket's actual criteria. It does not add district
 
 ## Acceptance matrix
 
-| Ticket | Assessment | Evidence or remaining action                                                                    |
-| ------ | ---------- | ----------------------------------------------------------------------------------------------- |
-| CC-4   | Complete   | Configuration contract, three examples, rejection checks, and placement decision                |
-| CC-5   | Complete   | Kestra runtime, authentication, telemetry policy, and synthetic restart                         |
-| CC-6   | Complete   | Nx image builds, signed publication, anonymous verification, and hosted startup                 |
-| CC-7   | Complete   | Database isolation, migrations, TLS, restart, and hosted profiles                               |
-| CC-8   | Complete   | Redis authentication, ACLs, TLS, restart, and readiness                                         |
-| CC-9   | Complete   | Artifact publication, integrity, interruption, and failure checks                               |
-| CC-10  | Open       | Publish on worker host A and verify the artifact from worker host B                             |
-| CC-11  | Complete   | Controller-owned Kestra internal-file restart and authenticated external workers                |
-| CC-12  | Complete   | HTTPS, bootstrap lifecycle, protected startup, route denial, and Chromium checks                |
-| CC-13  | Complete   | All-Docker installation, restart, lifecycle, upgrade, restore, and fault fixtures               |
-| CC-14  | Complete   | Hosted hybrid controller, external TLS services, two worker daemons, and resume                 |
-| CC-15  | Open       | Prove allowed and denied connections with an enforcing Kubernetes network plugin                |
-| CC-16  | Open       | Complete hybrid and Kubernetes lifecycle and backup-gated upgrade evidence                      |
-| CC-17  | Complete   | Isolated synthetic restores for all-Docker, hybrid, and Kubernetes                              |
-| CC-18  | Open       | Complete hybrid artifact/capacity/certificate faults and Kubernetes capacity/certificate faults |
-| CC-19  | Complete   | Signed candidate publication, rejection gates, and report-content binding regression tests      |
-| CC-20  | Open       | Independent human walkthroughs, required records, and completion decision                       |
+| Ticket | Assessment | Evidence or remaining action                                                                       |
+| ------ | ---------- | -------------------------------------------------------------------------------------------------- |
+| CC-4   | Complete   | Configuration contract, three examples, rejection checks, and placement decision                   |
+| CC-5   | Complete   | Kestra runtime, authentication, telemetry policy, and synthetic restart                            |
+| CC-6   | Complete   | Nx image builds, signed publication, anonymous verification, and hosted startup                    |
+| CC-7   | Complete   | Database isolation, migrations, TLS, restart, and hosted profiles                                  |
+| CC-8   | Complete   | Redis authentication, ACLs, TLS, restart, and readiness                                            |
+| CC-9   | Complete   | Artifact publication, integrity, interruption, and failure checks                                  |
+| CC-10  | Complete   | Worker host A published an artifact. Worker host B verified identical bytes and database metadata  |
+| CC-11  | Complete   | Controller-owned Kestra internal-file restart and authenticated external workers                   |
+| CC-12  | Complete   | HTTPS, bootstrap lifecycle, protected startup, route denial, and Chromium checks                   |
+| CC-13  | Complete   | All-Docker installation, restart, lifecycle, upgrade, restore, and fault fixtures                  |
+| CC-14  | Complete   | Hosted hybrid controller, external TLS services, two worker daemons, and resume                    |
+| CC-15  | Complete   | Calico enforced 29 DNS, allowed-service, and denied-service connection checks                      |
+| CC-16  | Complete   | All three profiles passed lifecycle, backup-gated image upgrade, fixture preservation, and erasure |
+| CC-17  | Complete   | Isolated synthetic restores for all-Docker, hybrid, and Kubernetes                                 |
+| CC-18  | Open       | Hybrid faults and Kubernetes certificates passed. Complete bounded Kubernetes capacity testing     |
+| CC-19  | Complete   | Signed candidate publication, rejection gates, and report-content binding regression tests         |
+| CC-20  | Open       | Independent human walkthroughs, required records, and completion decision                          |
 
 Ticket evidence resides under [evidence](evidence/).
 The [hosted validation record](installer/HOSTED-VALIDATION.md) links retained machine results.
@@ -46,6 +46,8 @@ Main CI now includes API end-to-end, operations, and qualification checks.
 
 The code review identified runtime-version validation and release-evidence binding gaps.
 Both corrections passed regression tests, including the complete 43-test installer suite.
+Kubernetes manifest history now preserves retired upgrade resources for verified uninstall.
+The expanded installer suite passed 45 tests, including interrupted rendering and ownership rejection.
 The network documentation now distinguishes internal all-Docker services from private hybrid worker listeners.
 External firewall verification remains an infrastructure-operator responsibility.
 

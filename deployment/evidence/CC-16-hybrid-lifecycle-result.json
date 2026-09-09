@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "profile": "hybrid",
+  "status": "passed",
+  "steps": [
+    {
+      "operation": "install",
+      "ready": true
+    },
+    {
+      "operation": "stop/resume",
+      "durableFixturesPreserved": true
+    },
+    {
+      "operation": "uninstall/resume",
+      "durableFixturesPreserved": true
+    },
+    {
+      "operation": "upgrade-without-backup-binding",
+      "rejected": true
+    },
+    {
+      "operation": "backup-gated-upgrade",
+      "durableFixturesPreserved": true
+    },
+    {
+      "operation": "erase",
+      "ownedResourcesRemoved": true,
+      "externalResourcesPreserved": true
+    }
+  ],
+  "remoteActionsCompleted": 20,
+  "checkedAt": "2026-09-09T17:44:29.379Z",
+  "releases": [
+    {
+      "sourceRevision": "3e6a6a67a2c3d29dda9546d7141bc58d3127bc84",
+      "images": {
+        "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:bd3a6b3226e2c6592d27487db2c42e93728ba37ea163cd81aaf1edbe64e8d113",
+        "api": "ghcr.io/campuscommander/campus-commander-api@sha256:d2f47641f21f4f4db1a683a3379d4601fc542c24a0085880bd77e9670094c344",
+        "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:50a1f86f3471ef5dd096a167c4e3427a8757962ff3917e0bb932aa80e94ea7ec"
+      }
+    },
+    {
+      "sourceRevision": "e940f20ab7d56b17c096e129368c9819d012f994",
+      "images": {
+        "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ed60da2ecb278fc9def24eddce8a6d9f09af74eed6c4c168bf7102f660c4f865",
+        "api": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+        "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:8cf2cc43342be8df114c41efd0d98b855c103251dff23c268d8044b43ceb17f3"
+      }
+    }
+  ],
+  "fixtureDigests": {
+    "baseline": "bc830b6e07cf7ffe64fc5b6765760f8dd585b5cde1924a5f34ec889699e2ddd7",
+    "recovered": "bc830b6e07cf7ffe64fc5b6765760f8dd585b5cde1924a5f34ec889699e2ddd7"
+  },
+  "finalImages": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ed60da2ecb278fc9def24eddce8a6d9f09af74eed6c4c168bf7102f660c4f865",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:8cf2cc43342be8df114c41efd0d98b855c103251dff23c268d8044b43ceb17f3"
+  },
+  "sourceRevision": "e940f20ab7d56b17c096e129368c9819d012f994",
+  "externalArtifactFiles": 2,
+  "externalKestraFiles": 1,
+  "observerCorrection": "Lifecycle actions completed once. The final database timestamp comparison normalized Date objects to their unchanged serialized values.",
+  "originalFailurePreserved": true,
+  "limitations": [
+    "Three Docker hosts share one physical host.",
+    "Shared POSIX volumes do not qualify a district network filesystem.",
+    "The controller required private cgroup initialization before resource-limited workloads could start."
+  ],
+  "cleanup": {
+    "checkedAt": "2026-09-09T17:47:17.028028+00:00",
+    "fixtureContainersRemoved": true,
+    "fixtureVolumesRemoved": true,
+    "fixtureNetworkRemoved": true,
+    "privateEvidencePreserved": true,
+    "unrelatedWorkloadsPreserved": true
+  }
+}

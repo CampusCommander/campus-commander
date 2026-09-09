@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "ticket": "CC-15",
+  "status": "passed",
+  "checkedAt": "2026-09-09T18:17:14.296Z",
+  "durationMs": 47048,
+  "scope": "synthetic-kind-enforcing-network-policy",
+  "testedReleaseSourceRevision": "3e6a6a67a2c3d29dda9546d7141bc58d3127bc84",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:bd3a6b3226e2c6592d27487db2c42e93728ba37ea163cd81aaf1edbe64e8d113",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:d2f47641f21f4f4db1a683a3379d4601fc542c24a0085880bd77e9670094c344",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:50a1f86f3471ef5dd096a167c4e3427a8757962ff3917e0bb932aa80e94ea7ec"
+  },
+  "platform": {
+    "kubernetesVersion": "v1.35.8",
+    "nodeCount": 3,
+    "controlPlaneNodeCount": 1,
+    "workerNodeCount": 2,
+    "cni": {
+      "name": "Calico",
+      "version": "v3.32.2",
+      "readyNodeCount": 3
+    }
+  },
+  "assertions": {
+    "deploymentCount": 8,
+    "allDeploymentsReady": true,
+    "dnsAllowedForEveryProbe": true,
+    "allowedServicePathsPassed": 11,
+    "dnsPathsPassed": 6,
+    "deniedPathsPassed": 12
+  },
+  "networkChecks": [
+    {
+      "source": "edge",
+      "target": "cluster-dns",
+      "port": 53,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "edge",
+      "target": "frontend",
+      "port": 8080,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "edge",
+      "target": "api",
+      "port": 3000,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "edge",
+      "target": "workers",
+      "port": 3001,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "edge",
+      "target": "application-postgres",
+      "port": 5432,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "edge",
+      "target": "redis",
+      "port": 6379,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "api",
+      "target": "cluster-dns",
+      "port": 53,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "api",
+      "target": "frontend",
+      "port": 8080,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "api",
+      "target": "workers",
+      "port": 3001,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "api",
+      "target": "application-postgres",
+      "port": 5432,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "api",
+      "target": "kestra-postgres",
+      "port": 5432,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "api",
+      "target": "redis",
+      "port": 6379,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "api",
+      "target": "kestra",
+      "port": 8080,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "api",
+      "target": "edge",
+      "port": 8443,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "workers",
+      "target": "cluster-dns",
+      "port": 53,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "workers",
+      "target": "application-postgres",
+      "port": 5432,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "kestra",
+      "target": "cluster-dns",
+      "port": 53,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "kestra",
+      "target": "kestra-postgres",
+      "port": 5432,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "kestra",
+      "target": "workers",
+      "port": 3001,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "untrusted",
+      "target": "cluster-dns",
+      "port": 53,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "untrusted",
+      "target": "frontend",
+      "port": 8080,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "untrusted",
+      "target": "api",
+      "port": 3000,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "untrusted",
+      "target": "workers",
+      "port": 3001,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "untrusted",
+      "target": "application-postgres",
+      "port": 5432,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "untrusted",
+      "target": "kestra-postgres",
+      "port": 5432,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "untrusted",
+      "target": "redis",
+      "port": 6379,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "untrusted",
+      "target": "kestra",
+      "port": 8080,
+      "expected": "denied",
+      "observed": "denied"
+    },
+    {
+      "source": "frontend",
+      "target": "cluster-dns",
+      "port": 53,
+      "expected": "allowed",
+      "observed": "allowed"
+    },
+    {
+      "source": "frontend",
+      "target": "application-postgres",
+      "port": 5432,
+      "expected": "denied",
+      "observed": "denied"
+    }
+  ],
+  "boundaries": [
+    "The fixture uses one Docker host and does not qualify district infrastructure.",
+    "The test validates rendered pod ingress and egress policy through Calico."
+  ]
+}

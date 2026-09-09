@@ -232,12 +232,107 @@ export function generatedManifestRecord(filename, value, project) {
   return { sha256: hash(canonical(value)), inventory };
 }
 
+export async function archiveKubernetesManifest({
+  root,
+  state,
+  project,
+  next,
+}) {
+  const path = join(root, 'kubernetes.json');
+  if (!(await exists(path))) return;
+  const previous = await protectedJson(path);
+  const record = generatedManifestRecord('kubernetes.json', previous, project);
+  const matches = (bound) => bound && canonical(bound) === canonical(record);
+  if (!matches(state.generatedManifests?.['kubernetes.json'])) {
+    if (matches(state.pendingGeneratedManifests?.['kubernetes.json'])) return;
+    fail(
+      'MANIFEST_BINDING',
+      'Only a verified Kubernetes manifest can enter installation history.',
+    );
+  }
+  if (
+    record.sha256 ===
+    generatedManifestRecord('kubernetes.json', next, project).sha256
+  )
+    return;
+  const filename = `kubernetes-history-${record.sha256}.json`;
+  await atomic(join(root, filename), previous);
+  state.kubernetesHistory = { ...state.kubernetesHistory, [filename]: record };
+}
+
+async function kubernetesHistory({ root, state, project }) {
+  const manifests = [];
+  for (const [filename, record] of Object.entries(
+    state.kubernetesHistory ?? {},
+  )) {
+    if (!/^kubernetes-history-[a-f0-9]{64}\.json$/.test(filename))
+      fail(
+        'MANIFEST_BINDING',
+        'Archived Kubernetes manifest filename is invalid.',
+      );
+    const value = await protectedJson(join(root, filename));
+    const actual = generatedManifestRecord('kubernetes.json', value, project);
+    if (
+      canonical(actual) !== canonical(record) ||
+      filename !== `kubernetes-history-${actual.sha256}.json`
+    )
+      fail(
+        'MANIFEST_BINDING',
+        'An archived Kubernetes manifest changed. Restore its verified content before lifecycle actions.',
+      );
+    manifests.push(value);
+  }
+  return manifests;
+}
+
+export async function kubernetesLifecycleItems({
+  root,
+  state,
+  project,
+  current,
+  command,
+}) {
+  const currentRecord = generatedManifestRecord(
+    'kubernetes.json',
+    current,
+    project,
+  );
+  if (
+    canonical(currentRecord) !==
+    canonical(state.generatedManifests?.['kubernetes.json'])
+  )
+    fail(
+      'MANIFEST_BINDING',
+      'Resume interrupted Kubernetes rendering before stopping or removing resources.',
+    );
+  const manifests = [
+    current,
+    ...(await kubernetesHistory({ root, state, project })),
+  ];
+  const items = new Map();
+  for (const manifest of manifests) {
+    generatedManifestRecord('kubernetes.json', manifest, project);
+    for (const item of manifest.items) {
+      const selected =
+        command === 'erase'
+          ? item.kind === 'PersistentVolumeClaim'
+          : !['Namespace', 'PersistentVolumeClaim', 'Secret'].includes(
+              item.kind,
+            );
+      const key = `${item.apiVersion}/${item.kind}/${item.metadata.name}`;
+      if (selected && !items.has(key)) items.set(key, item);
+    }
+  }
+  return [...items.values()];
+}
+
 export async function verifyGeneratedManifests({
   root,
   state,
   project,
   allowPending = false,
 }) {
+  await kubernetesHistory({ root, state, project });
   const committed = state.generatedManifests ?? {},
     pending = allowPending ? (state.pendingGeneratedManifests ?? {}) : {};
   const filenames = new Set([
@@ -657,7 +752,10 @@ export async function executeInstaller({
           root,
           state,
           project,
-          allowPending: Boolean(state.pendingGeneratedManifests),
+          allowPending:
+            Boolean(state.pendingGeneratedManifests) &&
+            (config.profile !== 'kubernetes' ||
+              !['stop', 'uninstall', 'erase'].includes(command)),
         });
       const composeFile = join(root, 'docker-compose.json'),
         kubernetesFile = join(root, 'kubernetes.json');
@@ -811,11 +909,13 @@ export async function executeInstaller({
                 '--replicas=0',
               );
           } else {
-            const items = list.items.filter((item) =>
-              command === 'erase'
-                ? item.kind === 'PersistentVolumeClaim'
-                : !['Namespace', 'PersistentVolumeClaim'].includes(item.kind),
-            );
+            const items = await kubernetesLifecycleItems({
+              root,
+              state,
+              project,
+              current: list,
+              command,
+            });
             const path = join(root, `kubernetes-${command}.json`);
             await atomic(path, { apiVersion: 'v1', kind: 'List', items });
             await kube('delete', '-f', path, '--ignore-not-found=true');
@@ -1003,6 +1103,13 @@ export async function executeInstaller({
           }
         }
       }
+      if (generated.has('kubernetes.json'))
+        await archiveKubernetesManifest({
+          root,
+          state,
+          project,
+          next: generated.get('kubernetes.json'),
+        });
       state.pendingGeneratedManifests = Object.fromEntries(
         [...generated].map(([filename, value]) => [
           filename,

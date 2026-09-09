@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "profile": "kubernetes",
+  "checkedAt": "2026-09-09T18:19:11.946Z",
+  "sourceRevision": "d47efdb69e4225f4333fcc3cc859b0eef9e5b47d",
+  "sourceState": "uncommitted-candidate",
+  "harnessSha256": "edc0382e3a984bdfc88ed6b5d7a2cc31e14984935941f908bb5e514111fb4afe",
+  "releaseSourceRevisions": [
+    "3e6a6a67a2c3d29dda9546d7141bc58d3127bc84",
+    "e940f20ab7d56b17c096e129368c9819d012f994"
+  ],
+  "imageInventories": [
+    {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:bd3a6b3226e2c6592d27487db2c42e93728ba37ea163cd81aaf1edbe64e8d113",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:d2f47641f21f4f4db1a683a3379d4601fc542c24a0085880bd77e9670094c344",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:50a1f86f3471ef5dd096a167c4e3427a8757962ff3917e0bb932aa80e94ea7ec"
+    },
+    {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ed60da2ecb278fc9def24eddce8a6d9f09af74eed6c4c168bf7102f660c4f865",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:8cf2cc43342be8df114c41efd0d98b855c103251dff23c268d8044b43ceb17f3"
+    }
+  ],
+  "operations": [
+    {
+      "command": "stop",
+      "resumed": true,
+      "claimsPreserved": true,
+      "fixtureSha256": "465422721eb04196d382374f97a43e338347d274ee9ad2daa0cc7107f5be834e"
+    },
+    {
+      "command": "uninstall",
+      "resumed": true,
+      "claimsPreserved": true,
+      "fixtureSha256": "465422721eb04196d382374f97a43e338347d274ee9ad2daa0cc7107f5be834e"
+    },
+    {
+      "command": "upgrade",
+      "encryptedBackupVerified": true,
+      "differentImageInventories": true,
+      "fixtureSha256": "465422721eb04196d382374f97a43e338347d274ee9ad2daa0cc7107f5be834e"
+    }
+  ],
+  "erase": {
+    "ownedDeploymentsRemoved": true,
+    "ownedClaimsRemoved": true,
+    "externalSecretsPreserved": true,
+    "retainedStorageVolumesPreserved": true
+  },
+  "limitations": [
+    "Synthetic Kind cluster on one physical host",
+    "Shared fixture storage does not qualify a district CSI driver"
+  ]
+}

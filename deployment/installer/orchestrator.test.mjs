@@ -14,8 +14,10 @@ import test from 'node:test';
 import { replaceBootstrap } from '../bootstrap/access.mjs';
 import {
   authenticateRelease,
+  archiveKubernetesManifest,
   executeInstaller,
   generatedManifestRecord,
+  kubernetesLifecycleItems,
   runCommand,
   verifyGeneratedManifests,
 } from './orchestrator.mjs';
@@ -65,6 +67,235 @@ async function setup() {
   };
   return { root, config, release, operator, dependencies, calls };
 }
+
+test('Kubernetes uninstall includes retired upgrade resources and preserves external resources', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-kube-history-'));
+  const project = 'cc-kube-history';
+  const resource = (kind, name) => ({
+    apiVersion: kind === 'Job' ? 'batch/v1' : 'v1',
+    kind,
+    metadata: { name, namespace: project },
+  });
+  const shared = [
+    resource('PersistentVolumeClaim', 'data'),
+    resource('Secret', 'operator-secret'),
+  ];
+  const previous = {
+    apiVersion: 'v1',
+    kind: 'List',
+    items: [
+      resource('ConfigMap', 'config-before'),
+      resource('Job', 'prepare-before'),
+      ...shared,
+    ],
+  };
+  const current = {
+    apiVersion: 'v1',
+    kind: 'List',
+    items: [
+      resource('ConfigMap', 'config-after'),
+      resource('Job', 'prepare-after'),
+      ...shared,
+    ],
+  };
+  const state = {
+    phase: 'ready',
+    steps: ['prepared', 'started', 'ready'],
+    generatedManifests: {
+      'kubernetes.json': generatedManifestRecord(
+        'kubernetes.json',
+        previous,
+        project,
+      ),
+    },
+  };
+  try {
+    await writeFile(join(root, 'kubernetes.json'), JSON.stringify(previous));
+    await archiveKubernetesManifest({ root, state, project, next: current });
+    assert.equal(Object.keys(state.kubernetesHistory).length, 1);
+    await writeFile(join(root, 'kubernetes.json'), JSON.stringify(current));
+    state.generatedManifests['kubernetes.json'] = generatedManifestRecord(
+      'kubernetes.json',
+      current,
+      project,
+    );
+    await verifyGeneratedManifests({ root, state, project });
+    await archiveKubernetesManifest({ root, state, project, next: current });
+    assert.equal(Object.keys(state.kubernetesHistory).length, 1);
+    const uninstall = await kubernetesLifecycleItems({
+      root,
+      state,
+      project,
+      current,
+      command: 'uninstall',
+    });
+    assert.deepEqual(uninstall.map((item) => item.metadata.name).sort(), [
+      'config-after',
+      'config-before',
+      'prepare-after',
+      'prepare-before',
+    ]);
+    const erase = await kubernetesLifecycleItems({
+      root,
+      state,
+      project,
+      current,
+      command: 'erase',
+    });
+    assert.deepEqual(
+      erase.map((item) => item.metadata.name),
+      ['data'],
+    );
+    const archive = Object.keys(state.kubernetesHistory)[0];
+    const altered = structuredClone(previous);
+    altered.items[0].metadata.name = 'unowned-config';
+    await writeFile(join(root, archive), JSON.stringify(altered));
+    await assert.rejects(verifyGeneratedManifests({ root, state, project }), {
+      code: 'MANIFEST_BINDING',
+    });
+    await assert.rejects(
+      kubernetesLifecycleItems({
+        root,
+        state,
+        project,
+        current,
+        command: 'uninstall',
+      }),
+      { code: 'MANIFEST_BINDING' },
+    );
+    altered.items[0].metadata.namespace = 'another-installation';
+    await writeFile(join(root, archive), JSON.stringify(altered));
+    await assert.rejects(verifyGeneratedManifests({ root, state, project }), {
+      code: 'MANIFEST_OWNERSHIP',
+    });
+    state.kubernetesHistory = {
+      '../outside.json': state.kubernetesHistory[archive],
+    };
+    await assert.rejects(verifyGeneratedManifests({ root, state, project }), {
+      code: 'MANIFEST_BINDING',
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Kubernetes manifest history remains verified across persisted rendering interruptions', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-kube-interrupted-history-'));
+  const project = 'cc-kube-interrupted-history';
+  const manifest = (name) => ({
+    apiVersion: 'v1',
+    kind: 'List',
+    items: [
+      {
+        apiVersion: 'v1',
+        kind: 'ConfigMap',
+        metadata: { name, namespace: project },
+        data: { fixture: name },
+      },
+    ],
+  });
+  const previous = manifest('configuration-before');
+  const next = manifest('configuration-after');
+  const state = {
+    phase: 'rendering',
+    steps: ['prepared', 'started', 'ready'],
+    generatedManifests: {
+      'kubernetes.json': generatedManifestRecord(
+        'kubernetes.json',
+        previous,
+        project,
+      ),
+    },
+  };
+  const statePath = join(root, 'installer-state.json');
+  try {
+    await writeFile(join(root, 'kubernetes.json'), JSON.stringify(previous));
+    await archiveKubernetesManifest({ root, state, project, next });
+    state.pendingGeneratedManifests = {
+      'kubernetes.json': generatedManifestRecord(
+        'kubernetes.json',
+        next,
+        project,
+      ),
+    };
+    await writeFile(statePath, JSON.stringify(state));
+    for (const current of [previous, next]) {
+      await writeFile(join(root, 'kubernetes.json'), JSON.stringify(current));
+      const resumed = JSON.parse(await readFile(statePath, 'utf8'));
+      await verifyGeneratedManifests({
+        root,
+        state: resumed,
+        project,
+        allowPending: true,
+      });
+      const lifecycle = {
+        root,
+        state: resumed,
+        project,
+        current,
+        command: 'uninstall',
+      };
+      if (current === next) {
+        await assert.rejects(kubernetesLifecycleItems(lifecycle), {
+          code: 'MANIFEST_BINDING',
+        });
+        await assert.rejects(
+          verifyGeneratedManifests({ root, state: resumed, project }),
+          {
+            code: 'MANIFEST_BINDING',
+          },
+        );
+        continue;
+      }
+      const cleanup = await kubernetesLifecycleItems(lifecycle);
+      assert.ok(
+        cleanup.some((item) => item.metadata.name === 'configuration-before'),
+      );
+      assert.equal(cleanup.length, 1);
+    }
+    const changed = manifest('configuration-changed-after-interruption');
+    const interrupted = JSON.parse(await readFile(statePath, 'utf8'));
+    await archiveKubernetesManifest({
+      root,
+      state: interrupted,
+      project,
+      next: changed,
+    });
+    assert.equal(Object.keys(interrupted.kubernetesHistory).length, 1);
+    interrupted.generatedManifests['kubernetes.json'] = generatedManifestRecord(
+      'kubernetes.json',
+      changed,
+      project,
+    );
+    const interruptedCleanup = await kubernetesLifecycleItems({
+      root,
+      state: interrupted,
+      project,
+      current: changed,
+      command: 'uninstall',
+    });
+    assert.deepEqual(
+      interruptedCleanup.map((item) => item.metadata.name).sort(),
+      ['configuration-before', 'configuration-changed-after-interruption'],
+    );
+    state.generatedManifests = state.pendingGeneratedManifests;
+    delete state.pendingGeneratedManifests;
+    state.phase = 'prepared';
+    await writeFile(statePath, JSON.stringify(state));
+    const resumed = JSON.parse(await readFile(statePath, 'utf8'));
+    await verifyGeneratedManifests({ root, state: resumed, project });
+    const cleanup = await kubernetesLifecycleItems({
+      root,
+      state: resumed,
+      project,
+      current: next,
+      command: 'uninstall',
+    });
+    assert.equal(cleanup.length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test('Kubernetes installation rejects local administrator line endings before apply without changing Secrets', async () => {
   const f = await setup();

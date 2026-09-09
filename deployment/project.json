@@ -296,6 +296,38 @@
       "options": {
         "command": "node deployment/kubernetes/fault-integration.mjs"
       }
+    },
+    "kubernetes-network-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/kubernetes/network-integration.mjs"
+      }
+    },
+    "kubernetes-certificate-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/kubernetes/certificate-integration.mjs"
+      }
+    },
+    "hybrid-lifecycle-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/installer/hybrid-lifecycle-integration.mjs"
+      }
+    },
+    "kubernetes-lifecycle-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/installer/kubernetes-lifecycle-integration.mjs"
+      }
     }
   }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFile } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
   chmod,
   mkdir,
@@ -13,10 +13,15 @@ import {
 import https from 'node:https';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
 import { prepareHybrid } from './prepare.mjs';
 import { renderFiles } from './render.mjs';
+import {
+  boundedArtifactVolumeArguments,
+  useBoundedArtifactVolume,
+  verifyBoundedArtifactVolume,
+} from './cc18-faults.mjs';
 import { qualificationImages } from '../../qualification/images.mjs';
 
 const execute = promisify(execFile);
@@ -271,10 +276,16 @@ async function availablePorts(count) {
 async function configureRuntimeCompose(
   path,
   externalNetwork,
-  { controller = false } = {},
+  { controller = false, boundedArtifact } = {},
 ) {
-  const document = JSON.parse(await readFile(path, 'utf8'));
+  let document = JSON.parse(await readFile(path, 'utf8'));
+  let artifactConsumers = [];
   document.networks.egress = { external: true, name: externalNetwork };
+  if (boundedArtifact) {
+    const bounded = useBoundedArtifactVolume(document, boundedArtifact);
+    document = bounded.document;
+    artifactConsumers = bounded.consumers;
+  }
   if (controller) {
     const [edgePort, apiPort, kestraPort] = await availablePorts(3);
     document.services.edge.ports = [`127.0.0.1:${edgePort}:8443`];
@@ -284,7 +295,7 @@ async function configureRuntimeCompose(
     delete document.services.workers.ports;
   }
   await writeFile(path, `${JSON.stringify(document, null, 2)}\n`);
-  return document;
+  return { document, artifactConsumers };
 }
 
 async function checkArtifact(workerId, path) {
@@ -296,6 +307,32 @@ async function checkArtifact(workerId, path) {
     `const f=require('node:fs'),c=require('node:crypto');process.stdout.write(c.createHash('sha256').update(f.readFileSync(${JSON.stringify(path)})).digest('hex'))`,
   ]);
   return result.stdout.trim();
+}
+
+async function writeContainerFile(container, path, bytes) {
+  await docker([
+    'exec',
+    container,
+    'node',
+    '-e',
+    `require('node:fs').writeFileSync(${JSON.stringify(path)},Buffer.from(${JSON.stringify(bytes.toString('base64'))},'base64'),{mode:0o600,flag:'wx'})`,
+  ]);
+}
+
+async function verifyPostgresCertificateFault(container) {
+  const probe = `import fs from 'node:fs/promises';import net from 'node:net';import tls from 'node:tls';import {connectionOptions} from '/app/deployment/postgres/index.mjs';import {secretPath} from '/app/deployment/redis/runtime.mjs';const c=JSON.parse(await fs.readFile(process.env.CC_CONFIG_FILE));const options=await connectionOptions(c.services.applicationDatabase,r=>fs.readFile(secretPath(r)));const connect=servername=>new Promise((resolve,reject)=>{const socket=net.createConnection({host:options.host,port:options.port??5432});socket.setTimeout(5000,()=>socket.destroy(Error('PostgreSQL TLS probe timed out.')));socket.once('error',reject);socket.once('connect',()=>socket.write(Buffer.from([0,0,0,8,4,210,22,47])));socket.once('data',bytes=>{if(bytes[0]!==83){socket.destroy();reject(Error('PostgreSQL rejected TLS.'));return}socket.removeAllListeners();const client=tls.connect({socket,servername,ca:options.ssl.ca,rejectUnauthorized:true});client.setTimeout(5000,()=>client.destroy(Error('PostgreSQL TLS handshake timed out.')));client.once('secureConnect',()=>{const authorized=client.authorized;client.destroy();resolve(authorized)});client.once('error',reject)});});const served=await connect('wrong-postgres.invalid');let rejectionCode;try{await connect(options.host)}catch(error){rejectionCode=error.code}if(!served||rejectionCode!=='ERR_TLS_CERT_ALTNAME_INVALID')throw Error('PostgreSQL did not serve the injected hostname certificate.');process.stdout.write(JSON.stringify({injectedCertificateServed:true,districtHostnameRejected:true,rejectionCode}));`;
+  return JSON.parse(
+    (
+      await docker([
+        'exec',
+        container,
+        'node',
+        '--input-type=module',
+        '-e',
+        probe,
+      ])
+    ).stdout,
+  );
 }
 
 function readyStatus(response) {
@@ -329,7 +366,8 @@ export async function qualifyFullHybrid() {
   const root = await mkdtemp(join(tmpdir(), `${runId}-`));
   const privateRoot = join(root, 'private');
   const storageRoot = join(root, 'kestra-internal');
-  const artifactRoot = join(root, 'artifacts');
+  const artifactVolumeRoot = join(root, 'artifact-volume');
+  const artifactRoot = join(artifactVolumeRoot, 'artifacts');
   const controllerFile = join(root, 'docker-compose.controller.yml');
   const workerFiles = [
     join(root, 'docker-compose.worker-1.yml'),
@@ -343,32 +381,48 @@ export async function qualifyFullHybrid() {
   const databaseContainer = `${runId}-district-postgres`;
   const redisContainer = `${runId}-district-redis`;
   const databaseVolume = `${runId}-postgres-data`;
+  const artifactVolume = `${runId}-artifacts`;
   const registryContainer = 'cc13-registry';
   const created = {
     network: false,
     databaseVolume: false,
+    artifactVolume: false,
     database: false,
     redis: false,
     controller: false,
     workers: [false, false],
   };
-  const cleanup = async () => {
+  const cleanup = async ({ strict = false, retainRoot = false } = {}) => {
+    const failures = [];
+    const attempt = async (operation) => {
+      try {
+        await operation();
+      } catch (error) {
+        failures.push(error);
+      }
+    };
     if (created.controller) {
-      await compose(projects.controller, controllerFile, [
-        'down',
-        '--remove-orphans',
-        '--timeout',
-        '3',
-      ]).catch(() => undefined);
-    }
-    for (let index = 0; index < workerFiles.length; index += 1) {
-      if (created.workers[index]) {
-        await compose(projects.workers[index], workerFiles[index], [
+      await attempt(() =>
+        compose(projects.controller, controllerFile, [
           'down',
+          '--volumes',
           '--remove-orphans',
           '--timeout',
           '3',
-        ]).catch(() => undefined);
+        ]),
+      );
+    }
+    for (let index = 0; index < workerFiles.length; index += 1) {
+      if (created.workers[index]) {
+        await attempt(() =>
+          compose(projects.workers[index], workerFiles[index], [
+            'down',
+            '--volumes',
+            '--remove-orphans',
+            '--timeout',
+            '3',
+          ]),
+        );
       }
     }
     for (const [present, name] of [
@@ -376,47 +430,71 @@ export async function qualifyFullHybrid() {
       [created.database, databaseContainer],
     ]) {
       if (present && name.startsWith(runId)) {
-        await docker(['rm', '-f', name]).catch(() => undefined);
+        await attempt(() => docker(['rm', '-f', name]));
       }
     }
     if (created.databaseVolume && databaseVolume.startsWith(runId)) {
-      await docker(['volume', 'rm', databaseVolume]).catch(() => undefined);
+      await attempt(() => docker(['volume', 'rm', databaseVolume]));
+    }
+    if (created.artifactVolume && artifactVolume === `${runId}-artifacts`) {
+      await attempt(async () => {
+        const details = JSON.parse(
+          (await docker(['volume', 'inspect', artifactVolume])).stdout,
+        )[0];
+        verifyBoundedArtifactVolume(details, artifactVolume, runId);
+        await docker(['volume', 'rm', artifactVolume]);
+      });
     }
     if (created.network && externalNetwork.startsWith(runId)) {
-      await docker(['network', 'rm', externalNetwork]).catch(() => undefined);
+      await attempt(() => docker(['network', 'rm', externalNetwork]));
     }
-    await rm(root, { recursive: true, force: true });
+    if (!retainRoot && failures.length === 0)
+      await attempt(() => rm(root, { recursive: true, force: true }));
+    if (strict && failures.length) {
+      throw new AggregateError(
+        failures,
+        'Owned hybrid fixture cleanup failed.',
+      );
+    }
+    return failures.length === 0;
   };
   let stage = 'prerequisites';
+  let completedResult;
+  let failure;
 
   try {
-    const registryState = (
-      await docker([
-        'inspect',
-        registryContainer,
-        '--format',
-        '{{.State.Status}}',
-      ])
-    ).stdout.trim();
-    if (registryState !== 'running') {
-      await docker(['start', registryContainer]);
-    }
-    await waitFor(
-      async () => {
-        try {
-          const result = await run('curl', [
-            '--fail',
-            '--silent',
-            'http://127.0.0.1:15000/v2/',
-          ]);
-          return result.stdout.trim() === '{}';
-        } catch {
-          return false;
-        }
-      },
-      15,
-      'Private registry readiness',
+    const usesFixtureRegistry = [frontendImage, apiImage, workerImage].some(
+      (image) => image.startsWith('localhost:15000/'),
     );
+    if (usesFixtureRegistry) {
+      const registryState = (
+        await docker([
+          'inspect',
+          registryContainer,
+          '--format',
+          '{{.State.Status}}',
+        ])
+      ).stdout.trim();
+      if (registryState !== 'running') {
+        await docker(['start', registryContainer]);
+      }
+      await waitFor(
+        async () => {
+          try {
+            const result = await run('curl', [
+              '--fail',
+              '--silent',
+              'http://127.0.0.1:15000/v2/',
+            ]);
+            return result.stdout.trim() === '{}';
+          } catch {
+            return false;
+          }
+        },
+        15,
+        'Private registry readiness',
+      );
+    }
     for (const image of [
       frontendImage,
       apiImage,
@@ -430,7 +508,7 @@ export async function qualifyFullHybrid() {
 
     await mkdir(privateRoot, { mode: 0o700 });
     await mkdir(storageRoot, { mode: 0o700 });
-    await mkdir(artifactRoot, { mode: 0o700 });
+    await mkdir(artifactRoot, { mode: 0o700, recursive: true });
 
     stage = 'certificates-and-secrets';
     const ca = {
@@ -564,14 +642,31 @@ export async function qualifyFullHybrid() {
     await renderFiles(configPath, releasePath, controllerFile, {
       workerBindAddresses: ['10.20.30.41', '10.20.30.42'],
     });
-    const controller = await configureRuntimeCompose(
+    const boundedArtifact = processFaultMode
+      ? { artifactRoot, volumeName: artifactVolume }
+      : undefined;
+    const controllerRuntime = await configureRuntimeCompose(
       controllerFile,
       externalNetwork,
-      { controller: true },
+      { controller: true, boundedArtifact },
     );
-    const workerDocuments = await Promise.all(
-      workerFiles.map((path) => configureRuntimeCompose(path, externalNetwork)),
+    const controller = controllerRuntime.document;
+    const workerRuntimes = await Promise.all(
+      workerFiles.map((path) =>
+        configureRuntimeCompose(path, externalNetwork, { boundedArtifact }),
+      ),
     );
+    const workerDocuments = workerRuntimes.map(({ document }) => document);
+    const artifactConsumers = [
+      ...controllerRuntime.artifactConsumers.map(
+        (service) => `${projects.controller}:${service}`,
+      ),
+      ...workerRuntimes.flatMap(({ artifactConsumers }, index) =>
+        artifactConsumers.map(
+          (service) => `${projects.workers[index]}:${service}`,
+        ),
+      ),
+    ];
     if (
       controller.services['application-postgres'] ||
       controller.services['kestra-postgres'] ||
@@ -590,8 +685,26 @@ export async function qualifyFullHybrid() {
       throw new Error('Rendered ownership differs from the hybrid placement.');
     }
 
-    await docker(['network', 'create', externalNetwork]);
     created.network = true;
+    await docker(['network', 'create', externalNetwork]);
+    if (processFaultMode) {
+      created.artifactVolume = true;
+      await docker(boundedArtifactVolumeArguments(artifactVolume, runId));
+      const details = JSON.parse(
+        (await docker(['volume', 'inspect', artifactVolume])).stdout,
+      )[0];
+      verifyBoundedArtifactVolume(details, artifactVolume, runId);
+      if (
+        artifactConsumers.length !== 6 ||
+        !artifactConsumers.every((name) =>
+          /:(api|workers|storage-preflight)$/.test(name),
+        )
+      ) {
+        throw new Error(
+          'The bounded artifact volume does not cover every live consumer.',
+        );
+      }
+    }
     for (const [project, file] of [
       [projects.controller, controllerFile],
       [projects.workers[0], workerFiles[0]],
@@ -601,8 +714,9 @@ export async function qualifyFullHybrid() {
     }
 
     stage = 'district-postgresql';
-    await docker(['volume', 'create', databaseVolume]);
     created.databaseVolume = true;
+    await docker(['volume', 'create', databaseVolume]);
+    created.database = true;
     await docker([
       'run',
       '-d',
@@ -630,7 +744,6 @@ export async function qualifyFullHybrid() {
       '-ec',
       'cp /input/server.crt /run/postgres-tls/server.crt\ncp /input/server.key /run/postgres-tls/server.key\nchown -R postgres:postgres /run/postgres-tls\nchmod 700 /run/postgres-tls\nchmod 600 /run/postgres-tls/server.key\nexec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/run/postgres-tls/server.crt -c ssl_key_file=/run/postgres-tls/server.key',
     ]);
-    created.database = true;
     await waitFor(
       async () => {
         try {
@@ -707,6 +820,7 @@ export async function qualifyFullHybrid() {
       ].join('\n'),
       { mode: 0o600 },
     );
+    created.redis = true;
     await docker([
       'run',
       '-d',
@@ -731,7 +845,6 @@ export async function qualifyFullHybrid() {
       'redis-server',
       '/run/redis.conf',
     ]);
-    created.redis = true;
     await waitFor(
       async () => {
         try {
@@ -755,8 +868,8 @@ export async function qualifyFullHybrid() {
 
     stage = 'worker-compose';
     for (let index = 0; index < workerFiles.length; index += 1) {
-      await compose(projects.workers[index], workerFiles[index], ['up', '-d']);
       created.workers[index] = true;
+      await compose(projects.workers[index], workerFiles[index], ['up', '-d']);
     }
     const workerIds = await Promise.all(
       workerFiles.map((file, index) =>
@@ -773,8 +886,8 @@ export async function qualifyFullHybrid() {
     );
 
     stage = 'controller-compose';
-    await compose(projects.controller, controllerFile, ['up', '-d']);
     created.controller = true;
+    await compose(projects.controller, controllerFile, ['up', '-d']);
     const apiPort = await publishedPort(
       projects.controller,
       controllerFile,
@@ -884,7 +997,11 @@ export async function qualifyFullHybrid() {
     const artifactChecksum = createHash('sha256')
       .update(artifactBytes)
       .digest('hex');
-    await writeFile(artifactPath, artifactBytes, { mode: 0o600 });
+    if (processFaultMode) {
+      await writeContainerFile(controllerIds.api, artifactPath, artifactBytes);
+    } else {
+      await writeFile(artifactPath, artifactBytes, { mode: 0o600 });
+    }
     const workerArtifactChecksums = await Promise.all(
       workerIds.map((id) => checkArtifact(id, artifactPath)),
     );
@@ -1115,7 +1232,7 @@ export async function qualifyFullHybrid() {
       );
       const fixtureProbe =
         common +
-        `const id=${JSON.stringify(seeded.artifactId)};const h=crypto.createHash('sha256');for await(const bytes of await store.openRead(id))h.update(bytes);const ledger=(await pool.query('SELECT id,checksum FROM cc.schema_migrations ORDER BY id')).rows;const metadata=(await pool.query('SELECT to_jsonb(a) AS value FROM cc.artifacts a WHERE id=$1',[id])).rows;await store.close();await pool.end();process.stdout.write(JSON.stringify({artifactId:id,sha256:h.digest('hex'),ledgerSha256:crypto.createHash('sha256').update(JSON.stringify(ledger)).digest('hex'),metadataSha256:crypto.createHash('sha256').update(JSON.stringify(metadata)).digest('hex')}));`;
+        `const id=${JSON.stringify(seeded.artifactId)};const h=crypto.createHash('sha256');for await(const bytes of await store.openRead(id))h.update(bytes);const ledger=(await pool.query('SELECT id,checksum FROM cc.schema_migrations ORDER BY id')).rows;const metadata=(await pool.query('SELECT to_jsonb(a) AS value FROM cc.artifacts a WHERE id=$1',[id])).rows;const readyRows=Number((await pool.query("SELECT count(*) FROM cc.artifacts WHERE publication_state='ready'")).rows[0].count);await store.close();await pool.end();process.stdout.write(JSON.stringify({artifactId:id,sha256:h.digest('hex'),ledgerSha256:crypto.createHash('sha256').update(JSON.stringify(ledger)).digest('hex'),metadataSha256:crypto.createHash('sha256').update(JSON.stringify(metadata)).digest('hex'),readyRows}));`;
       const databaseFixture = async () =>
         JSON.parse(
           (
@@ -1194,6 +1311,223 @@ export async function qualifyFullHybrid() {
           ca: caBytes,
           path: '/health',
         });
+      const observeNamedFailure = (names, description) =>
+        waitFor(
+          async () => {
+            let response;
+            try {
+              response = await apiObservation();
+            } catch {
+              return undefined;
+            }
+            if (response.status !== 503) return undefined;
+            const value = JSON.parse(response.body);
+            const checks = names.map((name) =>
+              value.checks?.find((check) => check.name === name),
+            );
+            return checks.every((check) => check?.status === 'not-ready')
+              ? checks.map(({ name, status }) => ({ name, status }))
+              : undefined;
+          },
+          30,
+          description,
+        );
+      const recoverReadiness = (description) =>
+        waitFor(
+          async () => {
+            if (!readyStatus(await apiObservation())) return undefined;
+            const value = await protectedStartup();
+            return (
+              value.status === 'ready' &&
+              value.checks.length === 8 &&
+              value.checks.every(({ status }) => status === 'ready')
+            );
+          },
+          120,
+          description,
+        );
+      const faultCells = [];
+
+      stage = 'artifact-access-loss';
+      await verifyFixtures();
+      const artifactAccessStarted = Date.now();
+      let artifactAccessObservation;
+      try {
+        await docker(['exec', controllerIds.api, 'chmod', '000', artifactRoot]);
+        artifactAccessObservation = await observeNamedFailure(
+          ['artifacts'],
+          'Hybrid artifact access-loss observation',
+        );
+      } finally {
+        await docker(['exec', controllerIds.api, 'chmod', '700', artifactRoot]);
+      }
+      const artifactAccessRecoveryStarted = Date.now();
+      await recoverReadiness('Hybrid artifact access recovery');
+      await verifyFixtures();
+      faultCells.push({
+        cell: 'artifact-access-loss',
+        status: 'passed',
+        observed: artifactAccessObservation,
+        elapsedMilliseconds: Date.now() - artifactAccessStarted,
+        recoveryMilliseconds: Date.now() - artifactAccessRecoveryStarted,
+        originalFixturesPreserved: true,
+      });
+
+      stage = 'artifact-capacity';
+      const capacityFiller = `${artifactRoot}/.cc18-capacity-filler`;
+      const capacity = JSON.parse(
+        (
+          await docker([
+            'exec',
+            workerIds[0],
+            'node',
+            '-e',
+            `const fs=require('node:fs'),root=${JSON.stringify(artifactRoot)},path=${JSON.stringify(capacityFiller)},before=fs.statfsSync(root),totalBytes=Number(before.blocks)*Number(before.bsize);if(Number(before.type)!==0x01021994||totalBytes>16777216)throw Error('Artifact filesystem is not the bounded tmpfs.');const file=fs.openSync(path,'wx',0o600),bytes=Buffer.alloc(65536,42);let writtenBytes=0,enospc=false;try{for(let index=0;index<300;index+=1)writtenBytes+=fs.writeSync(file,bytes)}catch(error){if(error.code!=='ENOSPC')throw error;enospc=true}finally{fs.closeSync(file)}if(!enospc)throw Error('Bounded artifact filesystem did not reach ENOSPC.');const after=fs.statfsSync(root);process.stdout.write(JSON.stringify({filesystemType:Number(before.type),totalBytes,writtenBytes,availableBytesBefore:Number(before.bavail)*Number(before.bsize),availableBytesAfter:Number(after.bavail)*Number(after.bsize)}))`,
+          ])
+        ).stdout,
+      );
+      if (
+        capacity.filesystemType !== 0x01021994 ||
+        capacity.totalBytes > 16 * 1024 * 1024 ||
+        capacity.availableBytesAfter >= 65_536
+      ) {
+        throw new Error(
+          'The live hybrid artifact filesystem exceeded its cap.',
+        );
+      }
+      const capacityStarted = Date.now();
+      const capacityObservation = await observeNamedFailure(
+        ['artifacts'],
+        'Hybrid artifact ENOSPC observation',
+      );
+      const failedArtifactId = randomUUID();
+      const failedAttemptId = randomUUID();
+      const failedPublication = JSON.parse(
+        (
+          await docker([
+            'exec',
+            controllerIds.api,
+            'node',
+            '--input-type=module',
+            '-e',
+            common +
+              `const [artifactId,attemptId]=process.argv.slice(1),bytes=Buffer.alloc(1048576,67);let rejected=false;try{await store.stage({artifactId,attemptId,schemaVersion:1,expectedSizeBytes:bytes.length,expectedSha256:crypto.createHash('sha256').update(bytes).digest('hex')},[bytes])}catch{rejected=true}const row=(await pool.query('SELECT publication_state,active FROM cc.artifacts WHERE id=$1',[artifactId])).rows[0],readyRows=Number((await pool.query("SELECT count(*) FROM cc.artifacts WHERE publication_state='ready'")).rows[0].count);await store.close();await pool.end();process.stdout.write(JSON.stringify({rejected,row,readyRows}))`,
+            failedArtifactId,
+            failedAttemptId,
+          ])
+        ).stdout,
+      );
+      if (
+        !failedPublication.rejected ||
+        failedPublication.row?.publication_state === 'ready' ||
+        failedPublication.row?.active !== false ||
+        failedPublication.readyRows !== baselineDatabase.readyRows
+      ) {
+        throw new Error('Hybrid ENOSPC created an authoritative artifact.');
+      }
+      await docker([
+        'exec',
+        workerIds[0],
+        'node',
+        '-e',
+        `require('node:fs').unlinkSync(${JSON.stringify(capacityFiller)})`,
+      ]);
+      const capacityRecoveryStarted = Date.now();
+      const failedCleanup = JSON.parse(
+        (
+          await docker([
+            'exec',
+            controllerIds.api,
+            'node',
+            '--input-type=module',
+            '-e',
+            common +
+              `const [artifactId,attemptId]=process.argv.slice(1),removed=await store.remove({artifactId,attemptId}),rowCount=Number((await pool.query('SELECT count(*) FROM cc.artifacts WHERE id=$1',[artifactId])).rows[0].count);await store.close();await pool.end();process.stdout.write(JSON.stringify({removed,rowCount}))`,
+            failedArtifactId,
+            failedAttemptId,
+          ])
+        ).stdout,
+      );
+      if (!failedCleanup.removed || failedCleanup.rowCount !== 0) {
+        throw new Error(
+          'Hybrid ENOSPC cleanup did not remove the failed attempt.',
+        );
+      }
+      await recoverReadiness('Hybrid artifact capacity recovery');
+      await verifyFixtures();
+      faultCells.push({
+        cell: 'artifact-capacity',
+        status: 'passed',
+        filesystem: capacity,
+        observed: capacityObservation,
+        publicationRejected: true,
+        failedAttemptRemoved: true,
+        elapsedMilliseconds: Date.now() - capacityStarted,
+        recoveryMilliseconds: Date.now() - capacityRecoveryStarted,
+        originalFixturesPreserved: true,
+      });
+
+      stage = 'database-certificate-fault';
+      const originalDatabaseCertificate = await readFile(
+        databaseTls.certificate,
+      );
+      const originalDatabaseKey = await readFile(databaseTls.key);
+      const wrongDatabaseTls = await signedCertificate(
+        privateRoot,
+        'district-postgres-wrong-host',
+        'wrong-postgres.invalid',
+        ['wrong-postgres.invalid'],
+        ca,
+      );
+      const wrongDatabaseCertificate = await readFile(
+        wrongDatabaseTls.certificate,
+      );
+      const wrongDatabaseKey = await readFile(wrongDatabaseTls.key);
+      const certificateStarted = Date.now();
+      let certificateObservation;
+      let certificateServiceProof;
+      try {
+        await writeFile(databaseTls.certificate, wrongDatabaseCertificate, {
+          mode: 0o600,
+        });
+        await writeFile(databaseTls.key, wrongDatabaseKey, { mode: 0o600 });
+        await docker(['restart', databaseContainer]);
+        certificateServiceProof = await waitFor(
+          async () => {
+            try {
+              return await verifyPostgresCertificateFault(controllerIds.api);
+            } catch {
+              return undefined;
+            }
+          },
+          30,
+          'Hybrid PostgreSQL injected certificate service',
+        );
+        certificateObservation = await observeNamedFailure(
+          ['application-database', 'kestra-database'],
+          'Hybrid database certificate rejection',
+        );
+      } finally {
+        await writeFile(databaseTls.certificate, originalDatabaseCertificate, {
+          mode: 0o600,
+        });
+        await writeFile(databaseTls.key, originalDatabaseKey, { mode: 0o600 });
+        await docker(['restart', databaseContainer]);
+      }
+      const certificateRecoveryStarted = Date.now();
+      await recoverReadiness('Hybrid database certificate recovery');
+      await verifyFixtures();
+      faultCells.push({
+        cell: 'database-certificate-rejection',
+        status: 'passed',
+        fault: 'valid private-CA certificate with the wrong server name',
+        serviceProof: certificateServiceProof,
+        observed: certificateObservation,
+        elapsedMilliseconds: Date.now() - certificateStarted,
+        recoveryMilliseconds: Date.now() - certificateRecoveryStarted,
+        originalFixturesPreserved: true,
+      });
+
       const records = [];
       for (const [component, containers, failedNames] of [
         ['api', [controllerIds.api], []],
@@ -1302,9 +1636,22 @@ export async function qualifyFullHybrid() {
         });
       processFaults = {
         status: 'passed',
-        scope: 'same-host-complete-hybrid-process-interruptions',
+        scope: 'same-host-complete-hybrid-faults',
         qualifiesProfile: false,
         acceptedRelease: false,
+        topology: {
+          artifactVolumeType: 'tmpfs',
+          artifactVolumeCapacityBytes: 16 * 1024 * 1024,
+          artifactConsumers: [
+            'controller-api',
+            'controller-storage-preflight',
+            'worker-1',
+            'worker-1-storage-preflight',
+            'worker-2',
+            'worker-2-storage-preflight',
+          ],
+        },
+        faultCells,
         records,
         fixture: {
           database: baselineDatabase,
@@ -1315,7 +1662,7 @@ export async function qualifyFullHybrid() {
         resources: stats,
       };
     }
-    return {
+    completedResult = {
       checkedAt: new Date().toISOString(),
       durationSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
       status: 'PASS',
@@ -1387,6 +1734,7 @@ export async function qualifyFullHybrid() {
         uniquePrefix: runId,
         retainedForRestore: retainFixture,
         composeVolumesRemoved: false,
+        ownedResourcesRemoved: false,
         oldCampusCommanderVolumesTouched: false,
       },
       ...(retainFixture
@@ -1406,28 +1754,56 @@ export async function qualifyFullHybrid() {
       limits: [
         'All eight component containers ran on one Docker host.',
         'The two worker Compose projects simulate separate worker hosts.',
-        'The shared directories use one host filesystem.',
+        ...(processFaultMode
+          ? [
+              'The shared artifact filesystem uses one bounded tmpfs volume on one Docker host.',
+            ]
+          : ['The shared directories use one host filesystem.']),
         'The check does not qualify district DNS, firewall, or storage infrastructure.',
         'The check uses synthetic certificates and a harmless worker task.',
       ],
     };
+    return completedResult;
   } catch (error) {
-    throw new Error(
-      `Full hybrid integration failed during ${stage}: ${error.message}`,
-      {
-        cause: error,
-      },
+    failure = new Error(
+      `Full hybrid integration failed during ${stage}: ${error.message}. Diagnostic root retained at ${root}.`,
+      { cause: error },
     );
+    if (!retainFixture) {
+      try {
+        await cleanup({ strict: true, retainRoot: true });
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [failure, cleanupError],
+          `${failure.message} Owned resource cleanup also failed.`,
+        );
+      }
+    }
+    throw failure;
   } finally {
-    if (!retainFixture) await cleanup();
+    if (!retainFixture && !failure) {
+      const removed = await cleanup({ strict: true });
+      if (completedResult) {
+        completedResult.cleanupPolicy.composeVolumesRemoved = removed;
+        completedResult.cleanupPolicy.ownedResourcesRemoved = removed;
+      }
+    }
   }
 }
 
 if (import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   qualifyFullHybrid()
-    .then((result) =>
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`),
-    )
+    .then(async (result) => {
+      const output = `${JSON.stringify(result, null, 2)}\n`;
+      const resultPath = process.env.CC_HYBRID_RESULT;
+      if (resultPath) {
+        if (!isAbsolute(resultPath)) {
+          throw new Error('Hybrid evidence requires an absolute new path.');
+        }
+        await writeFile(resultPath, output, { flag: 'wx', mode: 0o600 });
+      }
+      process.stdout.write(output);
+    })
     .catch((error) => {
       process.stderr.write(`${error.message}\n`);
       process.exitCode = 1;
