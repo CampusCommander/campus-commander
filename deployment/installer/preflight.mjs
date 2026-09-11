@@ -65,6 +65,32 @@ export async function verifyDockerFilesystem(
   }
 }
 
+export async function verifyDockerResources(image, run = command) {
+  await run('docker', [
+    'run',
+    '--rm',
+    '--network=none',
+    '--read-only',
+    '--cap-drop=ALL',
+    '--memory=128m',
+    '--cpus=0.25',
+    '--pids-limit=32',
+    '--entrypoint=node',
+    image,
+    '-e',
+    `const fs=require('node:fs');
+const read=(...paths)=>fs.readFileSync(paths.find(p=>fs.existsSync(p)),'utf8').trim();
+const root='/sys/fs/cgroup/';
+const memory=read(root+'memory.max',root+'memory/memory.limit_in_bytes');
+const pids=read(root+'pids.max',root+'pids/pids.max');
+const cpu=fs.existsSync(root+'cpu.max')?read(root+'cpu.max'):
+  read(root+'cpu/cpu.cfs_quota_us',root+'cpu,cpuacct/cpu.cfs_quota_us')+' '+
+  read(root+'cpu/cpu.cfs_period_us',root+'cpu,cpuacct/cpu.cfs_period_us');
+if(memory!=='134217728'||cpu!=='25000 100000'||pids!=='32')process.exit(1);`,
+  ]);
+  return true;
+}
+
 /** Inspect prerequisites without starting services or changing active credentials. */
 export async function preflight(
   input,
@@ -208,6 +234,11 @@ export async function preflight(
       'docker-installation-filesystem',
       'Run the installer on the Docker daemon host. A container with a mounted host Docker socket is not an installation host.',
       () => verifyDockerFilesystem(installationRoot, config.images.api, run),
+    );
+    await check(
+      'docker-resource-limits',
+      'Docker must enforce CPU, memory, and process limits. For nested Docker, repeat the installer with a private cgroup namespace.',
+      () => verifyDockerResources(config.images.api, run),
     );
     await check(
       'host-memory',

@@ -1000,7 +1000,11 @@ export async function executeInstaller({
       if (failures.length)
         fail(
           'PREREQUISITES',
-          'Resolve failed prerequisite instructions in installer-state.json before retrying.',
+          [
+            'Complete these prerequisites, then repeat the installer:',
+            ...failures.map((item) => `  ${item.name}: ${item.instruction}`),
+            'Your installation directory retains configuration and prerequisite results.',
+          ].join('\n'),
         );
       if (config.profile === 'all-docker')
         await prepareAllDocker(operator.configurationPath, root);

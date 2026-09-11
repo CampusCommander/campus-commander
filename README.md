@@ -11,17 +11,37 @@ Each later phase delivers a working version that preserves those deployment mode
 
 ## Try the published installer
 
-Use a Linux amd64 test host with `curl`, CA certificates, `sh`, and `tar`.
-Run this command in a terminal:
+Start in a Linux amd64 shell with internet access and root or sudo access.
+Run the installer first:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/main/install.sh | sh
 ```
 
-The installer verifies the signed release and guides configuration for all-Docker, hybrid, or Kubernetes installation.
+The installer detects the environment and offers automatic prerequisite installation, manual instructions, or cancellation.
+It verifies the signed release and guides configuration for all-Docker, hybrid, or Kubernetes installation.
+Ubuntu and Debian support automatic package installation, including Docker and Compose.
+Sudo requests your password through the terminal. The installer never reads or stores your sudo password.
+Hybrid requires your external services. Kubernetes requires your existing cluster and storage.
 Select candidate mode for disposable testing. Approve prerequisite exceptions only when they describe your test environment.
 
-Read the [hosted installation guide](deployment/installer/HOSTED.md) for prerequisites and recovery commands.
+If neither `curl` nor `wget` exists, download and copy `install.sh` to the machine, then run `sh install.sh`.
+The installer can install its missing download tools.
+
+### Container installations
+
+The installer works inside containers. A virtual machine is not required.
+All-Docker installation requires a working Docker daemon or an outer container configured to permit Docker nesting.
+Root or sudo inside a restricted container cannot grant missing host capabilities.
+The installer detects this restriction and prints host-side launch instructions.
+
+For disposable testing, the hosted guide provides a privileged Ubuntu container with a private Docker daemon and persistent volumes.
+Privileged containers grant broad host access. Use a dedicated test environment.
+Preserve `/var/lib/docker` and the installation directory across container restarts.
+Repeat the installer after a restart to start the daemon and resume the application.
+The [container validation record](deployment/evidence/CC-20-container-installer-2026-09-11.md) documents fresh Ubuntu installation, readiness, resource limits, and restart recovery.
+
+Read the [hosted installation guide](deployment/installer/HOSTED.md) for download alternatives, environment guidance, and recovery commands.
 Use the [Kubernetes test procedure](deployment/installer/HOSTED-KUBERNETES-TEST.md) to prepare a disposable cluster fixture.
 Use [published releases](https://github.com/CampusCommander/campus-commander/releases) for signed artifacts.
 Read the [hosted validation record](deployment/installer/HOSTED-VALIDATION.md) for tested behavior and laboratory limits.
@@ -45,11 +65,11 @@ Every mutation follows preview, confirmation, job execution, and file-backed aud
 
 ## Deployment direction
 
-| Profile           | Placement                                                                                            |
-| ----------------- | ---------------------------------------------------------------------------------------------------- |
-| Single server     | Compose runs application, workers, Kestra, PostgreSQL, and Redis with persistent local artifacts.    |
-| Separate services | The same images use district-managed databases, Redis, or worker hosts through configured endpoints. |
-| Kubernetes        | District-operated API/worker replicas use shared services and qualified artifact storage.            |
+| Profile    | Placement                                                                                            |
+| ---------- | ---------------------------------------------------------------------------------------------------- |
+| All-Docker | Compose runs application, workers, Kestra, PostgreSQL, and Redis with persistent local artifacts.    |
+| Hybrid     | The same images use district-managed databases, Redis, or worker hosts through configured endpoints. |
+| Kubernetes | District-operated API/worker replicas use shared services and qualified artifact storage.            |
 
 Compose is the default. Kubernetes is optional. Distributed workers require a shared backend before activation.
 Kestra availability, shared-service recovery, and district capacity remain qualification gates.

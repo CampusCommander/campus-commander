@@ -27,6 +27,10 @@ async function fixture(t, { link = false, tamper = false } = {}) {
   const content = {
     'LICENSE.md': 'Test license.\n',
     'deployment/installer/setup.mjs': 'require-not-supported\n',
+    'deployment/installer/platforms.mjs': await readFile(
+      resolve('deployment/installer/platforms.mjs'),
+      'utf8',
+    ),
   };
   content['deployment/installer/setup.mjs'] =
     'import fs from "node:fs";fs.writeFileSync(process.env.CC_ENTRY_EXECUTED,JSON.stringify(process.argv.slice(2)));\n';
@@ -96,11 +100,11 @@ if(process.env.CC_ENTRY_FAIL===a[0] || (process.env.CC_ENTRY_FAIL==='manifest' &
   );
   await writeFile(
     join(bin, 'docker'),
-    '#!/bin/sh\nprintf "test-version\\n"\n',
+    '#!/bin/sh\nif [ "$1" = compose ]; then printf "5.5.1\\n"; else printf "29.8.0\\n"; fi\n',
     { mode: 0o700 },
   );
   const answers = join(root, 'answers.json');
-  await writeFile(answers, '{}');
+  await writeFile(answers, '{}', { mode: 0o600 });
   const env = {
     ...process.env,
     PATH: `${bin}:${process.env.PATH}`,
@@ -211,6 +215,11 @@ test('entry reuses original release assets for status instead of querying the ne
   const args = JSON.parse(await f.executed());
   const releaseRoot = args[args.indexOf('--release-root') + 1];
   await mkdir(root, { mode: 0o700 });
+  await writeFile(
+    join(root, 'deployment.json'),
+    JSON.stringify({ profile: 'all-docker' }),
+    { mode: 0o600 },
+  );
   await writeFile(
     join(root, 'operator.json'),
     JSON.stringify({

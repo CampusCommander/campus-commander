@@ -1,0 +1,66 @@
+{
+  "status": "passed",
+  "date": "2026-09-11",
+  "operator": "agent",
+  "profile": "all-docker",
+  "environment": {
+    "image": "ubuntu:24.04",
+    "observedOperatingSystem": "Ubuntu 24.04.4 LTS",
+    "architecture": "x86_64",
+    "privileged": true,
+    "cgroupNamespace": "private",
+    "outerDockerVersion": "29.7.2",
+    "innerDockerVersion": "29.8.0",
+    "composeVersion": "5.5.1",
+    "memoryGiB": 8,
+    "cpus": 4,
+    "persistentMounts": ["/var/lib/docker", "/root"]
+  },
+  "candidate": {
+    "tag": "phase-1-candidate-e940f20ab7d5",
+    "sourceRevision": "e940f20ab7d56b17c096e129368c9819d012f994",
+    "releaseHash": "6e97c54b7f911145a18d9300017c38bc28ab9016937472e095260e08bcdf4539",
+    "acceptedRelease": false
+  },
+  "implementation": {
+    "state": "uncommitted",
+    "baseRevision": "6940a5987a4ee3d0ac8e1eaf1d6572e71a476d52",
+    "freshInstallationEntryScriptSha256": "d30273f695ae49f68127b235d9e8b7791ca909ae9b28131c721098604fbba3d0",
+    "finalEntryScriptSha256": "2555dc48dcbc99a043fff5990af4f938779c9d6b94c41b458df16578e87f55f3",
+    "probeSha256": "3e1933f0a4f89faffefe3dfa2e9a606bc576c1e018bc272788bcd935d55ad3a0",
+    "bundledSetup": "Published candidate. Local setup and preflight changes have separate regression coverage."
+  },
+  "checks": {
+    "freshContainerInstallation": "passed",
+    "missingDownloadToolsInstalled": "passed",
+    "dockerInstalledAndStartedWithoutSystemd": "passed",
+    "signedReleaseVerification": "passed",
+    "authenticatedHttps": 200,
+    "unauthenticatedHttps": 401,
+    "deniedApplicationRoutes": 404,
+    "readyComponents": 8,
+    "outerContainerRestartAndResume": "passed",
+    "restrictedContainerGuidanceBeforeDownloads": "passed"
+  },
+  "resourceProbe": {
+    "memory.max": "134217728",
+    "cpu.max": "25000 100000",
+    "pids.max": "32"
+  },
+  "durability": {
+    "configurationSha256": "319cea93ea181555878a3ea00d73fe5475099e0a36f67c6ceb243c306a89e138",
+    "artifactSha256": "4e0f5dd6d54c2baa94a2df77352f50f539bd268fb133829a2189673b7f544851",
+    "migrationRecords": 1,
+    "bootstrapRecords": 1,
+    "unchangedAfterRestart": true
+  },
+  "qualificationExceptions": ["time-synchronization"],
+  "localValidation": {
+    "installerTests": 71,
+    "failedTests": 0,
+    "deploymentLint": "passed",
+    "shellSyntax": "passed",
+    "diffWhitespace": "passed"
+  },
+  "humanAcceptance": "not-established"
+}

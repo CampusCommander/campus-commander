@@ -74,6 +74,24 @@ test('automation rejects unknown answers and missing required answers', async ()
   exact.finish();
 });
 
+test('interactive questions repeat invalid answers without restarting setup or echoing the answer', async () => {
+  const prompts = [];
+  const replies = ['private-invalid-value', 'yes'];
+  const q = createQuestions({}, async (label) => {
+    prompts.push(label);
+    return replies.shift();
+  });
+  assert.equal(
+    await q('choice', 'Continue (yes/no)', 'no', (v) =>
+      ['yes', 'no'].includes(v),
+    ),
+    'yes',
+  );
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /That answer is invalid/);
+  assert.doesNotMatch(prompts.join('\n'), /private-invalid-value/);
+});
+
 test('guided all-docker storage matches writable application volume mounts', async () => {
   const prompts = [];
   const questions = createQuestions(

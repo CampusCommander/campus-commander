@@ -3,7 +3,12 @@ import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { preflight, verifyDockerFilesystem } from './preflight.mjs';
+import { runInNewContext } from 'node:vm';
+import {
+  preflight,
+  verifyDockerFilesystem,
+  verifyDockerResources,
+} from './preflight.mjs';
 import {
   evaluatePlatformVersion,
   qualifiedPlatformVersions,
@@ -160,3 +165,50 @@ for (const visible of [true, false]) {
     }
   });
 }
+
+for (const memory of ['134217728', 'max']) {
+  test(`resource probe ${memory === 'max' ? 'rejects ignored' : 'accepts enforced'} nested Docker limits`, async () => {
+    const run = async (file, args) => {
+      assert.equal(file, 'docker');
+      for (const flag of [
+        '--memory=128m',
+        '--cpus=0.25',
+        '--pids-limit=32',
+        '--network=none',
+        '--rm',
+      ])
+        assert.ok(args.includes(flag));
+      const values = {
+        'memory.max': memory,
+        'cpu.max': '25000 100000',
+        'pids.max': '32',
+      };
+      runInNewContext(args.at(-1), {
+        require: () => ({
+          existsSync: (path) => Object.hasOwn(values, path.split('/').at(-1)),
+          readFileSync: (path) => values[path.split('/').at(-1)],
+        }),
+        process: {
+          exit: () => {
+            throw new Error('Resource limits are not enforced.');
+          },
+        },
+      });
+    };
+    if (memory === 'max')
+      await assert.rejects(
+        verifyDockerResources('fixture', run),
+        /not enforced/,
+      );
+    else assert.equal(await verifyDockerResources('fixture', run), true);
+  });
+}
+
+test('resource probe propagates a nested cgroup startup failure', async () => {
+  await assert.rejects(
+    verifyDockerResources('fixture', async () => {
+      throw new Error('cannot enter cgroupv2: threaded mode');
+    }),
+    /threaded mode/,
+  );
+});

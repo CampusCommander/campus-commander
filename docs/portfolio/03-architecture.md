@@ -425,6 +425,16 @@ Do not promise full availability from API or worker replicas alone. [Kestra depl
 
 Ship signed prebuilt images, digests, checksums, an SBOM, a release manifest, and separate development configuration.
 The Linux installer checks runtime, architecture, time synchronization, storage, memory, ports, hostname, certificate trust, and egress.
+The operator starts with the install script, an interactive shell, internet access, and root or sudo access.
+Detect the environment before downloading release tools. Explain unsupported environments and provide the next action.
+Offer automatic prerequisite installation, manual instructions, or cancellation before system changes.
+On Ubuntu and Debian, install missing local packages and start required services after consent.
+Support containers with a private Docker daemon and persistent storage, including containers without systemd.
+Detect missing nesting permissions and give the outer-host launch instructions. Do not require a VM solely because installation uses containers.
+Use terminal-based sudo authentication for individual privileged commands. Keep configuration and downloads under the operator account.
+Detect Docker daemon access separately from Docker CLI availability. Recheck every prerequisite after repair.
+Guide hybrid and Kubernetes operators through external requirements. Preserve district ownership of services, credentials, storage, and clusters.
+Keep release verification and acceptance gates intact. Record incomplete prerequisites without claiming installation success.
 Generate unique secrets and reserve first setup with a temporary bootstrap credential.
 Run migrations once. Start services with health checks. Offer sample data or read-only connection.
 Configure and test a backup before enabling production writes.

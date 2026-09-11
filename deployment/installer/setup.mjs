@@ -111,16 +111,21 @@ export function createQuestions(answers = {}, ask) {
     validate = (value) => typeof value === 'string' && value.length > 0,
   ) => {
     used.add(key);
-    let value = Object.hasOwn(answers, key)
-      ? answers[key]
-      : ask
-        ? await ask(
-            `${label}${fallback === undefined ? '' : ` [${fallback}]`}: `,
-          )
-        : fallback;
-    if (value === '' || value === undefined) value = fallback;
-    if (!validate(value)) fail(`Provide a valid answer for ${key}.`);
-    return value;
+    let retry = false;
+    for (;;) {
+      let value = Object.hasOwn(answers, key)
+        ? answers[key]
+        : ask
+          ? await ask(
+              `${retry ? 'That answer is invalid. Try again.\n' : ''}${label}${fallback === undefined ? '' : ` [${fallback}]`}: `,
+            )
+          : fallback;
+      if (value === '' || value === undefined) value = fallback;
+      if (validate(value)) return value;
+      if (!ask || Object.hasOwn(answers, key))
+        fail(`Provide a valid answer for ${key}.`);
+      retry = true;
+    }
   };
   question.reserve = (key) => used.add(key);
   question.finish = () => {
@@ -904,6 +909,7 @@ export async function runSetup(
     command = 'install';
   }
   installer ??= (await import('./orchestrator.mjs')).executeInstaller;
+  output('5 / 5  Check configuration and start services');
   output(
     `Running ${command} for ${config.profile}. Configuration: ${operatorPath}`,
   );

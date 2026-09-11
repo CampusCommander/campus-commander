@@ -782,7 +782,11 @@ test('daemon filesystem failure stops installation before Compose startup', asyn
         qualification: true,
         dependencies: f.dependencies,
       }),
-      { code: 'PREREQUISITES' },
+      {
+        code: 'PREREQUISITES',
+        message:
+          /docker-installation-filesystem: Run the installer on the Docker daemon host\./,
+      },
     );
     assert.equal(
       f.calls.some(([file, args]) => file === 'docker' && args.includes('up')),
