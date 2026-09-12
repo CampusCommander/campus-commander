@@ -486,6 +486,11 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
           join(directory, 'all-docker-upgrade.json'),
           JSON.stringify(report),
         );
+      if (target === 'kubernetes-restore-integration')
+        await writeFile(
+          join(directory, 'kubernetes-upgrade.json'),
+          JSON.stringify({ ...report, status: 'PASS' }),
+        );
       await recordBundleQualification({
         bundleRoot: phase2Output,
         reportRoot: directory,

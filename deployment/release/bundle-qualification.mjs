@@ -117,9 +117,19 @@ export async function inspectBundleQualification({
     assert.equal(primary.bundleManifestSha256, bundleManifestSha256);
     assert.equal(primary.ownedResourcesRemoved, true);
   } else {
-    const profile = primary.installer
-      ? primary
-      : await read('kubernetes-profile.json');
+    const profile =
+      target === 'kubernetes-restore-integration'
+        ? await read(applicationReports['kubernetes-upgrade-integration'])
+        : primary.installer
+          ? primary
+          : await read(applicationReports['kubernetes-integration']);
+    if (target === 'kubernetes-restore-integration') {
+      assertApplicationEvidence('kubernetes-upgrade-integration', profile, {
+        sourceRevision,
+        images,
+      });
+      assert.equal(profile.sourceRevision, sourceRevision);
+    }
     assert.equal(profile.installer.source, 'verified-extracted-bundle');
     assert.equal(profile.installer.bundleManifestSha256, bundleManifestSha256);
     if (target === 'kubernetes-restore-integration')

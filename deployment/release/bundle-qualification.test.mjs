@@ -3,8 +3,74 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { recordBundleQualification } from './bundle-qualification.mjs';
+import {
+  inspectBundleQualification,
+  recordBundleQualification,
+} from './bundle-qualification.mjs';
 import { sha256 } from './integrity.mjs';
+
+test('Kubernetes restore binds its executed upgrade companion report', async () => {
+  const reportRoot = await mkdtemp(join(tmpdir(), 'cc-kube-restore-report-'));
+  try {
+    for (const name of ['kubernetes-restore', 'kubernetes-upgrade'])
+      await writeFile(
+        join(reportRoot, `${name}.json`),
+        await readFile(
+          new URL(
+            `../evidence/CC-37-phase-2-bundle-${name}-be11ad2.json`,
+            import.meta.url,
+          ),
+        ),
+      );
+    const primary = JSON.parse(
+      await readFile(join(reportRoot, 'kubernetes-restore.json')),
+    );
+    const companionPath = join(reportRoot, 'kubernetes-upgrade.json');
+    const companion = JSON.parse(await readFile(companionPath));
+    const input = {
+      reportRoot,
+      target: 'kubernetes-restore-integration',
+      sourceRevision: primary.sourceRevision,
+      images: primary.images,
+      bundleManifestSha256: primary.operatorCli.bundleManifestSha256,
+    };
+    const result = await inspectBundleQualification(input);
+    assert.deepEqual(
+      result.reports.map((report) => report.path),
+      ['kubernetes-restore.json', 'kubernetes-upgrade.json'],
+    );
+    assert.equal(
+      result.reports[1].sha256,
+      sha256(await readFile(companionPath)),
+    );
+    for (const invalid of [
+      { ...companion, status: 'failed' },
+      { ...companion, sourceRevision: 'c'.repeat(40) },
+      {
+        ...companion,
+        images: { ...companion.images, api: companion.images.workers },
+      },
+      {
+        ...companion,
+        installer: { ...companion.installer, source: 'workspace' },
+      },
+      {
+        ...companion,
+        installer: {
+          ...companion.installer,
+          bundleManifestSha256: 'd'.repeat(64),
+        },
+      },
+    ]) {
+      await writeFile(companionPath, JSON.stringify(invalid));
+      await assert.rejects(inspectBundleQualification(input));
+    }
+    await rm(companionPath);
+    await assert.rejects(inspectBundleQualification(input), /ENOENT/);
+  } finally {
+    await rm(reportRoot, { recursive: true, force: true });
+  }
+});
 
 test('bundle workflow evidence rejects workspace execution and a different image inventory', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cc-bundle-report-'));

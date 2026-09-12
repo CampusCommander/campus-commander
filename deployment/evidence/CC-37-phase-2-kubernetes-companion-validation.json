@@ -1,0 +1,59 @@
+{
+  "status": "passed",
+  "checkedAt": "2026-09-12T18:11:16.341317+00:00",
+  "baseRevision": "d370bbd079cdcac9372b87c2d1b1e6f42e686428",
+  "sourceFiles": {
+    "deployment/release/bundle-qualification.mjs": "e7b8f8d71d13f79541e4a6286fc89cbd21474ad376f8a44ff7efe9483de61202",
+    "deployment/release/bundle-qualification.test.mjs": "7724389601f798b73a42674ed786ef24d1695c517e797edc47d4300de66afe89",
+    "deployment/release/candidate.test.mjs": "cf6b92c9861a6a7ba133b916ed82a2201048e41546d9dd48b6f5af2f43633dee"
+  },
+  "regression": {
+    "before": "ENOENT for kubernetes-profile.json using the actual downloaded CI reports",
+    "after": "passed using kubernetes-upgrade.json with strict application, source, image, installer, and manifest checks"
+  },
+  "validation": {
+    "releaseTests": 7,
+    "releaseDurationSeconds": 23.7,
+    "deploymentLint": "passed",
+    "realReportRecording": "passed",
+    "realQualifiedAssembly": {
+      "status": "passed",
+      "sourceRevision": "be11ad27b09f892a8232d557193bbdf42a43daaa",
+      "qualification": "profile-qualified",
+      "districtInfrastructureAcceptance": "not-qualified",
+      "files": 1375,
+      "output": "/tmp/cc-phase2-be11ad2-real-qualified-assembly",
+      "limits": [
+        "The Kubernetes restore context was generated locally from the unmodified downloaded CI reports using the corrected verifier.",
+        "The candidate archive and manifest were independently verified through the hosted installer.",
+        "This local output is unsigned. It does not replace the required published final assembly job."
+      ]
+    },
+    "distinctProfileReports": 15
+  },
+  "retainedReports": {
+    "kubernetes-restore": {
+      "path": "deployment/evidence/CC-37-phase-2-bundle-kubernetes-restore-be11ad2.json",
+      "retainedSha256": "e5fd74a1f3c52a06c9042ea88a572592f42e4ee4c89e664b66199a26864e3d39",
+      "downloadedSha256": "ec91fb5cd87ea0781f0a0a5788f428e678bbe0729607eb9a7be6aa40ff08bf10"
+    },
+    "kubernetes-upgrade": {
+      "path": "deployment/evidence/CC-37-phase-2-bundle-kubernetes-upgrade-be11ad2.json",
+      "retainedSha256": "fa835af36633796d78067ba60ce517459a71cf63f7c9e945d13c3d3f8478c571",
+      "downloadedSha256": "965e585385282694c71842cd0f5703f4d756e643b47049846021ed4f9b2aa562"
+    }
+  },
+  "logs": {
+    "cc-phase2-kubernetes-restore-report-red": "41cc1904dfc95a57401743df1023a924372a6332f6cf55fbac0fccdf175a2507",
+    "cc-phase2-kubernetes-restore-report-green": "496247ef95ec84a2a46549f9828b51e7709d59e70a959e6df377adca6f05ad5a",
+    "cc-phase2-kubernetes-companion-unit-red": "78bb8f37077cdc1d5b1254022456df2fe22db9d0e53a88508d1d2aa50715a339",
+    "cc-phase2-kubernetes-companion-unit-green": "eb096b2d7fa7ef6f2e5647cb1eefa15589f7edb044387e533a6b751d1ed90d67",
+    "cc-phase2-kubernetes-companion-lint": "6c44c4143bfd8eebe8038bebcf82f61da808d7cb0cba99157059f3b5a320ad03",
+    "cc-phase2-be11ad2-real-qualified-assembly": "09b83631b6ccd553728da9379fad29d8358f411fda11a2d2bd049b17323f9266"
+  },
+  "limits": [
+    "Retained reports use repository JSON formatting. Downloaded report hashes identify the original CI bytes.",
+    "The local assembler consumed all twelve actual workflow artifacts. Only the missing Kubernetes restore context was generated locally.",
+    "The local final archive contents are unsigned. Published final assembly and district acceptance remain required."
+  ]
+}

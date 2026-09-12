@@ -214,6 +214,23 @@ Further boundary checks reject unsupported worker commands, excessive worker del
 Credential markers remain absent from security-event details, API logs, worker logs, Kestra logs, execution data, flow definitions, and support output.
 The complete source authentication test passes with these assertions in 62 seconds.
 
+## Kubernetes restore evidence correction
+
+The be11ad2 candidate passed all twelve extracted application workflows.
+Its Kubernetes restore evidence step requested `kubernetes-profile.json`, but the executed upgrade-and-restore workflow produced `kubernetes-upgrade.json`.
+That missing file prevented final assembly. Forty jobs passed, one failed, and one was skipped.
+
+The verifier now selects the executed upgrade report and validates its application results, source revision, images, installer, and manifest hash.
+The original downloaded reports reproduced the failure and passed after the correction.
+Seven release tests and deployment lint passed, including rejection of altered or missing companion evidence.
+
+Local final assembly passed against all twelve downloaded workflow artifacts and created fifteen distinct profile reports.
+Only the missing restore context was generated locally. The candidate signatures and file inventory passed independent hosted-installer verification.
+The local final output remains unsigned. Published final assembly and district acceptance remain required.
+
+[The regression record](../../deployment/evidence/CC-37-phase-2-kubernetes-companion-validation.json) binds the reports, source hashes, tests, and actual assembly result.
+[The published run](../../deployment/evidence/CC-37-phase-2-twenty-fourth-published-run.json) retains the failed evidence step.
+
 ## PostgreSQL connection observation correction
 
 The operator now refreshes PostgreSQL statistics before every connection count.
