@@ -44,3 +44,25 @@ Image preparation pulls absent application and infrastructure images before expo
 The fixture preserves exact digest references during transfer.
 The upgrade target retains the synthetic host and storage limits described above.
 Isolated CLI restore and full fault acceptance require separate evidence.
+
+## Distributed process faults
+
+```sh
+npx nx run api-e2e:hybrid-cli-process-fault-integration
+```
+
+This target extends the real CLI upgrade and authenticated lifecycle with six isolated fault cases.
+It interrupts API replicas, both workers, external Redis, external PostgreSQL, Kestra, and shared artifact access.
+Each case requires a working baseline, an observed failure, recovery, repeated Diagnostics checks, and preserved durable fixtures.
+Redis restart must reject the old session. A fresh sign-in must retain application preferences.
+The fixture verifies original security events, identities, migrations, artifact bytes, and Kestra internal files after each recovery.
+
+The target writes private progress to the controller fixture directory during execution.
+A passed report requires every case and owned-resource cleanup to finish.
+The final report resides at `dist/phase-2-evidence/hybrid-cli-process-faults.json`.
+These cases do not replace capacity, certificate, or isolated restore qualification.
+
+The host fixture reserves private Docker address pools outside existing outer Docker networks.
+This prevents an inner bridge from intercepting the outer host gateway used by the synthetic identity provider.
+Each API replica must retrieve provider discovery over verified TLS before browser qualification.
+Failure evidence records the failed stage and bounded provider results without raw credentials or callback parameters.

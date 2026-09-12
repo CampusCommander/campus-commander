@@ -23,6 +23,7 @@ import { createHybridServices } from './hybrid-services-fixture.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { upgradeDistributedHybrid } from './hybrid-cli-upgrade-fixture.mjs';
+import { faultDistributedHybrid } from './hybrid-cli-faults-fixture.mjs';
 
 test(
   'the hybrid installer runs authenticated lifecycle checks across three Docker hosts',
@@ -42,6 +43,8 @@ test(
     let stage = 'host preparation';
     let result;
     let upgrade;
+    let faults;
+    const providerConnections = [];
     const failures = [];
     try {
       const images = {};
@@ -361,6 +364,26 @@ process.exit(result.status??1);
         .filter(Boolean);
       assert.equal(apiReplicas.length, 2);
       assert.equal(new Set(apiReplicas).size, 2);
+      stage = 'provider connectivity';
+      for (const replica of apiReplicas) {
+        const probe = JSON.parse(
+          await hosts.run(controller, [
+            'docker',
+            'exec',
+            replica,
+            'node',
+            '--input-type=module',
+            '-e',
+            `import fs from 'node:fs';import https from 'node:https';const c=JSON.parse(fs.readFileSync(process.env.CC_CONFIG_FILE));const timeout=setTimeout(()=>process.exit(2),10000);https.get(new URL('/.well-known/openid-configuration',c.applicationAuth.issuer),{ca:fs.readFileSync('/run/secrets/district-ca')},response=>{response.resume();response.on('end',()=>{clearTimeout(timeout);console.log(JSON.stringify({status:response.statusCode}));})}).on('error',error=>{clearTimeout(timeout);console.log(JSON.stringify({status:'failed',code:error.code}));});`,
+          ]),
+        );
+        providerConnections.push({ replica, ...probe });
+        assert.equal(
+          probe.status,
+          200,
+          'Each API replica must reach the verified synthetic provider.',
+        );
+      }
       const enrollment = JSON.parse(
         await hosts.run(
           controller,
@@ -468,28 +491,52 @@ process.exit(result.status??1);
             await checks({ recoverySeconds: 120 });
             assert.deepEqual(await readFile(controllerFile), original);
           }
+          if (process.env.CC_AUTH_HYBRID_CLI_FAULTS === '1') {
+            stage = 'distributed process and shared-storage faults';
+            faults = await faultDistributedHybrid({
+              hosts,
+              services,
+              compose,
+              config,
+              upgrade,
+              page,
+              checks,
+              verifyReplicas,
+              context,
+            });
+          }
         },
       );
       result = {
         status: 'passed',
         profile: 'hybrid',
         ...(upgrade ? { upgrade } : {}),
+        ...(faults ? { faults } : {}),
         sourceRevision,
         images,
         recordedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
         hosts: hosts.hosts.map(
-          ({ role, name, address, daemonId, serverVersion }) => ({
+          ({
             role,
             name,
             address,
             daemonId,
             serverVersion,
+            daemonNetwork,
+          }) => ({
+            role,
+            name,
+            address,
+            daemonId,
+            serverVersion,
+            daemonNetwork,
           }),
         ),
         commands,
         apiReplicaCount: apiReplicas.length,
         sessionChecks,
+        providerConnections,
         qualificationSourceState:
           'Workspace installer and test source with explicitly pinned published application images.',
         originalRenderPreserved: true,
@@ -546,17 +593,31 @@ process.exit(result.status??1);
         }
       }
     }
-    if (failures.length)
+    if (failures.length) {
+      await mkdir('dist/phase-2-evidence', { recursive: true });
+      await writeFile(
+        'dist/phase-2-evidence/hybrid-cli-failure.json',
+        JSON.stringify({
+          status: 'failed',
+          profile: 'hybrid',
+          stage,
+          providerConnections,
+          recordedAt: new Date().toISOString(),
+        }),
+      );
       throw new AggregateError(
         failures,
         'Distributed qualification or fixture cleanup failed.',
       );
+    }
     result.ownedResourcesRemoved = true;
     await mkdir('dist/phase-2-evidence', { recursive: true });
     await writeFile(
-      upgrade
-        ? 'dist/phase-2-evidence/hybrid-cli-upgrade.json'
-        : 'dist/phase-2-evidence/hybrid-cli.json',
+      faults
+        ? 'dist/phase-2-evidence/hybrid-cli-process-faults.json'
+        : upgrade
+          ? 'dist/phase-2-evidence/hybrid-cli-upgrade.json'
+          : 'dist/phase-2-evidence/hybrid-cli.json',
       JSON.stringify(result, null, 2),
     );
   },

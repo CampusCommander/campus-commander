@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { reserveHybridNetworks } from './hybrid-network-fixture.mjs';
 
 const execute = promisify(execFile);
 export const dockerHostImage =
@@ -119,6 +120,17 @@ export async function createHybridHosts({ root, project, images, publicPort }) {
       JSON.parse(await outerDocker(['inspect', name]))[0].NetworkSettings
         .Networks[network].IPAddress;
     const dnsAddress = await address(dns);
+    const networkIds = (await outerDocker(['network', 'ls', '--quiet']))
+      .split('\n')
+      .filter(Boolean);
+    const outerNetworks = JSON.parse(
+      await outerDocker(['network', 'inspect', ...networkIds]),
+    );
+    const daemonNetworks = reserveHybridNetworks(
+      outerNetworks.flatMap((network) =>
+        (network.IPAM.Config ?? []).map((item) => item.Subnet).filter(Boolean),
+      ),
+    );
     for (const [index, role] of [
       'controller',
       'worker-1',
@@ -159,6 +171,8 @@ export async function createHybridHosts({ root, project, images, publicPort }) {
         hostImage,
         '--host=unix:///var/run/docker.sock',
         `--dns=${dnsAddress}`,
+        `--bip=${daemonNetworks[index].bridge}`,
+        `--default-address-pool=base=${daemonNetworks[index].pool},size=24`,
       ]);
       owned.push(name);
       const host = { role, name, root: hostRoot, address: await address(name) };
@@ -185,6 +199,7 @@ export async function createHybridHosts({ root, project, images, publicPort }) {
       Object.assign(host, {
         daemonId: info.ID,
         serverVersion: info.ServerVersion,
+        daemonNetwork: daemonNetworks[index],
       });
       await outerDocker([
         'exec',

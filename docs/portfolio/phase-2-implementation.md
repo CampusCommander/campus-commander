@@ -3,7 +3,20 @@
 Epic: [CC-22](https://easton-consulting.atlassian.net/browse/CC-22).
 Status: IN PROGRESS. No Phase 2 release has passed acceptance.
 
-## Current published candidate
+## Current qualification status
+
+Jira records thirteen Done tasks, CC-23 through CC-35. CC-36 through CC-38 remain In Progress.
+CC-35 includes the passing published-image browser and Orca 46.1 evidence from source `0185173`.
+The [tenth candidate](https://github.com/CampusCommander/campus-commander/actions/runs/34690914876) tests source `d1df394d1b5d8f8c8a484f187c720fb48b415305`.
+It adds the distributed hybrid CLI upgrade and corrects preparation of absent infrastructure images.
+It failed both distributed CLI sign-in checks. All sixteen other executable jobs passed. Bundle publication skipped.
+
+The latest published bundle remains [candidate 2f26a01](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-2f26a013e3bb).
+The eighth and ninth candidates failed and published no replacement bundle.
+Complete profile fault evidence, final revision qualification, isolated CLI recovery, and accepted signed release assembly remain open.
+Sections below preserve earlier observations with their original source revisions and limits.
+
+## Fourth published candidate (historical)
 
 The [fourth candidate workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34683360766) passed all seventeen jobs.
 These jobs include eleven application checks, capacity, runtime image publication, validation, and bundle publication.
@@ -583,3 +596,48 @@ This report combines workspace installer source with pinned published applicatio
 Its original generic limits include upgrade among separate gates. The nested upgrade evidence establishes only this intermediate fixture result.
 Final revision qualification, isolated CLI restore, full fault acceptance, and district infrastructure remain open.
 The candidate workflow now includes the distributed CLI upgrade target.
+
+## Distributed process faults and Docker network isolation
+
+[The first process fault report](../../deployment/evidence/CC-36-phase-2-distributed-hybrid-process-faults.json) passed all six cases in 408 seconds, including cleanup.
+The fixture interrupted API replicas, both workers, external Redis, external PostgreSQL, Kestra, and shared artifact access.
+Each case observed a failure and then repeated the application checks and direct session checks on both API replicas.
+Redis restart rejected the original session. Fresh sign-in preserved application preferences.
+Every recovery preserved the principal, thirty-six original security events, migration records, artifact bytes, and two Kestra internal files.
+External PostgreSQL recovery took 98 seconds, including Kestra recovery and repeated Diagnostics checks.
+The earlier 120-second CI failure remains unresolved. One passing run does not establish repeatable recovery within that bound.
+This intermediate report uses workspace qualification source and published application images from `dae5f7a`.
+Capacity, certificate, isolated CLI restore, and final revision acceptance remain open.
+
+[The tenth workflow record](../../deployment/evidence/CC-37-phase-2-tenth-published-run.json) records two failed distributed CLI sign-in checks.
+The image-cache correction passed its earlier prerequisite. Both targets installed before the browser failed to reach the account page.
+[The routing probe](../../deployment/evidence/CC-36-phase-2-hybrid-network-routing.json) reproduced overlapping outer and inner Docker bridges.
+The default inner bridge routed the outer gateway `172.17.0.1` to loopback.
+A separate bridge and address pool routed the same address through the outer interface.
+The fixture now reserves independent private ranges outside all known outer Docker networks.
+It also checks verified provider discovery from each API replica before browser sign-in.
+The probe establishes the routing failure. CI must still verify complete sign-in with the correction.
+
+The release regression test reproduced omission of the distributed CLI reports from candidate inventory.
+Assembly now requires distributed install, upgrade, and process fault evidence with matching revisions, distinct daemon identifiers, and successful cleanup.
+Upgrade and process fault reports must contain verified encrypted backup evidence.
+The process fault report must contain every required interruption and recovery case.
+Rejection tests cover mixed source, repeated host identifiers, incomplete cleanup, missing backup verification, and an omitted fault case.
+These checks preserve candidate status until all fifteen complete profile acceptance records pass.
+
+[The second process fault report](../../deployment/evidence/CC-36-phase-2-distributed-hybrid-process-failure.json) failed Kestra recovery after PostgreSQL loss.
+The complete target ran for 412 seconds and removed its owned containers.
+Both API replicas passed verified provider discovery after network isolation. Sign-in and the preceding CLI lifecycle passed.
+API, worker, and Redis interruption checks passed. The PostgreSQL recovery exceeded the existing 120-second check bound.
+This failure supersedes the earlier single pass as evidence of repeatability. Full process fault acceptance remains open.
+
+The pinned [JdbcQueue implementation](https://github.com/kestra-io/kestra/blob/v1.3.37/jdbc/src/main/java/io/kestra/jdbc/runner/JdbcQueue.java) initiates synchronous shutdown from a polling failure.
+Its queue closure waits up to thirty seconds for each executor termination.
+The [shutdown listener](https://github.com/kestra-io/kestra/blob/v1.3.37/cli/src/main/java/io/kestra/cli/listeners/GracefulEmbeddedServiceShutdownListener.java) waits for embedded services to close.
+The retained runtime log reported terminated executors and forced queue shutdown before restart.
+These facts support the shutdown-wait hypothesis. They do not yet isolate every contribution to the recovery delay.
+The production termination grace period remains five minutes. No runtime recovery change or test-bound increase has been applied.
+
+The current Jira audit verifies [all sixteen epic links and twenty-five blocking links](../../deployment/evidence/CC-38-phase-2-current-jira-audit.json).
+CC-36 records its completed configuration criterion. CC-38 records completed Jira linkage and UI evidence criteria.
+Both tasks remain In Progress with the release task and epic.

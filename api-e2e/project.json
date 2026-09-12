@@ -156,6 +156,25 @@
           "CC_AUTH_HYBRID_CLI_UPGRADE": "1"
         }
       }
+    },
+    "hybrid-cli-process-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/hybrid-cli.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_CLI_UPGRADE": "1",
+          "CC_AUTH_HYBRID_CLI_FAULTS": "1"
+        }
+      }
+    },
+    "hybrid-fixture-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/hybrid-network-fixture.test.mjs"
+      }
     }
   }
 }

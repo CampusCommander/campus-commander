@@ -100,3 +100,10 @@ node deployment/release/candidate.mjs candidate-bundle image-evidence "$GITHUB_S
 
 The qualification directory contains the separate `qualification-<target>` artifact directories from the application workflow matrix.
 Missing reports, failed reports, and different image references stop assembly.
+
+The candidate inventory also requires the distributed hybrid CLI install, upgrade, and process fault reports.
+These reports must match the source revision and include three distinct daemon identifiers and successful owned-resource cleanup.
+The upgrade and process fault reports must include a verified encrypted backup.
+The process fault report must include all six named interruption and recovery cases.
+Assembly rejects missing reports, mixed source revisions, repeated daemon identifiers, incomplete cleanup, and missing backup verification.
+These requirements retain candidate status until the complete profile acceptance records pass.

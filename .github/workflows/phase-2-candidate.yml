@@ -20,6 +20,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --omit=dev
+      - run: npm exec nx run api-e2e:hybrid-fixture-test
       - run: npm exec nx run-many -- -t build,lint,test -p deployment,frontend,api,worker,application-contracts
         env:
           NX_NO_CLOUD: 'true'
@@ -249,6 +250,7 @@ jobs:
             hybrid-integration,
             hybrid-cli-integration,
             hybrid-cli-upgrade-integration,
+            hybrid-cli-process-fault-integration,
             hybrid-upgrade-integration,
             hybrid-restore-integration,
             kubernetes-integration,

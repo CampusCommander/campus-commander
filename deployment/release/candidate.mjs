@@ -18,6 +18,9 @@ export const applicationReports = {
   'auth-image-integration': 'packaged-integration.json',
   'all-docker-integration': 'all-docker-profile.json',
   'hybrid-integration': 'hybrid-profile.json',
+  'hybrid-cli-integration': 'hybrid-cli.json',
+  'hybrid-cli-upgrade-integration': 'hybrid-cli-upgrade.json',
+  'hybrid-cli-process-fault-integration': 'hybrid-cli-process-faults.json',
   'hybrid-upgrade-integration': 'hybrid-upgrade.json',
   'hybrid-restore-integration': 'hybrid-restore.json',
   'kubernetes-integration': 'kubernetes-profile.json',
@@ -157,6 +160,55 @@ export async function assembleCandidate({
         filename,
       );
       const report = JSON.parse(await readFile(source, 'utf8'));
+      if (target.startsWith('hybrid-cli-')) {
+        const workers =
+          report.hosts?.filter((host) => host.role?.startsWith('worker-')) ??
+          [];
+        const controller =
+          report.hosts?.filter((host) => host.role === 'controller') ?? [];
+        if (
+          report.profile !== 'hybrid' ||
+          report.sourceRevision !== sourceRevision ||
+          report.ownedResourcesRemoved !== true ||
+          workers.length !== 2 ||
+          controller.length !== 1 ||
+          new Set(report.hosts.map((host) => host.daemonId)).size !== 3 ||
+          report.hosts.some(
+            (host) => typeof host.daemonId !== 'string' || !host.daemonId,
+          ) ||
+          (target !== 'hybrid-cli-integration' &&
+            (report.upgrade?.status !== 'passed' ||
+              report.upgrade.encryptedBackup?.status !== 'verified'))
+        )
+          throw new Error(
+            'Distributed CLI qualification requires matching source, independent hosts, cleanup, and verified upgrade recovery.',
+          );
+      }
+      if (target === 'hybrid-cli-process-fault-integration') {
+        const required = [
+          'api-interruption',
+          'worker-host-interruption',
+          'external-redis-interruption',
+          'external-postgresql-interruption',
+          'kestra-interruption',
+          'shared-artifact-access-loss',
+        ];
+        const cases = report.faults?.cases;
+        if (
+          report.faults?.status !== 'passed' ||
+          !Array.isArray(cases) ||
+          cases.length !== required.length ||
+          required.some(
+            (name) =>
+              cases.filter(
+                (item) => item.name === name && item.status === 'passed',
+              ).length !== 1,
+          )
+        )
+          throw new Error(
+            'Distributed process fault qualification requires every interruption and recovery case.',
+          );
+      }
       const actual = report.releaseB ?? report.images;
       const applicationPassed =
         target === 'auth-image-integration'

@@ -125,10 +125,33 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
             ? 'PASS'
             : 'passed',
           application: { status: 'passed' },
-          upgrade: { status: 'passed', runtimeImageContentVerified: true },
+          upgrade: {
+            status: 'passed',
+            runtimeImageContentVerified: true,
+            encryptedBackup: { status: 'verified' },
+          },
+          profile: 'hybrid',
+          faults: {
+            status: 'passed',
+            cases: [
+              'api-interruption',
+              'worker-host-interruption',
+              'external-redis-interruption',
+              'external-postgresql-interruption',
+              'kestra-interruption',
+              'shared-artifact-access-loss',
+            ].map((name) => ({ name, status: 'passed' })),
+          },
           browser: { status: 'passed' },
           packagedApplicationImages: true,
           images: manifest.images,
+          sourceRevision,
+          ownedResourcesRemoved: true,
+          hosts: [
+            { role: 'controller', daemonId: 'controller' },
+            { role: 'worker-1', daemonId: 'worker-1' },
+            { role: 'worker-2', daemonId: 'worker-2' },
+          ],
         }),
       );
     }
@@ -170,6 +193,72 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       Object.keys(phase2.applicationEvidence).length,
       Object.keys(applicationReports).length,
     );
+    for (const target of [
+      'hybrid-cli-integration',
+      'hybrid-cli-upgrade-integration',
+    ])
+      assert.ok(
+        phase2.applicationEvidence[target],
+        'Distributed CLI evidence must enter the signed inventory.',
+      );
+    const distributedPath = join(
+      qualificationArtifacts,
+      'qualification-hybrid-cli-upgrade-integration',
+      'hybrid-cli-upgrade.json',
+    );
+    const distributed = JSON.parse(await readFile(distributedPath, 'utf8'));
+    for (const [name, change] of [
+      ['mixed-source', { sourceRevision: '0'.repeat(40) }],
+      ['incomplete-cleanup', { ownedResourcesRemoved: false }],
+      [
+        'shared-host',
+        {
+          hosts: distributed.hosts.map((host) => ({
+            ...host,
+            daemonId: 'same-daemon',
+          })),
+        },
+      ],
+      ['missing-backup', { upgrade: { status: 'passed' } }],
+    ]) {
+      await writeFile(
+        distributedPath,
+        JSON.stringify({ ...distributed, ...change }),
+      );
+      await assert.rejects(
+        assembleCandidate({
+          root,
+          output: join(root, name),
+          artifacts: join(root, 'artifacts'),
+          sourceRevision,
+          phase: 2,
+          qualificationArtifacts,
+        }),
+        /Distributed CLI qualification/,
+      );
+    }
+    await writeFile(distributedPath, JSON.stringify(distributed));
+    const faultPath = join(
+      qualificationArtifacts,
+      'qualification-hybrid-cli-process-fault-integration',
+      'hybrid-cli-process-faults.json',
+    );
+    const faultReport = JSON.parse(await readFile(faultPath, 'utf8'));
+    const incompleteFaultReport = structuredClone(faultReport);
+    incompleteFaultReport.faults.cases.pop();
+    await writeFile(faultPath, JSON.stringify(incompleteFaultReport));
+    await assert.rejects(
+      assembleCandidate({
+        root,
+        output: join(root, 'missing-process-fault'),
+        artifacts: join(root, 'artifacts'),
+        sourceRevision,
+        phase: 2,
+        qualificationArtifacts,
+      }),
+      /every interruption and recovery case/,
+    );
+    await writeFile(faultPath, JSON.stringify(faultReport));
     const upgradeReportPath = join(
       qualificationArtifacts,
       'qualification-hybrid-upgrade-integration',
