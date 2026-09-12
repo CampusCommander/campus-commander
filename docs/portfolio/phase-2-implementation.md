@@ -214,6 +214,23 @@ Further boundary checks reject unsupported worker commands, excessive worker del
 Credential markers remain absent from security-event details, API logs, worker logs, Kestra logs, execution data, flow definitions, and support output.
 The complete source authentication test passes with these assertions in 62 seconds.
 
+## PostgreSQL connection observation correction
+
+The operator now refreshes PostgreSQL statistics before every connection count.
+Each check allows a five-second observation budget for closing clients. Persistent connections still reject backup or restore.
+The command requires zero other connections and retains its existing table locks.
+
+A PostgreSQL 18.6 reproduction proved stale connection counts within a transaction after another client closed.
+The original function rejected that closed client. Clearing the statistics snapshot observed zero connections.
+The exact connection in the earlier Kubernetes CI failure remains unidentified.
+
+Seven operations tests, the native operator CLI integration, six release tests, and deployment lint passed.
+The Kubernetes restore test passed in 5 minutes 42 seconds with the published 608df6f application images.
+That test used the corrected workspace operator and three Kind nodes on one Docker host.
+It does not qualify district storage, network policy, load balancers, or identity-provider configuration.
+
+[The regression record](../../deployment/evidence/CC-37-phase-2-quiescence-validation.json) binds source hashes, failing tests, passing tests, and the restore report.
+
 ## Authentication contract
 
 Application sign-in uses OIDC authorization code flow through `openid-client` 6.8.8.

@@ -20,6 +20,7 @@ import { migrate, provision } from '../postgres/index.mjs';
 import { createArtifactStore } from '../storage/index.mjs';
 import { changeApplicationAccess } from '../bootstrap/application-access.mjs';
 import { createOperationsCliFixture } from './cli-fixture.mjs';
+import { noOtherConnections } from './quiescence.mjs';
 import {
   backupFoundation,
   postgresToolArguments,
@@ -303,6 +304,48 @@ try {
     stoppedServices: ['api', 'workers', 'kestra'],
   };
   const backupDirectory = join(root, 'backup');
+  const observer = new pg.Client({
+    ...connection,
+    user: 'migrator-source',
+    database: 'app-source',
+  });
+  const closingClient = new pg.Client({
+    ...connection,
+    user: 'app-source',
+    database: 'app-source',
+  });
+  let closed;
+  try {
+    await observer.connect();
+    await closingClient.connect();
+    await observer.query('BEGIN');
+    assert.equal(
+      (
+        await observer.query(
+          'SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()',
+        )
+      ).rows[0].count,
+      1,
+    );
+    closed = new Promise((done) => setTimeout(done, 100)).then(() =>
+      closingClient.end(),
+    );
+    await noOtherConnections(observer);
+    await closed;
+    assert.equal(
+      (
+        await observer.query(
+          'SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()',
+        )
+      ).rows[0].count,
+      0,
+    );
+    await observer.query('ROLLBACK');
+  } finally {
+    if (closed) await closed;
+    else await closingClient.end();
+    await observer.end();
+  }
   const busy = new pg.Client({
     ...connection,
     user: 'app-source',
@@ -613,6 +656,7 @@ try {
         encryptedFiles: manifest.files.length,
         results: [
           'actual connection quiescence enforced',
+          'delayed connection teardown observed through fresh transaction statistics',
           'both database dumps restored',
           'Phase 2 identity, preferences, permission version, and security events restored',
           'artifact identity and Unicode bytes restored',

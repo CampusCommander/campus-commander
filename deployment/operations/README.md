@@ -20,12 +20,17 @@ Profile startup commands do not enforce this marker automatically.
 Stop API, workers, and Kestra before backup. Disable their automatic restart and external dispatch access.
 Stop every other database client and filesystem writer, including monitoring clients that connect to these databases.
 Record the operator identity and stop time in `quiesce` immediately before backup.
-The command rejects records older than five minutes and existing database connections.
+The command rejects records older than five minutes.
+Each connection check uses a five-second observation budget for database clients that are closing.
+Every observation clears the transaction statistics snapshot and requires zero other database connections.
+Persistent connections produce `DATABASE_CONNECTIONS_ACTIVE`. The command never terminates another client.
+Individual database query timeouts also apply. The observation budget does not bound total command duration.
 It holds SHARE locks on both databases' user tables throughout dumps and file reads.
 It rejects active artifact attempts, changed file inventories, changed table counts, and connections observed after copying.
 These checks support a cold backup. They do not replace the operator's control over stopped writers and storage mounts.
 
 PostgreSQL documents consistent single-database dumps in [pg_dump](https://www.postgresql.org/docs/18/app-pgdump.html).
+PostgreSQL documents statistics snapshot refresh in [monitoring statistics](https://www.postgresql.org/docs/18/monitoring-stats.html).
 The cross-component boundary requires stopped writers because a database dump does not capture filesystem state.
 See [table locks](https://www.postgresql.org/docs/18/sql-lock.html) and [transactional restore](https://www.postgresql.org/docs/18/app-pgrestore.html).
 The recovery point is the recorded stop time. Changes after that point are outside this backup.
