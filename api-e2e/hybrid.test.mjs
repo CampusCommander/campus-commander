@@ -1,3 +1,4 @@
+import { applicationAccess } from './access-fixture.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -143,12 +144,7 @@ test(
           password,
           caFile: certificate,
           async check(fixture) {
-            const {
-              root: installation,
-              controllerFile,
-              projects,
-              workerFiles,
-            } = fixture;
+            const { controllerFile, projects, workerFiles } = fixture;
             const compose = (...args) =>
               docker(
                 'compose',
@@ -158,31 +154,15 @@ test(
                 projects.controller,
                 ...args,
               );
-            const requestPath = join(installation, 'phase2-access.json');
-            await writeFile(
-              requestPath,
-              JSON.stringify({
+            const enrolled = applicationAccess(
+              controllerFile,
+              projects.controller,
+              {
                 action: 'initialize',
                 issuer: provider.issuer,
                 subject: 'administrator',
                 displayName: 'Synthetic administrator',
-              }),
-              { mode: 0o600 },
-            );
-            const enrolled = JSON.parse(
-              compose(
-                'run',
-                '--rm',
-                '--no-deps',
-                '-v',
-                `${requestPath}:/run/access.json:ro`,
-                'database-migrate',
-                'node',
-                '/app/deployment/bootstrap/application-access-cli.mjs',
-                '/run/config/profile.json',
-                '/run/config/operator.json',
-                '/run/access.json',
-              ),
+              },
             );
             assert.ok(enrolled.principalId);
             return applicationBrowser(

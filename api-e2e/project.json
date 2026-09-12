@@ -9,14 +9,16 @@
       "cache": false,
       "options": {
         "command": "node --test api-e2e/hybrid.test.mjs"
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "all-docker-integration": {
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
         "command": "node --test api-e2e/all-docker.test.mjs"
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "auth-image-integration": {
       "executor": "nx:run-commands",
@@ -26,7 +28,8 @@
         "env": {
           "CC_AUTH_PACKAGED_IMAGES": "true"
         }
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "auth-integration": {
       "executor": "nx:run-commands",
@@ -34,7 +37,12 @@
       "options": {
         "command": "node --test api-e2e/auth.test.mjs"
       },
-      "dependsOn": ["api:build", "frontend:build", "worker:build"]
+      "dependsOn": [
+        "api:build",
+        "frontend:build",
+        "worker:build",
+        "deployment:build"
+      ]
     },
     "e2e": {
       "executor": "nx:run-commands",
@@ -48,14 +56,16 @@
       "cache": false,
       "options": {
         "command": "node --test api-e2e/kubernetes.test.mjs"
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "upgrade-integration": {
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
         "command": "node --test api-e2e/upgrade.test.mjs"
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "screen-reader-integration": {
       "executor": "nx:run-commands",
@@ -65,7 +75,8 @@
         "env": {
           "CC_AUTH_SCREEN_READER": "1"
         }
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "restore-integration": {
       "executor": "nx:run-commands",
@@ -75,7 +86,8 @@
         "env": {
           "CC_AUTH_APPLICATION_RESTORE": "1"
         }
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "hybrid-upgrade-integration": {
       "executor": "nx:run-commands",
@@ -85,7 +97,8 @@
         "env": {
           "CC_AUTH_HYBRID_UPGRADE": "1"
         }
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "hybrid-restore-integration": {
       "executor": "nx:run-commands",
@@ -96,7 +109,8 @@
           "CC_AUTH_HYBRID_UPGRADE": "1",
           "CC_AUTH_HYBRID_RESTORE": "1"
         }
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "kubernetes-upgrade-integration": {
       "executor": "nx:run-commands",
@@ -106,7 +120,8 @@
         "env": {
           "CC_AUTH_KUBERNETES_UPGRADE": "1"
         }
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "kubernetes-restore-integration": {
       "executor": "nx:run-commands",
@@ -117,7 +132,8 @@
           "CC_AUTH_KUBERNETES_UPGRADE": "1",
           "CC_AUTH_KUBERNETES_RESTORE": "1"
         }
-      }
+      },
+      "dependsOn": ["deployment:build"]
     }
   }
 }

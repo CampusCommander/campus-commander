@@ -504,7 +504,12 @@ export async function qualifyFullHybrid({ application } = {}) {
       postgresImage,
       redisImage,
     ]) {
-      await docker(['image', 'inspect', image]);
+      try {
+        await docker(['image', 'inspect', image]);
+      } catch {
+        await docker(['pull', image]);
+        await docker(['image', 'inspect', image]);
+      }
     }
 
     await mkdir(privateRoot, { mode: 0o700 });

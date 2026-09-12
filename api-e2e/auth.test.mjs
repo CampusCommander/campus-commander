@@ -23,7 +23,11 @@ import {
   migrate,
   provision,
 } from '../deployment/postgres/index.mjs';
-import { redisImage, renderRedis } from '../deployment/redis/runtime.mjs';
+import {
+  applicationRedisAcl,
+  redisImage,
+  renderRedis,
+} from '../deployment/redis/runtime.mjs';
 import { changeApplicationAccess } from '../deployment/bootstrap/application-access.mjs';
 import { createBootstrapEdge } from '../deployment/bootstrap/edge.mjs';
 import { startKestraFixture } from './kestra-fixture.mjs';
@@ -361,12 +365,14 @@ test(
         sessionIdleSeconds: 60,
       };
       const redisConfig = join(directory, 'redis.conf');
+      const redisOperatorPassword = randomUUID();
       await writeFile(
         redisConfig,
         renderRedis(config, Buffer.from(password)).replace(
           'dir /data',
           'dir /tmp',
-        ),
+        ) +
+          `user qualification-operator on #${createHash('sha256').update(redisOperatorPassword).digest('hex')} -@all +acl|setuser\n`,
       );
       docker(
         'run',
@@ -390,6 +396,24 @@ test(
       redis = createClient({ url: `redis://127.0.0.1:${redisPort}`, password });
       redis.on('error', () => undefined);
       await redis.connect();
+      const configureRedisAccess = (...rules) => {
+        assert.equal(
+          docker(
+            'exec',
+            '-e',
+            `REDISCLI_AUTH=${redisOperatorPassword}`,
+            names[1],
+            'redis-cli',
+            '--user',
+            'qualification-operator',
+            'ACL',
+            'SETUSER',
+            'default',
+            ...rules,
+          ),
+          'OK',
+        );
+      };
       const nodeImage = (
         await readFile('deployment/images/api.Dockerfile', 'utf8')
       ).match(/^FROM (node:\S+)/m)[1];
@@ -435,6 +459,8 @@ test(
             '--rm',
             '--network',
             network,
+            '--user',
+            `${process.getuid()}:${process.getgid()}`,
             '--workdir',
             '/app',
             ...(packaged ? [] : ['-v', `${process.cwd()}:/app:ro`]),
@@ -662,6 +688,24 @@ test(
         ).status,
         403,
       );
+      for (const operation of ['postgresql', 'redis', 'kestra', 'artifacts']) {
+        assert.equal(
+          (
+            await request(`${publicOrigin}/api/diagnostics/${operation}`, {
+              ca,
+              cookie: sessionCookie,
+              method: 'POST',
+              body: {},
+              headers: {
+                origin: publicOrigin,
+                'x-csrf-token': session.csrfToken,
+              },
+            })
+          ).status,
+          403,
+          `Deny the ${operation} operation without execution permission.`,
+        );
+      }
       await migrator.query(
         "UPDATE cc.application_principals SET permissions=ARRAY['identity:read','diagnostics:read','diagnostics:run'] WHERE id=$1",
         [principalId],
@@ -697,6 +741,89 @@ test(
         (await runtime.query('SELECT id FROM cc.artifacts')).rowCount,
         0,
       );
+      const runDiagnostic = async (operation) => {
+        const response = await request(
+          `${publicOrigin}/api/diagnostics/${operation}`,
+          {
+            ca,
+            cookie: sessionCookie,
+            method: 'POST',
+            body: {},
+            headers: {
+              origin: publicOrigin,
+              'x-csrf-token': session.csrfToken,
+            },
+          },
+        );
+        assert.equal(response.status, 201, response.text);
+        const result = JSON.parse(response.text);
+        assert.equal(
+          result.correlationId,
+          response.headers['x-correlation-id'],
+        );
+        return result;
+      };
+      await migrator.query(
+        "ALTER TABLE cc.security_events ADD CONSTRAINT reject_synthetic_transaction CHECK(detail <> 'transaction-fixture')",
+      );
+      let failedTransaction;
+      try {
+        failedTransaction = await runDiagnostic('postgresql');
+        assert.equal(failedTransaction.status, 'failed');
+        assert.equal(
+          failedTransaction.message,
+          'The check failed. Inspect the service configuration and retry.',
+        );
+        assert.equal(
+          (
+            await migrator.query(
+              "SELECT id FROM cc.security_events WHERE detail='transaction-fixture'",
+            )
+          ).rowCount,
+          0,
+        );
+        assert.equal(
+          (
+            await migrator.query(
+              "SELECT id FROM cc.security_events WHERE event='diagnostic-failed' AND correlation_id=$1",
+              [failedTransaction.correlationId],
+            )
+          ).rowCount,
+          1,
+        );
+      } finally {
+        await migrator.query(
+          'ALTER TABLE cc.security_events DROP CONSTRAINT reject_synthetic_transaction',
+        );
+      }
+      assert.equal((await runDiagnostic('postgresql')).status, 'passed');
+
+      configureRedisAccess(
+        'resetkeys',
+        '~cc:auth:*',
+        '~cc:diagnostics:reservation',
+        '~cc:diagnostics:health',
+      );
+      try {
+        const failedRedis = await runDiagnostic('redis');
+        assert.equal(failedRedis.status, 'failed');
+        assert.equal(
+          failedRedis.message,
+          'The check failed. Inspect the service configuration and retry.',
+        );
+        assert.equal(
+          (
+            await request(`${publicOrigin}/api/auth/session`, {
+              ca,
+              cookie: sessionCookie,
+            })
+          ).status,
+          200,
+        );
+      } finally {
+        configureRedisAccess('resetkeys', ...applicationRedisAcl.split(' '));
+      }
+      assert.equal((await runDiagnostic('redis')).status, 'passed');
       const executions = await fetch(
         `${kestraFixture.origin}/api/v1/main/executions/search?namespace=campus.application`,
         { headers: { authorization: kestraFixture.authorization } },
@@ -1336,6 +1463,9 @@ test(
               'revocation and recovery',
               'database and Redis timeout recovery',
               'four live utility operations',
+              'execution permission denial for all four utility operations',
+              'PostgreSQL transaction rejection, rollback, audit, and retry',
+              'Redis diagnostic key denial, preserved session, and retry',
               'browser sign-in and sign-out',
               'persisted preferences',
               'system and explicit themes',

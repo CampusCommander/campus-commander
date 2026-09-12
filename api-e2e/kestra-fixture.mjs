@@ -98,6 +98,8 @@ export async function startKestraFixture({
       kestraName,
       '--network',
       network,
+      '--user',
+      `${process.getuid()}:${process.getgid()}`,
       '--env-file',
       environmentPath,
       '-v',

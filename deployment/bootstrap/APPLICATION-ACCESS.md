@@ -68,6 +68,19 @@ Create the enrollment request in a protected operator directory:
 node deployment/bootstrap/application-access-cli.mjs /protected/profile.json /protected/postgres-operator.json /protected/access-request.json
 ```
 
+For Compose installations, send the protected request through standard input:
+
+```sh
+docker compose -f /protected/installation/docker-compose.json -p INSTALLATION_PROJECT \
+  run --rm --no-deps --interactive --no-tty database-migrate \
+  node /app/deployment/bootstrap/application-access-cli.mjs \
+  /run/config/profile.json /run/config/operator.json /dev/stdin \
+  < /protected/access-request.json
+```
+
+Use the installation project name from the operator configuration.
+This command retains protected file permissions when the host and container use different user IDs.
+
 The command permits initialization only when no principal exists.
 It returns the principal ID and audit correlation identifier.
 Sign in through the configured HTTPS address and verify all four Diagnostics checks.

@@ -30,6 +30,36 @@ The isolated worktree passes these checks:
 
 These checks validate the isolated source. Published image qualification and release acceptance remain open.
 
+### First published candidate run
+
+[PR 3](https://github.com/CampusCommander/campus-commander/pull/3) contains the release source.
+[Run 34680669090](https://github.com/CampusCommander/campus-commander/actions/runs/34680669090) built, scanned, signed, and published all three application images.
+Validation and capacity checks passed. Application qualification failed, so the workflow did not publish an installation bundle.
+The [run record](../../deployment/evidence/CC-37-phase-2-first-published-run.json) preserves exact image references and job outcomes.
+
+Fresh runners exposed missing prerequisites and fixture portability defects:
+
+- Application integration targets omitted their deployment build prerequisite. A clean-output reproduction confirmed the missing-module failure.
+- Hybrid qualification assumed upstream service images already existed in the local daemon.
+- Installer qualification encountered Docker Engine and Compose versions outside the supported contract.
+- Private operator request mounts assumed matching host and container user IDs.
+- The Kestra fixture assumed its image user could read host-owned private configuration.
+- Kubernetes image imports lacked the requested digests in the runner's exported image archive.
+
+Application targets now declare the deployment build prerequisite. Hybrid qualification pulls missing images before inspection.
+Compose enrollment sends the protected request through standard input. The Kestra fixture uses the fixture owner's user ID.
+The candidate application jobs select Docker Engine 29.7.2, Compose 5.5.0, and the containerd image store.
+Docker documents [daemon selection](https://github.com/docker/setup-docker-action) and [Compose version selection](https://github.com/docker/setup-compose-action).
+
+The clean-output packaged application test passes after Nx builds its prerequisite.
+New real-service checks prove PostgreSQL transaction rejection, rollback, audited failure, and retry.
+They also prove Redis diagnostic permission failure, preserved application access, and retry.
+All four diagnostic operations reject an identity without execution permission.
+The complete all-Docker test passes with standard-input enrollment.
+A separate check confirms private file denial and successful standard input under a different container user ID.
+
+These local results do not establish successful qualification on the corrected GitHub runner.
+
 ## Authentication contract
 
 Application sign-in uses OIDC authorization code flow through `openid-client` 6.8.8.

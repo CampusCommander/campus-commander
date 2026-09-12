@@ -1,3 +1,4 @@
+import { applicationAccess } from './access-fixture.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -133,32 +134,12 @@ test(
       });
       assert.equal(readiness.status, 'ready');
       assert.equal(readiness.checks.length, 8);
-      const requestPath = join(root, 'access.json');
-      await writeFile(
-        requestPath,
-        JSON.stringify({
-          action: 'initialize',
-          issuer: provider.issuer,
-          subject: 'administrator',
-          displayName: 'Synthetic administrator',
-        }),
-        { mode: 0o600 },
-      );
-      const enrolled = JSON.parse(
-        compose(
-          'run',
-          '--rm',
-          '--no-deps',
-          '-v',
-          `${requestPath}:/run/access.json:ro`,
-          'database-migrate',
-          'node',
-          '/app/deployment/bootstrap/application-access-cli.mjs',
-          '/run/config/profile.json',
-          '/run/config/operator.json',
-          '/run/access.json',
-        ),
-      );
+      const enrolled = applicationAccess(composePath, project, {
+        action: 'initialize',
+        issuer: provider.issuer,
+        subject: 'administrator',
+        displayName: 'Synthetic administrator',
+      });
       assert.ok(enrolled.principalId);
       const addresses = () =>
         Object.fromEntries(

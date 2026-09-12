@@ -492,6 +492,7 @@ process.exit(result.status??1);
     const applicationResult = application
       ? await application.check({
           root,
+          project,
           config,
           release: releases[1],
           compose,
