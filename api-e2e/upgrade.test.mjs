@@ -39,6 +39,7 @@ test(
         }
       }
       const images = {};
+      const revisions = new Set();
       const publishedReferences = ['frontend', 'api', 'worker'].map(
         (service) => process.env[`CC_AUTH_${service.toUpperCase()}_IMAGE`],
       );
@@ -58,26 +59,34 @@ test(
         const image = JSON.parse(
           (await execute('docker', ['image', 'inspect', ref])).stdout,
         )[0];
+        revisions.add(image.Config.Labels['org.opencontainers.image.revision']);
         images[service === 'worker' ? 'workers' : service] = ref.includes(
           '@sha256:',
         )
           ? ref
           : image.RepoDigests[0];
       }
+      assert.equal(
+        revisions.size,
+        1,
+        'Application images must share one source revision.',
+      );
+      const [imageBuildId] = revisions;
+      assert.match(imageBuildId, /^[a-f0-9]{40}(?:-dirty)?$/);
+      if (published) assert.match(imageBuildId, /^[a-f0-9]{40}$/);
       const target = {
         schemaVersion: 1,
-        sourceRevision: (
-          await execute('git', ['rev-parse', 'HEAD'])
-        ).stdout.trim(),
+        sourceRevision: imageBuildId.slice(0, 40),
         architectures: ['linux/amd64'],
         images,
         phase: 2,
         qualification: 'candidate-only',
-        workingTree: (
-          await execute('git', ['status', '--porcelain'])
-        ).stdout.trim()
+        workingTree: imageBuildId.endsWith('-dirty')
           ? 'uncommitted-candidate'
           : 'clean',
+        sourceRevisionMeaning: imageBuildId.endsWith('-dirty')
+          ? 'base revision before local image changes'
+          : 'image source revision',
       };
       const a = join(inventoryRoot, 'baseline.json'),
         b = join(inventoryRoot, 'target.json');
@@ -183,6 +192,8 @@ test(
           {
             ...result,
             baseline,
+            imageBuildId,
+            imageSourceRevision: target.sourceRevision,
             imageMirrors: registry?.copies ?? [],
             registryTransport: registry?.transport ?? 'published-https',
             limits: [

@@ -21,6 +21,7 @@ import { renderKubernetes } from '../deployment/kubernetes/render.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { qualifyKubernetesUpgrade } from './kubernetes-upgrade-fixture.mjs';
+import { prepareKubernetesInstaller } from './kubernetes-installer-fixture.mjs';
 
 const execute = promisify(execFile);
 const run = async (file, args, input) => {
@@ -94,20 +95,41 @@ test(
         password,
       });
       const images = {};
+      const revisions = new Set();
       for (const service of ['frontend', 'api', 'worker']) {
         const ref =
           process.env[`CC_AUTH_${service.toUpperCase()}_IMAGE`] ??
           `campus-commander/${service}:cc-6`;
         const inspected = JSON.parse(await docker('image', 'inspect', ref))[0];
+        revisions.add(
+          inspected.Config.Labels['org.opencontainers.image.revision'],
+        );
         images[service === 'worker' ? 'workers' : service] = ref.includes(
           '@sha256:',
         )
           ? ref
           : inspected.RepoDigests[0];
       }
+      assert.equal(
+        revisions.size,
+        1,
+        'Application images must share one source revision.',
+      );
+      const [imageBuildId] = revisions;
+      assert.match(imageBuildId, /^[a-f0-9]{40}(?:-dirty)?$/);
+      const sourceRevision = imageBuildId.slice(0, 40);
+      const workingTree = imageBuildId.endsWith('-dirty')
+        ? 'uncommitted-candidate'
+        : 'clean';
+      if (
+        Object.values(images).every((image) =>
+          image.startsWith('ghcr.io/campuscommander/'),
+        )
+      )
+        assert.equal(workingTree, 'clean');
       const release = {
         schemaVersion: 1,
-        sourceRevision: await run('git', ['rev-parse', 'HEAD']),
+        sourceRevision,
         architectures: ['linux/amd64'],
         images,
       };
@@ -314,6 +336,7 @@ test(
         project,
         application: {
           upgradeFromPhase1: Boolean(baseline),
+          installerOwnsWorkloads: !baseline,
           auth: {
             issuer: provider.issuer,
             clientId: 'qualification',
@@ -343,89 +366,14 @@ test(
           maxBuffer: 8 * 1024 * 1024,
         },
       );
-      for (const name of [
-        'application-postgres',
-        'kestra-postgres',
-        'redis',
-        'kestra',
-        'workers',
-        'api',
-        'frontend',
-        'edge',
-      ]) {
-        process.stdout.write(`Wait for ${name}.\n`);
-        await kube([
-          'rollout',
-          'status',
-          `deployment/${name}`,
-          '--timeout=300s',
-        ]);
-      }
-      const upgrade = baseline
-        ? await qualifyKubernetesUpgrade({
-            root,
-            kube,
-            baseline,
-            release,
-            application: fixture.application,
-          })
-        : undefined;
-      const resources = JSON.parse(
-        await readFile(join(root, 'runtime', 'resources.json'), 'utf8'),
-      );
-      const template = structuredClone(
-        resources.items.find((item) => item.kind === 'Job').spec.template,
-      );
-      const request = {
-        action: 'initialize',
-        issuer: provider.issuer,
-        subject: 'administrator',
-        displayName: 'Synthetic administrator',
-      };
-      template.spec.containers[0].command = [
-        'node',
-        '/app/deployment/bootstrap/application-access-cli.mjs',
-        '/config/deployment.json',
-        '/config/operator.json',
-        '/run/enrollment/request',
-      ];
-      template.spec.containers[0].volumeMounts.push({
-        name: 'enrollment',
-        mountPath: '/run/enrollment',
-        readOnly: true,
-      });
-      template.spec.volumes.push({
-        name: 'enrollment',
-        secret: { secretName: 'qualification-enrollment' },
-      });
-      await kube(
-        ['apply', '-f', '-'],
-        JSON.stringify({
-          apiVersion: 'v1',
-          kind: 'Secret',
-          metadata: { name: 'qualification-enrollment', namespace: project },
-          stringData: { request: JSON.stringify(request) },
-        }),
-      );
-      await kube(
-        ['apply', '-f', '-'],
-        JSON.stringify({
-          apiVersion: 'batch/v1',
-          kind: 'Job',
-          metadata: { name: 'qualification-enrollment', namespace: project },
-          spec: { backoffLimit: 0, activeDeadlineSeconds: 60, template },
-        }),
-      );
-      await kube([
-        'wait',
-        '--for=condition=complete',
-        'job/qualification-enrollment',
-        '--timeout=90s',
-      ]);
-      const edgePort = resources.items.find(
-        (item) => item.kind === 'Service' && item.metadata.name === 'edge',
-      ).spec.ports[0].port;
       const startForward = async (namespace = project) => {
+        const currentResources = JSON.parse(
+          await readFile(join(root, 'runtime', 'resources.json'), 'utf8'),
+        );
+        const edgePort = currentResources.items.find(
+          (item) => item.kind === 'Service' && item.metadata.name === 'edge',
+        ).spec.ports[0].port;
+
         if (
           forward &&
           forward.exitCode === null &&
@@ -476,7 +424,104 @@ test(
           });
         });
       };
-      await startForward();
+      let installer;
+      if (!baseline) {
+        installer = await prepareKubernetesInstaller({
+          root,
+          project,
+          kubeconfig,
+          kube,
+          release,
+          application: fixture.application,
+        });
+        await installer.resume(startForward);
+        await installer.resume(startForward);
+      }
+      for (const name of [
+        'application-postgres',
+        'kestra-postgres',
+        'redis',
+        'kestra',
+        'workers',
+        'api',
+        'frontend',
+        'edge',
+      ]) {
+        process.stdout.write(`Wait for ${name}.\n`);
+        await kube([
+          'rollout',
+          'status',
+          `deployment/${name}`,
+          '--timeout=300s',
+        ]);
+      }
+      const upgrade = baseline
+        ? await qualifyKubernetesUpgrade({
+            root,
+            kube,
+            baseline,
+            release,
+            application: fixture.application,
+          })
+        : undefined;
+      const resources = installer
+        ? installer.resources()
+        : JSON.parse(
+            await readFile(join(root, 'runtime', 'resources.json'), 'utf8'),
+          );
+      const template = structuredClone(
+        resources.items.find((item) => item.kind === 'Job').spec.template,
+      );
+      for (const volume of template.spec.volumes)
+        if (volume.configMap)
+          await kube(['get', 'configmap', volume.configMap.name]);
+      const request = {
+        action: 'initialize',
+        issuer: provider.issuer,
+        subject: 'administrator',
+        displayName: 'Synthetic administrator',
+      };
+      template.spec.containers[0].command = [
+        'node',
+        '/app/deployment/bootstrap/application-access-cli.mjs',
+        '/config/deployment.json',
+        '/config/operator.json',
+        '/run/enrollment/request',
+      ];
+      template.spec.containers[0].volumeMounts.push({
+        name: 'enrollment',
+        mountPath: '/run/enrollment',
+        readOnly: true,
+      });
+      template.spec.volumes.push({
+        name: 'enrollment',
+        secret: { secretName: 'qualification-enrollment' },
+      });
+      await kube(
+        ['apply', '-f', '-'],
+        JSON.stringify({
+          apiVersion: 'v1',
+          kind: 'Secret',
+          metadata: { name: 'qualification-enrollment', namespace: project },
+          stringData: { request: JSON.stringify(request) },
+        }),
+      );
+      await kube(
+        ['apply', '-f', '-'],
+        JSON.stringify({
+          apiVersion: 'batch/v1',
+          kind: 'Job',
+          metadata: { name: 'qualification-enrollment', namespace: project },
+          spec: { backoffLimit: 0, activeDeadlineSeconds: 60, template },
+        }),
+      );
+      await kube([
+        'wait',
+        '--for=condition=complete',
+        'job/qualification-enrollment',
+        '--timeout=90s',
+      ]);
+      if (!installer) await startForward();
       let restoration;
       const application = await applicationBrowser(
         publicOrigin,
@@ -552,6 +597,40 @@ test(
             ]);
           }
           await checks();
+          if (installer) {
+            const preference = page.waitForResponse(
+              (response) =>
+                new URL(response.url()).pathname === '/api/auth/preferences' &&
+                response.request().method() === 'POST',
+            );
+            await page.getByRole('button', { name: 'Choose theme' }).click();
+            await page
+              .getByRole('menuitem', { name: 'Use dark theme' })
+              .click();
+            assert.equal((await preference).status(), 201);
+            for (const command of ['stop', 'uninstall']) {
+              assert.equal((await installer.cli(command)).dataPreserved, true);
+              await installer.resume(startForward);
+              await page.reload();
+              await expect(
+                page.getByRole('heading', { name: 'Sign in', exact: true }),
+              ).toBeVisible();
+              await page
+                .getByRole('link', { name: 'Sign in to Campus Commander' })
+                .click();
+              await expect(
+                page.getByRole('heading', {
+                  name: 'Your account',
+                  exact: true,
+                }),
+              ).toBeVisible({ timeout: 15000 });
+              await expect(page.locator('html')).toHaveAttribute(
+                'data-theme',
+                'dark',
+              );
+              await checks({ recoverySeconds: 120 });
+            }
+          }
           if (process.env.CC_AUTH_KUBERNETES_RESTORE === '1') {
             const preference = page.waitForResponse(
               (response) =>
@@ -643,11 +722,25 @@ test(
             checkedAt: new Date().toISOString(),
             elapsedMilliseconds: Date.now() - started,
             images,
+            sourceRevision,
+            imageBuildId,
+            workingTree,
+            qualificationSourceRevision: await run('git', [
+              'rev-parse',
+              'HEAD',
+            ]),
+            qualificationWorkingTree: (await run('git', [
+              'status',
+              '--porcelain',
+            ]))
+              ? 'uncommitted-candidate'
+              : 'clean',
             ...(upgrade ? { upgrade } : {}),
             application,
             nodes: nodes.length,
             apiReplicas: 2,
             workerRescheduled: true,
+            ...(installer ? { installer: await installer.evidence() } : {}),
             limits: [
               'Three Kind nodes share one Docker host and synthetic storage.',
               'Kind default networking does not enforce NetworkPolicy.',

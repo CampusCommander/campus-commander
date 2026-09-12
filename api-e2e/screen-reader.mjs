@@ -25,6 +25,7 @@ export async function startScreenReader() {
     XDG_CACHE_HOME: join(root, 'cache'),
     XDG_RUNTIME_DIR: join(root, 'runtime'),
     GSETTINGS_BACKEND: 'memory',
+    ACCESSIBILITY_ENABLED: '1',
     SPEECHD_ADDRESS: `unix_socket:${root}/speech.sock`,
     SPEECHD_PLUGIN_DIR: `${packages}/usr/lib/x86_64-linux-gnu/speech-dispatcher`,
     ...(packages
@@ -68,7 +69,7 @@ gi.require_version('Atspi', '2.0')
 from gi.repository import Atspi
 desktop = Atspi.get_desktop(0)
 names = [desktop.get_child_at_index(i).get_name() for i in range(desktop.get_child_count())]
-print(json.dumps({'status': 'observed', 'applicationCount': len(names), 'chromiumRegistered': any('Chrome' in name or 'Chromium' in name for name in names)}))
+print(json.dumps({'status': 'observed', 'applicationCount': len(names), 'chromiumRegistered': any('Chrome' in name or 'Chromium' in name for name in names), 'readerRegistered': any('orca' in name.lower() for name in names)}))
 `,
         ],
         { env, timeout: 5000 },
@@ -132,8 +133,18 @@ print(json.dumps({'status': 'observed', 'applicationCount': len(names), 'chromiu
       [`${packages}/usr/bin/orca`, '--debug-file', join(root, 'orca.debug')],
       'orca',
     );
-    await delay(1500);
-    const initialConnection = await connectionSnapshot();
+    const startupDeadline = Date.now() + 30000;
+    let initialConnection;
+    do {
+      initialConnection = await connectionSnapshot();
+      if (initialConnection.readerRegistered) break;
+      await delay(100);
+    } while (Date.now() < startupDeadline);
+    assert.equal(
+      initialConnection.readerRegistered,
+      true,
+      'Orca must register with the accessibility desktop before the browser starts.',
+    );
     const initialDebug = await readFile(join(root, 'orca.debug'), 'utf8').catch(
       () => '',
     );
@@ -184,10 +195,11 @@ print(json.dumps({'status': 'observed', 'applicationCount': len(names), 'chromiu
           connection: {
             beforeBrowser: initialConnection,
             afterBrowser: finalConnection,
-            readerAnnouncedStartupBeforeBrowser: initialDebug.includes(
+            startupAnnouncementVisibleBeforeBrowser: initialDebug.includes(
               "SPEECH OUTPUT: 'Screen reader on.",
             ),
             explicitAccessibilityBus: Boolean(env.AT_SPI_BUS_ADDRESS),
+            nativeAccessibilityEnabled: env.ACCESSIBILITY_ENABLED === '1',
             browserMentionedInDebug: /Chrome|Chromium/.test(debug),
             debugLineCount: debug.split('\n').length,
             eventLineCount: debug

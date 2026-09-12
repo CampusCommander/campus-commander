@@ -77,6 +77,8 @@ The relay preserves registry requests and responses. It does not replace registr
 CI supplies all three `CC_AUTH_API_IMAGE`, `CC_AUTH_FRONTEND_IMAGE`, and `CC_AUTH_WORKER_IMAGE` references as published HTTPS digests.
 Published references use normal registry verification without the local HTTP fixture.
 It uses encrypted backups, distinct image digests, and the Phase 2 migration before administrator enrollment and Diagnostics checks.
+The upgrade target also verifies expired and wrong-host edge certificate rejection and recovery.
+Fault recovery must preserve the verified post-upgrade migration ledger and artifact.
 The fixture adds a synthetic provider CA and host mapping through a separate runtime Compose file.
 The installer retains its verified deployment manifest throughout lifecycle actions.
 This qualification does not certify release signatures or district infrastructure.
@@ -127,3 +129,27 @@ Without `CC_AUTH_INSTALLER_ROOT`, the fixture uses the workspace CLI.
 Local development images use the existing disposable loopback registry adapter.
 The report records the CLI source, image mirrors, lifecycle commands, and browser observations.
 Candidate qualification does not complete the fifteen signed profile acceptance records.
+
+## Clean Kubernetes installer qualification
+
+`api-e2e:kubernetes-integration` invokes the installer CLI for preparation, repeated resume, stop/resume, and uninstall/resume.
+The fixture prepares synthetic Secrets and storage before the CLI creates application workloads.
+Enrollment uses the CLI-generated ConfigMap and migration Job template.
+The fixture verifies shared sessions, worker rescheduling, fresh sign-in after Redis restart, saved preferences, and repeated Diagnostics checks.
+Two workers must occupy distinct Kind worker nodes.
+
+The private kubectl wrapper adds synthetic provider routing and CA trust to a separate runtime manifest.
+The original CLI-generated manifest remains unchanged throughout qualification.
+After stop and uninstall, the fixture waits for every application pod to disappear before resume.
+
+Set the three published application image variables and the verified bundle path to test the extracted installer:
+
+```sh
+CC_AUTH_INSTALLER_ROOT=/absolute/verified/bundle npx nx run api-e2e:kubernetes-integration
+```
+
+The fixture checks the bundle phase, source revision, and image inventory before invoking its CLI.
+Without that variable, the fixture uses the workspace CLI.
+Reports distinguish the application image source revision from the qualification harness revision.
+Kind nodes share one physical Docker host and synthetic storage. District DNS, identity providers, storage, and CNI enforcement require separate qualification.
+Kubernetes upgrade and restore targets retain their separate rendered-profile coverage.

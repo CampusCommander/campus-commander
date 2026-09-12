@@ -402,7 +402,8 @@ for (const [claim, subPath] of [
     }),
   );
 }
-kube(['apply', '-f', join(root, 'resources.json')]);
+if (!application?.installerOwnsWorkloads)
+  kube(['apply', '-f', join(root, 'resources.json')]);
 process.stdout.write(
-  `Synthetic Kubernetes resources applied. Private fixture directory: ${root}\n`,
+  `Synthetic Kubernetes fixture prepared. Private fixture directory: ${root}\n`,
 );

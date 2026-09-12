@@ -470,7 +470,7 @@ process.exit(result.status??1);
                       probe,
                     ),
                   ),
-                  before,
+                  after,
                 ),
             },
           )

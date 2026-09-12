@@ -416,3 +416,39 @@ The candidate workflow requires eleven application reports. Release tests, relev
 - Record distinct worker hosts for distributed profiles and retain measured fixture limitations.
 - Review every remaining ticket criterion and link its final implementation and validation evidence.
 - Publish the accepted release and record supported workflows, defects, and measured limits.
+
+## Kubernetes CLI qualification and reader startup
+
+The fresh Kubernetes fixture now delegates application workload creation to the installer CLI.
+It supplies synthetic Secrets and storage before preparation.
+The CLI passes preparation, repeated resume, stop/resume, and uninstall/resume against the published `dae5f7a10a03` application images.
+The browser completes 24 diagnostic operations and preserves preferences after fresh sign-in following Redis restart.
+Two workers occupy distinct Kind worker nodes. The original CLI-generated manifest remains unchanged.
+[The CLI evidence](../../deployment/evidence/CC-36-phase-2-kubernetes-cli-install.json) records image identity, lifecycle commands, browser checks, and fixture limits.
+
+The sixth candidate run passed every application check except screen-reader qualification.
+[The candidate record](../../deployment/evidence/CC-37-phase-2-sixth-published-run.json) links each terminal job result. PR CI passed.
+[The reader report](../../deployment/evidence/CC-35-phase-2-reader-6d3bd65-failure.json) confirms missing Chromium registration in the accessibility desktop.
+A focused browser probe reproduced that condition when desktop accessibility remained disabled.
+Enabling Chromium native accessibility registered the browser under the same condition.
+The fixture now enables native accessibility and waits for actual Orca registration before launching Chromium.
+Orca buffers its debug file. Initial log contents cannot establish startup readiness.
+The full local reader test passed all six speech assertions in 213 seconds with Orca 50.2.
+[The reader evidence](../../deployment/evidence/CC-35-phase-2-reader-registration-local.json) records live registration and actual utterances.
+CC-35 remains open pending verification with CI’s Orca 46.1.
+
+Kubernetes upgrade and restore fixtures still use their rendered-profile procedures.
+Complete distributed CLI qualification and the fifteen signed profile acceptance records remain open.
+Phase 1 acceptance remains separate.
+
+The independently verified extracted Kubernetes bundle passed the same CLI lifecycle in 232 seconds.
+[The bundle evidence](../../deployment/evidence/CC-36-phase-2-kubernetes-bundle-install.json) records the published image identity and two distinct worker nodes.
+The fixture waits for stopped application pods to disappear before resuming workloads.
+This prevents port forwarding from selecting a terminating edge pod.
+
+The standard Phase 2 upgrade target now includes expired and wrong-host edge certificate rejection and recovery.
+The first run exposed a preservation assertion that still expected the Phase 1 migration ledger.
+Fault recovery now compares against the verified post-upgrade state, including the Phase 2 migration.
+The corrected upgrade test passed in 208 seconds, including both certificate failures and subsequent application checks.
+[The upgrade fault evidence](../../deployment/evidence/CC-37-phase-2-upgrade-tls-faults.json) records preserved migrations, artifact integrity, and restored certificate bytes.
+These certificate checks retain their limited scope. They do not establish complete profile fault acceptance.
