@@ -19,6 +19,7 @@ import pg from 'pg';
 import { migrate, provision } from '../postgres/index.mjs';
 import { createArtifactStore } from '../storage/index.mjs';
 import { changeApplicationAccess } from '../bootstrap/application-access.mjs';
+import { createOperationsCliFixture } from './cli-fixture.mjs';
 import {
   backupFoundation,
   postgresToolArguments,
@@ -28,7 +29,8 @@ import {
 
 const name = `cc-restore-${randomUUID()}`,
   root = await mkdtemp(join(tmpdir(), 'cc-restore-'));
-const native = process.env.CC_OPERATIONS_NATIVE === '1';
+const cli = process.env.CC_OPERATIONS_CLI === '1';
+const native = cli || process.env.CC_OPERATIONS_NATIVE === '1';
 const toolVersions = native
   ? Object.fromEntries(
       ['pg_dump', 'pg_restore'].map((tool) => [
@@ -37,8 +39,8 @@ const toolVersions = native
       ]),
     )
   : undefined;
-const password = randomUUID(),
-  encryptionKey = randomBytes(32);
+const password = randomUUID();
+let encryptionKey = randomBytes(32);
 const docker = (...args) =>
   execFileSync('docker', args, {
     encoding: 'utf8',
@@ -59,9 +61,23 @@ const resolveSecret = async (reference) =>
   reference.path === '/run/secrets/backup-key'
     ? encryptionKey
     : Buffer.from(`${password}\r\n`);
-let admin, pool, store;
+let admin, pool, store, operatorCli;
 const clients = [];
 try {
+  if (cli) {
+    operatorCli = await createOperationsCliFixture(
+      join(root, 'operator-cli'),
+      resolveSecret,
+      {
+        container: process.env.CC_OPERATIONS_CLI_CONTAINER === '1',
+        mountDirectories: [root],
+      },
+    );
+    encryptionKey.fill(0);
+    encryptionKey = await operatorCli.generateKey();
+    assert.equal(encryptionKey.length, 32);
+    await assert.rejects(operatorCli.generateKey());
+  }
   await writeFile(
     join(root, 'postgres.env'),
     `POSTGRES_PASSWORD=${password}\n`,
@@ -307,6 +323,18 @@ try {
     }),
     /Stop every/,
   );
+  if (cli)
+    await assert.rejects(
+      operatorCli.run('backup', {
+        config,
+        release,
+        backupDirectory,
+        sourceRoots,
+        keyRecovery,
+        quiesce,
+        applicationCredentials,
+      }),
+    );
   await busy.end();
   await assert.rejects(
     backupFoundation({
@@ -324,17 +352,36 @@ try {
       runTool,
     }),
   );
-  const manifest = await backupFoundation({
-    config,
-    release,
-    backupDirectory,
-    sourceRoots,
-    keyRecovery,
-    quiesce,
-    resolveSecret,
-    applicationCredentials,
-    runTool,
-  });
+  if (cli) {
+    const backup = await operatorCli.run('backup', {
+      config,
+      release,
+      backupDirectory,
+      sourceRoots,
+      keyRecovery,
+      quiesce,
+      applicationCredentials,
+    });
+    assert.equal(backup.result.status, 'complete');
+    const verified = await operatorCli.run('verify', {
+      backupDirectory,
+      keyRecovery,
+    });
+    assert.equal(verified.result.status, 'verified');
+  }
+  const manifest = cli
+    ? await verifyBackup({ backupDirectory, keyRecovery, resolveSecret })
+    : await backupFoundation({
+        config,
+        release,
+        backupDirectory,
+        sourceRoots,
+        keyRecovery,
+        quiesce,
+        resolveSecret,
+        applicationCredentials,
+        runTool,
+      });
   assert.ok(
     manifest.files.every((file) => file.encryptedPath.endsWith('.enc')),
   );
@@ -361,6 +408,10 @@ try {
   const corrupt = join(root, 'corrupt');
   await cp(backupDirectory, corrupt, { recursive: true });
   await writeFile(join(corrupt, manifest.files[0].encryptedPath), 'corrupt');
+  if (cli)
+    await assert.rejects(
+      operatorCli.run('verify', { backupDirectory: corrupt, keyRecovery }),
+    );
   await assert.rejects(
     verifyBackup({ backupDirectory: corrupt, keyRecovery, resolveSecret }),
   );
@@ -437,16 +488,30 @@ try {
     ).includes('stopped'),
   );
   await assert.rejects(readFile(join(failedDirectory, 'restore-report.json')));
-  const report = await restoreFoundation({
-    backupDirectory,
-    targetConfig,
-    targetDirectory,
-    keyRecovery,
-    resolveSecret,
-    applicationCredentials: targetCredentials,
-    runTool,
-  });
+  const cliRestore = cli
+    ? await operatorCli.run('restore', {
+        backupDirectory,
+        targetConfig,
+        targetDirectory,
+        keyRecovery,
+        applicationCredentials: targetCredentials,
+      })
+    : undefined;
+  const report = cli
+    ? JSON.parse(
+        await readFile(join(targetDirectory, 'restore-report.json'), 'utf8'),
+      )
+    : await restoreFoundation({
+        backupDirectory,
+        targetConfig,
+        targetDirectory,
+        keyRecovery,
+        resolveSecret,
+        applicationCredentials: targetCredentials,
+        runTool,
+      });
   assert.equal(report.status, 'verified-services-disabled');
+  if (cli) assert.equal(cliRestore.result.status, 'verified-services-disabled');
   assert.deepEqual(report.redisRecovery, {
     policy: 'discard-cache',
     releaseRequiresFreshRedis: true,
@@ -458,7 +523,7 @@ try {
         'utf8',
       ),
     ),
-    targetConfig,
+    cliRestore?.configuration ?? targetConfig,
   );
   assert.ok(
     (
@@ -522,10 +587,26 @@ try {
     }),
     /empty/,
   );
+  if (cli)
+    await assert.rejects(
+      operatorCli.run('restore', {
+        backupDirectory,
+        targetConfig,
+        targetDirectory,
+        keyRecovery,
+        applicationCredentials: targetCredentials,
+      }),
+    );
   console.log(
     JSON.stringify(
       {
-        runner: native ? 'default-native' : 'injected-docker',
+        runner: cli
+          ? 'operator-cli-native'
+          : native
+            ? 'default-native'
+            : 'injected-docker',
+        ...(cli ? { commands: operatorCli.commands } : {}),
+        ...(cli ? { operatorCli: operatorCli.execution } : {}),
         toolVersions,
         backupMilliseconds: manifest.durationMilliseconds,
         restoreMilliseconds: report.durationMilliseconds,

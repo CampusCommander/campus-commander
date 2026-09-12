@@ -336,6 +336,14 @@
       "options": {
         "command": "node deployment/kestra/database-recovery-probe.mjs"
       }
+    },
+    "operations-cli-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "CC_OPERATIONS_CLI=1 node deployment/operations/integration.mjs"
+      }
     }
   }
 }

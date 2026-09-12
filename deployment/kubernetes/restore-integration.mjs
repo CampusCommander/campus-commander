@@ -5,18 +5,13 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createReadStream } from 'node:fs';
-import { pipeline } from 'node:stream/promises';
-import { Writable } from 'node:stream';
 import pg from 'pg';
-import {
-  backupFoundation,
-  postgresToolArguments,
-  restoreFoundation,
-} from '../operations/index.mjs';
+import { verifyBackup } from '../operations/index.mjs';
+import { createOperationsCliFixture } from '../operations/cli-fixture.mjs';
 import { replaceBootstrap } from '../bootstrap/access.mjs';
 import { connectionOptions } from '../postgres/index.mjs';
 import { renderKubernetes } from './render.mjs';
+import { isolatedPortForward } from './isolated-port-forward.mjs';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
 
 const capacity = process.env.CC_KUBERNETES_CAPACITY_FIXTURE
@@ -84,6 +79,25 @@ async function waitFor(check, label, attempts = 180) {
 function portForward(namespace, service, remotePort) {
   const localPort = nextForwardPort;
   nextForwardPort += 1;
+  if (remotePort === 5432) {
+    return isolatedPortForward({
+      localPort,
+      remotePort,
+      arguments: [
+        '--kubeconfig',
+        kubeconfig,
+        '--context',
+        context,
+        '--namespace',
+        namespace,
+        'port-forward',
+        `service/${service}`,
+        `:${remotePort}`,
+        '--address',
+        '127.0.0.1',
+      ],
+    });
+  }
   const child = spawn(
     'kubectl',
     [
@@ -123,6 +137,10 @@ function portForward(namespace, service, remotePort) {
 }
 
 function assertForwardAlive(forward, label) {
+  if (forward.isAlive) {
+    assert.equal(forward.isAlive(), true, `${label} listener stopped.`);
+    return;
+  }
   assert.equal(
     forward.child.exitCode,
     null,
@@ -401,59 +419,6 @@ async function verifyTargetKestra(root, expected) {
   } finally {
     forward.close();
   }
-}
-
-async function kubernetesTool(tool, { service, input, output }) {
-  const namespace = service.database.endsWith('-restore')
-    ? targetNamespace
-    : sourceNamespace;
-  const deployment = service.database.startsWith('campus')
-    ? 'application-postgres'
-    : 'kestra-postgres';
-  const child = spawn(
-    'kubectl',
-    [
-      '--kubeconfig',
-      kubeconfig,
-      '--context',
-      context,
-      '--namespace',
-      namespace,
-      'exec',
-      '-i',
-      `deployment/${deployment}`,
-      '--',
-      tool,
-      '--username',
-      service.role,
-      ...(tool === 'pg_dump' ? ['--dbname', service.database] : []),
-      ...postgresToolArguments(tool, service),
-    ],
-    { stdio: ['pipe', 'pipe', 'pipe'] },
-  );
-  let stderr = '';
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk.toString();
-  });
-  const completed = new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', (code) =>
-      code === 0
-        ? resolve()
-        : reject(
-            new Error(`Kubernetes PostgreSQL ${tool} failed: ${stderr.trim()}`),
-          ),
-    );
-  });
-  const sink = new Writable({
-    write(_chunk, _encoding, done) {
-      done();
-    },
-  });
-  const tasks = [completed, pipeline(child.stdout, output ?? sink)];
-  if (input) tasks.push(pipeline(createReadStream(input), child.stdin));
-  else child.stdin.end();
-  await Promise.all(tasks);
 }
 
 function postgresSql(namespace, deployment, sql) {
@@ -811,7 +776,15 @@ try {
     sourceKestraForward,
     'Source Kestra database port forward',
   );
-  const manifest = await backupFoundation({
+  const operatorCli = await createOperationsCliFixture(
+    join(backupRoot, 'operator-cli'),
+    resolveSecret,
+    {
+      container: process.env.CC_OPERATIONS_CLI_HOST !== '1',
+      mountDirectories: [backupRoot, sharedRoot],
+    },
+  );
+  const { result: backupResult } = await operatorCli.run('backup', {
     config: sourceConfig,
     release: sourceOperator.release,
     backupDirectory,
@@ -821,9 +794,19 @@ try {
     },
     keyRecovery,
     quiesce,
-    resolveSecret,
     applicationCredentials,
-    runTool: kubernetesTool,
+  });
+
+  assert.equal(backupResult.status, 'complete');
+  const { result: verifiedBackup } = await operatorCli.run('verify', {
+    backupDirectory,
+    keyRecovery,
+  });
+  assert.equal(verifiedBackup.status, 'verified');
+  const manifest = await verifyBackup({
+    backupDirectory,
+    keyRecovery,
+    resolveSecret,
   });
 
   const targetRuntime = structuredClone(runtimeConfig);
@@ -930,15 +913,17 @@ try {
     targetKestraForward,
     'Target Kestra database port forward',
   );
-  const report = await restoreFoundation({
+  const { result: restoreResult } = await operatorCli.run('restore', {
     backupDirectory,
     targetConfig,
     targetDirectory,
     keyRecovery,
-    resolveSecret,
     applicationCredentials,
-    runTool: kubernetesTool,
   });
+  assert.equal(restoreResult.status, 'verified-services-disabled');
+  const report = JSON.parse(
+    await readFile(join(targetDirectory, 'restore-report.json'), 'utf8'),
+  );
   assert.equal(report.status, 'verified-services-disabled');
   assert.equal(
     (await readFile(join(targetDirectory, 'RESTORE_DISABLED'), 'utf8')).trim(),
@@ -961,7 +946,7 @@ try {
       sourceApplication,
     );
 
-  targetApplicationForward.close();
+  await targetApplicationForward.close();
   const acceptanceForward = portForward(
     targetNamespace,
     'application-postgres',
@@ -1161,15 +1146,25 @@ try {
           : {}),
         sourceNamespace,
         targetNamespace,
+        operatorCli: {
+          ...operatorCli.execution,
+          commands: operatorCli.commands,
+        },
         operatorAdapter: {
           sourceApplicationPort,
           sourceKestraPort,
           targetApplicationPort,
           targetKestraPort,
           tlsServerName: 'localhost',
-          kubernetesPostgresTools: version,
+          postgresServerTools: version,
           postgresTransport:
-            'One verified TLS database session per kubectl port-forward process.',
+            'Each verified TLS database connection uses an independent kubectl port-forward process.',
+          databaseTunnels: [
+            sourceApplicationForward,
+            sourceKestraForward,
+            targetApplicationForward,
+            targetKestraForward,
+          ].map((forward) => forward.observation),
         },
         quiesce,
         sourceWorkloads,
@@ -1244,5 +1239,5 @@ try {
     `${JSON.stringify({ status: 'pass', sourceNamespace, targetNamespace, readyChecks: targetStartup.checks.length, durationMilliseconds: Date.now() - startedAt })}\n`,
   );
 } finally {
-  for (const forward of forwards) forward.close();
+  await Promise.all(forwards.map((forward) => forward.close()));
 }

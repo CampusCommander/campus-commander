@@ -108,3 +108,10 @@ The process fault report must include all six named interruption and recovery ca
 It must declare the shared 180-second foundation budget and include measured recovery times within that budget.
 Assembly rejects missing reports, mixed source revisions, repeated daemon identifiers, incomplete cleanup, and missing backup verification.
 These requirements retain candidate status until the complete profile acceptance records pass.
+
+All three application restore reports must record successful operator CLI `backup`, `verify`, and `restore` commands.
+The records identify the native runner and the protected `/run/secrets` mount.
+Assembly rejects missing CLI evidence, injected database adapters, and incomplete commands.
+The hybrid operator records backup and restore execution separately inside its existing container.
+Linux CI uses the pinned PostgreSQL operator image for all-Docker and Kubernetes restore commands.
+Docker Desktop qualification supports native host tools when container networking cannot reach host loopback endpoints.

@@ -161,6 +161,44 @@ export async function assembleCandidate({
         filename,
       );
       const report = JSON.parse(await readFile(source, 'utf8'));
+      if (
+        [
+          'restore-integration',
+          'hybrid-restore-integration',
+          'kubernetes-restore-integration',
+        ].includes(target)
+      ) {
+        const executions =
+          target === 'hybrid-restore-integration'
+            ? [report.backup?.operatorCli, report.verification?.operatorCli]
+            : [report.operatorCli];
+        const commands = executions.flatMap(
+          (execution) => execution?.commands ?? [],
+        );
+        if (
+          executions.some(
+            (execution) =>
+              !execution ||
+              ![
+                'operator-container-native',
+                'operator-host-native',
+                'operator-native-existing-mount',
+              ].includes(execution.runner) ||
+              execution.injectedDatabaseTool !== false ||
+              execution.secretMount !== '/run/secrets' ||
+              !Array.isArray(execution.commands),
+          ) ||
+          ['backup', 'verify', 'restore'].some(
+            (command) =>
+              !commands.some(
+                (item) => item.command === command && item.status === 'passed',
+              ),
+          )
+        )
+          throw new Error(
+            'Application restore qualification requires the native operator CLI backup, verify, and restore commands.',
+          );
+      }
       if (target.startsWith('hybrid-cli-')) {
         const workers =
           report.hosts?.filter((host) => host.role?.startsWith('worker-')) ??

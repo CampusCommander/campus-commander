@@ -1,0 +1,110 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T13:03:27.014145+00:00",
+  "baseGitRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17",
+  "fixtureState": "Uncommitted CLI qualification changes after the base revision.",
+  "sourceFiles": [
+    {
+      "path": "api-e2e/restore-fixture.mjs",
+      "sha256": "5552f379b3b63c934c99f3e5562627232abd475b981fbeba1f070df9e5d04110"
+    },
+    {
+      "path": "deployment/operations/cli-fixture.mjs",
+      "sha256": "f2531e53427b9ca60801278e820300a402210ed02f78fef25fd04bc8577a3285"
+    },
+    {
+      "path": "deployment/operations/integration.mjs",
+      "sha256": "62608e31251a8966dfcf16744fa6fa948be4690233b2a392f7cd89ee3d36e918"
+    },
+    {
+      "path": "deployment/kubernetes/restore-integration.mjs",
+      "sha256": "85a720bc261452c6bb1107191bcd88c42b08aa50a6cbb2504d6a42c9d1094eca"
+    },
+    {
+      "path": "deployment/kubernetes/isolated-port-forward.mjs",
+      "sha256": "8e31b017ee332460312d4feefc819b87000334f8d3baa47e9cf250066c15afda"
+    },
+    {
+      "path": "deployment/profiles/hybrid/restore-integration.mjs",
+      "sha256": "aa83ef3ae46d3d52f3d7ca51abcf5ba6ae2424896df2575f7ae135fdd5d80ead"
+    },
+    {
+      "path": "deployment/release/candidate.mjs",
+      "sha256": "2419a03a18d9b9ed2a73203df52d6946090f185f541fc133f634765cb01e68b8"
+    }
+  ],
+  "checks": [
+    {
+      "target": "deployment:operations-cli-integration",
+      "status": "passed",
+      "durationSeconds": 5.4,
+      "logSha256": "d637af6887243b953fb20af8d4b13996dfe4e90fdb396025e21853f90dc1f0a8"
+    },
+    {
+      "target": "api-e2e:restore-integration",
+      "status": "passed",
+      "durationSeconds": 252,
+      "logSha256": "e0f2769d52a20a5a6869a4fea2b017c702fb93ff81f723af039e010f4fcc571f"
+    },
+    {
+      "target": "api-e2e:hybrid-restore-integration",
+      "status": "passed",
+      "durationSeconds": 295,
+      "logSha256": "7189f31508f084ef994c350e986d19e6cef7a44e2d06189bef24fa6b9d9f0490"
+    },
+    {
+      "target": "api-e2e:kubernetes-restore-integration",
+      "status": "passed",
+      "durationSeconds": 337,
+      "logSha256": "2b50b30a0445eaedd9e2e64d3660502398e251f1df9a8d3a465160d1a2de04f0"
+    },
+    {
+      "target": "deployment:operations-test",
+      "status": "passed",
+      "durationSeconds": null,
+      "logSha256": "057e489c91716802ece6cae399c19172075d20341fdd81ef189071adcd37d3f0"
+    },
+    {
+      "target": "deployment:kubernetes-test",
+      "status": "passed",
+      "durationSeconds": null,
+      "logSha256": "b6c8fdd8802fa62cc186acdc770643cddfc7d4d567159cb2139dc6342bc2b649"
+    },
+    {
+      "target": "deployment:release-test",
+      "status": "passed",
+      "durationSeconds": 5.5,
+      "logSha256": "d1f97522626d14a24031f03c9fda688f4fec37a2daef234959e2233f0d779ea9"
+    },
+    {
+      "target": "deployment,api-e2e:lint",
+      "status": "passed",
+      "durationSeconds": 1.9,
+      "logSha256": "fc0882bbb96570300328b4d4d2195bbf495ff2977bc5f3efbf2cbeeab8eacf00"
+    }
+  ],
+  "profiles": {
+    "all-docker": {
+      "reportPath": "deployment/evidence/CC-36-phase-2-all-docker-operator-cli-restore.json",
+      "sha256": "2718a1c5fe5ded39a41b4afdcafa2a1d7ec32cf49b353c0571a065a5983eb757"
+    },
+    "hybrid": {
+      "reportPath": "deployment/evidence/CC-36-phase-2-hybrid-operator-cli-restore.json",
+      "sha256": "85036b690e7d4408400d52adaca33475db03c0bbef8227e0f15aa913c2e0944f"
+    },
+    "kubernetes": {
+      "reportPath": "deployment/evidence/CC-36-phase-2-kubernetes-operator-cli-restore.json",
+      "sha256": "2fc1fcdeed1da786865286e58084f8543a6a7ed08e442bd21b0a503d902489d9"
+    }
+  },
+  "ownedContainersRemaining": 0,
+  "ownedPortForwardProcessesRemaining": 0,
+  "applicationUiChanged": false,
+  "limits": [
+    "Local application images use the base revision. Final revision CI remains required.",
+    "All-Docker and Kubernetes use native host tools because Docker Desktop container networking cannot reach host loopback endpoints.",
+    "Hybrid runs native tools inside the existing operator container with verified TLS.",
+    "Synthetic storage, certificates, and one physical host do not establish district qualification.",
+    "The fifteen complete profile release gates and accepted release assembly remain open."
+  ]
+}

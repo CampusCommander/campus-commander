@@ -1,20 +1,13 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Writable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { expect } from '@playwright/test';
 import { prepareAllDocker } from '../deployment/profiles/all-docker/prepare.mjs';
 import { renderAllDocker } from '../deployment/profiles/all-docker/render.mjs';
-import { normalizePostgresSecret } from '../deployment/postgres/secrets.mjs';
-import {
-  backupFoundation,
-  postgresToolArguments,
-  restoreFoundation,
-} from '../deployment/operations/index.mjs';
+import { verifyBackup } from '../deployment/operations/index.mjs';
+import { createOperationsCliFixture } from '../deployment/operations/cli-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 
 const docker = (args, input) =>
@@ -45,7 +38,6 @@ export async function qualifyApplicationRestore({
   const targetCompose = (...args) =>
     docker(['compose', '-f', targetFile, '-p', project, ...args]);
   const proxies = [];
-  const containers = new Map();
   let sourceStopped = false;
   let targetPrepared = false;
   const probe = `
@@ -105,61 +97,8 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
       const port = docker(['port', name, '5432/tcp']).split(':').at(-1);
       const endpoint = `postgresql://127.0.0.1:${port}`;
       result.services[key].endpoint.url = endpoint;
-      containers.set(endpoint, container);
     }
     return result;
-  };
-  const runTool = async (tool, { service, input, output }) => {
-    const child = spawn(
-      'docker',
-      [
-        'exec',
-        '-i',
-        '-e',
-        'PGPASSWORD',
-        '-e',
-        `PGUSER=${service.role}`,
-        '-e',
-        `PGDATABASE=${service.database}`,
-        '-e',
-        'PGHOST=127.0.0.1',
-        containers.get(service.endpoint.url),
-        tool,
-        ...postgresToolArguments(tool, service),
-      ],
-      {
-        env: {
-          ...process.env,
-          PGPASSWORD: normalizePostgresSecret(
-            await resolveSecret(service.passwordSecretRef),
-          ),
-        },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      },
-    );
-    child.stderr.resume();
-    const tasks = [
-      new Promise((done, reject) => {
-        child.on('error', reject);
-        child.on('close', (code) =>
-          code === 0
-            ? done()
-            : reject(new Error('Application restore database command failed.')),
-        );
-      }),
-      pipeline(
-        child.stdout,
-        output ??
-          new Writable({
-            write(_chunk, _encoding, done) {
-              done();
-            },
-          }),
-      ),
-    ];
-    if (input) tasks.push(pipeline(createReadStream(input), child.stdin));
-    else child.stdin.end();
-    await Promise.all(tasks);
   };
   const applicationCredentials = {
     role: 'application-installer',
@@ -208,7 +147,15 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
     sourceConfig.services.kestra.internalStorage.location =
       sourceRoots.kestraInternal;
     const backupDirectory = join(root, 'phase2-application-backup');
-    const backup = await backupFoundation({
+    const operatorCli = await createOperationsCliFixture(
+      join(root, 'application-operator-cli'),
+      resolveSecret,
+      {
+        container: process.env.CC_OPERATIONS_CLI_HOST !== '1',
+        mountDirectories: [root],
+      },
+    );
+    const { result: backupResult } = await operatorCli.run('backup', {
       config: sourceConfig,
       release,
       backupDirectory,
@@ -219,9 +166,18 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
         stoppedAt: new Date().toISOString(),
         stoppedServices: ['api', 'workers', 'kestra'],
       },
-      resolveSecret,
       applicationCredentials,
-      runTool,
+    });
+    assert.equal(backupResult.status, 'complete');
+    const { result: verifiedBackup } = await operatorCli.run('verify', {
+      backupDirectory,
+      keyRecovery,
+    });
+    assert.equal(verifiedBackup.status, 'verified');
+    const backup = await verifyBackup({
+      backupDirectory,
+      keyRecovery,
+      resolveSecret,
     });
     assert.ok(
       backup.files.every((file) => file.encryptedPath.endsWith('.enc')),
@@ -272,15 +228,17 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
       targetDirectory,
       'kestra-internal',
     );
-    const restoration = await restoreFoundation({
+    const { result: restoreResult } = await operatorCli.run('restore', {
       backupDirectory,
       targetConfig: restoreConfig,
       targetDirectory,
       keyRecovery,
-      resolveSecret,
       applicationCredentials,
-      runTool,
     });
+    assert.equal(restoreResult.status, 'verified-services-disabled');
+    const restoration = JSON.parse(
+      await readFile(join(targetDirectory, 'restore-report.json'), 'utf8'),
+    );
     assert.equal(restoration.status, 'verified-services-disabled');
     assert.equal(restoration.redisRecovery.releaseRequiresFreshRedis, true);
     for (const [volume, directory] of [
@@ -340,6 +298,7 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
       sourceRevision: release.sourceRevision,
       application,
       restoration,
+      operatorCli: { ...operatorCli.execution, commands: operatorCli.commands },
       preserved: {
         principals: before.principals.length,
         securityEvents: before.events.length,

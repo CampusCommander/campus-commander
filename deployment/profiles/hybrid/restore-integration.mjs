@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  writeFile,
+} from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import {
-  backupFoundation,
-  restoreFoundation,
-} from '../../operations/index.mjs';
+import { verifyBackup } from '../../operations/index.mjs';
+import { createOperationsCliFixture } from '../../operations/cli-fixture.mjs';
 import { connectionOptions, provision } from '../../postgres/index.mjs';
 import { normalizePostgresSecret } from '../../postgres/secrets.mjs';
 import { createArtifactStore } from '../../storage/index.mjs';
@@ -70,6 +75,14 @@ async function operatorPhase(phase, inputPath) {
     version: 1,
     reference: { provider: 'file', path: '/run/secrets/restore-backup-key' },
   };
+  const operatorCli =
+    phase === 'redis'
+      ? undefined
+      : await createOperationsCliFixture(
+          join(root, `operator-cli-${phase}`),
+          secret,
+          { mountedSecrets: true },
+        );
   const executionDigest = async (config) => {
     const client = new pg.Client(
       await connectionOptions(config.services.kestraDatabase, secret),
@@ -192,7 +205,7 @@ async function operatorPhase(phase, inputPath) {
     };
     assert.ok(expected.kestraFiles.length > 0);
     await writeJson(join(root, 'expected.json'), expected);
-    const manifest = await backupFoundation({
+    const { result: backupResult } = await operatorCli.run('backup', {
       config: sourceConfig,
       release: input.release,
       backupDirectory: join(root, 'backup'),
@@ -206,10 +219,21 @@ async function operatorPhase(phase, inputPath) {
         stoppedAt: new Date().toISOString(),
         stoppedServices: ['api', 'workers', 'kestra'],
       },
-      resolveSecret: secret,
       applicationCredentials: credentials(false),
     });
+    assert.equal(backupResult.status, 'complete');
+    const { result: verifiedBackup } = await operatorCli.run('verify', {
+      backupDirectory: join(root, 'backup'),
+      keyRecovery,
+    });
+    assert.equal(verifiedBackup.status, 'verified');
+    const manifest = await verifyBackup({
+      backupDirectory: join(root, 'backup'),
+      keyRecovery,
+      resolveSecret: secret,
+    });
     await writeJson(join(root, 'backup-summary.json'), {
+      operatorCli: { ...operatorCli.execution, commands: operatorCli.commands },
       encryptedFiles: manifest.files.length,
       durationMilliseconds: manifest.durationMilliseconds,
     });
@@ -257,14 +281,15 @@ async function operatorPhase(phase, inputPath) {
     } finally {
       await admin.end();
     }
-    const report = await restoreFoundation({
+    const { result: restoreResult } = await operatorCli.run('restore', {
       backupDirectory: join(root, 'backup'),
       targetConfig,
       targetDirectory: join(root, 'restored'),
       keyRecovery,
-      resolveSecret: secret,
       applicationCredentials: credentials(true),
     });
+    assert.equal(restoreResult.status, 'verified-services-disabled');
+    const report = await json(join(root, 'restored', 'restore-report.json'));
     const expected = await json(join(root, 'expected.json'));
     const pool = new pg.Pool(
       await connectionOptions(
@@ -376,6 +401,7 @@ async function operatorPhase(phase, inputPath) {
       releaseRequiresFreshRedis: true,
     });
     await writeJson(join(root, 'verification.json'), {
+      operatorCli: { ...operatorCli.execution, commands: operatorCli.commands },
       status: report.status,
       ...(expected.application
         ? {
@@ -614,6 +640,9 @@ export async function qualifyHybridRestore({
         );
     };
     checkStopped();
+    const operatorSecretRoot = join(root, 'operator-secrets');
+    await cp(sourcePrivate, operatorSecretRoot, { recursive: true });
+    await cp(join(root, 'private'), operatorSecretRoot, { recursive: true });
     const runOperator = (phase, network) =>
       docker([
         'run',
@@ -634,7 +663,7 @@ export async function qualifyHybridRestore({
         '-v',
         `${sourcePrivate}:${sourcePrivate}:ro`,
         '-v',
-        `${join(sourcePrivate, 'district-ca')}:/run/secrets/district-ca:ro`,
+        `${operatorSecretRoot}:/run/secrets:ro`,
         ...(phase === 'backup'
           ? [
               '-v',

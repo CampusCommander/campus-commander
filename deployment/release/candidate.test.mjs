@@ -125,6 +125,34 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
             ? 'PASS'
             : 'passed',
           application: { status: 'passed' },
+          operatorCli: {
+            runner: 'operator-container-native',
+            injectedDatabaseTool: false,
+            secretMount: '/run/secrets',
+            commands: ['backup', 'verify', 'restore'].map((command) => ({
+              command,
+              status: 'passed',
+            })),
+          },
+          backup: {
+            operatorCli: {
+              runner: 'operator-native-existing-mount',
+              injectedDatabaseTool: false,
+              secretMount: '/run/secrets',
+              commands: ['backup', 'verify'].map((command) => ({
+                command,
+                status: 'passed',
+              })),
+            },
+          },
+          verification: {
+            operatorCli: {
+              runner: 'operator-native-existing-mount',
+              injectedDatabaseTool: false,
+              secretMount: '/run/secrets',
+              commands: [{ command: 'restore', status: 'passed' }],
+            },
+          },
           upgrade: {
             status: 'passed',
             runtimeImageContentVerified: true,
@@ -202,6 +230,58 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
         phase2.applicationEvidence[target],
         'Distributed CLI evidence must enter the signed inventory.',
       );
+    for (const target of [
+      'restore-integration',
+      'hybrid-restore-integration',
+      'kubernetes-restore-integration',
+    ]) {
+      const path = join(
+        qualificationArtifacts,
+        `qualification-${target}`,
+        applicationReports[target],
+      );
+      const original = JSON.parse(await readFile(path, 'utf8'));
+      for (const [index, mutate] of [
+        (report) => {
+          delete report.operatorCli;
+          delete report.backup.operatorCli;
+        },
+        (report) => {
+          for (const cli of [
+            report.operatorCli,
+            report.backup.operatorCli,
+            report.verification.operatorCli,
+          ])
+            cli.injectedDatabaseTool = true;
+        },
+        (report) => {
+          for (const cli of [
+            report.operatorCli,
+            report.backup.operatorCli,
+            report.verification.operatorCli,
+          ])
+            cli.commands = cli.commands.filter(
+              ({ command }) => command !== 'restore',
+            );
+        },
+      ].entries()) {
+        const invalid = structuredClone(original);
+        mutate(invalid);
+        await writeFile(path, JSON.stringify(invalid));
+        await assert.rejects(
+          assembleCandidate({
+            root,
+            output: join(root, `invalid-${target}-cli-${index}`),
+            artifacts: join(root, 'artifacts'),
+            sourceRevision,
+            phase: 2,
+            qualificationArtifacts,
+          }),
+          /native operator CLI/,
+        );
+      }
+      await writeFile(path, JSON.stringify(original));
+    }
     const distributedPath = join(
       qualificationArtifacts,
       'qualification-hybrid-cli-upgrade-integration',

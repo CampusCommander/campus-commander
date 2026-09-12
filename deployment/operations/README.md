@@ -45,6 +45,25 @@ It uses the production runner without a Docker command adapter.
 It checks encrypted backup, isolated restore, configuration, artifact integrity, Kestra fixtures, and the fresh-Redis release requirement.
 The fixture uses loopback PostgreSQL without TLS. It does not qualify district endpoints or shared storage.
 
+Run `npm exec nx run deployment:operations-cli-integration` to test the same fixture through the operator CLI.
+This target requires Linux user namespaces, mount namespaces, and the exact native tools on `PATH`.
+It creates private operator files and mounts secret references at `/run/secrets` inside an isolated namespace.
+It tests key generation, backup, verification, restore, and rejection of invalid operations.
+The CLI uses the production database runner. The fixture does not change host secret mounts or weaken configuration validation.
+
+The application restore targets invoke the CLI with native tools inside the pinned PostgreSQL image.
+All Docker and Kubernetes fixtures mount private operator inputs and source storage into a temporary operator container.
+On Docker Desktop, set `CC_OPERATIONS_CLI_HOST=1` when container host networking cannot reach the operator host loopback listeners.
+This option uses native tools on `PATH` and isolated Linux secret mounts for those two fixtures.
+The fixture records the selected runner. It does not change the backup or restore command.
+The hybrid fixture invokes the CLI inside its existing operator container with verified district-service TLS.
+These fixtures use the qualification Node binary and retain the PostgreSQL image digest in their evidence.
+They verify restored application access and reject old sessions after fresh Redis starts.
+Their synthetic infrastructure does not qualify district storage or recovery-key custody.
+The Kubernetes fixture gives each database connection an independent `kubectl port-forward` process.
+This transport preserves the backup lock session when a database tool closes its connection.
+It bounds concurrent tunnels and terminates every owned tunnel during cleanup. Database TLS verification remains enabled.
+
 Copy `operator.example.json` into a protected operator directory and replace every example value.
 Keep the backup directory outside all primary volumes and source trees.
 Use an encrypted backup destination on a separate storage system under district retention controls.

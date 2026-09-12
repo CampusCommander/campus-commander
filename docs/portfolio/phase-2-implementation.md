@@ -7,16 +7,15 @@ Status: IN PROGRESS. No Phase 2 release has passed acceptance.
 
 Jira records thirteen Done tasks, CC-23 through CC-35. CC-36 through CC-38 remain In Progress.
 CC-35 includes the passing published-image browser and Orca 46.1 evidence from source `0185173`.
-The [eleventh candidate](https://github.com/CampusCommander/campus-commander/actions/runs/34692002250) tests source `294124f3d39bc5803e9635298d5a18a4f60db581`.
-It passed fifteen jobs and failed four jobs. Bundle publication skipped. Pull request CI passed.
-All three distributed hybrid jobs passed provider discovery, sign-in, and initial Diagnostics.
-They failed after API restart because the Diagnostics heading did not return within fifteen seconds.
-The Kubernetes installation job failed during the Redis image download with a connection reset.
-The Kubernetes upgrade and restore jobs passed.
-[The terminal run record](../../deployment/evidence/CC-37-phase-2-eleventh-published-run.json) preserves each job result and failure scope.
+The [twelfth candidate](https://github.com/CampusCommander/campus-commander/actions/runs/34693537292) passed all twenty jobs for source `a41bb2fde8d5fff79d59b98c94cace2c8722ba17`.
+[Pull request CI](https://github.com/CampusCommander/campus-commander/actions/runs/34693539602) also passed.
+The jobs include fourteen application targets, capacity, validation, three image publications, and bundle publication.
+[The terminal run record](../../deployment/evidence/CC-37-phase-2-twelfth-published-run.json) preserves job results and qualification artifact checksums.
+The latest published bundle is [candidate a41bb2f](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-a41bb2fde8d5).
 
-The latest published bundle remains [candidate 2f26a01](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-2f26a013e3bb).
-The eighth through eleventh candidates failed and published no replacement bundle.
+[The published distributed fault report](../../deployment/evidence/CC-36-phase-2-distributed-hybrid-published-faults.json) passed all six faults with matching source and images.
+PostgreSQL recovery took 74.0 seconds within the shared 180-second recovery budget.
+The report preserves the earlier fixture limits. It does not establish district recovery guarantees.
 Complete profile fault evidence, final revision qualification, isolated CLI recovery, and accepted signed release assembly remain open.
 Sections below preserve earlier observations with their original source revisions and limits.
 
@@ -701,3 +700,51 @@ The report preserves the verified Phase 1 upgrade, encrypted backup, distinct da
 Every fault preserved application identity, preferences, security events, artifact bytes, and both Kestra internal files.
 This pass does not erase earlier failures or establish a district recovery guarantee.
 Full profile capacity, certificate, isolated CLI restore, and final release acceptance remain open.
+
+## Native operator CLI qualification
+
+[The native CLI fixture](../../deployment/evidence/CC-36-phase-2-native-operator-cli.json) passed encrypted backup, verification, and isolated restore in 5.3 seconds.
+The CLI reads serialized operator inputs and resolves original secret references through a private `/run/secrets` mount.
+The fixture uses native PostgreSQL 18.6 tools without an injected database command adapter.
+It rejects key overwrite, active database clients, corrupt backup data, and nonempty restore targets.
+Restored identity, preferences, security events, artifact bytes, and synthetic Kestra state match their source values.
+The successful restore retains disabled services and requires fresh Redis.
+
+This fixture uses loopback PostgreSQL without TLS and synthetic Kestra state.
+The full application restore fixtures now invoke the operator CLI. Their current verification results follow below.
+
+The first container CLI runs failed at backup on Docker Desktop.
+[The failure evidence](../../deployment/evidence/CC-36-phase-2-cli-container-network-failure.json) records the full application failure and a smaller CLI reproduction.
+A separate network probe connected from the native host but received `ECONNREFUSED` from the host-network container.
+Local all-Docker and Kubernetes checks therefore use native host tools with isolated secret mounts.
+Linux CI verifies the container path. Hybrid uses its existing operator container on the district fixture network.
+Neither path injects a database command adapter.
+
+The [all-Docker CLI restore](../../deployment/evidence/CC-36-phase-2-all-docker-operator-cli-restore.json) passed with published `a41bb2f` images.
+The complete Phase 1 upgrade and restore target finished in 4 minutes 12 seconds.
+The [hybrid CLI restore](../../deployment/evidence/CC-36-phase-2-hybrid-operator-cli-restore.json) passed through the existing TLS operator container.
+Its complete target finished in 4 minutes 55 seconds.
+Both restored application identity, preferences, security events, and artifact integrity.
+Both rejected old sessions after fresh Redis started and passed all four Diagnostics operations.
+The local fixtures include uncommitted CLI qualification changes after `a41bb2f`. They do not establish final revision acceptance.
+
+Candidate assembly now requires native operator CLI evidence for all three application restore reports.
+It rejects missing execution records, injected database adapters, and omitted backup, verify, or restore commands.
+The rejection test first failed with a missing expected rejection. All four release tests passed after the gate changed.
+
+The first native Kubernetes CLI backup failed when a second database connection terminated the shared port-forward process.
+[The failure evidence](../../deployment/evidence/CC-36-phase-2-kubernetes-cli-tunnel-failure.json) records the connection reset and loss of the existing database session.
+The fixture now assigns each database connection an independent port-forward process.
+A live TCP regression verifies that one terminated tunnel leaves a concurrent database session usable.
+All seven Kubernetes unit tests pass. The complete restore result follows.
+
+The [Kubernetes CLI restore](../../deployment/evidence/CC-36-phase-2-kubernetes-operator-cli-restore.json) passed after tunnel isolation.
+The complete target finished in 5 minutes 37 seconds. Isolated restore took 64.4 seconds.
+Eight independent tunnels carried the source and target database sessions. Each database reached two concurrent connections.
+The fixture preserved identity, preferences, 57 security events, and artifact integrity.
+Old sessions failed after fresh Redis started. All four restored Diagnostics operations passed.
+The test removed its Kind cluster and every owned port-forward process.
+
+[The qualification record](../../deployment/evidence/CC-36-phase-2-operator-cli-qualification.json) binds local results to report hashes and the changed fixture files.
+All three application restore targets now pass through the native operator CLI.
+Final revision CI, complete profile fault evidence, and accepted release assembly remain required.
