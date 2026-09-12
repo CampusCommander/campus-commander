@@ -133,3 +133,8 @@ The application matrix includes `all-docker-capacity-integration` and `kubernete
 Capacity evidence must verify bounded ENOSPC, rejected publication, preserved application state, and removal of failed Diagnostics metadata and files.
 Kubernetes certificate evidence must verify expired and wrong-host rejection, bounded authenticated recovery, exact secret restoration, and cluster cleanup.
 Candidate assembly rejects incomplete records. The complete profile acceptance requirements remain unchanged.
+
+The distributed hybrid capacity gate verifies capped shared storage across two API replicas and two worker hosts.
+It requires three Docker daemon identities, ENOSPC, authenticated failure, exact artifact cleanup, preserved durable state, and bounded recovery.
+The capacity fixture downloads pinned infrastructure images before offline Compose startup.
+These checks retain candidate status until the complete profile acceptance records pass.

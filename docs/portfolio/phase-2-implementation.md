@@ -865,3 +865,31 @@ The candidate matrix now requires eighteen application targets and twenty-four t
 It includes authenticated all-Docker capacity, Kubernetes certificate recovery, and the bounded navigation regression.
 Remaining work includes hybrid and Kubernetes capacity, remaining profile certificate coverage, final revision evidence, and accepted release assembly.
 Phase 1 acceptance remains separate.
+
+## Distributed hybrid capacity
+
+[The hybrid capacity target](../../deployment/evidence/CC-36-phase-2-hybrid-authenticated-capacity.json) passed in 4 minutes 34 seconds.
+It used published `8a5f823` images and the current fixture changes.
+A dedicated 16 MiB tmpfs artifact volume spans three independent Docker daemons.
+Both API replicas and both worker hosts observed zero available bytes during the same fault.
+Authenticated Diagnostics rejected publication and removed failed metadata and files.
+All four Diagnostics checks and direct replica session requests passed after recovery in 2.2 seconds.
+The test preserved identity, preferences, migrations, 44 security events, six completed Kestra executions, and two internal files.
+It verified the original artifact checksum and exact restoration of available bytes.
+Cleanup removed the owned hosts, services, network, and capacity volume.
+The fixture does not qualify persistent storage or district capacity.
+
+The candidate gate requires all four filesystem observations, three daemon identities, exact cleanup, preserved state, and bounded recovery.
+Ten negative evidence cases and all four release tests pass.
+The candidate matrix now includes nineteen application targets and twenty-five total jobs.
+
+## Capacity image preparation failure
+
+[The published all-Docker capacity job](../../deployment/evidence/CC-36-phase-2-capacity-image-preparation-failure.json) failed before application startup.
+Its clean CI daemon lacked the pinned PostgreSQL image.
+The fixture now downloads pinned PostgreSQL, Redis, and Kestra images before its offline Compose startup.
+[The corrected complete target](../../deployment/evidence/CC-36-phase-2-all-docker-capacity-image-preparation.json) passed locally in 51.6 seconds with published `8a5f823` images.
+The local daemon cached infrastructure layers. Published revision CI must verify preparation on a clean daemon.
+
+Kubernetes capacity, remaining certificate coverage, final revision qualification, and accepted release assembly remain open.
+Phase 1 acceptance remains separate.

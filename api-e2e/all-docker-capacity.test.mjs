@@ -10,6 +10,11 @@ import { applicationAccess } from './access-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { startRegistry } from './registry-fixture.mjs';
+import {
+  postgresImage,
+  kestraImage,
+} from '../deployment/profiles/all-docker/render.mjs';
+import { redisImage } from '../deployment/redis/runtime.mjs';
 const execute = promisify(execFile);
 
 test(
@@ -21,6 +26,13 @@ test(
     let registry;
     const previousRelease = process.env.CC_QUALIFICATION_RELEASE;
     try {
+      for (const reference of [postgresImage, kestraImage, redisImage]) {
+        assert.match(reference, /@sha256:[a-f0-9]{64}$/);
+        await execute('docker', ['pull', reference], {
+          timeout: 300000,
+          maxBuffer: 8 * 1024 * 1024,
+        });
+      }
       let images = {};
       const revisions = new Set();
       for (const service of ['frontend', 'api', 'worker']) {

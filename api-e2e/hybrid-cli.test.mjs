@@ -24,6 +24,7 @@ import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { upgradeDistributedHybrid } from './hybrid-cli-upgrade-fixture.mjs';
 import { faultDistributedHybrid } from './hybrid-cli-faults-fixture.mjs';
+import { qualifyHybridCapacity } from './hybrid-capacity-fixture.mjs';
 
 test(
   'the hybrid installer runs authenticated lifecycle checks across three Docker hosts',
@@ -44,6 +45,7 @@ test(
     let result;
     let upgrade;
     let faults;
+    let capacity;
     const providerConnections = [];
     const sessionChecks = [];
     const restartRecoveries = [];
@@ -85,7 +87,13 @@ test(
         }
       }
       const initialImages = baseline?.images ?? images;
-      hosts = await createHybridHosts({ root, project, images, publicPort });
+      hosts = await createHybridHosts({
+        root,
+        project,
+        images,
+        publicPort,
+        boundedArtifacts: process.env.CC_AUTH_HYBRID_CAPACITY === '1',
+      });
       await hosts.loadImages(
         [
           ...Object.values(images),
@@ -161,7 +169,7 @@ test(
         config.artifacts.location,
         config.services.kestra.internalStorage.location,
       ])
-        await mkdir(directory, { mode: 0o700 });
+        await mkdir(directory, { recursive: true, mode: 0o700 });
       const applicationAuth = {
         issuer: provider.issuer,
         clientId: 'qualification',
@@ -552,6 +560,20 @@ process.exit(result.status??1);
               context,
             });
           }
+          if (process.env.CC_AUTH_HYBRID_CAPACITY === '1') {
+            stage = 'authenticated shared artifact capacity';
+            capacity = await qualifyHybridCapacity({
+              hosts,
+              services,
+              compose,
+              config,
+              upgrade,
+              page,
+              checks,
+              verifyReplicas,
+              context,
+            });
+          }
         },
       );
       result = {
@@ -559,6 +581,7 @@ process.exit(result.status??1);
         profile: 'hybrid',
         ...(upgrade ? { upgrade } : {}),
         ...(faults ? { faults } : {}),
+        ...(capacity ? { capacity } : {}),
         sourceRevision,
         images,
         recordedAt: new Date().toISOString(),
@@ -667,11 +690,13 @@ process.exit(result.status??1);
     result.ownedResourcesRemoved = true;
     await mkdir('dist/phase-2-evidence', { recursive: true });
     await writeFile(
-      faults
-        ? 'dist/phase-2-evidence/hybrid-cli-process-faults.json'
-        : upgrade
-          ? 'dist/phase-2-evidence/hybrid-cli-upgrade.json'
-          : 'dist/phase-2-evidence/hybrid-cli.json',
+      capacity
+        ? 'dist/phase-2-evidence/hybrid-capacity.json'
+        : faults
+          ? 'dist/phase-2-evidence/hybrid-cli-process-faults.json'
+          : upgrade
+            ? 'dist/phase-2-evidence/hybrid-cli-upgrade.json'
+            : 'dist/phase-2-evidence/hybrid-cli.json',
       JSON.stringify(result, null, 2),
     );
   },

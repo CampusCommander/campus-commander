@@ -24,6 +24,7 @@ export const applicationReports = {
   'hybrid-cli-integration': 'hybrid-cli.json',
   'hybrid-cli-upgrade-integration': 'hybrid-cli-upgrade.json',
   'hybrid-cli-process-fault-integration': 'hybrid-cli-process-faults.json',
+  'hybrid-cli-capacity-integration': 'hybrid-capacity.json',
   'hybrid-upgrade-integration': 'hybrid-upgrade.json',
   'hybrid-restore-integration': 'hybrid-restore.json',
   'kubernetes-integration': 'kubernetes-profile.json',
@@ -165,6 +166,66 @@ export async function assembleCandidate({
         filename,
       );
       const report = JSON.parse(await readFile(source, 'utf8'));
+      if (target === 'hybrid-cli-capacity-integration') {
+        const capacity = report.capacity;
+        const observations = capacity?.observations;
+        if (
+          capacity?.status !== 'passed' ||
+          capacity.recoveryBoundSeconds !== faultRecoveryTimeoutSeconds ||
+          !Number.isFinite(capacity.recoveryMs) ||
+          capacity.recoveryMs < 0 ||
+          capacity.recoveryMs > faultRecoveryTimeoutSeconds * 1000 ||
+          capacity?.fault?.kind !== 'ENOSPC' ||
+          capacity.fault.publicationRejected !== true ||
+          capacity.fault.readyRowsUnchanged !== true ||
+          capacity?.authenticatedFailure?.httpStatus !== 201 ||
+          capacity.authenticatedFailure.status !== 'failed' ||
+          capacity?.preserved?.failedDiagnosticArtifactsRemoved !== true ||
+          capacity.preserved.identityAndPreferencesPreserved !== true ||
+          capacity.preserved.migrationsPreserved !== true ||
+          capacity.preserved.artifactMetadataPreserved !== true ||
+          capacity.preserved.artifactFilesPreserved !== true ||
+          !(capacity.preserved.preservedSecurityEvents > 0) ||
+          !(capacity.preserved.preservedKestraExecutions > 0) ||
+          !(capacity.preserved.preservedInternalFiles > 0) ||
+          !/^[a-f0-9]{64}$/.test(capacity.preserved.artifactSha256 ?? '') ||
+          !Array.isArray(observations) ||
+          observations.length !== 4 ||
+          new Set(observations.map((item) => item.processId)).size !== 4 ||
+          observations.some(
+            (item) => typeof item.processId !== 'string' || !item.processId,
+          ) ||
+          !Array.isArray(report.hosts) ||
+          report.hosts.some(
+            (host) =>
+              observations.filter(
+                (item) =>
+                  item.daemonId === host.daemonId &&
+                  item.role ===
+                    (host.role === 'controller' ? 'api' : 'workers'),
+              ).length !== (host.role === 'controller' ? 2 : 1),
+          ) ||
+          observations.some(
+            (item) =>
+              !Number.isSafeInteger(item.before?.totalBytes) ||
+              item.before.totalBytes <= 0 ||
+              item.before.totalBytes > 16777216 ||
+              !Number.isSafeInteger(item.before.availableBytes) ||
+              item.before.availableBytes <= 0 ||
+              item.before.availableBytes > item.before.totalBytes ||
+              ['before', 'during', 'after'].some(
+                (stage) =>
+                  item[stage]?.filesystemType !== 0x01021994 ||
+                  item[stage]?.totalBytes !== item.before.totalBytes,
+              ) ||
+              item.during.availableBytes !== 0 ||
+              item.after.availableBytes !== item.before.availableBytes,
+          )
+        )
+          throw new Error(
+            'Distributed capacity qualification requires capped shared storage, authenticated failure, preserved state, and bounded recovery.',
+          );
+      }
       if (target === 'kubernetes-certificate-integration') {
         const certificate = report.certificates;
         const cases = certificate?.cases;

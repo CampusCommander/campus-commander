@@ -254,6 +254,7 @@ jobs:
             hybrid-cli-integration,
             hybrid-cli-upgrade-integration,
             hybrid-cli-process-fault-integration,
+            hybrid-cli-capacity-integration,
             hybrid-upgrade-integration,
             hybrid-restore-integration,
             kubernetes-integration,

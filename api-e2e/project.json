@@ -233,6 +233,18 @@
       "options": {
         "command": "node --test api-e2e/navigation-fixture.test.mjs"
       }
+    },
+    "hybrid-cli-capacity-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/hybrid-cli.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_CLI_UPGRADE": "1",
+          "CC_AUTH_HYBRID_CAPACITY": "1"
+        }
+      }
     }
   }
 }

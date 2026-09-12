@@ -140,7 +140,35 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
             })),
           },
           capacity: {
-            status: 'PASS',
+            status:
+              target === 'hybrid-cli-capacity-integration' ? 'passed' : 'PASS',
+            recoveryBoundSeconds: 180,
+            recoveryMs: 1000,
+            observations: [
+              'controller',
+              'controller',
+              'worker-1',
+              'worker-2',
+            ].map((daemonId, index) => ({
+              daemonId,
+              role: daemonId === 'controller' ? 'api' : 'workers',
+              processId: `process-${index}`,
+              before: {
+                filesystemType: 0x01021994,
+                totalBytes: 16777216,
+                availableBytes: 16773120,
+              },
+              during: {
+                filesystemType: 0x01021994,
+                totalBytes: 16777216,
+                availableBytes: 0,
+              },
+              after: {
+                filesystemType: 0x01021994,
+                totalBytes: 16777216,
+                availableBytes: 16773120,
+              },
+            })),
             topology: { componentCount: 8 },
             fault: {
               kind: 'ENOSPC',
@@ -154,6 +182,11 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
             },
             authenticatedFailure: { status: 'failed', httpStatus: 201 },
             preserved: {
+              artifactMetadataPreserved: true,
+              artifactFilesPreserved: true,
+              artifactSha256: 'a'.repeat(64),
+              preservedKestraExecutions: 1,
+              preservedInternalFiles: 1,
               identityAndPreferencesPreserved: true,
               failedDiagnosticArtifactsRemoved: true,
               migrationsPreserved: true,
@@ -445,6 +478,62 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       );
     }
     await writeFile(capacityPath, JSON.stringify(capacityReport));
+    const hybridCapacityPath = join(
+      qualificationArtifacts,
+      'qualification-hybrid-cli-capacity-integration',
+      'hybrid-capacity.json',
+    );
+    const hybridCapacity = JSON.parse(
+      await readFile(hybridCapacityPath, 'utf8'),
+    );
+    for (const [index, mutate] of [
+      (report) => {
+        report.capacity.observations.pop();
+      },
+      (report) => {
+        report.capacity.observations[2].daemonId = 'controller';
+      },
+      (report) => {
+        report.capacity.observations[0].before.totalBytes = 33554432;
+      },
+      (report) => {
+        report.capacity.observations[0].during.availableBytes = 1024;
+      },
+      (report) => {
+        report.capacity.observations[0].after.availableBytes = 4096;
+      },
+      (report) => {
+        report.capacity.recoveryMs = 180001;
+      },
+      (report) => {
+        report.capacity.authenticatedFailure.status = 'passed';
+      },
+      (report) => {
+        report.capacity.preserved.failedDiagnosticArtifactsRemoved = false;
+      },
+      (report) => {
+        report.capacity.preserved.preservedKestraExecutions = 0;
+      },
+      (report) => {
+        report.ownedResourcesRemoved = false;
+      },
+    ].entries()) {
+      const invalid = structuredClone(hybridCapacity);
+      mutate(invalid);
+      await writeFile(hybridCapacityPath, JSON.stringify(invalid));
+      await assert.rejects(
+        assembleCandidate({
+          root,
+          output: join(root, `invalid-hybrid-capacity-${index}`),
+          artifacts: join(root, 'artifacts'),
+          sourceRevision,
+          phase: 2,
+          qualificationArtifacts,
+        }),
+        /Distributed (capacity|CLI) qualification/,
+      );
+    }
+    await writeFile(hybridCapacityPath, JSON.stringify(hybridCapacity));
     const replicaPath = join(
       qualificationArtifacts,
       'qualification-all-docker-integration',

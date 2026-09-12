@@ -21,12 +21,19 @@ export async function outerDocker(args, options = {}) {
 }
 
 /** Create independent Docker hosts with isolated daemons and shared fixture storage. */
-export async function createHybridHosts({ root, project, images, publicPort }) {
+export async function createHybridHosts({
+  root,
+  project,
+  images,
+  publicPort,
+  boundedArtifacts = false,
+}) {
   assert.match(project, /^cc-phase2-hybrid-[a-f0-9]{12}$/);
   assert.ok(root.startsWith(`/tmp/${project}-`));
   const network = `${project}-district`;
   const owned = [];
   let networkCreated = false;
+  let artifactVolume;
   const hosts = [];
   const dnsRoot = join(root, 'dns');
   const imageCache = join(root, 'image-cache');
@@ -60,6 +67,31 @@ export async function createHybridHosts({ root, project, images, publicPort }) {
         failures.push(error);
       }
     }
+    if (artifactVolume) {
+      try {
+        const volume = JSON.parse(
+          await outerDocker(['volume', 'inspect', artifactVolume]),
+        )[0];
+        assert.equal(volume.Name, `${project}-bounded-artifacts`);
+        assert.equal(
+          volume.Labels['com.campus-commander.qualification'],
+          project,
+        );
+        assert.equal(volume.Options.type, 'tmpfs');
+        assert.equal(volume.Options.o, 'size=16m,uid=1000,gid=1000,mode=0700');
+        await outerDocker(['volume', 'rm', artifactVolume]);
+        const remaining = await outerDocker([
+          'volume',
+          'ls',
+          '--quiet',
+          '--filter',
+          `label=com.campus-commander.qualification=${project}`,
+        ]);
+        assert.equal(remaining, '');
+      } catch (error) {
+        failures.push(error);
+      }
+    }
     if (networkCreated) {
       try {
         await outerDocker(['network', 'rm', network]);
@@ -71,6 +103,26 @@ export async function createHybridHosts({ root, project, images, publicPort }) {
       throw new AggregateError(failures, 'Docker host fixture cleanup failed.');
   };
   try {
+    if (boundedArtifacts) {
+      const volumeName = `${project}-bounded-artifacts`;
+      await outerDocker([
+        'volume',
+        'create',
+        '--driver',
+        'local',
+        '--label',
+        `com.campus-commander.qualification=${project}`,
+        '--opt',
+        'type=tmpfs',
+        '--opt',
+        'device=tmpfs',
+        '--opt',
+        'o=size=16m,uid=1000,gid=1000,mode=0700',
+        volumeName,
+      ]);
+      artifactVolume = volumeName;
+      await mkdir(join(shared, 'artifacts'), { mode: 0o700 });
+    }
     try {
       await outerDocker(['image', 'inspect', hostImage]);
     } catch {
@@ -158,6 +210,12 @@ export async function createHybridHosts({ root, project, images, publicPort }) {
         `type=bind,source=${hostRoot},target=${hostRoot}`,
         '--mount',
         `type=bind,source=${shared},target=${shared}`,
+        ...(artifactVolume
+          ? [
+              '--mount',
+              `type=volume,source=${artifactVolume},target=${join(shared, 'artifacts')},volume-nocopy`,
+            ]
+          : []),
         '--mount',
         `type=bind,source=${imageCache},target=/image-cache,readonly`,
         ...(index === 0
@@ -262,6 +320,7 @@ export async function createHybridHosts({ root, project, images, publicPort }) {
       hosts,
       network,
       shared,
+      artifactVolume,
       hostImage,
       run: hostRun,
       close,
