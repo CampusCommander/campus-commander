@@ -6,28 +6,34 @@ Status: IN PROGRESS. No Phase 2 release has passed acceptance.
 ## Current qualification status
 
 Jira records thirteen Done tasks, CC-23 through CC-35. CC-36 through CC-38 remain In Progress.
-[CC-37](https://easton-consulting.atlassian.net/browse/CC-37) records the current published revision and release checks.
-CC-35 includes published-image browser and Orca 46.1 evidence. UI acceptance remains separate from district identity-provider qualification.
+[CC-37](https://easton-consulting.atlassian.net/browse/CC-37) records the current revision and release checks.
+CC-35 includes published-image browser and Orca 46.1 evidence. District identity-provider acceptance remains separate.
 
-The [be11ad2 published run](../../deployment/evidence/CC-37-phase-2-twenty-fourth-published-run.json) passed all twelve extracted application workflows.
-Its restore evidence step selected the wrong companion filename and prevented final assembly.
-The corrected verifier passed the original downloaded reports and rejected altered or missing companion evidence.
-[Local assembly](../../deployment/evidence/CC-37-phase-2-kubernetes-companion-validation.json) consumed those twelve workflow artifacts and produced fifteen distinct profile reports.
-The local output is unsigned. It does not replace published final assembly.
-
-The hosted installer independently verified the be11ad2 candidate archive, manifest, three image signatures, and all 1,333 inventoried files.
-All 23 application reports passed strict evidence validation. The candidate remains candidate-only.
+The [b8bc284 release pipeline](https://github.com/CampusCommander/campus-commander/actions/runs/34710449485) passed all forty-two jobs.
+It published [phase-2-qualified-b8bc284e6ae5](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-qualified-b8bc284e6ae5).
+The hosted installer independently verified both release signatures, three application image signatures, and all 1,383 inventoried files.
+All fifteen profile reports passed evidence verification across installation, resume, upgrade, restore, and faults.
+[The verification record](../../deployment/evidence/CC-37-phase-2-qualified-hosted-verification-b8bc284.json) identifies the exact manifest and reports.
+The signed manifest explicitly records district infrastructure as not qualified.
 
 [Connection observation tests](../../deployment/evidence/CC-37-phase-2-quiescence-validation.json) verify fresh PostgreSQL statistics and rejection of persistent clients.
 Native operator CLI integration and Kubernetes restore passed with that correction.
-The subsequent d370bbd hybrid upgrade failed with ECONNRESET during persistence verification after PostgreSQL restart.
-The failed request remains unidentified. Separate stage labels now distinguish Kestra execution reads from API readiness reads.
-[The instrumented local upgrade](../../deployment/evidence/CC-37-phase-2-hybrid-observation-validation.json) passed in 2 minutes 6 seconds with the same images.
-That pass does not establish the earlier failure's cause. Request and acceptance behavior remain unchanged.
-[The failed published run](../../deployment/evidence/CC-37-phase-2-twenty-fifth-published-run.json) retains the original error.
+The release also includes the corrected Kubernetes restore companion-report verifier.
 
-Published final assembly, district infrastructure qualification, and the final criterion audit remain open.
-Phase 1 acceptance remains separate. The sections below preserve earlier observations with their original revisions and limits.
+The later [7ba4f64 hybrid failure](../../deployment/evidence/CC-37-phase-2-hybrid-recovery-failure-7ba4f64.json) preserved data but failed final readiness.
+The former recovery loop ended after one healthy response. It checked persistence outside that loop.
+The corrected loop requires readiness and all persistence observations within one ninety-second budget.
+Separate upgrade execution reads also use bounded observation. Only read operations repeat.
+
+Real TLS regression tests reproduce temporary readiness loss and connection reset after an initial healthy response.
+Persistent failure, corrupted artifact bytes, and late success still reject.
+Thirty profile tests, deployment lint, and the complete hybrid upgrade passed with the correction.
+The full upgrade used the failing revision's images and completed in 3 minutes 3 seconds.
+[The recovery validation](../../deployment/evidence/CC-37-phase-2-hybrid-recovery-validation.json) retains failures, source hashes, tests, and the complete report.
+The upstream cause of transient readiness and connection resets remains unidentified.
+
+The latest recovery correction requires published qualification. District infrastructure acceptance and the final criterion audit remain open.
+Phase 1 acceptance remains separate. Sections below preserve earlier observations with their original revisions and limits.
 
 ## Fourth published candidate (historical)
 

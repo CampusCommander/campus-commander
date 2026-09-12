@@ -46,6 +46,21 @@ const redisImage =
 const retainFixture = process.env.CC_HYBRID_KEEP_FIXTURE === 'true';
 const processFaultMode = process.env.CC_HYBRID_PROCESS_FAULTS === 'true';
 
+export async function recoverHybridPersistence({ ready, verify, clock }) {
+  const now = clock?.now ?? (() => Date.now());
+  const deadline = now() + 90000;
+  return waitFor(
+    async () => {
+      if (!(await ready())) return undefined;
+      const result = await verify();
+      return now() <= deadline ? result : undefined;
+    },
+    90,
+    'Readiness and persistence after PostgreSQL restart',
+    clock,
+  );
+}
+
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === 'object')
@@ -102,17 +117,25 @@ async function compose(project, file, args, options) {
   return docker(['compose', '-p', project, '-f', file, ...args], options);
 }
 
-async function waitFor(operation, seconds, description) {
-  const deadline = Date.now() + seconds * 1000;
+async function waitFor(
+  operation,
+  seconds,
+  description,
+  {
+    now = () => Date.now(),
+    delay = (ms) => new Promise((done) => setTimeout(done, ms)),
+  } = {},
+) {
+  const deadline = now() + seconds * 1000;
   let lastError;
-  while (Date.now() < deadline) {
+  while (now() < deadline) {
     try {
       const result = await operation();
       if (result) return result;
     } catch (error) {
       lastError = error;
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await delay(1000);
   }
   throw new Error(`${description} exceeded ${seconds} seconds.`, {
     cause: lastError,
@@ -1143,8 +1166,8 @@ export async function qualifyFullHybrid({ application } = {}) {
     );
     const postgresRecoveryStarted = Date.now();
     await docker(['start', databaseContainer]);
-    await waitFor(
-      async () => {
+    const { preservedExecution } = await recoverHybridPersistence({
+      ready: async () => {
         try {
           return readyStatus(
             await request({
@@ -1158,50 +1181,50 @@ export async function qualifyFullHybrid({ application } = {}) {
           return undefined;
         }
       },
-      90,
-      'Readiness after PostgreSQL restart',
-    );
+      verify: async () => {
+        stage = 'persistence-kestra-execution-read';
+        const preservedExecution = await request({
+          port: kestraPort,
+          servername: 'kestra',
+          ca: caBytes,
+          authorization: kestraBasic,
+          path: `/api/v1/main/executions/${executionId}`,
+        });
+        stage = 'persistence-worker-artifact-read';
+        const finalWorkerChecksums = await Promise.all(
+          workerIds.map((id) => checkArtifact(id, artifactPath)),
+        );
+        stage = 'persistence-api-readiness-read';
+        const finalReadiness = await request({
+          port: apiPort,
+          servername: 'api',
+          ca: caBytes,
+          path: '/health',
+        });
+        stage = 'persistence-verification';
+        const persistenceChecks = {
+          executionPreserved:
+            preservedExecution.status === 200 &&
+            JSON.parse(preservedExecution.body).state.current === 'SUCCESS',
+          workerChecksumsMatch: finalWorkerChecksums.every(
+            (checksum) => checksum === artifactChecksum,
+          ),
+          internalStoragePreserved:
+            (await readdir(storageRoot, { recursive: true })).length >=
+            storageEntriesBefore,
+          finalReadiness: Boolean(readyStatus(finalReadiness)),
+        };
+        if (Object.values(persistenceChecks).some((passed) => !passed)) {
+          throw new Error(
+            `State did not survive the external dependency outages: ${JSON.stringify(persistenceChecks)}`,
+          );
+        }
+        return { preservedExecution };
+      },
+    });
     const postgresRecoverySeconds = Math.ceil(
       (Date.now() - postgresRecoveryStarted) / 1000,
     );
-
-    stage = 'persistence-kestra-execution-read';
-    const preservedExecution = await request({
-      port: kestraPort,
-      servername: 'kestra',
-      ca: caBytes,
-      authorization: kestraBasic,
-      path: `/api/v1/main/executions/${executionId}`,
-    });
-    stage = 'persistence-worker-artifact-read';
-    const finalWorkerChecksums = await Promise.all(
-      workerIds.map((id) => checkArtifact(id, artifactPath)),
-    );
-    stage = 'persistence-api-readiness-read';
-    const finalReadiness = await request({
-      port: apiPort,
-      servername: 'api',
-      ca: caBytes,
-      path: '/health',
-    });
-    stage = 'persistence-verification';
-    const persistenceChecks = {
-      executionPreserved:
-        preservedExecution.status === 200 &&
-        JSON.parse(preservedExecution.body).state.current === 'SUCCESS',
-      workerChecksumsMatch: finalWorkerChecksums.every(
-        (checksum) => checksum === artifactChecksum,
-      ),
-      internalStoragePreserved:
-        (await readdir(storageRoot, { recursive: true })).length >=
-        storageEntriesBefore,
-      finalReadiness: Boolean(readyStatus(finalReadiness)),
-    };
-    if (Object.values(persistenceChecks).some((passed) => !passed)) {
-      throw new Error(
-        `State did not survive the external dependency outages: ${JSON.stringify(persistenceChecks)}`,
-      );
-    }
 
     const componentContainers = {
       frontend: controllerIds.frontend,
@@ -1662,6 +1685,7 @@ export async function qualifyFullHybrid({ application } = {}) {
         resources: stats,
       };
     }
+    stage = 'application-upgrade';
     const upgrade = application?.upgrade
       ? await application.upgrade({
           root,
@@ -1675,20 +1699,28 @@ export async function qualifyFullHybrid({ application } = {}) {
           artifactPath,
           artifactChecksum,
           storageRoot,
-          readExecution: async () => {
-            const response = await request({
-              port: kestraPort,
-              servername: 'kestra',
-              ca: caBytes,
-              authorization: kestraBasic,
-              path: `/api/v1/main/executions/${executionId}`,
-            });
-            if (response.status !== 200)
-              throw new Error('The original Kestra execution is unavailable.');
-            return JSON.parse(response.body);
-          },
+          readExecution: () =>
+            recoverHybridPersistence({
+              ready: async () => true,
+              verify: async () => {
+                stage = 'application-upgrade-execution-read';
+                const response = await request({
+                  port: kestraPort,
+                  servername: 'kestra',
+                  ca: caBytes,
+                  authorization: kestraBasic,
+                  path: `/api/v1/main/executions/${executionId}`,
+                });
+                if (response.status !== 200)
+                  throw new Error(
+                    'The original Kestra execution is unavailable.',
+                  );
+                return JSON.parse(response.body);
+              },
+            }),
         })
       : undefined;
+    stage = 'application-check';
     const applicationResult = application
       ? await application.check({
           root,
