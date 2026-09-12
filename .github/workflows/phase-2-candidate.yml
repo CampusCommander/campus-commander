@@ -236,6 +236,8 @@ jobs:
   application:
     needs: publish
     runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
     permissions:
       contents: read
       packages: read
@@ -302,10 +304,44 @@ jobs:
           printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
           chmod 700 "$RUNNER_TEMP/kind"
           printf 'CC_KIND_BINARY=%s\n' "$RUNNER_TEMP/kind" >> "$GITHUB_ENV"
+      - name: Prepare the shared-storage fixture account
+        if: startsWith(matrix.target, 'hybrid-') || startsWith(matrix.target, 'kubernetes-')
+        run: |
+          if ! getent passwd 1000 > /dev/null; then
+            sudo useradd --uid 1000 --user-group --create-home cc-qualification
+          fi
+          if ! command -v setfacl > /dev/null; then
+            sudo apt-get install --no-install-recommends -y acl
+          fi
+          cp -a "${DOCKER_CONFIG:-$HOME/.docker}" "$GITHUB_WORKSPACE/.qualification-docker"
+          fixture_socket="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+          test "${fixture_socket#unix://}" != "$fixture_socket"
+          fixture_socket="${fixture_socket#unix://}"
+          sudo setfacl -m u:1000:rw "$fixture_socket"
+          fixture_directory="$(dirname "$fixture_socket")"
+          while test "$fixture_directory" != /; do
+            sudo setfacl -m u:1000:x "$fixture_directory"
+            fixture_directory="$(dirname "$fixture_directory")"
+          done
+          if test -n "${CC_KIND_BINARY:-}"; then
+            sudo chown 1000:1000 "$CC_KIND_BINARY"
+          fi
+          sudo chown -R 1000:1000 "$GITHUB_WORKSPACE"
+          printf 'DOCKER_CONFIG=%s/.qualification-docker\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Qualify the authenticated application
-        run: npm exec nx run api-e2e:${{ matrix.target }}
+        run: |
+          if [[ "$QUALIFICATION_TARGET" == hybrid-* || "$QUALIFICATION_TARGET" == kubernetes-* ]]; then
+            sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,CC_KIND_BINARY,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run "api-e2e:$QUALIFICATION_TARGET"
+          else
+            npm exec nx run "api-e2e:$QUALIFICATION_TARGET"
+          fi
         env:
+          QUALIFICATION_TARGET: ${{ matrix.target }}
           NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
+      - name: Restore evidence ownership
+        if: always() && (startsWith(matrix.target, 'hybrid-') || startsWith(matrix.target, 'kubernetes-'))
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

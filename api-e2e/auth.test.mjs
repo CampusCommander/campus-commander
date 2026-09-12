@@ -981,24 +981,56 @@ test(
         {},
         { origin: publicOrigin },
         { origin: 'https://wrong.example', 'x-csrf-token': session.csrfToken },
+        { origin: 'null', 'x-csrf-token': session.csrfToken },
+        { origin: publicOrigin, 'x-csrf-token': '0'.repeat(64) },
+        {
+          origin: publicOrigin,
+          'x-csrf-token': session.csrfToken,
+          'content-type': 'text/plain',
+        },
       ]) {
-        assert.equal(
-          (
-            await request(`${publicOrigin}/api/auth/preferences`, {
-              ca,
-              cookie: sessionCookie,
-              method: 'POST',
-              body: preferences,
-              headers,
-            })
-          ).status,
-          403,
-        );
+        const denied = await request(`${publicOrigin}/api/auth/preferences`, {
+          ca,
+          cookie: sessionCookie,
+          method: 'POST',
+          body: preferences,
+          headers,
+        });
+        assert.equal(denied.status, 403);
+        assert.equal(denied.headers['cache-control'], 'no-store');
+        assert.equal(denied.headers['access-control-allow-origin'], undefined);
+        assert.equal(JSON.parse(denied.text).code, 'forbidden');
+        assert.ok(!denied.text.includes(session.csrfToken));
+        assert.ok(!denied.text.includes(password));
       }
       const headers = {
         origin: publicOrigin,
         'x-csrf-token': session.csrfToken,
       };
+      for (const body of [
+        { ...preferences, theme: 'invalid' },
+        { ...preferences, permissions: ['diagnostics:run'] },
+      ]) {
+        const invalid = await request(`${publicOrigin}/api/auth/preferences`, {
+          ca,
+          cookie: sessionCookie,
+          method: 'POST',
+          body,
+          headers,
+        });
+        assert.equal(invalid.status, 400);
+        assert.equal(JSON.parse(invalid.text).code, 'invalid-request');
+        assert.equal(invalid.headers['cache-control'], 'no-store');
+      }
+      assert.deepEqual(
+        (
+          await migrator.query(
+            'SELECT preferences FROM cc.application_principals WHERE id=$1',
+            [principalId],
+          )
+        ).rows[0].preferences,
+        session.identity.preferences,
+      );
       assert.equal(
         (
           await request(`${publicOrigin}/api/auth/preferences`, {
@@ -1196,9 +1228,41 @@ test(
         page.getByRole('heading', { name: 'Sign in', exact: true }),
       ).toBeVisible();
       await auditAccessibility(page, 'login');
-      await page
+      // Capture the status before navigation replaces the document.
+      let signInProgressObserved = false;
+      const recordSignInProgress = (message) => {
+        if (message.text() === 'cc-qualification:sign-in-progress')
+          signInProgressObserved = true;
+      };
+      page.on('console', recordSignInProgress);
+      await page.evaluate(() => {
+        const observer = new MutationObserver(() => {
+          if (
+            document.querySelector('[role="status"]')?.textContent?.trim() ===
+            'Connecting to sign-in.'
+          ) {
+            console.debug('cc-qualification:sign-in-progress');
+            observer.disconnect();
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      });
+      const signInResponse = Promise.withResolvers();
+      await page.route('**/api/auth/login', async (route) => {
+        await signInResponse.promise;
+        await route.continue();
+      });
+      const signInNavigation = page
         .getByRole('link', { name: 'Sign in to Campus Commander' })
         .click();
+      try {
+        await expect.poll(() => signInProgressObserved).toBe(true);
+      } finally {
+        signInResponse.resolve();
+        await signInNavigation;
+        await page.unroute('**/api/auth/login');
+        page.off('console', recordSignInProgress);
+      }
       await expect(
         page.getByRole('heading', { name: 'Your account', exact: true }),
       ).toBeVisible();
@@ -1466,6 +1530,8 @@ test(
               'execution permission denial for all four utility operations',
               'PostgreSQL transaction rejection, rollback, audit, and retry',
               'Redis diagnostic key denial, preserved session, and retry',
+              'origin, CSRF, content-type, and preference-tampering rejection',
+              'uncached redacted errors without permissive CORS',
               'browser sign-in and sign-out',
               'persisted preferences',
               'system and explicit themes',

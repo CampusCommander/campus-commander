@@ -664,10 +664,45 @@ test(
     } catch (error) {
       if (created) {
         try {
+          const pods = JSON.parse(await kube(['get', 'pods', '-o', 'json']));
+          await writeFile(join(root, 'pod-status.json'), JSON.stringify(pods), {
+            mode: 0o600,
+          });
+          const events = JSON.parse(
+            await kube(['get', 'events', '-o', 'json']),
+          );
+          const failure = {
+            status: 'FAIL',
+            checkedAt: new Date().toISOString(),
+            pods: pods.items.map(({ metadata, status }) => ({
+              name: metadata.name,
+              phase: status.phase,
+              conditions: status.conditions,
+              containers: status.containerStatuses?.map(
+                ({ name, state, restartCount }) => ({
+                  name,
+                  state,
+                  restartCount,
+                }),
+              ),
+              initialization: status.initContainerStatuses?.map(
+                ({ name, state, restartCount }) => ({
+                  name,
+                  state,
+                  restartCount,
+                }),
+              ),
+            })),
+            events: events.items.map(({ reason, message, involvedObject }) => ({
+              reason,
+              message,
+              object: involvedObject.name,
+            })),
+          };
+          await mkdir('dist/phase-2-evidence', { recursive: true });
           await writeFile(
-            join(root, 'pod-status.json'),
-            await kube(['get', 'pods', '-o', 'json']),
-            { mode: 0o600 },
+            'dist/phase-2-evidence/kubernetes-failure.json',
+            JSON.stringify(failure, null, 2),
           );
         } catch {
           /* Preserve the original failure. */

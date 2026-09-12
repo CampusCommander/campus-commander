@@ -11,8 +11,12 @@
     } @if (auth.error(); as error) {
     <p role="alert" class="error">{{ error }}</p>
     } @if (auth.metadata()?.authenticationConfigured) {
-    <a mat-flat-button href="/api/auth/login">Sign in to Campus Commander</a>
-    } @else {
+    <a mat-flat-button href="/api/auth/login" (click)="startSignIn($event)">
+      Sign in to Campus Commander
+    </a>
+    @if (signingIn()) {
+    <p role="status">Connecting to sign-in.</p>
+    } } @else {
     <p role="status">
       Application sign-in is unavailable. Contact the installation operator.
     </p>

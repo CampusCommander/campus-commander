@@ -60,6 +60,34 @@ A separate check confirms private file denial and successful standard input unde
 
 These local results do not establish successful qualification on the corrected GitHub runner.
 
+### Second published candidate run
+
+[Run 34681268033](https://github.com/CampusCommander/campus-commander/actions/runs/34681268033) tested source `700e813a193360cf42bddd183e09b959103f46dd`.
+Validation, image publication, capacity, authentication, all-Docker installation, upgrade, restore, and screen-reader checks passed.
+The [authentication report](../../deployment/evidence/CC-24-phase-2-published-authentication.json) records the exact published image digests and checks.
+All four accessibility reports contain zero violations and zero incomplete checks.
+The [published screen-reader report](../../deployment/evidence/CC-35-phase-2-published-screen-reader.json) records Orca 46.1, named controls, diagnostic announcements, and sign-out.
+The speech device discards audio. This automated check does not establish human listening or usability acceptance.
+The [run record](../../deployment/evidence/CC-37-phase-2-second-published-run.json) preserves job results and authentication artifact hashes.
+
+Hybrid checks failed during PostgreSQL provisioning. Their private fixture files assumed host UID 1000, but GitHub uses UID 1001.
+Kubernetes checks imported the image digests, then timed out during Kestra deployment.
+The Kubernetes fixture also creates private shared directories for services that use UID 1000.
+The next workflow runs these shared-storage fixtures under UID 1000 and preserves production container users and private file modes.
+Kubernetes failure evidence now includes pod states and events. The next run must establish the Kubernetes failure cause.
+
+The PR application job now uses the candidate job's pinned Docker versions and containerd image store.
+New browser checks reject null origins, incorrect CSRF tokens, non-JSON writes, invalid preferences, and privilege fields.
+They also verify uncached, redacted errors and unchanged preferences. The packaged application test passes locally in 61 seconds.
+
+The login page now announces its connection progress before redirecting to the identity provider.
+The browser test delays the sign-in response and checks the status before completing authentication.
+This change follows UI-05, UI-08, and UI-09. It retains the existing centered form and theme tokens.
+The complete source authentication test passes in 61 seconds. Frontend, API, worker, and deployment build prerequisites pass.
+Frontend, application-test, and deployment lint checks pass. Both workflow files pass YAML parsing and Bash syntax checks.
+
+Six profile jobs failed. The workflow did not publish an installation bundle. Phase 2 release acceptance remains open.
+
 ## Authentication contract
 
 Application sign-in uses OIDC authorization code flow through `openid-client` 6.8.8.
