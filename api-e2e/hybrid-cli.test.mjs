@@ -22,6 +22,7 @@ import { createHybridHosts, outerDocker } from './hybrid-hosts-fixture.mjs';
 import { createHybridServices } from './hybrid-services-fixture.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
+import { upgradeDistributedHybrid } from './hybrid-cli-upgrade-fixture.mjs';
 
 test(
   'the hybrid installer runs authenticated lifecycle checks across three Docker hosts',
@@ -40,6 +41,7 @@ test(
     let provider;
     let stage = 'host preparation';
     let result;
+    let upgrade;
     const failures = [];
     try {
       const images = {};
@@ -60,13 +62,41 @@ test(
       assert.equal(new Set(labels).size, 1);
       const sourceRevision = labels[0];
       assert.match(sourceRevision, /^[a-f0-9]{40}$/);
+      const baseline =
+        process.env.CC_AUTH_HYBRID_CLI_UPGRADE === '1'
+          ? JSON.parse(
+              await readFile(
+                'deployment/qualification/phase-1-upgrade-baseline.json',
+                'utf8',
+              ),
+            )
+          : undefined;
+      for (const reference of Object.values(baseline?.images ?? {})) {
+        try {
+          await outerDocker(['image', 'inspect', reference]);
+        } catch {
+          await outerDocker(['pull', reference]);
+        }
+      }
+      const initialImages = baseline?.images ?? images;
       hosts = await createHybridHosts({ root, project, images, publicPort });
-      await hosts.loadImages([
-        ...Object.values(images),
-        kestraImage,
-        postgresImage,
-        redisImage,
-      ]);
+      await hosts.loadImages(
+        [
+          ...Object.values(images),
+          ...Object.values(baseline?.images ?? {}),
+          kestraImage,
+          postgresImage,
+          redisImage,
+        ],
+        {
+          workerReferences: [
+            images.api,
+            images.workers,
+            initialImages.api,
+            initialImages.workers,
+          ],
+        },
+      );
       services = await createHybridServices(hosts, project);
       const controller = hosts.hosts[0];
       const workers = hosts.hosts.slice(1);
@@ -98,12 +128,12 @@ test(
           new URL('../deployment/examples/hybrid.json', import.meta.url),
         ),
       );
-      config.phase = 2;
-      config.images = images;
+      config.phase = baseline ? 1 : 2;
+      config.images = initialImages;
       config.services.api.placement.replicas = 2;
       config.services.workers.endpoint.url =
         'https://workers.fixture.test:3001';
-      config.services.edge.access = 'application';
+      config.services.edge.access = baseline ? 'bootstrap-only' : 'application';
       config.services.edge.endpoint = {
         url: publicOrigin,
         tls: {
@@ -126,12 +156,13 @@ test(
         config.services.kestra.internalStorage.location,
       ])
         await mkdir(directory, { mode: 0o700 });
-      config.applicationAuth = {
+      const applicationAuth = {
         issuer: provider.issuer,
         clientId: 'qualification',
         publicOrigin,
         clientSecretRef: { provider: 'file', path: '/run/secrets/oidc-client' },
       };
+      if (!baseline) config.applicationAuth = applicationAuth;
       const configPath = join(controller.root, 'deployment.json');
       const releasePath = join(controller.root, 'release.json');
       const operatorPath = join(controller.root, 'operator.json');
@@ -155,14 +186,15 @@ test(
       await json(configPath, config);
       await json(join(runtime, 'profile.json'), config);
       await json(join(runtime, 'operator.json'), databaseOperator);
-      await json(releasePath, {
+      const targetRelease = {
         schemaVersion: 1,
         phase: 2,
         architectures: ['linux/amd64'],
         images,
         sourceRevision,
         qualification: 'candidate-only',
-      });
+      };
+      await json(releasePath, baseline ?? targetRelease);
       await prepareSecrets(config, privateRoot);
       const operator = {
         installationRoot: controller.root,
@@ -295,13 +327,35 @@ process.exit(result.status??1);
       };
       stage = 'CLI preparation';
       assert.equal((await cli('prepare')).status, 'prepared');
-      const original = await readFile(controllerFile);
+      let original = await readFile(controllerFile);
       await transfer();
       for (const host of workers) await compose(host, ['up', '-d']);
       stage = 'CLI installation';
       assert.equal((await cli('install')).status, 'ready');
       assert.equal((await cli('resume')).status, 'ready');
       assert.deepEqual(await readFile(controllerFile), original);
+      if (baseline) {
+        stage = 'CLI upgrade and encrypted backup';
+        upgrade = await upgradeDistributedHybrid({
+          hosts,
+          controller,
+          workers,
+          compose,
+          cli,
+          transfer,
+          config,
+          configPath,
+          releasePath,
+          operator,
+          operatorPath,
+          databaseOperator,
+          target: targetRelease,
+          baseline,
+          auth: applicationAuth,
+          json,
+        });
+        original = await readFile(controllerFile);
+      }
       const apiReplicas = (await compose(controller, ['ps', '--quiet', 'api']))
         .split('\n')
         .filter(Boolean);
@@ -419,6 +473,7 @@ process.exit(result.status??1);
       result = {
         status: 'passed',
         profile: 'hybrid',
+        ...(upgrade ? { upgrade } : {}),
         sourceRevision,
         images,
         recordedAt: new Date().toISOString(),
@@ -443,7 +498,8 @@ process.exit(result.status??1);
           'Three Docker daemons share one physical Docker host and synthetic shared storage.',
           'A separate Compose overlay trusts the synthetic identity provider through the existing district CA mount.',
           'Final release qualification requires matching installer, test, and application source revisions.',
-          'Upgrade, isolated restore, complete fault acceptance, and district infrastructure require separate evidence.',
+          ...(upgrade ? [] : ['Upgrade requires separate evidence.']),
+          'Isolated restore, complete fault acceptance, and district infrastructure require separate evidence.',
         ],
       };
     } catch (error) {
@@ -498,7 +554,9 @@ process.exit(result.status??1);
     result.ownedResourcesRemoved = true;
     await mkdir('dist/phase-2-evidence', { recursive: true });
     await writeFile(
-      'dist/phase-2-evidence/hybrid-cli.json',
+      upgrade
+        ? 'dist/phase-2-evidence/hybrid-cli-upgrade.json'
+        : 'dist/phase-2-evidence/hybrid-cli.json',
       JSON.stringify(result, null, 2),
     );
   },

@@ -145,6 +145,17 @@
       "options": {
         "command": "node --test api-e2e/hybrid-cli.test.mjs"
       }
+    },
+    "hybrid-cli-upgrade-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/hybrid-cli.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_CLI_UPGRADE": "1"
+        }
+      }
     }
   }
 }

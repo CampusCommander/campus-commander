@@ -553,3 +553,33 @@ All sixteen diagnostic executions passed without retry.
 The fixture retained the original generated Compose files and preserved the dark theme through lifecycle recovery.
 The report explicitly separates workspace qualification source from pinned published application images.
 These results do not complete final revision qualification, isolated restore, upgrade, or full profile fault acceptance.
+
+## Ninth candidate and distributed CLI upgrade
+
+The ninth candidate used source `0185173a5b71831b813e890469661805cd9d69ee`.
+[The terminal workflow record](../../deployment/evidence/CC-37-phase-2-ninth-published-run.json) records sixteen successful jobs and one failed application target.
+The distributed hybrid target failed before application assertions because the outer Docker cache lacked the pinned Kestra image.
+Image preparation now pulls absent references before exporting images to the independent Docker daemons.
+The candidate did not publish a release bundle. CI must verify the image preparation correction on a clean runner.
+The earlier hybrid outage check passed in this run. That result does not resolve the preceding intermittent recovery failure.
+
+[The CI reader report](../../deployment/evidence/phase-2-published-0185173/reader/screen-reader.json) passes all six speech assertions with Orca 46.1.
+It verifies native login focus before activation and retains eighteen diagnostic observations, including two transient Kestra failures after restart.
+[The browser report](../../deployment/evidence/phase-2-published-0185173/auth/packaged-integration.json) passed against the same published application images in 73 seconds.
+It covers identity denial, request security, session expiry, credential rotation, recovery, all utility operations, keyboard interaction, and themes.
+The four accessibility reports contain zero violations and zero incomplete checks, including contrast and target-size rules.
+The browser verifies 200 percent CSS zoom and 320 pixel reflow.
+Review of both retained screenshots confirmed readable service results and rendered controls without clipping at the captured viewport.
+[Artifact provenance](../../deployment/evidence/phase-2-published-0185173/artifact-provenance.json) identifies the original downloaded bytes before repository formatting.
+Applicable rules are UI-01 through UI-06, UI-08 through UI-10, and FORM-01.
+Native reader evidence addresses UI-09 and UI-10. Human listening and district identity-provider acceptance remain separate limits.
+
+[The distributed CLI upgrade report](../../deployment/evidence/CC-37-phase-2-distributed-hybrid-cli-upgrade.json) records a complete local target pass in 267 seconds, including cleanup.
+The actual CLI upgraded published Phase 1 images after creating a verified encrypted backup.
+It preserved the foundation migration checksum, artifact metadata and bytes, Kestra execution, and two internal storage files.
+The target verified new image content across two API replicas, the frontend, and two independent worker daemons.
+All sixteen diagnostic executions and eight direct session checks passed after upgrade and lifecycle recovery.
+This report combines workspace installer source with pinned published application images from `dae5f7a10a0347043931f5b97ef317882c1d70f6`.
+Its original generic limits include upgrade among separate gates. The nested upgrade evidence establishes only this intermediate fixture result.
+Final revision qualification, isolated CLI restore, full fault acceptance, and district infrastructure remain open.
+The candidate workflow now includes the distributed CLI upgrade target.

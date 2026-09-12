@@ -254,11 +254,21 @@ export async function createHybridHosts({ root, project, images, publicPort }) {
         Object.assign(mappings, values);
         await writeDns();
       },
-      async loadImages(references) {
+      async loadImages(
+        references,
+        { workerReferences = [images.api, images.workers] } = {},
+      ) {
+        for (const reference of new Set(references)) {
+          try {
+            await outerDocker(['image', 'inspect', reference]);
+          } catch {
+            await outerDocker(['pull', reference]);
+          }
+        }
         const subsets = {
           controller: [...new Set(references)],
           workers: [...new Set(references)].filter((reference) =>
-            [images.api, images.workers].includes(reference),
+            workerReferences.includes(reference),
           ),
         };
         for (const [name, subset] of Object.entries(subsets))
