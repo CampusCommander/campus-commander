@@ -1165,7 +1165,7 @@ export async function qualifyFullHybrid({ application } = {}) {
       (Date.now() - postgresRecoveryStarted) / 1000,
     );
 
-    stage = 'persistence-verification';
+    stage = 'persistence-kestra-execution-read';
     const preservedExecution = await request({
       port: kestraPort,
       servername: 'kestra',
@@ -1173,15 +1173,18 @@ export async function qualifyFullHybrid({ application } = {}) {
       authorization: kestraBasic,
       path: `/api/v1/main/executions/${executionId}`,
     });
+    stage = 'persistence-worker-artifact-read';
     const finalWorkerChecksums = await Promise.all(
       workerIds.map((id) => checkArtifact(id, artifactPath)),
     );
+    stage = 'persistence-api-readiness-read';
     const finalReadiness = await request({
       port: apiPort,
       servername: 'api',
       ca: caBytes,
       path: '/health',
     });
+    stage = 'persistence-verification';
     const persistenceChecks = {
       executionPreserved:
         preservedExecution.status === 200 &&

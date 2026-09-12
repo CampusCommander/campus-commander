@@ -6,18 +6,28 @@ Status: IN PROGRESS. No Phase 2 release has passed acceptance.
 ## Current qualification status
 
 Jira records thirteen Done tasks, CC-23 through CC-35. CC-36 through CC-38 remain In Progress.
-CC-35 includes the passing published-image browser and Orca 46.1 evidence from source `0185173`.
-The [twelfth candidate](https://github.com/CampusCommander/campus-commander/actions/runs/34693537292) passed all twenty jobs for source `a41bb2fde8d5fff79d59b98c94cace2c8722ba17`.
-[Pull request CI](https://github.com/CampusCommander/campus-commander/actions/runs/34693539602) also passed.
-The jobs include fourteen application targets, capacity, validation, three image publications, and bundle publication.
-[The terminal run record](../../deployment/evidence/CC-37-phase-2-twelfth-published-run.json) preserves job results and qualification artifact checksums.
-The latest published bundle is [candidate a41bb2f](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-a41bb2fde8d5).
+[CC-37](https://easton-consulting.atlassian.net/browse/CC-37) records the current published revision and release checks.
+CC-35 includes published-image browser and Orca 46.1 evidence. UI acceptance remains separate from district identity-provider qualification.
 
-[The published distributed fault report](../../deployment/evidence/CC-36-phase-2-distributed-hybrid-published-faults.json) passed all six faults with matching source and images.
-PostgreSQL recovery took 74.0 seconds within the shared 180-second recovery budget.
-The report preserves the earlier fixture limits. It does not establish district recovery guarantees.
-Complete profile fault evidence, final revision qualification, isolated CLI recovery, and accepted signed release assembly remain open.
-Sections below preserve earlier observations with their original source revisions and limits.
+The [be11ad2 published run](../../deployment/evidence/CC-37-phase-2-twenty-fourth-published-run.json) passed all twelve extracted application workflows.
+Its restore evidence step selected the wrong companion filename and prevented final assembly.
+The corrected verifier passed the original downloaded reports and rejected altered or missing companion evidence.
+[Local assembly](../../deployment/evidence/CC-37-phase-2-kubernetes-companion-validation.json) consumed those twelve workflow artifacts and produced fifteen distinct profile reports.
+The local output is unsigned. It does not replace published final assembly.
+
+The hosted installer independently verified the be11ad2 candidate archive, manifest, three image signatures, and all 1,333 inventoried files.
+All 23 application reports passed strict evidence validation. The candidate remains candidate-only.
+
+[Connection observation tests](../../deployment/evidence/CC-37-phase-2-quiescence-validation.json) verify fresh PostgreSQL statistics and rejection of persistent clients.
+Native operator CLI integration and Kubernetes restore passed with that correction.
+The subsequent d370bbd hybrid upgrade failed with ECONNRESET during persistence verification after PostgreSQL restart.
+The failed request remains unidentified. Separate stage labels now distinguish Kestra execution reads from API readiness reads.
+[The instrumented local upgrade](../../deployment/evidence/CC-37-phase-2-hybrid-observation-validation.json) passed in 2 minutes 6 seconds with the same images.
+That pass does not establish the earlier failure's cause. Request and acceptance behavior remain unchanged.
+[The failed published run](../../deployment/evidence/CC-37-phase-2-twenty-fifth-published-run.json) retains the original error.
+
+Published final assembly, district infrastructure qualification, and the final criterion audit remain open.
+Phase 1 acceptance remains separate. The sections below preserve earlier observations with their original revisions and limits.
 
 ## Fourth published candidate (historical)
 
