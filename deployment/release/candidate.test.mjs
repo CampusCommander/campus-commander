@@ -158,20 +158,49 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
             runtimeImageContentVerified: true,
             encryptedBackup: { status: 'verified' },
           },
-          profile: 'hybrid',
+          profile: target.startsWith('all-docker-') ? 'all-docker' : 'hybrid',
           faults: {
             status: 'passed',
             recoveryBoundSeconds: 180,
-            cases: [
-              'api-interruption',
-              'worker-host-interruption',
-              'external-redis-interruption',
-              'external-postgresql-interruption',
-              'kestra-interruption',
-              'shared-artifact-access-loss',
-            ].map((name) => ({ name, status: 'passed', recoveryMs: 1000 })),
+            cases: (target === 'all-docker-process-fault-integration'
+              ? [
+                  'api-interruption',
+                  'worker-interruption',
+                  'redis-interruption',
+                  'application-postgresql-interruption',
+                  'kestra-postgresql-interruption',
+                  'kestra-interruption',
+                  'artifact-access-loss',
+                ]
+              : [
+                  'api-interruption',
+                  'worker-host-interruption',
+                  'external-redis-interruption',
+                  'external-postgresql-interruption',
+                  'kestra-interruption',
+                  'shared-artifact-access-loss',
+                ]
+            ).map((name) => ({ name, status: 'passed', recoveryMs: 1000 })),
           },
           browser: { status: 'passed' },
+          apiReplicaCount: 2,
+          logoutRejectedAcrossReplicas: true,
+          replicaObservations: [
+            'initial-session',
+            'restart-session',
+            'stop-resume-session',
+            'uninstall-resume-session',
+            'signed-out-session',
+          ].flatMap((phase) =>
+            [1, 2].map((index) => ({
+              phase,
+              container: `api-${index}`,
+              status: phase === 'signed-out-session' ? 401 : 200,
+              ...(phase === 'signed-out-session'
+                ? {}
+                : { principalId: 'synthetic-principal' }),
+            })),
+          ),
           packagedApplicationImages: true,
           images: manifest.images,
           sourceRevision,
@@ -282,6 +311,76 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       }
       await writeFile(path, JSON.stringify(original));
     }
+    const replicaPath = join(
+      qualificationArtifacts,
+      'qualification-all-docker-integration',
+      'all-docker-profile.json',
+    );
+    const replicaReport = JSON.parse(await readFile(replicaPath, 'utf8'));
+    for (const [index, mutate] of [
+      (report) => {
+        report.replicaObservations.pop();
+      },
+      (report) => {
+        report.replicaObservations[0].container =
+          report.replicaObservations[1].container;
+      },
+      (report) => {
+        report.replicaObservations.at(-1).status = 200;
+      },
+    ].entries()) {
+      const invalid = structuredClone(replicaReport);
+      mutate(invalid);
+      await writeFile(replicaPath, JSON.stringify(invalid));
+      await assert.rejects(
+        assembleCandidate({
+          root,
+          output: join(root, `invalid-replica-${index}`),
+          artifacts: join(root, 'artifacts'),
+          sourceRevision,
+          phase: 2,
+          qualificationArtifacts,
+        }),
+        /both API replicas/,
+      );
+    }
+    await writeFile(replicaPath, JSON.stringify(replicaReport));
+    const processPath = join(
+      qualificationArtifacts,
+      'qualification-all-docker-process-fault-integration',
+      'all-docker-process-faults.json',
+    );
+    const processReport = JSON.parse(await readFile(processPath, 'utf8'));
+    for (const [index, mutate] of [
+      (report) => {
+        report.faults.cases.pop();
+      },
+      (report) => {
+        report.faults.cases[0].recoveryMs = 180001;
+      },
+      (report) => {
+        report.sourceRevision = '0'.repeat(40);
+      },
+      (report) => {
+        report.ownedResourcesRemoved = false;
+      },
+    ].entries()) {
+      const invalid = structuredClone(processReport);
+      mutate(invalid);
+      await writeFile(processPath, JSON.stringify(invalid));
+      await assert.rejects(
+        assembleCandidate({
+          root,
+          output: join(root, `invalid-all-docker-fault-${index}`),
+          artifacts: join(root, 'artifacts'),
+          sourceRevision,
+          phase: 2,
+          qualificationArtifacts,
+        }),
+        /All-Docker process fault qualification/,
+      );
+    }
+    await writeFile(processPath, JSON.stringify(processReport));
     const distributedPath = join(
       qualificationArtifacts,
       'qualification-hybrid-cli-upgrade-integration',
@@ -398,6 +497,7 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
     await writeFile(
       mismatchedReport,
       JSON.stringify({
+        ...replicaReport,
         status: 'passed',
         browser: { status: 'passed' },
         images: { ...manifest.images, api: 'wrong-image' },

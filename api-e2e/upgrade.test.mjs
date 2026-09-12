@@ -12,6 +12,7 @@ import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { startRegistry } from './registry-fixture.mjs';
 import { qualifyApplicationRestore } from './restore-fixture.mjs';
+import { faultAllDocker } from './all-docker-faults-fixture.mjs';
 const execute = promisify(execFile);
 
 test(
@@ -165,6 +166,24 @@ test(
               );
               assert.ok(enrolled.principalId);
               return applicationBrowser(publicOrigin, async (browser) => {
+                if (process.env.CC_AUTH_ALL_DOCKER_FAULTS === '1') {
+                  const saved = browser.page.waitForResponse(
+                    (response) =>
+                      new URL(response.url()).pathname ===
+                        '/api/auth/preferences' &&
+                      response.request().method() === 'POST',
+                  );
+                  await browser.page
+                    .getByRole('button', { name: 'Choose theme' })
+                    .click();
+                  await browser.page
+                    .getByRole('menuitem', { name: 'Use dark theme' })
+                    .click();
+                  assert.equal((await saved).status(), 201);
+                  return {
+                    faults: await faultAllDocker({ ...fixture, ...browser }),
+                  };
+                }
                 if (process.env.CC_AUTH_APPLICATION_RESTORE !== '1')
                   return undefined;
                 const restoration = await qualifyApplicationRestore({
@@ -186,6 +205,44 @@ test(
       assert.equal(result.status, 'passed');
       assert.equal(result.application.status, 'passed');
       await mkdir('dist/phase-2-evidence', { recursive: true });
+      if (process.env.CC_AUTH_ALL_DOCKER_FAULTS === '1') {
+        const faults = result.application.lifecycle.faults;
+        assert.equal(faults.status, 'passed');
+        for (const resource of ['container', 'volume', 'network']) {
+          const listed = await execute('docker', [
+            resource,
+            'ls',
+            ...(resource === 'container' ? ['-a'] : []),
+            '--filter',
+            `label=com.docker.compose.project=${result.project}`,
+            '--quiet',
+          ]);
+          assert.equal(listed.stdout.trim(), '');
+        }
+        await writeFile(
+          'dist/phase-2-evidence/all-docker-process-faults.json',
+          JSON.stringify(
+            {
+              status: 'passed',
+              profile: 'all-docker',
+              sourceRevision: target.sourceRevision,
+              images: target.images,
+              recordedAt: new Date().toISOString(),
+              application: result.application,
+              faults,
+              certificateFaults: result.faults,
+              installerChecks: result.checks,
+              ownedResourcesRemoved: true,
+              limits: [
+                'One Docker host retains host and local-volume failure points.',
+                'Near-full storage requires separate complete-profile evidence.',
+              ],
+            },
+            null,
+            2,
+          ),
+        );
+      }
       await writeFile(
         'dist/phase-2-evidence/all-docker-upgrade.json',
         JSON.stringify(

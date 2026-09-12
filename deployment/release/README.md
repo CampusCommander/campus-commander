@@ -115,3 +115,9 @@ Assembly rejects missing CLI evidence, injected database adapters, and incomplet
 The hybrid operator records backup and restore execution separately inside its existing container.
 Linux CI uses the pinned PostgreSQL operator image for all-Docker and Kubernetes restore commands.
 Docker Desktop qualification supports native host tools when container networking cannot reach host loopback endpoints.
+
+The Phase 2 application matrix includes `all-docker-process-fault-integration`.
+Its report must contain all seven interruptions, matching source, bounded recovery, and confirmed installation cleanup.
+The all-Docker profile report must verify the same principal on two distinct API containers through four authenticated lifecycle stages.
+Both containers must reject the signed-out session.
+These gates add evidence requirements. They do not replace complete profile fault, capacity, certificate, or accepted release requirements.

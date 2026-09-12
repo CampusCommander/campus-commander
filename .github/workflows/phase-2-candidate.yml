@@ -247,6 +247,7 @@ jobs:
           [
             auth-image-integration,
             all-docker-integration,
+            all-docker-process-fault-integration,
             hybrid-integration,
             hybrid-cli-integration,
             hybrid-cli-upgrade-integration,

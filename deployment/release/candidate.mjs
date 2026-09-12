@@ -18,6 +18,7 @@ const services = { frontend: 'frontend', api: 'api', worker: 'workers' };
 export const applicationReports = {
   'auth-image-integration': 'packaged-integration.json',
   'all-docker-integration': 'all-docker-profile.json',
+  'all-docker-process-fault-integration': 'all-docker-process-faults.json',
   'hybrid-integration': 'hybrid-profile.json',
   'hybrid-cli-integration': 'hybrid-cli.json',
   'hybrid-cli-upgrade-integration': 'hybrid-cli-upgrade.json',
@@ -161,6 +162,84 @@ export async function assembleCandidate({
         filename,
       );
       const report = JSON.parse(await readFile(source, 'utf8'));
+      if (target === 'all-docker-integration') {
+        const observations = report.replicaObservations;
+        const phases = [
+          'initial-session',
+          'restart-session',
+          'stop-resume-session',
+          'uninstall-resume-session',
+          'signed-out-session',
+        ];
+        if (
+          report.apiReplicaCount !== 2 ||
+          report.logoutRejectedAcrossReplicas !== true ||
+          !Array.isArray(observations) ||
+          observations.length !== 10 ||
+          phases.some((phase) => {
+            const matches = observations.filter((item) => item.phase === phase);
+            return (
+              matches.length !== 2 ||
+              new Set(matches.map((item) => item.container)).size !== 2 ||
+              matches.some(
+                (item) =>
+                  typeof item.container !== 'string' ||
+                  !item.container ||
+                  item.status !== (phase === 'signed-out-session' ? 401 : 200),
+              )
+            );
+          }) ||
+          new Set(
+            observations
+              .filter((item) => item.status === 200)
+              .map((item) => item.principalId),
+          ).size !== 1 ||
+          observations.some(
+            (item) =>
+              item.status === 200 &&
+              (typeof item.principalId !== 'string' || !item.principalId),
+          )
+        )
+          throw new Error(
+            'All-Docker qualification requires shared sessions and logout rejection on both API replicas.',
+          );
+      }
+      if (target === 'all-docker-process-fault-integration') {
+        const required = [
+          'api-interruption',
+          'worker-interruption',
+          'redis-interruption',
+          'application-postgresql-interruption',
+          'kestra-postgresql-interruption',
+          'kestra-interruption',
+          'artifact-access-loss',
+        ];
+        const cases = report.faults?.cases;
+        if (
+          report.profile !== 'all-docker' ||
+          report.sourceRevision !== sourceRevision ||
+          report.ownedResourcesRemoved !== true ||
+          report.faults?.status !== 'passed' ||
+          report.faults.recoveryBoundSeconds !== faultRecoveryTimeoutSeconds ||
+          !Array.isArray(cases) ||
+          cases.length !== required.length ||
+          required.some(
+            (name) =>
+              cases.filter(
+                (item) => item.name === name && item.status === 'passed',
+              ).length !== 1,
+          ) ||
+          cases.some(
+            (item) =>
+              !Number.isFinite(item.recoveryMs) ||
+              item.recoveryMs < 0 ||
+              item.recoveryMs > faultRecoveryTimeoutSeconds * 1000,
+          )
+        )
+          throw new Error(
+            'All-Docker process fault qualification requires every case, matching source, cleanup, and bounded recovery.',
+          );
+      }
       if (
         [
           'restore-integration',

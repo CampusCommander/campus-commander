@@ -1,0 +1,31 @@
+{
+  "sourceRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+  "failedCiRun": 34695445865,
+  "correction": "Apply repository formatting to retained evidence. Preserve parsed JSON values and update retained-file hash references.",
+  "records": [
+    {
+      "path": "deployment/evidence/CC-36-phase-2-all-docker-operator-cli-restore.json",
+      "originalSha256": "2718a1c5fe5ded39a41b4afdcafa2a1d7ec32cf49b353c0571a065a5983eb757",
+      "formattedSha256": "18b0a8cbb79d94b9aee251eac93e2c0438b7b4bff37f3a28cd244fba29d79df5",
+      "parsedJsonEqual": true
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-distributed-hybrid-published-faults.json",
+      "originalSha256": "b17bfcd11148d714782a2119d246acec9bac537c14a992195833202951b3cabd",
+      "formattedSha256": "7a0678af1c5fc66ed6b1d61405fc5f4d9d2b261c9332ddf1cf4e7d431c4247ce",
+      "parsedJsonEqual": true
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-hybrid-operator-cli-restore.json",
+      "originalSha256": "85036b690e7d4408400d52adaca33475db03c0bbef8227e0f15aa913c2e0944f",
+      "formattedSha256": "9e633f6f18e15e02071e161710f70df1c44766484f02b6a3e6860548ac3a349c",
+      "parsedJsonEqual": true
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-kubernetes-operator-cli-restore.json",
+      "originalSha256": "2fc1fcdeed1da786865286e58084f8543a6a7ed08e442bd21b0a503d902489d9",
+      "formattedSha256": "10599a9a77f3e5bf632789cdeb58a81d34d2aeefc24d1224bcc78f8978b2f18d",
+      "parsedJsonEqual": true
+    }
+  ]
+}

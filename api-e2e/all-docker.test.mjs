@@ -115,6 +115,7 @@ test(
         await readFile('deployment/examples/all-docker.json', 'utf8'),
       );
       config.phase = 2;
+      config.services.api.placement.replicas = 2;
       config.services.edge.access = 'application';
       config.services.edge.endpoint.url = publicOrigin;
       config.applicationAuth = {
@@ -275,6 +276,71 @@ process.exit(result.status??1);
         displayName: 'Synthetic administrator',
       });
       assert.ok(enrolled.principalId);
+      const replicaObservations = [];
+      let sessionCookie;
+      const verifyReplicas = async (context, phase, expectedStatus = 200) => {
+        if (context) {
+          sessionCookie = (await context.cookies())
+            .filter((cookie) => cookie.name.startsWith('__Host-'))
+            .map((cookie) => `${cookie.name}=${cookie.value}`)
+            .join('; ');
+        }
+        assert.ok(sessionCookie);
+        const replicas = compose('ps', '--quiet', 'api')
+          .split('\n')
+          .filter(Boolean);
+        assert.equal(replicas.length, 2);
+        for (const replica of replicas) {
+          const inspected = JSON.parse(docker('inspect', replica))[0];
+          const endpoint = new URL(config.services.api.endpoint.url);
+          endpoint.hostname =
+            inspected.NetworkSettings.Networks[`${project}_internal`].IPAddress;
+          endpoint.pathname = '/api/auth/session';
+          let observation;
+          await expect
+            .poll(
+              () => {
+                observation = JSON.parse(
+                  execFileSync(
+                    'docker',
+                    [
+                      'exec',
+                      '-i',
+                      replicas[0],
+                      'node',
+                      '--input-type=module',
+                      '-e',
+                      `import fs from 'node:fs';const input=JSON.parse(fs.readFileSync(0,'utf8'));
+const response=await fetch(input.url,{headers:{cookie:input.cookie,host:input.host,'x-forwarded-proto':'https'},signal:AbortSignal.timeout(10000)});
+let body;try{body=await response.json()}catch{}
+console.log(JSON.stringify({status:response.status,principalId:body?.identity?.id}));`,
+                    ],
+                    {
+                      input: JSON.stringify({
+                        url: endpoint.href,
+                        cookie: sessionCookie,
+                        host: new URL(publicOrigin).host,
+                      }),
+                      encoding: 'utf8',
+                      stdio: ['pipe', 'pipe', 'pipe'],
+                      timeout: 15000,
+                    },
+                  ),
+                );
+                return observation.status;
+              },
+              { timeout: 30000 },
+            )
+            .toBe(expectedStatus);
+          if (expectedStatus === 200)
+            assert.equal(observation.principalId, enrolled.principalId);
+          replicaObservations.push({
+            phase,
+            container: replica,
+            ...observation,
+          });
+        }
+      };
       const addresses = () =>
         Object.fromEntries(
           ['api', 'frontend', 'workers'].map((service) => [
@@ -286,7 +352,8 @@ process.exit(result.status??1);
       const initialAddresses = addresses();
       const browser = await applicationBrowser(
         publicOrigin,
-        async ({ page, checks }) => {
+        async ({ page, context, checks }) => {
+          await verifyReplicas(context, 'initial-session');
           await page.getByRole('button', { name: 'Choose theme' }).click();
           await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
           await expect(page.locator('html')).toHaveAttribute(
@@ -296,6 +363,7 @@ process.exit(result.status??1);
           compose('restart', 'api', 'frontend', 'workers');
           compose('up', '-d', '--wait', '--wait-timeout', '120');
           const restartedAddresses = addresses();
+          await verifyReplicas(context, 'restart-session');
           await page.reload();
           await expect(
             page.getByRole('heading', { name: 'Diagnostics', exact: true }),
@@ -323,6 +391,7 @@ process.exit(result.status??1);
               'dark',
             );
             await checks({ recoverySeconds: 60 });
+            await verifyReplicas(context, `${command}-resume-session`);
           }
           return {
             restartRecoveryBoundSeconds: 60,
@@ -333,6 +402,7 @@ process.exit(result.status??1);
           };
         },
       );
+      await verifyReplicas(undefined, 'signed-out-session', 401);
       assert.equal(await readFile(composePath, 'utf8'), originalRender);
       assert.deepEqual(
         JSON.parse(await readFile(releasePath, 'utf8')),
@@ -392,6 +462,9 @@ process.exit(result.status??1);
             browser,
             readinessChecks: readiness.checks.map(({ name }) => name),
             sessionSurvivedRestart: true,
+            apiReplicaCount: 2,
+            replicaObservations,
+            logoutRejectedAcrossReplicas: true,
             limits: [
               'Synthetic provider CA and loopback port replace district ingress.',
               'Upgrade and isolated restore require separate evidence.',

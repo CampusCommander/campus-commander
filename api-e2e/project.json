@@ -175,6 +175,18 @@
       "options": {
         "command": "node --test api-e2e/hybrid-network-fixture.test.mjs"
       }
+    },
+    "all-docker-process-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/upgrade.test.mjs",
+        "env": {
+          "CC_INSTALLER_FAULTS": "1",
+          "CC_AUTH_ALL_DOCKER_FAULTS": "1"
+        }
+      }
     }
   }
 }

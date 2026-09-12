@@ -1,0 +1,213 @@
+{
+  "sourceRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+  "status": "success",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34695444024",
+  "jobs": [
+    {
+      "name": "validate",
+      "conclusion": "success",
+      "databaseId": 103558023368
+    },
+    {
+      "name": "publish (worker)",
+      "conclusion": "success",
+      "databaseId": 103558177491
+    },
+    {
+      "name": "publish (api)",
+      "conclusion": "success",
+      "databaseId": 103558177493
+    },
+    {
+      "name": "publish (frontend)",
+      "conclusion": "success",
+      "databaseId": 103558177525
+    },
+    {
+      "name": "capacity",
+      "conclusion": "success",
+      "databaseId": 103558472778
+    },
+    {
+      "name": "application (auth-image-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472875
+    },
+    {
+      "name": "application (hybrid-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472878
+    },
+    {
+      "name": "application (restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472879
+    },
+    {
+      "name": "application (kubernetes-restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472882
+    },
+    {
+      "name": "application (upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472883
+    },
+    {
+      "name": "application (hybrid-cli-process-fault-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472885
+    },
+    {
+      "name": "application (kubernetes-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472895
+    },
+    {
+      "name": "application (screen-reader-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472896
+    },
+    {
+      "name": "application (hybrid-cli-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472898
+    },
+    {
+      "name": "application (hybrid-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472916
+    },
+    {
+      "name": "application (hybrid-cli-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472923
+    },
+    {
+      "name": "application (hybrid-restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472926
+    },
+    {
+      "name": "application (kubernetes-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472928
+    },
+    {
+      "name": "application (all-docker-integration)",
+      "conclusion": "success",
+      "databaseId": 103558472939
+    },
+    {
+      "name": "bundle",
+      "conclusion": "success",
+      "databaseId": 103559539111
+    }
+  ],
+  "pullRequestChecks": {
+    "runId": 34695445865,
+    "status": "failure",
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34695445865",
+    "failedJob": "main",
+    "failedStep": "format:check",
+    "correctionEvidence": "deployment/evidence/CC-38-phase-2-evidence-format.json"
+  },
+  "release": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-016fd588aa27",
+  "nativeCliRestoreReports": [
+    {
+      "artifact": "qualification-hybrid-restore-integration/hybrid-restore.json",
+      "sha256": "3f7eace50e312f2677c294b06a852c24707004e69a0db0d6fe219b64535f1012",
+      "status": "passed",
+      "operatorCli": null,
+      "backupOperatorCli": {
+        "runner": "operator-native-existing-mount",
+        "nodeVersion": "v24.19.0",
+        "secretMount": "/run/secrets",
+        "injectedDatabaseTool": false,
+        "commands": [
+          {
+            "command": "backup",
+            "status": "passed"
+          },
+          {
+            "command": "verify",
+            "status": "passed"
+          }
+        ]
+      },
+      "restoreOperatorCli": {
+        "runner": "operator-native-existing-mount",
+        "nodeVersion": "v24.19.0",
+        "secretMount": "/run/secrets",
+        "injectedDatabaseTool": false,
+        "commands": [
+          {
+            "command": "restore",
+            "status": "passed"
+          }
+        ]
+      }
+    },
+    {
+      "artifact": "qualification-kubernetes-restore-integration/kubernetes-restore.json",
+      "sha256": "cd8aeb65a0e29fa2e89a7ec8a1f77e1a924a460e9fcaf9ecb8090f356366f328",
+      "status": "passed",
+      "operatorCli": {
+        "runner": "operator-container-native",
+        "postgresImage": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+        "nodeVersion": "v24.19.0",
+        "secretMount": "/run/secrets",
+        "injectedDatabaseTool": false,
+        "commands": [
+          {
+            "command": "backup",
+            "status": "passed"
+          },
+          {
+            "command": "verify",
+            "status": "passed"
+          },
+          {
+            "command": "restore",
+            "status": "passed"
+          }
+        ]
+      },
+      "backupOperatorCli": null,
+      "restoreOperatorCli": null
+    },
+    {
+      "artifact": "qualification-restore-integration/all-docker-restore.json",
+      "sha256": "bd14c602f42c36180d0d4b4d8dc152bd57e948a43dcb9df3d2253b7b44fd2dca",
+      "status": "passed",
+      "operatorCli": {
+        "runner": "operator-container-native",
+        "postgresImage": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+        "nodeVersion": "v24.19.0",
+        "secretMount": "/run/secrets",
+        "injectedDatabaseTool": false,
+        "commands": [
+          {
+            "command": "backup",
+            "status": "passed"
+          },
+          {
+            "command": "verify",
+            "status": "passed"
+          },
+          {
+            "command": "restore",
+            "status": "passed"
+          }
+        ]
+      },
+      "backupOperatorCli": null,
+      "restoreOperatorCli": null
+    }
+  ],
+  "limits": [
+    "The candidate passed all twenty jobs. PR CI failed formatting in four retained JSON reports.",
+    "Formatting corrections preserve parsed report values.",
+    "Candidate publication does not establish release acceptance."
+  ]
+}

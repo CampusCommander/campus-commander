@@ -748,3 +748,36 @@ The test removed its Kind cluster and every owned port-forward process.
 [The qualification record](../../deployment/evidence/CC-36-phase-2-operator-cli-qualification.json) binds local results to report hashes and the changed fixture files.
 All three application restore targets now pass through the native operator CLI.
 Final revision CI, complete profile fault evidence, and accepted release assembly remain required.
+
+## Published native CLI and all-Docker fault evidence
+
+[Candidate 016fd588](../../deployment/evidence/CC-37-phase-2-thirteenth-published-run.json) passed all twenty candidate jobs and published its signed candidate bundle.
+All three application restore jobs passed through the native operator CLI in Linux CI.
+All-Docker and Kubernetes used the operator container. Hybrid used its existing operator container with external TLS services.
+PR CI failed formatting in four retained JSON reports.
+[The formatting correction](../../deployment/evidence/CC-38-phase-2-evidence-format.json) preserves every parsed report value and records both file hashes.
+
+[The all-Docker replica test](../../deployment/evidence/CC-36-phase-2-all-docker-replicas.json) passed with two API containers and published `016fd588` images.
+Ten direct session requests verified both replicas after login, restart, stop/resume, uninstall/resume, and sign-out.
+Every authenticated response identified the same principal. Both replicas rejected the signed-out session with HTTP 401.
+The complete target finished in 2 minutes 22 seconds.
+
+[The all-Docker fault test](../../deployment/evidence/CC-36-phase-2-all-docker-process-faults.json) passed seven authenticated interruptions in 5 minutes 54 seconds.
+The cases cover API, workers, Redis, application PostgreSQL, Kestra PostgreSQL, Kestra, and artifact access.
+Each case repeats all four Diagnostics operations and verifies durable application and Kestra state after recovery.
+Redis recovery rejects the old session and requires another sign-in.
+The slowest recovery took 62.4 seconds after the Kestra PostgreSQL interruption, within the shared 180-second budget.
+The fixture also rejected expired and wrong-host edge certificates before application enrollment. Both cases restored eight protected startup checks.
+Explicit erasure removed every owned installation container, network, and volume.
+
+[The first fault run](../../deployment/evidence/CC-36-phase-2-all-docker-process-fixture-failure.json) passed six interruptions before its artifact permission helper failed.
+The helper used root to read an owner-restricted configuration file.
+The corrected helper uses the application file owner. Application permissions remain restricted.
+[The qualification record](../../deployment/evidence/CC-36-phase-2-all-docker-qualification.json) binds reports and fixture files to their hashes.
+These local fixtures include changes after the published image revision.
+
+Candidate assembly now requires both replica observations and all seven bounded process recovery records.
+Four release tests and both affected lint targets pass.
+The candidate workflow adds the all-Docker process fault target, for fifteen application targets and twenty-one total jobs.
+Complete profile capacity, Kubernetes application faults, remaining certificate coverage, final revision evidence, and accepted release assembly remain open.
+Phase 1 acceptance remains separate.

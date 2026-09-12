@@ -86,15 +86,18 @@
   "profiles": {
     "all-docker": {
       "reportPath": "deployment/evidence/CC-36-phase-2-all-docker-operator-cli-restore.json",
-      "sha256": "2718a1c5fe5ded39a41b4afdcafa2a1d7ec32cf49b353c0571a065a5983eb757"
+      "sha256": "18b0a8cbb79d94b9aee251eac93e2c0438b7b4bff37f3a28cd244fba29d79df5",
+      "originalReportSha256": "2718a1c5fe5ded39a41b4afdcafa2a1d7ec32cf49b353c0571a065a5983eb757"
     },
     "hybrid": {
       "reportPath": "deployment/evidence/CC-36-phase-2-hybrid-operator-cli-restore.json",
-      "sha256": "85036b690e7d4408400d52adaca33475db03c0bbef8227e0f15aa913c2e0944f"
+      "sha256": "9e633f6f18e15e02071e161710f70df1c44766484f02b6a3e6860548ac3a349c",
+      "originalReportSha256": "85036b690e7d4408400d52adaca33475db03c0bbef8227e0f15aa913c2e0944f"
     },
     "kubernetes": {
       "reportPath": "deployment/evidence/CC-36-phase-2-kubernetes-operator-cli-restore.json",
-      "sha256": "2fc1fcdeed1da786865286e58084f8543a6a7ed08e442bd21b0a503d902489d9"
+      "sha256": "10599a9a77f3e5bf632789cdeb58a81d34d2aeefc24d1224bcc78f8978b2f18d",
+      "originalReportSha256": "2fc1fcdeed1da786865286e58084f8543a6a7ed08e442bd21b0a503d902489d9"
     }
   },
   "ownedContainersRemaining": 0,
