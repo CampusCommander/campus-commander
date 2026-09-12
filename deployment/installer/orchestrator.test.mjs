@@ -608,6 +608,76 @@ test('stop and uninstall preserve volumes while erase needs explicit owned proje
     await rm(f.root, { recursive: true, force: true });
   }
 });
+test('profile-qualified prereleases cannot enter accepted mode with fifteen valid reports', async () => {
+  const f = await setup();
+  try {
+    const manifest = {
+      ...f.release,
+      phase: 2,
+      qualification: 'profile-qualified',
+      districtInfrastructureAcceptance: 'not-qualified',
+      files: [],
+      evidence: {},
+    };
+    for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
+      manifest.evidence[profile] = { workerHosts: ['host-a', 'host-b'] };
+      for (const check of [
+        'install',
+        'resume',
+        'upgrade',
+        'restore',
+        'faults',
+      ]) {
+        const path = `${profile}-${check}.json`;
+        const bytes = Buffer.from(
+          JSON.stringify({
+            status: 'passed',
+            profile,
+            check,
+            sourceRevision: manifest.sourceRevision,
+            images: manifest.images,
+          }),
+        );
+        const sha256 = createHash('sha256').update(bytes).digest('hex');
+        await writeFile(join(f.root, path), bytes);
+        manifest.files.push({ path, sizeBytes: bytes.length, sha256 });
+        manifest.evidence[profile][check] = {
+          status: 'passed',
+          sourceRevision: manifest.sourceRevision,
+          images: manifest.images,
+          reportPath: path,
+          reportSha256: sha256,
+        };
+      }
+    }
+    const bytes = Buffer.from(JSON.stringify(manifest));
+    await writeFile(f.operator.releasePath, bytes);
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const signaturePath = join(f.root, 'signature');
+    const publicKeyPath = join(f.root, 'public.pem');
+    await writeFile(signaturePath, sign(null, bytes, privateKey));
+    await writeFile(
+      publicKeyPath,
+      publicKey.export({ type: 'spki', format: 'pem' }),
+    );
+    const operator = {
+      ...f.operator,
+      trust: { kind: 'ed25519', signaturePath, publicKeyPath },
+    };
+    await assert.rejects(
+      authenticateRelease(operator, { qualification: false }),
+      { code: 'RELEASE' },
+    );
+    assert.equal(
+      (await authenticateRelease(operator, { qualification: true }))
+        .acceptedRelease,
+      false,
+    );
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
 test('normal installation rejects unsigned and incomplete signed releases', async () => {
   const f = await setup();
   try {

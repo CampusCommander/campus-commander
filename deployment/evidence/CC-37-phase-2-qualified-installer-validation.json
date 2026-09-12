@@ -1,0 +1,99 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T17:12:28.319148+00:00",
+  "baseRevision": "ba44732a93cf2f0be03fcd1708cc1bd783cd9860",
+  "sourceState": "Uncommitted hosted installer corrections on the recorded base revision.",
+  "files": [
+    {
+      "path": "install.sh",
+      "sizeBytes": 44504,
+      "sha256": "162b48372fb35e073f53e7376b2f23e57ae2311f9f777d9f21230a4e0ae09a8c"
+    },
+    {
+      "path": "deployment/installer/entry.test.mjs",
+      "sizeBytes": 11895,
+      "sha256": "5cb7460b6c11c4ca22b42a5d93822e4ae3c2757ddaccf5e8516b10db7cef4a71"
+    },
+    {
+      "path": "deployment/installer/orchestrator.mjs",
+      "sizeBytes": 39832,
+      "sha256": "4063a0affe0151a61bae8c4e2329009d2c20adb3c336cc12622ca416db658e6c"
+    },
+    {
+      "path": "deployment/installer/orchestrator.test.mjs",
+      "sizeBytes": 33691,
+      "sha256": "abeb6999dc42c56477d9dbf61a99f04283da6c4c9dc1a45514b11ddeb4890d22"
+    },
+    {
+      "path": "deployment/installer/HOSTED.md",
+      "sizeBytes": 13623,
+      "sha256": "70f124def6b70862d88d235bf39524210157b1f4c85b0296403a2f7980e87b80"
+    },
+    {
+      "path": "deployment/installer/PHASE-2.md",
+      "sizeBytes": 11679,
+      "sha256": "de3ec4612125756b5a296e6e7985f069a54c3d17960829248097e842d5f72736"
+    }
+  ],
+  "regression": {
+    "before": {
+      "command": "npx nx run deployment:installer-test",
+      "passed": 82,
+      "failed": 4,
+      "log": {
+        "path": "/tmp/cc-phase2-qualified-entry-and-acceptance-red.log",
+        "sizeBytes": 18362,
+        "sha256": "d0ebcb497998cf97786f3efa0aadd1df86eee757440cdc7120a135737f37ee9a"
+      },
+      "symptoms": [
+        "Automatic selection found no supported release for the new profile-qualified tag.",
+        "Explicit profile-qualified tags were rejected before download.",
+        "Accepted mode admitted a signed profile-qualified manifest with fifteen matching reports and unqualified district infrastructure."
+      ]
+    },
+    "after": {
+      "command": "npx nx run deployment:installer-test",
+      "passed": 86,
+      "failed": 0,
+      "durationMs": 7802.551389,
+      "log": {
+        "path": "/tmp/cc-phase2-qualified-entry-green.log",
+        "sizeBytes": 11457,
+        "sha256": "eaf5a47c78797f7c563ae55dcfc75c2656225c58e83ff3330687c2564a7e0165"
+      }
+    }
+  },
+  "checks": [
+    {
+      "name": "deployment:release-test",
+      "status": "passed",
+      "tests": 6,
+      "durationMs": 19709.407968,
+      "log": {
+        "path": "/tmp/cc-phase2-qualified-entry-release-test.log",
+        "sizeBytes": 2005,
+        "sha256": "be4925dba4f0d3b4c46488f7dfc59bbbfa568be9da76dcd2c33f8dea14a8a99d"
+      }
+    },
+    {
+      "name": "deployment:lint",
+      "status": "passed",
+      "log": {
+        "path": "/tmp/cc-phase2-qualified-entry-lint.log",
+        "sizeBytes": 391,
+        "sha256": "16bfe88bfcc339302a31c67386172e98cfa9224344bfbc65cf30617d4fd0a5bd"
+      }
+    },
+    {
+      "name": "POSIX shell syntax",
+      "command": "sh -n install.sh",
+      "status": "passed"
+    }
+  ],
+  "limits": [
+    "Hosted entry tests use a controlled download and Cosign adapter. They verify command routing and rejection, not live Sigstore service behavior.",
+    "The accepted-mode regression signs its complete synthetic evidence with a real Ed25519 key.",
+    "Live published archive verification and complete profile workflows remain required.",
+    "The earlier hybrid CI persistence failure remains undetermined."
+  ]
+}

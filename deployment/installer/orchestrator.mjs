@@ -394,6 +394,15 @@ export async function authenticateRelease(
 ) {
   const bytes = await readFile(operator.releasePath),
     manifest = JSON.parse(bytes);
+  if (
+    !qualification &&
+    (['candidate-only', 'profile-qualified'].includes(manifest.qualification) ||
+      manifest.districtInfrastructureAcceptance === 'not-qualified')
+  )
+    fail(
+      'RELEASE',
+      'This prerelease requires candidate mode until release acceptance is complete.',
+    );
   if (qualification) {
     if (
       manifest.schemaVersion !== 1 ||

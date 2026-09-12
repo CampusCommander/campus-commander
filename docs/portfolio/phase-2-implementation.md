@@ -1092,3 +1092,24 @@ The local run uses one Docker host and the instrumented workspace fixture. It do
 The complete published bundle matrix, final prerelease execution, district qualification, and final acceptance audit remain open.
 
 [The assembly verification record](../../deployment/evidence/CC-37-phase-2-qualified-assembly-validation.json) binds the implementation, retained reports, and local check logs.
+
+## Hosted profile-qualified installation
+
+The completion review found two gaps after adding profile-qualified release assembly.
+The hosted installer rejected the new tag and expected candidate asset names during selection, verification, and cached resume.
+Accepted mode also admitted a signed profile-qualified manifest despite its explicit unqualified district gate.
+
+The installer now selects the correct archive prefix and fixed Phase 2 signing identity for profile-qualified tags.
+It binds the tag to the signed manifest phase, qualification class, and source revision.
+Cached resume retains the original tag and assets. Phase 1 and Phase 2 candidate behavior remain supported.
+The installer rejects accepted mode for candidate-only, profile-qualified, and explicitly district-unqualified manifests.
+Candidate mode retains its existing explicit acknowledgment and records acceptedRelease as false.
+
+The regression suite first reported four failures and eighty-two passes.
+After the corrections, all eighty-six installer tests passed in 7.8 seconds.
+The accepted-mode regression uses fifteen matching reports and a real Ed25519 signature.
+Entry tests exercise the actual shell with controlled download and Cosign adapters.
+They verify selection, both blob checks, all three image checks, manifest mismatch rejection, and cached resume.
+Six release tests, deployment lint, formatting, and POSIX shell syntax also passed.
+[The installer verification record](../../deployment/evidence/CC-37-phase-2-qualified-installer-validation.json) preserves the failing and passing evidence hashes.
+Live published artifact and profile qualification remain required.

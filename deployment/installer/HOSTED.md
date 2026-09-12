@@ -90,6 +90,23 @@ Select `candidate` when asked for the release mode.
 Type `candidate-lab` when asked to acknowledge the disposable test installation.
 This choice records `acceptedRelease: false`. It does not waive signature verification.
 
+Phase 2 also publishes profile-qualified prereleases after its twelve extracted-bundle workflows and final assembly pass.
+The tag is `phase-2-qualified-<revision12>`. Its archive and signature use the `phase-2-qualified` prefix.
+Use the installer from the selected source revision when testing a branch prerelease.
+
+```sh
+sh /absolute/path/to/install.sh --release phase-2-qualified-REVISION12 --verify-only
+```
+
+Replace `REVISION12` with the first twelve characters of the published source revision.
+Remove `--verify-only` to continue through guided installation.
+Both Phase 2 tag types use the independently trusted Phase 2 workflow signing identity.
+Automatic selection includes supported candidate and profile-qualified tags. Resume retains the installation's original tag and cached assets.
+
+Profile-qualified prereleases still require candidate mode.
+The installer rejects accepted mode for a candidate manifest, a profile-qualified manifest, or an explicit unqualified district gate.
+Fifteen automated profile reports do not complete district infrastructure acceptance.
+
 For an all-Docker laboratory installation:
 
 1. Select method `1`.

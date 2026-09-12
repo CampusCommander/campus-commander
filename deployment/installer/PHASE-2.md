@@ -101,7 +101,7 @@ The restore uses native PostgreSQL tools, new database roles and passwords, fres
 The browser must reject the source session and complete a fresh login with preserved preferences and all four Diagnostics checks.
 Both hybrid fixtures use one Docker host and synthetic certificates. District infrastructure and signed publication require separate acceptance.
 
-Run `npx nx run api-e2e:kubernetes-upgrade-integration` to upgrade the rendered Kubernetes profile from published Phase 1 images.
+Run `npx nx run api-e2e:kubernetes-upgrade-integration` to upgrade the Kubernetes profile through the installer CLI from published Phase 1 images.
 The fixture verifies runtime image content, original migrations, artifact metadata and bytes, worker execution, and Kestra files.
 The installer-owned migration job applies Phase 2 before administrator enrollment and browser checks.
 
@@ -152,4 +152,21 @@ The fixture checks the bundle phase, source revision, and image inventory before
 Without that variable, the fixture uses the workspace CLI.
 Reports distinguish the application image source revision from the qualification harness revision.
 Kind nodes share one physical Docker host and synthetic storage. District DNS, identity providers, storage, and CNI enforcement require separate qualification.
-Kubernetes upgrade and restore targets retain their separate rendered-profile coverage.
+Kubernetes upgrade invokes the installer CLI with the complete target inventory.
+Kubernetes restore retains its separate isolated recovery workflow and invokes the native operator CLI.
+
+## Distributed hybrid installer qualification
+
+Run `npx nx run api-e2e:hybrid-cli-integration` for fresh installation, repeated resume, stop, and uninstall across three Docker daemons.
+Run `npx nx run api-e2e:hybrid-cli-upgrade-integration` for the installer upgrade with a verified encrypted Phase 1 backup.
+Set `CC_AUTH_INSTALLER_ROOT` to the independently verified extracted bundle to execute its CLI and complete target manifest.
+The reports require distinct controller and worker daemon identities, authenticated Diagnostics, preserved state, and owned-resource cleanup.
+The daemons share one physical host. District infrastructure requires its own acceptance evidence.
+
+## Profile-qualified prereleases
+
+The final release workflow binds fifteen profile reports to twelve executed extracted-bundle workflows.
+It publishes a signed `phase-2-qualified-<revision12>` prerelease after every required job passes.
+See [release verification](../release/README.md#profile-qualified-assembly) for the archive, manifest, evidence, and signing identity.
+See [hosted installation](HOSTED.md#current-candidate-testing) for tag selection and cached resume.
+Profile-qualified prereleases use candidate mode until full release acceptance is complete.
