@@ -328,6 +328,14 @@
       "options": {
         "command": "node deployment/installer/kubernetes-lifecycle-integration.mjs"
       }
+    },
+    "kestra-database-recovery-probe": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/kestra/database-recovery-probe.mjs"
+      }
     }
   }
 }

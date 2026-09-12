@@ -53,6 +53,7 @@ export async function applicationBrowser(
     await expect(page).toHaveTitle('Your account · Campus Commander');
     const checks = async ({
       recoverySeconds: bound = recoverySeconds,
+      recoveryDeadline,
     } = {}) => {
       await activate(
         page.getByRole('link', { name: 'Diagnostics', exact: true }).first(),
@@ -71,7 +72,7 @@ export async function applicationBrowser(
           Kestra: 'kestra',
           'Artifact storage': 'artifacts',
         }[name];
-        const deadline = Date.now() + bound * 1000;
+        const deadline = recoveryDeadline ?? Date.now() + bound * 1000;
         let passed = false;
         do {
           const response = page.waitForResponse(
@@ -96,7 +97,9 @@ export async function applicationBrowser(
             correlationId: body.correlationId,
             observedAt: new Date().toISOString(),
           });
-          passed = body.status === 'passed';
+          passed =
+            body.status === 'passed' &&
+            (recoveryDeadline === undefined || Date.now() <= recoveryDeadline);
           if (!passed && Date.now() < deadline)
             await new Promise((done) => setTimeout(done, 2000));
         } while (!passed && Date.now() < deadline);

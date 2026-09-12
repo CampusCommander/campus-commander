@@ -133,6 +133,7 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
           profile: 'hybrid',
           faults: {
             status: 'passed',
+            recoveryBoundSeconds: 180,
             cases: [
               'api-interruption',
               'worker-host-interruption',
@@ -140,7 +141,7 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
               'external-postgresql-interruption',
               'kestra-interruption',
               'shared-artifact-access-loss',
-            ].map((name) => ({ name, status: 'passed' })),
+            ].map((name) => ({ name, status: 'passed', recoveryMs: 1000 })),
           },
           browser: { status: 'passed' },
           packagedApplicationImages: true,
@@ -258,6 +259,35 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       }),
       /every interruption and recovery case/,
     );
+    for (const [index, mutate] of [
+      (report) => {
+        delete report.faults.recoveryBoundSeconds;
+      },
+      (report) => {
+        report.faults.recoveryBoundSeconds = 181;
+      },
+      (report) => {
+        delete report.faults.cases[0].recoveryMs;
+      },
+      (report) => {
+        report.faults.cases[0].recoveryMs = 180001;
+      },
+    ].entries()) {
+      const invalid = structuredClone(faultReport);
+      mutate(invalid);
+      await writeFile(faultPath, JSON.stringify(invalid));
+      await assert.rejects(
+        assembleCandidate({
+          root,
+          output: join(root, `invalid-fault-timing-${index}`),
+          artifacts: join(root, 'artifacts'),
+          sourceRevision,
+          phase: 2,
+          qualificationArtifacts,
+        }),
+        /recovery timing/,
+      );
+    }
     await writeFile(faultPath, JSON.stringify(faultReport));
     const upgradeReportPath = join(
       qualificationArtifacts,

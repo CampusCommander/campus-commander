@@ -105,5 +105,6 @@ The candidate inventory also requires the distributed hybrid CLI install, upgrad
 These reports must match the source revision and include three distinct daemon identifiers and successful owned-resource cleanup.
 The upgrade and process fault reports must include a verified encrypted backup.
 The process fault report must include all six named interruption and recovery cases.
+It must declare the shared 180-second foundation budget and include measured recovery times within that budget.
 Assembly rejects missing reports, mixed source revisions, repeated daemon identifiers, incomplete cleanup, and missing backup verification.
 These requirements retain candidate status until the complete profile acceptance records pass.

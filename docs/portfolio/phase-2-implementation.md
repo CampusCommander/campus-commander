@@ -7,12 +7,16 @@ Status: IN PROGRESS. No Phase 2 release has passed acceptance.
 
 Jira records thirteen Done tasks, CC-23 through CC-35. CC-36 through CC-38 remain In Progress.
 CC-35 includes the passing published-image browser and Orca 46.1 evidence from source `0185173`.
-The [tenth candidate](https://github.com/CampusCommander/campus-commander/actions/runs/34690914876) tests source `d1df394d1b5d8f8c8a484f187c720fb48b415305`.
-It adds the distributed hybrid CLI upgrade and corrects preparation of absent infrastructure images.
-It failed both distributed CLI sign-in checks. All sixteen other executable jobs passed. Bundle publication skipped.
+The [eleventh candidate](https://github.com/CampusCommander/campus-commander/actions/runs/34692002250) tests source `294124f3d39bc5803e9635298d5a18a4f60db581`.
+It passed fifteen jobs and failed four jobs. Bundle publication skipped. Pull request CI passed.
+All three distributed hybrid jobs passed provider discovery, sign-in, and initial Diagnostics.
+They failed after API restart because the Diagnostics heading did not return within fifteen seconds.
+The Kubernetes installation job failed during the Redis image download with a connection reset.
+The Kubernetes upgrade and restore jobs passed.
+[The terminal run record](../../deployment/evidence/CC-37-phase-2-eleventh-published-run.json) preserves each job result and failure scope.
 
 The latest published bundle remains [candidate 2f26a01](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-2f26a013e3bb).
-The eighth and ninth candidates failed and published no replacement bundle.
+The eighth through eleventh candidates failed and published no replacement bundle.
 Complete profile fault evidence, final revision qualification, isolated CLI recovery, and accepted signed release assembly remain open.
 Sections below preserve earlier observations with their original source revisions and limits.
 
@@ -641,3 +645,59 @@ The production termination grace period remains five minutes. No runtime recover
 The current Jira audit verifies [all sixteen epic links and twenty-five blocking links](../../deployment/evidence/CC-38-phase-2-current-jira-audit.json).
 CC-36 records its completed configuration criterion. CC-38 records completed Jira linkage and UI evidence criteria.
 Both tasks remain In Progress with the release task and epic.
+
+## API restart readiness and focused Kestra diagnosis
+
+The eleventh candidate passed verified provider discovery and initial browser checks on all three distributed hybrid targets.
+Each target then failed the Diagnostics heading assertion after API restart.
+The fixture now verifies the existing session on each restarted replica before browser navigation.
+It retains response statuses and recovery times within a thirty-second bound.
+The session must identify the original principal. No new OIDC login supplies that proof.
+
+A [focused Kestra probe](../../deployment/kestra/README.md#database-recovery-probe) isolates PostgreSQL-loss recovery from application installation.
+[Three observations](../../deployment/evidence/CC-36-phase-2-kestra-shutdown-probe.json) record task recovery and private JVM log checksums.
+Five-minute grace runs recovered in 66.5 and 94.0 seconds. A three-second grace run recovered in 94.3 seconds.
+JVM dumps show a queue thread waiting for shutdown callbacks while those callbacks wait for queue termination.
+HTTP 200 responses continued during part of that delay without completed task execution.
+The probe follows changed ephemeral ports after restart. The distributed fixture uses fixed ports.
+
+The tagged [queue implementation](https://github.com/kestra-io/kestra/blob/v1.3.37/jdbc/src/main/java/io/kestra/jdbc/runner/JdbcQueue.java) invokes shutdown from the polling thread.
+The [shutdown context](https://github.com/kestra-io/kestra/blob/v1.3.37/core/src/main/java/io/kestra/core/contexts/KestraContext.java) closes the application context synchronously.
+The measured waits support a shutdown coordination diagnosis. They do not establish a production correction.
+The retained distributed recovery failure remains open. The production grace period and recovery bound remain unchanged.
+
+The complete distributed run with the readiness correction reached all installer lifecycle assertions and then reproduced PostgreSQL recovery failure.
+[The failure record](../../deployment/evidence/CC-36-phase-2-distributed-hybrid-restart-failure.json) retains published image digests, fault progress, and the JVM observation.
+The API, worker, and Redis fault cases passed. Kestra exceeded the unchanged 120-second recovery bound after PostgreSQL returned.
+The failing queue thread waited in `ThreadPoolExecutor.awaitTermination` through `PostgresWorkerJobQueue.close` and `KestraContext.Initializer.shutdown`.
+The final two fault cases did not run.
+
+The repository Nx probe passed with the default grace period and verified resource cleanup.
+[Its report](../../deployment/evidence/CC-36-phase-2-kestra-nx-probe.json) records 66.4-second task recovery.
+This narrower probe does not override the failed distributed test.
+
+## Shared foundation recovery budget
+
+The existing foundation process harness uses a 180-second default recovery budget.
+The new distributed Phase 2 fixture initially used 120 seconds.
+The portfolio requires fault recovery evidence and explicit limits. It does not specify a two-minute orchestration recovery objective.
+The distributed fixture now imports the existing foundation budget instead of defining a separate value.
+One deadline covers session recovery and all four Diagnostics checks after each fault.
+The signed candidate requires that budget and finite measured recovery times within it.
+Missing timing, a different budget, and late recovery fail release validation.
+
+This alignment does not correct Kestra shutdown coordination or erase the 120-second failures.
+The production grace period remains five minutes. District recovery guarantees remain unqualified.
+The focused Nx probe retains its narrower 120-second diagnostic bound.
+
+[The distributed installation run](../../deployment/evidence/CC-36-phase-2-distributed-hybrid-restart-install.json) passed in 175.9 seconds with the readiness correction.
+It verified ten direct session observations and removed every owned resource.
+The constrained focused probe used the profile limits of two CPUs and 2 GiB. Task execution recovered in 67.1 seconds.
+Those resource limits alone did not reproduce the longer distributed shutdown.
+
+The [complete distributed run](../../deployment/evidence/CC-36-phase-2-distributed-hybrid-foundation-budget.json) passed all six fault cases under the shared budget.
+PostgreSQL recovery took 93.0 seconds. The complete Nx target finished in 6 minutes 45 seconds.
+The report preserves the verified Phase 1 upgrade, encrypted backup, distinct daemon identities, session checks, and cleanup result.
+Every fault preserved application identity, preferences, security events, artifact bytes, and both Kestra internal files.
+This pass does not erase earlier failures or establish a district recovery guarantee.
+Full profile capacity, certificate, isolated CLI restore, and final release acceptance remain open.

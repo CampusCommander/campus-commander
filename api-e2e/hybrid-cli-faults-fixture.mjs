@@ -4,6 +4,7 @@ import { chmod, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
 import { outerDocker } from './hybrid-hosts-fixture.mjs';
+import { faultRecoveryTimeoutSeconds } from '../deployment/qualification/faults.mjs';
 
 /** Verify process recovery against the installed distributed application. */
 export async function faultDistributedHybrid({
@@ -162,6 +163,7 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
   ];
   const report = {
     status: 'in-progress',
+    recoveryBoundSeconds: faultRecoveryTimeoutSeconds,
     cases: [],
     limits: [
       'Process and shared-artifact access faults only. Capacity and certificate faults require separate evidence.',
@@ -176,7 +178,7 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
   try {
     for (const fault of cases) {
       console.log('Distributed hybrid fault:', fault.name);
-      await checks({ recoverySeconds: 120 });
+      await checks({ recoverySeconds: faultRecoveryTimeoutSeconds });
       await verifyDurable();
       const record = {
         name: fault.name,
@@ -229,8 +231,15 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
           })
           .toBe(200);
       }
-      await checks({ recoverySeconds: 120 });
+      await checks({
+        recoverySeconds: faultRecoveryTimeoutSeconds,
+        recoveryDeadline: recoveryStarted + faultRecoveryTimeoutSeconds * 1000,
+      });
       record.recoveryMs = Date.now() - recoveryStarted;
+      assert.ok(
+        record.recoveryMs <= faultRecoveryTimeoutSeconds * 1000,
+        'Fault recovery exceeded the foundation deadline.',
+      );
       record.durableState = await verifyDurable();
       await verifyReplicas(context);
       record.status = 'passed';

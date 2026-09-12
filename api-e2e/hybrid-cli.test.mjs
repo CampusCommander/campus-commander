@@ -45,9 +45,12 @@ test(
     let upgrade;
     let faults;
     const providerConnections = [];
+    const sessionChecks = [];
+    const restartRecoveries = [];
+    const images = {};
+    let sourceRevision;
     const failures = [];
     try {
-      const images = {};
       const labels = [];
       for (const [name, variable] of [
         ['frontend', 'FRONTEND'],
@@ -63,7 +66,7 @@ test(
         );
       }
       assert.equal(new Set(labels).size, 1);
-      const sourceRevision = labels[0];
+      sourceRevision = labels[0];
       assert.match(sourceRevision, /^[a-f0-9]{40}$/);
       const baseline =
         process.env.CC_AUTH_HYBRID_CLI_UPGRADE === '1'
@@ -418,8 +421,10 @@ process.exit(result.status??1);
       );
       assert.ok(enrollment.principalId);
       stage = 'browser and lifecycle';
-      const sessionChecks = [];
-      const verifyReplicas = async (context) => {
+      const verifyReplicas = async (
+        context,
+        { waitForRestart = false } = {},
+      ) => {
         const replicas = (await compose(controller, ['ps', '--quiet', 'api']))
           .split('\n')
           .filter(Boolean);
@@ -428,22 +433,61 @@ process.exit(result.status??1);
           .map(({ name, value }) => `${name}=${value}`)
           .join('; ');
         for (const replica of replicas) {
-          const result = JSON.parse(
-            await hosts.run(
-              controller,
-              [
-                'docker',
-                'exec',
-                '-i',
-                replica,
-                'node',
-                '--input-type=module',
-                '-e',
-                `import fs from 'node:fs';import https from 'node:https';let input='';for await(const chunk of process.stdin)input+=chunk;const {cookie}=JSON.parse(input);const request=https.get({hostname:'127.0.0.1',port:3000,servername:'api',ca:fs.readFileSync('/run/secrets/district-ca'),path:'/api/auth/session',headers:{cookie},timeout:10000},response=>{let body='';response.on('data',chunk=>body+=chunk);response.on('end',()=>{const value=JSON.parse(body);console.log(JSON.stringify({status:response.statusCode,principalId:value.identity?.id}))})});request.on('timeout',()=>request.destroy(new Error('Session verification timed out.')));request.on('error',()=>process.exit(1));`,
-              ],
-              { input: JSON.stringify({ cookie }) },
-            ),
-          );
+          const readSession = async () =>
+            JSON.parse(
+              await hosts.run(
+                controller,
+                [
+                  'docker',
+                  'exec',
+                  '-i',
+                  replica,
+                  'node',
+                  '--input-type=module',
+                  '-e',
+                  `import fs from 'node:fs';import https from 'node:https';let input='';for await(const chunk of process.stdin)input+=chunk;const {cookie}=JSON.parse(input);const request=https.get({hostname:'127.0.0.1',port:3000,servername:'api',ca:fs.readFileSync('/run/secrets/district-ca'),path:'/api/auth/session',headers:{cookie},timeout:10000},response=>{let body='';response.on('data',chunk=>body+=chunk);response.on('end',()=>{const value=JSON.parse(body);console.log(JSON.stringify({status:response.statusCode,principalId:value.identity?.id}))})});request.on('timeout',()=>request.destroy(new Error('Session verification timed out.')));request.on('error',()=>process.exit(1));`,
+                ],
+                { input: JSON.stringify({ cookie }) },
+              ),
+            );
+          let result;
+          if (waitForRestart) {
+            const started = Date.now();
+            const observations = [];
+            await expect
+              .poll(
+                async () => {
+                  try {
+                    result = await readSession();
+                    observations.push({
+                      status: result.status,
+                      elapsedMs: Date.now() - started,
+                    });
+                    return (
+                      result.status === 200 &&
+                      result.principalId === enrollment.principalId
+                    );
+                  } catch {
+                    observations.push({
+                      status: 'unavailable',
+                      elapsedMs: Date.now() - started,
+                    });
+                    return false;
+                  }
+                },
+                {
+                  timeout: 30000,
+                  message:
+                    'The API replica must restore the existing session after restart.',
+                },
+              )
+              .toBe(true);
+            restartRecoveries.push({
+              replica,
+              recoveryMs: Date.now() - started,
+              observations,
+            });
+          } else result = await readSession();
           assert.equal(result.status, 200);
           assert.equal(result.principalId, enrollment.principalId);
           sessionChecks.push({ replica, ...result });
@@ -461,9 +505,11 @@ process.exit(result.status??1);
           await page.getByRole('button', { name: 'Choose theme' }).click();
           await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
           assert.equal((await preference).status(), 201);
+          stage = 'API restart and session restoration';
           await compose(controller, ['restart', 'api']);
           for (const host of workers)
             await compose(host, ['restart', 'workers']);
+          await verifyReplicas(context, { waitForRestart: true });
           await page.reload();
           await expect(
             page.getByRole('heading', { name: 'Diagnostics', exact: true }),
@@ -471,6 +517,7 @@ process.exit(result.status??1);
           await verifyReplicas(context);
           await checks({ recoverySeconds: 120 });
           for (const command of ['stop', 'uninstall']) {
+            stage = `${command} and resume`;
             for (const host of workers)
               await compose(host, command === 'stop' ? ['stop'] : ['down']);
             const result = await cli(command);
@@ -536,6 +583,7 @@ process.exit(result.status??1);
         commands,
         apiReplicaCount: apiReplicas.length,
         sessionChecks,
+        restartRecoveries,
         providerConnections,
         qualificationSourceState:
           'Workspace installer and test source with explicitly pinned published application images.',
@@ -601,7 +649,13 @@ process.exit(result.status??1);
           status: 'failed',
           profile: 'hybrid',
           stage,
+          sourceRevision,
+          images,
+          durationMs: Date.now() - started,
           providerConnections,
+          sessionChecks,
+          restartRecoveries,
+          ...(upgrade ? { upgrade } : {}),
           recordedAt: new Date().toISOString(),
         }),
       );

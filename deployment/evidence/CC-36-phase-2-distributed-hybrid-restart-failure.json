@@ -1,0 +1,114 @@
+{
+  "status": "failed",
+  "profile": "hybrid",
+  "stage": "distributed process and shared-storage faults",
+  "providerConnections": [
+    {
+      "replica": "a32c5d3ddfd7b87a22f0c701b27b247639fa200ff339a29a4d0225a93035011a",
+      "status": 200
+    },
+    {
+      "replica": "210dbf885661e5c22c9f00cd28b4f4aadb71314f365a269e8ee02fabdc5287d2",
+      "status": 200
+    }
+  ],
+  "recordedAt": "2026-09-12T12:07:59.043Z",
+  "command": "npx nx run api-e2e:hybrid-cli-process-fault-integration",
+  "images": {
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:0df8787ef16016e6595949e0962bdcd3c1ca68bb3d7e5126e48e824bcc9790fa",
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:b0f04a0d8b5b2e3ea3bd27bde622a4023a579290ad08d9580183a460fde6b44d",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:e1d16ecd4d37c815bb2407b7985b548ec3acd78116538c43e4a5f7626d3c44fd"
+  },
+  "sourceRevision": "294124f3d39bc5803e9635298d5a18a4f60db581",
+  "qualificationSourceState": "Workspace fixture based on 294124f with the API session readiness correction.",
+  "message": "Kestra operation did not recover within 120 seconds.",
+  "faultProgress": {
+    "status": "failed",
+    "cases": [
+      {
+        "name": "api-interruption",
+        "startedAt": "2026-09-12T12:05:18.492Z",
+        "status": "passed",
+        "observed": {
+          "httpStatus": 502
+        },
+        "interruptionMs": 4781,
+        "recoveryMs": 1918,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 36,
+          "artifactSha256": "bf5afe432e898cf4049a243192c6b3000edc3c83451a7f93817ce306ab839c25",
+          "internalStorageFiles": 2
+        }
+      },
+      {
+        "name": "worker-host-interruption",
+        "startedAt": "2026-09-12T12:05:27.909Z",
+        "status": "passed",
+        "observed": {
+          "httpStatus": 201,
+          "status": "failed",
+          "correlationId": "a0f302e9-c757-4499-b826-d6a4f6fca9d1"
+        },
+        "interruptionMs": 5348,
+        "recoveryMs": 912,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 36,
+          "artifactSha256": "bf5afe432e898cf4049a243192c6b3000edc3c83451a7f93817ce306ab839c25",
+          "internalStorageFiles": 2
+        }
+      },
+      {
+        "name": "external-redis-interruption",
+        "startedAt": "2026-09-12T12:05:36.709Z",
+        "status": "passed",
+        "observed": {
+          "httpStatus": 503,
+          "correlationId": "7781c839-d121-44da-90ff-d559b1b5302c"
+        },
+        "interruptionMs": 3741,
+        "sourceSessionRejected": true,
+        "recoveryMs": 1518,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 36,
+          "artifactSha256": "bf5afe432e898cf4049a243192c6b3000edc3c83451a7f93817ce306ab839c25",
+          "internalStorageFiles": 2
+        }
+      },
+      {
+        "name": "external-postgresql-interruption",
+        "startedAt": "2026-09-12T12:05:44.515Z",
+        "status": "in-progress",
+        "observed": {
+          "httpStatus": 503,
+          "correlationId": "646bbfb6-032b-4079-bccd-01a4414c2d7e"
+        },
+        "interruptionMs": 4563
+      }
+    ],
+    "limits": [
+      "Process and shared-artifact access faults only. Capacity and certificate faults require separate evidence."
+    ]
+  },
+  "jvmObservation": {
+    "thread": "jdbc-queue-WorkerJob_0",
+    "state": "TIMED_WAITING",
+    "stack": [
+      "ThreadPoolExecutor.awaitTermination",
+      "JdbcQueue.close",
+      "PostgresWorkerJobQueue.close",
+      "DefaultBeanContext.stop",
+      "KestraContext.Initializer.shutdown",
+      "JdbcQueue.poll"
+    ],
+    "privateLogSha256": "f65bf35f1b8eb3698a12d4117f02d083804184de1a941d48fcd211da47de4151"
+  },
+  "durationMs": 423317.72016,
+  "limits": [
+    "Upgrade, initial Diagnostics, API restart sessions, and all installer lifecycle checks passed before the fault cases.",
+    "API, worker, and Redis fault recovery passed. PostgreSQL recovery failed. The final two fault cases did not run.",
+    "The session readiness correction does not resolve the PostgreSQL recovery failure."
+  ]
+}

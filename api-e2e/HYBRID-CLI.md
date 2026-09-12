@@ -66,3 +66,13 @@ The host fixture reserves private Docker address pools outside existing outer Do
 This prevents an inner bridge from intercepting the outer host gateway used by the synthetic identity provider.
 Each API replica must retrieve provider discovery over verified TLS before browser qualification.
 Failure evidence records the failed stage and bounded provider results without raw credentials or callback parameters.
+
+The API restart check waits for the existing session on both replicas before browser navigation.
+Each replica has a thirty-second readiness bound. The report retains response statuses and measured recovery time.
+The check uses the existing cookie and verifies the original principal. It does not create another session.
+
+The process fault target uses the existing foundation recovery budget of 180 seconds.
+One deadline covers session recovery and all four Diagnostics checks after each fault.
+The report records the budget and measured recovery time for every case.
+The signed inventory rejects missing timing, a different budget, and recovery beyond the budget.
+Earlier 120-second failures remain recorded. Passing the foundation budget does not establish recovery within two minutes.

@@ -11,6 +11,7 @@ import {
 import { dirname, resolve, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { sha256 } from './integrity.mjs';
+import { faultRecoveryTimeoutSeconds } from '../qualification/faults.mjs';
 
 const run = promisify(execFile);
 const services = { frontend: 'frontend', api: 'api', worker: 'workers' };
@@ -207,6 +208,18 @@ export async function assembleCandidate({
         )
           throw new Error(
             'Distributed process fault qualification requires every interruption and recovery case.',
+          );
+        if (
+          report.faults.recoveryBoundSeconds !== faultRecoveryTimeoutSeconds ||
+          cases.some(
+            (item) =>
+              !Number.isFinite(item.recoveryMs) ||
+              item.recoveryMs < 0 ||
+              item.recoveryMs > faultRecoveryTimeoutSeconds * 1000,
+          )
+        )
+          throw new Error(
+            'Distributed process fault qualification requires measured recovery timing within the foundation budget.',
           );
       }
       const actual = report.releaseB ?? report.images;
