@@ -1,0 +1,40 @@
+{
+  "name": "diagnostics-light",
+  "engine": {
+    "name": "axe-core",
+    "version": "4.13.0"
+  },
+  "recordedAt": "2026-09-12T06:27:43.794Z",
+  "violations": [],
+  "incomplete": [],
+  "passedRuleIds": [
+    "aria-allowed-attr",
+    "aria-conditional-attr",
+    "aria-hidden-body",
+    "aria-hidden-focus",
+    "aria-prohibited-attr",
+    "aria-valid-attr-value",
+    "aria-valid-attr",
+    "button-name",
+    "bypass",
+    "color-contrast",
+    "document-title",
+    "duplicate-id-aria",
+    "html-has-lang",
+    "html-lang-valid",
+    "link-name",
+    "list",
+    "listitem",
+    "meta-viewport",
+    "nested-interactive",
+    "summary-name",
+    "target-size"
+  ],
+  "accessibilityTree": "- link \"Skip to content\":\n  - /url: \"#main-content\"\n- navigation \"Application navigation\":\n  - button \"Toggle navigation\"\n  - link \"Your account\":\n    - /url: /account\n  - link \"Diagnostics\":\n    - /url: /diagnostics\n- banner:\n  - text: Diagnostics\n  - link \"Application help\":\n    - /url: /account#application-help\n  - button \"Choose theme\"\n  - button \"Open user menu\": Synthetic administrator\n- main:\n  - heading \"Diagnostics\" [level=1]\n  - paragraph: Check application services and inspect their results.\n  - region \"Service connections\":\n    - heading \"Service connections\" [level=2]\n    - button \"Refresh connections\"\n    - list:\n      - listitem:\n        - text: PostgreSQL\n        - strong: Ready\n      - listitem:\n        - text: Redis\n        - strong: Ready\n      - listitem:\n        - text: Kestra\n        - strong: Ready\n      - listitem:\n        - text: Artifact storage\n        - strong: Ready\n    - paragraph:\n      - time: Observed 0 seconds ago\n  - region \"Service checks\":\n    - heading \"Service checks\" [level=2]\n    - paragraph: Checks use temporary synthetic data. Run one check at a time.\n    - article:\n      - heading \"PostgreSQL\" [level=3]\n      - paragraph: Verify a synthetic database transaction and its rollback.\n      - button \"Check PostgreSQL\"\n      - paragraph: \"PostgreSQL: The check passed. The service returned the expected result.\"\n      - paragraph: Sep 12, 2026, 2:27:41 AM\n      - group: Support reference\n    - article:\n      - heading \"Redis\" [level=3]\n      - paragraph: Write, read, and remove a temporary cache value.\n      - button \"Check Redis\"\n      - paragraph: \"Redis: The check passed. The service returned the expected result.\"\n      - paragraph: Sep 12, 2026, 2:27:41 AM\n      - group: Support reference\n    - article:\n      - heading \"Kestra\" [level=3]\n      - paragraph: Run a fixed task and verify the worker result.\n      - button \"Check Kestra\"\n      - paragraph: \"Kestra: The check passed. The service returned the expected result.\"\n      - paragraph: Sep 12, 2026, 2:27:42 AM\n      - group: Support reference\n    - article:\n      - heading \"Artifact storage\" [level=3]\n      - paragraph: Publish, read, verify, and remove a synthetic artifact.\n      - button \"Check Artifact storage\"\n      - paragraph: \"Artifact storage: The check passed. The service returned the expected result.\"\n      - paragraph: Sep 12, 2026, 2:27:42 AM\n      - group: Support reference\n- contentinfo:\n  - text: Version phase-2-development · Build 7dbeee83cc06786f03a06d1e2ab21332caeae96e-dirty\n  - link \"Services ready\":\n    - /url: /diagnostics",
+  "computedTheme": {
+    "theme": "light",
+    "color": "rgb(32, 33, 36)",
+    "background": "rgb(248, 250, 252)"
+  },
+  "screenReaderWalkthrough": "not-run"
+}

@@ -1,0 +1,9 @@
+{
+  "name": "application-contracts",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/application-contracts/src",
+  "projectType": "library",
+  "tags": ["type:contracts"],
+  "// targets": "to see all targets run: nx show project application-contracts --web",
+  "targets": {}
+}

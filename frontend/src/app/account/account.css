@@ -1,0 +1,4 @@
+.card {
+  max-width: var(--cc-content-max-width);
+  margin-block: var(--cc-space-xl);
+}

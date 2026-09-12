@@ -23,6 +23,7 @@ import {
   verifyBoundedArtifactVolume,
 } from './cc18-faults.mjs';
 import { qualificationImages } from '../../qualification/images.mjs';
+import { applicationRedisAcl } from '../../redis/runtime.mjs';
 
 const execute = promisify(execFile);
 const {
@@ -360,7 +361,7 @@ function readyStatus(response) {
   return status;
 }
 
-export async function qualifyFullHybrid() {
+export async function qualifyFullHybrid({ application } = {}) {
   const startedAt = Date.now();
   const runId = `cc-hybrid-full-${process.pid}-${randomBytes(4).toString('hex')}`;
   const root = await mkdtemp(join(tmpdir(), `${runId}-`));
@@ -586,7 +587,7 @@ export async function qualifyFullHybrid() {
         'utf8',
       ),
     );
-    source.images = {
+    source.images = application?.baseline?.images ?? {
       frontend: frontendImage,
       api: apiImage,
       workers: workerImage,
@@ -605,6 +606,13 @@ export async function qualifyFullHybrid() {
     };
     source.services.kestra.internalStorage.location = storageRoot;
     source.artifacts.location = artifactRoot;
+    if (application && !application.baseline) {
+      source.phase = 2;
+      source.applicationAuth = application.auth;
+      source.services.edge.access = 'application';
+      source.services.edge.endpoint.url = application.auth.publicOrigin;
+      await writeSecret(privateRoot, 'oidc-client', application.password);
+    }
     const configPath = join(root, 'hybrid.json');
     const releasePath = join(root, 'release.json');
     await writeFile(configPath, `${JSON.stringify(source, null, 2)}\n`);
@@ -651,6 +659,26 @@ export async function qualifyFullHybrid() {
       { controller: true, boundedArtifact },
     );
     const controller = controllerRuntime.document;
+    if (application) {
+      controller.services.edge.ports = [
+        `127.0.0.1:${new URL(application.auth.publicOrigin).port}:8443`,
+      ];
+      controller.services.api.environment.NODE_EXTRA_CA_CERTS =
+        '/run/qualification/provider-ca';
+      controller.services.api.extra_hosts = [
+        'host.docker.internal:host-gateway',
+      ];
+      controller.services.api.volumes.push({
+        type: 'bind',
+        source: application.caFile,
+        target: '/run/qualification/provider-ca',
+        read_only: true,
+      });
+      await writeFile(
+        controllerFile,
+        `${JSON.stringify(controller, null, 2)}\n`,
+      );
+    }
     const workerRuntimes = await Promise.all(
       workerFiles.map((path) =>
         configureRuntimeCompose(path, externalNetwork, { boundedArtifact }),
@@ -786,7 +814,7 @@ export async function qualifyFullHybrid() {
       `${join(privateRoot, 'kestra-database-password')}:/run/secrets/kestra-database-password:ro`,
       '-v',
       `${join(privateRoot, 'postgres-migrator')}:/run/secrets/postgres-migrator:ro`,
-      apiImage,
+      source.images.api,
       'node',
       '/app/deployment/postgres/cli.mjs',
       'provision',
@@ -810,7 +838,7 @@ export async function qualifyFullHybrid() {
         'appendonly no',
         'enable-debug-command no',
         'enable-module-command no',
-        `user default on #${passwordHash} ~cc:* &cc:* -@all +ping +get +set +del +exists +expire +ttl`,
+        `user default on #${passwordHash} ${applicationRedisAcl}`,
         'port 0',
         'tls-port 6379',
         'tls-cert-file /run/tls/server.crt',
@@ -978,14 +1006,14 @@ export async function qualifyFullHybrid() {
       port: edgePort,
       servername: 'campus.example.org',
       ca: caBytes,
-      path: '/api',
+      path: source.phase === 2 ? '/api/startup' : '/api',
     });
     const edgeAuthorized = await request({
       port: edgePort,
       servername: 'campus.example.org',
       ca: caBytes,
       authorization: `Basic ${Buffer.from(`operator:${bootstrap}`).toString('base64')}`,
-      path: '/api',
+      path: source.phase === 2 ? '/api/startup' : '/api',
     });
     if (edgeUnauthenticated.status !== 401 || edgeAuthorized.status !== 200) {
       throw new Error('The edge bootstrap access contract failed.');
@@ -1662,7 +1690,51 @@ export async function qualifyFullHybrid() {
         resources: stats,
       };
     }
+    const upgrade = application?.upgrade
+      ? await application.upgrade({
+          root,
+          source,
+          configPath,
+          releasePath,
+          controllerFile,
+          workerFiles,
+          projects,
+          externalNetwork,
+          artifactPath,
+          artifactChecksum,
+          storageRoot,
+          readExecution: async () => {
+            const response = await request({
+              port: kestraPort,
+              servername: 'kestra',
+              ca: caBytes,
+              authorization: kestraBasic,
+              path: `/api/v1/main/executions/${executionId}`,
+            });
+            if (response.status !== 200)
+              throw new Error('The original Kestra execution is unavailable.');
+            return JSON.parse(response.body);
+          },
+        })
+      : undefined;
+    const applicationResult = application
+      ? await application.check({
+          root,
+          source,
+          controllerFile,
+          workerFiles,
+          projects,
+          controllerIds,
+          workerIds,
+          externalNetwork,
+          databaseContainer,
+          redisContainer,
+          executionId,
+        })
+      : undefined;
     completedResult = {
+      ...(upgrade ? { upgrade } : {}),
+      ...(applicationResult ? { application: applicationResult } : {}),
       checkedAt: new Date().toISOString(),
       durationSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
       status: 'PASS',

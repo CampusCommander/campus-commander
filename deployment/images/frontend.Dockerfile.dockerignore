@@ -5,5 +5,6 @@
 !tsconfig.base.json
 !eslint.config.mjs
 !frontend/**
+!libs/application-contracts/**
 !deployment/images/frontend-server.mjs
 !LICENSE.md

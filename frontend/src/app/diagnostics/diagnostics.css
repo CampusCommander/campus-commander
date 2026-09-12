@@ -1,0 +1,37 @@
+section {
+  margin-block: var(--cc-space-xxl);
+}
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cc-space-lg);
+}
+.health-list {
+  list-style: none;
+  padding: 0;
+}
+.health-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--cc-space-lg);
+  padding: var(--cc-space-md) 0;
+  border-bottom: 1px solid var(--cc-border);
+}
+.check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: var(--cc-space-lg);
+}
+code {
+  overflow-wrap: anywhere;
+}
+
+.health-skeleton span {
+  display: block;
+  height: 44px;
+  border-bottom: 1px solid var(--cc-border);
+  background: var(--cc-surface-hover);
+  margin-block: var(--cc-space-xs);
+}

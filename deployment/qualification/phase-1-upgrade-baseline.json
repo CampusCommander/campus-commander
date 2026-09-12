@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+  "architectures": ["linux/amd64"],
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+  },
+  "phase": 1,
+  "qualification": "candidate-only",
+  "sourceTag": "phase-1-candidate-7dbeee83cc06",
+  "sourceManifestSha256": "3afe29148d358bf0629a3826442a2275071d0930190063ded32778e49de4462b",
+  "sourceUrl": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-1-candidate-7dbeee83cc06"
+}

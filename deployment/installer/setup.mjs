@@ -17,6 +17,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { configureApplication } from './application-setup.mjs';
 
 const profiles = ['all-docker', 'hybrid', 'kubernetes'];
 const exceptionNames = [
@@ -292,6 +293,7 @@ export async function verifyClusterSecrets(config, operator, run = execute) {
     for (const child of Object.values(value)) visit(child);
   };
   visit(config.services);
+  visit(config.applicationAuth);
   const secrets = new Map();
   try {
     for (const ref of references.values()) {
@@ -347,6 +349,7 @@ export async function configure({
     join(releaseRoot, 'deployment/examples', `${profile}.json`),
   );
   config.images = manifest.images;
+  config.phase = manifest.phase ?? config.phase;
   const project = await q(
     'project',
     'Installation project or namespace',
@@ -371,6 +374,12 @@ export async function configure({
   ).trust;
   operator.trust = {
     ...trust,
+    ...(manifest.phase === 2
+      ? {
+          identity:
+            'https://github.com/CampusCommander/campus-commander/.github/workflows/phase-2-candidate.yml@refs/heads/implementation/phase-2-cc-22',
+        }
+      : {}),
     bundlePath: join(releaseRoot, 'release-manifest.sigstore.json'),
   };
   const files = new Map();
@@ -643,6 +652,7 @@ export async function configure({
       );
   }
   await storage(config.artifacts, 'artifacts', profile !== 'all-docker');
+  await configureApplication(config, operator, q);
   const generated = new Set([
     '/run/secrets/bootstrap',
     '/run/secrets/worker-dispatch',
@@ -698,6 +708,7 @@ export async function configure({
       await visit(child, key ? `${key}.${name}` : name);
   };
   await visit(config.services, 'services');
+  await visit(config.applicationAuth, 'applicationAuth');
   let migration;
   if (profile === 'hybrid') {
     migration = {
@@ -976,9 +987,21 @@ export async function runSetup(
   output(
     `Readiness: ${result.readiness?.status ?? result.status ?? result.state?.phase ?? 'unknown'}. URL: ${config.services.edge.endpoint.url}`,
   );
-  output(
-    `Bootstrap credential file: ${refPath(join(root, 'private'), config.services.edge.bootstrapSecretRef)}`,
-  );
+  if (config.phase === 2) {
+    output(
+      `OIDC callback URL: ${config.applicationAuth.publicOrigin}/api/auth/callback`,
+    );
+    output(
+      'Enroll the initial administrator with deployment/bootstrap/application-access-cli.mjs before application sign-in.',
+    );
+    output(
+      'Follow deployment/bootstrap/APPLICATION-ACCESS.md for enrollment, recovery, and credential rotation.',
+    );
+  } else {
+    output(
+      `Bootstrap credential file: ${refPath(join(root, 'private'), config.services.edge.bootstrapSecretRef)}`,
+    );
+  }
   if (config.profile === 'hybrid')
     output(
       `Deploy docker-compose.worker-*.json on the declared worker hosts. Preserve shared storage paths and private credential mounts.`,

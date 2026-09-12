@@ -27,6 +27,7 @@ import { verifyBackup } from '../operations/index.mjs';
 import { installationSecretPath, prepareSecrets } from './secrets.mjs';
 import { createSupportBundle } from './support.mjs';
 import { httpsStartup } from '../qualification/faults.mjs';
+import { supportedUpgrade } from './upgrade-policy.mjs';
 import { connectDatabase } from '../postgres/index.mjs';
 import { normalizePostgresSecret } from '../postgres/secrets.mjs';
 import {
@@ -661,11 +662,10 @@ export async function executeInstaller({
             'UPGRADE',
             'Recovery backup differs from the current installation release.',
           );
-        const withoutImages = (value) => ({ ...value, images: {} });
-        if (canonical(withoutImages(old)) !== canonical(withoutImages(config)))
+        if (!supportedUpgrade(old, config))
           fail(
             'UPGRADE',
-            'Phase 1 fixture upgrade must preserve configuration except application image digests.',
+            'Upgrade must preserve deployment settings except images and Phase 2 authentication.',
           );
         state = {
           ...state,
@@ -962,8 +962,11 @@ export async function executeInstaller({
           args[0] === 'manifest' &&
           args[1] === 'inspect'
         ) {
-          if (!/^localhost:[0-9]+\//.test(args[2]))
-            fail('REGISTRY', 'HTTP fixture registries must use localhost.');
+          if (!/^(?:localhost|127\.0\.0\.1):[0-9]+\//.test(args[2]))
+            fail(
+              'REGISTRY',
+              'HTTP fixture registries must use a loopback address.',
+            );
           return run(file, [...args.slice(0, 2), '--insecure', args[2]]);
         }
         return run(file, args);

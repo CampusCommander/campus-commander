@@ -18,6 +18,7 @@ import { pipeline } from 'node:stream/promises';
 import pg from 'pg';
 import { migrate, provision } from '../postgres/index.mjs';
 import { createArtifactStore } from '../storage/index.mjs';
+import { changeApplicationAccess } from '../bootstrap/application-access.mjs';
 import {
   backupFoundation,
   postgresToolArguments,
@@ -124,6 +125,26 @@ try {
   });
   await migration.connect();
   await migrate(migration, { runtimeRole: 'app-source' });
+  const { principalId } = await changeApplicationAccess(
+    migration,
+    {
+      action: 'initialize',
+      issuer: 'https://identity.example.invalid',
+      subject: 'restore-administrator',
+      displayName: 'Restore administrator',
+    },
+    'https://identity.example.invalid',
+  );
+  await migration.query(
+    'UPDATE cc.application_principals SET preferences=$1 WHERE id=$2',
+    [{ theme: 'dark', navigationCollapsed: true }, principalId],
+  );
+  const originalPrincipals = (
+    await migration.query('SELECT * FROM cc.application_principals ORDER BY id')
+  ).rows;
+  const originalEvents = (
+    await migration.query('SELECT * FROM cc.security_events ORDER BY id')
+  ).rows;
   await migration.end();
   const sourceRoots = {
     artifacts: join(root, 'source-artifacts'),
@@ -184,6 +205,19 @@ try {
       database,
       role,
     });
+  config.phase = 2;
+  config.services.edge.access = 'application';
+  config.applicationAuth = {
+    issuer: 'https://identity.example.invalid',
+    clientId: 'restore-fixture',
+    clientSecretRef: {
+      provider: 'file',
+      path: '/run/secrets/oidc-client-secret',
+    },
+    publicOrigin: 'https://campus.example.invalid',
+    sessionLifetimeSeconds: 28800,
+    sessionIdleSeconds: 1800,
+  };
   config.artifacts.location = sourceRoots.artifacts;
   config.services.kestra.internalStorage.location = sourceRoots.kestraInternal;
   const release = {
@@ -455,6 +489,15 @@ try {
     user: 'app-target',
     database: 'app-target',
   });
+  assert.deepEqual(
+    (await pool.query('SELECT * FROM cc.application_principals ORDER BY id'))
+      .rows,
+    originalPrincipals,
+  );
+  assert.deepEqual(
+    (await pool.query('SELECT * FROM cc.security_events ORDER BY id')).rows,
+    originalEvents,
+  );
   store = await createArtifactStore({
     pool,
     root: targetConfig.artifacts.location,
@@ -490,6 +533,7 @@ try {
         results: [
           'actual connection quiescence enforced',
           'both database dumps restored',
+          'Phase 2 identity, preferences, permission version, and security events restored',
           'artifact identity and Unicode bytes restored',
           'Kestra synthetic state and internal files restored',
           'missing/wrong keys rejected',

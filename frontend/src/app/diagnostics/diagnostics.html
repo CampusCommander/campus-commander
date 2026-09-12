@@ -1,0 +1,95 @@
+<h1>Diagnostics</h1>
+<p>Check application services and inspect their results.</p>
+@if (!auth.session()?.identity?.permissions?.includes('diagnostics:read')) {
+<p role="alert">
+  Your account does not have diagnostic access. Contact the installation
+  operator.
+</p>
+} @else { @if (diagnostics.error(); as error) {
+<p role="alert" class="error">{{ error }}</p>
+}
+<section
+  class="card"
+  aria-labelledby="connection-title"
+  [attr.aria-busy]="diagnostics.refreshing()"
+>
+  <div class="section-heading">
+    <h2 id="connection-title">Service connections</h2>
+    <button
+      mat-stroked-button
+      (click)="diagnostics.refresh()"
+      [disabled]="diagnostics.refreshing()"
+    >
+      Refresh connections
+    </button>
+  </div>
+  @if (diagnostics.health(); as health) {
+  <ul class="health-list">
+    @for (check of health.checks; track check.name) {
+    <li>
+      <span>{{ check.name }}</span
+      ><strong [class.error]="check.status !== 'ready'"
+        >{{ check.status === 'ready' ? 'Ready' : 'Needs attention' }}</strong
+      >
+    </li>
+    }
+  </ul>
+  <p class="secondary">
+    <time
+      [attr.datetime]="health.observedAt"
+      [attr.title]="health.observedAt | date:'medium'"
+      >Observed {{ diagnostics.ageSeconds() }} seconds ago</time
+    >@if (diagnostics.stale()) { · Stale observation }
+  </p>
+  } @else { @if (diagnostics.refreshing()) {
+  <div class="health-skeleton" aria-hidden="true">
+    <span></span><span></span><span></span><span></span>
+  </div>
+  <p role="status">Checking service connections.</p>
+  } @else {
+  <p role="status">Connection checks have not returned a result.</p>
+  } }
+</section>
+<section aria-labelledby="checks-title">
+  <h2 id="checks-title">Service checks</h2>
+  <p>Checks use temporary synthetic data. Run one check at a time.</p>
+  @if (!auth.session()?.identity?.permissions?.includes('diagnostics:run')) {
+  <p>
+    Your account can inspect connections. The installation operator controls
+    permission to run checks.
+  </p>
+  }
+  <div class="check-grid">
+    @for (operation of operations; track operation.id) {
+    <article class="card">
+      <h3>{{ operation.label }}</h3>
+      <p>{{ operation.description }}</p>
+      <button
+        mat-stroked-button
+        [attr.aria-busy]="diagnostics.running() === operation.id"
+        (click)="diagnostics.run(operation.id)"
+        [disabled]="!!diagnostics.running() || !auth.session()?.identity?.permissions?.includes('diagnostics:run')"
+      >
+        Check {{ operation.label }}
+      </button>
+      <div aria-live="polite" aria-atomic="true">
+        @if (diagnostics.running() === operation.id) {
+        <p>{{ operation.label }}: The check is running.</p>
+        } @else if (diagnostics.results()[operation.id]; as result) {
+        <p [class.error]="result.status !== 'passed'">
+          {{ operation.label }}: {{ result.message }}
+        </p>
+        }
+      </div>
+      @if (diagnostics.results()[operation.id]; as result) {
+      <p class="secondary">{{ result.observedAt | date:'medium' }}</p>
+      <details>
+        <summary>Support reference</summary>
+        <code>{{ result.correlationId }}</code>
+      </details>
+      }
+    </article>
+    }
+  </div>
+</section>
+}

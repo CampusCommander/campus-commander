@@ -27,7 +27,7 @@ jobs:
       - run: npm ci
 
       - run: npm exec nx format:check -- --base="remotes/origin/main"
-      - run: npm exec nx run-many -- -t lint,test,build,typecheck -p deployment,frontend,api,worker
+      - run: npm exec nx run-many -- -t lint,test,build,typecheck -p deployment,frontend,api,worker,application-contracts
         env:
           NX_NO_CLOUD: ${{ vars.NX_CLOUD_ENABLED != 'true' }}
       - run: npm exec nx run api-e2e:e2e
@@ -70,3 +70,31 @@ jobs:
       - run: npm exec nx run frontend-e2e:e2e -- --args="--project=chromium"
         env:
           NX_NO_CLOUD: 'true'
+
+  application-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm exec nx run-many -- -t image -p api,frontend,worker --parallel=2
+        env:
+          NX_NO_CLOUD: 'true'
+          CC_IMAGE_VERSION: phase-2-ci
+      - run: npm exec nx run api-e2e:auth-image-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - run: npm exec nx run api-e2e:all-docker-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-2-application-evidence
+          path: dist/phase-2-evidence/
+          if-no-files-found: warn

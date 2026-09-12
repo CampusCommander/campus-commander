@@ -1,4 +1,4 @@
-# Phase 1 release verification
+# Release verification
 
 The candidate workflow publishes application images under `ghcr.io/campuscommander/campus-commander-{frontend,api,worker}`.
 It builds each image through Nx for Linux amd64.
@@ -71,3 +71,32 @@ The extracted-bundle check also verifies every manifest file checksum.
 Candidate release tags are immutable and include the first twelve source revision characters.
 A repeated publication for an existing tag stops at release creation.
 Create a new source commit for a new candidate. Do not replace assets or rebind an existing candidate tag.
+
+## Phase 2 candidate
+
+The Phase 2 workflow uses `.github/workflows/phase-2-candidate.yml` on `implementation/phase-2-cc-22`.
+Its independently expected signing identity is:
+
+```text
+https://github.com/CampusCommander/campus-commander/.github/workflows/phase-2-candidate.yml@refs/heads/implementation/phase-2-cc-22
+```
+
+The workflow requires production dependency checks and scans each runtime image before publication.
+It tests published application images and all three deployment profiles.
+All three deployment profiles have Phase 1 upgrade and isolated application restore targets.
+It also tests named diagnostic announcements through Orca in an isolated desktop session.
+Bundle assembly requires matching image references in every application report.
+The bundle includes image scan reports, application reports, accessibility reports, and theme screenshots in its checksum inventory.
+These application reports retain their fixture limits. They do not replace the complete profile acceptance records.
+
+The Phase 2 bundle uses `phase-2-candidate.tar.gz` and `phase-2-candidate.sigstore.json`.
+The prerelease tag uses `phase-2-candidate-<revision12>`.
+Verify its bundle with the Phase 2 identity and the existing GitHub Actions issuer before extraction.
+The Phase 1 identity remains valid only for Phase 1 candidates.
+
+```sh
+node deployment/release/candidate.mjs candidate-bundle image-evidence "$GITHUB_SHA" 2 qualification-evidence
+```
+
+The qualification directory contains the separate `qualification-<target>` artifact directories from the application workflow matrix.
+Missing reports, failed reports, and different image references stop assembly.

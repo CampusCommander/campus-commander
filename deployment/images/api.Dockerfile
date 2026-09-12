@@ -6,6 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY nx.json tsconfig.base.json eslint.config.mjs ./
 COPY api ./api
+COPY libs/application-contracts ./libs/application-contracts
 COPY deployment ./deployment
 RUN npm exec -- nx run deployment:build
 RUN npm exec -- nx run api:build
@@ -19,11 +20,19 @@ RUN npm ci --omit=dev --ignore-scripts
 
 FROM node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995
 ENV NODE_ENV=production PORT=3000
+ARG CC_VERSION=development
+ARG CC_BUILD_ID=unreleased
+ENV CC_VERSION=${CC_VERSION} CC_BUILD_ID=${CC_BUILD_ID}
+LABEL org.opencontainers.image.version=${CC_VERSION} org.opencontainers.image.revision=${CC_BUILD_ID}
+RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 WORKDIR /app
 COPY --from=build --chown=node:node /workspace/dist/api ./
 COPY --from=runtime-dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /workspace/deployment/bootstrap/access.mjs /workspace/deployment/bootstrap/api-runtime.mjs /workspace/deployment/bootstrap/cli.mjs /workspace/deployment/bootstrap/edge.mjs /workspace/deployment/bootstrap/main.mjs /workspace/deployment/bootstrap/status.mjs ./deployment/bootstrap/
+COPY --from=build --chown=node:node /workspace/deployment/bootstrap/application-edge.mjs ./deployment/bootstrap/
+COPY --from=build --chown=node:node /workspace/deployment/bootstrap/application-access.mjs /workspace/deployment/bootstrap/application-access-cli.mjs ./deployment/bootstrap/
 COPY --from=build --chown=node:node /workspace/deployment/kestra/render-config.mjs ./deployment/kestra/
+COPY --from=build --chown=node:node /workspace/deployment/kestra/phase2-connection.yaml ./deployment/kestra/
 COPY --from=build --chown=node:node /workspace/deployment/postgres/index.mjs /workspace/deployment/postgres/cli.mjs /workspace/deployment/postgres/secrets.mjs ./deployment/postgres/
 COPY --from=build --chown=node:node /workspace/deployment/postgres/migrations ./deployment/postgres/migrations
 COPY --from=build --chown=node:node /workspace/deployment/redis/runtime.mjs /workspace/deployment/redis/probe.mjs ./deployment/redis/

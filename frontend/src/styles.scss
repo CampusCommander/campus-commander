@@ -1,0 +1,116 @@
+@use '@angular/material' as mat;
+@use './theme/tokens.css';
+@import '@fontsource/roboto/latin-400.css';
+@import '@fontsource/roboto/latin-500.css';
+@import '@fontsource/roboto/latin-700.css';
+@import '@fontsource/material-symbols-outlined/400.css';
+
+html {
+  @include mat.theme(
+    (
+      color: (
+        theme-type: color-scheme,
+        primary: mat.$azure-palette,
+      ),
+      typography: Roboto,
+      density: 0,
+    )
+  );
+  @include mat.theme-overrides(
+    (
+      primary: var(--cc-accent),
+      on-primary: var(--cc-text-on-accent),
+      surface: var(--cc-surface-card),
+      on-surface: var(--cc-text-primary),
+      on-surface-variant: var(--cc-text-secondary),
+      outline: var(--cc-border-control),
+      error: var(--cc-status-error-text),
+    )
+  );
+  @include mat.button-overrides(
+    (
+      outlined-label-text-color: var(--cc-text-link),
+      text-label-text-color: var(--cc-text-link),
+      outlined-container-shape: var(--cc-radius-control),
+      filled-container-shape: var(--cc-radius-control),
+    )
+  );
+  background: var(--cc-surface-app);
+  color: var(--cc-text-primary);
+  font:
+    400 14px / 20px Roboto,
+    sans-serif;
+}
+body {
+  margin: 0;
+}
+* {
+  box-sizing: border-box;
+}
+h1 {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 700;
+}
+h2,
+h3 {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+}
+a {
+  color: var(--cc-text-link);
+}
+p {
+  max-width: 80ch;
+}
+.card {
+  background: var(--cc-surface-card);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  padding: var(--cc-card-padding);
+}
+.error {
+  color: var(--cc-status-error-text);
+}
+.secondary {
+  color: var(--cc-text-secondary);
+}
+:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 3px;
+}
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 8px;
+  z-index: 100;
+  background: var(--cc-surface-card);
+  padding: var(--cc-space-md);
+}
+.skip-link:focus {
+  top: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

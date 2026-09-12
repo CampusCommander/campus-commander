@@ -1,0 +1,274 @@
+{
+  "epic": "CC-22",
+  "url": "https://easton-consulting.atlassian.net/browse/CC-22",
+  "authorized": "2026-09-11",
+  "tasks": [
+    {
+      "title": "Establish the Phase 2 application and security contracts",
+      "items": [1, 2, 3, 5],
+      "packages": "P0.1, P1.1, P9.1",
+      "deps": [],
+      "scope": "Prepare the existing application for authenticated routes without changing Phase 1 installation behavior.",
+      "criteria": [
+        "Record OIDC, initial administrator enrollment, session, recovery, and service credential decisions.",
+        "Establish validated identity, permission, diagnostics, health, and error contracts.",
+        "Define API module and library boundaries with Nx checks and compatible pinned dependencies.",
+        "Retain minimal health and protected bootstrap behavior until application authentication is configured."
+      ],
+      "key": "CC-23",
+      "blockers": [],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nPrepare the existing application for authenticated routes without changing Phase 1 installation behavior.\n\nPlanning items: 1, 2, 3, 5. Packages: P0.1, P1.1, P9.1.\n\n## Acceptance criteria\n\n- [ ] Record OIDC, initial administrator enrollment, session, recovery, and service credential decisions.\n- [ ] Establish validated identity, permission, diagnostics, health, and error contracts.\n- [ ] Define API module and library boundaries with Nx checks and compatible pinned dependencies.\n- [ ] Retain minimal health and protected bootstrap behavior until application authentication is configured.\n\n## Blocked by\n\nNone. Start immediately.\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Sign in an authorized administrator through OIDC",
+      "items": [4, 6, 8, 12],
+      "packages": "P1.2, P6.1, P9.1",
+      "deps": [1],
+      "scope": "An authorized administrator signs in through the login page and reaches a protected identity page.",
+      "criteria": [
+        "Use an established OIDC library with exact callback, issuer, audience, state, nonce, and authorization-code protections.",
+        "Persist stable application identity and explicit access. Reject identities without access.",
+        "Provide an initial administrator enrollment procedure without open registration or Google administration scopes.",
+        "Show login progress, errors, retry, and access denial with accessible controls.",
+        "Test database migrations, successful browser sign-in, forged callbacks, replay, and denied identity."
+      ],
+      "key": "CC-24",
+      "blockers": ["CC-23"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn authorized administrator signs in through the login page and reaches a protected identity page.\n\nPlanning items: 4, 6, 8, 12. Packages: P1.2, P6.1, P9.1.\n\n## Acceptance criteria\n\n- [ ] Use an established OIDC library with exact callback, issuer, audience, state, nonce, and authorization-code protections.\n- [ ] Persist stable application identity and explicit access. Reject identities without access.\n- [ ] Provide an initial administrator enrollment procedure without open registration or Google administration scopes.\n- [ ] Show login progress, errors, retry, and access denial with accessible controls.\n- [ ] Test database migrations, successful browser sign-in, forged callbacks, replay, and denied identity.\n\n## Blocked by\n\n- CC-23\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Restore, expire, and revoke application sessions",
+      "items": [7, 11],
+      "packages": "P6.1, P9.1",
+      "deps": [2],
+      "scope": "The frontend restores a Redis-backed session and handles sign-out, expiry, and revoked access.",
+      "criteria": [
+        "Use opaque secure cookies and server-side session records with bounded lifetime.",
+        "Restore the session after browser navigation and API restart.",
+        "Sign-out and expiry invalidate subsequent protected requests across replicas.",
+        "Redis loss denies access without creating a local authentication fallback.",
+        "Test route guards, restored state, expired sessions, sign-out, and service failure."
+      ],
+      "key": "CC-25",
+      "blockers": ["CC-24"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nThe frontend restores a Redis-backed session and handles sign-out, expiry, and revoked access.\n\nPlanning items: 7, 11. Packages: P6.1, P9.1.\n\n## Acceptance criteria\n\n- [ ] Use opaque secure cookies and server-side session records with bounded lifetime.\n- [ ] Restore the session after browser navigation and API restart.\n- [ ] Sign-out and expiry invalidate subsequent protected requests across replicas.\n- [ ] Redis loss denies access without creating a local authentication fallback.\n- [ ] Test route guards, restored state, expired sessions, sign-out, and service failure.\n\n## Blocked by\n\n- CC-24\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Protect browser requests and sensitive responses",
+      "items": [9],
+      "packages": "P9.1",
+      "deps": [3],
+      "scope": "Authenticated browser requests enforce origin and CSRF policy without breaking the login workflow.",
+      "criteria": [
+        "Apply CSRF, CORS, CSP, secure cookie, cache, and content-type policies.",
+        "Reject invalid origins, missing CSRF proof, and tampered requests.",
+        "Keep secrets, authentication responses, and sensitive diagnostics out of browser caches and error payloads.",
+        "Record automated denial evidence for the complete browser-to-API boundary."
+      ],
+      "key": "CC-26",
+      "blockers": ["CC-25"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAuthenticated browser requests enforce origin and CSRF policy without breaking the login workflow.\n\nPlanning items: 9. Packages: P9.1.\n\n## Acceptance criteria\n\n- [ ] Apply CSRF, CORS, CSP, secure cookie, cache, and content-type policies.\n- [ ] Reject invalid origins, missing CSRF proof, and tampered requests.\n- [ ] Keep secrets, authentication responses, and sensitive diagnostics out of browser caches and error payloads.\n- [ ] Record automated denial evidence for the complete browser-to-API boundary.\n\n## Blocked by\n\n- CC-25\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Deliver the shared shell, themes, and controls",
+      "items": [13, 14],
+      "packages": "P6.1, Track 12",
+      "deps": [3],
+      "scope": "An authenticated operator uses the shared shell in both themes with available navigation and persistent preferences.",
+      "criteria": [
+        "Provide navigation, header, content, footer, help, theme control, and user menu.",
+        "Persist navigation collapse and theme preferences per user. Honor the system theme before an override.",
+        "Show actual version and build identifiers. Expose only Phase 2 pages.",
+        "Use repository tokens, Material controls, bundled fonts, and Material Symbols.",
+        "Verify UI-01 through UI-06 and UI-08 through UI-10, including keyboard, focus, zoom, and both themes."
+      ],
+      "key": "CC-27",
+      "blockers": ["CC-25"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn authenticated operator uses the shared shell in both themes with available navigation and persistent preferences.\n\nPlanning items: 13, 14. Packages: P6.1, Track 12.\n\n## Acceptance criteria\n\n- [ ] Provide navigation, header, content, footer, help, theme control, and user menu.\n- [ ] Persist navigation collapse and theme preferences per user. Honor the system theme before an override.\n- [ ] Show actual version and build identifiers. Expose only Phase 2 pages.\n- [ ] Use repository tokens, Material controls, bundled fonts, and Material Symbols.\n- [ ] Verify UI-01 through UI-06 and UI-08 through UI-10, including keyboard, focus, zoom, and both themes.\n\n## Blocked by\n\n- CC-25\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Inspect protected identity and dependency health",
+      "items": [15, 16],
+      "packages": "P3.3, P6.1, P9.1",
+      "deps": [4, 5],
+      "scope": "An authorized operator opens Diagnostics and sees truthful dependency status through a protected utility page.",
+      "criteria": [
+        "Provide protected identity and dependency routes alongside minimal health and readiness routes.",
+        "Restrict utility execution by explicit permission and fixed operation identifiers.",
+        "Show progress, success, partial failure, timeout, and retry without arbitrary command inputs.",
+        "Use one health state for footer and detailed diagnostics.",
+        "Bound work and response sizes. Redact connection strings, credentials, and internal error details."
+      ],
+      "key": "CC-28",
+      "blockers": ["CC-26", "CC-27"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn authorized operator opens Diagnostics and sees truthful dependency status through a protected utility page.\n\nPlanning items: 15, 16. Packages: P3.3, P6.1, P9.1.\n\n## Acceptance criteria\n\n- [ ] Provide protected identity and dependency routes alongside minimal health and readiness routes.\n- [ ] Restrict utility execution by explicit permission and fixed operation identifiers.\n- [ ] Show progress, success, partial failure, timeout, and retry without arbitrary command inputs.\n- [ ] Use one health state for footer and detailed diagnostics.\n- [ ] Bound work and response sizes. Redact connection strings, credentials, and internal error details.\n\n## Blocked by\n\n- CC-26\n- CC-27\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Verify PostgreSQL through the utility page",
+      "items": [17],
+      "packages": "P1.2, P3.3",
+      "deps": [6],
+      "scope": "An authorized operator runs a synthetic PostgreSQL transaction and sees its verified result.",
+      "criteria": [
+        "Run a bounded transaction through the application database module.",
+        "Verify committed or rolled-back behavior and remove disposable fixtures.",
+        "Report database failure with a correlation identifier and recovery action.",
+        "Test permission denial, database outage, transaction failure, and repeated execution."
+      ],
+      "key": "CC-29",
+      "blockers": ["CC-28"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn authorized operator runs a synthetic PostgreSQL transaction and sees its verified result.\n\nPlanning items: 17. Packages: P1.2, P3.3.\n\n## Acceptance criteria\n\n- [ ] Run a bounded transaction through the application database module.\n- [ ] Verify committed or rolled-back behavior and remove disposable fixtures.\n- [ ] Report database failure with a correlation identifier and recovery action.\n- [ ] Test permission denial, database outage, transaction failure, and repeated execution.\n\n## Blocked by\n\n- CC-28\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Verify Redis through the utility page",
+      "items": [18],
+      "packages": "P3.3, P9.1",
+      "deps": [6],
+      "scope": "An authorized operator writes and reads a disposable Redis value through the utility page.",
+      "criteria": [
+        "Use a dedicated key namespace, expiry, bounded values, and cleanup.",
+        "Verify the exact returned value without altering session records.",
+        "Report authentication, connectivity, and timeout failures without secrets.",
+        "Test permission denial, Redis outage, and repeated execution."
+      ],
+      "key": "CC-30",
+      "blockers": ["CC-28"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn authorized operator writes and reads a disposable Redis value through the utility page.\n\nPlanning items: 18. Packages: P3.3, P9.1.\n\n## Acceptance criteria\n\n- [ ] Use a dedicated key namespace, expiry, bounded values, and cleanup.\n- [ ] Verify the exact returned value without altering session records.\n- [ ] Report authentication, connectivity, and timeout failures without secrets.\n- [ ] Test permission denial, Redis outage, and repeated execution.\n\n## Blocked by\n\n- CC-28\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Run an authenticated synthetic Kestra task",
+      "items": [10, 19],
+      "packages": "P3.3, P9.1",
+      "deps": [6],
+      "scope": "An authorized operator starts a fixed Kestra task and receives the independent worker result.",
+      "criteria": [
+        "Authenticate API, Kestra, and worker requests using documented issuance and rotation rules.",
+        "Allow only the fixed synthetic operation with bounded execution and timeouts.",
+        "Report task completion, failure, and timeout through Diagnostics.",
+        "Reject missing credentials, wrong credentials, unauthorized operations, and public control-plane access.",
+        "Test credential rotation and worker failure without Google mutations or a full JobService."
+      ],
+      "key": "CC-31",
+      "blockers": ["CC-28"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn authorized operator starts a fixed Kestra task and receives the independent worker result.\n\nPlanning items: 10, 19. Packages: P3.3, P9.1.\n\n## Acceptance criteria\n\n- [ ] Authenticate API, Kestra, and worker requests using documented issuance and rotation rules.\n- [ ] Allow only the fixed synthetic operation with bounded execution and timeouts.\n- [ ] Report task completion, failure, and timeout through Diagnostics.\n- [ ] Reject missing credentials, wrong credentials, unauthorized operations, and public control-plane access.\n- [ ] Test credential rotation and worker failure without Google mutations or a full JobService.\n\n## Blocked by\n\n- CC-28\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Verify artifact publication and readback through Diagnostics",
+      "items": [20],
+      "packages": "P2.4, P3.3",
+      "deps": [7, 9],
+      "scope": "An authorized operator completes a synthetic artifact round trip through the existing storage interface.",
+      "criteria": [
+        "Stage, verify, publish, read, and compare an immutable synthetic artifact.",
+        "Use metadata, explicit checksums, permission checks, and bounded cleanup.",
+        "Reuse the Phase 1 local and shared backend contracts.",
+        "Test corrupt bytes, interrupted publication, unavailable storage, and unauthorized reads."
+      ],
+      "key": "CC-32",
+      "blockers": ["CC-29", "CC-31"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn authorized operator completes a synthetic artifact round trip through the existing storage interface.\n\nPlanning items: 20. Packages: P2.4, P3.3.\n\n## Acceptance criteria\n\n- [ ] Stage, verify, publish, read, and compare an immutable synthetic artifact.\n- [ ] Use metadata, explicit checksums, permission checks, and bounded cleanup.\n- [ ] Reuse the Phase 1 local and shared backend contracts.\n- [ ] Test corrupt bytes, interrupted publication, unavailable storage, and unauthorized reads.\n\n## Blocked by\n\n- CC-29\n- CC-31\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Trace security events and redact support evidence",
+      "items": [21],
+      "packages": "P1.2, P9.1, P9.3",
+      "deps": [4, 9, 10],
+      "scope": "An operator correlates authentication and utility results with durable security events and redacted support evidence.",
+      "criteria": [
+        "Record authentication, access denial, session revocation, and sensitive configuration events.",
+        "Propagate correlation identifiers across API, Kestra, workers, and utility results.",
+        "Exclude secrets from logs, diagnostics, flows, artifacts, and support bundles.",
+        "Verify seeded secret markers never appear in retained evidence.",
+        "Document security-event retention and restore behavior."
+      ],
+      "key": "CC-33",
+      "blockers": ["CC-26", "CC-31", "CC-32"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn operator correlates authentication and utility results with durable security events and redacted support evidence.\n\nPlanning items: 21. Packages: P1.2, P9.1, P9.3.\n\n## Acceptance criteria\n\n- [ ] Record authentication, access denial, session revocation, and sensitive configuration events.\n- [ ] Propagate correlation identifiers across API, Kestra, workers, and utility results.\n- [ ] Exclude secrets from logs, diagnostics, flows, artifacts, and support bundles.\n- [ ] Verify seeded secret markers never appear in retained evidence.\n- [ ] Document security-event retention and restore behavior.\n\n## Blocked by\n\n- CC-26\n- CC-31\n- CC-32\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Recover administrator access and rotate credentials",
+      "items": [2, 7, 23],
+      "packages": "P9.1, P9.3",
+      "deps": [11],
+      "scope": "An installation operator recovers administrator access and rotates credentials without retaining unauthorized sessions.",
+      "criteria": [
+        "Provide a controlled account recovery and identity replacement procedure.",
+        "Rotate OIDC and internal service credentials with documented restart or reload behavior.",
+        "Revoke affected sessions and preserve security-event evidence.",
+        "Restore application identity state into an isolated installation and handle Redis state explicitly.",
+        "Test failed recovery, invalid replacement identity, and expired credentials."
+      ],
+      "key": "CC-34",
+      "blockers": ["CC-33"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn installation operator recovers administrator access and rotates credentials without retaining unauthorized sessions.\n\nPlanning items: 2, 7, 23. Packages: P9.1, P9.3.\n\n## Acceptance criteria\n\n- [ ] Provide a controlled account recovery and identity replacement procedure.\n- [ ] Rotate OIDC and internal service credentials with documented restart or reload behavior.\n- [ ] Revoke affected sessions and preserve security-event evidence.\n- [ ] Restore application identity state into an isolated installation and handle Redis state explicitly.\n- [ ] Test failed recovery, invalid replacement identity, and expired credentials.\n\n## Blocked by\n\n- CC-33\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Verify the complete Phase 2 browser experience",
+      "items": [22],
+      "packages": "P0.1, P6.1, P9.1",
+      "deps": [5, 7, 8, 10, 11, 12],
+      "scope": "An operator completes login, diagnostics, recovery, and sign-out using supported browser interactions.",
+      "criteria": [
+        "Run meaningful Nx unit, integration, and browser checks.",
+        "Verify all utility checks, denied access, session expiry, restart, and dependency failures.",
+        "Record keyboard, focus, screen-reader, contrast, target-size, zoom, overflow, and both-theme evidence.",
+        "Confirm unavailable phase features never appear as working controls.",
+        "Record defects and limitations separately from passed checks."
+      ],
+      "key": "CC-35",
+      "blockers": ["CC-27", "CC-29", "CC-30", "CC-32", "CC-33", "CC-34"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn operator completes login, diagnostics, recovery, and sign-out using supported browser interactions.\n\nPlanning items: 22. Packages: P0.1, P6.1, P9.1.\n\n## Acceptance criteria\n\n- [ ] Run meaningful Nx unit, integration, and browser checks.\n- [ ] Verify all utility checks, denied access, session expiry, restart, and dependency failures.\n- [ ] Record keyboard, focus, screen-reader, contrast, target-size, zoom, overflow, and both-theme evidence.\n- [ ] Confirm unavailable phase features never appear as working controls.\n- [ ] Record defects and limitations separately from passed checks.\n\n## Blocked by\n\n- CC-27\n- CC-29\n- CC-30\n- CC-32\n- CC-33\n- CC-34\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Qualify Phase 2 in all Docker, hybrid, and Kubernetes",
+      "items": [23],
+      "packages": "P9.2, P9.3, P9.4",
+      "deps": [12, 13],
+      "scope": "Operators install and run the same authenticated application across all three supported deployment modes.",
+      "criteria": [
+        "Extend typed configuration, secret mounts, images, and installer output for application authentication.",
+        "Run the complete Phase 2 checks in all Docker, hybrid, and district Kubernetes.",
+        "Verify shared sessions and authenticated requests across API replicas.",
+        "Test restart, reschedule, service loss, artifact persistence, and isolated restore.",
+        "Preserve Phase 1 installer, network, and lifecycle behavior. Record exact environments and measured limits."
+      ],
+      "key": "CC-36",
+      "blockers": ["CC-34", "CC-35"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nOperators install and run the same authenticated application across all three supported deployment modes.\n\nPlanning items: 23. Packages: P9.2, P9.3, P9.4.\n\n## Acceptance criteria\n\n- [ ] Extend typed configuration, secret mounts, images, and installer output for application authentication.\n- [ ] Run the complete Phase 2 checks in all Docker, hybrid, and district Kubernetes.\n- [ ] Verify shared sessions and authenticated requests across API replicas.\n- [ ] Test restart, reschedule, service loss, artifact persistence, and isolated restore.\n- [ ] Preserve Phase 1 installer, network, and lifecycle behavior. Record exact environments and measured limits.\n\n## Blocked by\n\n- CC-34\n- CC-35\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Publish and qualify the Phase 2 release",
+      "items": [24],
+      "packages": "P0.1, P9.2, P9.4",
+      "deps": [14],
+      "scope": "An operator installs a tagged Phase 2 release and upgrades a Phase 1 installation using published images.",
+      "criteria": [
+        "Publish signed images, digests, checksums, SBOM, and a versioned release manifest.",
+        "Demonstrate clean installation and Phase 1 upgrade in all three deployment modes.",
+        "Verify new migrations, preserved state, application login, utility checks, and recovery after upgrade.",
+        "Run release integrity, dependency, image, and regression checks.",
+        "Record known defects, supported workflows, and limits without marking Phase 1 acceptance complete."
+      ],
+      "key": "CC-37",
+      "blockers": ["CC-36"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn operator installs a tagged Phase 2 release and upgrades a Phase 1 installation using published images.\n\nPlanning items: 24. Packages: P0.1, P9.2, P9.4.\n\n## Acceptance criteria\n\n- [ ] Publish signed images, digests, checksums, SBOM, and a versioned release manifest.\n- [ ] Demonstrate clean installation and Phase 1 upgrade in all three deployment modes.\n- [ ] Verify new migrations, preserved state, application login, utility checks, and recovery after upgrade.\n- [ ] Run release integrity, dependency, image, and regression checks.\n- [ ] Record known defects, supported workflows, and limits without marking Phase 1 acceptance complete.\n\n## Blocked by\n\n- CC-36\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Record Phase 2 acceptance and Jira evidence",
+      "items": [24],
+      "packages": "All Phase 2 packages",
+      "deps": [15],
+      "scope": "A reviewer can trace every Phase 2 requirement to implementation, test results, and a released workflow.",
+      "criteria": [
+        "Link all child issues to the Phase 2 epic and record dependencies.",
+        "Update portfolio milestones, application documentation, security decisions, and operational procedures.",
+        "Record actual UI rule IDs and validation evidence.",
+        "Audit every Phase 2 and shared release criterion against current evidence.",
+        "Complete Jira tasks only after their criteria pass. Complete the epic only after the full phase passes."
+      ],
+      "key": "CC-38",
+      "blockers": ["CC-37"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nA reviewer can trace every Phase 2 requirement to implementation, test results, and a released workflow.\n\nPlanning items: 24. Packages: All Phase 2 packages.\n\n## Acceptance criteria\n\n- [ ] Link all child issues to the Phase 2 epic and record dependencies.\n- [ ] Update portfolio milestones, application documentation, security decisions, and operational procedures.\n- [ ] Record actual UI rule IDs and validation evidence.\n- [ ] Audit every Phase 2 and shared release criterion against current evidence.\n- [ ] Complete Jira tasks only after their criteria pass. Complete the epic only after the full phase passes.\n\n## Blocked by\n\n- CC-37\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    }
+  ]
+}

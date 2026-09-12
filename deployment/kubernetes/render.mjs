@@ -425,6 +425,7 @@ export function renderKubernetes(input, operatorInput) {
     if (key === 'api')
       refs = collectRefs([
         service,
+        config.applicationAuth,
         ...Object.values(config.services).map(
           ({ endpoint, passwordSecretRef, authSecretRef }) => ({
             endpoint,
@@ -880,6 +881,10 @@ export function renderKubernetes(input, operatorInput) {
     kestra: ['kestraDatabase', 'workers'],
     'database-prepare': ['applicationDatabase', 'kestraDatabase'],
   };
+  if (config.applicationAuth && !operator.externalEgress.identityProvider)
+    throw new Error(
+      'Phase 2 requires explicit identity-provider egress CIDRs.',
+    );
   const ingress = new Map();
   for (const [source, targets] of Object.entries(dependencies)) {
     if (
@@ -921,6 +926,20 @@ export function renderKubernetes(input, operatorInput) {
           ipBlock: { cidr },
         }));
       egress.push({ to, ports: [{ protocol: 'TCP', port }] });
+    }
+    if (source === 'api' && config.applicationAuth) {
+      const ports = [
+        ...new Set([
+          443,
+          Number(new URL(config.applicationAuth.issuer).port || 443),
+        ]),
+      ];
+      egress.push({
+        to: operator.externalEgress.identityProvider.map((cidr) => ({
+          ipBlock: { cidr },
+        })),
+        ports: ports.map((port) => ({ protocol: 'TCP', port })),
+      });
     }
     items.push(
       object(
