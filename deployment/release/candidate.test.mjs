@@ -140,8 +140,13 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
             })),
           },
           capacity: {
-            status:
-              target === 'hybrid-cli-capacity-integration' ? 'passed' : 'PASS',
+            status: [
+              'hybrid-cli-capacity-integration',
+              'kubernetes-capacity-integration',
+            ].includes(target)
+              ? 'passed'
+              : 'PASS',
+            artifact: { artifactSha256: 'a'.repeat(64) },
             recoveryBoundSeconds: 180,
             recoveryMs: 1000,
             observations: [
@@ -151,6 +156,8 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
               'worker-2',
             ].map((daemonId, index) => ({
               daemonId,
+              podUid: `pod-${index}`,
+              node: daemonId,
               role: daemonId === 'controller' ? 'api' : 'workers',
               processId: `process-${index}`,
               before: {
@@ -265,27 +272,61 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
           browser: { status: 'passed' },
           apiReplicaCount: 2,
           logoutRejectedAcrossReplicas: true,
-          replicaObservations: [
-            'initial-session',
-            'restart-session',
-            'stop-resume-session',
-            'uninstall-resume-session',
-            'signed-out-session',
-          ].flatMap((phase) =>
-            [1, 2].map((index) => ({
-              phase,
-              container: `api-${index}`,
-              status: phase === 'signed-out-session' ? 401 : 200,
-              ...(phase === 'signed-out-session'
-                ? {}
-                : { principalId: 'synthetic-principal' }),
-            })),
-          ),
+          replacementPreservedOneReplica: true,
+          replicaObservations:
+            target === 'kubernetes-replica-integration'
+              ? [
+                  'initial-session',
+                  'replacement-session',
+                  'worker-reschedule-session',
+                  'stop-revoked-session',
+                  'stop-resume-session',
+                  'uninstall-revoked-session',
+                  'uninstall-resume-session',
+                  'signed-out-session',
+                ].flatMap((phase) =>
+                  [1, 2].map((index) => ({
+                    phase,
+                    podUid:
+                      phase === 'initial-session' && index === 1
+                        ? 'old-pod'
+                        : `pod-${index}`,
+                    node: `node-${index}`,
+                    status:
+                      phase.includes('revoked') ||
+                      phase === 'signed-out-session'
+                        ? 401
+                        : 200,
+                    ...(phase.includes('revoked') ||
+                    phase === 'signed-out-session'
+                      ? {}
+                      : {
+                          principalId: '12345678-1234-1234-1234-123456789abc',
+                        }),
+                  })),
+                )
+              : [
+                  'initial-session',
+                  'restart-session',
+                  'stop-resume-session',
+                  'uninstall-resume-session',
+                  'signed-out-session',
+                ].flatMap((phase) =>
+                  [1, 2].map((index) => ({
+                    phase,
+                    container: `api-${index}`,
+                    status: phase === 'signed-out-session' ? 401 : 200,
+                    ...(phase === 'signed-out-session'
+                      ? {}
+                      : { principalId: 'synthetic-principal' }),
+                  })),
+                ),
           packagedApplicationImages: true,
           images: manifest.images,
           sourceRevision,
           ownedResourcesRemoved: true,
           ownedClusterRemoved: true,
+          ownedCapacityVolumeRemoved: true,
           hosts: [
             { role: 'controller', daemonId: 'controller' },
             { role: 'worker-1', daemonId: 'worker-1' },
@@ -534,6 +575,104 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       );
     }
     await writeFile(hybridCapacityPath, JSON.stringify(hybridCapacity));
+    for (const [target, filename, mutations, expectedError] of [
+      [
+        'kubernetes-replica-integration',
+        'kubernetes-replicas.json',
+        [
+          (report) => {
+            report.replicaObservations.pop();
+          },
+          (report) => {
+            report.replicaObservations[0].principalId =
+              '00000000-0000-0000-0000-000000000000';
+          },
+          (report) => {
+            report.replicaObservations[0].podUid =
+              report.replicaObservations[1].podUid;
+          },
+          (report) => {
+            report.replicaObservations.find(
+              (item) => item.phase === 'signed-out-session',
+            ).status = 200;
+          },
+          (report) => {
+            report.replicaObservations.find(
+              (item) => item.phase === 'stop-revoked-session',
+            ).status = 200;
+          },
+          (report) => {
+            report.replicaObservations.find(
+              (item) => item.phase === 'replacement-session',
+            ).podUid = 'another-new-pod';
+            report.replicaObservations[1].podUid = 'another-old-pod';
+          },
+          (report) => {
+            report.ownedClusterRemoved = false;
+          },
+        ],
+        /Kubernetes replica qualification/,
+      ],
+      [
+        'kubernetes-capacity-integration',
+        'kubernetes-capacity.json',
+        [
+          (report) => {
+            report.capacity.observations.pop();
+          },
+          (report) => {
+            report.capacity.observations[2].node =
+              report.capacity.observations[3].node;
+          },
+          (report) => {
+            report.capacity.observations[0].before.totalBytes = 33554432;
+          },
+          (report) => {
+            report.capacity.observations[0].during.availableBytes = 4096;
+          },
+          (report) => {
+            report.capacity.observations[0].after.availableBytes = 4096;
+          },
+          (report) => {
+            report.capacity.preserved.failedDiagnosticArtifactsRemoved = false;
+          },
+          (report) => {
+            report.capacity.authenticatedFailure.status = 'passed';
+          },
+          (report) => {
+            report.capacity.recoveryMs = 180001;
+          },
+          (report) => {
+            report.ownedCapacityVolumeRemoved = false;
+          },
+        ],
+        /Kubernetes capacity qualification/,
+      ],
+    ]) {
+      const path = join(
+        qualificationArtifacts,
+        `qualification-${target}`,
+        filename,
+      );
+      const original = JSON.parse(await readFile(path, 'utf8'));
+      for (const [index, mutate] of mutations.entries()) {
+        const invalid = structuredClone(original);
+        mutate(invalid);
+        await writeFile(path, JSON.stringify(invalid));
+        await assert.rejects(
+          assembleCandidate({
+            root,
+            output: join(root, `invalid-${target}-${index}`),
+            artifacts: join(root, 'artifacts'),
+            sourceRevision,
+            phase: 2,
+            qualificationArtifacts,
+          }),
+          expectedError,
+        );
+      }
+      await writeFile(path, JSON.stringify(original));
+    }
     const replicaPath = join(
       qualificationArtifacts,
       'qualification-all-docker-integration',

@@ -261,6 +261,8 @@ jobs:
             kubernetes-upgrade-integration,
             kubernetes-process-fault-integration,
             kubernetes-certificate-integration,
+            kubernetes-replica-integration,
+            kubernetes-capacity-integration,
             kubernetes-restore-integration,
             upgrade-integration,
             restore-integration,

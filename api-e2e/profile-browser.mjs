@@ -5,7 +5,7 @@ import { startScreenReader } from './screen-reader.mjs';
 export async function applicationBrowser(
   publicOrigin,
   run,
-  { recoverySeconds = 0 } = {},
+  { recoverySeconds = 0, afterSignOut } = {},
 ) {
   const reader =
     process.env.CC_AUTH_SCREEN_READER === '1'
@@ -125,6 +125,7 @@ export async function applicationBrowser(
     await expect(
       page.getByRole('heading', { name: 'Sign in', exact: true }),
     ).toBeVisible();
+    await afterSignOut?.({ page, context });
     assert.deepEqual(errors, []);
     const screenReader = reader ? await reader.verify() : undefined;
     return {

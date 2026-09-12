@@ -9,7 +9,10 @@ export async function createKubernetesDurableProbe({
   kube,
   config,
   upgrade,
+  artifact = upgrade?.preserved,
 }) {
+  assert.match(artifact?.artifactId ?? '', /^[a-f0-9-]{36}$/);
+  assert.match(artifact?.artifactSha256 ?? '', /^[a-f0-9]{64}$/);
   const runApi = async (script) =>
     JSON.parse(
       await kube(
@@ -28,7 +31,7 @@ const principals=(await pool.query('SELECT * FROM cc.application_principals ORDE
 const events=(await pool.query('SELECT * FROM cc.security_events ORDER BY id')).rows;
 const migrations=(await pool.query('SELECT id,checksum FROM cc.schema_migrations ORDER BY id')).rows;
 const store=await createArtifactStore({pool,root:c.artifacts.location}),hash=crypto.createHash('sha256');
-for await(const bytes of await store.openRead(${JSON.stringify(upgrade.preserved.artifactId)}))hash.update(bytes);
+for await(const bytes of await store.openRead(${JSON.stringify(artifact.artifactId)}))hash.update(bytes);
 await store.close();await pool.end();
 console.log(JSON.stringify({principals,events,migrations,artifactSha256:hash.digest('hex')}));`);
   const executions = async () =>
@@ -77,7 +80,7 @@ console.log(JSON.stringify({principals,events,migrations,artifactSha256:hash.dig
   assert.ok(baseline.events.length > 0);
   assert.ok(baselineExecutions.length > 0);
   assert.ok(baselineFiles.length > 0);
-  assert.equal(baseline.artifactSha256, upgrade.preserved.artifactSha256);
+  assert.equal(baseline.artifactSha256, artifact.artifactSha256);
   const verifyDurable = async () => {
     const after = await durable();
     assert.deepEqual(after.principals, baseline.principals);

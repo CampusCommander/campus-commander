@@ -24,12 +24,16 @@ import { qualifyKubernetesUpgrade } from './kubernetes-upgrade-fixture.mjs';
 import { faultKubernetesCertificates } from './kubernetes-certificates-fixture.mjs';
 import { faultKubernetes } from './kubernetes-faults-fixture.mjs';
 import { prepareKubernetesInstaller } from './kubernetes-installer-fixture.mjs';
+import { kubernetesReplicaProbe } from './kubernetes-replicas-fixture.mjs';
+import { createKubernetesCapacityVolume } from './kubernetes-capacity-volume.mjs';
+import { qualifyKubernetesCapacity } from './kubernetes-capacity-fixture.mjs';
 
 const execute = promisify(execFile);
-const run = async (file, args, input) => {
+const run = async (file, args, input, options = {}) => {
   const operation = execute(file, args, {
     timeout: 900000,
     maxBuffer: 8 * 1024 * 1024,
+    ...options,
   });
   if (input !== undefined) operation.child.stdin.end(input);
   return (await operation).stdout.trim();
@@ -64,6 +68,8 @@ test(
     const started = Date.now();
     let faultEvidence;
     let certificateEvidence;
+    let replicaEvidence;
+    let capacityVolume, capacityEvidence;
     try {
       const listener = createServer().listen(0, '127.0.0.1');
       await once(listener, 'listening');
@@ -162,6 +168,19 @@ test(
         await mkdir(path, { recursive: true, mode: 0o700 });
       }
       await chmod(root, 0o755);
+      if (process.env.CC_AUTH_KUBERNETES_CAPACITY === '1') {
+        assert.equal(
+          baseline,
+          undefined,
+          'Capacity uses a fresh Phase 2 installation.',
+        );
+        capacityVolume = await createKubernetesCapacityVolume({
+          root,
+          project,
+          docker,
+          image: images.api,
+        });
+      }
       const kindFile = join(root, 'kind.json');
       await writeFile(
         kindFile,
@@ -183,20 +202,25 @@ test(
         'Create the dedicated three-node Kubernetes fixture.\n',
       );
       created = true;
-      await run(kind, [
-        'create',
-        'cluster',
-        '--name',
-        project,
-        '--image',
-        'kindest/node:v1.35.8',
-        '--config',
-        kindFile,
-        '--kubeconfig',
-        kubeconfig,
-        '--wait',
-        '180s',
-      ]);
+      await run(
+        kind,
+        [
+          'create',
+          'cluster',
+          '--name',
+          project,
+          '--image',
+          'kindest/node:v1.35.8',
+          '--config',
+          kindFile,
+          '--kubeconfig',
+          kubeconfig,
+          '--wait',
+          '180s',
+        ],
+        undefined,
+        capacityVolume ? { env: capacityVolume.environment } : {},
+      );
       const hostGateway = await docker(
         'run',
         '--rm',
@@ -538,10 +562,19 @@ test(
       let restoration;
       let applicationFaults;
       let certificateFaults;
+      let capacityFaults;
       let installerEvidence;
+      const replicas =
+        process.env.CC_AUTH_KUBERNETES_REPLICAS === '1'
+          ? kubernetesReplicaProbe(kube)
+          : undefined;
       const application = await applicationBrowser(
         publicOrigin,
         async ({ page, context, checks }) => {
+          const originalPods = await replicas?.verify(
+            context,
+            'initial-session',
+          );
           const pods = JSON.parse(
             await kube([
               'get',
@@ -560,6 +593,16 @@ test(
             page.getByRole('heading', { name: 'Diagnostics', exact: true }),
           ).toBeVisible({ timeout: 15000 });
           await checks();
+          if (replicas) {
+            const replacements = await replicas.verify(
+              context,
+              'replacement-session',
+            );
+            assert.equal(
+              replacements.filter((uid) => originalPods.includes(uid)).length,
+              1,
+            );
+          }
           await kube(['scale', 'deployment/workers', '--replicas=1']);
           await kube([
             'rollout',
@@ -613,6 +656,7 @@ test(
             ]);
           }
           await checks();
+          await replicas?.verify(context, 'worker-reschedule-session');
           if (installer) {
             const preference = page.waitForResponse(
               (response) =>
@@ -627,6 +671,11 @@ test(
             for (const command of ['stop', 'uninstall']) {
               assert.equal((await installer.cli(command)).dataPreserved, true);
               await installer.resume(startForward);
+              await replicas?.verify(
+                undefined,
+                `${command}-revoked-session`,
+                401,
+              );
               await page.reload();
               await expect(
                 page.getByRole('heading', { name: 'Sign in', exact: true }),
@@ -645,6 +694,7 @@ test(
                 'dark',
               );
               await checks({ recoverySeconds: 120 });
+              await replicas?.verify(context, `${command}-resume-session`);
             }
           }
           if (process.env.CC_AUTH_KUBERNETES_FAULTS === '1') {
@@ -670,6 +720,15 @@ test(
               startForward,
             });
           }
+          if (capacityVolume)
+            capacityFaults = await qualifyKubernetesCapacity({
+              root,
+              project,
+              kube,
+              volume: capacityVolume,
+              page,
+              checks,
+            });
           // Capture source placement before isolated restore stops its writers.
           installerEvidence = await installer.evidence();
           if (process.env.CC_AUTH_KUBERNETES_RESTORE === '1') {
@@ -748,8 +807,43 @@ test(
             };
           }
         },
+        {
+          afterSignOut: replicas
+            ? () => replicas.verify(undefined, 'signed-out-session', 401)
+            : undefined,
+        },
       );
       assert.ok(installerEvidence);
+      if (capacityFaults)
+        capacityEvidence = {
+          status: 'passed',
+          profile: 'kubernetes',
+          sourceRevision,
+          images,
+          application,
+          capacity: capacityFaults,
+          installer: installerEvidence,
+          recordedAt: new Date().toISOString(),
+          limits: capacityFaults.limits,
+        };
+      if (replicas)
+        replicaEvidence = {
+          status: 'passed',
+          profile: 'kubernetes',
+          sourceRevision,
+          images,
+          application,
+          upgrade,
+          installer: installerEvidence,
+          replicaObservations: replicas.observations,
+          apiReplicaCount: 2,
+          logoutRejectedAcrossReplicas: true,
+          replacementPreservedOneReplica: true,
+          recordedAt: new Date().toISOString(),
+          limits: [
+            'Two API replicas run in a dedicated Kind cluster on one physical Docker host.',
+          ],
+        };
       await mkdir('dist/phase-2-evidence', { recursive: true });
       if (applicationFaults) {
         assert.equal(applicationFaults.status, 'passed');
@@ -888,6 +982,41 @@ test(
           '--kubeconfig',
           kubeconfig,
         ]);
+      if (capacityVolume) {
+        assert.notEqual(process.env.CC_PHASE2_KEEP_FIXTURE, 'true');
+        await capacityVolume.close();
+      }
+    }
+    if (capacityEvidence) {
+      assert.ok(
+        !(await run(kind, ['get', 'clusters'])).split('\n').includes(project),
+      );
+      await writeFile(
+        'dist/phase-2-evidence/kubernetes-capacity.json',
+        JSON.stringify(
+          {
+            ...capacityEvidence,
+            ownedClusterRemoved: true,
+            ownedCapacityVolumeRemoved: true,
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    if (replicaEvidence) {
+      assert.notEqual(process.env.CC_PHASE2_KEEP_FIXTURE, 'true');
+      assert.ok(
+        !(await run(kind, ['get', 'clusters'])).split('\n').includes(project),
+      );
+      await writeFile(
+        'dist/phase-2-evidence/kubernetes-replicas.json',
+        JSON.stringify(
+          { ...replicaEvidence, ownedClusterRemoved: true },
+          null,
+          2,
+        ),
+      );
     }
     if (certificateEvidence) {
       assert.notEqual(process.env.CC_PHASE2_KEEP_FIXTURE, 'true');

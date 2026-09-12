@@ -31,6 +31,8 @@ export const applicationReports = {
   'kubernetes-upgrade-integration': 'kubernetes-upgrade.json',
   'kubernetes-process-fault-integration': 'kubernetes-process-faults.json',
   'kubernetes-certificate-integration': 'kubernetes-certificates.json',
+  'kubernetes-replica-integration': 'kubernetes-replicas.json',
+  'kubernetes-capacity-integration': 'kubernetes-capacity.json',
   'kubernetes-restore-integration': 'kubernetes-restore.json',
   'upgrade-integration': 'all-docker-upgrade.json',
   'restore-integration': 'all-docker-restore.json',
@@ -166,6 +168,133 @@ export async function assembleCandidate({
         filename,
       );
       const report = JSON.parse(await readFile(source, 'utf8'));
+      if (target === 'kubernetes-replica-integration') {
+        const phases = [
+          'initial-session',
+          'replacement-session',
+          'worker-reschedule-session',
+          'stop-revoked-session',
+          'stop-resume-session',
+          'uninstall-revoked-session',
+          'uninstall-resume-session',
+          'signed-out-session',
+        ];
+        const observations = report.replicaObservations;
+        if (
+          report.profile !== 'kubernetes' ||
+          report.sourceRevision !== sourceRevision ||
+          report.ownedClusterRemoved !== true ||
+          report.apiReplicaCount !== 2 ||
+          report.upgrade?.status !== 'passed' ||
+          report.logoutRejectedAcrossReplicas !== true ||
+          report.replacementPreservedOneReplica !== true ||
+          !Array.isArray(observations) ||
+          observations.length !== phases.length * 2 ||
+          phases.some((phase) => {
+            const rows = observations.filter((item) => item.phase === phase);
+            const status =
+              phase.includes('revoked') || phase === 'signed-out-session'
+                ? 401
+                : 200;
+            return (
+              rows.length !== 2 ||
+              new Set(rows.map((item) => item.podUid)).size !== 2 ||
+              rows.some(
+                (item) =>
+                  item.status !== status ||
+                  !item.podUid ||
+                  !item.node ||
+                  (status === 200
+                    ? !/^[a-f0-9-]{36}$/.test(item.principalId ?? '')
+                    : item.principalId !== undefined),
+              )
+            );
+          }) ||
+          new Set(
+            observations
+              .filter((item) => item.status === 200)
+              .map((item) => item.principalId),
+          ).size !== 1 ||
+          observations.filter(
+            (item) =>
+              item.phase === 'replacement-session' &&
+              observations.some(
+                (original) =>
+                  original.phase === 'initial-session' &&
+                  original.podUid === item.podUid,
+              ),
+          ).length !== 1 ||
+          observations
+            .filter((item) => item.phase === 'signed-out-session')
+            .some(
+              (item) =>
+                !observations.some(
+                  (previous) =>
+                    previous.phase === 'uninstall-resume-session' &&
+                    previous.podUid === item.podUid,
+                ),
+            )
+        )
+          throw new Error(
+            'Kubernetes replica qualification requires direct session and revocation checks through both API pods.',
+          );
+      }
+      if (target === 'kubernetes-capacity-integration') {
+        const capacity = report.capacity,
+          observations = capacity?.observations;
+        if (
+          report.profile !== 'kubernetes' ||
+          report.sourceRevision !== sourceRevision ||
+          report.ownedClusterRemoved !== true ||
+          report.ownedCapacityVolumeRemoved !== true ||
+          capacity?.status !== 'passed' ||
+          capacity.recoveryBoundSeconds !== faultRecoveryTimeoutSeconds ||
+          !Number.isFinite(capacity.recoveryMs) ||
+          capacity.recoveryMs < 0 ||
+          capacity.recoveryMs > faultRecoveryTimeoutSeconds * 1000 ||
+          capacity?.fault?.kind !== 'ENOSPC' ||
+          capacity.fault.publicationRejected !== true ||
+          capacity.fault.readyRowsUnchanged !== true ||
+          capacity?.authenticatedFailure?.httpStatus !== 201 ||
+          capacity.authenticatedFailure.status !== 'failed' ||
+          capacity?.preserved?.failedDiagnosticArtifactsRemoved !== true ||
+          capacity.preserved.identityAndPreferencesPreserved !== true ||
+          capacity.preserved.migrationsPreserved !== true ||
+          !(capacity.preserved.preservedSecurityEvents > 0) ||
+          !(capacity.preserved.preservedKestraExecutions > 0) ||
+          !(capacity.preserved.preservedInternalFiles > 0) ||
+          !/^[a-f0-9]{64}$/.test(capacity.preserved.artifactSha256 ?? '') ||
+          capacity.preserved.artifactSha256 !==
+            capacity.artifact?.artifactSha256 ||
+          !Array.isArray(observations) ||
+          observations.length !== 4 ||
+          new Set(observations.map((item) => item.podUid)).size !== 4 ||
+          observations.some((item) => !item.podUid || !item.node) ||
+          observations.filter((item) => item.role === 'api').length !== 2 ||
+          observations.filter((item) => item.role === 'workers').length !== 2 ||
+          new Set(
+            observations
+              .filter((item) => item.role === 'workers')
+              .map((item) => item.node),
+          ).size !== 2 ||
+          observations.some(
+            (item) =>
+              ['before', 'during', 'after'].some(
+                (stage) =>
+                  item[stage]?.filesystemType !== 0x01021994 ||
+                  item[stage].totalBytes !== 16777216,
+              ) ||
+              !Number.isSafeInteger(item.before.availableBytes) ||
+              item.before.availableBytes <= 0 ||
+              item.before.availableBytes > 16777216 ||
+              item.during.availableBytes !== 0 ||
+              item.after.availableBytes !== item.before.availableBytes,
+          )
+        )
+          throw new Error(
+            'Kubernetes capacity qualification requires a shared capped volume, authenticated failure, preserved state, recovery, and cleanup.',
+          );
+      }
       if (target === 'hybrid-cli-capacity-integration') {
         const capacity = report.capacity;
         const observations = capacity?.observations;

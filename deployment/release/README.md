@@ -138,3 +138,14 @@ The distributed hybrid capacity gate verifies capped shared storage across two A
 It requires three Docker daemon identities, ENOSPC, authenticated failure, exact artifact cleanup, preserved durable state, and bounded recovery.
 The capacity fixture downloads pinned infrastructure images before offline Compose startup.
 These checks retain candidate status until the complete profile acceptance records pass.
+
+The Kubernetes matrix includes `kubernetes-replica-integration` and `kubernetes-capacity-integration`.
+Replica evidence requires sixteen direct requests across eight lifecycle stages and the same principal on both API pods.
+Both pods must reject sessions revoked by stop, uninstall, and browser sign-out.
+Exactly one original API pod must survive replacement. The fixture must confirm cluster removal.
+Capacity evidence requires two API pods and two worker pods with distinct worker nodes.
+All four pods must observe the same capped 16 MiB tmpfs, zero available bytes during failure, and exact space restoration.
+The gate also requires authenticated failure, artifact cleanup, durable state, bounded recovery, and removal of the cluster and volume.
+The capacity target starts a fresh Phase 2 installation. The replica target includes a Phase 1 upgrade.
+The matrix now contains twenty-one application targets and twenty-seven total jobs.
+These synthetic reports retain their limits and do not establish accepted release status.

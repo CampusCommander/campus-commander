@@ -141,3 +141,24 @@ The integration fixture uses the qualified PostgreSQL image and disposable synth
 It checks encrypted backup, both database restores, artifact reads, Kestra fixture state, and missing or corrupt components.
 It also checks missing source storage, busy databases, nonempty targets, and failure before a restore success report.
 It does not establish actual Kestra engine recovery, district shared-storage recovery, or a complete profile restart.
+
+## Failure reasons
+
+A failed command exits with status 1 and prints a fixed `Reason: <CODE>.` classification.
+The classification never prints the underlying exception message, SQL, connection material, or private paths.
+Unknown failures use `UNCLASSIFIED_FAILURE`.
+
+| Reason                                                     | Operator action                                                                         |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `QUIESCENCE_REQUIRED`                                      | Stop writers and provide a recent operator record.                                      |
+| `DATABASE_CONNECTIONS_ACTIVE`                              | Stop other database clients before another backup attempt.                              |
+| `ARTIFACT_ATTEMPTS_ACTIVE`                                 | Resolve active artifact attempts before backup.                                         |
+| `STORAGE_CHANGED` or `DATABASE_CHANGED`                    | Identify the remaining writer and repeat the cold backup procedure.                     |
+| `POSTGRES_VERSION_MISMATCH` or `POSTGRES_TOOL_UNAVAILABLE` | Install the required PostgreSQL tools and verify their path.                            |
+| `POSTGRES_TOOL_FAILED`                                     | Inspect the protected operator environment and database prerequisites.                  |
+| `FILESYSTEM_FULL` or `FILESYSTEM_ACCESS_DENIED`            | Correct storage capacity or operator permissions.                                       |
+| `BACKUP_INCOMPLETE` or `BACKUP_AUTHENTICATION_FAILED`      | Verify the selected backup and its independently recovered key.                         |
+| `RESTORE_DATABASE_NOT_EMPTY`                               | Provision another empty restore target.                                                 |
+| `UNCLASSIFIED_FAILURE`                                     | Retain protected inputs and investigate the failed command in the operator environment. |
+
+A failure code identifies a category. It does not authorize startup or reuse of a partial restore target.

@@ -893,3 +893,48 @@ The local daemon cached infrastructure layers. Published revision CI must verify
 
 Kubernetes capacity, remaining certificate coverage, final revision qualification, and accepted release assembly remain open.
 Phase 1 acceptance remains separate.
+
+## Kubernetes replica sessions and bounded capacity
+
+[The direct replica test](../../deployment/evidence/CC-36-phase-2-kubernetes-authenticated-replicas.json) passed in 4 minutes 35 seconds with published `8a5f823` images.
+It sent sixteen session requests directly to named API pods across eight lifecycle stages.
+Both replicas returned the same principal after initial login, pod replacement, worker reschedule, and fresh login after installer resume.
+Both replicas rejected sessions revoked by stop, uninstall, and browser sign-out.
+Exactly one original API pod survived the replacement stage. The fixture confirmed cluster removal before writing its final evidence.
+
+[The Kubernetes capacity test](../../deployment/evidence/CC-36-phase-2-kubernetes-authenticated-capacity.json) passed in 3 minutes 50 seconds with the same published images.
+A dedicated named volume supplies a capped 16 MiB tmpfs to all three Kind nodes.
+Two API pods and two worker pods observed zero available bytes during the same fault.
+The worker pods occupied distinct Kind nodes. Authenticated Diagnostics rejected publication and removed failed artifact metadata and files.
+All four Diagnostics checks passed after recovery in 2.46 seconds.
+The test preserved identity, preferences, migrations, 64 security events, seven completed Kestra executions, and one internal file.
+It verified the original artifact checksum, restored available bytes, and removed the owned cluster and capacity volume.
+
+[Two fixture failures](../../deployment/evidence/CC-36-phase-2-kubernetes-capacity-fixture-failures.json) remain separate from the corrected pass.
+A Docker mountpoint bind did not expose the named tmpfs contents. A scoped wrapper now mounts the named volume directly.
+The first complete test rejected an empty Kestra internal file baseline before injecting a fault.
+The corrected fixture uploads and reads a synthetic namespace file through the authenticated Kestra API before capturing that baseline.
+The capacity fixture uses a fresh Phase 2 installation. Its report does not claim a Phase 1 upgrade.
+
+Candidate assembly now requires both reports, sixteen valid replica observations, four capped filesystem observations, exact cleanup, and bounded recovery.
+Seven invalid replica records and nine invalid capacity records fail candidate assembly in the release tests.
+The candidate matrix contains twenty-one application targets and twenty-seven total jobs.
+Kind nodes share one physical host. These tests do not qualify district storage, physical host separation, or NetworkPolicy enforcement.
+
+## Published capacity passes and Kubernetes backup diagnostics
+
+[Candidate 8a5f823](../../deployment/evidence/CC-37-phase-2-sixteenth-published-run.json) passed twenty-two jobs and failed infrastructure image preparation for all-Docker capacity.
+[Candidate f76a701](../../deployment/evidence/CC-37-phase-2-seventeenth-published-run.json) passed twenty-three jobs, including both all-Docker and hybrid capacity.
+The clean CI daemon therefore verified the image preparation correction.
+Both revisions passed all seven PR checks. Neither candidate published a bundle.
+The f76a701 Kubernetes restore job failed during operator CLI backup with a generic error. Its underlying cause remains unconfirmed.
+
+[The operator regression](../../deployment/evidence/CC-34-phase-2-operator-failure-reason-regression.json) reproduces the missing failure classification with a rejected quiescence record.
+The CLI now returns a fixed allowlisted reason code alongside its redacted failure message.
+Unknown errors retain `UNCLASSIFIED_FAILURE`. No exception text, SQL, credentials, or private paths enter that classification.
+Four unit tests and the native operator CLI integration passed after the change.
+[The Kubernetes restore report](../../deployment/evidence/CC-34-phase-2-kubernetes-reason-regression.json) records successful backup, verification, restore, and application checks with native host tools.
+The local restore does not reproduce the published container failure or establish its correction.
+
+Remaining certificate coverage, published Kubernetes backup diagnosis, final revision qualification, and accepted release assembly remain open.
+Phase 1 acceptance remains separate.
