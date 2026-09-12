@@ -1,0 +1,37 @@
+{
+  "name": "account",
+  "engine": {
+    "name": "axe-core",
+    "version": "4.13.0"
+  },
+  "recordedAt": "2026-09-12T09:44:31.052Z",
+  "violations": [],
+  "incomplete": [],
+  "passedRuleIds": [
+    "aria-allowed-attr",
+    "aria-conditional-attr",
+    "aria-hidden-body",
+    "aria-hidden-focus",
+    "aria-prohibited-attr",
+    "aria-valid-attr-value",
+    "aria-valid-attr",
+    "button-name",
+    "bypass",
+    "color-contrast",
+    "document-title",
+    "duplicate-id-aria",
+    "html-has-lang",
+    "html-lang-valid",
+    "link-name",
+    "meta-viewport",
+    "nested-interactive",
+    "target-size"
+  ],
+  "accessibilityTree": "- link \"Skip to content\":\n  - /url: \"#main-content\"\n- navigation \"Application navigation\":\n  - button \"Toggle navigation\"\n  - link \"Your account\":\n    - /url: /account\n  - link \"Diagnostics\":\n    - /url: /diagnostics\n- banner:\n  - text: Your account\n  - link \"Application help\":\n    - /url: /account#application-help\n  - button \"Choose theme\"\n  - button \"Open user menu\": Synthetic administrator\n- main:\n  - heading \"Your account\" [level=1]\n  - region \"Synthetic administrator\":\n    - heading \"Synthetic administrator\" [level=2]\n    - paragraph: You signed in to Campus Commander.\n    - paragraph: The installation operator manages your application access.\n  - region \"Application help\":\n    - heading \"Application help\" [level=2]\n    - paragraph: Use Diagnostics to inspect service connections and run fixed service checks.\n    - paragraph: Use the theme menu to select light, dark, or system appearance.\n    - paragraph: Use the user menu to sign out. If your session expires, sign in again.\n    - paragraph: If a check fails, give its support reference to the installation operator.\n- contentinfo:\n  - text: Version phase-2-candidate-2f26a013e3bbc7cbf768add55f0b3701ac312243 · Build 2f26a013e3bbc7cbf768add55f0b3701ac312243\n  - link \"Services ready\":\n    - /url: /diagnostics",
+  "computedTheme": {
+    "theme": "dark",
+    "color": "rgb(232, 234, 237)",
+    "background": "rgb(18, 18, 18)"
+  },
+  "screenReaderWalkthrough": "not-run"
+}

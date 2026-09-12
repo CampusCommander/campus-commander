@@ -336,7 +336,7 @@ test(
         project,
         application: {
           upgradeFromPhase1: Boolean(baseline),
-          installerOwnsWorkloads: !baseline,
+          installerOwnsWorkloads: true,
           auth: {
             issuer: provider.issuer,
             clientId: 'qualification',
@@ -366,13 +366,28 @@ test(
           maxBuffer: 8 * 1024 * 1024,
         },
       );
-      const startForward = async (namespace = project) => {
+      const startForward = async (namespace = project, edgePod) => {
         const currentResources = JSON.parse(
           await readFile(join(root, 'runtime', 'resources.json'), 'utf8'),
         );
-        const edgePort = currentResources.items.find(
+        const edgeService = currentResources.items.find(
           (item) => item.kind === 'Service' && item.metadata.name === 'edge',
-        ).spec.ports[0].port;
+        );
+        const servicePort = edgeService.spec.ports[0];
+        const edgePort = !edgePod
+          ? servicePort.port
+          : typeof servicePort.targetPort === 'number'
+            ? servicePort.targetPort
+            : currentResources.items
+                .find(
+                  (item) =>
+                    item.kind === 'Deployment' && item.metadata.name === 'edge',
+                )
+                .spec.template.spec.containers.flatMap(
+                  (container) => container.ports ?? [],
+                )
+                .find((port) => port.name === servicePort.targetPort)
+                .containerPort;
 
         if (
           forward &&
@@ -393,7 +408,7 @@ test(
             '-n',
             namespace,
             'port-forward',
-            'service/edge',
+            edgePod ? `pod/${edgePod}` : 'service/edge',
             `${publicPort}:${edgePort}`,
             '--address=127.0.0.1',
           ],
@@ -424,19 +439,16 @@ test(
           });
         });
       };
-      let installer;
-      if (!baseline) {
-        installer = await prepareKubernetesInstaller({
-          root,
-          project,
-          kubeconfig,
-          kube,
-          release,
-          application: fixture.application,
-        });
-        await installer.resume(startForward);
-        await installer.resume(startForward);
-      }
+      const installer = await prepareKubernetesInstaller({
+        root,
+        project,
+        kubeconfig,
+        kube,
+        release: baseline ?? release,
+        application: fixture.application,
+      });
+      await installer.resume(startForward);
+      await installer.resume(startForward);
       for (const name of [
         'application-postgres',
         'kestra-postgres',
@@ -462,13 +474,11 @@ test(
             baseline,
             release,
             application: fixture.application,
+            installer,
+            startForward,
           })
         : undefined;
-      const resources = installer
-        ? installer.resources()
-        : JSON.parse(
-            await readFile(join(root, 'runtime', 'resources.json'), 'utf8'),
-          );
+      const resources = installer.resources();
       const template = structuredClone(
         resources.items.find((item) => item.kind === 'Job').spec.template,
       );
@@ -521,8 +531,8 @@ test(
         'job/qualification-enrollment',
         '--timeout=90s',
       ]);
-      if (!installer) await startForward();
       let restoration;
+      let installerEvidence;
       const application = await applicationBrowser(
         publicOrigin,
         async ({ page, context, checks }) => {
@@ -631,6 +641,8 @@ test(
               await checks({ recoverySeconds: 120 });
             }
           }
+          // Capture source placement before isolated restore stops its writers.
+          installerEvidence = await installer.evidence();
           if (process.env.CC_AUTH_KUBERNETES_RESTORE === '1') {
             const preference = page.waitForResponse(
               (response) =>
@@ -708,6 +720,7 @@ test(
           }
         },
       );
+      assert.ok(installerEvidence);
       await mkdir('dist/phase-2-evidence', { recursive: true });
       if (restoration)
         await writeFile(
@@ -740,7 +753,7 @@ test(
             nodes: nodes.length,
             apiReplicas: 2,
             workerRescheduled: true,
-            ...(installer ? { installer: await installer.evidence() } : {}),
+            installer: installerEvidence,
             limits: [
               'Three Kind nodes share one Docker host and synthetic storage.',
               'Kind default networking does not enforce NetworkPolicy.',

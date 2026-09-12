@@ -435,9 +435,10 @@ The fixture now enables native accessibility and waits for actual Orca registrat
 Orca buffers its debug file. Initial log contents cannot establish startup readiness.
 The full local reader test passed all six speech assertions in 213 seconds with Orca 50.2.
 [The reader evidence](../../deployment/evidence/CC-35-phase-2-reader-registration-local.json) records live registration and actual utterances.
-CC-35 remains open pending verification with CI’s Orca 46.1.
+The subsequent CI run passed with Orca 46.1. The criterion audit completed CC-35.
 
-Kubernetes upgrade and restore fixtures still use their rendered-profile procedures.
+Kubernetes upgrade now uses the real installer CLI and an encrypted baseline backup.
+The restore target still uses its isolated restore procedure.
 Complete distributed CLI qualification and the fifteen signed profile acceptance records remain open.
 Phase 1 acceptance remains separate.
 
@@ -452,3 +453,51 @@ Fault recovery now compares against the verified post-upgrade state, including t
 The corrected upgrade test passed in 208 seconds, including both certificate failures and subsequent application checks.
 [The upgrade fault evidence](../../deployment/evidence/CC-37-phase-2-upgrade-tls-faults.json) records preserved migrations, artifact integrity, and restored certificate bytes.
 These certificate checks retain their limited scope. They do not establish complete profile fault acceptance.
+
+## Seventh candidate and Kubernetes CLI upgrade
+
+The seventh candidate workflow passed all 17 jobs for source `2f26a013e3bbc7cbf768add55f0b3701ac312243`.
+[The terminal workflow record](../../deployment/evidence/CC-37-phase-2-seventh-published-run.json) links candidate and PR results.
+The workflow published the signed candidate. Its fifteen profile acceptance gates remain open.
+[Independent hosted verification](../../deployment/evidence/CC-37-phase-2-hosted-verification-2f26a01.json) passed archive, manifest, image signatures, and inventoried file checks.
+
+[The CI reader report](../../deployment/evidence/phase-2-published-2f26a01/reader/screen-reader.json) passes all six speech assertions with Orca 46.1.
+Live accessibility registration includes Orca before browser startup and Chromium after browser startup.
+[The browser report](../../deployment/evidence/phase-2-published-2f26a01/auth/packaged-integration.json) records the complete application checks.
+Four accessibility reports contain zero violations and zero incomplete checks.
+The retained screenshots show both themes and the actual build identifier.
+The evidence covers UI-01 through UI-06, UI-08 through UI-10, and FORM-01 where applicable.
+[Artifact provenance](../../deployment/evidence/phase-2-published-2f26a01/artifact-provenance.json) records original downloaded hashes before repository JSON formatting.
+
+The Kubernetes CLI upgrade passed in 269 seconds, including cluster cleanup.
+[The upgrade evidence](../../deployment/evidence/CC-36-phase-2-cli-kubernetes-upgrade.json) records the published baseline and target image identities.
+The fixture stops API, worker, and Kestra writers before creating the encrypted database and storage backup.
+The installer verifies the backup and applies the Phase 2 migration.
+The test preserves the Phase 1 migration checksum, artifact metadata, artifact bytes, worker execution, and Kestra files.
+It completes 24 diagnostic executions, API replacement, worker rescheduling, stop/resume, and uninstall/resume.
+The fixture preserves each CLI-generated manifest until an explicit upgrade generates its replacement.
+
+The first upgrade attempt reached healthy workloads but failed the fixture readiness connection.
+The fixture now forwards to a ready edge pod with the target image during rolling updates.
+The subsequent upgrade passed. This result supports the old-pod selection diagnosis without proving the original connection target.
+Three Kind nodes share one Docker host and synthetic storage. District infrastructure and CNI enforcement remain separate qualification requirements.
+The local run uses published `dae5f7a` images and uncommitted qualification changes based on `2f26a01`.
+It does not qualify the final release revision.
+
+The first combined CLI upgrade and restore run completed recovery but failed its final evidence assertion.
+The assertion expected two source worker hosts after restore had stopped every source writer.
+[The failure record](../../deployment/evidence/CC-36-phase-2-cli-kubernetes-restore-report-failure.json) preserves the failed target and passed restore subchecks separately.
+The fixture now captures source worker placement after lifecycle recovery and before isolated restore stops source writers.
+
+[The hybrid daemon probe](../../deployment/evidence/CC-36-phase-2-hybrid-daemon-probe.json) started three independent Docker 29.8.0 daemons.
+Each daemon returned a distinct identifier. The probe removed its three containers after verification.
+The probe verifies fixture availability only. Full hybrid CLI and shared-storage qualification remain open.
+
+The corrected CLI upgrade and isolated restore target passed in 324 seconds, including cluster cleanup.
+[Restore evidence](../../deployment/evidence/CC-36-phase-2-cli-kubernetes-restore.json) records exact identities, preferences, security events, and isolated storage.
+[Lifecycle evidence](../../deployment/evidence/CC-36-phase-2-cli-kubernetes-restore-lifecycle.json) records the encrypted backup, CLI commands, and source worker placement.
+The target rejects the source session. Fresh login preserves the dark theme and completes all four Diagnostics checks.
+All 28 diagnostic executions passed across source lifecycle recovery and target verification.
+The test retains source writer shutdown during target verification.
+Relevant lint, formatting, and whitespace checks passed.
+The restore procedure still uses its isolated target adapter. This evidence does not establish complete CLI restore acceptance.

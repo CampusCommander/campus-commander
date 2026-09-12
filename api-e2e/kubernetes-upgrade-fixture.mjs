@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { renderKubernetes } from '../deployment/kubernetes/render.mjs';
 
 export function configureKubernetesProvider(resources, application) {
   const pod = resources.items.find(
@@ -44,13 +43,15 @@ async function checksums(root, relative = '') {
   return entries.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/** Verify migration and durable state across the rendered Kubernetes upgrade. */
+/** Verify migration and durable state across the Kubernetes installer upgrade. */
 export async function qualifyKubernetesUpgrade({
   root,
   kube,
   baseline,
   release,
   application,
+  installer,
+  startForward,
 }) {
   const started = Date.now();
   const runtime = join(root, 'runtime');
@@ -155,34 +156,18 @@ process.stdout.write(JSON.stringify({metadata,ledger,authTable,sha256:hash.diges
   process.stdout.write(
     'Preserve the baseline state and apply the Phase 2 migration.\n',
   );
-  for (const name of ['edge', 'frontend', 'api', 'workers', 'kestra']) {
-    await kube(['scale', `deployment/${name}`, '--replicas=0']);
-    await kube(['rollout', 'status', `deployment/${name}`, '--timeout=180s']);
-  }
+  assert.ok(
+    installer,
+    'Kubernetes upgrade must use the prepared installer CLI.',
+  );
   config.phase = 2;
   config.images = release.images;
   config.applicationAuth = application.auth;
   config.services.edge.access = 'application';
   config.services.edge.endpoint.url = application.auth.publicOrigin;
   operator.release = release;
-  const resources = renderKubernetes(config, operator);
-  configureKubernetesProvider(resources, application);
-  await kube(
-    ['apply', '-f', '-'],
-    JSON.stringify({
-      apiVersion: 'v1',
-      kind: 'List',
-      items: resources.items.filter((item) => item.kind !== 'Deployment'),
-    }),
-  );
-  const job = resources.items.find((item) => item.kind === 'Job');
-  await kube([
-    'wait',
-    '--for=condition=complete',
-    `job/${job.metadata.name}`,
-    '--timeout=180s',
-  ]);
-  await kube(['apply', '-f', '-'], JSON.stringify(resources));
+  const lifecycle = await installer.upgrade({ config, release, startForward });
+  const resources = installer.resources();
   await kube(['rollout', 'status', 'deployment', '--timeout=300s']);
   const afterImages = await verifyImages(release.images);
   const after = await inspectState();
@@ -209,6 +194,7 @@ process.stdout.write(JSON.stringify({metadata,ledger,authTable,sha256:hash.diges
     baselineImages: baseline.images,
     images: release.images,
     runtimeImageContentVerified: true,
+    installer: lifecycle,
     beforeImages,
     afterImages,
     baselineMigrations: before.ledger,
@@ -223,7 +209,7 @@ process.stdout.write(JSON.stringify({metadata,ledger,authTable,sha256:hash.diges
     },
     limits: [
       'Three Kind nodes share one Docker host and synthetic shared storage.',
-      'The fixture applies rendered manifests and runs the installer-owned migration job.',
+      'The real installer CLI verifies the encrypted baseline backup and applies the Phase 2 upgrade.',
       'This report does not establish district infrastructure, network policy enforcement, or signed release acceptance.',
     ],
   };

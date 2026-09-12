@@ -1,0 +1,716 @@
+{
+  "scope": "synthetic-kind-three-node-shared-host-directory",
+  "cluster": "cc-capacity-kube-3b5bd84c8e37",
+  "context": "kind-cc-capacity-kube-3b5bd84c8e37",
+  "kubeconfig": "/tmp/cc-capacity-kube-3b5bd84c8e37-QsdMyj/kubeconfig",
+  "nodeImage": "kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0",
+  "nodes": [
+    "cc-capacity-kube-3b5bd84c8e37-control-plane",
+    "cc-capacity-kube-3b5bd84c8e37-worker",
+    "cc-capacity-kube-3b5bd84c8e37-worker2"
+  ],
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+  },
+  "sourceRevision": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
+  "sourceState": "uncommitted-implementation",
+  "qualifiesDistrictStorage": false,
+  "networkPolicyEnforced": false,
+  "loadBalancerQualified": false,
+  "status": "passed",
+  "applicationState": {
+    "principals": 1,
+    "securityEvents": 57,
+    "identityStateSha256": "8f5c360686718a69bed7cd2610ad37bf502954e060ee96e15adfb18925c4401c",
+    "exactIdentityAndPreferences": true,
+    "exactSecurityEvents": true
+  },
+  "sourceNamespace": "cc-capacity-kube-3b5bd84c8e37",
+  "targetNamespace": "cc-kube-restore-synthetic",
+  "operatorAdapter": {
+    "sourceApplicationPort": 31162,
+    "sourceKestraPort": 31163,
+    "targetApplicationPort": 31164,
+    "targetKestraPort": 31165,
+    "tlsServerName": "localhost",
+    "kubernetesPostgresTools": "pg_dump (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)",
+    "postgresTransport": "One verified TLS database session per kubectl port-forward process."
+  },
+  "quiesce": {
+    "operator": "synthetic-kubernetes-qualification",
+    "stoppedServices": ["api", "workers", "kestra"],
+    "stoppedAt": "2026-09-12T10:09:25.257Z"
+  },
+  "sourceWorkloads": [
+    {
+      "name": "api",
+      "desired": 2,
+      "ready": 2,
+      "image": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a"
+    },
+    {
+      "name": "application-postgres",
+      "desired": 1,
+      "ready": 1,
+      "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
+    },
+    {
+      "name": "edge",
+      "desired": 1,
+      "ready": 1,
+      "image": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a"
+    },
+    {
+      "name": "frontend",
+      "desired": 1,
+      "ready": 1,
+      "image": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab"
+    },
+    {
+      "name": "kestra",
+      "desired": 1,
+      "ready": 1,
+      "image": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114"
+    },
+    {
+      "name": "kestra-postgres",
+      "desired": 1,
+      "ready": 1,
+      "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
+    },
+    {
+      "name": "redis",
+      "desired": 1,
+      "ready": 1,
+      "image": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee"
+    },
+    {
+      "name": "workers",
+      "desired": 2,
+      "ready": 2,
+      "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+    }
+  ],
+  "targetWorkloads": [
+    {
+      "name": "api",
+      "desired": 2,
+      "ready": 2,
+      "image": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a"
+    },
+    {
+      "name": "application-postgres",
+      "desired": 1,
+      "ready": 1,
+      "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
+    },
+    {
+      "name": "edge",
+      "desired": 1,
+      "ready": 1,
+      "image": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a"
+    },
+    {
+      "name": "frontend",
+      "desired": 1,
+      "ready": 1,
+      "image": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab"
+    },
+    {
+      "name": "kestra",
+      "desired": 1,
+      "ready": 1,
+      "image": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114"
+    },
+    {
+      "name": "kestra-postgres",
+      "desired": 1,
+      "ready": 1,
+      "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
+    },
+    {
+      "name": "redis",
+      "desired": 1,
+      "ready": 1,
+      "image": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee"
+    },
+    {
+      "name": "workers",
+      "desired": 2,
+      "ready": 2,
+      "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+    }
+  ],
+  "sourceStartup": {
+    "phase": 1,
+    "status": "ready",
+    "checks": [
+      {
+        "name": "application-database",
+        "status": "ready"
+      },
+      {
+        "name": "kestra-database",
+        "status": "ready"
+      },
+      {
+        "name": "redis",
+        "status": "ready"
+      },
+      {
+        "name": "frontend",
+        "status": "ready"
+      },
+      {
+        "name": "api",
+        "status": "ready"
+      },
+      {
+        "name": "workers",
+        "status": "ready"
+      },
+      {
+        "name": "artifacts",
+        "status": "ready"
+      },
+      {
+        "name": "kestra",
+        "status": "ready"
+      }
+    ]
+  },
+  "targetStartup": {
+    "phase": 1,
+    "status": "ready",
+    "checks": [
+      {
+        "name": "application-database",
+        "status": "ready"
+      },
+      {
+        "name": "kestra-database",
+        "status": "ready"
+      },
+      {
+        "name": "redis",
+        "status": "ready"
+      },
+      {
+        "name": "frontend",
+        "status": "ready"
+      },
+      {
+        "name": "api",
+        "status": "ready"
+      },
+      {
+        "name": "workers",
+        "status": "ready"
+      },
+      {
+        "name": "artifacts",
+        "status": "ready"
+      },
+      {
+        "name": "kestra",
+        "status": "ready"
+      }
+    ]
+  },
+  "sourcePvcs": [
+    {
+      "name": "application-postgres-data",
+      "uid": "9c38adf3-1e63-46ab-a684-2de9defe076f",
+      "volumeName": "pvc-9c38adf3-1e63-46ab-a684-2de9defe076f"
+    },
+    {
+      "name": "campus-artifacts",
+      "uid": "4af195eb-0fc0-4498-9f1a-6f8ae17a89b1",
+      "volumeName": "cc-synthetic-campus-artifacts"
+    },
+    {
+      "name": "kestra-internal",
+      "uid": "b7efc1f5-413a-44af-a70c-b364be46fde7",
+      "volumeName": "cc-synthetic-kestra-internal"
+    },
+    {
+      "name": "kestra-postgres-data",
+      "uid": "fff93fe1-228d-41fe-82c7-401a213582ee",
+      "volumeName": "pvc-fff93fe1-228d-41fe-82c7-401a213582ee"
+    }
+  ],
+  "targetPvcs": [
+    {
+      "name": "application-postgres-data",
+      "uid": "787f6799-c3a9-4c94-8c82-461cf7f2b7bd",
+      "volumeName": "pvc-787f6799-c3a9-4c94-8c82-461cf7f2b7bd",
+      "phase": "Bound"
+    },
+    {
+      "name": "campus-artifacts",
+      "uid": "2f07df02-b479-4f8f-b72e-6652e1f0a040",
+      "volumeName": "cc-synthetic-restore-campus-artifacts",
+      "phase": "Bound"
+    },
+    {
+      "name": "kestra-internal",
+      "uid": "c957f1fa-4821-4649-8d36-27ce41ed37df",
+      "volumeName": "cc-synthetic-restore-kestra-internal",
+      "phase": "Bound"
+    },
+    {
+      "name": "kestra-postgres-data",
+      "uid": "4d39b30a-2bf6-4617-82eb-bc60dbd69b1a",
+      "volumeName": "pvc-4d39b30a-2bf6-4617-82eb-bc60dbd69b1a",
+      "phase": "Bound"
+    }
+  ],
+  "backup": {
+    "profile": "kubernetes",
+    "postgresVersion": "18.6",
+    "redisRecovery": "discard-cache",
+    "componentPaths": [
+      "artifacts/36cdf2cd-e244-4399-8bdd-aac0615e67a4.374aa654-84e5-4bec-9b5a-e58110d367a0",
+      "artifacts/6603fd4b-1fc8-416a-8f31-452c61ebfbfa.28f9bacc-5317-4104-9cf1-ecad8dec5d87",
+      "kestra-internal/main/campus/validation/_files/cc17-kubernetes-marker.bin",
+      "kestra-internal/main/campus/validation/cc11-external-worker/executions/3HTCsRcoGj1ooZLsw40MzD/tasks/persist-result/5dKvQYPiSiwfBKuIFTMafB/7727487009003481752.json",
+      "kestra-internal/main/campus/validation/cc11-external-worker/executions/LIQBW92mJuQpoaNta525X/tasks/persist-result/5PgnxlxYSYEmJ9OYNlKSXx/14197415040407225432.json",
+      "configuration.json",
+      "release.json",
+      "application.dump",
+      "kestra.dump"
+    ],
+    "configurationSha256": "57f9051311a758cbadc80c999879e61b84bc56ff5ab6bd7e3a7d5f49a05621e6",
+    "releaseSha256": "697d244fd1366ea4fa6e3ef8452a59dd10b0aab05f0fd5e0aa67adb443b17f94"
+  },
+  "restore": {
+    "status": "verified-services-disabled",
+    "disabledMarkerObserved": true,
+    "disabledMarkerRemovedAfterAcceptance": true,
+    "applicationTables": [
+      {
+        "schema": "cc",
+        "name": "application_principals",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "artifacts",
+        "count": "2"
+      },
+      {
+        "schema": "cc",
+        "name": "bootstrap_access",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "schema_migrations",
+        "count": "2"
+      },
+      {
+        "schema": "cc",
+        "name": "security_events",
+        "count": "57"
+      }
+    ],
+    "kestraTables": [
+      {
+        "schema": "public",
+        "name": "concurrency_limit",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "dashboards",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "execution_queued",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "executions",
+        "count": "8"
+      },
+      {
+        "schema": "public",
+        "name": "executordelayed",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "executorstate",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "flow_topologies",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "flows",
+        "count": "2"
+      },
+      {
+        "schema": "public",
+        "name": "flyway_schema_history",
+        "count": "53"
+      },
+      {
+        "schema": "public",
+        "name": "kv_metadata",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "logs",
+        "count": "8"
+      },
+      {
+        "schema": "public",
+        "name": "metrics",
+        "count": "40"
+      },
+      {
+        "schema": "public",
+        "name": "multipleconditions",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "namespace_file_metadata",
+        "count": "2"
+      },
+      {
+        "schema": "public",
+        "name": "queues",
+        "count": "58"
+      },
+      {
+        "schema": "public",
+        "name": "service_instance",
+        "count": "20"
+      },
+      {
+        "schema": "public",
+        "name": "settings",
+        "count": "4"
+      },
+      {
+        "schema": "public",
+        "name": "sla_monitor",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "templates",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "triggers",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "worker_job_running",
+        "count": "0"
+      }
+    ],
+    "artifactFiles": [
+      {
+        "path": "artifacts/36cdf2cd-e244-4399-8bdd-aac0615e67a4.374aa654-84e5-4bec-9b5a-e58110d367a0",
+        "sha256": "e5804c1710c0b522544a9e78970f72071e0fc82ad45e8e1752ff3a09621161a6",
+        "sizeBytes": 40
+      },
+      {
+        "path": "artifacts/6603fd4b-1fc8-416a-8f31-452c61ebfbfa.28f9bacc-5317-4104-9cf1-ecad8dec5d87",
+        "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd",
+        "sizeBytes": 8388608
+      }
+    ]
+  },
+  "fixtures": {
+    "artifact": {
+      "before": {
+        "artifactId": "6603fd4b-1fc8-416a-8f31-452c61ebfbfa",
+        "attemptId": "28f9bacc-5317-4104-9cf1-ecad8dec5d87",
+        "schemaVersion": 1,
+        "sizeBytes": 8388608,
+        "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd",
+        "writerHost": "workers-97576545c-kd44z",
+        "writtenAt": "2026-09-12T10:09:07.259Z",
+        "operatorTwoHostAttestationRequired": true,
+        "readerHost": "workers-97576545c-vbqvc",
+        "readAt": "2026-09-12T10:09:07.834Z",
+        "integrity": "pass"
+      },
+      "after": {
+        "artifactId": "6603fd4b-1fc8-416a-8f31-452c61ebfbfa",
+        "attemptId": "28f9bacc-5317-4104-9cf1-ecad8dec5d87",
+        "schemaVersion": 1,
+        "sizeBytes": 8388608,
+        "sha256": "b63446a770bf575bb6247db059d6a4a2463b9d02170507937fbd459778c37acd",
+        "writerHost": "workers-97576545c-kd44z",
+        "writtenAt": "2026-09-12T10:09:07.259Z",
+        "operatorTwoHostAttestationRequired": true,
+        "readerHost": "workers-d4868845b-4lpvr",
+        "readAt": "2026-09-12T10:09:59.485Z",
+        "integrity": "pass"
+      }
+    },
+    "kestra": {
+      "before": {
+        "flow": "campus.validation/cc11_external_worker",
+        "executionId": "LIQBW92mJuQpoaNta525X",
+        "executionState": "SUCCESS",
+        "markerSha256": "340a8665ef2ab5a7f85ff7042d22942d04ea961c19864915fefaaf7e8b926ee2"
+      },
+      "after": {
+        "flow": "campus.validation/cc11_external_worker",
+        "markerSha256": "340a8665ef2ab5a7f85ff7042d22942d04ea961c19864915fefaaf7e8b926ee2"
+      }
+    },
+    "redis": {
+      "sourceMarkerExists": 1,
+      "targetMarkerExists": 0
+    }
+  },
+  "isolation": {
+    "namespaceMapping": {
+      "source": "cc-capacity-kube-3b5bd84c8e37",
+      "target": "cc-kube-restore-synthetic"
+    },
+    "sourceWritersStopped": [
+      {
+        "name": "api",
+        "desired": 0,
+        "ready": 0,
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a"
+      },
+      {
+        "name": "kestra",
+        "desired": 0,
+        "ready": 0,
+        "image": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114"
+      },
+      {
+        "name": "workers",
+        "desired": 0,
+        "ready": 0,
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+      }
+    ],
+    "distinctNamespaces": true,
+    "distinctPvcUids": true,
+    "sourceResourcesRetained": true,
+    "targetDirectory": "/tmp/cc-capacity-kube-3b5bd84c8e37-QsdMyj/shared/restore-qualification",
+    "sourceRoots": {
+      "artifacts": "/tmp/cc-capacity-kube-3b5bd84c8e37-QsdMyj/shared/campus-artifacts/artifacts",
+      "kestraInternal": "/tmp/cc-capacity-kube-3b5bd84c8e37-QsdMyj/shared/kestra-internal/kestra"
+    },
+    "restoredRoots": {
+      "artifacts": "/tmp/cc-capacity-kube-3b5bd84c8e37-QsdMyj/shared/restore-qualification/artifacts",
+      "kestraInternal": "/tmp/cc-capacity-kube-3b5bd84c8e37-QsdMyj/shared/restore-qualification/kestra-internal"
+    },
+    "mountedTargetRoots": {
+      "artifacts": "/tmp/cc-capacity-kube-3b5bd84c8e37-QsdMyj/shared/restore-qualification/artifact-volume/artifacts",
+      "kestraInternal": "/tmp/cc-capacity-kube-3b5bd84c8e37-QsdMyj/shared/restore-qualification/kestra-volume/kestra"
+    }
+  },
+  "durationMilliseconds": 54880,
+  "testedAt": "2026-09-12T10:10:00.432Z",
+  "limitations": [
+    "Kind hostPath shares one Docker host and does not qualify district RWX storage.",
+    "Kind default networking does not qualify an enforcing district CNI.",
+    "Port forwarding qualifies the operator adapter, not district control-plane routing.",
+    "Local immutable images do not qualify a published signed release."
+  ],
+  "oldSessionRejected": true,
+  "preservedTheme": "dark",
+  "restoredOperations": ["postgresql", "redis", "kestra", "artifacts"],
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "350d6875-a719-493d-8a32-de7fc911b284",
+        "observedAt": "2026-09-12T10:07:24.827Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "c035c300-e2fc-48a6-b4cc-7677305d5249",
+        "observedAt": "2026-09-12T10:07:24.971Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "a7a63e49-887b-43bf-8773-f3f8e08bb529",
+        "observedAt": "2026-09-12T10:07:25.737Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "fedd0e4f-78d6-4179-a423-937e71d7b714",
+        "observedAt": "2026-09-12T10:07:25.841Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "345e7c3e-d250-42b7-8575-0fe82b3fede6",
+        "observedAt": "2026-09-12T10:07:37.983Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "ae8d494d-8da4-4eba-a719-5e7dc36ab568",
+        "observedAt": "2026-09-12T10:07:38.071Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "5c3b1ead-e20c-4484-913c-65739c5183ff",
+        "observedAt": "2026-09-12T10:07:38.704Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "9e37b607-28b2-4b3f-b9ae-479d82827138",
+        "observedAt": "2026-09-12T10:07:38.816Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "7d88e4b1-82e6-4d2c-8c38-09ee61f2bb76",
+        "observedAt": "2026-09-12T10:07:51.390Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "07adb713-6dd4-4bdc-8e6f-c08b29b4ffac",
+        "observedAt": "2026-09-12T10:07:51.637Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "384b55de-089b-47b8-abd7-9a41ae3f4ff3",
+        "observedAt": "2026-09-12T10:07:52.264Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "d342f46d-6e30-490a-aa2f-9b93082deb8a",
+        "observedAt": "2026-09-12T10:07:52.354Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "5e39718b-488e-417e-bcb5-ac9aa58a6ba2",
+        "observedAt": "2026-09-12T10:08:03.598Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "6acaca14-7209-473e-806d-3383467cb685",
+        "observedAt": "2026-09-12T10:08:03.835Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "535b7d78-4ebd-41ce-b845-9b5e75a2951a",
+        "observedAt": "2026-09-12T10:08:04.454Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "cefff0e7-4f05-49eb-bfa5-6d8e83d16899",
+        "observedAt": "2026-09-12T10:08:04.556Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "8c79372b-cbe9-49f7-ad7e-144fbb455d29",
+        "observedAt": "2026-09-12T10:08:31.760Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "bca8883d-3466-4e87-a20e-459b646ae42e",
+        "observedAt": "2026-09-12T10:08:31.849Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "22b9c607-9c47-4bd3-b534-70b8ce17a96f",
+        "observedAt": "2026-09-12T10:08:32.680Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "e6edafee-b75e-4794-8412-c34c8fd5e098",
+        "observedAt": "2026-09-12T10:08:32.786Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "0a44b0fb-8369-4775-949a-9f36a57c7e15",
+        "observedAt": "2026-09-12T10:09:04.273Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "c82fef7d-b9f8-4edb-bdca-493ac7f0d0dc",
+        "observedAt": "2026-09-12T10:09:04.363Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "26102f53-d2f3-4d5e-b06d-325607e1a24d",
+        "observedAt": "2026-09-12T10:09:05.160Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "5c9afdbc-b4e2-4371-8002-57ee7a9778ad",
+        "observedAt": "2026-09-12T10:09:05.271Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "b1b46874-00f5-4ef5-87a2-c66689e99122",
+        "observedAt": "2026-09-12T10:10:01.149Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "a7bfa4b2-83f5-4bdc-bddb-b2e442ad168c",
+        "observedAt": "2026-09-12T10:10:01.223Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "28b48411-127c-46d5-b973-0debdf198dfd",
+        "observedAt": "2026-09-12T10:10:02.040Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "eb24ea97-6c34-46da-bc29-a55181348aee",
+        "observedAt": "2026-09-12T10:10:02.142Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  }
+}

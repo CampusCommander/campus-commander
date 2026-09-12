@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import { backupKubernetesInstallation } from './kubernetes-backup-fixture.mjs';
 
 const execute = promisify(execFile);
 
@@ -27,7 +28,8 @@ export async function prepareKubernetesInstaller({
     await readFile(join(runtime, 'operator.json'), 'utf8'),
   );
   assert.equal(config.profile, 'kubernetes');
-  assert.equal(config.phase, 2);
+  const phase = config.phase ?? 1;
+  assert.ok([1, 2].includes(phase));
   assert.equal(kubernetes.namespace, project);
   assert.deepEqual(config.images, release.images);
   await mkdir(installationRoot, { mode: 0o700 });
@@ -48,12 +50,12 @@ export async function prepareKubernetesInstaller({
   const source = process.env.CC_AUTH_INSTALLER_ROOT
     ? 'verified-extracted-bundle'
     : 'workspace';
-  let inventory = { ...release, phase: 2, qualification: 'candidate-only' };
+  let inventory = { ...release, phase, qualification: 'candidate-only' };
   if (process.env.CC_AUTH_INSTALLER_ROOT) {
     inventory = JSON.parse(
       await readFile(join(installerRoot, 'release-manifest.json'), 'utf8'),
     );
-    assert.equal(inventory.phase, 2);
+    assert.equal(inventory.phase, phase);
     assert.equal(inventory.sourceRevision, release.sourceRevision);
     assert.deepEqual(inventory.images, release.images);
   }
@@ -167,48 +169,116 @@ process.exit(result.status??1);
     return result;
   };
   assert.equal((await cli('prepare')).status, 'prepared');
-  const original = await readFile(generatedPath, 'utf8');
-  return {
-    cli,
-    resources: () => JSON.parse(original),
-    async resume(startForward) {
-      const pending = cli('resume');
-      // Attach rejection handling while the fixture waits for the edge workload.
-      let completed;
-      const settled = pending.then(
-        (value) => (completed = { value }),
-        (error) => (completed = { error }),
-      );
-      let available = false;
-      for (let attempt = 0; attempt < 120; attempt++) {
-        if (completed?.error) throw completed.error;
-        try {
-          const edge = JSON.parse(
-            await kube(['get', 'deployment', 'edge', '-o', 'json']),
+  let original = await readFile(generatedPath, 'utf8');
+  const ready = async (command, startForward, image) => {
+    const pending = cli(command);
+    // Attach rejection handling while the fixture waits for the edge workload.
+    let completed;
+    const settled = pending.then(
+      (value) => (completed = { value }),
+      (error) => (completed = { error }),
+    );
+    let available = false;
+    let edgePod;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      if (completed?.error) throw completed.error;
+      try {
+        const edge = JSON.parse(
+          await kube(['get', 'deployment', 'edge', '-o', 'json']),
+        );
+        if (
+          edge.spec.template.spec.containers.some(
+            (container) => container.image === image,
+          ) &&
+          edge.spec.replicas > 0 &&
+          edge.status.observedGeneration >= edge.metadata.generation &&
+          edge.status.availableReplicas >= edge.spec.replicas
+        ) {
+          const pods = JSON.parse(
+            await kube([
+              'get',
+              'pods',
+              '-l',
+              'app.kubernetes.io/name=edge',
+              '-o',
+              'json',
+            ]),
+          ).items;
+          edgePod = pods.find(
+            (pod) =>
+              !pod.metadata.deletionTimestamp &&
+              pod.spec.containers.some(
+                (container) => container.image === image,
+              ) &&
+              pod.status.conditions?.some(
+                (condition) =>
+                  condition.type === 'Ready' && condition.status === 'True',
+              ),
           );
-          if (
-            edge.spec.replicas > 0 &&
-            edge.status.observedGeneration >= edge.metadata.generation &&
-            edge.status.availableReplicas >= edge.spec.replicas
-          ) {
+          if (edgePod) {
             available = true;
             break;
           }
-        } catch {
-          /* The CLI has not created the edge Deployment yet. */
         }
-        await new Promise((done) => setTimeout(done, 1000));
+      } catch {
+        /* The CLI has not created the edge Deployment yet. */
       }
-      if (available) await startForward();
-      const result = await settled;
-      if (result.error) throw result.error;
-      assert.equal(
-        available,
-        true,
-        'The installer must start the edge Deployment.',
-      );
-      assert.equal(result.value.status, 'ready');
+      await new Promise((done) => setTimeout(done, 1000));
+    }
+    if (available) await startForward(project, edgePod.metadata.name);
+    const result = await settled;
+    if (result.error) throw result.error;
+    assert.equal(
+      available,
+      true,
+      'The installer must start the edge Deployment.',
+    );
+    assert.equal(result.value.status, 'ready');
+    if (command === 'resume')
       assert.equal(await readFile(generatedPath, 'utf8'), original);
+  };
+  return {
+    cli,
+    resources: () => JSON.parse(original),
+    resume: (startForward) =>
+      ready('resume', startForward, inventory.images.api),
+    async upgrade({ config: nextConfig, release: nextRelease, startForward }) {
+      assert.equal(await readFile(generatedPath, 'utf8'), original);
+      const state = JSON.parse(
+        await readFile(join(installationRoot, 'installer-state.json'), 'utf8'),
+      );
+      assert.equal(state.phase, 'ready');
+      const backup = await backupKubernetesInstallation({
+        root,
+        project,
+        kubeconfig,
+        kube,
+        config,
+        kubernetes,
+        release: inventory,
+        installationRoot,
+      });
+      const operator = JSON.parse(await readFile(operatorPath, 'utf8'));
+      operator.upgradeFromReleaseHash = state.releaseHash;
+      operator.upgradeBackup = {
+        backupDirectory: backup.backupDirectory,
+        keyRecovery: backup.keyRecovery,
+      };
+      operator.backupManifestSha256 = backup.backupManifestSha256;
+      inventory = { ...nextRelease, phase: 2, qualification: 'candidate-only' };
+      await writeFile(operator.configurationPath, JSON.stringify(nextConfig), {
+        mode: 0o600,
+      });
+      await writeFile(releasePath, JSON.stringify(inventory), { mode: 0o600 });
+      await writeFile(operatorPath, JSON.stringify(operator), { mode: 0o600 });
+      await ready('upgrade', startForward, inventory.images.api);
+      original = await readFile(generatedPath, 'utf8');
+      return {
+        status: 'passed',
+        backupManifestSha256: backup.backupManifestSha256,
+        writersStopped: backup.writersStopped,
+        previousReleaseSourceRevision: backup.sourceRevision,
+      };
     },
     async evidence() {
       assert.equal(await readFile(generatedPath, 'utf8'), original);

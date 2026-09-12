@@ -86,6 +86,8 @@ if (capacity) {
   };
 }
 const application = capacity?.application;
+if (application)
+  config.services.edge.endpoint.url = application.auth.publicOrigin;
 if (application && !application.upgradeFromPhase1) {
   config.phase = 2;
   config.applicationAuth = application.auth;
