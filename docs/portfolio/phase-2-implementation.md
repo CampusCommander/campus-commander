@@ -501,3 +501,55 @@ All 28 diagnostic executions passed across source lifecycle recovery and target 
 The test retains source writer shutdown during target verification.
 Relevant lint, formatting, and whitespace checks passed.
 The restore procedure still uses its isolated target adapter. This evidence does not establish complete CLI restore acceptance.
+
+## Eighth candidate failures and continued qualification
+
+The eighth candidate used source `9aadf55a917870c6e3ed08d548308e659fc017fa`.
+[The terminal workflow record](../../deployment/evidence/CC-37-phase-2-eighth-published-run.json) records two failed application targets.
+The PR workflow passed. The candidate did not publish a release bundle.
+The hybrid target failed its Kestra diagnostic after the PostgreSQL outage despite restored HTTP readiness.
+The operation did not recover within the existing 120-second bound. This failure remains unresolved.
+
+[The reader failure](../../deployment/evidence/CC-35-phase-2-reader-9aadf55-failure.json) records five passed speech checks and a failed login announcement.
+CC-35 returned to In Progress. Earlier reader results do not close the current failure.
+A local probe reproduced disagreement between DOM focus and native accessibility focus.
+The fixture now waits for the login control, requests native focus, and verifies that focus before activation.
+[The corrected reader report](../../deployment/evidence/CC-35-phase-2-native-focus-reader.json) passes all six speech checks with Orca 50.2.
+The complete browser target passed in 218 seconds with eighteen diagnostic observations and lifecycle recovery.
+Candidate CI must still verify the correction against its Orca version and final images.
+
+[The distributed hybrid CLI report](../../deployment/evidence/CC-36-phase-2-hybrid-cli.json) records three independent Docker daemons with distinct identifiers.
+It transfers the generated worker fragments to separate daemon hosts and retains external TLS PostgreSQL and Redis.
+Host preparation now verifies the Docker resource controls through the installer preflight.
+A private connection probe traced the migration failure to DNS resolution of a single-label district hostname.
+[The DNS probe](../../deployment/evidence/CC-36-phase-2-hybrid-dns.json) passed after using fully qualified fixture hostnames.
+The corresponding single-label queries failed through the embedded resolver.
+This evidence qualifies synthetic fixture behavior. It does not establish district DNS acceptance.
+
+The API replica contract tests reproduced ignored replica counts in both Compose profiles.
+The renderer now applies the configured API replica count while retaining resource limits and singular migration jobs.
+The distributed CLI fixture asserts two running API containers and checks the same session against each container.
+The following lifecycle evidence covers the synthetic distributed fixture. Full profile fault and release acceptance remain open.
+
+The distributed CLI reached two healthy API replicas after the DNS correction.
+Its first Kestra task failed immediately after installer resume.
+The retained execution log reported `No X509TrustManager implementation available`.
+A focused Java probe confirmed that unchanged preparation replaced the truststore password used by the running JVM.
+
+[Preparation evidence](../../deployment/evidence/CC-36-phase-2-hybrid-preparation.json) records the reproduced failure and corrected probes.
+Hybrid preparation now records protected input and output checksums.
+Unchanged inputs and verified runtime files preserve the existing TLS stores and passwords.
+Changed credentials, configuration, or damaged runtime files trigger regeneration.
+Regression tests and the real Java truststore probe pass.
+The complete distributed CLI target passed in 175 seconds after the correction.
+It completed install, resume, API and worker restart, stop/resume, and uninstall/resume.
+All sixteen diagnostic executions passed. Both API replicas accepted the same session before and after lifecycle recovery.
+The fixture now retains each replica result and writes its passed report only after owned-resource cleanup succeeds.
+Candidate CI includes this distributed CLI target. Final release qualification remains open.
+
+The final distributed CLI target passed in 180 seconds, including owned-resource cleanup.
+Its report records eight successful direct session checks across both API replicas and four lifecycle states.
+All sixteen diagnostic executions passed without retry.
+The fixture retained the original generated Compose files and preserved the dark theme through lifecycle recovery.
+The report explicitly separates workspace qualification source from pinned published application images.
+These results do not complete final revision qualification, isolated restore, upgrade, or full profile fault acceptance.

@@ -17,12 +17,16 @@ The target requires the same application images and Docker access as `all-docker
 Published image references use `CC_AUTH_API_IMAGE`, `CC_AUTH_FRONTEND_IMAGE`, and `CC_AUTH_WORKER_IMAGE`.
 The fixture enables Chromium native accessibility with `ACCESSIBILITY_ENABLED=1`.
 It waits for Orca to register with the accessibility desktop before launching Chromium.
-The fixture focuses controls before keyboard activation and captures Orca output after sign-out.
+The fixture waits for the visible login control in the native accessibility tree.
+It requests native focus and verifies native focus before keyboard activation.
+DOM focus alone left the native focus on Chromium’s address bar during a reproduced failure.
+The fixture captures Orca output after sign-out.
 It checks the login label, diagnostic controls, named service completion, bounded announcements, and sign-out.
 
 The report resides at `dist/phase-2-evidence/screen-reader.json`.
 Raw reader logs remain in the private temporary evidence directory named by that report.
 Connection observations record Chromium registration before and after browser execution.
+Login observations record the native control name, role, and focus state.
 The report also records reader registration, visible startup log output, browser references, and accessibility event counts.
 Orca buffers its debug file. Missing startup log output does not prove that Orca has not announced startup.
 These observations distinguish missing browser registration from missing reader announcements.

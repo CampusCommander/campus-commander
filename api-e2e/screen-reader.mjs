@@ -148,9 +148,64 @@ print(json.dumps({'status': 'observed', 'applicationCount': len(names), 'chromiu
     const initialDebug = await readFile(join(root, 'orca.debug'), 'utf8').catch(
       () => '',
     );
+    const controlObservations = [];
     return {
       env,
       stop,
+      async waitForControl(name, focused = false) {
+        const deadline = Date.now() + 30000;
+        let observed;
+        do {
+          try {
+            const result = await execute(
+              '/usr/bin/python3',
+              [
+                '-c',
+                `
+import json, sys
+import gi
+gi.require_version('Atspi', '2.0')
+from gi.repository import Atspi
+desktop = Atspi.get_desktop(0)
+queue = [desktop.get_child_at_index(i) for i in range(desktop.get_child_count())]
+found = None
+visited = 0
+while queue and visited < 1000:
+    node = queue.pop(0)
+    visited += 1
+    try:
+        states = node.get_state_set()
+        if node.get_name() == sys.argv[1] and states.contains(Atspi.StateType.SHOWING):
+            focused = states.contains(Atspi.StateType.FOCUSED)
+            if sys.argv[2] == 'focused' and not focused:
+                node.get_component_iface().grab_focus()
+                focused = node.get_state_set().contains(Atspi.StateType.FOCUSED)
+            if sys.argv[2] != 'focused' or focused:
+                found = {'name': node.get_name(), 'role': node.get_role_name(), 'focused': focused}
+                break
+        queue.extend(node.get_child_at_index(i) for i in range(node.get_child_count()))
+    except Exception:
+        pass
+print(json.dumps(found))
+`,
+                name,
+                focused ? 'focused' : 'visible',
+              ],
+              { env, timeout: 5000 },
+            );
+            observed = JSON.parse(result.stdout);
+          } catch {
+            observed = undefined;
+          }
+          if (observed) break;
+          await delay(100);
+        } while (Date.now() < deadline);
+        assert.ok(
+          observed,
+          'The login control must reach the native accessibility tree before activation.',
+        );
+        controlObservations.push(observed);
+      },
       async verify() {
         await delay(1500);
         const finalConnection = await connectionSnapshot();
@@ -195,6 +250,7 @@ print(json.dumps({'status': 'observed', 'applicationCount': len(names), 'chromiu
           connection: {
             beforeBrowser: initialConnection,
             afterBrowser: finalConnection,
+            loginControlObservations: controlObservations,
             startupAnnouncementVisibleBeforeBrowser: initialDebug.includes(
               "SPEECH OUTPUT: 'Screen reader on.",
             ),

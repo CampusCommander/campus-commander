@@ -438,7 +438,10 @@ export function renderAllDocker(
         image: images.api,
         ...restart,
         ...hardening,
-        ...resourceLimits(services.api),
+        deploy: {
+          ...resourceLimits(services.api).deploy,
+          replicas: services.api.placement.replicas,
+        },
         networks: ['ingress', 'internal'],
         healthcheck: health('/health', 3000),
         tmpfs: ['/tmp'],

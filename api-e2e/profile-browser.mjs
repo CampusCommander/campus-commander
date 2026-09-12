@@ -36,6 +36,14 @@ export async function applicationBrowser(
     const observations = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(publicOrigin);
+    if (reader) {
+      await page.bringToFront();
+      await reader.waitForControl('Sign in to Campus Commander');
+      await page
+        .getByRole('link', { name: 'Sign in to Campus Commander' })
+        .focus();
+      await reader.waitForControl('Sign in to Campus Commander', true);
+    }
     await activate(
       page.getByRole('link', { name: 'Sign in to Campus Commander' }),
     );

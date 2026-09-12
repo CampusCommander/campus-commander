@@ -247,6 +247,7 @@ jobs:
             auth-image-integration,
             all-docker-integration,
             hybrid-integration,
+            hybrid-cli-integration,
             hybrid-upgrade-integration,
             hybrid-restore-integration,
             kubernetes-integration,

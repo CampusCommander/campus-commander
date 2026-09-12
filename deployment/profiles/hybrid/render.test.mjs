@@ -342,3 +342,16 @@ test('controller and remote workers stage private files before nonroot startup',
   assert.deepEqual(worker.services['runtime-files'].networks, ['egress']);
   assert.equal(controller.networks.internal.internal, true);
 });
+
+test('applies controller API replicas without duplicating workers on each host', () => {
+  const replicated = structuredClone(config);
+  replicated.services.api.placement.replicas = 2;
+  const compose = renderHybrid(replicated, release);
+  assert.equal(compose.services.api.deploy.replicas, 2);
+  assert.equal(compose.services['database-migrate'].deploy.replicas, undefined);
+  const worker = renderWorkerHost(replicated, release, {
+    hostIndex: 0,
+    bindAddress: '10.20.30.41',
+  });
+  assert.equal(worker.services.workers.deploy.replicas ?? 1, 1);
+});

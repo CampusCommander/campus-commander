@@ -137,6 +137,14 @@
         }
       },
       "dependsOn": ["deployment:build"]
+    },
+    "hybrid-cli-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/hybrid-cli.test.mjs"
+      }
     }
   }
 }
