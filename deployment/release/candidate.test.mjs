@@ -2,10 +2,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { applicationReports, assembleCandidate } from './candidate.mjs';
-import { assertReleaseEvidence, verifyReleaseFiles } from './integrity.mjs';
+import {
+  assertReleaseEvidence,
+  verifyReleaseFiles,
+  verifyReleaseEvidence,
+  sha256,
+} from './integrity.mjs';
+import {
+  bundleTargets,
+  recordBundleQualification,
+} from './bundle-qualification.mjs';
+import { assembleQualifiedRelease, profileWorkflows } from './qualified.mjs';
 
 test('candidate inventory excludes untracked secrets and cannot pass release qualification', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cc-candidate-'));
@@ -377,6 +387,200 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       );
     }
     await verifyReleaseFiles(phase2Output, phase2);
+    const bundleQualifications = join(root, 'bundle-qualifications');
+    const manifestSha256 = sha256(
+      await readFile(join(phase2Output, 'release-manifest.json')),
+    );
+    for (const target of bundleTargets) {
+      const report = JSON.parse(
+        await readFile(
+          join(
+            qualificationArtifacts,
+            `qualification-${target}`,
+            applicationReports[target],
+          ),
+        ),
+      );
+      const profile = Object.entries(profileWorkflows).find(([, mapping]) =>
+        Object.values(mapping).includes(target),
+      )[0];
+      report.profile = profile;
+      const commands = [
+        'prepare',
+        'resume',
+        'resume',
+        'stop',
+        'resume',
+        'uninstall',
+        'resume',
+      ];
+      const structuredCommands = commands.map((command) => ({
+        command,
+        status:
+          { prepare: 'prepared', stop: 'stopped', uninstall: 'uninstalled' }[
+            command
+          ] ?? 'ready',
+      }));
+      report.installer = {
+        source:
+          profile === 'kubernetes'
+            ? 'verified-extracted-bundle'
+            : 'extracted-published-bundle',
+        commands: profile === 'all-docker' ? commands : structuredCommands,
+        bundleManifestSha256: manifestSha256,
+        workerHosts: ['worker-a', 'worker-b'],
+      };
+      report.commands = structuredCommands;
+      report.installerSource = 'extracted-published-bundle';
+      report.bundleManifestSha256 = manifestSha256;
+      report.qualificationSourceState =
+        'Extracted published installer bundle with matching application images.';
+      report.releaseInventories = [
+        {
+          sourceRevision: '0'.repeat(40),
+          images: {
+            ...manifest.images,
+            api: 'registry.example.org/baseline@sha256:' + 'b'.repeat(64),
+          },
+        },
+        { sourceRevision, images: manifest.images },
+      ];
+      report.checks = [
+        'encrypted backup verified before upgrade',
+        'different image digests upgrade with artifact and ledger preservation',
+      ];
+      report.oldSessionRejected = true;
+      report.application.oldSessionRejected = true;
+      report.preserved = {
+        principals: 1,
+        securityEvents: 1,
+        artifactSha256: 'a'.repeat(64),
+      };
+      const state = {
+        principals: 1,
+        securityEvents: 1,
+        exactIdentityAndPreferences: true,
+        exactSecurityEvents: true,
+      };
+      report.applicationState = state;
+      report.verification.application = state;
+      for (const execution of [
+        report.operatorCli,
+        report.backup.operatorCli,
+        report.verification.operatorCli,
+      ]) {
+        execution.source = 'extracted-published-bundle';
+        execution.bundleManifestSha256 = manifestSha256;
+      }
+      const directory = join(
+        bundleQualifications,
+        `bundle-qualification-${target}`,
+      );
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        join(directory, applicationReports[target]),
+        JSON.stringify(report),
+      );
+      if (target === 'all-docker-process-fault-integration')
+        await writeFile(
+          join(directory, 'all-docker-upgrade.json'),
+          JSON.stringify(report),
+        );
+      await recordBundleQualification({
+        bundleRoot: phase2Output,
+        reportRoot: directory,
+        target,
+        sourceRevision,
+        images: manifest.images,
+      });
+    }
+    const qualifiedOutput = join(root, 'qualified');
+    const qualified = await assembleQualifiedRelease({
+      candidateRoot: phase2Output,
+      qualifications: bundleQualifications,
+      output: qualifiedOutput,
+      sourceRevision,
+    });
+    assert.equal(qualified.qualification, 'profile-qualified');
+    assert.equal(qualified.districtInfrastructureAcceptance, 'not-qualified');
+    const checkPaths = Object.values(qualified.evidence).flatMap((profile) =>
+      Object.values(profile)
+        .filter((check) => check.reportPath)
+        .map((check) => check.reportPath),
+    );
+    assert.equal(checkPaths.length, 15);
+    assert.equal(new Set(checkPaths).size, 15);
+    await verifyReleaseEvidence(qualifiedOutput, qualified);
+    await verifyReleaseFiles(qualifiedOutput, qualified);
+    assert.deepEqual(
+      await readFile(
+        join(qualifiedOutput, 'provenance/candidate-manifest.json'),
+      ),
+      await readFile(join(phase2Output, 'release-manifest.json')),
+    );
+    const contextPath = join(
+      bundleQualifications,
+      'bundle-qualification-all-docker-integration/bundle-qualification.json',
+    );
+    const contextBytes = await readFile(contextPath);
+    const context = JSON.parse(contextBytes);
+    let invalidIndex = 0;
+    for (const invalid of [
+      { ...context, bundleManifestSha256: '0'.repeat(64) },
+      { ...context, sourceRevision: '0'.repeat(40) },
+      { ...context, status: 'failed' },
+      {
+        ...context,
+        reports: [{ ...context.reports[0], path: '../outside.json' }],
+      },
+    ]) {
+      await writeFile(contextPath, JSON.stringify(invalid));
+      await assert.rejects(
+        assembleQualifiedRelease({
+          candidateRoot: phase2Output,
+          qualifications: bundleQualifications,
+          output: join(root, `invalid-qualified-${invalidIndex++}`),
+          sourceRevision,
+        }),
+      );
+    }
+    await writeFile(contextPath, contextBytes);
+    const resumeReportPath = join(
+      bundleQualifications,
+      'bundle-qualification-all-docker-integration/all-docker-profile.json',
+    );
+    const resumeBytes = await readFile(resumeReportPath);
+    const missingResume = JSON.parse(resumeBytes);
+    missingResume.installer.commands = ['prepare', 'resume'];
+    await writeFile(resumeReportPath, JSON.stringify(missingResume));
+    await recordBundleQualification({
+      bundleRoot: phase2Output,
+      reportRoot: dirname(contextPath),
+      target: 'all-docker-integration',
+      sourceRevision,
+      images: manifest.images,
+    });
+    await assert.rejects(
+      assembleQualifiedRelease({
+        candidateRoot: phase2Output,
+        qualifications: bundleQualifications,
+        output: join(root, 'missing-resume-qualified'),
+        sourceRevision,
+      }),
+    );
+    await writeFile(resumeReportPath, resumeBytes);
+    await writeFile(contextPath, contextBytes);
+    await rm(contextPath);
+    await assert.rejects(
+      assembleQualifiedRelease({
+        candidateRoot: phase2Output,
+        qualifications: bundleQualifications,
+        output: join(root, 'missing-workflow-qualified'),
+        sourceRevision,
+      }),
+      { code: 'ENOENT' },
+    );
+    await writeFile(contextPath, contextBytes);
     assert.equal(
       Object.keys(phase2.applicationEvidence).length,
       Object.keys(applicationReports).length,

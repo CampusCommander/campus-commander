@@ -1182,15 +1182,22 @@ export async function qualifyFullHybrid({ application } = {}) {
       ca: caBytes,
       path: '/health',
     });
-    if (
-      preservedExecution.status !== 200 ||
-      JSON.parse(preservedExecution.body).state.current !== 'SUCCESS' ||
-      finalWorkerChecksums.some((checksum) => checksum !== artifactChecksum) ||
-      (await readdir(storageRoot, { recursive: true })).length <
-        storageEntriesBefore ||
-      !readyStatus(finalReadiness)
-    ) {
-      throw new Error('State did not survive the external dependency outages.');
+    const persistenceChecks = {
+      executionPreserved:
+        preservedExecution.status === 200 &&
+        JSON.parse(preservedExecution.body).state.current === 'SUCCESS',
+      workerChecksumsMatch: finalWorkerChecksums.every(
+        (checksum) => checksum === artifactChecksum,
+      ),
+      internalStoragePreserved:
+        (await readdir(storageRoot, { recursive: true })).length >=
+        storageEntriesBefore,
+      finalReadiness: Boolean(readyStatus(finalReadiness)),
+    };
+    if (Object.values(persistenceChecks).some((passed) => !passed)) {
+      throw new Error(
+        `State did not survive the external dependency outages: ${JSON.stringify(persistenceChecks)}`,
+      );
     }
 
     const componentContainers = {

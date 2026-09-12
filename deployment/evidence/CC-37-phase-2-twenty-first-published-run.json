@@ -1,0 +1,224 @@
+{
+  "status": "failed",
+  "recordedAt": "2026-09-12T16:59:39.061308+00:00",
+  "sourceRevision": "3ead25fd4221ce6751a6badd080c5a994a1f5fb8",
+  "candidate": {
+    "runId": 34705694210,
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34705694210",
+    "status": "completed",
+    "conclusion": "failure",
+    "jobs": [
+      {
+        "id": 103585208400,
+        "name": "validate",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585459558,
+        "name": "publish (worker)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585459574,
+        "name": "publish (frontend)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585459627,
+        "name": "publish (api)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791519,
+        "name": "capacity",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791702,
+        "name": "application (hybrid-cli-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791707,
+        "name": "application (all-docker-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791711,
+        "name": "application (auth-image-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791730,
+        "name": "application (all-docker-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791744,
+        "name": "application (all-docker-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791762,
+        "name": "application (hybrid-cli-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791764,
+        "name": "application (hybrid-cli-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791773,
+        "name": "application (hybrid-cli-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791774,
+        "name": "application (kubernetes-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791779,
+        "name": "application (hybrid-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103585791782,
+        "name": "application (kubernetes-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791783,
+        "name": "application (screen-reader-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791788,
+        "name": "application (kubernetes-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791790,
+        "name": "application (hybrid-cli-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791792,
+        "name": "application (all-docker-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791796,
+        "name": "application (kubernetes-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791819,
+        "name": "application (restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791826,
+        "name": "application (hybrid-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791828,
+        "name": "application (kubernetes-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791850,
+        "name": "application (kubernetes-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791852,
+        "name": "application (hybrid-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791853,
+        "name": "application (upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585791914,
+        "name": "application (kubernetes-replica-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103587353318,
+        "name": "bundle-application",
+        "conclusion": "skipped"
+      },
+      {
+        "id": 103587353357,
+        "name": "bundle",
+        "conclusion": "skipped"
+      }
+    ]
+  },
+  "pr": {
+    "runId": 34705697198,
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34705697198",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 103585214691,
+        "name": "main",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585214776,
+        "name": "browser",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585214780,
+        "name": "foundation-integration (storage-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585214783,
+        "name": "application-integration",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585214808,
+        "name": "foundation-integration (operations-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585214815,
+        "name": "foundation-integration (qualify-redis)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103585214822,
+        "name": "foundation-integration (postgres-integration)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "failure": {
+    "jobId": 103585791779,
+    "target": "hybrid-integration",
+    "stage": "persistence-verification",
+    "message": "State did not survive the external dependency outages.",
+    "jobLogSha256": "6e5842cdfaf31a290b4c5105efded7399211e6fa5e55dcc53908d150697d0276",
+    "cause": "undetermined"
+  },
+  "release": {
+    "published": false,
+    "accepted": false
+  },
+  "limits": [
+    "Twenty-seven candidate jobs passed. One hybrid application job failed. Bundle assembly and the bundle matrix were skipped.",
+    "All seven PR jobs passed.",
+    "The failed assertion did not identify the execution, worker checksum, storage entry count, or readiness subcheck.",
+    "No extracted-bundle or final assembly qualification ran for this revision."
+  ]
+}

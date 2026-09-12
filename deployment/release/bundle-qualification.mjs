@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { applicationReports } from './candidate.mjs';
+import {
+  applicationReports,
+  assertApplicationEvidence,
+} from './application-evidence.mjs';
 import { sha256 } from './integrity.mjs';
 import { loadQualificationBundle } from './qualification.mjs';
 
@@ -34,6 +37,29 @@ export async function recordBundleQualification({
     sourceRevision,
     images,
   });
+  const result = await inspectBundleQualification({
+    reportRoot,
+    target,
+    sourceRevision,
+    images,
+    bundleManifestSha256: bundle.manifestSha256,
+  });
+  await writeFile(
+    join(reportRoot, 'bundle-qualification.json'),
+    JSON.stringify(result, null, 2) + '\n',
+  );
+  return result;
+}
+
+/** Inspect report provenance without changing downloaded qualification artifacts. */
+export async function inspectBundleQualification({
+  reportRoot,
+  target,
+  sourceRevision,
+  images,
+  bundleManifestSha256,
+}) {
+  assert.ok(bundleTargets.includes(target));
   const reports = new Map();
   const read = async (name) => {
     const bytes = await readFile(join(reportRoot, name));
@@ -47,6 +73,7 @@ export async function recordBundleQualification({
     return report;
   };
   const primary = await read(applicationReports[target]);
+  assertApplicationEvidence(target, primary, { sourceRevision, images });
   const reportedImages = primary.images ?? primary.releaseB;
   for (const [name, reference] of Object.entries(images))
     assert.equal(
@@ -58,7 +85,7 @@ export async function recordBundleQualification({
     assert.equal(primary.sourceRevision, sourceRevision);
   const operator = (record) => {
     assert.equal(record.source, 'extracted-published-bundle');
-    assert.equal(record.bundleManifestSha256, bundle.manifestSha256);
+    assert.equal(record.bundleManifestSha256, bundleManifestSha256);
     assert.equal(record.injectedDatabaseTool, false);
   };
   if (target === 'all-docker-integration') {
@@ -72,7 +99,7 @@ export async function recordBundleQualification({
         ? primary
         : await read('all-docker-upgrade.json');
     assert.equal(upgrade.installerSource, 'extracted-published-bundle');
-    assert.equal(upgrade.bundleManifestSha256, bundle.manifestSha256);
+    assert.equal(upgrade.bundleManifestSha256, bundleManifestSha256);
     assert.equal(
       upgrade.releaseInventories.at(-1).sourceRevision,
       sourceRevision,
@@ -87,14 +114,14 @@ export async function recordBundleQualification({
       primary.qualificationSourceState,
       'Extracted published installer bundle with matching application images.',
     );
-    assert.equal(primary.bundleManifestSha256, bundle.manifestSha256);
+    assert.equal(primary.bundleManifestSha256, bundleManifestSha256);
     assert.equal(primary.ownedResourcesRemoved, true);
   } else {
     const profile = primary.installer
       ? primary
       : await read('kubernetes-profile.json');
     assert.equal(profile.installer.source, 'verified-extracted-bundle');
-    assert.equal(profile.installer.bundleManifestSha256, bundle.manifestSha256);
+    assert.equal(profile.installer.bundleManifestSha256, bundleManifestSha256);
     if (target === 'kubernetes-restore-integration')
       operator(primary.operatorCli);
   }
@@ -104,16 +131,12 @@ export async function recordBundleQualification({
     target,
     sourceRevision,
     images,
-    bundleManifestSha256: bundle.manifestSha256,
+    bundleManifestSha256,
     reports: [...reports.values()],
     limits: [
       'This record binds one executed candidate workflow. It does not establish release acceptance.',
     ],
   };
-  await writeFile(
-    join(reportRoot, 'bundle-qualification.json'),
-    JSON.stringify(result, null, 2) + '\n',
-  );
   return result;
 }
 

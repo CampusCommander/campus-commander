@@ -35,6 +35,14 @@ test('bundle workflow evidence rejects workspace execution and a different image
     const manifestBytes = Buffer.from(JSON.stringify(manifest));
     await writeFile(join(bundleRoot, 'release-manifest.json'), manifestBytes);
     const report = {
+      ...JSON.parse(
+        await readFile(
+          new URL(
+            '../evidence/CC-37-phase-2-extracted-all-docker-a807c35.json',
+            import.meta.url,
+          ),
+        ),
+      ),
       status: 'passed',
       sourceRevision,
       images,

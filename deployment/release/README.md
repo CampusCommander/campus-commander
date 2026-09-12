@@ -147,7 +147,7 @@ Capacity evidence requires two API pods and two worker pods with distinct worker
 All four pods must observe the same capped 16 MiB tmpfs, zero available bytes during failure, and exact space restoration.
 The gate also requires authenticated failure, artifact cleanup, durable state, bounded recovery, and removal of the cluster and volume.
 The capacity target starts a fresh Phase 2 installation. The replica target includes a Phase 1 upgrade.
-The application matrix contains twenty-three targets. Twelve extracted-bundle jobs extend the complete workflow to forty-one jobs.
+The application matrix contains twenty-three targets. Twelve extracted-bundle jobs and final assembly extend the complete workflow to forty-two jobs.
 These synthetic reports retain their limits and do not establish accepted release status.
 
 The hybrid matrix includes `hybrid-cli-certificate-integration` after a real installer upgrade and verified encrypted backup.
@@ -188,3 +188,32 @@ The recorder rejects workspace CLI execution and mismatched or failed reports.
 A failed target cannot create a successful context record through the workflow.
 The workflow uploads each target separately as `bundle-qualification-<target>`.
 These records supply evidence for final assembly. They do not promote the candidate or replace district acceptance.
+
+## Profile-qualified assembly
+
+The `qualified-bundle` job requires candidate publication and all twelve extracted-bundle workflows to pass.
+It independently verifies both candidate signatures before extraction and compares the extracted manifest with the signed manifest.
+
+```sh
+node deployment/release/qualified.mjs candidate-input bundle-evidence qualified-bundle "$GITHUB_SHA"
+```
+
+The evidence directory retains all twelve `bundle-qualification-<target>` directories.
+Assembly validates the candidate inventory and repeats the application evidence checks for all twenty-three candidate reports.
+It checks each bundle context against its exact report bytes, source revision, image references, and original candidate manifest hash.
+Missing workflows, inconsistent hashes, failed checks, and incomplete resume or restore evidence stop assembly.
+Assembly preserves the input directories and requires a new output directory.
+
+The output includes fifteen distinct reports for install, resume, upgrade, restore, and faults across three profiles.
+Fault reports also reference the candidate's capacity and certificate evidence.
+The inventory includes the original candidate manifest, bundle contexts, raw reports, and original installation files.
+Hybrid and Kubernetes records retain their distinct worker identifiers.
+
+The workflow signs the new archive and manifest. It verifies both signatures before checking a separate extraction.
+The artifact name is `phase-2-qualified-<revision>`. The immutable prerelease tag is `phase-2-qualified-<revision12>`.
+The archive uses `phase-2-qualified.tar.gz` and `phase-2-qualified.sigstore.json`.
+Use the independently trusted Phase 2 workflow identity and GitHub Actions issuer for verification.
+
+The manifest records `qualification: profile-qualified` and `districtInfrastructureAcceptance: not-qualified`.
+Its limits retain synthetic identity credentials, shared physical hosts, and Kind network-policy and storage restrictions.
+Automated profile evidence does not complete district infrastructure acceptance or Phase 1 acceptance.

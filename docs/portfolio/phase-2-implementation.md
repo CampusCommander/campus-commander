@@ -1056,3 +1056,39 @@ Final CI must qualify these new jobs on the published revision.
 The all-Docker authenticated certificate job passed. The workflow published its candidate release.
 The candidate retains its acceptance limits. Complete extracted-bundle evidence, accepted release assembly, and district acceptance remain open.
 Phase 1 acceptance remains separate.
+
+## Profile-qualified release assembly
+
+The final assembly job now requires candidate publication and all twelve extracted-bundle workflows to pass.
+The complete candidate workflow contains forty-two jobs.
+The assembler repeats the strict application checks and verifies each context against its exact report bytes and candidate manifest hash.
+It creates fifteen distinct reports for installation, resume, upgrade, restore, and faults across the three profiles.
+Fault reports also reference capacity and certificate evidence from the signed candidate.
+
+The output preserves the original candidate manifest, installation files, raw workflow reports, and context records.
+The workflow signs the new archive and manifest. It verifies both signatures and checks a separate extraction before publication.
+The prerelease manifest records district infrastructure as not qualified and retains each synthetic environment limit.
+This implementation does not establish completed profile execution or district acceptance.
+
+Six release tests passed, including successful synthetic assembly and rejection of altered hashes, missing workflows, and incomplete resume evidence.
+Deployment lint passed. The workflow parser verified twelve bundle targets, forty-two jobs, and fifty-one shell scripts.
+The strict validator also accepted five retained real workflow reports from the independently verified a807c35 bundle.
+[The compatibility record](../../deployment/evidence/CC-37-phase-2-qualified-report-compatibility.json) binds the retained report bytes.
+Formatting changed their hashes from the earlier temporary contexts. The new contexts preserve the original source, images, and manifest binding.
+
+## Twenty-first published candidate
+
+[Candidate 34705694210](https://github.com/CampusCommander/campus-commander/actions/runs/34705694210) completed with twenty-seven passed jobs and one failed hybrid application job.
+Bundle assembly and the extracted-bundle matrix were skipped. All seven PR jobs passed.
+[The terminal record](../../deployment/evidence/CC-37-phase-2-twenty-first-published-run.json) preserves the exact job results.
+
+The hybrid fixture failed during persistence verification after external dependency outages.
+Its generic error did not distinguish execution state, worker checksums, internal storage entries, or final readiness.
+The fixture now reports those four Boolean results when the same assertion fails. Its acceptance conditions remain unchanged.
+
+The local hybrid integration passed in 2 minutes 15 seconds with the failed run's exact published image digests.
+[The local report](../../deployment/evidence/CC-36-phase-2-hybrid-persistence-probe-3ead25f.json) records persistence, recovery, browser checks, and owned-resource cleanup.
+The local run uses one Docker host and the instrumented workspace fixture. It does not reproduce or resolve the CI failure.
+The complete published bundle matrix, final prerelease execution, district qualification, and final acceptance audit remain open.
+
+[The assembly verification record](../../deployment/evidence/CC-37-phase-2-qualified-assembly-validation.json) binds the implementation, retained reports, and local check logs.

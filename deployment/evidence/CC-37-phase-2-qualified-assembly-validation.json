@@ -1,0 +1,125 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T17:03:08.717493+00:00",
+  "baseRevision": "3ead25fd4221ce6751a6badd080c5a994a1f5fb8",
+  "sourceState": "Uncommitted assembly and diagnostic fixture changes on the recorded base revision.",
+  "files": [
+    {
+      "path": ".github/workflows/phase-2-candidate.yml",
+      "sha256": "799454d8b903d5006df36abb4dee014a3bea236efa61255f734f9b59463bf86f",
+      "sizeBytes": 32991
+    },
+    {
+      "path": "deployment/release/application-evidence.mjs",
+      "sha256": "395418c969a81323f45b67e4eaff310d17082e94de1b640fbab9d12a2b280694",
+      "sizeBytes": 20962
+    },
+    {
+      "path": "deployment/release/qualified.mjs",
+      "sha256": "f2dee2b7e742457d50ecfb5b202d695e005e3bae9821774df7e33dd2a968e008",
+      "sizeBytes": 11415
+    },
+    {
+      "path": "deployment/release/candidate.mjs",
+      "sha256": "d0f1aec77ae9e6a2ec3c03e17dab5e4ed4d41dc347ebcdad233aa0fa14cb1e3a",
+      "sizeBytes": 7948
+    },
+    {
+      "path": "deployment/release/candidate.test.mjs",
+      "sha256": "0e02e0cd87c7d9f7dbb4caa018daade62a8611d89ffa3ffc795df017822fc689",
+      "sizeBytes": 37724
+    },
+    {
+      "path": "deployment/release/bundle-qualification.mjs",
+      "sha256": "791d13d88892360099ef246a8a7f0b663cb6e233d0df0844cedbc336ce38225a",
+      "sizeBytes": 5285
+    },
+    {
+      "path": "deployment/release/bundle-qualification.test.mjs",
+      "sha256": "eb9427c08079a010b5e50c219ab3ba9a6fe5a7ccb44798a9eb3c63ff0399e591",
+      "sizeBytes": 2876
+    },
+    {
+      "path": "deployment/profiles/hybrid/full-integration.mjs",
+      "sha256": "b38ee64cbdb29ddd0e9ab276808acde2e6c38351fb74fc0de5f880dad9ba81d9",
+      "sizeBytes": 62197
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-hybrid-persistence-probe-3ead25f.json",
+      "sha256": "533cdc30abc1ce2747d0cf02dd58ea6d87fbba7b5e11221fd1da9f959e560e92",
+      "sizeBytes": 11990
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-qualified-report-compatibility.json",
+      "sha256": "a1d9746f992e1579d894803046927314ef6829bd91f7ae7a1ec15ad8db90939f",
+      "sizeBytes": 6646
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-twenty-first-published-run.json",
+      "sha256": "69cd77667b17a792df120afed85385ca4b0d1d09d3cf9534232dc0b4c07dd9aa",
+      "sizeBytes": 6175
+    }
+  ],
+  "checks": [
+    {
+      "name": "deployment:release-test",
+      "status": "passed",
+      "tests": 6,
+      "durationMs": 19377.478558,
+      "log": {
+        "path": "/tmp/cc-phase2-qualified-release-final-test.log",
+        "sha256": "a1b016c280ca320150c17f14754a70202f4a87dda251dcdddeafa08f6f3d8d5b",
+        "sizeBytes": 2005
+      }
+    },
+    {
+      "name": "deployment:lint",
+      "status": "passed",
+      "log": {
+        "path": "/tmp/cc-phase2-qualified-release-final-lint.log",
+        "sha256": "26143a1db0f398a1bb4b4d571a77e48389df93688bc65cef8865bbb92e8e9204",
+        "sizeBytes": 391
+      }
+    },
+    {
+      "name": "api-e2e:hybrid-integration",
+      "status": "passed",
+      "durationMs": 134480.276457,
+      "images": {
+        "api": "ghcr.io/campuscommander/campus-commander-api@sha256:ec29515258a8e8aa24b68cf4220f0d187dfe711d3161eb4af3b7b225290d4018",
+        "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:b5d5ca293aa78e0eaadec70c5d3cc9fb01486eb67827e7514ece9b049196fdd5",
+        "worker": "ghcr.io/campuscommander/campus-commander-worker@sha256:7e2c2cfb557405be9a2e5bd64b4dd03649ebf49dbd9ee5184af2bdb3f8c32b7b"
+      },
+      "log": {
+        "path": "/tmp/cc-phase2-3ead25f-hybrid-persistence-probe.log",
+        "sha256": "684585d17ddb6d50c590a1f94c5b2dfed2571de778df858c0f7f2b4122eb31b7",
+        "sizeBytes": 1312
+      }
+    },
+    {
+      "name": "workflow structure and shell syntax",
+      "status": "passed",
+      "jobs": 42,
+      "bundleTargets": 12,
+      "shellScripts": 51
+    },
+    {
+      "name": "retained real report compatibility",
+      "status": "passed",
+      "workflows": 5
+    },
+    {
+      "name": "owned hybrid resources absent",
+      "status": "passed",
+      "containers": 0,
+      "networks": 0,
+      "volumes": 0
+    }
+  ],
+  "limits": [
+    "Assembly tests use synthetic evidence. They do not establish twelve executed bundle workflows or final release acceptance.",
+    "The local hybrid test did not reproduce the CI persistence failure. Its cause remains undetermined.",
+    "The hybrid fixture now reports separate Boolean persistence results without changing its acceptance conditions.",
+    "District infrastructure and Phase 1 acceptance remain separate."
+  ]
+}
