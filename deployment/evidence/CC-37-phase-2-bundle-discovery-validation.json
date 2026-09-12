@@ -1,0 +1,94 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T17:39:29.548980+00:00",
+  "baseRevision": "608df6f14952f2a89b40625e337b65107962d230",
+  "sourceState": "Uncommitted Nx discovery exclusion with the unchanged published ba44732 bundle.",
+  "files": [
+    {
+      "path": ".nxignore",
+      "sizeBytes": 182,
+      "sha256": "e55cdab54f2b70e6de88a5e44e4ea2c8399a39ad707908b94468c9390f8cf216"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-workspace-extracted-all-docker-ba44732.json",
+      "sizeBytes": 9170,
+      "sha256": "8f4096f7b51ab7cd90ec2256a18a26e0d3cf4b8c9ef2e56cc1424cf8f160db34"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-twenty-second-published-run.json",
+      "sizeBytes": 12655,
+      "sha256": "1a89004081b975b686049af6758a484bdfbd4d7baaa22d97c30761e4054e88a0"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-twenty-third-published-run.json",
+      "sizeBytes": 7301,
+      "sha256": "1749f4b768c4a15b8f32b4d8e045400c63e5b8c39caf975182b82338608a28d1"
+    }
+  ],
+  "regression": {
+    "command": "npx nx show projects --json",
+    "before": {
+      "status": "failed",
+      "reason": "Duplicate deployment projects in the workspace and extracted-candidate/deployment.",
+      "log": {
+        "path": "/tmp/cc-phase2-extracted-nx-discovery-red.log",
+        "sizeBytes": 360,
+        "sha256": "23b879fd22e619918470ab7c0a6fd02986a63d6600798075e092bf9a4d54791d"
+      }
+    },
+    "after": {
+      "status": "passed",
+      "projects": [
+        "application-contracts",
+        "frontend-e2e",
+        "deployment",
+        "frontend",
+        "api-e2e",
+        "worker",
+        "api"
+      ],
+      "projectList": {
+        "path": "/tmp/cc-phase2-extracted-nx-discovery-green.json",
+        "sizeBytes": 90,
+        "sha256": "c88561e5f97d9a3978c0eaaf6e0d7cffc05804aa1a4200ce79cdd61f44d35d4f"
+      }
+    }
+  },
+  "checks": [
+    {
+      "name": "deployment:build with extracted archive present",
+      "status": "passed",
+      "log": {
+        "path": "/tmp/cc-phase2-extracted-nx-build-green.log",
+        "sizeBytes": 256,
+        "sha256": "0ffbb2b69a709645b272865830d8535a9c4a45770d051c469337acf2cd7ecd53"
+      }
+    },
+    {
+      "name": "api-e2e:all-docker-integration with extracted archive present",
+      "status": "passed",
+      "durationMs": 169001.002427,
+      "log": {
+        "path": "/tmp/cc-phase2-ba44732-workspace-extracted-all-docker.log",
+        "sizeBytes": 1501,
+        "sha256": "5d133c778db835851305e1be1751e6fee80e55e3ea0505a09d24e099d28c506f"
+      }
+    },
+    {
+      "name": "signed archive inventory before and after execution",
+      "status": "passed",
+      "files": 1328,
+      "manifestSha256": "4b47123ccdd796be14e9a8c8d89295cddbed08c3a67c16d49dd3397f1302e63a"
+    },
+    {
+      "name": "owned workspace extraction cleanup",
+      "status": "passed"
+    }
+  ],
+  "limits": [
+    "The full local workflow covers all-Docker installation and lifecycle only.",
+    "Twelve published bundle workflows and final assembly still require execution.",
+    "The 608df6f Kubernetes restore failure reported an active database connection. Its source remains undetermined.",
+    "District infrastructure and Phase 1 acceptance remain separate."
+  ]
+}

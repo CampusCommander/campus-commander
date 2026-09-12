@@ -1113,3 +1113,32 @@ They verify selection, both blob checks, all three image checks, manifest mismat
 Six release tests, deployment lint, formatting, and POSIX shell syntax also passed.
 [The installer verification record](../../deployment/evidence/CC-37-phase-2-qualified-installer-validation.json) preserves the failing and passing evidence hashes.
 Live published artifact and profile qualification remain required.
+
+## Extracted bundle project discovery
+
+The ba44732 candidate passed all twenty-nine preparation, application, and bundle publication jobs.
+All twelve extracted-bundle jobs then failed before application execution. The final assembly job was skipped.
+Every failed job reported duplicate deployment projects in the workspace and extracted-candidate/deployment.
+[The twenty-second run record](../../deployment/evidence/CC-37-phase-2-twenty-second-published-run.json) retains all job results and failure log hashes.
+
+The hosted installer from 608df6f independently verified the live ba44732 candidate download.
+Both blob signatures, all three application image signatures, and all 1,328 inventoried files passed verification.
+The manifest hash is 4b47123ccdd796be14e9a8c8d89295cddbed08c3a67c16d49dd3397f1302e63a.
+This verifies the candidate download. It does not establish profile-qualified release acceptance.
+
+Copying that verified archive into the workspace reproduced the Nx discovery failure.
+The .nxignore correction excludes the extraction directory from project discovery without changing the signed archive.
+The original seven-project graph and deployment build then passed.
+The complete all-Docker workflow passed in 2 minutes 49 seconds with the archive inside the workspace.
+It verified installation, repeated resume, stop, uninstall, shared sessions, repeated Diagnostics, and sign-out.
+[The application report](../../deployment/evidence/CC-37-phase-2-workspace-extracted-all-docker-ba44732.json) retains the exact images and lifecycle evidence.
+The file inventory remained intact after execution. The owned workspace extraction was removed.
+
+The 608df6f candidate passed twenty-seven jobs before Kubernetes restore failed during native operator CLI backup.
+The CLI reported DATABASE_CONNECTIONS_ACTIVE. The failure artifact contains no API, worker, or Kestra application pods.
+The remaining database connection's source is undetermined. The backup refusal remains intact.
+[The twenty-third run record](../../deployment/evidence/CC-37-phase-2-twenty-third-published-run.json) retains the error and bounded pod evidence.
+All seven PR jobs passed for both revisions.
+Complete published bundle workflows, final assembly, the restore failure diagnosis, district qualification, and final acceptance remain open.
+
+[The discovery verification record](../../deployment/evidence/CC-37-phase-2-bundle-discovery-validation.json) binds the Nx regression, application run, and unchanged archive inventory.

@@ -1,0 +1,381 @@
+{
+  "status": "failed",
+  "recordedAt": "2026-09-12T17:30:13.642338+00:00",
+  "sourceRevision": "ba44732a93cf2f0be03fcd1708cc1bd783cd9860",
+  "candidate": {
+    "runId": 34707077182,
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34707077182",
+    "status": "completed",
+    "conclusion": "failure",
+    "jobs": [
+      {
+        "id": 103588953634,
+        "name": "validate",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589203412,
+        "name": "publish (api)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589203430,
+        "name": "publish (worker)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589203477,
+        "name": "publish (frontend)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589547886,
+        "name": "capacity",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548100,
+        "name": "application (hybrid-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548107,
+        "name": "application (auth-image-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548112,
+        "name": "application (hybrid-cli-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548118,
+        "name": "application (all-docker-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548119,
+        "name": "application (all-docker-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548126,
+        "name": "application (all-docker-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548131,
+        "name": "application (hybrid-cli-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548140,
+        "name": "application (hybrid-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548146,
+        "name": "application (hybrid-cli-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548149,
+        "name": "application (hybrid-cli-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548151,
+        "name": "application (all-docker-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548154,
+        "name": "application (kubernetes-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548157,
+        "name": "application (hybrid-cli-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548173,
+        "name": "application (kubernetes-replica-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548174,
+        "name": "application (hybrid-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548177,
+        "name": "application (restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548179,
+        "name": "application (upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548181,
+        "name": "application (kubernetes-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548183,
+        "name": "application (kubernetes-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548185,
+        "name": "application (kubernetes-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548190,
+        "name": "application (kubernetes-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548195,
+        "name": "application (screen-reader-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103589548224,
+        "name": "application (kubernetes-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103591185936,
+        "name": "bundle",
+        "conclusion": "success"
+      },
+      {
+        "id": 103591546199,
+        "name": "bundle-application (kubernetes-restore-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546204,
+        "name": "bundle-application (all-docker-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546205,
+        "name": "bundle-application (all-docker-process-fault-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546208,
+        "name": "bundle-application (kubernetes-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546211,
+        "name": "bundle-application (restore-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546218,
+        "name": "bundle-application (hybrid-restore-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546223,
+        "name": "bundle-application (hybrid-cli-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546230,
+        "name": "bundle-application (upgrade-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546234,
+        "name": "bundle-application (kubernetes-upgrade-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546235,
+        "name": "bundle-application (kubernetes-process-fault-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546285,
+        "name": "bundle-application (hybrid-cli-upgrade-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591546296,
+        "name": "bundle-application (hybrid-cli-process-fault-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103591968960,
+        "name": "qualified-bundle",
+        "conclusion": "skipped"
+      }
+    ]
+  },
+  "pr": {
+    "runId": 34707078817,
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34707078817",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 103588958273,
+        "name": "application-integration",
+        "conclusion": "success"
+      },
+      {
+        "id": 103588958350,
+        "name": "browser",
+        "conclusion": "success"
+      },
+      {
+        "id": 103588958376,
+        "name": "main",
+        "conclusion": "success"
+      },
+      {
+        "id": 103588958422,
+        "name": "foundation-integration (storage-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103588958423,
+        "name": "foundation-integration (qualify-redis)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103588958449,
+        "name": "foundation-integration (postgres-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103588958468,
+        "name": "foundation-integration (operations-integration)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "failures": [
+    {
+      "id": 103591546199,
+      "name": "bundle-application (kubernetes-restore-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "3974b59f40bff6ec6bab2864db778ff11cd9f0a85ea6c1c326a28d5b1d3cf6fd"
+    },
+    {
+      "id": 103591546204,
+      "name": "bundle-application (all-docker-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "8a015fa2beebeacf6e05bbb67a137899472aec9ef077091b8acf4097775f371b"
+    },
+    {
+      "id": 103591546205,
+      "name": "bundle-application (all-docker-process-fault-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "3c657b2802a2775541927104d7b9515a3ee5328040ac8a1a4ecd5db98eb5fc1e"
+    },
+    {
+      "id": 103591546208,
+      "name": "bundle-application (kubernetes-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "f939ffde2a99f70d088bde18a1b97dae33895eb801f3333f7e27b070b935c7e5"
+    },
+    {
+      "id": 103591546211,
+      "name": "bundle-application (restore-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "3b499e85b6a38c5821b187ae39740378912623479c9261e1a2e2c3e5ab94dc52"
+    },
+    {
+      "id": 103591546218,
+      "name": "bundle-application (hybrid-restore-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "ea8ca38e199f79f8c8b19d8fd2a1b364008f9191307339b8137e1ce402cb6522"
+    },
+    {
+      "id": 103591546223,
+      "name": "bundle-application (hybrid-cli-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "c547376de06f9ed5620f264895e61c1fe47e5e4ed9af682230a8f37326c58b37"
+    },
+    {
+      "id": 103591546230,
+      "name": "bundle-application (upgrade-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "0b99879975dc2f19d574eaf5149e8e5fb5b3d1c070923b68d4aff6c5908a5a72"
+    },
+    {
+      "id": 103591546234,
+      "name": "bundle-application (kubernetes-upgrade-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "28ac36b6dbb66c98e175e3038bb468cdc371e42e1b41ebd5cb38ce1949d637df"
+    },
+    {
+      "id": 103591546235,
+      "name": "bundle-application (kubernetes-process-fault-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "f57712f35e0613a5551025aca3b6cffbd68660225889cee8bfb43fafa2c0510d"
+    },
+    {
+      "id": 103591546285,
+      "name": "bundle-application (hybrid-cli-upgrade-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "4c6d9c0934a8c491caa83a9432b8bd6595124f53389db50af9efef751e381f95"
+    },
+    {
+      "id": 103591546296,
+      "name": "bundle-application (hybrid-cli-process-fault-integration)",
+      "failure": "Nx duplicate deployment project from the extracted archive.",
+      "logSha256": "a4ece457261cf2d85c8688bd6f3d18271527432a1fedb6047ae119d32f1d169e"
+    }
+  ],
+  "release": {
+    "published": true,
+    "accepted": false,
+    "tag": "phase-2-candidate-ba44732a93cf",
+    "url": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-ba44732a93cf"
+  },
+  "independentHostedVerification": {
+    "status": "passed",
+    "verifiedAt": "2026-09-12T17:24:34.525630+00:00",
+    "installerSourceRevision": "608df6f14952f2a89b40625e337b65107962d230",
+    "bundleSourceRevision": "ba44732a93cf2f0be03fcd1708cc1bd783cd9860",
+    "releaseTag": "phase-2-candidate-ba44732a93cf",
+    "releaseUrl": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-ba44732a93cf",
+    "command": "sh install.sh --cache-dir /tmp/cc-phase2-ba44732-hosted-verification --release phase-2-candidate-ba44732a93cf --verify-only",
+    "manifestSha256": "4b47123ccdd796be14e9a8c8d89295cddbed08c3a67c16d49dd3397f1302e63a",
+    "inventoryFiles": 1328,
+    "applicationReports": 23,
+    "qualification": "candidate-only",
+    "verifiedSignatures": [
+      "archive",
+      "manifest",
+      "frontend image",
+      "API image",
+      "worker image"
+    ],
+    "identity": "https://github.com/CampusCommander/campus-commander/.github/workflows/phase-2-candidate.yml@refs/heads/implementation/phase-2-cc-22",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "logSha256": "f83b43d21370d60784ba4b74d6d7e72c9a672b8fa9fdcd6b53442a80e6228755",
+    "limits": [
+      "This verifies the live candidate download and signatures through the current hosted installer.",
+      "It does not execute installation or establish final profile-qualified artifact acceptance."
+    ]
+  },
+  "limits": [
+    "All twenty-nine candidate preparation, application, and bundle publication jobs passed.",
+    "All twelve extracted-bundle jobs failed during Nx project discovery before application execution.",
+    "Nx discovered deployment in the workspace and in extracted-candidate/deployment.",
+    "The final qualified-bundle job was skipped. All seven PR jobs passed.",
+    "Live hosted verification checked both blob signatures, three image signatures, and all 1328 inventoried files.",
+    "Published profile workflows and final release acceptance remain incomplete."
+  ]
+}
