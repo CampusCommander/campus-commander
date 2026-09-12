@@ -147,7 +147,7 @@ Capacity evidence requires two API pods and two worker pods with distinct worker
 All four pods must observe the same capped 16 MiB tmpfs, zero available bytes during failure, and exact space restoration.
 The gate also requires authenticated failure, artifact cleanup, durable state, bounded recovery, and removal of the cluster and volume.
 The capacity target starts a fresh Phase 2 installation. The replica target includes a Phase 1 upgrade.
-The matrix now contains twenty-two application targets and twenty-eight total jobs.
+The matrix now contains twenty-three application targets and twenty-nine total jobs.
 These synthetic reports retain their limits and do not establish accepted release status.
 
 The hybrid matrix includes `hybrid-cli-certificate-integration` after a real installer upgrade and verified encrypted backup.
@@ -161,3 +161,8 @@ Kubernetes application jobs run the shutdown observation regression before their
 The lifecycle fixture waits through the rendered termination grace plus a 30-second status allowance.
 Fault recovery retains its separate 180-second budget.
 The hybrid request regression uses real TLS and an idle connection closure. It also verifies hostname rejection and no POST replay.
+
+The all-Docker matrix includes `all-docker-certificate-integration` after a real Phase 1 upgrade and application login.
+It requires expired and wrong-host TLS rejection, authenticated Diagnostics recovery, original private files, durable state, and owned-resource cleanup.
+All three certificate gates enforce the shared 180-second recovery budget and reject missing durable-state records.
+The fixture uses an independent synthetic identity provider. District browser trust and certificate operations require separate acceptance.

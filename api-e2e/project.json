@@ -287,6 +287,18 @@
       "options": {
         "command": "node --test api-e2e/kubernetes-shutdown.test.mjs"
       }
+    },
+    "all-docker-certificate-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/upgrade.test.mjs",
+        "env": {
+          "CC_INSTALLER_FAULTS": "1",
+          "CC_AUTH_ALL_DOCKER_CERTIFICATES": "1"
+        }
+      }
     }
   }
 }

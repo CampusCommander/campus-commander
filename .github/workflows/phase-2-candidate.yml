@@ -250,6 +250,7 @@ jobs:
             all-docker-integration,
             all-docker-process-fault-integration,
             all-docker-capacity-integration,
+            all-docker-certificate-integration,
             hybrid-integration,
             hybrid-cli-integration,
             hybrid-cli-upgrade-integration,

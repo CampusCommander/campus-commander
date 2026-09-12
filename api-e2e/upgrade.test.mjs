@@ -13,6 +13,7 @@ import { applicationBrowser } from './profile-browser.mjs';
 import { startRegistry } from './registry-fixture.mjs';
 import { qualifyApplicationRestore } from './restore-fixture.mjs';
 import { faultAllDocker } from './all-docker-faults-fixture.mjs';
+import { qualifyAllDockerCertificates } from './all-docker-certificates-fixture.mjs';
 const execute = promisify(execFile);
 
 test(
@@ -166,7 +167,10 @@ test(
               );
               assert.ok(enrolled.principalId);
               return applicationBrowser(publicOrigin, async (browser) => {
-                if (process.env.CC_AUTH_ALL_DOCKER_FAULTS === '1') {
+                if (
+                  process.env.CC_AUTH_ALL_DOCKER_FAULTS === '1' ||
+                  process.env.CC_AUTH_ALL_DOCKER_CERTIFICATES === '1'
+                ) {
                   const saved = browser.page.waitForResponse(
                     (response) =>
                       new URL(response.url()).pathname ===
@@ -180,9 +184,19 @@ test(
                     .getByRole('menuitem', { name: 'Use dark theme' })
                     .click();
                   assert.equal((await saved).status(), 201);
-                  return {
-                    faults: await faultAllDocker({ ...fixture, ...browser }),
-                  };
+                  return process.env.CC_AUTH_ALL_DOCKER_CERTIFICATES === '1'
+                    ? {
+                        certificates: await qualifyAllDockerCertificates({
+                          ...fixture,
+                          ...browser,
+                        }),
+                      }
+                    : {
+                        faults: await faultAllDocker({
+                          ...fixture,
+                          ...browser,
+                        }),
+                      };
                 }
                 if (process.env.CC_AUTH_APPLICATION_RESTORE !== '1')
                   return undefined;
@@ -205,9 +219,17 @@ test(
       assert.equal(result.status, 'passed');
       assert.equal(result.application.status, 'passed');
       await mkdir('dist/phase-2-evidence', { recursive: true });
-      if (process.env.CC_AUTH_ALL_DOCKER_FAULTS === '1') {
-        const faults = result.application.lifecycle.faults;
-        assert.equal(faults.status, 'passed');
+      if (
+        process.env.CC_AUTH_ALL_DOCKER_FAULTS === '1' ||
+        process.env.CC_AUTH_ALL_DOCKER_CERTIFICATES === '1'
+      ) {
+        const certificateMode =
+          process.env.CC_AUTH_ALL_DOCKER_CERTIFICATES === '1';
+        const evidence =
+          result.application.lifecycle[
+            certificateMode ? 'certificates' : 'faults'
+          ];
+        assert.equal(evidence.status, 'passed');
         for (const resource of ['container', 'volume', 'network']) {
           const listed = await execute('docker', [
             resource,
@@ -220,7 +242,9 @@ test(
           assert.equal(listed.stdout.trim(), '');
         }
         await writeFile(
-          'dist/phase-2-evidence/all-docker-process-faults.json',
+          certificateMode
+            ? 'dist/phase-2-evidence/all-docker-certificates.json'
+            : 'dist/phase-2-evidence/all-docker-process-faults.json',
           JSON.stringify(
             {
               status: 'passed',
@@ -229,7 +253,9 @@ test(
               images: target.images,
               recordedAt: new Date().toISOString(),
               application: result.application,
-              faults,
+              ...(certificateMode
+                ? { certificates: evidence }
+                : { faults: evidence }),
               certificateFaults: result.faults,
               installerChecks: result.checks,
               ownedResourcesRemoved: true,

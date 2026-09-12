@@ -442,6 +442,7 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       await writeFile(path, JSON.stringify(original));
     }
     for (const target of [
+      'all-docker-certificate-integration',
       'kubernetes-certificate-integration',
       'hybrid-cli-certificate-integration',
     ]) {
@@ -495,7 +496,7 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
             phase: 2,
             qualificationArtifacts,
           }),
-          /(?:Kubernetes|Hybrid) certificate qualification/,
+          /(?:Kubernetes|Hybrid|All-Docker) certificate qualification/,
         );
       }
       await writeFile(certificatePath, JSON.stringify(certificateReport));

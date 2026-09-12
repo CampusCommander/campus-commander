@@ -983,3 +983,29 @@ The CI log does not establish why its remote socket closed. Published revision q
 
 Remaining all-Docker authenticated certificate coverage, final revision qualification, extracted-bundle workflows, and accepted release assembly remain open.
 Phase 1 acceptance remains separate.
+
+## All-Docker authenticated certificate recovery
+
+[The all-Docker certificate target](../../deployment/evidence/CC-36-phase-2-all-docker-authenticated-certificates.json) passed in 4 minutes 43 seconds with published `8a5f823` images.
+The fixture completed the real Phase 1 upgrade before login and certificate faults.
+Native TLS verification rejected expired and wrong-host certificates. Authenticated Diagnostics recovered in 10.131 and 10.064 seconds.
+Both recoveries preserved identity, preferences, migrations, twelve security events, one completed Kestra execution, and one internal file.
+The fixture verified original artifact bytes, restored all original private files, and removed owned resources.
+The identity provider uses separate synthetic trust. These results do not qualify district browser trust or certificate operations.
+
+The candidate matrix now requires twenty-three application targets and twenty-nine total jobs.
+All three certificate gates require both TLS failures, bounded recovery, durable state, exact secret restoration, and resource cleanup.
+Four release tests passed, including nine invalid certificate records for each of the three profiles.
+[The shared probe regression](../../deployment/evidence/CC-36-phase-2-all-docker-shared-probe-regression.json) passed all seven process faults in 6 minutes 34 seconds.
+Final revision qualification, extracted-bundle workflows, and accepted release assembly remain open.
+Phase 1 acceptance remains separate.
+
+## Nineteenth published candidate
+
+[Candidate a807c35](../../deployment/evidence/CC-37-phase-2-nineteenth-published-run.json) passed all twenty-eight jobs. All seven PR jobs passed.
+The previously failing Kubernetes capacity and rendered hybrid upgrade targets passed on this published revision.
+The new distributed hybrid certificate target also passed.
+The workflow published a candidate archive and signed its archive and manifest through the expected GitHub workflow identity.
+Independent verification confirmed both signatures, matching extracted manifest bytes, and all 1,302 inventoried files.
+The manifest retains candidate status and fifteen unrun profile acceptance records.
+Extracted-bundle workflows and accepted release assembly remain open.

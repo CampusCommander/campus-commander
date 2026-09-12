@@ -20,6 +20,7 @@ export const applicationReports = {
   'all-docker-integration': 'all-docker-profile.json',
   'all-docker-process-fault-integration': 'all-docker-process-faults.json',
   'all-docker-capacity-integration': 'all-docker-capacity.json',
+  'all-docker-certificate-integration': 'all-docker-certificates.json',
   'hybrid-integration': 'hybrid-profile.json',
   'hybrid-cli-integration': 'hybrid-cli.json',
   'hybrid-cli-upgrade-integration': 'hybrid-cli-upgrade.json',
@@ -359,12 +360,15 @@ export async function assembleCandidate({
       if (
         [
           'kubernetes-certificate-integration',
+          'all-docker-certificate-integration',
           'hybrid-cli-certificate-integration',
         ].includes(target)
       ) {
         const profile = target.startsWith('kubernetes-')
           ? 'kubernetes'
-          : 'hybrid';
+          : target.startsWith('all-docker-')
+            ? 'all-docker'
+            : 'hybrid';
         const certificate = report.certificates;
         const cases = certificate?.cases;
         if (
@@ -420,7 +424,7 @@ export async function assembleCandidate({
           )
         )
           throw new Error(
-            `${profile === 'kubernetes' ? 'Kubernetes' : 'Hybrid'} certificate qualification requires both TLS rejections, bounded recovery, durable state, original secrets, and fixture cleanup.`,
+            `${profile === 'kubernetes' ? 'Kubernetes' : profile === 'hybrid' ? 'Hybrid' : 'All-Docker'} certificate qualification requires both TLS rejections, bounded recovery, durable state, original secrets, and fixture cleanup.`,
           );
       }
       if (target === 'all-docker-capacity-integration') {

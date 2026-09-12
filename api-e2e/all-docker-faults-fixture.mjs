@@ -15,16 +15,14 @@ const docker = (args, input) =>
     maxBuffer: 4 * 1024 * 1024,
   }).trim();
 
-/** Verify authenticated recovery and durable state in an owned installation. */
-export async function faultAllDocker({
+/** Capture and verify durable state in an owned all-Docker installation. */
+export async function createAllDockerDurableProbe({
   root,
   project,
   config,
   release,
   compose,
   id,
-  page,
-  checks,
 }) {
   assert.match(project, /^cc-installer-[a-z0-9-]+$/);
   assert.match(basename(root), /^cc-installer-/);
@@ -142,8 +140,31 @@ console.log(JSON.stringify({principals,events,migrations,artifactId:artifact.art
       artifactSha256: after.artifactSha256,
       preservedKestraExecutions: baselineExecutions.length,
       internalStorageSha256: internalSha256,
+      preservedInternalFiles: 1,
     };
   };
+  return verifyDurable;
+}
+
+/** Verify authenticated recovery and durable state in an owned installation. */
+export async function faultAllDocker({
+  root,
+  project,
+  config,
+  release,
+  compose,
+  id,
+  page,
+  checks,
+}) {
+  const verifyDurable = await createAllDockerDurableProbe({
+    root,
+    project,
+    config,
+    release,
+    compose,
+    id,
+  });
   const request = (operation) =>
     page.evaluate(
       async ({ operation }) => {
