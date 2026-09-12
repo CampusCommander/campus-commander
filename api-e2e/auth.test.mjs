@@ -1107,11 +1107,7 @@ test(
         ).status,
         200,
       );
-      await changeApplicationAccess(
-        migrator,
-        { action: 'revoke', principalId, expectedVersion: 1 },
-        issuer,
-      );
+      await callOperator({ action: 'revoke', principalId, expectedVersion: 1 });
       assert.equal(
         (
           await request(`${publicOrigin}/api/auth/session`, {
@@ -1136,18 +1132,36 @@ test(
         ),
         /version changed/,
       );
-      await changeApplicationAccess(
-        migrator,
-        {
-          action: 'replace',
-          principalId,
-          expectedVersion: 2,
-          issuer,
-          subject: 'administrator',
-          displayName: 'Synthetic administrator',
-        },
+      for (const replacement of [
+        { issuer: 'https://untrusted.example.invalid', subject: 'replacement' },
+        { issuer, subject: '' },
+      ]) {
+        await assert.rejects(
+          callOperator({
+            action: 'replace',
+            principalId,
+            expectedVersion: 2,
+            ...replacement,
+            displayName: 'Invalid replacement',
+          }),
+        );
+        const unchanged = (
+          await callOperator({ action: 'inspect' })
+        ).principals.find((principal) => principal.id === principalId);
+        assert.equal(unchanged.permission_version, 2);
+        assert.equal(unchanged.enabled, false);
+        assert.equal(unchanged.issuer, issuer);
+        assert.equal(unchanged.subject, 'administrator');
+      }
+      const recoveredIdentity = await callOperator({
+        action: 'replace',
+        principalId,
+        expectedVersion: 2,
         issuer,
-      );
+        subject: 'administrator',
+        displayName: 'Synthetic administrator',
+      });
+      assert.equal(recoveredIdentity.principalId, principalId);
       const second = await login();
       const secondCookie = second.finish.headers['set-cookie']
         .find((entry) => entry.startsWith('__Host-cc-session='))

@@ -1,0 +1,156 @@
+{
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": [
+      "postgresql",
+      "redis",
+      "kestra",
+      "artifacts"
+    ],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "64808208-8db9-45a6-9fb2-504c188310e7",
+        "observedAt": "2026-09-12T08:36:25.764Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "5fd4d5f4-fe04-4d05-bce1-9415fd195e8f",
+        "observedAt": "2026-09-12T08:36:25.862Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "719adb8e-6354-4fff-970b-3f2a61460a2c",
+        "observedAt": "2026-09-12T08:36:27.141Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "c77cdc1e-f1ab-4882-9de4-38bd16d79a02",
+        "observedAt": "2026-09-12T08:36:27.332Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "status": "passed",
+  "project": "cc-installer-76961ad5-a",
+  "profile": "all-docker",
+  "acceptedRelease": false,
+  "workingTree": "uncommitted-candidate",
+  "baseGitRevision": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
+  "artifact": {
+    "artifactId": "4d46b08f-6b8b-4090-8e00-3fc7f7628db6",
+    "attemptId": "9370e83c-d59e-488f-ad76-0c27029d45c7",
+    "schemaVersion": 1,
+    "sizeBytes": 28,
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7"
+  },
+  "before": {
+    "artifactId": "4d46b08f-6b8b-4090-8e00-3fc7f7628db6",
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "ledger": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ]
+  },
+  "after": {
+    "artifactId": "4d46b08f-6b8b-4090-8e00-3fc7f7628db6",
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "ledger": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      },
+      {
+        "id": "002-application-auth",
+        "checksum": "561767ba67da4525759616617a86555626a86de520ca8014671fe7429bc57acd"
+      }
+    ]
+  },
+  "releaseB": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+  },
+  "releaseInventories": [
+    {
+      "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+      "architectures": [
+        "linux/amd64"
+      ],
+      "images": {
+        "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+        "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+        "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+      }
+    },
+    {
+      "sourceRevision": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
+      "architectures": [
+        "linux/amd64"
+      ],
+      "workingTree": "uncommitted-candidate",
+      "images": {
+        "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+        "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+        "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+      }
+    }
+  ],
+  "checks": [
+    "actual CLI prepare and resume",
+    "stop and resume preserve data",
+    "uninstall and resume preserve volumes",
+    "encrypted backup verified before upgrade",
+    "different image digests upgrade with artifact and ledger preservation",
+    "active secrets preserved",
+    "input release inventory metadata preserved"
+  ],
+  "prerequisiteExceptions": [
+    {
+      "name": "district-dns",
+      "reason": "Synthetic hostname resolves through explicit loopback connection override."
+    },
+    {
+      "name": "time-synchronization",
+      "reason": "Disposable development host does not expose district time-service evidence."
+    },
+    {
+      "name": "storage-capacity",
+      "reason": "Synthetic fixture uses small data rather than declared district capacity reservation."
+    }
+  ],
+  "baseline": {
+    "schemaVersion": 1,
+    "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+    "architectures": [
+      "linux/amd64"
+    ],
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+    },
+    "phase": 1,
+    "qualification": "candidate-only",
+    "sourceTag": "phase-1-candidate-7dbeee83cc06",
+    "sourceManifestSha256": "3afe29148d358bf0629a3826442a2275071d0930190063ded32778e49de4462b",
+    "sourceUrl": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-1-candidate-7dbeee83cc06"
+  },
+  "imageMirrors": [],
+  "registryTransport": "published-https",
+  "limits": [
+    "The fixture uses the real current installer CLI and published Phase 1 image digests.",
+    "Phase 2 target images remain development artifacts unless published references are supplied.",
+    "The fixture adds its synthetic provider CA and host mapping to the rendered API service.",
+    "This check does not certify release signatures or district infrastructure."
+  ]
+}

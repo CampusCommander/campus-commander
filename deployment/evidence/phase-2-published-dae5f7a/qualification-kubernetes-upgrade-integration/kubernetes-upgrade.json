@@ -1,0 +1,239 @@
+{
+  "status": "PASS",
+  "checkedAt": "2026-09-12T08:38:09.097Z",
+  "elapsedMilliseconds": 252979,
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+  },
+  "upgrade": {
+    "status": "passed",
+    "recordedAt": "2026-09-12T08:37:20.527Z",
+    "durationMs": 41026,
+    "baselineImages": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+    },
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+    },
+    "runtimeImageContentVerified": true,
+    "beforeImages": [
+      {
+        "service": "frontend",
+        "pod": "frontend-87b69df75-gvgqf",
+        "image": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+        "imageId": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944"
+      },
+      {
+        "service": "api",
+        "pod": "api-6579999d47-mc9gw",
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+        "imageId": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce"
+      },
+      {
+        "service": "api",
+        "pod": "api-6579999d47-qhhj4",
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+        "imageId": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce"
+      },
+      {
+        "service": "workers",
+        "pod": "workers-8499f6775d-2txtk",
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14",
+        "imageId": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+      },
+      {
+        "service": "workers",
+        "pod": "workers-8499f6775d-xdzq7",
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14",
+        "imageId": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+      }
+    ],
+    "afterImages": [
+      {
+        "service": "frontend",
+        "pod": "frontend-594cf97b59-gff2g",
+        "image": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+        "imageId": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab"
+      },
+      {
+        "service": "api",
+        "pod": "api-7488c6cbd8-rq92n",
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+        "imageId": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a"
+      },
+      {
+        "service": "api",
+        "pod": "api-7488c6cbd8-zxkqv",
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+        "imageId": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a"
+      },
+      {
+        "service": "workers",
+        "pod": "workers-6cc7d9866c-7zvwx",
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d",
+        "imageId": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+      },
+      {
+        "service": "workers",
+        "pod": "workers-6cc7d9866c-8zkfv",
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d",
+        "imageId": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+      }
+    ],
+    "baselineMigrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ],
+    "upgradedMigrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      },
+      {
+        "id": "002-application-auth",
+        "checksum": "561767ba67da4525759616617a86555626a86de520ca8014671fe7429bc57acd"
+      }
+    ],
+    "preserved": {
+      "artifactId": "0c21406e-f62b-4f49-817d-c0f537918df4",
+      "artifactSha256": "e5804c1710c0b522544a9e78970f72071e0fc82ad45e8e1752ff3a09621161a6",
+      "artifactMetadata": true,
+      "executionId": "1AUVJMJT4H5QcRzPtG3c7k",
+      "executionState": "SUCCESS",
+      "kestraFiles": 1
+    },
+    "limits": [
+      "Three Kind nodes share one Docker host and synthetic shared storage.",
+      "The fixture applies rendered manifests and runs the installer-owned migration job.",
+      "This report does not establish district infrastructure, network policy enforcement, or signed release acceptance."
+    ]
+  },
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": [
+      "postgresql",
+      "redis",
+      "kestra",
+      "artifacts"
+    ],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "e270fbca-6af1-40ea-b637-b111b5dd3093",
+        "observedAt": "2026-09-12T08:37:28.229Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "77ec3455-61a8-4d7f-aff3-bc1f61d02dcc",
+        "observedAt": "2026-09-12T08:37:28.345Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "a567fcf9-c005-4fd0-8bad-d2a5f9e3011b",
+        "observedAt": "2026-09-12T08:37:29.913Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "2b64965d-2369-4610-bb91-653dff069b26",
+        "observedAt": "2026-09-12T08:37:30.045Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "b1d3d327-b11d-4ca1-9e8c-ab99ce35693b",
+        "observedAt": "2026-09-12T08:37:42.169Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "ca8a20c0-eff1-4877-845d-8fe4d20322b6",
+        "observedAt": "2026-09-12T08:37:42.278Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "e8c1ff73-fca0-4a4d-a7ac-d576038b4f9d",
+        "observedAt": "2026-09-12T08:37:42.952Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "4fa09886-f760-4392-9a57-c786bf2115f4",
+        "observedAt": "2026-09-12T08:37:43.127Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "4395a6f4-17be-448a-a3fa-fe3f3951ff68",
+        "observedAt": "2026-09-12T08:37:55.358Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "9aa14ee0-8f46-40e8-95c0-e2f64bca70e6",
+        "observedAt": "2026-09-12T08:37:55.532Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "20f109ed-049d-460b-aef3-17837798ede8",
+        "observedAt": "2026-09-12T08:37:56.206Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "dd89183a-2acd-4319-aafc-884fac13b7f3",
+        "observedAt": "2026-09-12T08:37:56.316Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "e436ce5f-b3df-45c1-b068-19e27bd859f6",
+        "observedAt": "2026-09-12T08:38:07.939Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "89937122-2d92-4506-9317-41ec56c72a6f",
+        "observedAt": "2026-09-12T08:38:08.043Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "a10d98ee-5e93-49d9-aa40-208be6fb96d2",
+        "observedAt": "2026-09-12T08:38:08.715Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "405e3c98-1cfa-4649-abf6-c033cc64d31d",
+        "observedAt": "2026-09-12T08:38:08.856Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "nodes": 3,
+  "apiReplicas": 2,
+  "workerRescheduled": true,
+  "limits": [
+    "Three Kind nodes share one Docker host and synthetic storage.",
+    "Kind default networking does not enforce NetworkPolicy.",
+    "District DNS, identity provider, CNI enforcement, and storage remain separate qualification requirements.",
+    "Isolated restore requires separate evidence."
+  ]
+}

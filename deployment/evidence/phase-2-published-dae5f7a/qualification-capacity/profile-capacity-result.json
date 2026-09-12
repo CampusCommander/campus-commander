@@ -1,0 +1,412 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-09-12T08:34:19.784Z",
+  "durationSeconds": 41,
+  "status": "PASS",
+  "scope": "complete-all-docker-artifact-capacity",
+  "qualifiesProfile": "all-docker-capacity-only",
+  "sourceState": "uncommitted workspace",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+    "worker": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d",
+    "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+    "applicationPostgres": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "kestraPostgres": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "redis": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee"
+  },
+  "topology": {
+    "projectPattern": "cc-fault-capacity-profile-<12 hex>",
+    "componentCount": 8,
+    "components": [
+      {
+        "service": "api",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "application-postgres",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "edge",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "frontend",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "kestra",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "kestra-postgres",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "redis",
+        "state": "running",
+        "health": "healthy"
+      },
+      {
+        "service": "workers",
+        "state": "running",
+        "health": "healthy"
+      }
+    ],
+    "artifactMountConsumers": [
+      "volume-permissions",
+      "api",
+      "workers"
+    ],
+    "artifactVolumeDriver": "local",
+    "artifactVolumeType": "tmpfs",
+    "artifactVolumeCapacityBytes": 16777216,
+    "writableHostBinds": false
+  },
+  "baseline": {
+    "readiness": {
+      "phase": 1,
+      "status": "ready",
+      "checks": [
+        {
+          "name": "application-database",
+          "status": "ready"
+        },
+        {
+          "name": "kestra-database",
+          "status": "ready"
+        },
+        {
+          "name": "redis",
+          "status": "ready"
+        },
+        {
+          "name": "frontend",
+          "status": "ready"
+        },
+        {
+          "name": "api",
+          "status": "ready"
+        },
+        {
+          "name": "workers",
+          "status": "ready"
+        },
+        {
+          "name": "artifacts",
+          "status": "ready"
+        },
+        {
+          "name": "kestra",
+          "status": "ready"
+        }
+      ]
+    },
+    "artifact": {
+      "artifactId": "cc03adcb-b274-49c2-9239-9dca6e3b2a5f",
+      "sha256": "d58f626efe1927d08325499ae7ae6913aeacb7934a37adf5c1cc15784904e335",
+      "sizeBytes": 40,
+      "readyRows": 1
+    },
+    "resources": [
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.01%",
+        "Container": "16681e4648f6",
+        "ID": "16681e4648f6",
+        "MemPerc": "4.97%",
+        "MemUsage": "25.46MiB / 512MiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-edge-1",
+        "NetIO": "6.12kB / 6.19kB",
+        "PIDs": "11"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.00%",
+        "Container": "d850b2c01977",
+        "ID": "d850b2c01977",
+        "MemPerc": "8.97%",
+        "MemUsage": "45.95MiB / 512MiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-api-1",
+        "NetIO": "21.1kB / 19.6kB",
+        "PIDs": "11"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.01%",
+        "Container": "51902515f5de",
+        "ID": "51902515f5de",
+        "MemPerc": "2.81%",
+        "MemUsage": "14.4MiB / 512MiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-workers-1",
+        "NetIO": "2.7kB / 1.78kB",
+        "PIDs": "7"
+      },
+      {
+        "BlockIO": "9.17MB / 0B",
+        "CPUPerc": "12.25%",
+        "Container": "8660396ecb7a",
+        "ID": "8660396ecb7a",
+        "MemPerc": "20.95%",
+        "MemUsage": "429.1MiB / 2GiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-kestra-1",
+        "NetIO": "2.09MB / 2.84MB",
+        "PIDs": "62"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.32%",
+        "Container": "ed1ed7616b88",
+        "ID": "ed1ed7616b88",
+        "MemPerc": "1.84%",
+        "MemUsage": "9.445MiB / 512MiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-redis-1",
+        "NetIO": "3.5kB / 1.02kB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "0B / 64.9MB",
+        "CPUPerc": "2.20%",
+        "Container": "3d318b912fe8",
+        "ID": "3d318b912fe8",
+        "MemPerc": "7.73%",
+        "MemUsage": "79.17MiB / 1GiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-kestra-postgres-1",
+        "NetIO": "2.85MB / 2.09MB",
+        "PIDs": "20"
+      },
+      {
+        "BlockIO": "0B / 61MB",
+        "CPUPerc": "0.02%",
+        "Container": "27139a59710b",
+        "ID": "27139a59710b",
+        "MemPerc": "4.72%",
+        "MemUsage": "48.33MiB / 1GiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-application-postgres-1",
+        "NetIO": "22.3kB / 17.9kB",
+        "PIDs": "10"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.01%",
+        "Container": "48baf3cc76d8",
+        "ID": "48baf3cc76d8",
+        "MemPerc": "3.34%",
+        "MemUsage": "17.1MiB / 512MiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-frontend-1",
+        "NetIO": "6.04kB / 3.15kB",
+        "PIDs": "11"
+      }
+    ]
+  },
+  "fault": {
+    "kind": "ENOSPC",
+    "capacity": {
+      "filesystemType": 16914836,
+      "totalBytes": 16777216,
+      "writtenBytes": 16769024,
+      "availableBytesBefore": 16769024,
+      "availableBytesAfter": 0
+    },
+    "readiness": {
+      "phase": 1,
+      "status": "not-ready",
+      "checks": [
+        {
+          "name": "application-database",
+          "status": "ready"
+        },
+        {
+          "name": "kestra-database",
+          "status": "ready"
+        },
+        {
+          "name": "redis",
+          "status": "ready"
+        },
+        {
+          "name": "frontend",
+          "status": "ready"
+        },
+        {
+          "name": "api",
+          "status": "ready"
+        },
+        {
+          "name": "workers",
+          "status": "ready"
+        },
+        {
+          "name": "artifacts",
+          "status": "not-ready"
+        },
+        {
+          "name": "kestra",
+          "status": "ready"
+        }
+      ]
+    },
+    "publicationRejected": true,
+    "failedPublicationState": "staging",
+    "readyRowsUnchanged": true,
+    "resources": [
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.00%",
+        "Container": "16681e4648f6",
+        "ID": "16681e4648f6",
+        "MemPerc": "5.04%",
+        "MemUsage": "25.79MiB / 512MiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-edge-1",
+        "NetIO": "10.6kB / 9.8kB",
+        "PIDs": "11"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.01%",
+        "Container": "d850b2c01977",
+        "ID": "d850b2c01977",
+        "MemPerc": "8.99%",
+        "MemUsage": "46.02MiB / 512MiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-api-1",
+        "NetIO": "33kB / 32.3kB",
+        "PIDs": "11"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.03%",
+        "Container": "51902515f5de",
+        "ID": "51902515f5de",
+        "MemPerc": "5.97%",
+        "MemUsage": "30.57MiB / 512MiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-workers-1",
+        "NetIO": "3.65kB / 2.86kB",
+        "PIDs": "7"
+      },
+      {
+        "BlockIO": "9.17MB / 0B",
+        "CPUPerc": "5.15%",
+        "Container": "8660396ecb7a",
+        "ID": "8660396ecb7a",
+        "MemPerc": "20.95%",
+        "MemUsage": "429MiB / 2GiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-kestra-1",
+        "NetIO": "2.23MB / 3.05MB",
+        "PIDs": "62"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "2.58%",
+        "Container": "ed1ed7616b88",
+        "ID": "ed1ed7616b88",
+        "MemPerc": "1.85%",
+        "MemUsage": "9.496MiB / 512MiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-redis-1",
+        "NetIO": "4.46kB / 1.59kB",
+        "PIDs": "6"
+      },
+      {
+        "BlockIO": "0B / 65.1MB",
+        "CPUPerc": "2.14%",
+        "Container": "3d318b912fe8",
+        "ID": "3d318b912fe8",
+        "MemPerc": "7.70%",
+        "MemUsage": "78.85MiB / 1GiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-kestra-postgres-1",
+        "NetIO": "3.06MB / 2.23MB",
+        "PIDs": "20"
+      },
+      {
+        "BlockIO": "0B / 61.1MB",
+        "CPUPerc": "0.03%",
+        "Container": "27139a59710b",
+        "ID": "27139a59710b",
+        "MemPerc": "4.71%",
+        "MemUsage": "48.27MiB / 1GiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-application-postgres-1",
+        "NetIO": "28kB / 23.6kB",
+        "PIDs": "10"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "11.32%",
+        "Container": "48baf3cc76d8",
+        "ID": "48baf3cc76d8",
+        "MemPerc": "3.58%",
+        "MemUsage": "18.33MiB / 512MiB",
+        "Name": "cc-fault-capacity-profile-a9b6cac2e74d-frontend-1",
+        "NetIO": "7.1kB / 5.05kB",
+        "PIDs": "11"
+      }
+    ]
+  },
+  "recovery": {
+    "elapsedMilliseconds": 4236,
+    "readiness": {
+      "phase": 1,
+      "status": "ready",
+      "checks": [
+        {
+          "name": "application-database",
+          "status": "ready"
+        },
+        {
+          "name": "kestra-database",
+          "status": "ready"
+        },
+        {
+          "name": "redis",
+          "status": "ready"
+        },
+        {
+          "name": "frontend",
+          "status": "ready"
+        },
+        {
+          "name": "api",
+          "status": "ready"
+        },
+        {
+          "name": "workers",
+          "status": "ready"
+        },
+        {
+          "name": "artifacts",
+          "status": "ready"
+        },
+        {
+          "name": "kestra",
+          "status": "ready"
+        }
+      ]
+    },
+    "failedAttemptRemoved": true,
+    "originalArtifactPreserved": true,
+    "artifact": {
+      "artifactId": "cc03adcb-b274-49c2-9239-9dca6e3b2a5f",
+      "sha256": "d58f626efe1927d08325499ae7ae6913aeacb7934a37adf5c1cc15784904e335",
+      "sizeBytes": 40,
+      "readyRows": 1
+    }
+  },
+  "cleanupPolicy": {
+    "verifiedProjectVolumeLabels": true,
+    "removedOnlyOwnedResources": true,
+    "oldCampusCommanderVolumesTouched": false,
+    "registryStopped": false
+  },
+  "limits": [
+    "The artifact filesystem is a synthetic tmpfs volume.",
+    "The result makes no storage persistence claim.",
+    "The check ran on one Docker host.",
+    "The check does not reproduce ext4, quota, NFS, or object-storage behavior.",
+    "The check qualifies only all-Docker artifact capacity behavior."
+  ]
+}

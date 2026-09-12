@@ -3,6 +3,52 @@
 Epic: [CC-22](https://easton-consulting.atlassian.net/browse/CC-22).
 Status: IN PROGRESS. No Phase 2 release has passed acceptance.
 
+## Current published candidate
+
+The [fourth candidate workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34683360766) passed all seventeen jobs.
+These jobs include eleven application checks, capacity, runtime image publication, validation, and bundle publication.
+The [pull request workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34683362066) also passed.
+The source revision is `dae5f7a10a0347043931f5b97ef317882c1d70f6`.
+
+The [published prerelease](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-dae5f7a10a03) contains the signed installation archive and manifest.
+CI verified the archive signature and every extracted file checksum before publication.
+Each application image passed its vulnerability scan and signature verification.
+The manifest includes exact image references, source files, runtime dependencies, SBOMs, and application evidence.
+
+[The run record](../../deployment/evidence/CC-37-phase-2-fourth-published-run.json) records job results and downloaded artifact checksums.
+[The retained evidence](../../deployment/evidence/phase-2-published-dae5f7a/) preserves the complete downloaded qualification reports and screenshots.
+All three profiles passed published-image application checks, Phase 1 upgrade checks, and isolated application restores.
+The hybrid fixture now observes PostgreSQL outage responses without racing the database connection timeout.
+
+The manifest remains `candidate-only`. All fifteen complete profile acceptance records remain `not-run` in that manifest.
+Rendered hybrid and Kubernetes checks do not establish complete installer CLI acceptance.
+Kind and Docker fixtures do not establish district storage, CNI enforcement, or district capacity.
+Earlier sections below preserve the implementation history and its original limitations.
+
+## Recovery and browser acceptance audit
+
+The real operator CLI now performs the recovery test's revocation and successful identity replacement.
+An untrusted replacement issuer and empty subject both fail without changing the revoked principal or its permission version.
+The recovered identity retains its principal ID and completes a fresh sign-in.
+Stale permission versions fail. Retired OIDC credentials fail until the API loads their replacement.
+The existing test also verifies worker credential rotation, previous-session denial, and retained security events.
+
+`npx nx run api-e2e:auth-integration` passed in 69 seconds after these additional CLI assertions.
+`npx nx run api-e2e:lint` passed.
+The [operator procedure](../../deployment/bootstrap/APPLICATION-ACCESS.md) defines credential replacement, restart, revocation, and isolated restore.
+The published restore reports verify preserved identity, preferences, and security events with fresh Redis.
+
+Orca 46.1 passed against the published candidate with the default browser cache.
+Its retained utterances include sign-in progress, all four named diagnostics, service failure, retry, and sign-out.
+Four axe reports contain zero violations and zero incomplete checks, including contrast and target-size rules.
+Screenshot review confirmed readable controls, results, and version information in both themes.
+Browser checks cover keyboard focus, menus, offline recovery, 200 percent CSS zoom, and 320-pixel reflow.
+Applicable rules are UI-01 through UI-06, UI-08 through UI-10, and FORM-01 for sign-in feedback.
+
+The reader fixture processes the real Chromium accessibility tree through Orca and Speech Dispatcher.
+Its ALSA null device discards audio. This evidence does not claim human listening or a district usability study.
+The prior reader failure remains recorded in the third published run.
+
 The owner authorized Phase 2 development on September 11, 2026, while Phase 1 acceptance remains open.
 This instruction replaces the requirement to finish Phase 1 acceptance before Phase 2 development.
 Phase 1 acceptance remains a separate record.
@@ -326,10 +372,8 @@ The candidate workflow requires eleven application reports. Release tests, relev
 
 ## Remaining release gates
 
-- Verify clean installation from published Phase 2 images in every deployment mode.
-- Verify Phase 1 upgrades against published Phase 2 images in every deployment mode.
-- Repeat isolated application restores with the published images in every deployment mode.
-- Review the recorded reader output and remaining human-usability limits during final accessibility acceptance.
-- Review every ticket criterion and link its final implementation and validation evidence.
-- Commit the Phase 2 changes without including unrelated Phase 1 workspace edits.
-- Publish signed release artifacts and record accepted workflows, defects, and measured limits.
+- Complete installer acceptance for install, resume, upgrade, restore, and faults in each deployment mode.
+- Bind fifteen distinct acceptance reports to the exact release revision, images, and signed file inventory.
+- Record distinct worker hosts for distributed profiles and retain measured fixture limitations.
+- Review every remaining ticket criterion and link its final implementation and validation evidence.
+- Publish the accepted release and record supported workflows, defects, and measured limits.
