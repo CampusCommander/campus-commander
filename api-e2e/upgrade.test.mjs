@@ -14,6 +14,7 @@ import { startRegistry } from './registry-fixture.mjs';
 import { qualifyApplicationRestore } from './restore-fixture.mjs';
 import { faultAllDocker } from './all-docker-faults-fixture.mjs';
 import { qualifyAllDockerCertificates } from './all-docker-certificates-fixture.mjs';
+import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 const execute = promisify(execFile);
 
 test(
@@ -76,7 +77,7 @@ test(
       const [imageBuildId] = revisions;
       assert.match(imageBuildId, /^[a-f0-9]{40}(?:-dirty)?$/);
       if (published) assert.match(imageBuildId, /^[a-f0-9]{40}$/);
-      const target = {
+      let target = {
         schemaVersion: 1,
         sourceRevision: imageBuildId.slice(0, 40),
         architectures: ['linux/amd64'],
@@ -90,6 +91,13 @@ test(
           ? 'base revision before local image changes'
           : 'image source revision',
       };
+      if (process.env.CC_AUTH_INSTALLER_ROOT)
+        target = (
+          await loadQualificationBundle(
+            process.env.CC_AUTH_INSTALLER_ROOT,
+            target,
+          )
+        ).manifest;
       const a = join(inventoryRoot, 'baseline.json'),
         b = join(inventoryRoot, 'target.json');
       if (!published)

@@ -5,9 +5,9 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { secretPath } from '../redis/runtime.mjs';
+import { loadQualificationBundle } from '../release/qualification.mjs';
 
 const execute = promisify(execFile);
-const cliPath = fileURLToPath(new URL('./cli.mjs', import.meta.url));
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const postgresImage = JSON.parse(
   await readFile(
@@ -26,6 +26,16 @@ export async function createOperationsCliFixture(
     mountDirectories = [directory],
   } = {},
 ) {
+  const sourceRoot = resolve(process.env.CC_AUTH_INSTALLER_ROOT ?? workspace);
+  const bundle = process.env.CC_AUTH_INSTALLER_ROOT
+    ? await loadQualificationBundle(
+        sourceRoot,
+        JSON.parse(
+          await readFile(join(sourceRoot, 'release-manifest.json'), 'utf8'),
+        ),
+      )
+    : undefined;
+  const cliPath = join(sourceRoot, 'deployment/operations/cli.mjs');
   await mkdir(directory, { mode: 0o700 });
   const secretDirectory = join(directory, 'secrets');
   await mkdir(secretDirectory, { mode: 0o700 });
@@ -70,7 +80,7 @@ export async function createOperationsCliFixture(
               '--mount',
               `type=bind,source=${process.execPath},target=/fixture-node,readonly`,
               '--mount',
-              `type=bind,source=${workspace},target=${workspace},readonly`,
+              `type=bind,source=${sourceRoot},target=${sourceRoot},readonly`,
               ...mountDirectories.flatMap((source) => [
                 '--mount',
                 `type=bind,source=${source},target=${source}`,
@@ -78,7 +88,7 @@ export async function createOperationsCliFixture(
               '--mount',
               `type=bind,source=${secretDirectory},target=/run/secrets,readonly`,
               '--workdir',
-              workspace,
+              sourceRoot,
               '--entrypoint',
               '/fixture-node',
               postgresImage,
@@ -141,6 +151,8 @@ export async function createOperationsCliFixture(
       nodeVersion: process.version,
       secretMount: '/run/secrets',
       injectedDatabaseTool: false,
+      source: bundle ? 'extracted-published-bundle' : 'workspace',
+      ...(bundle ? { bundleManifestSha256: bundle.manifestSha256 } : {}),
     },
     async generateKey() {
       const path = join(directory, 'generated-recovery-key');

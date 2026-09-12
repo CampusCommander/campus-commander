@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { backupKubernetesInstallation } from './kubernetes-backup-fixture.mjs';
+import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 
 const execute = promisify(execFile);
 
@@ -58,6 +59,7 @@ export async function prepareKubernetesInstaller({
   kubeconfig,
   kube,
   release,
+  targetRelease = release,
   application,
 }) {
   assert.match(project, /^cc-capacity-kube-[a-f0-9]{12}$/);
@@ -93,12 +95,12 @@ export async function prepareKubernetesInstaller({
   const source = process.env.CC_AUTH_INSTALLER_ROOT
     ? 'verified-extracted-bundle'
     : 'workspace';
+  const bundle = process.env.CC_AUTH_INSTALLER_ROOT
+    ? await loadQualificationBundle(installerRoot, targetRelease)
+    : undefined;
   let inventory = { ...release, phase, qualification: 'candidate-only' };
-  if (process.env.CC_AUTH_INSTALLER_ROOT) {
-    inventory = JSON.parse(
-      await readFile(join(installerRoot, 'release-manifest.json'), 'utf8'),
-    );
-    assert.equal(inventory.phase, phase);
+  if (bundle && phase === 2) {
+    inventory = bundle.manifest;
     assert.equal(inventory.sourceRevision, release.sourceRevision);
     assert.deepEqual(inventory.images, release.images);
   }
@@ -286,6 +288,14 @@ process.exit(result.status??1);
       };
       operator.backupManifestSha256 = backup.backupManifestSha256;
       inventory = { ...nextRelease, phase: 2, qualification: 'candidate-only' };
+      if (bundle) {
+        assert.equal(
+          nextRelease.sourceRevision,
+          bundle.manifest.sourceRevision,
+        );
+        assert.deepEqual(nextRelease.images, bundle.manifest.images);
+        inventory = bundle.manifest;
+      }
       await writeFile(operator.configurationPath, JSON.stringify(nextConfig), {
         mode: 0o600,
       });
@@ -320,6 +330,7 @@ process.exit(result.status??1);
         workerHosts,
         originalRenderPreserved: true,
         source,
+        ...(bundle ? { bundleManifestSha256: bundle.manifestSha256 } : {}),
       };
     },
   };

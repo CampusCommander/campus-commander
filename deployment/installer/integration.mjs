@@ -23,10 +23,12 @@ import {
 } from '../operations/index.mjs';
 import { normalizePostgresSecret } from '../postgres/secrets.mjs';
 import { runEdgeTlsFaults } from '../qualification/edge-tls-faults.mjs';
+import { loadQualificationBundle } from '../release/qualification.mjs';
 
 const execute = promisify(execFile);
 
 export async function qualifyInstaller({ configureApplication } = {}) {
+  const installerRoot = resolve(process.env.CC_AUTH_INSTALLER_ROOT ?? '.');
   const previousPath = process.env.PATH;
   const releasePaths = [
     process.env.CC_INSTALLER_RELEASE_A,
@@ -69,7 +71,7 @@ export async function qualifyInstaller({ configureApplication } = {}) {
         await execute(
           process.execPath,
           [
-            'deployment/installer/cli.mjs',
+            join(installerRoot, 'deployment/installer/cli.mjs'),
             command,
             join(root, 'operator.json'),
             '--qualification',
@@ -99,6 +101,10 @@ export async function qualifyInstaller({ configureApplication } = {}) {
     const release = JSON.parse(await readFile(path, 'utf8'));
     releases.push(release);
   }
+  const bundle = process.env.CC_AUTH_INSTALLER_ROOT
+    ? await loadQualificationBundle(installerRoot, releases[1])
+    : undefined;
+  if (bundle) assert.deepEqual(releases[1], bundle.manifest);
   assert.notDeepEqual(
     releases[0].images,
     releases[1].images,
@@ -117,7 +123,7 @@ export async function qualifyInstaller({ configureApplication } = {}) {
     installationRoot: root,
     configurationPath: join(root, 'input.json'),
     releasePath: join(root, 'release.json'),
-    releaseRoot: root,
+    releaseRoot: bundle ? installerRoot : root,
     project,
     connectAddress: '127.0.0.1',
     bindAddress: '127.0.0.1',
@@ -509,6 +515,8 @@ process.exit(result.status??1);
       project,
       profile: 'all-docker',
       acceptedRelease: false,
+      installerSource: bundle ? 'extracted-published-bundle' : 'workspace',
+      ...(bundle ? { bundleManifestSha256: bundle.manifestSha256 } : {}),
       workingTree: sourceState,
       baseGitRevision: harnessRevision,
       artifact,

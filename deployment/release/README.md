@@ -147,7 +147,7 @@ Capacity evidence requires two API pods and two worker pods with distinct worker
 All four pods must observe the same capped 16 MiB tmpfs, zero available bytes during failure, and exact space restoration.
 The gate also requires authenticated failure, artifact cleanup, durable state, bounded recovery, and removal of the cluster and volume.
 The capacity target starts a fresh Phase 2 installation. The replica target includes a Phase 1 upgrade.
-The matrix now contains twenty-three application targets and twenty-nine total jobs.
+The application matrix contains twenty-three targets. Twelve extracted-bundle jobs extend the complete workflow to forty-one jobs.
 These synthetic reports retain their limits and do not establish accepted release status.
 
 The hybrid matrix includes `hybrid-cli-certificate-integration` after a real installer upgrade and verified encrypted backup.
@@ -166,3 +166,25 @@ The all-Docker matrix includes `all-docker-certificate-integration` after a real
 It requires expired and wrong-host TLS rejection, authenticated Diagnostics recovery, original private files, durable state, and owned-resource cleanup.
 All three certificate gates enforce the shared 180-second recovery budget and reject missing durable-state records.
 The fixture uses an independent synthetic identity provider. District browser trust and certificate operations require separate acceptance.
+
+## Extracted bundle qualification
+
+Verify the archive signature against the independently trusted workflow identity before extraction.
+Verify the manifest signature and every inventoried file before starting profile workflows.
+Set `CC_AUTH_INSTALLER_ROOT` to the extracted directory when running the application qualification targets.
+Supply the three immutable `CC_AUTH_FRONTEND_IMAGE`, `CC_AUTH_API_IMAGE`, and `CC_AUTH_WORKER_IMAGE` references from that manifest.
+The fixture rejects a different revision, image inventory, phase, architecture, or modified inventoried file.
+
+All-Docker upgrade and hybrid CLI workflows use the extracted installer CLI and complete target inventory.
+Kubernetes upgrade starts the Phase 1 baseline before applying the complete extracted Phase 2 inventory.
+Native restore qualification uses the extracted operator CLI. Its execution record includes the manifest hash.
+These fixture checks retain qualification exceptions and synthetic trust. They do not replace external signature verification or final acceptance.
+
+The `bundle-application` matrix runs twelve core workflows after candidate publication.
+It requires independently verified archive and manifest signatures before any extracted installer command.
+Each profile runs installation and resume, upgrade, restore, and authenticated process faults.
+Each successful target produces `bundle-qualification.json` with its source revision, image inventory, manifest hash, and exact report hashes.
+The recorder rejects workspace CLI execution and mismatched or failed reports.
+A failed target cannot create a successful context record through the workflow.
+The workflow uploads each target separately as `bundle-qualification-<target>`.
+These records supply evidence for final assembly. They do not promote the candidate or replace district acceptance.

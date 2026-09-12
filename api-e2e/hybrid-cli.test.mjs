@@ -26,6 +26,7 @@ import { upgradeDistributedHybrid } from './hybrid-cli-upgrade-fixture.mjs';
 import { faultDistributedHybrid } from './hybrid-cli-faults-fixture.mjs';
 import { qualifyHybridCapacity } from './hybrid-capacity-fixture.mjs';
 import { qualifyHybridCertificates } from './hybrid-certificates-fixture.mjs';
+import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 
 test(
   'the hybrid installer runs authenticated lifecycle checks across three Docker hosts',
@@ -72,6 +73,12 @@ test(
       assert.equal(new Set(labels).size, 1);
       sourceRevision = labels[0];
       assert.match(sourceRevision, /^[a-f0-9]{40}$/);
+      const bundle = process.env.CC_AUTH_INSTALLER_ROOT
+        ? await loadQualificationBundle(process.env.CC_AUTH_INSTALLER_ROOT, {
+            images,
+            sourceRevision,
+          })
+        : undefined;
       const baseline =
         process.env.CC_AUTH_HYBRID_CLI_UPGRADE === '1'
           ? JSON.parse(
@@ -202,7 +209,7 @@ test(
       await json(configPath, config);
       await json(join(runtime, 'profile.json'), config);
       await json(join(runtime, 'operator.json'), databaseOperator);
-      const targetRelease = {
+      const targetRelease = bundle?.manifest ?? {
         schemaVersion: 1,
         phase: 2,
         architectures: ['linux/amd64'],
@@ -625,8 +632,10 @@ process.exit(result.status??1);
         sessionChecks,
         restartRecoveries,
         providerConnections,
-        qualificationSourceState:
-          'Workspace installer and test source with explicitly pinned published application images.',
+        qualificationSourceState: bundle
+          ? 'Extracted published installer bundle with matching application images.'
+          : 'Workspace installer and test source with explicitly pinned published application images.',
+        ...(bundle ? { bundleManifestSha256: bundle.manifestSha256 } : {}),
         originalRenderPreserved: true,
         application,
         limits: [

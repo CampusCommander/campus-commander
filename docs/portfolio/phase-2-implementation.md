@@ -1009,3 +1009,50 @@ The workflow published a candidate archive and signed its archive and manifest t
 Independent verification confirmed both signatures, matching extracted manifest bytes, and all 1,302 inventoried files.
 The manifest retains candidate status and fifteen unrun profile acceptance records.
 Extracted-bundle workflows and accepted release assembly remain open.
+
+## Extracted candidate installation and resume
+
+[The extracted all-Docker workflow](../../deployment/evidence/CC-37-phase-2-extracted-all-docker-a807c35.json) passed in 2 minutes 48 seconds.
+It used the verified `a807c35` archive, its complete manifest, and matching published application images.
+The real CLI completed prepare, repeated resume, stop and resume, and uninstall and resume.
+Login, all four Diagnostics operations, preference preservation, and logout passed across two API replicas.
+Eight temporary Kestra failures followed the service restart. Recovery passed within the configured sixty-second bound.
+The report preserves those failures and their correlation identifiers.
+
+[The verification record](../../deployment/evidence/CC-37-phase-2-extracted-all-docker-verification.json) binds this result to the signed archive and manifest hashes.
+Relevant test source matched the image revision. The test completed cleanup, and recorded API containers no longer existed.
+This evidence covers extracted installation and resume with synthetic trust and qualification exceptions.
+The candidate manifest remains unchanged. Complete profile acceptance and final release assembly remain open.
+
+## Extracted bundle routing and automated qualification
+
+The extracted Kubernetes installation and resume workflow passed in 3 minutes 46 seconds.
+It preserved authenticated access through installer lifecycle checks and worker rescheduling across two Kind nodes.
+The fixture removed its cluster. [The verification record](../../deployment/evidence/CC-37-phase-2-extracted-kubernetes-verification.json) binds the report to the verified archive.
+
+The hybrid fixture previously omitted the bundle inventory. The all-Docker upgrade fixture invoked the workspace CLI.
+The corrected fixtures load the complete extracted inventory and invoke the extracted installer CLI.
+The shared loader rejects different source revisions, images, phases, architectures, and modified inventoried files.
+Kubernetes upgrade now retains its Phase 1 baseline before applying the complete Phase 2 bundle inventory.
+Native operator fixtures invoke the extracted operator CLI and record its manifest hash.
+The hybrid operator container receives the extracted bundle through a separate read-only mount.
+
+[Hybrid installation](../../deployment/evidence/CC-37-phase-2-extracted-hybrid-a807c35.json) passed in 3 minutes 18 seconds across three Docker daemons.
+[All-Docker upgrade](../../deployment/evidence/CC-37-phase-2-extracted-all-docker-upgrade-a807c35.json) passed in 3 minutes 45 seconds.
+[Kubernetes upgrade](../../deployment/evidence/CC-37-phase-2-extracted-kubernetes-upgrade-a807c35.json) passed in 4 minutes 39 seconds.
+[Hybrid restore](../../deployment/evidence/CC-37-phase-2-extracted-hybrid-restore-a807c35.json) passed in 4 minutes 20 seconds.
+[The native operator integration](../../deployment/evidence/CC-37-phase-2-extracted-operator-cli-a807c35.json) passed encrypted backup, verification, restore, and denial checks in 6.8 seconds.
+These runs used the independently verified `a807c35` bundle and its matching application images.
+
+The workflow now adds twelve extracted-bundle jobs after candidate publication.
+Each profile runs installation and resume, upgrade, restore, and authenticated process faults.
+Each job verifies archive and manifest signatures before extraction. It then verifies the manifest identity and file inventory.
+After the actual target passes, the job records its reports and manifest hash.
+The recorder rejects workspace CLI evidence, different images, failed reports, and modified bundle files.
+The complete workflow now contains forty-one jobs. Six release tests and relevant lint passed.
+Final CI must qualify these new jobs on the published revision.
+
+[Candidate 5bda2bf](../../deployment/evidence/CC-37-phase-2-twentieth-published-run.json) passed all twenty-nine candidate jobs and all seven PR jobs.
+The all-Docker authenticated certificate job passed. The workflow published its candidate release.
+The candidate retains its acceptance limits. Complete extracted-bundle evidence, accepted release assembly, and district acceptance remain open.
+Phase 1 acceptance remains separate.

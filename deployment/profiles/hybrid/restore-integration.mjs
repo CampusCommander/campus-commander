@@ -658,6 +658,14 @@ export async function qualifyHybridRestore({
         `${process.execPath}:/opt/cc-node:ro`,
         '-v',
         `${fileURLToPath(new URL('../../../', import.meta.url))}:/workspace:ro`,
+        ...(process.env.CC_AUTH_INSTALLER_ROOT
+          ? [
+              '-v',
+              `${process.env.CC_AUTH_INSTALLER_ROOT}:/release:ro`,
+              '-e',
+              'CC_AUTH_INSTALLER_ROOT=/release',
+            ]
+          : []),
         '-v',
         `${root}:${root}`,
         '-v',

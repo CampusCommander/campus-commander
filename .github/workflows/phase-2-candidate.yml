@@ -432,3 +432,154 @@ jobs:
           Verify the bundle signature and the independently trusted workflow identity before extraction.
           NOTES
           gh release create "$candidate_tag" --target "$GITHUB_SHA" --prerelease --title "Phase 2 candidate ${GITHUB_SHA:0:12}" --notes-file candidate-notes.md phase-2-candidate.tar.gz phase-2-candidate.sigstore.json candidate-bundle/release-manifest.json candidate-bundle/release-manifest.sigstore.json
+
+  bundle-application:
+    needs: bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - all-docker-integration
+          - upgrade-integration
+          - restore-integration
+          - all-docker-process-fault-integration
+          - hybrid-cli-integration
+          - hybrid-cli-upgrade-integration
+          - hybrid-restore-integration
+          - hybrid-cli-process-fault-integration
+          - kubernetes-integration
+          - kubernetes-upgrade-integration
+          - kubernetes-restore-integration
+          - kubernetes-process-fault-integration
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
+        with:
+          version: v29.7.2
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - uses: docker/setup-compose-action@4eb059ff7f16592f9c84d5ca339c53cb7c5064e2 # v2
+        with:
+          version: v5.5.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: candidate-*
+          merge-multiple: true
+          path: image-evidence
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm ci
+      - name: Select the shared-storage browser cache
+        if: startsWith(matrix.target, 'hybrid-') || startsWith(matrix.target, 'kubernetes-')
+        run: printf 'PLAYWRIGHT_BROWSERS_PATH=%s/.cache/ms-playwright\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+      - run: npx playwright install --with-deps chromium
+      - name: Verify the Kubernetes fault timeout boundary
+        if: matrix.target == 'kubernetes-process-fault-integration'
+        run: npm exec nx run api-e2e:kubernetes-fault-fixture-test
+      - name: Install the screen-reader qualification tools
+        if: matrix.target == 'screen-reader-integration'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y orca speech-dispatcher speech-dispatcher-espeak-ng xvfb dbus-x11
+      - run: npm exec nx run deployment:build
+      - name: Prepare published image references
+        run: |
+          for service in api frontend worker; do
+            reference="$(cat "image-evidence/${service}.reference")"
+            docker pull "$reference"
+            printf 'CC_AUTH_%s_IMAGE=%s\n' "${service^^}" "$reference" >> "$GITHUB_ENV"
+          done
+      - name: Install verified Kind binary
+        if: startsWith(matrix.target, 'kubernetes-')
+        run: |
+          curl --fail --location --retry 3 https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 --output "$RUNNER_TEMP/kind"
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
+          chmod 700 "$RUNNER_TEMP/kind"
+          printf 'CC_KIND_BINARY=%s\n' "$RUNNER_TEMP/kind" >> "$GITHUB_ENV"
+      - name: Verify Kubernetes shutdown observation
+        if: startsWith(matrix.target, 'kubernetes-')
+        run: npm exec nx run api-e2e:kubernetes-shutdown-test
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: phase-2-candidate-${{ github.sha }}
+          path: published-bundle
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+      - name: Verify and extract the candidate bundle
+        run: |
+          identity="https://github.com/${GITHUB_WORKFLOW_REF}"
+          cosign verify-blob --bundle published-bundle/phase-2-candidate.sigstore.json --certificate-identity="$identity" --certificate-oidc-issuer=https://token.actions.githubusercontent.com published-bundle/phase-2-candidate.tar.gz
+          cosign verify-blob --bundle published-bundle/candidate-bundle/release-manifest.sigstore.json --certificate-identity="$identity" --certificate-oidc-issuer=https://token.actions.githubusercontent.com published-bundle/candidate-bundle/release-manifest.json
+          mkdir extracted-candidate
+          tar --extract --gzip --file published-bundle/phase-2-candidate.tar.gz --directory extracted-candidate --no-same-owner --no-same-permissions
+          cmp published-bundle/candidate-bundle/release-manifest.json extracted-candidate/release-manifest.json
+          node --input-type=module <<'NODE'
+          import {loadQualificationBundle} from './deployment/release/qualification.mjs';
+          await loadQualificationBundle('extracted-candidate', {
+            sourceRevision: process.env.GITHUB_SHA,
+            images: {
+              frontend: process.env.CC_AUTH_FRONTEND_IMAGE,
+              api: process.env.CC_AUTH_API_IMAGE,
+              workers: process.env.CC_AUTH_WORKER_IMAGE,
+            },
+          });
+          NODE
+          printf 'CC_AUTH_INSTALLER_ROOT=%s/extracted-candidate\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+      - name: Prepare the shared-storage fixture account
+        if: startsWith(matrix.target, 'hybrid-') || startsWith(matrix.target, 'kubernetes-')
+        run: |
+          if ! getent passwd 1000 > /dev/null; then
+            sudo useradd --uid 1000 --user-group --create-home cc-qualification
+          fi
+          if ! command -v setfacl > /dev/null; then
+            sudo apt-get install --no-install-recommends -y acl
+          fi
+          cp -a "${DOCKER_CONFIG:-$HOME/.docker}" "$GITHUB_WORKSPACE/.qualification-docker"
+          fixture_socket="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+          test "${fixture_socket#unix://}" != "$fixture_socket"
+          fixture_socket="${fixture_socket#unix://}"
+          sudo setfacl -m u:1000:rw "$fixture_socket"
+          fixture_directory="$(dirname "$fixture_socket")"
+          while test "$fixture_directory" != /; do
+            sudo setfacl -m u:1000:x "$fixture_directory"
+            fixture_directory="$(dirname "$fixture_directory")"
+          done
+          if test -n "${CC_KIND_BINARY:-}"; then
+            sudo chown 1000:1000 "$CC_KIND_BINARY"
+          fi
+          sudo chown -R 1000:1000 "$GITHUB_WORKSPACE"
+          printf 'DOCKER_CONFIG=%s/.qualification-docker\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+      - name: Qualify the authenticated application
+        run: |
+          if [[ "$QUALIFICATION_TARGET" == hybrid-* || "$QUALIFICATION_TARGET" == kubernetes-* ]]; then
+            sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,CC_KIND_BINARY,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run "api-e2e:$QUALIFICATION_TARGET"
+          else
+            npm exec nx run "api-e2e:$QUALIFICATION_TARGET"
+          fi
+        env:
+          QUALIFICATION_TARGET: ${{ matrix.target }}
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
+      - name: Restore evidence ownership
+        if: always() && (startsWith(matrix.target, 'hybrid-') || startsWith(matrix.target, 'kubernetes-'))
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      - name: Record the executed bundle workflow
+        run: node deployment/release/bundle-qualification.mjs
+        env:
+          QUALIFICATION_TARGET: ${{ matrix.target }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: bundle-qualification-${{ matrix.target }}
+          path: dist/phase-2-evidence/
+          if-no-files-found: warn

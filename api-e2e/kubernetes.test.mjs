@@ -473,6 +473,7 @@ test(
         kubeconfig,
         kube,
         release: baseline ?? release,
+        targetRelease: release,
         application: fixture.application,
       });
       await installer.resume(startForward);
