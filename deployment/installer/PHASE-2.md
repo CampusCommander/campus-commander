@@ -107,3 +107,23 @@ Run `npx nx run api-e2e:kubernetes-restore-integration` to extend that upgrade w
 The target uses another namespace, distinct persistent volumes, restored databases, and fresh Redis.
 The browser must reject the source session and preserve preferences after another login.
 Both Kubernetes fixtures use three Kind nodes on one Docker host. They do not qualify district storage or CNI enforcement.
+
+## Clean all-Docker installer qualification
+
+`api-e2e:all-docker-integration` invokes the installer CLI for preparation, repeated resume, stop/resume, and uninstall/resume.
+API and worker restart preserve the session. Redis restart requires fresh sign-in and preserves PostgreSQL preferences.
+The fixture repeats all four Diagnostics checks after each lifecycle operation.
+Only the fixture runtime adds the synthetic provider CA and host mapping. The original installer output remains unchanged.
+
+Set all three `CC_AUTH_*_IMAGE` variables to the published immutable application references.
+Set `CC_AUTH_INSTALLER_ROOT` to an extracted bundle after the hosted installer verifies its signatures and checksums.
+The fixture checks the bundle's source revision, phase, and image inventory before invoking its CLI.
+
+```sh
+CC_AUTH_INSTALLER_ROOT=/absolute/verified/bundle npx nx run api-e2e:all-docker-integration
+```
+
+Without `CC_AUTH_INSTALLER_ROOT`, the fixture uses the workspace CLI.
+Local development images use the existing disposable loopback registry adapter.
+The report records the CLI source, image mirrors, lifecycle commands, and browser observations.
+Candidate qualification does not complete the fifteen signed profile acceptance records.

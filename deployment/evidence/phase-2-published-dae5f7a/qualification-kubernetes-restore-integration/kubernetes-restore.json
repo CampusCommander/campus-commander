@@ -40,11 +40,7 @@
   },
   "quiesce": {
     "operator": "synthetic-kubernetes-qualification",
-    "stoppedServices": [
-      "api",
-      "workers",
-      "kestra"
-    ],
+    "stoppedServices": ["api", "workers", "kestra"],
     "stoppedAt": "2026-09-12T08:38:16.868Z"
   },
   "sourceWorkloads": [
@@ -538,21 +534,11 @@
   ],
   "oldSessionRejected": true,
   "preservedTheme": "dark",
-  "restoredOperations": [
-    "postgresql",
-    "redis",
-    "kestra",
-    "artifacts"
-  ],
+  "restoredOperations": ["postgresql", "redis", "kestra", "artifacts"],
   "application": {
     "status": "passed",
     "browser": "149.0.7827.55",
-    "operations": [
-      "postgresql",
-      "redis",
-      "kestra",
-      "artifacts"
-    ],
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
     "observations": [
       {
         "operation": "postgresql",

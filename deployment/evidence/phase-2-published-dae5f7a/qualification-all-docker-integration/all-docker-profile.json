@@ -11,12 +11,7 @@
   "browser": {
     "status": "passed",
     "browser": "149.0.7827.55",
-    "operations": [
-      "postgresql",
-      "redis",
-      "kestra",
-      "artifacts"
-    ],
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
     "observations": [
       {
         "operation": "postgresql",

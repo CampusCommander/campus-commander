@@ -27,6 +27,14 @@ Earlier sections below preserve the implementation history and its original limi
 
 ## Recovery and browser acceptance audit
 
+The subsequent `fd04554` reader job reproduced missing browser announcements. CC-35 is open again pending repeatable qualification.
+[The failing report](../../deployment/evidence/CC-35-phase-2-reader-fd04554-failure.json) retains the contradictory evidence.
+Restoring the default browser cache did not resolve the intermittent failure.
+The reader fixture now records Chromium registration and event counts without retaining raw debug content in public evidence.
+The instrumented local Orca 50.2 run passed in 213 seconds with the expanded installer lifecycle.
+[Its connection report](../../deployment/evidence/CC-35-phase-2-reader-connection-local.json) observed Chromium registration and 8,354 accessibility event lines.
+That local pass does not resolve the intermittent Orca 46.1 CI failure.
+
 The real operator CLI now performs the recovery test's revocation and successful identity replacement.
 An untrusted replacement issuer and empty subject both fail without changing the revoked principal or its permission version.
 The recovered identity retains its principal ID and completes a fresh sign-in.
@@ -48,6 +56,37 @@ Applicable rules are UI-01 through UI-06, UI-08 through UI-10, and FORM-01 for s
 The reader fixture processes the real Chromium accessibility tree through Orca and Speech Dispatcher.
 Its ALSA null device discards audio. This evidence does not claim human listening or a district usability study.
 The prior reader failure remains recorded in the third published run.
+
+## Published installer verification and lifecycle
+
+The hosted installer verified candidate `dae5f7a` with its pinned Cosign binary.
+It verified archive and manifest signatures, all three application image signatures, safe archive entries, and every inventoried file checksum.
+[The verification report](../../deployment/evidence/CC-37-phase-2-hosted-verification.json) records the command and tool checksum.
+Verification alone does not install services or complete profile acceptance.
+
+The expanded all-Docker check passed against those published images in 131 seconds.
+It invokes the real CLI for prepare, repeated resume, stop/resume, and uninstall/resume.
+API and worker restart preserve the session. Full stop restarts Redis and requires fresh sign-in.
+Fresh sign-in preserves PostgreSQL preferences and completes all four Diagnostics checks after each lifecycle operation.
+The test verifies unchanged installer output and release inventory.
+[The lifecycle report](../../deployment/evidence/CC-36-phase-2-published-cli-install.json) records commands, images, and browser observations.
+
+The same lifecycle also passed with the CLI from the verified, extracted release archive.
+The fixture matched its phase, source revision, and image inventory before installation.
+Each CLI invocation verified the bundle file inventory during candidate authentication.
+[The extracted-bundle report](../../deployment/evidence/CC-36-phase-2-published-bundle-install.json) identifies this separate execution.
+
+The first CLI attempt rejected the fixture's IP certificate during hostname preflight.
+The fixture now uses its mapped DNS name and matching certificate.
+The second attempt incorrectly expected a session after Redis restart.
+The corrected assertion verifies fresh sign-in and durable preferences according to the Redis state contract.
+Production certificate checks and Redis persistence policy remain unchanged.
+
+PR CI found formatting differences in the newly retained JSON reports.
+Repository copies now use Prettier formatting. Their values match the original downloaded reports exactly.
+The run record's artifact checksums identify the original downloaded bytes.
+The local image path also passed the expanded CLI lifecycle in 119 seconds through its disposable registry.
+Its report preserves the `-dirty` image build marker. Published image references require clean source revisions.
 
 The owner authorized Phase 2 development on September 11, 2026, while Phase 1 acceptance remains open.
 This instruction replaces the requirement to finish Phase 1 acceptance before Phase 2 development.

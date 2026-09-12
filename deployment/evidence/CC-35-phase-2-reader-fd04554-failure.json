@@ -1,0 +1,21 @@
+{
+  "status": "failed",
+  "recordedAt": "2026-09-12T08:52:00.855Z",
+  "reader": "46.1",
+  "checks": {
+    "speechConnection": true,
+    "login": false,
+    "controls": false,
+    "completion": false,
+    "boundedAnnouncements": true,
+    "signOut": false
+  },
+  "utterances": ["Screen reader on."],
+  "rawEvidenceDirectory": "/tmp/cc-phase2-orca-mTzQjn",
+  "rules": ["UI-09", "UI-10"],
+  "limits": [
+    "Orca and eSpeak process the real Chromium accessibility tree and speech output.",
+    "The isolated ALSA null device discards audio. Human listening and usability remain separate.",
+    "This fixture covers representative Phase 2 controls and diagnostic completion announcements."
+  ]
+}

@@ -2,12 +2,7 @@
   "application": {
     "status": "passed",
     "browser": "149.0.7827.55",
-    "operations": [
-      "postgresql",
-      "redis",
-      "kestra",
-      "artifacts"
-    ],
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
     "observations": [
       {
         "operation": "postgresql",
@@ -50,12 +45,7 @@
         "application": {
           "status": "passed",
           "browser": "149.0.7827.55",
-          "operations": [
-            "postgresql",
-            "redis",
-            "kestra",
-            "artifacts"
-          ],
+          "operations": ["postgresql", "redis", "kestra", "artifacts"],
           "observations": [
             {
               "operation": "postgresql",
@@ -308,9 +298,7 @@
   "releaseInventories": [
     {
       "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
-      "architectures": [
-        "linux/amd64"
-      ],
+      "architectures": ["linux/amd64"],
       "images": {
         "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
         "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
@@ -319,9 +307,7 @@
     },
     {
       "sourceRevision": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
-      "architectures": [
-        "linux/amd64"
-      ],
+      "architectures": ["linux/amd64"],
       "workingTree": "uncommitted-candidate",
       "images": {
         "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
@@ -356,9 +342,7 @@
   "baseline": {
     "schemaVersion": 1,
     "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
-    "architectures": [
-      "linux/amd64"
-    ],
+    "architectures": ["linux/amd64"],
     "images": {
       "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
       "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",

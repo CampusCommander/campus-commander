@@ -60,11 +60,7 @@
         "health": "healthy"
       }
     ],
-    "artifactMountConsumers": [
-      "volume-permissions",
-      "api",
-      "workers"
-    ],
+    "artifactMountConsumers": ["volume-permissions", "api", "workers"],
     "artifactVolumeDriver": "local",
     "artifactVolumeType": "tmpfs",
     "artifactVolumeCapacityBytes": 16777216,

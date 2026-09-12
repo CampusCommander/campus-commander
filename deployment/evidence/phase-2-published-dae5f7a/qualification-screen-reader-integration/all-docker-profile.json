@@ -92,10 +92,7 @@
         "Screen reader off."
       ],
       "rawEvidenceDirectory": "/tmp/cc-phase2-orca-NMk1GO",
-      "rules": [
-        "UI-09",
-        "UI-10"
-      ],
+      "rules": ["UI-09", "UI-10"],
       "limits": [
         "Orca and eSpeak process the real Chromium accessibility tree and speech output.",
         "The isolated ALSA null device discards audio. Human listening and usability remain separate.",
@@ -103,12 +100,7 @@
       ]
     },
     "browser": "149.0.7827.55",
-    "operations": [
-      "postgresql",
-      "redis",
-      "kestra",
-      "artifacts"
-    ],
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
     "observations": [
       {
         "operation": "postgresql",

@@ -1,0 +1,166 @@
+{
+  "status": "passed",
+  "profile": "all-docker",
+  "recordedAt": "2026-09-12T09:03:04.330Z",
+  "durationMs": 125475,
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+  },
+  "sourceRevision": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
+  "imageMirrors": [],
+  "installer": {
+    "status": "passed",
+    "commands": [
+      "prepare",
+      "resume",
+      "resume",
+      "stop",
+      "resume",
+      "uninstall",
+      "resume"
+    ],
+    "repeatedResume": true,
+    "redisSessionsDiscarded": true,
+    "freshSignInPreservesPreferences": true,
+    "originalRenderPreserved": true,
+    "source": "extracted-published-bundle"
+  },
+  "browser": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "fb0bd4fd-6143-46b9-8d74-e41efccb5bff",
+        "observedAt": "2026-09-12T09:01:46.144Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "edbed650-af4e-4766-8f88-10242f447a0f",
+        "observedAt": "2026-09-12T09:01:46.219Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "aafa6137-8bcb-4b65-96fc-142a798ea887",
+        "observedAt": "2026-09-12T09:01:47.069Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "95dac0fd-291f-4923-9f8e-ee426ea20b25",
+        "observedAt": "2026-09-12T09:01:47.177Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "206d6215-2856-495a-baf9-d57267e00b32",
+        "observedAt": "2026-09-12T09:01:55.663Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "80a35e0f-a0a9-4b5f-8bdc-b24e3f99a07e",
+        "observedAt": "2026-09-12T09:01:55.753Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "774d2140-8434-4d5d-9f3b-8d1ca2253f8b",
+        "observedAt": "2026-09-12T09:01:56.394Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "3aed2fb9-dfcf-4397-97b7-548dd89b7f82",
+        "observedAt": "2026-09-12T09:01:56.493Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "e8d6976c-ea23-4b0d-807b-0d18547149ea",
+        "observedAt": "2026-09-12T09:02:28.907Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "9cafa3b1-dfa7-4db5-9687-88ed028aab5c",
+        "observedAt": "2026-09-12T09:02:28.983Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "24e110a9-caef-403b-83e1-d3c03052a2e7",
+        "observedAt": "2026-09-12T09:02:29.782Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "45390ca8-7563-48e0-a10d-8637719809da",
+        "observedAt": "2026-09-12T09:02:29.891Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "f3bcfd4a-a56e-4ad4-9f0c-167a7aadab5e",
+        "observedAt": "2026-09-12T09:03:03.170Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "7e250315-6290-4e87-8cae-5391ff9b0bab",
+        "observedAt": "2026-09-12T09:03:03.247Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "5010bcfd-53ee-4d8a-899f-c94b4bf46238",
+        "observedAt": "2026-09-12T09:03:04.040Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "1343be6f-3672-43a3-b52c-5bb5d702769f",
+        "observedAt": "2026-09-12T09:03:04.137Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "lifecycle": {
+      "restartRecoveryBoundSeconds": 60,
+      "networkAddresses": {
+        "before": {
+          "api": "172.25.0.7",
+          "frontend": "172.25.0.5",
+          "workers": "172.25.0.6"
+        },
+        "after": {
+          "api": "172.25.0.7",
+          "frontend": "172.25.0.5",
+          "workers": "172.25.0.6"
+        }
+      }
+    },
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "readinessChecks": [
+    "application-database",
+    "kestra-database",
+    "redis",
+    "frontend",
+    "api",
+    "workers",
+    "artifacts",
+    "kestra"
+  ],
+  "sessionSurvivedRestart": true,
+  "limits": [
+    "Synthetic provider CA and loopback port replace district ingress.",
+    "Upgrade and isolated restore require separate evidence."
+  ]
+}

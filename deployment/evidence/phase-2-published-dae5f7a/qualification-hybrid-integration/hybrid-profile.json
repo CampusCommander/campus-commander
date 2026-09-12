@@ -2,12 +2,7 @@
   "application": {
     "status": "passed",
     "browser": "149.0.7827.55",
-    "operations": [
-      "postgresql",
-      "redis",
-      "kestra",
-      "artifacts"
-    ],
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
     "observations": [
       {
         "operation": "postgresql",
@@ -278,14 +273,8 @@
     "composeConfigAccepted": true,
     "localReplacementPostgres": false,
     "localReplacementRedis": false,
-    "productionPublishedServices": [
-      "edge"
-    ],
-    "fixturePublishedServices": [
-      "edge",
-      "api",
-      "kestra"
-    ]
+    "productionPublishedServices": ["edge"],
+    "fixturePublishedServices": ["edge", "api", "kestra"]
   },
   "preparation": {
     "runtimeFiles": [
@@ -298,11 +287,7 @@
       "server.p12",
       "worker-truststore.p12"
     ],
-    "credentialStatuses": [
-      "created",
-      "created",
-      "created"
-    ],
+    "credentialStatuses": ["created", "created", "created"],
     "jdbcMode": "verify-full"
   },
   "startup": {

@@ -147,5 +147,6 @@
     "upgrade",
     "restore",
     "faults"
-  ]
+  ],
+  "retainedCopies": "Repository JSON copies use Prettier formatting. Artifact checksums identify the original downloaded bytes."
 }

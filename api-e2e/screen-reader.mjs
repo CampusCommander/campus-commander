@@ -55,6 +55,29 @@ export async function startScreenReader() {
     'Debug 0\n',
   );
   const children = [];
+  const connectionSnapshot = async () => {
+    try {
+      const result = await execute(
+        '/usr/bin/python3',
+        [
+          '-c',
+          `
+import json
+import gi
+gi.require_version('Atspi', '2.0')
+from gi.repository import Atspi
+desktop = Atspi.get_desktop(0)
+names = [desktop.get_child_at_index(i).get_name() for i in range(desktop.get_child_count())]
+print(json.dumps({'status': 'observed', 'applicationCount': len(names), 'chromiumRegistered': any('Chrome' in name or 'Chromium' in name for name in names)}))
+`,
+        ],
+        { env, timeout: 5000 },
+      );
+      return JSON.parse(result.stdout);
+    } catch {
+      return { status: 'unavailable' };
+    }
+  };
   const start = async (file, args, label) => {
     const child = spawn(file, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
     const log = createWriteStream(join(root, `${label}.log`), { mode: 0o600 });
@@ -110,11 +133,16 @@ export async function startScreenReader() {
       'orca',
     );
     await delay(1500);
+    const initialConnection = await connectionSnapshot();
+    const initialDebug = await readFile(join(root, 'orca.debug'), 'utf8').catch(
+      () => '',
+    );
     return {
       env,
       stop,
       async verify() {
         await delay(1500);
+        const finalConnection = await connectionSnapshot();
         await stop();
         const debug = await readFile(join(root, 'orca.debug'), 'utf8');
         const utterances = debug.split('\n').flatMap((line) => {
@@ -153,6 +181,19 @@ export async function startScreenReader() {
           recordedAt: new Date().toISOString(),
           reader: version,
           checks,
+          connection: {
+            beforeBrowser: initialConnection,
+            afterBrowser: finalConnection,
+            readerAnnouncedStartupBeforeBrowser: initialDebug.includes(
+              "SPEECH OUTPUT: 'Screen reader on.",
+            ),
+            explicitAccessibilityBus: Boolean(env.AT_SPI_BUS_ADDRESS),
+            browserMentionedInDebug: /Chrome|Chromium/.test(debug),
+            debugLineCount: debug.split('\n').length,
+            eventLineCount: debug
+              .split('\n')
+              .filter((line) => /object:|window:/.test(line)).length,
+          },
           utterances,
           rawEvidenceDirectory: root,
           rules: ['UI-09', 'UI-10'],

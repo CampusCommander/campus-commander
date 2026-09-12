@@ -20,6 +20,10 @@ It checks the login label, diagnostic controls, named service completion, bounde
 
 The report resides at `dist/phase-2-evidence/screen-reader.json`.
 Raw reader logs remain in the private temporary evidence directory named by that report.
+Connection observations record Chromium registration before and after browser execution.
+The report also records reader startup, browser references, and accessibility event counts.
+These observations distinguish missing browser registration from missing reader announcements.
+They do not change the required speech assertions or establish successful recovery from an intermittent failure.
 The report distinguishes reader output from human listening and usability evaluation.
 Do not infer full accessibility conformance from this target.
 
