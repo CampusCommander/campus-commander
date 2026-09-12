@@ -255,6 +255,7 @@ jobs:
             hybrid-cli-upgrade-integration,
             hybrid-cli-process-fault-integration,
             hybrid-cli-capacity-integration,
+            hybrid-cli-certificate-integration,
             hybrid-upgrade-integration,
             hybrid-restore-integration,
             kubernetes-integration,
@@ -320,6 +321,9 @@ jobs:
           printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
           chmod 700 "$RUNNER_TEMP/kind"
           printf 'CC_KIND_BINARY=%s\n' "$RUNNER_TEMP/kind" >> "$GITHUB_ENV"
+      - name: Verify Kubernetes shutdown observation
+        if: startsWith(matrix.target, 'kubernetes-')
+        run: npm exec nx run api-e2e:kubernetes-shutdown-test
       - name: Prepare the shared-storage fixture account
         if: startsWith(matrix.target, 'hybrid-') || startsWith(matrix.target, 'kubernetes-')
         run: |

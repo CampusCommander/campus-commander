@@ -25,6 +25,7 @@ export const applicationReports = {
   'hybrid-cli-upgrade-integration': 'hybrid-cli-upgrade.json',
   'hybrid-cli-process-fault-integration': 'hybrid-cli-process-faults.json',
   'hybrid-cli-capacity-integration': 'hybrid-capacity.json',
+  'hybrid-cli-certificate-integration': 'hybrid-certificates.json',
   'hybrid-upgrade-integration': 'hybrid-upgrade.json',
   'hybrid-restore-integration': 'hybrid-restore.json',
   'kubernetes-integration': 'kubernetes-profile.json',
@@ -355,13 +356,23 @@ export async function assembleCandidate({
             'Distributed capacity qualification requires capped shared storage, authenticated failure, preserved state, and bounded recovery.',
           );
       }
-      if (target === 'kubernetes-certificate-integration') {
+      if (
+        [
+          'kubernetes-certificate-integration',
+          'hybrid-cli-certificate-integration',
+        ].includes(target)
+      ) {
+        const profile = target.startsWith('kubernetes-')
+          ? 'kubernetes'
+          : 'hybrid';
         const certificate = report.certificates;
         const cases = certificate?.cases;
         if (
-          report.profile !== 'kubernetes' ||
+          report.profile !== profile ||
           report.sourceRevision !== sourceRevision ||
-          report.ownedClusterRemoved !== true ||
+          (profile === 'kubernetes'
+            ? report.ownedClusterRemoved !== true
+            : report.ownedResourcesRemoved !== true) ||
           certificate?.status !== 'passed' ||
           certificate.originalSecretBytesRestored !== true ||
           certificate.recoveryBoundSeconds !== faultRecoveryTimeoutSeconds ||
@@ -383,11 +394,33 @@ export async function assembleCandidate({
             (item) =>
               !Number.isFinite(item.recoveryMs) ||
               item.recoveryMs < 0 ||
-              item.recoveryMs > faultRecoveryTimeoutSeconds * 1000,
+              item.recoveryMs > faultRecoveryTimeoutSeconds * 1000 ||
+              item.durableState?.principalCount !== 1 ||
+              !Number.isSafeInteger(
+                item.durableState.preservedSecurityEvents,
+              ) ||
+              item.durableState.preservedSecurityEvents <= 0 ||
+              !Number.isSafeInteger(
+                item.durableState.preservedKestraExecutions,
+              ) ||
+              item.durableState.preservedKestraExecutions <= 0 ||
+              !Number.isSafeInteger(
+                item.durableState[
+                  profile === 'hybrid'
+                    ? 'internalStorageFiles'
+                    : 'preservedInternalFiles'
+                ],
+              ) ||
+              item.durableState[
+                profile === 'hybrid'
+                  ? 'internalStorageFiles'
+                  : 'preservedInternalFiles'
+              ] <= 0 ||
+              !/^[a-f0-9]{64}$/.test(item.durableState.artifactSha256 ?? ''),
           )
         )
           throw new Error(
-            'Kubernetes certificate qualification requires both TLS rejections, bounded recovery, original secrets, and cluster cleanup.',
+            `${profile === 'kubernetes' ? 'Kubernetes' : 'Hybrid'} certificate qualification requires both TLS rejections, bounded recovery, durable state, original secrets, and fixture cleanup.`,
           );
       }
       if (target === 'all-docker-capacity-integration') {

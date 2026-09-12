@@ -1,0 +1,40 @@
+{
+  "status": "corrected-shutdown-observation",
+  "recordedAt": "2026-09-12T15:32:41.168755+00:00",
+  "publishedFailure": {
+    "sourceRevision": "315b03db518db7a65d25ac7a933b36ab550b6140",
+    "run": 34701666129,
+    "job": 103574939164,
+    "target": "api-e2e:kubernetes-capacity-integration",
+    "stage": "installer-lifecycle-before-capacity",
+    "observed": "One Kestra pod remained after the fixture shutdown deadline.",
+    "fixtureWaitSeconds": 180,
+    "renderedKestraGraceSeconds": 360,
+    "logSha256": "4870c783f45b4f4f186f5f441d1edb87c6c3a697a7e06bf113b8f6ca627877c9"
+  },
+  "correction": "Wait through the maximum rendered deployment termination grace plus a 30-second status observation allowance.",
+  "regression": {
+    "target": "api-e2e:kubernetes-shutdown-test",
+    "clock": "controlled-virtual-time",
+    "before": {
+      "status": "failed-as-expected",
+      "logSha256": "1d8ab3e1ba495b32da741de8c086f6e88071438b278fcc3db1572ce6b1fc6f0c"
+    },
+    "after": {
+      "status": "passed",
+      "tests": 3,
+      "logSha256": "469dacf0249670cc3ef639140803ea9b037575cf96854105b5345ce12894056d"
+    }
+  },
+  "limits": [
+    "The regression verifies deadline behavior using controlled time. It does not measure district shutdown duration.",
+    "The shared 180-second fault recovery budget remains unchanged.",
+    "Published revision qualification remains required."
+  ],
+  "fullWorkflow": {
+    "target": "api-e2e:kubernetes-capacity-integration",
+    "status": "passed",
+    "report": "deployment/evidence/CC-36-phase-2-kubernetes-capacity-shutdown-regression.json",
+    "logSha256": "4875b99b1892989f040b0efa113090b3e1d5432b9e64f9a62a15ac07beaade5d"
+  }
+}

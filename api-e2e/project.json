@@ -268,6 +268,25 @@
           "CC_AUTH_KUBERNETES_CAPACITY": "1"
         }
       }
+    },
+    "hybrid-cli-certificate-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/hybrid-cli.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_CLI_UPGRADE": "1",
+          "CC_AUTH_HYBRID_CERTIFICATES": "1"
+        }
+      }
+    },
+    "kubernetes-shutdown-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes-shutdown.test.mjs"
+      }
     }
   }
 }

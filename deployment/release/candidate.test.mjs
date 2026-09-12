@@ -137,6 +137,14 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
               tlsError,
               status: 'passed',
               recoveryMs: 1000,
+              durableState: {
+                principalCount: 1,
+                preservedSecurityEvents: 10,
+                preservedKestraExecutions: 2,
+                preservedInternalFiles: 1,
+                internalStorageFiles: 1,
+                artifactSha256: 'a'.repeat(64),
+              },
             })),
           },
           capacity: {
@@ -433,50 +441,65 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       }
       await writeFile(path, JSON.stringify(original));
     }
-    const certificatePath = join(
-      qualificationArtifacts,
-      'qualification-kubernetes-certificate-integration',
-      'kubernetes-certificates.json',
-    );
-    const certificateReport = JSON.parse(
-      await readFile(certificatePath, 'utf8'),
-    );
-    for (const [index, mutate] of [
-      (report) => {
-        report.certificates.cases.pop();
-      },
-      (report) => {
-        report.certificates.cases[0].tlsError = 'TLS_ACCEPTED';
-      },
-      (report) => {
-        report.certificates.cases[0].recoveryMs = 180001;
-      },
-      (report) => {
-        report.certificates.originalSecretBytesRestored = false;
-      },
-      (report) => {
-        report.ownedClusterRemoved = false;
-      },
-      (report) => {
-        report.sourceRevision = '0'.repeat(40);
-      },
-    ].entries()) {
-      const invalid = structuredClone(certificateReport);
-      mutate(invalid);
-      await writeFile(certificatePath, JSON.stringify(invalid));
-      await assert.rejects(
-        assembleCandidate({
-          root,
-          output: join(root, `invalid-certificate-${index}`),
-          artifacts: join(root, 'artifacts'),
-          sourceRevision,
-          phase: 2,
-          qualificationArtifacts,
-        }),
-        /Kubernetes certificate qualification/,
+    for (const target of [
+      'kubernetes-certificate-integration',
+      'hybrid-cli-certificate-integration',
+    ]) {
+      const certificatePath = join(
+        qualificationArtifacts,
+        `qualification-${target}`,
+        applicationReports[target],
       );
+      const certificateReport = JSON.parse(
+        await readFile(certificatePath, 'utf8'),
+      );
+      for (const [index, mutate] of [
+        (report) => {
+          report.certificates.cases.pop();
+        },
+        (report) => {
+          report.certificates.cases[0].tlsError = 'TLS_ACCEPTED';
+        },
+        (report) => {
+          report.certificates.cases[0].recoveryMs = 180001;
+        },
+        (report) => {
+          report.certificates.originalSecretBytesRestored = false;
+        },
+        (report) => {
+          report.ownedClusterRemoved = false;
+          report.ownedResourcesRemoved = false;
+        },
+        (report) => {
+          report.sourceRevision = '0'.repeat(40);
+        },
+        (report) => {
+          delete report.certificates.cases[0].durableState;
+        },
+        (report) => {
+          report.certificates.cases[0].durableState.preservedKestraExecutions = 0;
+        },
+        (report) => {
+          report.certificates.cases[0].durableState.artifactSha256 = 'invalid';
+        },
+      ].entries()) {
+        const invalid = structuredClone(certificateReport);
+        mutate(invalid);
+        await writeFile(certificatePath, JSON.stringify(invalid));
+        await assert.rejects(
+          assembleCandidate({
+            root,
+            output: join(root, `invalid-certificate-${target}-${index}`),
+            artifacts: join(root, 'artifacts'),
+            sourceRevision,
+            phase: 2,
+            qualificationArtifacts,
+          }),
+          /(?:Kubernetes|Hybrid) certificate qualification/,
+        );
+      }
+      await writeFile(certificatePath, JSON.stringify(certificateReport));
     }
-    await writeFile(certificatePath, JSON.stringify(certificateReport));
     const capacityPath = join(
       qualificationArtifacts,
       'qualification-all-docker-capacity-integration',

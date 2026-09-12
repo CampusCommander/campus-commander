@@ -8,6 +8,49 @@ import { backupKubernetesInstallation } from './kubernetes-backup-fixture.mjs';
 
 const execute = promisify(execFile);
 
+/** Observe shutdown through the rendered grace period and a bounded status allowance. */
+export async function waitForKubernetesShutdown(
+  kube,
+  rendered,
+  {
+    now = Date.now,
+    delay = (milliseconds) =>
+      new Promise((done) => setTimeout(done, milliseconds)),
+  } = {},
+) {
+  const deployments = rendered.items.filter(
+    (item) => item.kind === 'Deployment',
+  );
+  const names = deployments.map((item) => item.metadata.name);
+  assert.ok(names.length > 0);
+  const gracePeriods = deployments.map(
+    (item) => item.spec?.template?.spec?.terminationGracePeriodSeconds ?? 30,
+  );
+  for (const grace of gracePeriods)
+    assert.ok(Number.isSafeInteger(grace) && grace >= 0 && grace <= 3600);
+  const deadline = now() + (Math.max(...gracePeriods) + 30) * 1000;
+  let remaining;
+  do {
+    remaining = JSON.parse(
+      await kube([
+        'get',
+        'pods',
+        '-l',
+        `app.kubernetes.io/name in (${names.join(',')})`,
+        '-o',
+        'json',
+      ]),
+    ).items.length;
+    if (remaining === 0) break;
+    await delay(250);
+  } while (now() < deadline);
+  assert.equal(
+    remaining,
+    0,
+    'The lifecycle command must stop every application pod.',
+  );
+}
+
 /** Exercise the real installer against the caller's isolated Kind namespace. */
 export async function prepareKubernetesInstaller({
   root,
@@ -140,30 +183,7 @@ process.exit(result.status??1);
     );
     if (['stop', 'uninstall'].includes(command)) {
       const rendered = JSON.parse(await readFile(generatedPath, 'utf8'));
-      const names = rendered.items
-        .filter((item) => item.kind === 'Deployment')
-        .map((item) => item.metadata.name);
-      const deadline = Date.now() + 180000;
-      let remaining;
-      do {
-        remaining = JSON.parse(
-          await kube([
-            'get',
-            'pods',
-            '-l',
-            `app.kubernetes.io/name in (${names.join(',')})`,
-            '-o',
-            'json',
-          ]),
-        ).items.length;
-        if (remaining === 0) break;
-        await new Promise((done) => setTimeout(done, 250));
-      } while (Date.now() < deadline);
-      assert.equal(
-        remaining,
-        0,
-        'The lifecycle command must stop every application pod.',
-      );
+      await waitForKubernetesShutdown(kube, rendered);
     }
     commands.push({ command, status: result.status });
     return result;

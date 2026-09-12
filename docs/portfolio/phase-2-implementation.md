@@ -938,3 +938,48 @@ The local restore does not reproduce the published container failure or establis
 
 Remaining certificate coverage, published Kubernetes backup diagnosis, final revision qualification, and accepted release assembly remain open.
 Phase 1 acceptance remains separate.
+
+## Distributed hybrid certificate recovery
+
+[The hybrid certificate target](../../deployment/evidence/CC-36-phase-2-hybrid-authenticated-certificates.json) passed in 4 minutes 52 seconds with published `8a5f823` images.
+It first completed the real installer upgrade, encrypted baseline backup, browser login, and lifecycle checks across three Docker daemons.
+The edge rejected an expired certificate and a wrong-host certificate under the configured synthetic district CA.
+Authenticated recovery took 4.67 seconds and 4.76 seconds respectively.
+Both recoveries preserved identity, preferences, migrations, 36 security events, five completed Kestra executions, two internal files, and original artifact bytes.
+The fixture restored original installer and mounted edge secret bytes. It removed all owned resources.
+
+[The first fixture run](../../deployment/evidence/CC-36-phase-2-hybrid-certificate-projection-failure.json) changed only installer source files.
+The edge reads a separate runtime secret volume. Its TLS listener therefore retained the original valid certificate.
+A minimal real volume test reproduced stale mounted bytes. Refreshing the two edge files through the existing runtime-files service corrected that test.
+The complete fixture now verifies mounted certificate, key, and CA bytes before restarting the edge.
+It then verifies actual TLS rejection and authenticated recovery. The original failed run remains separate from the corrected pass.
+
+The candidate matrix now requires twenty-two application targets and twenty-eight total jobs.
+Hybrid and Kubernetes certificate gates reject absent durable-state evidence, invalid TLS results, late recovery, and incomplete secret restoration.
+The hybrid gate also requires three daemon identities, a verified upgrade backup, and successful resource cleanup.
+Four release tests passed, including nine invalid certificate records for each profile.
+These synthetic results do not establish district certificate lifecycle acceptance.
+
+## Published shutdown and connection failures
+
+[Candidate 315b03d](../../deployment/evidence/CC-37-phase-2-eighteenth-published-run.json) finished with twenty-four passed jobs, two failed jobs, and skipped bundle assembly.
+All seven PR jobs passed. The new Kubernetes replica job passed all sixteen direct requests.
+The Kubernetes operator container completed backup, verification, restore, and application checks. The earlier generic backup failure did not recur.
+Its original cause remains unconfirmed.
+
+[The Kubernetes capacity job](../../deployment/evidence/CC-36-phase-2-kubernetes-shutdown-observation.json) failed before capacity injection during installer lifecycle checks.
+The fixture allowed 180 seconds for pod removal. The rendered Kestra deployment allows a 360-second termination grace period.
+The fixture now waits through the maximum rendered grace plus a 30-second status allowance.
+The three shutdown regression tests cover delayed removal, timeout, and immediate completion with controlled time.
+The complete Kubernetes capacity target then passed in 3 minutes 50 seconds.
+The shared 180-second fault recovery budget remains unchanged.
+
+[The rendered hybrid upgrade job](../../deployment/evidence/CC-36-phase-2-hybrid-persistence-ci-failure.json) failed with ECONNRESET during persistence verification after database recovery.
+A real TLS regression reproduced socket hang up when the request helper reused an idle connection after server closure.
+The helper now creates a fresh verified TLS connection for each synthetic request.
+The regression preserves hostname rejection and verifies that a failed POST executes only once.
+All twenty-four profile tests pass. The complete hybrid upgrade target passed in 1 minute 57 seconds.
+The CI log does not establish why its remote socket closed. Published revision qualification remains required.
+
+Remaining all-Docker authenticated certificate coverage, final revision qualification, extracted-bundle workflows, and accepted release assembly remain open.
+Phase 1 acceptance remains separate.

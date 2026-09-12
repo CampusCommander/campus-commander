@@ -1,0 +1,129 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T15:40:25.948003+00:00",
+  "imageSourceRevision": "8a5f82306ea29bc497a7200914b9bd9dddfe1f01",
+  "fixtureSource": {
+    "baseGitRevision": "315b03db518db7a65d25ac7a933b36ab550b6140",
+    "workingTree": "uncommitted-candidate",
+    "files": [
+      {
+        "path": "api-e2e/hybrid-certificates-fixture.mjs",
+        "sha256": "375dad2eb4d264d0890b344516d96a18681d74607b2dbcb384ff95d921287b97"
+      },
+      {
+        "path": "api-e2e/kubernetes-shutdown.test.mjs",
+        "sha256": "dba61fd58f904e5217df1c93b673055c36ea38090b726e42f4bc7358af667cd4"
+      },
+      {
+        "path": "deployment/profiles/hybrid/request.mjs",
+        "sha256": "71779395cf228cffaed8c56432c48126fafeb71162a784dceb7124d01d969f6c"
+      },
+      {
+        "path": "deployment/profiles/hybrid/request.test.mjs",
+        "sha256": "ef463d383e3ba72c86997ef5d83e2a076b94d3ed9ecdd216d96c9c499f45d058"
+      },
+      {
+        "path": ".github/workflows/phase-2-candidate.yml",
+        "sha256": "35f710152a205639735094c0b1129f2e1c6b084221ba7199be74a79a576855d4"
+      },
+      {
+        "path": "api-e2e/hybrid-cli.test.mjs",
+        "sha256": "1160aabf6bc248be9381a7f92760c29d51ca7252b6121cd73dac4ccbf706a7c1"
+      },
+      {
+        "path": "api-e2e/kubernetes-installer-fixture.mjs",
+        "sha256": "88fc462789bcc4c6e49a21e15620a2ec762f1a38e8edcfd36270418ca67c7925"
+      },
+      {
+        "path": "api-e2e/project.json",
+        "sha256": "64f56a4fad829e907d1d7e4f7f02233fadc3c25a613501a401b77fb15ba8d606"
+      },
+      {
+        "path": "deployment/profiles/hybrid/full-integration.mjs",
+        "sha256": "4dd1eaec97a9aeecedcfbf8b5795dfdcdc02b72ef7971a64a37210b4becf20a1"
+      },
+      {
+        "path": "deployment/release/candidate.mjs",
+        "sha256": "773400f34ae301251b3618db4db0ed66bd52d8d97482a1fcd742220aa69d8d86"
+      },
+      {
+        "path": "deployment/release/candidate.test.mjs",
+        "sha256": "bc84e9b4a0aef36dd3621e76882af595c75224131692b42bea46e23bfd2f3884"
+      }
+    ]
+  },
+  "reports": [
+    {
+      "path": "deployment/evidence/CC-36-phase-2-hybrid-authenticated-certificates.json",
+      "sha256": "f63f0e3c66ba2ef5306db2b8aa9902a0f5e06e30b2ba7772425651bfc41cec5e"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-hybrid-certificate-projection-failure.json",
+      "sha256": "a193da6185ffb1e5009f63e8518eec0701e9eea672268483c5b4a70359777eb1"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-hybrid-persistence-ci-failure.json",
+      "sha256": "798c461d0cd99c006acf7debaa4141d90b14d5eb4ffbb7f8cc25386dcb2fb9f1"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-hybrid-upgrade-connection-regression.json",
+      "sha256": "e8330383df7411e156591f05b4f8990221f7c19448510450646359143ae9bd3a"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-kubernetes-capacity-shutdown-regression.json",
+      "sha256": "61013eb4a7d08a52bf754213196fa2b507f614fb88aa82f42b3f8bb23171f9b1"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-kubernetes-shutdown-observation.json",
+      "sha256": "8d87752c8a05d10ecd251bdfcf326f8c4cfc57f82537b74e61d9ca6bfd156d87"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-eighteenth-published-run.json",
+      "sha256": "bf78dfc88845a2b97d06fbcfbdb9b9ae05382cecbd11d640b86d8150f938a0d0"
+    }
+  ],
+  "tests": [
+    {
+      "target": "api-e2e:hybrid-cli-certificate-integration",
+      "status": "passed",
+      "logSha256": "5fcbcb81ef1ef3ad37d4aae57a0e8481cf63e993d11ddb5bfbbd809bc15acf0c"
+    },
+    {
+      "target": "api-e2e:kubernetes-capacity-integration",
+      "status": "passed",
+      "logSha256": "4875b99b1892989f040b0efa113090b3e1d5432b9e64f9a62a15ac07beaade5d"
+    },
+    {
+      "target": "api-e2e:hybrid-upgrade-integration",
+      "status": "passed",
+      "logSha256": "d182e2c7b64d72832a8e1dedd19ead84fa694ffa17b94d4db95a9455b0d86f21"
+    },
+    {
+      "target": "deployment:profiles-test",
+      "status": "passed",
+      "logSha256": "6255c20dc5afc37ee967d00c264bc8f4376d9a4417362b953e54a33661a5d36e"
+    },
+    {
+      "target": "api-e2e:kubernetes-shutdown-test",
+      "status": "passed",
+      "logSha256": "469dacf0249670cc3ef639140803ea9b037575cf96854105b5345ce12894056d"
+    },
+    {
+      "target": "deployment:release-test",
+      "status": "passed",
+      "logSha256": "7c3f0c411ccf343611561ce73d144fa16837389244cf2d9cea7efd14f55d30a7"
+    },
+    {
+      "target": "api-e2e:lint, deployment:lint",
+      "status": "passed",
+      "logSha256": "333b44e9ff6bf4b3b339b65b7dffa6438437690fb04cb9656eb2753f95619958"
+    }
+  ],
+  "limits": [
+    "The complete local workflows used published 8a5f823 application images and current fixture changes. Published revision CI remains required.",
+    "Certificate qualification uses synthetic district trust and three Docker daemons on one physical host.",
+    "Kubernetes qualification uses Kind on one physical host and does not enforce NetworkPolicy.",
+    "The controlled shutdown regression verifies rendered timing. It does not measure district shutdown duration.",
+    "Remaining all-Docker authenticated certificate coverage, final revision qualification, extracted-bundle workflows, and accepted release assembly remain open."
+  ]
+}
