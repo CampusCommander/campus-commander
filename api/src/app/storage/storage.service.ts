@@ -113,9 +113,10 @@ export class StorageService implements OnApplicationShutdown {
           'UPDATE cc.artifacts SET active=false WHERE id=$1 AND attempt_id=$2 AND reference_count=0',
           [manifest.artifactId, manifest.attemptId],
         );
-        if (!(await store.remove(manifest)))
-          throw new Error('Synthetic artifact cleanup failed.');
       }
+      const removed = await store.remove(manifest);
+      if (staged && !removed)
+        throw new Error('Synthetic artifact cleanup failed.');
     } catch (error) {
       failure ??= error;
     }

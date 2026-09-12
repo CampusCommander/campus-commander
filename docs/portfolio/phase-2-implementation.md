@@ -818,3 +818,50 @@ Four release tests and both affected lint targets pass.
 Three Kind nodes share one Docker host and synthetic storage. The fixture does not enforce NetworkPolicy.
 Complete profile capacity and certificate coverage, final revision qualification, and accepted release assembly remain open.
 Phase 1 acceptance remains separate.
+
+## Authenticated capacity and Kubernetes certificates
+
+[The authenticated all-Docker capacity test](../../deployment/evidence/CC-36-phase-2-all-docker-authenticated-capacity.json) exhausts only a capped 16 MiB tmpfs artifact volume.
+Diagnostics reports a correlated failure. The store rejects publication and preserves the original artifact.
+All four Diagnostics checks pass after recovery. Identity, preferences, migrations, and security events remain intact.
+The complete target passed in 58.7 seconds with rebuilt local images and the artifact cleanup correction below.
+The fixture removes its owned installation resources and temporary registry. It makes no storage persistence claim.
+
+[The stronger cleanup assertion](../../deployment/evidence/CC-32-phase-2-artifact-cleanup-regression.json) exposed one leftover inactive staging record after ENOSPC recovery.
+Diagnostics previously attempted artifact removal only after staging succeeded.
+It now attempts owned artifact removal after failed staging while preserving the original diagnostic failure.
+The artifact store still checks attempt identity, activity, and references before removal.
+The corrected test verifies that artifact metadata and files return to their exact baseline.
+Candidate assembly requires this cleanup evidence and rejects incomplete capacity records.
+[The packaged authentication regression](../../deployment/evidence/CC-32-phase-2-cleanup-packaged-authentication.json) passed with the rebuilt images in 68.8 seconds.
+It verifies sessions across replicas, credential rotation, permission denial, all four Diagnostics operations, browser interactions, and dependency recovery.
+
+[The Kubernetes certificate test](../../deployment/evidence/CC-36-phase-2-kubernetes-authenticated-certificates.json) passed expired and wrong-host edge certificate rejection in five minutes.
+It uses published `c5fef81` images and current certificate fixture changes.
+The synthetic district CA signs replacement certificates. Only the edge certificate and private key change.
+Authenticated Diagnostics recovered in 3.9 seconds after the expired certificate and 3.8 seconds after the wrong-host certificate.
+Both cases preserved identity, preferences, 56 security events, artifact bytes, seven completed Kestra executions, and one internal file.
+The test verified exact restoration of all original secret data and removed its dedicated Kind cluster.
+
+[Two fixture failures](../../deployment/evidence/CC-36-phase-2-kubernetes-certificate-fixture-failure.json) remain separate from the corrected pass.
+The first assumed an `edge-ca` key instead of reading the configured `district-ca` reference.
+The second exposed an asynchronous kubectl `/dev/stdin` limitation. A private patch file fixed the reproduced failure.
+Neither failed attempt changed cluster secret data.
+The process and certificate fixtures now share the same durable-state probe.
+
+## Published navigation failure and correction
+
+[Candidate c5fef81](../../deployment/evidence/CC-37-phase-2-fifteenth-published-run.json) passed twenty jobs, including Kubernetes authenticated process faults.
+All seven PR CI jobs passed. The all-Docker profile job failed at browser reload after installer resume.
+Chromium reported `ERR_NETWORK_CHANGED`. Candidate bundle publication was skipped.
+
+[The reload regression](../../deployment/evidence/CC-36-phase-2-browser-navigation-regression.json) verifies a retry for that exact navigation error.
+Other errors fail immediately. Repeated network changes stop after three attempts within a fifteen-second navigation budget.
+The full all-Docker target passed locally in 2 minutes 55 seconds with published `c5fef81` images.
+That local run needed no retries. The controlled regression covers the retry path.
+Final revision CI remains required.
+
+The candidate matrix now requires eighteen application targets and twenty-four total jobs.
+It includes authenticated all-Docker capacity, Kubernetes certificate recovery, and the bounded navigation regression.
+Remaining work includes hybrid and Kubernetes capacity, remaining profile certificate coverage, final revision evidence, and accepted release assembly.
+Phase 1 acceptance remains separate.

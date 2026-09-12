@@ -128,3 +128,8 @@ An interrupted API can produce a bounded transport timeout when its service has 
 Recovery still requires a successful authenticated session and all four Diagnostics operations.
 The fixture verifies durable application and Kestra state after each interruption.
 Kind node separation does not establish physical host separation, production storage acceptance, or NetworkPolicy enforcement.
+
+The application matrix includes `all-docker-capacity-integration` and `kubernetes-certificate-integration`.
+Capacity evidence must verify bounded ENOSPC, rejected publication, preserved application state, and removal of failed Diagnostics metadata and files.
+Kubernetes certificate evidence must verify expired and wrong-host rejection, bounded authenticated recovery, exact secret restoration, and cluster cleanup.
+Candidate assembly rejects incomplete records. The complete profile acceptance requirements remain unchanged.

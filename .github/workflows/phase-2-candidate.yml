@@ -21,6 +21,7 @@ jobs:
       - run: npm ci
       - run: npm audit --omit=dev
       - run: npm exec nx run api-e2e:hybrid-fixture-test
+      - run: npm exec nx run api-e2e:navigation-fixture-test
       - run: npm exec nx run-many -- -t build,lint,test -p deployment,frontend,api,worker,application-contracts
         env:
           NX_NO_CLOUD: 'true'
@@ -248,6 +249,7 @@ jobs:
             auth-image-integration,
             all-docker-integration,
             all-docker-process-fault-integration,
+            all-docker-capacity-integration,
             hybrid-integration,
             hybrid-cli-integration,
             hybrid-cli-upgrade-integration,
@@ -257,6 +259,7 @@ jobs:
             kubernetes-integration,
             kubernetes-upgrade-integration,
             kubernetes-process-fault-integration,
+            kubernetes-certificate-integration,
             kubernetes-restore-integration,
             upgrade-integration,
             restore-integration,

@@ -1,3 +1,4 @@
+import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
 import { applicationAccess } from './access-fixture.mjs';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
@@ -277,6 +278,7 @@ process.exit(result.status??1);
       });
       assert.ok(enrolled.principalId);
       const replicaObservations = [];
+      const navigationRecovery = [];
       let sessionCookie;
       const verifyReplicas = async (context, phase, expectedStatus = 200) => {
         if (context) {
@@ -364,7 +366,10 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
           compose('up', '-d', '--wait', '--wait-timeout', '120');
           const restartedAddresses = addresses();
           await verifyReplicas(context, 'restart-session');
-          await page.reload();
+          navigationRecovery.push({
+            phase: 'restart',
+            ...(await reloadAfterNetworkChange(page)),
+          });
           await expect(
             page.getByRole('heading', { name: 'Diagnostics', exact: true }),
           ).toBeVisible();
@@ -376,7 +381,10 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
           for (const command of ['stop', 'uninstall']) {
             assert.equal((await cli(command)).dataPreserved, true);
             assert.equal((await cli('resume')).status, 'ready');
-            await page.reload();
+            navigationRecovery.push({
+              phase: `${command}-resume`,
+              ...(await reloadAfterNetworkChange(page)),
+            });
             await expect(
               page.getByRole('heading', { name: 'Sign in', exact: true }),
             ).toBeVisible();
@@ -464,6 +472,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             sessionSurvivedRestart: true,
             apiReplicaCount: 2,
             replicaObservations,
+            navigationRecovery,
             logoutRejectedAcrossReplicas: true,
             limits: [
               'Synthetic provider CA and loopback port replace district ingress.',

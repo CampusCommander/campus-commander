@@ -19,6 +19,7 @@ export const applicationReports = {
   'auth-image-integration': 'packaged-integration.json',
   'all-docker-integration': 'all-docker-profile.json',
   'all-docker-process-fault-integration': 'all-docker-process-faults.json',
+  'all-docker-capacity-integration': 'all-docker-capacity.json',
   'hybrid-integration': 'hybrid-profile.json',
   'hybrid-cli-integration': 'hybrid-cli.json',
   'hybrid-cli-upgrade-integration': 'hybrid-cli-upgrade.json',
@@ -28,6 +29,7 @@ export const applicationReports = {
   'kubernetes-integration': 'kubernetes-profile.json',
   'kubernetes-upgrade-integration': 'kubernetes-upgrade.json',
   'kubernetes-process-fault-integration': 'kubernetes-process-faults.json',
+  'kubernetes-certificate-integration': 'kubernetes-certificates.json',
   'kubernetes-restore-integration': 'kubernetes-restore.json',
   'upgrade-integration': 'all-docker-upgrade.json',
   'restore-integration': 'all-docker-restore.json',
@@ -163,6 +165,74 @@ export async function assembleCandidate({
         filename,
       );
       const report = JSON.parse(await readFile(source, 'utf8'));
+      if (target === 'kubernetes-certificate-integration') {
+        const certificate = report.certificates;
+        const cases = certificate?.cases;
+        if (
+          report.profile !== 'kubernetes' ||
+          report.sourceRevision !== sourceRevision ||
+          report.ownedClusterRemoved !== true ||
+          certificate?.status !== 'passed' ||
+          certificate.originalSecretBytesRestored !== true ||
+          certificate.recoveryBoundSeconds !== faultRecoveryTimeoutSeconds ||
+          !Array.isArray(cases) ||
+          cases.length !== 2 ||
+          [
+            ['expired', 'CERT_HAS_EXPIRED'],
+            ['wrong-host', 'ERR_TLS_CERT_ALTNAME_INVALID'],
+          ].some(
+            ([name, code]) =>
+              cases.filter(
+                (item) =>
+                  item.name === name &&
+                  item.tlsError === code &&
+                  item.status === 'passed',
+              ).length !== 1,
+          ) ||
+          cases.some(
+            (item) =>
+              !Number.isFinite(item.recoveryMs) ||
+              item.recoveryMs < 0 ||
+              item.recoveryMs > faultRecoveryTimeoutSeconds * 1000,
+          )
+        )
+          throw new Error(
+            'Kubernetes certificate qualification requires both TLS rejections, bounded recovery, original secrets, and cluster cleanup.',
+          );
+      }
+      if (target === 'all-docker-capacity-integration') {
+        const capacity = report.capacity;
+        const filesystem = capacity?.fault?.capacity;
+        if (
+          report.profile !== 'all-docker' ||
+          report.sourceRevision !== sourceRevision ||
+          report.ownedResourcesRemoved !== true ||
+          capacity?.status !== 'PASS' ||
+          capacity?.topology?.componentCount !== 8 ||
+          filesystem?.filesystemType !== 0x01021994 ||
+          !Number.isSafeInteger(filesystem?.totalBytes) ||
+          filesystem.totalBytes <= 0 ||
+          filesystem.totalBytes > 16777216 ||
+          !Number.isSafeInteger(filesystem?.availableBytesAfter) ||
+          filesystem.availableBytesAfter < 0 ||
+          filesystem.availableBytesAfter >= 65536 ||
+          capacity?.fault?.kind !== 'ENOSPC' ||
+          capacity.fault.publicationRejected !== true ||
+          capacity.fault.readyRowsUnchanged !== true ||
+          capacity?.authenticatedFailure?.status !== 'failed' ||
+          capacity.authenticatedFailure.httpStatus !== 201 ||
+          capacity?.preserved?.failedDiagnosticArtifactsRemoved !== true ||
+          capacity?.preserved?.identityAndPreferencesPreserved !== true ||
+          capacity.preserved.migrationsPreserved !== true ||
+          !(capacity.preserved.preservedSecurityEvents > 0) ||
+          capacity?.recovery?.failedAttemptRemoved !== true ||
+          capacity.recovery.originalArtifactPreserved !== true ||
+          capacity?.cleanupPolicy?.removedOnlyOwnedResources !== true
+        )
+          throw new Error(
+            'Authenticated capacity qualification requires bounded ENOSPC, rejected publication, preserved state, recovery, and cleanup.',
+          );
+      }
       if (target === 'all-docker-integration') {
         const observations = report.replicaObservations;
         const phases = [

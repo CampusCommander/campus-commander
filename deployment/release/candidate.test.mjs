@@ -125,6 +125,46 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
             ? 'PASS'
             : 'passed',
           application: { status: 'passed' },
+          certificates: {
+            status: 'passed',
+            originalSecretBytesRestored: true,
+            recoveryBoundSeconds: 180,
+            cases: [
+              ['expired', 'CERT_HAS_EXPIRED'],
+              ['wrong-host', 'ERR_TLS_CERT_ALTNAME_INVALID'],
+            ].map(([name, tlsError]) => ({
+              name,
+              tlsError,
+              status: 'passed',
+              recoveryMs: 1000,
+            })),
+          },
+          capacity: {
+            status: 'PASS',
+            topology: { componentCount: 8 },
+            fault: {
+              kind: 'ENOSPC',
+              capacity: {
+                filesystemType: 0x01021994,
+                totalBytes: 16777216,
+                availableBytesAfter: 0,
+              },
+              publicationRejected: true,
+              readyRowsUnchanged: true,
+            },
+            authenticatedFailure: { status: 'failed', httpStatus: 201 },
+            preserved: {
+              identityAndPreferencesPreserved: true,
+              failedDiagnosticArtifactsRemoved: true,
+              migrationsPreserved: true,
+              preservedSecurityEvents: 1,
+            },
+            recovery: {
+              failedAttemptRemoved: true,
+              originalArtifactPreserved: true,
+            },
+            cleanupPolicy: { removedOnlyOwnedResources: true },
+          },
           operatorCli: {
             runner: 'operator-container-native',
             injectedDatabaseTool: false,
@@ -319,6 +359,92 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       }
       await writeFile(path, JSON.stringify(original));
     }
+    const certificatePath = join(
+      qualificationArtifacts,
+      'qualification-kubernetes-certificate-integration',
+      'kubernetes-certificates.json',
+    );
+    const certificateReport = JSON.parse(
+      await readFile(certificatePath, 'utf8'),
+    );
+    for (const [index, mutate] of [
+      (report) => {
+        report.certificates.cases.pop();
+      },
+      (report) => {
+        report.certificates.cases[0].tlsError = 'TLS_ACCEPTED';
+      },
+      (report) => {
+        report.certificates.cases[0].recoveryMs = 180001;
+      },
+      (report) => {
+        report.certificates.originalSecretBytesRestored = false;
+      },
+      (report) => {
+        report.ownedClusterRemoved = false;
+      },
+      (report) => {
+        report.sourceRevision = '0'.repeat(40);
+      },
+    ].entries()) {
+      const invalid = structuredClone(certificateReport);
+      mutate(invalid);
+      await writeFile(certificatePath, JSON.stringify(invalid));
+      await assert.rejects(
+        assembleCandidate({
+          root,
+          output: join(root, `invalid-certificate-${index}`),
+          artifacts: join(root, 'artifacts'),
+          sourceRevision,
+          phase: 2,
+          qualificationArtifacts,
+        }),
+        /Kubernetes certificate qualification/,
+      );
+    }
+    await writeFile(certificatePath, JSON.stringify(certificateReport));
+    const capacityPath = join(
+      qualificationArtifacts,
+      'qualification-all-docker-capacity-integration',
+      'all-docker-capacity.json',
+    );
+    const capacityReport = JSON.parse(await readFile(capacityPath, 'utf8'));
+    for (const [index, mutate] of [
+      (report) => {
+        report.capacity.fault.capacity.totalBytes = 33554432;
+      },
+      (report) => {
+        report.capacity.authenticatedFailure.status = 'passed';
+      },
+      (report) => {
+        report.capacity.fault.publicationRejected = false;
+      },
+      (report) => {
+        report.capacity.preserved.failedDiagnosticArtifactsRemoved = false;
+      },
+      (report) => {
+        report.capacity.cleanupPolicy.removedOnlyOwnedResources = false;
+      },
+      (report) => {
+        report.sourceRevision = '0'.repeat(40);
+      },
+    ].entries()) {
+      const invalid = structuredClone(capacityReport);
+      mutate(invalid);
+      await writeFile(capacityPath, JSON.stringify(invalid));
+      await assert.rejects(
+        assembleCandidate({
+          root,
+          output: join(root, `invalid-capacity-${index}`),
+          artifacts: join(root, 'artifacts'),
+          sourceRevision,
+          phase: 2,
+          qualificationArtifacts,
+        }),
+        /Authenticated capacity qualification/,
+      );
+    }
+    await writeFile(capacityPath, JSON.stringify(capacityReport));
     const replicaPath = join(
       qualificationArtifacts,
       'qualification-all-docker-integration',

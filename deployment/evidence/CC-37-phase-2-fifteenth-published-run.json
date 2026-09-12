@@ -1,0 +1,147 @@
+{
+  "sourceRevision": "c5fef81c0dcc89dae1965cd9256560d8f2e0a0a1",
+  "status": "failure",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34697718166",
+  "jobs": [
+    {
+      "name": "validate",
+      "conclusion": "success",
+      "databaseId": 103563966891
+    },
+    {
+      "name": "publish (frontend)",
+      "conclusion": "success",
+      "databaseId": 103564138839
+    },
+    {
+      "name": "publish (api)",
+      "conclusion": "success",
+      "databaseId": 103564138845
+    },
+    {
+      "name": "publish (worker)",
+      "conclusion": "success",
+      "databaseId": 103564138855
+    },
+    {
+      "name": "capacity",
+      "conclusion": "success",
+      "databaseId": 103564439151
+    },
+    {
+      "name": "application (hybrid-cli-process-fault-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439288
+    },
+    {
+      "name": "application (kubernetes-process-fault-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439296
+    },
+    {
+      "name": "application (hybrid-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439298
+    },
+    {
+      "name": "application (kubernetes-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439305
+    },
+    {
+      "name": "application (hybrid-cli-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439306
+    },
+    {
+      "name": "application (all-docker-integration)",
+      "conclusion": "failure",
+      "databaseId": 103564439318
+    },
+    {
+      "name": "application (upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439321
+    },
+    {
+      "name": "application (kubernetes-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439322
+    },
+    {
+      "name": "application (hybrid-cli-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439324
+    },
+    {
+      "name": "application (screen-reader-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439328
+    },
+    {
+      "name": "application (all-docker-process-fault-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439330
+    },
+    {
+      "name": "application (kubernetes-restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439332
+    },
+    {
+      "name": "application (restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439342
+    },
+    {
+      "name": "application (hybrid-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439348
+    },
+    {
+      "name": "application (auth-image-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439396
+    },
+    {
+      "name": "application (hybrid-restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103564439398
+    },
+    {
+      "name": "bundle",
+      "conclusion": "skipped",
+      "databaseId": 103565942019
+    }
+  ],
+  "pullRequestChecks": {
+    "status": "success",
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34697721014"
+  },
+  "releasePublished": false,
+  "reports": [
+    {
+      "artifact": "qualification-kubernetes-process-fault-integration/kubernetes-upgrade.json",
+      "sha256": "597eea078c23d7589848f839ad9ad6dcc011a8a0a906ff099e8994812c2a37d4",
+      "status": "PASS",
+      "sourceRevision": "c5fef81c0dcc89dae1965cd9256560d8f2e0a0a1"
+    },
+    {
+      "artifact": "qualification-kubernetes-process-fault-integration/kubernetes-process-faults.json",
+      "sha256": "a664f41dba2319417388b8046c19719f616f4acf6a63581c1990cfa47b7d479d",
+      "status": "passed",
+      "sourceRevision": "c5fef81c0dcc89dae1965cd9256560d8f2e0a0a1"
+    }
+  ],
+  "failure": {
+    "target": "api-e2e:all-docker-integration",
+    "message": "page.reload: net::ERR_NETWORK_CHANGED",
+    "stage": "Browser reload after installer resume",
+    "logSha256": "16fbf22ac33e22f83126dc3d1e216d588df76d16a4d7c8abcb51c86adece0fa5"
+  },
+  "limits": [
+    "Twenty candidate jobs passed. One failed and bundle publication was skipped.",
+    "The all-Docker reload correction requires CI verification on its published revision.",
+    "Candidate acceptance remains open."
+  ]
+}

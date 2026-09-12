@@ -206,6 +206,33 @@
       "options": {
         "command": "node --test api-e2e/kubernetes-faults-fixture.test.mjs"
       }
+    },
+    "all-docker-capacity-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker-capacity.test.mjs"
+      }
+    },
+    "kubernetes-certificate-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs",
+        "env": {
+          "CC_AUTH_KUBERNETES_UPGRADE": "1",
+          "CC_AUTH_KUBERNETES_CERTIFICATES": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "navigation-fixture-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/navigation-fixture.test.mjs"
+      }
     }
   }
 }
