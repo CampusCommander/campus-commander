@@ -867,6 +867,39 @@ test(
           401,
         );
       }
+      for (const body of [
+        { ...dispatchBody, command: 'unavailable-operation' },
+        { ...dispatchBody, delayMilliseconds: 10001 },
+      ]) {
+        const rejected = await fetch(
+          `${kestraFixture.workerOrigin}/dispatch/synthetic`,
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${rotatedDispatch}`,
+            },
+            body: JSON.stringify(body),
+          },
+        );
+        assert.equal(rejected.status, 400);
+        assert.ok(!(await rejected.text()).includes(rotatedDispatch));
+      }
+      assert.equal(
+        (
+          await request(`${publicOrigin}/api/diagnostics/arbitrary`, {
+            ca,
+            cookie: sessionCookie,
+            method: 'POST',
+            body: {},
+            headers: {
+              origin: publicOrigin,
+              'x-csrf-token': session.csrfToken,
+            },
+          })
+        ).status,
+        404,
+      );
       const failedDispatch = await request(
         `${publicOrigin}/api/diagnostics/kestra`,
         {
@@ -1186,7 +1219,7 @@ test(
         assert.equal(await redis.get(key), null);
       }
       const events = await migrator.query(
-        'SELECT event,correlation_id FROM cc.security_events',
+        'SELECT event,correlation_id,detail FROM cc.security_events',
       );
       for (const event of [
         'access-granted',
@@ -1207,6 +1240,43 @@ test(
       assert.ok(!output.includes(session.csrfToken));
       assert.ok(!output.includes('synthetic-access-token'));
       assert.ok(events.rows.some((row) => row.event === 'access-denied'));
+      const supportDirectory = join(directory, 'support');
+      const { createSupportBundle } = await import(
+        '../deployment/installer/support.mjs'
+      );
+      await createSupportBundle({ directory: supportDirectory, config });
+      const retainedEvidence = {
+        events: JSON.stringify(events.rows),
+        api: output,
+        worker: docker('logs', kestraFixture.workerName),
+        kestra: docker('logs', kestraFixture.kestraName),
+        executions: JSON.stringify(executions),
+        flow: await fetch(
+          `${kestraFixture.origin}/api/v1/main/flows/campus.application/phase2_connection`,
+          {
+            headers: { authorization: kestraFixture.authorization },
+          },
+        ).then((response) => {
+          assert.equal(response.status, 200);
+          return response.text();
+        }),
+        support: await readFile(join(supportDirectory, 'support.json'), 'utf8'),
+      };
+      for (const [label, bytes] of Object.entries(retainedEvidence)) {
+        for (const marker of [
+          password,
+          oidcPassword,
+          rotatedDispatch,
+          session.csrfToken,
+          'synthetic-access-token',
+          kestraFixture.authorization,
+        ]) {
+          assert.ok(
+            !bytes.includes(marker),
+            `${label} retains a credential marker.`,
+          );
+        }
+      }
       browser = await chromium.launch({
         args: ['--host-resolver-rules=MAP host.docker.internal 127.0.0.1'],
       });

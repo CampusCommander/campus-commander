@@ -88,6 +88,31 @@ Frontend, application-test, and deployment lint checks pass. Both workflow files
 
 Six profile jobs failed. The workflow did not publish an installation bundle. Phase 2 release acceptance remains open.
 
+### Third published candidate run
+
+[Run 34682542712](https://github.com/CampusCommander/campus-commander/actions/runs/34682542712) tested source `c8ace78e1a3942aac6f32c079963776da705f24a`.
+Validation, publication, capacity, authentication, all-Docker installation, upgrade, restore, and all three Kubernetes checks passed.
+[PR CI](https://github.com/CampusCommander/campus-commander/actions/runs/34682545244) passed every job.
+The [run record](../../deployment/evidence/CC-37-phase-2-third-published-run.json) preserves terminal results and artifact hashes.
+
+Published Kubernetes evidence covers [installation](../../deployment/evidence/CC-36-phase-2-published-kubernetes.json), [Phase 1 upgrade](../../deployment/evidence/CC-37-phase-2-published-kubernetes-upgrade.json), and [isolated restore](../../deployment/evidence/CC-36-phase-2-published-kubernetes-restore.json).
+These checks use three Kind nodes, two API replicas, synthetic storage, and published image digests.
+The reports retain their CNI, physical-host, district-trust, and shared-storage limits.
+
+All three hybrid checks failed during PostgreSQL outage observation after successful startup.
+A focused reproduction confirms a timeout race between the five-second test client and PostgreSQL connection deadline.
+The client disconnected after 5,006 milliseconds. A ten-second client received the expected 503 response after 5,007 milliseconds.
+The outage probe now allows ten seconds for each response. The twenty-second outage observation limit remains.
+The complete hybrid test passes locally in 127 seconds.
+
+The screen-reader process started, but its report contained no browser announcements.
+The shared browser cache now applies only to hybrid and Kubernetes fixtures. Screen-reader qualification uses its previous default cache.
+Its next published check must pass. The workflow did not publish an installation bundle.
+
+Further boundary checks reject unsupported worker commands, excessive worker delay, and an unavailable public diagnostic operation.
+Credential markers remain absent from security-event details, API logs, worker logs, Kestra logs, execution data, flow definitions, and support output.
+The complete source authentication test passes with these assertions in 62 seconds.
+
 ## Authentication contract
 
 Application sign-in uses OIDC authorization code flow through `openid-client` 6.8.8.

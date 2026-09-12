@@ -236,8 +236,6 @@ jobs:
   application:
     needs: publish
     runs-on: ubuntu-latest
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
     permissions:
       contents: read
       packages: read
@@ -283,6 +281,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - run: npm ci
+      - name: Select the shared-storage browser cache
+        if: startsWith(matrix.target, 'hybrid-') || startsWith(matrix.target, 'kubernetes-')
+        run: printf 'PLAYWRIGHT_BROWSERS_PATH=%s/.cache/ms-playwright\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - run: npx playwright install --with-deps chromium
       - name: Install the screen-reader qualification tools
         if: matrix.target == 'screen-reader-integration'

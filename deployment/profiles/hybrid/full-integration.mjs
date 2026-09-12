@@ -128,6 +128,7 @@ function request({
   path,
   body,
   contentType,
+  timeoutMilliseconds = 5000,
 }) {
   return new Promise((resolve, reject) => {
     const client = https.request(
@@ -143,7 +144,7 @@ function request({
           ...(contentType ? { 'content-type': contentType } : {}),
           ...(body ? { 'content-length': Buffer.byteLength(body) } : {}),
         },
-        timeout: 5000,
+        timeout: timeoutMilliseconds,
       },
       (response) => {
         const chunks = [];
@@ -1174,6 +1175,7 @@ export async function qualifyFullHybrid({ application } = {}) {
                 servername: 'api',
                 ca: caBytes,
                 path: '/health',
+                timeoutMilliseconds: 10000,
               })
             ).status === 503
           );
