@@ -256,6 +256,7 @@ jobs:
             hybrid-restore-integration,
             kubernetes-integration,
             kubernetes-upgrade-integration,
+            kubernetes-process-fault-integration,
             kubernetes-restore-integration,
             upgrade-integration,
             restore-integration,
@@ -290,6 +291,9 @@ jobs:
         if: startsWith(matrix.target, 'hybrid-') || startsWith(matrix.target, 'kubernetes-')
         run: printf 'PLAYWRIGHT_BROWSERS_PATH=%s/.cache/ms-playwright\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - run: npx playwright install --with-deps chromium
+      - name: Verify the Kubernetes fault timeout boundary
+        if: matrix.target == 'kubernetes-process-fault-integration'
+        run: npm exec nx run api-e2e:kubernetes-fault-fixture-test
       - name: Install the screen-reader qualification tools
         if: matrix.target == 'screen-reader-integration'
         run: |

@@ -187,6 +187,25 @@
           "CC_AUTH_ALL_DOCKER_FAULTS": "1"
         }
       }
+    },
+    "kubernetes-process-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs",
+        "env": {
+          "CC_AUTH_KUBERNETES_UPGRADE": "1",
+          "CC_AUTH_KUBERNETES_FAULTS": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "kubernetes-fault-fixture-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes-faults-fixture.test.mjs"
+      }
     }
   }
 }

@@ -121,3 +121,10 @@ Its report must contain all seven interruptions, matching source, bounded recove
 The all-Docker profile report must verify the same principal on two distinct API containers through four authenticated lifecycle stages.
 Both containers must reject the signed-out session.
 These gates add evidence requirements. They do not replace complete profile fault, capacity, certificate, or accepted release requirements.
+
+The Phase 2 matrix also includes `kubernetes-process-fault-integration` and its browser timeout regression.
+Kubernetes fault reports require seven passed cases, matching source and images, bounded recovery, and confirmed removal of the owned cluster.
+An interrupted API can produce a bounded transport timeout when its service has no reachable endpoints.
+Recovery still requires a successful authenticated session and all four Diagnostics operations.
+The fixture verifies durable application and Kestra state after each interruption.
+Kind node separation does not establish physical host separation, production storage acceptance, or NetworkPolicy enforcement.

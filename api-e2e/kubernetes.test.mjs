@@ -21,6 +21,7 @@ import { renderKubernetes } from '../deployment/kubernetes/render.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { qualifyKubernetesUpgrade } from './kubernetes-upgrade-fixture.mjs';
+import { faultKubernetes } from './kubernetes-faults-fixture.mjs';
 import { prepareKubernetesInstaller } from './kubernetes-installer-fixture.mjs';
 
 const execute = promisify(execFile);
@@ -60,6 +61,7 @@ test(
       forward,
       created = false;
     const started = Date.now();
+    let faultEvidence;
     try {
       const listener = createServer().listen(0, '127.0.0.1');
       await once(listener, 'listening');
@@ -532,6 +534,7 @@ test(
         '--timeout=90s',
       ]);
       let restoration;
+      let applicationFaults;
       let installerEvidence;
       const application = await applicationBrowser(
         publicOrigin,
@@ -641,6 +644,17 @@ test(
               await checks({ recoverySeconds: 120 });
             }
           }
+          if (process.env.CC_AUTH_KUBERNETES_FAULTS === '1') {
+            applicationFaults = await faultKubernetes({
+              root,
+              project,
+              kube,
+              release,
+              upgrade,
+              page,
+              checks,
+            });
+          }
           // Capture source placement before isolated restore stops its writers.
           installerEvidence = await installer.evidence();
           if (process.env.CC_AUTH_KUBERNETES_RESTORE === '1') {
@@ -722,6 +736,21 @@ test(
       );
       assert.ok(installerEvidence);
       await mkdir('dist/phase-2-evidence', { recursive: true });
+      if (applicationFaults) {
+        assert.equal(applicationFaults.status, 'passed');
+        faultEvidence = {
+          status: 'passed',
+          profile: 'kubernetes',
+          sourceRevision,
+          images,
+          recordedAt: new Date().toISOString(),
+          application,
+          faults: applicationFaults,
+          upgrade,
+          installer: installerEvidence,
+          limits: applicationFaults.limits,
+        };
+      }
       if (restoration)
         await writeFile(
           'dist/phase-2-evidence/kubernetes-restore.json',
@@ -830,6 +859,19 @@ test(
           '--kubeconfig',
           kubeconfig,
         ]);
+    }
+    if (faultEvidence) {
+      assert.notEqual(process.env.CC_PHASE2_KEEP_FIXTURE, 'true');
+      const clusters = (await run(kind, ['get', 'clusters'])).split('\n');
+      assert.ok(!clusters.includes(project));
+      await writeFile(
+        'dist/phase-2-evidence/kubernetes-process-faults.json',
+        JSON.stringify(
+          { ...faultEvidence, ownedClusterRemoved: true },
+          null,
+          2,
+        ),
+      );
     }
   },
 );

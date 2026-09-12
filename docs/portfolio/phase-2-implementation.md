@@ -781,3 +781,40 @@ Four release tests and both affected lint targets pass.
 The candidate workflow adds the all-Docker process fault target, for fifteen application targets and twenty-one total jobs.
 Complete profile capacity, Kubernetes application faults, remaining certificate coverage, final revision evidence, and accepted release assembly remain open.
 Phase 1 acceptance remains separate.
+
+## Published all-Docker fault qualification
+
+[Candidate ef498231](../../deployment/evidence/CC-37-phase-2-fourteenth-published-run.json) passed all twenty-one jobs and published its signed candidate bundle.
+All seven PR CI jobs also passed, including the corrected formatting check.
+The all-Docker profile verified ten session requests across two API replicas.
+All seven authenticated process faults passed against the same published source and images.
+The longest CI recovery took 95.5 seconds after the Kestra PostgreSQL interruption, within the shared 180-second budget.
+The report retains original CI artifact hashes. Candidate publication does not establish release acceptance.
+
+## Kubernetes authenticated process faults
+
+[The Kubernetes process fault test](../../deployment/evidence/CC-36-phase-2-kubernetes-process-faults.json) passed all seven interruptions in 8 minutes 56 seconds.
+The fixture uses published `016fd588` images and current fixture changes after `ef498231`.
+It performs the real Phase 1 upgrade, encrypted baseline backup, installer lifecycle checks, and worker rescheduling before fault injection.
+The cases stop both API pods, both workers, Redis, application PostgreSQL, Kestra PostgreSQL, and Kestra. Another case removes artifact access.
+Every case repeats all four authenticated Diagnostics operations and verifies durable state after recovery.
+Redis recovery requires another sign-in and rejects the old session.
+The longest recovery took 112.9 seconds after Kestra PostgreSQL interruption, within the shared 180-second budget.
+The fixture preserved identity, preferences, 56 security events, artifact bytes, seven completed Kestra executions, and one internal storage file.
+Two worker node identities remained distinct. The fixture removed its dedicated Kind cluster before publishing the passed report.
+
+[The first run](../../deployment/evidence/CC-36-phase-2-kubernetes-fault-timeout-failure.json) failed when the interrupted API produced a 45-second browser timeout.
+The fixture originally required an HTTP error response during an outage with no API endpoints.
+A small browser regression reproduced that assumption failure in under one second.
+The fixture now records bounded session transport timeouts during deliberate outages. It still requires successful authentication and Diagnostics after recovery.
+The corrected browser regression and complete Kubernetes target pass.
+
+Candidate assembly requires all seven Kubernetes cases, the exact source and images, bounded recovery, and confirmed cluster cleanup.
+The candidate workflow runs the browser timeout regression before Kubernetes fault qualification.
+The matrix now contains sixteen application targets and twenty-two total jobs.
+Four release tests and both affected lint targets pass.
+[The qualification record](../../deployment/evidence/CC-36-phase-2-kubernetes-fault-qualification.json) binds reports and fixture files to their hashes.
+
+Three Kind nodes share one Docker host and synthetic storage. The fixture does not enforce NetworkPolicy.
+Complete profile capacity and certificate coverage, final revision qualification, and accepted release assembly remain open.
+Phase 1 acceptance remains separate.

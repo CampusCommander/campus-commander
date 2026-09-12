@@ -158,11 +158,18 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
             runtimeImageContentVerified: true,
             encryptedBackup: { status: 'verified' },
           },
-          profile: target.startsWith('all-docker-') ? 'all-docker' : 'hybrid',
+          profile: target.startsWith('kubernetes-')
+            ? 'kubernetes'
+            : target.startsWith('all-docker-')
+              ? 'all-docker'
+              : 'hybrid',
           faults: {
             status: 'passed',
             recoveryBoundSeconds: 180,
-            cases: (target === 'all-docker-process-fault-integration'
+            cases: ([
+              'all-docker-process-fault-integration',
+              'kubernetes-process-fault-integration',
+            ].includes(target)
               ? [
                   'api-interruption',
                   'worker-interruption',
@@ -205,6 +212,7 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
           images: manifest.images,
           sourceRevision,
           ownedResourcesRemoved: true,
+          ownedClusterRemoved: true,
           hosts: [
             { role: 'controller', daemonId: 'controller' },
             { role: 'worker-1', daemonId: 'worker-1' },
@@ -345,42 +353,45 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       );
     }
     await writeFile(replicaPath, JSON.stringify(replicaReport));
-    const processPath = join(
-      qualificationArtifacts,
-      'qualification-all-docker-process-fault-integration',
-      'all-docker-process-faults.json',
-    );
-    const processReport = JSON.parse(await readFile(processPath, 'utf8'));
-    for (const [index, mutate] of [
-      (report) => {
-        report.faults.cases.pop();
-      },
-      (report) => {
-        report.faults.cases[0].recoveryMs = 180001;
-      },
-      (report) => {
-        report.sourceRevision = '0'.repeat(40);
-      },
-      (report) => {
-        report.ownedResourcesRemoved = false;
-      },
-    ].entries()) {
-      const invalid = structuredClone(processReport);
-      mutate(invalid);
-      await writeFile(processPath, JSON.stringify(invalid));
-      await assert.rejects(
-        assembleCandidate({
-          root,
-          output: join(root, `invalid-all-docker-fault-${index}`),
-          artifacts: join(root, 'artifacts'),
-          sourceRevision,
-          phase: 2,
-          qualificationArtifacts,
-        }),
-        /All-Docker process fault qualification/,
+    for (const profile of ['all-docker', 'kubernetes']) {
+      const processPath = join(
+        qualificationArtifacts,
+        `qualification-${profile}-process-fault-integration`,
+        `${profile}-process-faults.json`,
       );
+      const processReport = JSON.parse(await readFile(processPath, 'utf8'));
+      for (const [index, mutate] of [
+        (report) => {
+          report.faults.cases.pop();
+        },
+        (report) => {
+          report.faults.cases[0].recoveryMs = 180001;
+        },
+        (report) => {
+          report.sourceRevision = '0'.repeat(40);
+        },
+        (report) => {
+          if (profile === 'kubernetes') report.ownedClusterRemoved = false;
+          else report.ownedResourcesRemoved = false;
+        },
+      ].entries()) {
+        const invalid = structuredClone(processReport);
+        mutate(invalid);
+        await writeFile(processPath, JSON.stringify(invalid));
+        await assert.rejects(
+          assembleCandidate({
+            root,
+            output: join(root, `invalid-${profile}-fault-${index}`),
+            artifacts: join(root, 'artifacts'),
+            sourceRevision,
+            phase: 2,
+            qualificationArtifacts,
+          }),
+          /process fault qualification/,
+        );
+      }
+      await writeFile(processPath, JSON.stringify(processReport));
     }
-    await writeFile(processPath, JSON.stringify(processReport));
     const distributedPath = join(
       qualificationArtifacts,
       'qualification-hybrid-cli-upgrade-integration',

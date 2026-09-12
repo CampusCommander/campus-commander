@@ -1,0 +1,73 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T13:53:41.185810+00:00",
+  "imageSourceRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+  "fixtureSource": {
+    "baseGitRevision": "ef49823152d49f9dff8dc8b8948e800f83c2b483",
+    "workingTree": "uncommitted-candidate",
+    "files": [
+      {
+        "path": "api-e2e/kubernetes.test.mjs",
+        "sha256": "261476386b61105269c411bee08b343d84667fbf4c8ab67ba8b4274466404b1a"
+      },
+      {
+        "path": "api-e2e/kubernetes-faults-fixture.mjs",
+        "sha256": "cac6c077ba9a8828c678eab86120c5e0eb2c92b3d4cade66a34b1ac0bcbb9879"
+      },
+      {
+        "path": "api-e2e/kubernetes-faults-fixture.test.mjs",
+        "sha256": "479b6b16738dcd5ca608d2e3bbcfd5cd697f6acfa58e56c79afdf249922c93c2"
+      },
+      {
+        "path": "api-e2e/project.json",
+        "sha256": "c5645ca7d8736c83961071420265f374fcd6e8d4a06067e1c05137a5298e4a07"
+      },
+      {
+        "path": "deployment/release/candidate.mjs",
+        "sha256": "bc6c7623e6857e7c894b39d67a4e31b2b108e92df510af8a462fd197215f1d9a"
+      },
+      {
+        "path": "deployment/release/candidate.test.mjs",
+        "sha256": "15a159779d69486c8fce4f3a16127adaa57e908514be617f29485902150e9a04"
+      },
+      {
+        "path": ".github/workflows/phase-2-candidate.yml",
+        "sha256": "658eec6250c059dbeddf240063f6cfea098d53e93e82414c07ccb0a784b5ebc1"
+      }
+    ]
+  },
+  "report": {
+    "path": "deployment/evidence/CC-36-phase-2-kubernetes-process-faults.json",
+    "sha256": "ccd1c4a34c8dcfa6436ea9b307936e012f888cd4b0037d652fac2fb7d985da1f",
+    "originalReportSha256": "bf73024e0a49ccdfe44659a7d098202ae885635a5b958829175a9d3cc80de591"
+  },
+  "tests": [
+    {
+      "target": "api-e2e:kubernetes-process-fault-integration",
+      "status": "passed",
+      "durationSeconds": 536.03,
+      "logSha256": "a322657b061df2859ac0f2f717db77bc92a989b7708440f3d9d179f5e6e3cfd8"
+    },
+    {
+      "target": "api-e2e:kubernetes-fault-fixture-test",
+      "status": "passed",
+      "logSha256": "914f8378756ae0ce867451d5a7b830502567bebf7c0870b15dd997e60fc7d16a"
+    },
+    {
+      "target": "deployment:release-test",
+      "status": "passed",
+      "tests": 4,
+      "logSha256": "f74c25d8c29c30107b30582895383ad545c61b5be8537904262b3ba0da85ace6"
+    },
+    {
+      "target": "deployment:lint and api-e2e:lint",
+      "status": "passed",
+      "logSha256": "8da4bb847379ee2b33590264927866b16e2fc5afc5ab57bb47997f03d83485b4"
+    }
+  ],
+  "limits": [
+    "Published image source and uncommitted fixture source differ.",
+    "Three Kind nodes use one physical host and synthetic shared storage.",
+    "Complete capacity and certificate coverage, final revision evidence, and accepted release assembly remain open."
+  ]
+}

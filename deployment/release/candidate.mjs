@@ -27,6 +27,7 @@ export const applicationReports = {
   'hybrid-restore-integration': 'hybrid-restore.json',
   'kubernetes-integration': 'kubernetes-profile.json',
   'kubernetes-upgrade-integration': 'kubernetes-upgrade.json',
+  'kubernetes-process-fault-integration': 'kubernetes-process-faults.json',
   'kubernetes-restore-integration': 'kubernetes-restore.json',
   'upgrade-integration': 'all-docker-upgrade.json',
   'restore-integration': 'all-docker-restore.json',
@@ -204,7 +205,15 @@ export async function assembleCandidate({
             'All-Docker qualification requires shared sessions and logout rejection on both API replicas.',
           );
       }
-      if (target === 'all-docker-process-fault-integration') {
+      if (
+        [
+          'all-docker-process-fault-integration',
+          'kubernetes-process-fault-integration',
+        ].includes(target)
+      ) {
+        const profile = target.startsWith('kubernetes-')
+          ? 'kubernetes'
+          : 'all-docker';
         const required = [
           'api-interruption',
           'worker-interruption',
@@ -216,9 +225,11 @@ export async function assembleCandidate({
         ];
         const cases = report.faults?.cases;
         if (
-          report.profile !== 'all-docker' ||
+          report.profile !== profile ||
           report.sourceRevision !== sourceRevision ||
-          report.ownedResourcesRemoved !== true ||
+          (profile === 'kubernetes'
+            ? report.ownedClusterRemoved !== true
+            : report.ownedResourcesRemoved !== true) ||
           report.faults?.status !== 'passed' ||
           report.faults.recoveryBoundSeconds !== faultRecoveryTimeoutSeconds ||
           !Array.isArray(cases) ||
@@ -237,7 +248,7 @@ export async function assembleCandidate({
           )
         )
           throw new Error(
-            'All-Docker process fault qualification requires every case, matching source, cleanup, and bounded recovery.',
+            `${profile === 'kubernetes' ? 'Kubernetes' : 'All-Docker'} process fault qualification requires every case, matching source, cleanup, and bounded recovery.`,
           );
       }
       if (
