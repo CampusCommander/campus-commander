@@ -5,13 +5,15 @@ Use your ordinary Ubuntu login with sudo access. Use your Windows computer for t
 The reference platform is Ubuntu 24.04 LTS on Intel or AMD 64-bit hardware.
 Allow 8 GB RAM and sufficient disk space. This recipe uses the all-Docker installation mode.
 
-Target test release: `phase-2-candidate-8b8d5a15c756`.
-Installer source revision: `8b8d5a15c756017255a9e74caa0de2553b2e871f`.
+Target test release: `phase-2-lab-a1a6b227bf32`.
+Installer source revision: `a1a6b227bf32a3ee31205d6992428b26848fc0ef`.
 This recipe tests browser credential import, installer administrator enrollment, progress output, update, and uninstall.
+The lab workflow uses eight active jobs. Full profile qualification runs separately on request.
+The workflow publishes the lab release only after authentication and extracted All-Docker installation checks pass.
 
 **Publication gate:** This recipe does not establish that the target release is available.
-Check the [target workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34738281104) before starting.
-Wait for successful completion and the [target release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-8b8d5a15c756).
+Check the [target workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34780484347) before starting.
+Wait for successful completion and the [target release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-lab-a1a6b227bf32).
 If the workflow fails or the release page is missing, stop and report that result.
 Do not substitute release `436d3b0698a5`. It contains the previous onboarding flow.
 
@@ -117,13 +119,15 @@ Run these commands on Ubuntu:
 
 ```bash
 mkdir -p "$HOME/cc-test-tools"
-curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/8b8d5a15c756017255a9e74caa0de2553b2e871f/install.sh -o "$HOME/cc-test-tools/install.sh"
-sh "$HOME/cc-test-tools/install.sh" --release phase-2-candidate-8b8d5a15c756 --verify-only
+curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/a1a6b227bf32a3ee31205d6992428b26848fc0ef/install.sh -o "$HOME/cc-test-tools/install.sh"
+sh "$HOME/cc-test-tools/install.sh" --release phase-2-lab-a1a6b227bf32 --verify-only
 ```
 
 **Expected result:** The installer reports that release signatures and file checksums passed.
 It prints `Verified release:` followed by a private cache directory.
 Stop at a verification failure. Do not remove verification flags or change image digests.
+A release download returning HTTP 404 means the named asset is unavailable.
+Check the target workflow and release page before repeating the command. Do not reset the VM for this download failure.
 
 This step downloads the installer runtime privately. It does not install the application.
 The script uses its private Node runtime. Ubuntu's `node --version` can still report Node 12 afterward.
@@ -135,7 +139,7 @@ Run on Ubuntu:
 
 ```bash
 sh "$HOME/cc-test-tools/install.sh" \
-  --release phase-2-candidate-8b8d5a15c756 \
+  --release phase-2-lab-a1a6b227bf32 \
   --profile all-docker \
   --root "$HOME/cc-phase2-lab"
 ```
@@ -145,6 +149,8 @@ On this dedicated VM, select automatic installation when it offers required Dock
 Read the license and select acceptance only if you agree.
 
 Use these answers when the corresponding prompts appear:
+If the installer asks for an OIDC issuer without first offering the sign-in provider, stop.
+Confirm the script revision and release tag from step 4 before continuing.
 
 | Question                                         | Answer                                      |
 | ------------------------------------------------ | ------------------------------------------- |
@@ -232,7 +238,7 @@ If browser policy prevents continuation, use an administrator-approved trusted c
 
 Select **Sign in to Campus Commander** and choose the Google account enrolled in step 6.
 You should reach **Your account**.
-The footer's build should identify revision `8b8d5a1`. The version can retain the `phase-2-candidate` image label.
+The footer's build should identify revision `a1a6b22`. The version can retain the `phase-2-candidate` image label.
 
 **8. Complete the first browser test**
 
@@ -358,7 +364,7 @@ First test selection of the release that is already installed:
 ```bash
 sh "$HOME/cc-test-tools/install.sh" \
   --root "$HOME/cc-phase2-lab" \
-  --release phase-2-candidate-8b8d5a15c756 \
+  --release phase-2-lab-a1a6b227bf32 \
   --update
 ```
 
@@ -400,7 +406,7 @@ Record the source release, target release, and recovery result separately from t
 Use this format for each failure:
 
 ```text
-Release: phase-2-candidate-8b8d5a15c756
+Release: phase-2-lab-a1a6b227bf32
 Test:
 Expected:
 Observed:
@@ -443,4 +449,4 @@ Do not erase volumes while you still need the test evidence or saved account.
 This recipe covers guided all-Docker onboarding, application behavior, and the maintenance checks listed above.
 Hybrid services, Kubernetes, isolated backup restore, and Phase 1 upgrades require separate environment tests.
 Use the [Phase 2 installer procedure](../../deployment/installer/PHASE-2.md) and [operator recovery procedure](../../deployment/bootstrap/APPLICATION-ACCESS.md) for those later sessions.
-Consult the [target release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-8b8d5a15c756) for published evidence and its limits.
+Consult the [target release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-lab-a1a6b227bf32) for published evidence and its limits.
