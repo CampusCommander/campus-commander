@@ -1,0 +1,279 @@
+{
+  "status": "passed",
+  "profile": "hybrid",
+  "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:43ce28b44913a595da2151fbe0932ec3b3dd99f74da667199ab251d8f187d17a",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:cec237789c4f20b66c18a99add171ce2fa2d424907b76bcb6b9bd5026c0bef71",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b75ebcaac2b4a52be29fcce96ab93ebb83cacb565fc6ba8a3fac9d5346c86a2a"
+  },
+  "recordedAt": "2026-09-12T16:19:36.400Z",
+  "durationMs": 192346,
+  "hosts": [
+    {
+      "role": "controller",
+      "name": "cc-phase2-hybrid-82162982d71a-controller",
+      "address": "172.24.0.3",
+      "daemonId": "c842deed-e5e9-4114-9ce0-785421436ba8",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.200.0.1/24",
+        "pool": "10.200.0.0/16"
+      }
+    },
+    {
+      "role": "worker-1",
+      "name": "cc-phase2-hybrid-82162982d71a-worker-1",
+      "address": "172.24.0.4",
+      "daemonId": "e9dc91e2-24ea-4d0c-8ce7-6427e0621779",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.201.0.1/24",
+        "pool": "10.201.0.0/16"
+      }
+    },
+    {
+      "role": "worker-2",
+      "name": "cc-phase2-hybrid-82162982d71a-worker-2",
+      "address": "172.24.0.5",
+      "daemonId": "16cc1ce1-8f77-436c-a553-34006bb993f3",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.202.0.1/24",
+        "pool": "10.202.0.0/16"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "command": "prepare",
+      "status": "prepared"
+    },
+    {
+      "command": "install",
+      "status": "ready"
+    },
+    {
+      "command": "resume",
+      "status": "ready"
+    },
+    {
+      "command": "stop",
+      "status": "stopped"
+    },
+    {
+      "command": "resume",
+      "status": "ready"
+    },
+    {
+      "command": "uninstall",
+      "status": "uninstalled"
+    },
+    {
+      "command": "resume",
+      "status": "ready"
+    }
+  ],
+  "apiReplicaCount": 2,
+  "sessionChecks": [
+    {
+      "replica": "9e3410317158f6211d3ee5de117fea47296e8b8a942f0abbb70b2a4bcc418708",
+      "status": 200,
+      "principalId": "313b1f22-def9-4cdd-9336-d375e42316fc"
+    },
+    {
+      "replica": "c1c36f2d094b93847d05ecc14fe7cae8a46c525655eca53089dfbb7c6a9e5797",
+      "status": 200,
+      "principalId": "313b1f22-def9-4cdd-9336-d375e42316fc"
+    },
+    {
+      "replica": "9e3410317158f6211d3ee5de117fea47296e8b8a942f0abbb70b2a4bcc418708",
+      "status": 200,
+      "principalId": "313b1f22-def9-4cdd-9336-d375e42316fc"
+    },
+    {
+      "replica": "c1c36f2d094b93847d05ecc14fe7cae8a46c525655eca53089dfbb7c6a9e5797",
+      "status": 200,
+      "principalId": "313b1f22-def9-4cdd-9336-d375e42316fc"
+    },
+    {
+      "replica": "9e3410317158f6211d3ee5de117fea47296e8b8a942f0abbb70b2a4bcc418708",
+      "status": 200,
+      "principalId": "313b1f22-def9-4cdd-9336-d375e42316fc"
+    },
+    {
+      "replica": "c1c36f2d094b93847d05ecc14fe7cae8a46c525655eca53089dfbb7c6a9e5797",
+      "status": 200,
+      "principalId": "313b1f22-def9-4cdd-9336-d375e42316fc"
+    },
+    {
+      "replica": "9e3410317158f6211d3ee5de117fea47296e8b8a942f0abbb70b2a4bcc418708",
+      "status": 200,
+      "principalId": "313b1f22-def9-4cdd-9336-d375e42316fc"
+    },
+    {
+      "replica": "c1c36f2d094b93847d05ecc14fe7cae8a46c525655eca53089dfbb7c6a9e5797",
+      "status": 200,
+      "principalId": "313b1f22-def9-4cdd-9336-d375e42316fc"
+    },
+    {
+      "replica": "387e03931ff3171d28b7a62fa3f101eba340d88360178adeb86a25b919a67b5f",
+      "status": 200,
+      "principalId": "313b1f22-def9-4cdd-9336-d375e42316fc"
+    },
+    {
+      "replica": "0adc16ec44c78c43015a36e1530d874337f6afcc269178f3bb3a354fcd66b3b6",
+      "status": 200,
+      "principalId": "313b1f22-def9-4cdd-9336-d375e42316fc"
+    }
+  ],
+  "restartRecoveries": [
+    {
+      "replica": "9e3410317158f6211d3ee5de117fea47296e8b8a942f0abbb70b2a4bcc418708",
+      "recoveryMs": 346,
+      "observations": [
+        {
+          "status": 200,
+          "elapsedMs": 346
+        }
+      ]
+    },
+    {
+      "replica": "c1c36f2d094b93847d05ecc14fe7cae8a46c525655eca53089dfbb7c6a9e5797",
+      "recoveryMs": 333,
+      "observations": [
+        {
+          "status": 200,
+          "elapsedMs": 333
+        }
+      ]
+    }
+  ],
+  "providerConnections": [
+    {
+      "replica": "9e3410317158f6211d3ee5de117fea47296e8b8a942f0abbb70b2a4bcc418708",
+      "status": 200
+    },
+    {
+      "replica": "c1c36f2d094b93847d05ecc14fe7cae8a46c525655eca53089dfbb7c6a9e5797",
+      "status": 200
+    }
+  ],
+  "qualificationSourceState": "Extracted published installer bundle with matching application images.",
+  "bundleManifestSha256": "9481f643d8c225ec22f0aed0d6ab6a6101475c8d36b971207eea9ee698650a5d",
+  "originalRenderPreserved": true,
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "a9d8cc19-29df-4797-9ca2-9398b0ea44e5",
+        "observedAt": "2026-09-12T16:18:18.844Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "aa330667-4737-435b-b522-2c4228cfd9b9",
+        "observedAt": "2026-09-12T16:18:18.935Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "f5297a48-b33e-49ba-8cec-388418454a6a",
+        "observedAt": "2026-09-12T16:18:19.857Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "dbf64cfd-d9ad-4b11-834a-c9d49809ab37",
+        "observedAt": "2026-09-12T16:18:19.956Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "bf373eeb-b6a2-4d4a-ae6b-c67a37755269",
+        "observedAt": "2026-09-12T16:18:25.785Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "17113a4f-dd80-47a3-a5d1-d09804117be3",
+        "observedAt": "2026-09-12T16:18:25.870Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "bd6db18f-e930-4060-9c70-36b84a9d3e9d",
+        "observedAt": "2026-09-12T16:18:26.505Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "568a1440-2b80-4f94-926b-a76a79bdf3a9",
+        "observedAt": "2026-09-12T16:18:26.610Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "d92181dc-bc66-4ce2-9d61-8a212f8dd62b",
+        "observedAt": "2026-09-12T16:18:57.375Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "46a447af-6f60-4016-b91a-b6beb575a67d",
+        "observedAt": "2026-09-12T16:18:57.514Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "cb3e109b-1c46-4d37-8257-aaeb8b384d21",
+        "observedAt": "2026-09-12T16:18:58.317Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "aee855b9-5d1b-4de9-95df-70fb2a17d08c",
+        "observedAt": "2026-09-12T16:18:58.420Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "a5ec8862-7a30-4c95-b58f-1e0d281f1cef",
+        "observedAt": "2026-09-12T16:19:35.203Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "119ccbcf-1e46-432b-b97e-9a189c428439",
+        "observedAt": "2026-09-12T16:19:35.279Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "7e8d98f2-e23c-4190-9cc0-129f806c75e8",
+        "observedAt": "2026-09-12T16:19:36.103Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "bbae5d9f-b06d-4534-b402-1ff0366e64c0",
+        "observedAt": "2026-09-12T16:19:36.202Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "limits": [
+    "Three Docker daemons share one physical Docker host and synthetic shared storage.",
+    "A separate Compose overlay trusts the synthetic identity provider through the existing district CA mount.",
+    "Final release qualification requires matching installer, test, and application source revisions.",
+    "Upgrade requires separate evidence.",
+    "Isolated restore, complete fault acceptance, and district infrastructure require separate evidence."
+  ],
+  "ownedResourcesRemoved": true
+}

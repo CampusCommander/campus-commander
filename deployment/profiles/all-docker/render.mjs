@@ -118,6 +118,7 @@ export function renderAllDocker(
   };
   const secretReferences = [
     ...Object.values(refs),
+    ...(config.applicationAuth ? [config.applicationAuth.clientSecretRef] : []),
     services.edge.serverTls.certificateSecretRef,
     services.edge.serverTls.privateKeySecretRef,
   ];
@@ -134,6 +135,7 @@ export function renderAllDocker(
   ])
     secrets[name] = { file: `./private/${name}` };
   const apiSecrets = [
+    ...(config.applicationAuth ? [config.applicationAuth.clientSecretRef] : []),
     refs.appPassword,
     refs.kestraPassword,
     refs.redisPassword,
@@ -436,7 +438,10 @@ export function renderAllDocker(
         image: images.api,
         ...restart,
         ...hardening,
-        ...resourceLimits(services.api),
+        deploy: {
+          ...resourceLimits(services.api).deploy,
+          replicas: services.api.placement.replicas,
+        },
         networks: ['ingress', 'internal'],
         healthcheck: health('/health', 3000),
         tmpfs: ['/tmp'],

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { open, readFile } from 'node:fs/promises';
 import { backupFoundation, restoreFoundation, verifyBackup } from './index.mjs';
 import { secretPath } from '../redis/runtime.mjs';
+import { operationFailureReason } from './failure.mjs';
 
 try {
   const [command, inputPath] = process.argv.slice(2);
@@ -76,9 +77,10 @@ try {
       );
     }
   }
-} catch {
+} catch (error) {
   console.error(
     'Foundation backup or restore failed. Check quiescence, key recovery, component integrity, and isolated target prerequisites.',
   );
+  console.error(`Reason: ${operationFailureReason(error)}.`);
   process.exitCode = 1;
 }

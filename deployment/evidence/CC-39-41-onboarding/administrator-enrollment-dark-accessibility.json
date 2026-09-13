@@ -1,0 +1,83 @@
+{
+  "name": "administrator-enrollment-dark",
+  "engine": {
+    "name": "axe-core",
+    "version": "4.13.0"
+  },
+  "recordedAt": "2026-09-13T03:29:22.181Z",
+  "violations": [],
+  "incomplete": [
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "tags": [
+        "cat.color",
+        "wcag2aa",
+        "wcag143",
+        "TTv5",
+        "TT13.c",
+        "EN-301-549",
+        "EN-9.1.4.3",
+        "ACT",
+        "RGAAv4",
+        "RGAA-3.2.1"
+      ],
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgOverlap",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it is overlapped by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<input _ngcontent-ng-c30941...=\"\" matinput=\"\" name=\"code\" type=\"password\" autocomplete=\"off\" required=\"\" maxlength=\"64\" class=\"mat-mdc-input-elemen...\" id=\"mat-input-0\" aria-required=\"true\">",
+          "target": ["#mat-input-0"],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
+        }
+      ]
+    }
+  ],
+  "passedRuleIds": [
+    "aria-allowed-attr",
+    "aria-conditional-attr",
+    "aria-hidden-body",
+    "aria-hidden-focus",
+    "aria-prohibited-attr",
+    "aria-valid-attr-value",
+    "aria-valid-attr",
+    "autocomplete-valid",
+    "avoid-inline-spacing",
+    "button-name",
+    "color-contrast",
+    "document-title",
+    "duplicate-id-aria",
+    "form-field-multiple-labels",
+    "html-has-lang",
+    "html-lang-valid",
+    "label",
+    "meta-viewport",
+    "nested-interactive",
+    "target-size"
+  ],
+  "accessibilityTree": "- main:\n  - region \"Enroll the first administrator\":\n    - paragraph: Campus Commander\n    - heading \"Enroll the first administrator\" [level=1]\n    - paragraph: Use the private pairing code from the installer terminal. Then sign in with the administrator account.\n    - text: Installer pairing code\n    - textbox \"Installer pairing code\"\n    - button \"Sign in to enroll administrator\" [disabled]",
+  "computedTheme": {
+    "color": "rgb(232, 234, 237)",
+    "background": "rgb(18, 18, 18)"
+  },
+  "screenReaderWalkthrough": "not-run"
+}

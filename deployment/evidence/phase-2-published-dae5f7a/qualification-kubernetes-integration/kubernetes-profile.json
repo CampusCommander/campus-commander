@@ -1,0 +1,125 @@
+{
+  "status": "PASS",
+  "checkedAt": "2026-09-12T08:37:31.597Z",
+  "elapsedMilliseconds": 223002,
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+  },
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "850e5e1b-d90b-4be2-8b60-87085eb85573",
+        "observedAt": "2026-09-12T08:36:50.868Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "dd92dedd-d5a0-4a68-99cc-c8f6f6b9446e",
+        "observedAt": "2026-09-12T08:36:50.958Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "b5048933-af0e-4fea-8aac-5ddd5d07fabe",
+        "observedAt": "2026-09-12T08:36:52.726Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "c28279e0-0f1a-42bf-8462-735c4fe8cdf2",
+        "observedAt": "2026-09-12T08:36:52.836Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "8dff4c73-1c40-454a-9849-d9f46deb7115",
+        "observedAt": "2026-09-12T08:37:04.713Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "91304438-d101-4e92-91f2-c2e48b7038ac",
+        "observedAt": "2026-09-12T08:37:04.819Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "bb59abbe-fe15-424d-9470-03b4eecd2711",
+        "observedAt": "2026-09-12T08:37:05.454Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "cbbddc10-0902-477f-821d-ff2e627c51f7",
+        "observedAt": "2026-09-12T08:37:05.554Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "0ee3bbe3-a7a2-4fe3-be55-e06216715b65",
+        "observedAt": "2026-09-12T08:37:18.402Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "1889b2f6-c476-4268-b9a0-e62816dbe0f4",
+        "observedAt": "2026-09-12T08:37:18.539Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "d6ed7337-80bb-4f13-9459-01af38add07b",
+        "observedAt": "2026-09-12T08:37:19.166Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "8d19512b-0a00-4746-be25-e4c0a2526106",
+        "observedAt": "2026-09-12T08:37:19.272Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "148bd377-6696-48c4-b04e-9d6dcced804b",
+        "observedAt": "2026-09-12T08:37:30.499Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "685cc290-3d93-480a-b55d-bf2a4a9aacab",
+        "observedAt": "2026-09-12T08:37:30.638Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "4a951caf-e057-4573-af8a-d61ec308f1c9",
+        "observedAt": "2026-09-12T08:37:31.259Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "8e87ef3e-5dbe-4d8a-a6b3-d61cdcd21fbc",
+        "observedAt": "2026-09-12T08:37:31.352Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "nodes": 3,
+  "apiReplicas": 2,
+  "workerRescheduled": true,
+  "limits": [
+    "Three Kind nodes share one Docker host and synthetic storage.",
+    "Kind default networking does not enforce NetworkPolicy.",
+    "District DNS, identity provider, CNI enforcement, and storage remain separate qualification requirements.",
+    "Upgrade and isolated restore require separate evidence."
+  ]
+}

@@ -5,24 +5,39 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createReadStream } from 'node:fs';
-import { pipeline } from 'node:stream/promises';
-import { Writable } from 'node:stream';
 import pg from 'pg';
-import {
-  backupFoundation,
-  postgresToolArguments,
-  restoreFoundation,
-} from '../operations/index.mjs';
+import { verifyBackup } from '../operations/index.mjs';
+import { createOperationsCliFixture } from '../operations/cli-fixture.mjs';
 import { replaceBootstrap } from '../bootstrap/access.mjs';
 import { connectionOptions } from '../postgres/index.mjs';
 import { renderKubernetes } from './render.mjs';
+import { isolatedPortForward } from './isolated-port-forward.mjs';
+import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
 
-const kubeconfig = '/tmp/cc-kube-workload-kubeconfig';
-const context = 'kind-cc-workload-validation';
-const sourceNamespace = 'cc-kube-synthetic';
+const capacity = process.env.CC_KUBERNETES_CAPACITY_FIXTURE
+  ? JSON.parse(
+      await readFile(process.env.CC_KUBERNETES_CAPACITY_FIXTURE, 'utf8'),
+    )
+  : undefined;
+if (capacity) {
+  assert.equal(capacity.qualificationOnly, true);
+  assert.match(capacity.project, /^cc-capacity-kube-[a-f0-9]{12}$/);
+  assert.match(
+    capacity.root,
+    /^\/tmp\/cc-capacity-kube-[a-f0-9]{12}-[a-zA-Z0-9]+$/,
+  );
+  assert.ok(capacity.root.startsWith(`/tmp/${capacity.project}-`));
+}
+const cluster = capacity?.project ?? 'cc-workload-validation';
+const kubeconfig = capacity
+  ? join(capacity.root, 'kubeconfig')
+  : '/tmp/cc-kube-workload-kubeconfig';
+const context = `kind-${cluster}`;
+const sourceNamespace = capacity?.project ?? 'cc-kube-synthetic';
 const targetNamespace = 'cc-kube-restore-synthetic';
-const sharedRoot = '/tmp/cc-kube-synthetic-shared';
+const sharedRoot = capacity
+  ? join(capacity.root, 'shared')
+  : '/tmp/cc-kube-synthetic-shared';
 const targetDirectory = join(sharedRoot, 'restore-qualification');
 const artifactEvidencePath = `/tmp/cc-kubernetes-restore-artifact-${process.pid}.json`;
 let nextForwardPort = 25000 + (process.pid % 1000) * 10;
@@ -64,6 +79,25 @@ async function waitFor(check, label, attempts = 180) {
 function portForward(namespace, service, remotePort) {
   const localPort = nextForwardPort;
   nextForwardPort += 1;
+  if (remotePort === 5432) {
+    return isolatedPortForward({
+      localPort,
+      remotePort,
+      arguments: [
+        '--kubeconfig',
+        kubeconfig,
+        '--context',
+        context,
+        '--namespace',
+        namespace,
+        'port-forward',
+        `service/${service}`,
+        `:${remotePort}`,
+        '--address',
+        '127.0.0.1',
+      ],
+    });
+  }
   const child = spawn(
     'kubectl',
     [
@@ -103,6 +137,10 @@ function portForward(namespace, service, remotePort) {
 }
 
 function assertForwardAlive(forward, label) {
+  if (forward.isAlive) {
+    assert.equal(forward.isAlive(), true, `${label} listener stopped.`);
+    return;
+  }
   assert.equal(
     forward.child.exitCode,
     null,
@@ -196,7 +234,8 @@ function workloadInventory(namespace) {
 }
 
 async function protectedStartup(namespace, root, attempts = 180) {
-  const forward = portForward(namespace, 'edge', 443);
+  const service = json(namespace, ['get', 'service', 'edge', '-o', 'json']);
+  const forward = portForward(namespace, 'edge', service.spec.ports[0].port);
   try {
     const port = await forward.ready;
     const credential = secretBytes(
@@ -382,59 +421,6 @@ async function verifyTargetKestra(root, expected) {
   }
 }
 
-async function kubernetesTool(tool, { service, input, output }) {
-  const namespace = service.database.endsWith('-restore')
-    ? targetNamespace
-    : sourceNamespace;
-  const deployment = service.database.startsWith('campus')
-    ? 'application-postgres'
-    : 'kestra-postgres';
-  const child = spawn(
-    'kubectl',
-    [
-      '--kubeconfig',
-      kubeconfig,
-      '--context',
-      context,
-      '--namespace',
-      namespace,
-      'exec',
-      '-i',
-      `deployment/${deployment}`,
-      '--',
-      tool,
-      '--username',
-      service.role,
-      ...(tool === 'pg_dump' ? ['--dbname', service.database] : []),
-      ...postgresToolArguments(tool, service),
-    ],
-    { stdio: ['pipe', 'pipe', 'pipe'] },
-  );
-  let stderr = '';
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk.toString();
-  });
-  const completed = new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', (code) =>
-      code === 0
-        ? resolve()
-        : reject(
-            new Error(`Kubernetes PostgreSQL ${tool} failed: ${stderr.trim()}`),
-          ),
-    );
-  });
-  const sink = new Writable({
-    write(_chunk, _encoding, done) {
-      done();
-    },
-  });
-  const tasks = [completed, pipeline(child.stdout, output ?? sink)];
-  if (input) tasks.push(pipeline(createReadStream(input), child.stdin));
-  else child.stdin.end();
-  await Promise.all(tasks);
-}
-
 function postgresSql(namespace, deployment, sql) {
   kube(
     namespace,
@@ -559,9 +545,9 @@ async function renderTargetKestra(root, config, operator) {
 }
 
 const startedAt = Date.now();
-const runtimeRoot = (
-  await readFile('/tmp/cc-kube-runtime-current', 'utf8')
-).trim();
+const runtimeRoot = capacity
+  ? join(capacity.root, 'runtime')
+  : (await readFile('/tmp/cc-kube-runtime-current', 'utf8')).trim();
 const runtimeConfig = JSON.parse(
   await readFile(join(runtimeRoot, 'config.json'), 'utf8'),
 );
@@ -571,9 +557,7 @@ const sourceOperator = JSON.parse(
 const nodes = json('', ['get', 'nodes', '-o', 'json']);
 assert.equal(nodes.items.length, 3);
 assert.ok(
-  nodes.items.every(({ metadata }) =>
-    metadata.name.startsWith('cc-workload-validation-'),
-  ),
+  nodes.items.every(({ metadata }) => metadata.name.startsWith(`${cluster}-`)),
 );
 const sourceWorkloads = await waitFor(
   () => {
@@ -677,6 +661,36 @@ const stopped = workloadInventory(sourceNamespace).filter(({ name }) =>
   ['api', 'workers', 'kestra'].includes(name),
 );
 assert.ok(stopped.every(({ desired, ready }) => desired === 0 && ready === 0));
+const applicationState = (namespace, database) =>
+  JSON.parse(
+    kube(namespace, [
+      'exec',
+      'deployment/application-postgres',
+      '--',
+      'psql',
+      '-U',
+      'postgres',
+      '-d',
+      database,
+      '-t',
+      '-A',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-c',
+      "SELECT json_build_object('principals',(SELECT coalesce(json_agg(p ORDER BY p.id),'[]') FROM cc.application_principals p),'securityEvents',(SELECT coalesce(json_agg(e ORDER BY e.id),'[]') FROM cc.security_events e))",
+    ]),
+  );
+const sourceApplication =
+  runtimeConfig.phase === 2
+    ? applicationState(
+        sourceNamespace,
+        runtimeConfig.services.applicationDatabase.database,
+      )
+    : undefined;
+if (sourceApplication) {
+  assert.ok(sourceApplication.principals.length > 0);
+  assert.ok(sourceApplication.securityEvents.length > 0);
+}
 
 const sourceApplicationForward = portForward(
   sourceNamespace,
@@ -739,7 +753,10 @@ try {
     role: sourceOperator.migrationRole,
     passwordSecretRef: sourceOperator.migrationPasswordSecretRef,
   };
-  const backupRoot = await mkdtemp(join(tmpdir(), 'cc-kube-backup-'));
+  const backupRoot = capacity
+    ? join(capacity.root, 'backup')
+    : await mkdtemp(join(tmpdir(), 'cc-kube-backup-'));
+  if (capacity) await mkdir(backupRoot, { mode: 0o700 });
   const backupDirectory = join(backupRoot, 'encrypted-backup');
   const keyRecovery = {
     id: 'synthetic-kubernetes-recovery',
@@ -759,7 +776,15 @@ try {
     sourceKestraForward,
     'Source Kestra database port forward',
   );
-  const manifest = await backupFoundation({
+  const operatorCli = await createOperationsCliFixture(
+    join(backupRoot, 'operator-cli'),
+    resolveSecret,
+    {
+      container: process.env.CC_OPERATIONS_CLI_HOST !== '1',
+      mountDirectories: [backupRoot, sharedRoot],
+    },
+  );
+  const { result: backupResult } = await operatorCli.run('backup', {
     config: sourceConfig,
     release: sourceOperator.release,
     backupDirectory,
@@ -769,9 +794,19 @@ try {
     },
     keyRecovery,
     quiesce,
-    resolveSecret,
     applicationCredentials,
-    runTool: kubernetesTool,
+  });
+
+  assert.equal(backupResult.status, 'complete');
+  const { result: verifiedBackup } = await operatorCli.run('verify', {
+    backupDirectory,
+    keyRecovery,
+  });
+  assert.equal(verifiedBackup.status, 'verified');
+  const manifest = await verifyBackup({
+    backupDirectory,
+    keyRecovery,
+    resolveSecret,
   });
 
   const targetRuntime = structuredClone(runtimeConfig);
@@ -791,6 +826,31 @@ try {
   targetOperator.storageClasses.artifacts = 'cc-synthetic-rwx-restore';
   targetOperator.storageClasses.kestraInternal = 'cc-synthetic-rwx-restore';
   const targetList = renderKubernetes(targetRuntime, targetOperator);
+  if (capacity?.application) {
+    const pod = targetList.items.find(
+      (item) => item.kind === 'Deployment' && item.metadata.name === 'api',
+    ).spec.template.spec;
+    pod.hostAliases = [
+      {
+        ip: capacity.application.hostGateway,
+        hostnames: ['host.docker.internal'],
+      },
+    ];
+    pod.volumes.push({
+      name: 'qualification-provider',
+      secret: { secretName: 'qualification-provider' },
+    });
+    const api = pod.containers.find((item) => item.name === 'api');
+    api.env.push({
+      name: 'NODE_EXTRA_CA_CERTS',
+      value: '/run/qualification/ca',
+    });
+    api.volumeMounts.push({
+      name: 'qualification-provider',
+      mountPath: '/run/qualification',
+      readOnly: true,
+    });
+  }
   apply(targetList.items.find((item) => item.kind === 'Namespace'));
   cloneSecrets();
   const initialKinds = new Set(['ServiceAccount', 'ConfigMap']);
@@ -853,15 +913,17 @@ try {
     targetKestraForward,
     'Target Kestra database port forward',
   );
-  const report = await restoreFoundation({
+  const { result: restoreResult } = await operatorCli.run('restore', {
     backupDirectory,
     targetConfig,
     targetDirectory,
     keyRecovery,
-    resolveSecret,
     applicationCredentials,
-    runTool: kubernetesTool,
   });
+  assert.equal(restoreResult.status, 'verified-services-disabled');
+  const report = JSON.parse(
+    await readFile(join(targetDirectory, 'restore-report.json'), 'utf8'),
+  );
   assert.equal(report.status, 'verified-services-disabled');
   assert.equal(
     (await readFile(join(targetDirectory, 'RESTORE_DISABLED'), 'utf8')).trim(),
@@ -873,10 +935,18 @@ try {
   const restoredRelease = JSON.parse(
     await readFile(join(targetDirectory, 'release.json'), 'utf8'),
   );
-  assert.deepEqual(restoredConfiguration, sourceConfig);
+  assert.deepEqual(restoredConfiguration, parseDeploymentConfig(sourceConfig));
   assert.deepEqual(restoredRelease, sourceOperator.release);
+  if (sourceApplication)
+    assert.deepEqual(
+      applicationState(
+        targetNamespace,
+        targetRuntime.services.applicationDatabase.database,
+      ),
+      sourceApplication,
+    );
 
-  targetApplicationForward.close();
+  await targetApplicationForward.close();
   const acceptanceForward = portForward(
     targetNamespace,
     'application-postgres',
@@ -1015,7 +1085,7 @@ try {
 
   const common = {
     scope: 'synthetic-kind-three-node-shared-host-directory',
-    cluster: 'cc-workload-validation',
+    cluster,
     context,
     kubeconfig,
     nodeImage:
@@ -1029,7 +1099,9 @@ try {
     loadBalancerQualified: false,
   };
   await writeFile(
-    'deployment/evidence/CC-15-workload-result.json',
+    capacity
+      ? join(capacity.root, 'kubernetes-source-storage.json')
+      : 'deployment/evidence/CC-15-workload-result.json',
     `${JSON.stringify(
       {
         ...common,
@@ -1054,22 +1126,45 @@ try {
     )}\n`,
   );
   await writeFile(
-    'deployment/evidence/CC-17-kubernetes-result.json',
+    capacity
+      ? join(capacity.root, 'kubernetes-restore-foundation.json')
+      : 'deployment/evidence/CC-17-kubernetes-result.json',
     `${JSON.stringify(
       {
         ...common,
         status: 'pass',
+        ...(sourceApplication
+          ? {
+              applicationState: {
+                principals: sourceApplication.principals.length,
+                securityEvents: sourceApplication.securityEvents.length,
+                identityStateSha256: sha256(JSON.stringify(sourceApplication)),
+                exactIdentityAndPreferences: true,
+                exactSecurityEvents: true,
+              },
+            }
+          : {}),
         sourceNamespace,
         targetNamespace,
+        operatorCli: {
+          ...operatorCli.execution,
+          commands: operatorCli.commands,
+        },
         operatorAdapter: {
           sourceApplicationPort,
           sourceKestraPort,
           targetApplicationPort,
           targetKestraPort,
           tlsServerName: 'localhost',
-          kubernetesPostgresTools: version,
+          postgresServerTools: version,
           postgresTransport:
-            'One verified TLS database session per kubectl port-forward process.',
+            'Each verified TLS database connection uses an independent kubectl port-forward process.',
+          databaseTunnels: [
+            sourceApplicationForward,
+            sourceKestraForward,
+            targetApplicationForward,
+            targetKestraForward,
+          ].map((forward) => forward.observation),
         },
         quiesce,
         sourceWorkloads,
@@ -1144,5 +1239,5 @@ try {
     `${JSON.stringify({ status: 'pass', sourceNamespace, targetNamespace, readyChecks: targetStartup.checks.length, durationMilliseconds: Date.now() - startedAt })}\n`,
   );
 } finally {
-  for (const forward of forwards) forward.close();
+  await Promise.all(forwards.map((forward) => forward.close()));
 }

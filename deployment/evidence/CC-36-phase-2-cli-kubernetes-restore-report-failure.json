@@ -1,0 +1,35 @@
+{
+  "status": "failed",
+  "checkedAt": "2026-09-12T10:04:10.385Z",
+  "command": "npx nx run api-e2e:kubernetes-restore-integration",
+  "qualificationSourceRevision": "2f26a013e3bbc7cbf768add55f0b3701ac312243",
+  "qualificationWorkingTree": "uncommitted-candidate",
+  "durationMilliseconds": 326706,
+  "failure": {
+    "stage": "final installer evidence",
+    "code": "ERR_ASSERTION",
+    "actualWorkerHosts": 0,
+    "expectedWorkerHosts": 2,
+    "reason": "The isolated restore had stopped source writers before the final report queried source worker pods."
+  },
+  "completedSubchecks": {
+    "isolatedFoundationRestore": "passed",
+    "principalCount": 1,
+    "securityEventCount": 57,
+    "exactIdentityAndPreferences": true,
+    "exactSecurityEvents": true,
+    "oldSessionRejected": true,
+    "preservedTheme": "dark"
+  },
+  "correction": "Capture source installer and worker placement evidence after lifecycle recovery and before isolated restore stops source writers.",
+  "limits": [
+    "The complete target failed. Passed restore subchecks do not establish target acceptance.",
+    "The run used published dae5f7a images and uncommitted qualification code."
+  ],
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+  },
+  "sourceRevision": "dae5f7a10a0347043931f5b97ef317882c1d70f6"
+}

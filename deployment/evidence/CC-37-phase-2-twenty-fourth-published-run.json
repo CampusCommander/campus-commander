@@ -1,0 +1,34 @@
+{
+  "status": "failed",
+  "sourceRevision": "be11ad27b09f892a8232d557193bbdf42a43daaa",
+  "candidateRun": "https://github.com/CampusCommander/campus-commander/actions/runs/34708896304",
+  "jobs": {
+    "passed": 40,
+    "failed": 1,
+    "skipped": 1
+  },
+  "failure": {
+    "job": "bundle-application (kubernetes-restore-integration)",
+    "jobId": 103596038017,
+    "step": "Record the executed bundle workflow",
+    "code": "ENOENT",
+    "path": "dist/phase-2-evidence/kubernetes-profile.json",
+    "applicationWorkflow": "passed",
+    "actualCompanionReport": "kubernetes-upgrade.json"
+  },
+  "logSha256": "8466da449f67e5bd1c6403215af027c5c70b5b595ea061a785386a7a8d776b8c",
+  "hostedVerification": {
+    "status": "passed",
+    "sourceRevision": "be11ad27b09f892a8232d557193bbdf42a43daaa",
+    "qualification": "candidate-only",
+    "manifestSha256": "68e6526779e23567f86e4ab19de8bb671ae6e7adf2c974e2fa52a6ab8e811880",
+    "files": 1333,
+    "applicationReports": 23,
+    "verifiedBy": "current hosted installer with live Cosign archive, manifest, and three image signatures",
+    "root": "/tmp/cc-phase2-be11ad2-hosted-verification/release.lJXcb5x8/bundle"
+  },
+  "limits": [
+    "All twelve extracted application workflows passed. The failed report-recording step prevented final assembly.",
+    "The candidate remains candidate-only. No district acceptance is established."
+  ]
+}

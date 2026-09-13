@@ -1,0 +1,37 @@
+{
+  "status": "failed",
+  "recordedAt": "2026-09-12T15:28:28.321935+00:00",
+  "sourceRevision": "315b03db518db7a65d25ac7a933b36ab550b6140",
+  "run": 34701666129,
+  "job": 103574939171,
+  "target": "api-e2e:hybrid-upgrade-integration",
+  "jobUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34701666129/job/103574939171",
+  "stage": "persistence-verification",
+  "observedError": "socket hang up",
+  "observedCode": "ECONNRESET",
+  "rootCause": "unconfirmed",
+  "logSha256": "b5e2c81a62919179c6c27b6c16d0c1e83ce4e6c21f71da5103afabe05ed071d7",
+  "limits": [
+    "The local reproduction establishes an idle connection reuse defect in the request helper.",
+    "The CI log does not prove why its remote socket closed. The corrected full local workflow passed. Published revision checks remain required."
+  ],
+  "localReproduction": {
+    "target": "deployment:profiles-test",
+    "observed": "The real TLS request helper reuses an idle connection immediately after the server closes it. The request fails with ECONNRESET.",
+    "before": {
+      "status": "failed-as-expected",
+      "logSha256": "bfc8f60510440b597b0430baeb471d9a6114d0232440a0031348cb7c76c5fba9"
+    },
+    "after": {
+      "status": "passed",
+      "logSha256": "6255c20dc5afc37ee967d00c264bc8f4376d9a4417362b953e54a33661a5d36e"
+    },
+    "correction": "Use a fresh verified TLS connection for each synthetic hybrid request. Preserve TLS hostname rejection and do not replay failed POST requests."
+  },
+  "fullWorkflow": {
+    "target": "api-e2e:hybrid-upgrade-integration",
+    "status": "passed",
+    "report": "deployment/evidence/CC-36-phase-2-hybrid-upgrade-connection-regression.json",
+    "logSha256": "d182e2c7b64d72832a8e1dedd19ead84fa694ffa17b94d4db95a9455b0d86f21"
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "sourceRevision": "9aadf55a917870c6e3ed08d548308e659fc017fa",
+  "status": "failure",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918",
+  "jobs": [
+    {
+      "name": "validate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103537736782"
+    },
+    {
+      "name": "publish (frontend)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103537893773"
+    },
+    {
+      "name": "publish (api)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103537893781"
+    },
+    {
+      "name": "publish (worker)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103537893811"
+    },
+    {
+      "name": "capacity",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205654"
+    },
+    {
+      "name": "application (all-docker-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205773"
+    },
+    {
+      "name": "application (hybrid-integration)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205782"
+    },
+    {
+      "name": "application (hybrid-restore-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205796"
+    },
+    {
+      "name": "application (kubernetes-restore-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205798"
+    },
+    {
+      "name": "application (auth-image-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205807"
+    },
+    {
+      "name": "application (hybrid-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205810"
+    },
+    {
+      "name": "application (kubernetes-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205841"
+    },
+    {
+      "name": "application (restore-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205867"
+    },
+    {
+      "name": "application (kubernetes-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205886"
+    },
+    {
+      "name": "application (upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205895"
+    },
+    {
+      "name": "application (screen-reader-integration)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103538205916"
+    },
+    {
+      "name": "bundle",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687794918/job/103539231318"
+    }
+  ],
+  "publishedBundle": false,
+  "acceptedRelease": false,
+  "prCi": {
+    "status": "success",
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34687797432"
+  },
+  "failures": [
+    {
+      "target": "hybrid-integration",
+      "reason": "Kestra diagnostic did not recover within 120 seconds after the fixture database outage."
+    },
+    {
+      "target": "screen-reader-integration",
+      "reason": "The login announcement assertion failed. All other speech assertions passed."
+    }
+  ]
+}

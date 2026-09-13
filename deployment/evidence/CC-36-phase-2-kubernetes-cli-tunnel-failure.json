@@ -1,0 +1,21 @@
+{
+  "status": "failed",
+  "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17",
+  "fixtureRevision": "Native operator CLI changes after a41bb2f.",
+  "target": "api-e2e:kubernetes-restore-integration",
+  "durationSeconds": 297,
+  "stage": "Operator CLI backup after the Phase 1 upgrade and browser checks.",
+  "observed": [
+    "The first application and Kestra database sessions connected through verified TLS.",
+    "A second application database connection produced connection reset by peer in kubectl port-forward.",
+    "The shared tunnel stopped and terminated the existing application database session.",
+    "The operator CLI exited with Connection terminated unexpectedly."
+  ],
+  "logSha256": "9b3ad2bfc86a85c2887a1345a96c15807b8e8b0fea5110d7478075f7ece9fbd7",
+  "correction": "Give each database connection an independent kubectl port-forward process. Preserve native CLI tools and verified TLS.",
+  "regression": "A live TCP test terminates one tool tunnel while a concurrent database session remains usable.",
+  "limits": [
+    "The failure does not establish a database server defect.",
+    "The complete Kubernetes restore must pass with the corrected transport."
+  ]
+}

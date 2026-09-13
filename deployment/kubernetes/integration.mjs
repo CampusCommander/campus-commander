@@ -4,21 +4,34 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { renderKubernetes } from './render.mjs';
+import assert from 'node:assert/strict';
+import { qualificationImages } from '../qualification/images.mjs';
 
 // This adapter targets only the explicitly named disposable Kind cluster.
-const kubeconfig = '/tmp/cc-kube-workload-kubeconfig';
-const namespace = 'cc-kube-synthetic';
+const capacity = process.env.CC_KUBERNETES_CAPACITY_FIXTURE
+  ? JSON.parse(
+      await readFile(process.env.CC_KUBERNETES_CAPACITY_FIXTURE, 'utf8'),
+    )
+  : undefined;
+if (capacity) {
+  assert.equal(capacity.qualificationOnly, true);
+  assert.match(capacity.project, /^cc-capacity-kube-[a-f0-9]{12}$/);
+  assert.match(
+    capacity.root,
+    /^\/tmp\/cc-capacity-kube-[a-f0-9]{12}-[a-zA-Z0-9]+$/,
+  );
+  assert.equal(capacity.root.startsWith(`/tmp/${capacity.project}-`), true);
+}
+const kubeconfig = capacity
+  ? join(capacity.root, 'kubeconfig')
+  : '/tmp/cc-kube-workload-kubeconfig';
+const cluster = capacity?.project ?? 'cc-workload-validation';
+const namespace = capacity?.project ?? 'cc-kube-synthetic';
 const restoreNamespace = 'cc-kube-restore-synthetic';
 const kube = (args, input) =>
   execFileSync(
     'kubectl',
-    [
-      '--kubeconfig',
-      kubeconfig,
-      '--context',
-      'kind-cc-workload-validation',
-      ...args,
-    ],
+    ['--kubeconfig', kubeconfig, '--context', `kind-${cluster}`, ...args],
     {
       input,
       encoding: 'utf8',
@@ -29,17 +42,18 @@ const kube = (args, input) =>
 const nodes = JSON.parse(kube(['get', 'nodes', '-o', 'json']));
 if (
   nodes.items.length !== 3 ||
-  nodes.items.some(
-    (node) => !node.metadata.name.startsWith('cc-workload-validation-'),
-  )
+  nodes.items.some((node) => !node.metadata.name.startsWith(`${cluster}-`))
 )
   throw new Error('Use the dedicated three-node Kind fixture.');
 if (kube(['get', 'namespace', namespace, '--ignore-not-found', '-o', 'name']))
   throw new Error(
     'The synthetic namespace already exists. Preserve its credentials and use a fresh fixture.',
   );
-const root = await mkdtemp(join(tmpdir(), 'cc-kube-runtime-'));
-await writeFile('/tmp/cc-kube-runtime-current', root, { mode: 0o600 });
+const root = capacity
+  ? join(capacity.root, 'runtime')
+  : await mkdtemp(join(tmpdir(), 'cc-kube-runtime-'));
+if (capacity) await mkdir(root, { mode: 0o700 });
+else await writeFile('/tmp/cc-kube-runtime-current', root, { mode: 0o600 });
 const raw = JSON.parse(
   await readFile(
     new URL('../examples/kubernetes.json', import.meta.url),
@@ -63,6 +77,23 @@ config.images = {
   workers:
     'localhost:15000/campus-commander/worker@sha256:6e692bc185bcadb36ea1378aa5a321faa98c8fbf760058c5695dbad528688f0a',
 };
+if (capacity) {
+  const images = qualificationImages(undefined);
+  config.images = {
+    frontend: images.frontend,
+    api: images.api,
+    workers: images.worker,
+  };
+}
+const application = capacity?.application;
+if (application)
+  config.services.edge.endpoint.url = application.auth.publicOrigin;
+if (application && !application.upgradeFromPhase1) {
+  config.phase = 2;
+  config.applicationAuth = application.auth;
+  config.services.edge.access = 'application';
+  config.services.edge.endpoint.url = application.auth.publicOrigin;
+}
 const operator = JSON.parse(
   await readFile(new URL('./operator.example.json', import.meta.url), 'utf8'),
 );
@@ -73,6 +104,8 @@ operator.storageClasses = {
   kestraInternal: 'cc-synthetic-rwx',
 };
 operator.edgeIngress.sourceRanges = ['127.0.0.1/32'];
+if (application)
+  operator.externalEgress.identityProvider = [`${application.hostGateway}/32`];
 operator.release = {
   schemaVersion: 1,
   sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], {
@@ -82,44 +115,46 @@ operator.release = {
   images: config.images,
 };
 
-for (const node of nodes.items) {
-  execFileSync('docker', [
-    'exec',
-    node.metadata.name,
-    'mkdir',
-    '-p',
-    '/etc/containerd/certs.d/localhost:15000',
-  ]);
-  execFileSync(
-    'docker',
-    [
+if (!capacity) {
+  for (const node of nodes.items) {
+    execFileSync('docker', [
       'exec',
-      '-i',
       node.metadata.name,
-      'cp',
-      '/dev/stdin',
-      '/etc/containerd/certs.d/localhost:15000/hosts.toml',
-    ],
-    {
-      input: '[host."http://cc13-registry:5000"]\n',
-      stdio: ['pipe', 'ignore', 'pipe'],
-    },
+      'mkdir',
+      '-p',
+      '/etc/containerd/certs.d/localhost:15000',
+    ]);
+    execFileSync(
+      'docker',
+      [
+        'exec',
+        '-i',
+        node.metadata.name,
+        'cp',
+        '/dev/stdin',
+        '/etc/containerd/certs.d/localhost:15000/hosts.toml',
+      ],
+      {
+        input: '[host."http://cc13-registry:5000"]\n',
+        stdio: ['pipe', 'ignore', 'pipe'],
+      },
+    );
+  }
+  const network = JSON.parse(
+    execFileSync(
+      'docker',
+      [
+        'inspect',
+        '--format',
+        '{{json .NetworkSettings.Networks}}',
+        'cc13-registry',
+      ],
+      { encoding: 'utf8' },
+    ),
   );
+  if (!network.kind)
+    execFileSync('docker', ['network', 'connect', 'kind', 'cc13-registry']);
 }
-const network = JSON.parse(
-  execFileSync(
-    'docker',
-    [
-      'inspect',
-      '--format',
-      '{{json .NetworkSettings.Networks}}',
-      'cc13-registry',
-    ],
-    { encoding: 'utf8' },
-  ),
-);
-if (!network.kind)
-  execFileSync('docker', ['network', 'connect', 'kind', 'cc13-registry']);
 
 const openssl = (...args) =>
   execFileSync('openssl', args, { cwd: root, stdio: 'ignore' });
@@ -142,6 +177,16 @@ const ca = await readFile(join(root, 'ca.pem'));
 const secrets = new Map();
 const id = (ref) => `${ref.name}/${ref.key}`;
 const put = (ref, bytes) => secrets.set(id(ref), Buffer.from(bytes));
+if (application) {
+  put(
+    application.auth.clientSecretRef,
+    await readFile(application.clientSecretFile),
+  );
+  put(
+    { name: 'qualification-provider', key: 'ca' },
+    await readFile(application.caFile),
+  );
+}
 const pathFor = async (ref) => {
   const path = join(root, ref.name, ref.key);
   await mkdir(join(root, ref.name), { recursive: true, mode: 0o700 });
@@ -182,7 +227,7 @@ for (const [name, service] of Object.entries(config.services)) {
     '-out',
     `${name}.csr`,
     '-subj',
-    `/CN=${host}`,
+    `/CN=${capacity ? name : host}`,
   );
   await writeFile(
     join(root, `${name}.ext`),
@@ -269,6 +314,28 @@ for (const [reference, bytes] of secrets) {
   grouped.get(name)[key] = bytes.toString('base64');
 }
 const list = renderKubernetes(config, operator);
+if (application) {
+  const pod = list.items.find(
+    (item) => item.kind === 'Deployment' && item.metadata.name === 'api',
+  ).spec.template.spec;
+  pod.hostAliases = [
+    { ip: application.hostGateway, hostnames: ['host.docker.internal'] },
+  ];
+  pod.volumes.push({
+    name: 'qualification-provider',
+    secret: { secretName: 'qualification-provider' },
+  });
+  const container = pod.containers.find((item) => item.name === 'api');
+  container.env.push({
+    name: 'NODE_EXTRA_CA_CERTS',
+    value: '/run/qualification/ca',
+  });
+  container.volumeMounts.push({
+    name: 'qualification-provider',
+    mountPath: '/run/qualification',
+    readOnly: true,
+  });
+}
 await writeFile(join(root, 'config.json'), JSON.stringify(config, null, 2), {
   mode: 0o600,
 });
@@ -309,10 +376,14 @@ for (const [claim, subPath] of [
   ['campus-artifacts', 'artifacts'],
   ['kestra-internal', 'kestra'],
 ]) {
-  await mkdir(`/tmp/cc-kube-synthetic-shared/${claim}/${subPath}`, {
-    recursive: true,
-    mode: 0o700,
-  });
+  if (!capacity || claim !== 'campus-artifacts')
+    await mkdir(
+      `${capacity ? join(capacity.root, 'shared') : '/tmp/cc-kube-synthetic-shared'}/${claim}/${subPath}`,
+      {
+        recursive: true,
+        mode: 0o700,
+      },
+    );
   kube(
     ['apply', '-f', '-'],
     JSON.stringify({
@@ -333,7 +404,8 @@ for (const [claim, subPath] of [
     }),
   );
 }
-kube(['apply', '-f', join(root, 'resources.json')]);
+if (!application?.installerOwnsWorkloads)
+  kube(['apply', '-f', join(root, 'resources.json')]);
 process.stdout.write(
-  `Synthetic Kubernetes resources applied. Private fixture directory: ${root}\n`,
+  `Synthetic Kubernetes fixture prepared. Private fixture directory: ${root}\n`,
 );

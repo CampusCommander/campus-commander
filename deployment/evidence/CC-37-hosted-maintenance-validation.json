@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-13T04:19:54.998520+00:00",
+  "scope": "CC-37 hosted update and uninstall options",
+  "baseRevision": "837c4bfa0c473ec6f190582ef9a9a287f6f38c45",
+  "command": "npm exec nx run-many -- --targets=installer-test,lint,release-test,operations-test --projects=deployment --output-style=static",
+  "result": "passed",
+  "checks": {
+    "installer-test": {
+      "passed": 113,
+      "failed": 0
+    },
+    "operations-test": {
+      "passed": 7,
+      "failed": 0
+    },
+    "release-test": {
+      "passed": 7,
+      "failed": 0
+    },
+    "lint": "passed",
+    "build": "passed",
+    "shellSyntax": "passed",
+    "diffWhitespace": "passed"
+  },
+  "coverage": [
+    "Exact uninstall confirmation and preserved installation inputs.",
+    "Verified target downloads and image signature calls through the shell entry.",
+    "All-Docker, hybrid, and Kubernetes update configuration preservation.",
+    "Matching backup requirement and cancellation before lifecycle mutation.",
+    "Preparation and resume through the existing lifecycle engine.",
+    "Interrupted preparation, admitted update, and disk-full configuration publication.",
+    "State-bound cached release and uninstall operator selection during pending updates.",
+    "Changed staged configuration rejection before service mutation.",
+    "Hybrid worker update pause and resume."
+  ],
+  "limitations": [
+    "External commands and signing responses use controlled test implementations.",
+    "No new live VM update or uninstall execution.",
+    "No signed release publication or deployment to the operator VM."
+  ],
+  "files": [
+    {
+      "path": "install.sh",
+      "sha256": "82c66289d7693abfa91a53b3019f377569856b59421924b6eda64f163781ba14"
+    },
+    {
+      "path": "deployment/installer/maintenance.mjs",
+      "sha256": "b08bdeccf97ab5c7adcb9c49d99fb2e0f09899125c031482b0ccd6c043d76aeb"
+    },
+    {
+      "path": "deployment/installer/maintenance.test.mjs",
+      "sha256": "36772fd4990d15b3edbbb20e32db0b05ff4e20eda7a25ffd505eda12714fc012"
+    },
+    {
+      "path": "deployment/installer/setup.mjs",
+      "sha256": "3d8bf06b5717401f6160ed78df344e9ff913706af22b7e7e33eb745d1628b4cf"
+    },
+    {
+      "path": "deployment/installer/setup.test.mjs",
+      "sha256": "70dc17f8d0a8ca4dfe1842602ad8c010418b0e50b0de97272eb34d2549a81b01"
+    },
+    {
+      "path": "deployment/installer/orchestrator.mjs",
+      "sha256": "62c9f39949a4d866d7ef16b9bd53dbd26047603944fea29d395eab00c94425e7"
+    },
+    {
+      "path": "deployment/installer/orchestrator.test.mjs",
+      "sha256": "a8e646bcea538717eaef5cb52cb2b5fc992fc3bb39ba8adc16c374f96cbf130e"
+    },
+    {
+      "path": "deployment/installer/entry.test.mjs",
+      "sha256": "2defc84ae33ed53293f99160e598d58c50ebb3d82cb16e4ab0e26eeb138275fd"
+    }
+  ]
+}

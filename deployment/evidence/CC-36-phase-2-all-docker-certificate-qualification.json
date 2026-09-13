@@ -1,0 +1,87 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T16:08:25.374153+00:00",
+  "imageSourceRevision": "8a5f82306ea29bc497a7200914b9bd9dddfe1f01",
+  "fixtureSource": {
+    "baseGitRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+    "workingTree": "uncommitted-candidate",
+    "files": [
+      {
+        "path": "api-e2e/all-docker-certificates-fixture.mjs",
+        "sha256": "281b5644352b35e2af6f3d6d28b55e7c9cc3985db865271dae4417452141d2dc"
+      },
+      {
+        "path": "api-e2e/all-docker-faults-fixture.mjs",
+        "sha256": "34454bcda2483db28e0d7bdb03796691eb71e7e775c1d60b0706baee3b19438c"
+      },
+      {
+        "path": "api-e2e/upgrade.test.mjs",
+        "sha256": "35c43c9015e641c57a5d226793eef8ae6714851c080c45970dbd2c5fc118f8a8"
+      },
+      {
+        "path": "api-e2e/project.json",
+        "sha256": "af8897ded64e570117982c12be1f8b91c16e23c66c7e6d165e23f5e2e5fc6f5b"
+      },
+      {
+        "path": "deployment/release/candidate.mjs",
+        "sha256": "06148d94615d433d630923271e4dc18313486094827a2ba7dcce56fa73b45ecc"
+      },
+      {
+        "path": "deployment/release/candidate.test.mjs",
+        "sha256": "36630947107aa0f9b438c20dc82ef8c3577f846895748662384733e05a4e2d20"
+      },
+      {
+        "path": ".github/workflows/phase-2-candidate.yml",
+        "sha256": "746895283324bae8c0869cb2206383bf7b08d118317b10630ee11b0d26365195"
+      }
+    ]
+  },
+  "reports": [
+    {
+      "path": "deployment/evidence/CC-36-phase-2-all-docker-authenticated-certificates.json",
+      "sha256": "b5deb5809248901d36641a85007cc18b2e4630280fe81cb444aa2f024ace53cc"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-all-docker-shared-probe-regression.json",
+      "sha256": "752230e76139a656fbfd093fa86aafe43c961fd432008279a4e0764288b9a194"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-nineteenth-published-run.json",
+      "sha256": "4d7d55553da1e7cb7efb9924990f30b39d350e76da5f1e8e0f2307291f3c0018"
+    }
+  ],
+  "tests": [
+    {
+      "target": "api-e2e:all-docker-certificate-integration",
+      "status": "passed",
+      "logSha256": "8799f7e4bb0c326e82b7aa051836b1ae457ee8c923bfbbc6110be8a784bc181e"
+    },
+    {
+      "target": "api-e2e:all-docker-process-fault-integration",
+      "status": "passed",
+      "logSha256": "2c803d780405b8af0961c3b9c84c1bf8103c0956011b08819676b35059142cb5"
+    },
+    {
+      "target": "deployment:release-test",
+      "status": "passed",
+      "logSha256": "e5eda21d00480a41e6b72c6ec103419cb43334b49bb1737b5fd8a94ed9d2b630"
+    },
+    {
+      "target": "api-e2e:lint",
+      "status": "passed",
+      "logSha256": "49baf0eb9ba0ef00b438955088aedbc92e57bb8ef9c645073ee531cd7d075167"
+    },
+    {
+      "target": "deployment:lint",
+      "status": "passed",
+      "logSha256": "cee7126e08f36b70c9fc15430cd624fff60cf3ea762aa8d318fa8d9aa24f692c"
+    }
+  ],
+  "excludedPrivateFixtureValues": 13,
+  "limits": [
+    "The local certificate and process targets use published 8a5f823 images with current fixture changes.",
+    "Certificate tests use synthetic trust and one Docker host. They do not qualify district browser trust.",
+    "Published a807c35 passed twenty-eight candidate jobs and seven PR jobs. Its bundle signatures and 1,302 file hashes verified.",
+    "Final source qualification, extracted-bundle workflows, accepted release assembly, and district acceptance remain open."
+  ]
+}

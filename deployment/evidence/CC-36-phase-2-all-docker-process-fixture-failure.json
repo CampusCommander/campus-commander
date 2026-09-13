@@ -1,0 +1,137 @@
+{
+  "status": "failed",
+  "cause": "The artifact permission helper used root to read an owner-restricted configuration file.",
+  "correction": "The helper now uses the application file owner and the validated artifact path.",
+  "report": {
+    "status": "failed",
+    "profile": "all-docker",
+    "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17",
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6552fd5ac1740334f04235def95e58959c605b46f722a9091a98fbca5f6985ac",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:77806b035d3cf2c768290feb846429f4ef32bf18f7ac6e651ec8dcea521367f1",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:e9306ca625da685898cd4f8c00a385df50c4302504eefcd00d52c5097e8b3a61"
+    },
+    "recoveryBoundSeconds": 180,
+    "cases": [
+      {
+        "name": "api-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:18:11.112Z",
+        "observed": {
+          "httpStatus": 502
+        },
+        "interruptionMs": 9836,
+        "recoveryMs": 2972,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "worker-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:18:27.647Z",
+        "observed": {
+          "httpStatus": 201,
+          "status": "failed",
+          "correlationId": "6e459412-e438-489f-aff0-57b82e62842c"
+        },
+        "interruptionMs": 7377,
+        "recoveryMs": 902,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "redis-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:18:39.062Z",
+        "observed": {
+          "httpStatus": 503
+        },
+        "interruptionMs": 5846,
+        "sourceSessionRejected": true,
+        "recoveryMs": 1348,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "application-postgresql-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:18:49.453Z",
+        "observed": {
+          "httpStatus": 503
+        },
+        "interruptionMs": 3544,
+        "recoveryMs": 1027,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "kestra-postgresql-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:18:57.231Z",
+        "observed": {
+          "httpStatus": 201,
+          "status": "timed-out",
+          "correlationId": "ce4f68f4-c2dd-48a7-81db-0b6a99ef282e"
+        },
+        "interruptionMs": 6036,
+        "recoveryMs": 69637,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "kestra-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:20:16.481Z",
+        "observed": {
+          "httpStatus": 201,
+          "status": "timed-out",
+          "correlationId": "3e72e434-5a24-4b04-a585-c3e46e11bcd5"
+        },
+        "interruptionMs": 9919,
+        "recoveryMs": 5942,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "artifact-access-loss",
+        "status": "in-progress",
+        "startedAt": "2026-09-12T13:20:35.691Z"
+      }
+    ],
+    "limits": [
+      "One Docker host retains host and volume failure points.",
+      "Capacity and certificate faults require separate evidence."
+    ]
+  },
+  "logSha256": "a9856de2b23bfc0783f79fc2737c577196f1a113023ab95ee7289b4f93d52616"
+}

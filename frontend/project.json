@@ -18,9 +18,19 @@
           {
             "glob": "**/*",
             "input": "frontend/public"
+          },
+          {
+            "glob": "LICENSE",
+            "input": "node_modules/@fontsource/roboto",
+            "output": "licenses/roboto"
+          },
+          {
+            "glob": "LICENSE",
+            "input": "node_modules/@fontsource/material-symbols-outlined",
+            "output": "licenses/material-symbols-outlined"
           }
         ],
-        "styles": ["frontend/src/styles.css"]
+        "styles": ["frontend/src/styles.scss"]
       },
       "configurations": {
         "production": {
@@ -36,7 +46,15 @@
               "maximumError": "8kb"
             }
           ],
-          "outputHashing": "all"
+          "outputHashing": "all",
+          "optimization": {
+            "scripts": true,
+            "styles": {
+              "minify": true,
+              "inlineCritical": false
+            },
+            "fonts": false
+          }
         },
         "development": {
           "optimization": false,
@@ -81,7 +99,7 @@
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "command": "docker build --platform linux/amd64 --provenance=false --build-arg SOURCE_DATE_EPOCH=0 --file deployment/images/frontend.Dockerfile --tag campus-commander/frontend:cc-6 ."
+        "command": "node deployment/images/build.mjs frontend"
       }
     }
   }

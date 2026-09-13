@@ -1,0 +1,21 @@
+{
+  "status": "failed",
+  "scope": "kubernetes-authenticated-edge-certificate-fixture",
+  "durationSeconds": 272.63,
+  "sourceRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+  "failure": "The fixture assumed an edge-ca secret. The profile uses district-ca.",
+  "mutationStarted": false,
+  "correction": "Read the edge TLS references from configuration. Sign replacement certificates with the existing synthetic district CA. Replace only the edge certificate and key.",
+  "logSha256": "78185f7a203e6bbfae5f91b439a640a26ac4d61c08a53faa2198990f7c9638d5",
+  "limits": [
+    "This failed run does not qualify certificate rejection or recovery."
+  ],
+  "additionalFailure": {
+    "failure": "kubectl could not open /dev/stdin through an asynchronous child process.",
+    "mutationStarted": false,
+    "logSha256": "f5f2b47b09ef270ee1c5df95142b848e84340244c6203bd262c549bc65245b0e",
+    "minimalReproduction": "kubectl patch --local with async stdin reproduced ENXIO. A protected patch file passed.",
+    "correction": "Use a private patch file. Remove it after each kubectl invocation."
+  },
+  "correctedReport": "deployment/evidence/CC-36-phase-2-kubernetes-authenticated-certificates.json"
+}

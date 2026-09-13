@@ -9,7 +9,9 @@
       "options": {
         "command": "webpack-cli build",
         "cwd": "worker",
-        "env": { "NODE_ENV": "production" }
+        "env": {
+          "NODE_ENV": "production"
+        }
       }
     },
     "serve": {
@@ -21,12 +23,14 @@
         "runBuildTargetDependencies": false
       }
     },
-    "lint": { "executor": "@nx/eslint:lint" },
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    },
     "image": {
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "command": "docker build --platform linux/amd64 --provenance=false --build-arg SOURCE_DATE_EPOCH=0 --file deployment/images/worker.Dockerfile --tag campus-commander/worker:cc-6 ."
+        "command": "node deployment/images/build.mjs worker"
       }
     }
   },

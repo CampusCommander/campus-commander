@@ -1,0 +1,64 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T14:24:38.664Z",
+  "durationMs": 62067,
+  "environment": "one Docker host, synthetic HTTPS OIDC provider, two API replicas, real PostgreSQL, Redis, Kestra, worker, artifact storage, and Chromium",
+  "browser": "149.0.7827.55",
+  "packagedApplicationImages": true,
+  "images": {
+    "api": {
+      "reference": "campus-commander/api:cc-6",
+      "id": "sha256:8c4091810017353885c514e2936cf19c7a366feb732a63c01924a2da96d2d23c",
+      "labels": {
+        "org.opencontainers.image.licenses": "LicenseRef-Campus-Commander-Community-1.0.0",
+        "org.opencontainers.image.revision": "c5fef81c0dcc89dae1965cd9256560d8f2e0a0a1-dirty",
+        "org.opencontainers.image.version": "phase-2-development"
+      }
+    },
+    "frontend": {
+      "reference": "campus-commander/frontend:cc-6",
+      "id": "sha256:3879feeea8b7d027471479f3d1c461c9766653e4bc0c02794d68e8081e5951ca",
+      "labels": {
+        "org.opencontainers.image.licenses": "LicenseRef-Campus-Commander-Community-1.0.0",
+        "org.opencontainers.image.revision": "c5fef81c0dcc89dae1965cd9256560d8f2e0a0a1-dirty",
+        "org.opencontainers.image.version": "phase-2-development"
+      }
+    },
+    "worker": {
+      "reference": "campus-commander/worker:cc-6",
+      "id": "sha256:f9cc8abfa28ab325d719132c8a89372444172d9c5ac3b4d4e7a8984e71061160",
+      "labels": {
+        "org.opencontainers.image.licenses": "LicenseRef-Campus-Commander-Community-1.0.0",
+        "org.opencontainers.image.revision": "c5fef81c0dcc89dae1965cd9256560d8f2e0a0a1-dirty",
+        "org.opencontainers.image.version": "phase-2-development"
+      }
+    }
+  },
+  "checks": [
+    "OIDC sign-in and forged callback denial",
+    "OIDC client credential rotation",
+    "worker credential rotation",
+    "cross-replica sessions and logout",
+    "absolute and idle expiry",
+    "revocation and recovery",
+    "database and Redis timeout recovery",
+    "four live utility operations",
+    "execution permission denial for all four utility operations",
+    "PostgreSQL transaction rejection, rollback, audit, and retry",
+    "Redis diagnostic key denial, preserved session, and retry",
+    "origin, CSRF, content-type, and preference-tampering rejection",
+    "uncached redacted errors without permissive CORS",
+    "browser sign-in and sign-out",
+    "persisted preferences",
+    "system and explicit themes",
+    "offline observation recovery",
+    "keyboard focus and menus",
+    "CSS zoom 200 percent",
+    "320 pixel reflow"
+  ],
+  "limits": [
+    "Full deployment profile qualification remains separate.",
+    "Human screen-reader walkthrough remains unperformed.",
+    "Synthetic provider evidence does not qualify a district identity provider."
+  ]
+}

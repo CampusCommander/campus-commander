@@ -1,0 +1,39 @@
+{
+  "status": "passed",
+  "scope": "diagnostics-failed-artifact-cleanup",
+  "failedImageSourceRevision": "c5fef81c0dcc89dae1965cd9256560d8f2e0a0a1",
+  "fixedImageBuildId": "c5fef81c0dcc89dae1965cd9256560d8f2e0a0a1-dirty",
+  "failure": {
+    "state": "One extra inactive staging record remained after ENOSPC recovery.",
+    "expectedArtifactRows": 1,
+    "actualArtifactRows": 2,
+    "logSha256": "f3b9edeba7fdf63ea38ef6ef90189724292e602fce1e921c0d52a7cf886cb749"
+  },
+  "correction": {
+    "path": "api/src/app/storage/storage.service.ts",
+    "sha256": "0ea0da9ce2196c9aa43bcedc1e5f584a0e7b184f8e3b01906261dafcbadab59e",
+    "behavior": "Attempt owned artifact removal after failed staging. Preserve the original diagnostic failure.",
+    "scope": "The artifact store retains attempt, activity, and reference checks before removal."
+  },
+  "verification": {
+    "target": "api-e2e:all-docker-capacity-integration",
+    "status": "passed",
+    "logSha256": "f0aae1f807090cdac77a5ae00334998355355699f1d12afbffdce84c0482a9dc",
+    "failedMetadataRemoved": true,
+    "failedFilesRemoved": true,
+    "identityAndPreferencesPreserved": true,
+    "securityEventsPreserved": true,
+    "originalArtifactPreserved": true
+  },
+  "limits": [
+    "The fixed image includes uncommitted source changes. Published revision CI remains required.",
+    "The capacity fixture uses bounded tmpfs and does not qualify other filesystem implementations."
+  ],
+  "packagedRegression": {
+    "target": "api-e2e:auth-image-integration",
+    "status": "passed",
+    "durationSeconds": 68.75,
+    "report": "deployment/evidence/CC-32-phase-2-cleanup-packaged-authentication.json",
+    "logSha256": "3953bc3b61c315ac31628a1c5faff938dd6356144604bb509f670e3a0c60f80a"
+  }
+}

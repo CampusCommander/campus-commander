@@ -1,0 +1,238 @@
+{
+  "status": "passed",
+  "profile": "all-docker",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6552fd5ac1740334f04235def95e58959c605b46f722a9091a98fbca5f6985ac",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:77806b035d3cf2c768290feb846429f4ef32bf18f7ac6e651ec8dcea521367f1",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:e9306ca625da685898cd4f8c00a385df50c4302504eefcd00d52c5097e8b3a61"
+  },
+  "recordedAt": "2026-09-12T12:50:10.770Z",
+  "durationMs": 58138,
+  "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17",
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "790a214e-e1de-43e1-a5e7-48b726d89564",
+        "observedAt": "2026-09-12T12:50:09.540Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "52928a44-717d-4ec5-810e-cc5ee5e8c1b7",
+        "observedAt": "2026-09-12T12:50:09.630Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "291f76a1-3c96-4ca3-a8e0-b27d4544b367",
+        "observedAt": "2026-09-12T12:50:10.469Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "9f38d10d-8a77-4f1d-a04a-c84484a5b5b4",
+        "observedAt": "2026-09-12T12:50:10.578Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "restoration": {
+    "schemaVersion": 1,
+    "status": "verified-services-disabled",
+    "profile": "all-docker",
+    "durationMilliseconds": 461,
+    "redisRecovery": {
+      "policy": "discard-cache",
+      "releaseRequiresFreshRedis": true
+    },
+    "backupCreatedAt": "2026-09-12T12:49:22.894Z",
+    "applicationTables": [
+      {
+        "schema": "cc",
+        "name": "application_principals",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "artifacts",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "bootstrap_access",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "schema_migrations",
+        "count": "2"
+      },
+      {
+        "schema": "cc",
+        "name": "security_events",
+        "count": "12"
+      }
+    ],
+    "kestraTables": [
+      {
+        "schema": "public",
+        "name": "concurrency_limit",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "dashboards",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "execution_queued",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "executions",
+        "count": "1"
+      },
+      {
+        "schema": "public",
+        "name": "executordelayed",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "executorstate",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "flow_topologies",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "flows",
+        "count": "1"
+      },
+      {
+        "schema": "public",
+        "name": "flyway_schema_history",
+        "count": "53"
+      },
+      {
+        "schema": "public",
+        "name": "kv_metadata",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "logs",
+        "count": "1"
+      },
+      {
+        "schema": "public",
+        "name": "metrics",
+        "count": "5"
+      },
+      {
+        "schema": "public",
+        "name": "multipleconditions",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "namespace_file_metadata",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "queues",
+        "count": "8"
+      },
+      {
+        "schema": "public",
+        "name": "service_instance",
+        "count": "20"
+      },
+      {
+        "schema": "public",
+        "name": "settings",
+        "count": "4"
+      },
+      {
+        "schema": "public",
+        "name": "sla_monitor",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "templates",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "triggers",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "worker_job_running",
+        "count": "0"
+      }
+    ],
+    "artifactFiles": [
+      {
+        "path": "artifacts/.cc16-fixture.json",
+        "sha256": "63b4d86427f507b819086077de1e5974dbe082596c8513dd4cc9e548ea20dba5",
+        "sizeBytes": 213
+      },
+      {
+        "path": "artifacts/c3f92c94-8582-435c-90df-93fb93b72955.42d99e5c-3bf4-46a5-8119-fc215ea69e5e",
+        "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+        "sizeBytes": 28
+      }
+    ]
+  },
+  "operatorCli": {
+    "runner": "operator-host-native",
+    "nodeVersion": "v24.19.0",
+    "secretMount": "/run/secrets",
+    "injectedDatabaseTool": false,
+    "commands": [
+      {
+        "command": "backup",
+        "status": "passed"
+      },
+      {
+        "command": "verify",
+        "status": "passed"
+      },
+      {
+        "command": "restore",
+        "status": "passed"
+      }
+    ]
+  },
+  "preserved": {
+    "principals": 1,
+    "securityEvents": 12,
+    "identityStateSha256": "17880a7c5933cbd4d45c78fc0594156e3cd8060325875b90a2ebbf93933bb477",
+    "artifactId": "c3f92c94-8582-435c-90df-93fb93b72955",
+    "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "preference": "dark"
+  },
+  "oldSessionRejected": true,
+  "limits": [
+    "Separate Compose networks, databases, and volumes share one Docker host.",
+    "The stopped source and restored target reuse one loopback HTTPS origin.",
+    "Synthetic credentials remain unchanged for this restore and require district review before deployment.",
+    "The fixture adds a synthetic provider CA and host mapping."
+  ]
+}

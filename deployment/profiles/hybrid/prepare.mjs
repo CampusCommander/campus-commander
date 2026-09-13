@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   access,
   chmod,
@@ -9,6 +10,9 @@ import {
   mkdir,
   readFile,
   realpath,
+  rename,
+  unlink,
+  writeFile,
 } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -189,9 +193,6 @@ export async function prepareHybrid(
     CC_KESTRA_WORKER_CA_FILE: workerCa,
   };
 
-  if (render) await render(environment);
-  else await run(process.execPath, [kestraRenderer], { env: environment });
-
   const runtimeFiles = [
     'application.yaml',
     'database-ca.pem',
@@ -202,11 +203,64 @@ export async function prepareHybrid(
     'server.p12',
     'worker-truststore.p12',
   ];
-  for (const name of runtimeFiles) {
-    await protectedFile(
-      resolve(runtimeRoot, name),
-      `Kestra runtime file ${name}`,
+  const inputs = Object.entries(environment)
+    .filter(([name]) => name.startsWith('CC_KESTRA_'))
+    .sort(([left], [right]) => left.localeCompare(right));
+  const fingerprint = createHash('sha256').update(JSON.stringify(inputs));
+  for (const [name, value] of inputs) {
+    if (name.endsWith('_FILE')) fingerprint.update(await readFile(value));
+  }
+  for (const source of [
+    kestraRenderer,
+    resolve(import.meta.dirname, '../../postgres/secrets.mjs'),
+  ])
+    fingerprint.update(await readFile(source));
+  const inputSha256 = fingerprint.digest('hex');
+  const manifestPath = resolve(runtimeRoot, 'preparation.json');
+  const checksums = async () =>
+    Object.fromEntries(
+      await Promise.all(
+        runtimeFiles.map(async (name) => {
+          const path = await protectedFile(
+            resolve(runtimeRoot, name),
+            `Kestra runtime file ${name}`,
+          );
+          return [
+            name,
+            createHash('sha256')
+              .update(await readFile(path))
+              .digest('hex'),
+          ];
+        }),
+      ),
     );
+  let preserved = false;
+  try {
+    await protectedFile(manifestPath, 'The Kestra preparation record');
+    const previous = JSON.parse(await readFile(manifestPath, 'utf8'));
+    const current = await checksums();
+    preserved =
+      previous.schemaVersion === 1 &&
+      previous.inputSha256 === inputSha256 &&
+      runtimeFiles.every((name) => previous.files?.[name] === current[name]);
+  } catch {
+    // Missing or changed runtime evidence requires new preparation.
+  }
+  if (!preserved) {
+    if (render) await render(environment);
+    else await run(process.execPath, [kestraRenderer], { env: environment });
+    const files = await checksums();
+    const temporary = `${manifestPath}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(
+        temporary,
+        JSON.stringify({ schemaVersion: 1, inputSha256, files }),
+        { flag: 'wx', mode: 0o600 },
+      );
+      await rename(temporary, manifestPath);
+    } finally {
+      await unlink(temporary).catch(() => undefined);
+    }
   }
 
   return {

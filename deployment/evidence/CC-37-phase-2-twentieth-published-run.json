@@ -1,0 +1,220 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T16:32:08.289983+00:00",
+  "sourceRevision": "5bda2bffba3a215c49063a03ac362244c620dfe4",
+  "candidate": {
+    "runId": 34704341623,
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34704341623",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 103581563618,
+        "name": "validate",
+        "conclusion": "success"
+      },
+      {
+        "id": 103581790443,
+        "name": "publish (worker)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103581790468,
+        "name": "publish (frontend)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103581790506,
+        "name": "publish (api)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582100826,
+        "name": "capacity",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101010,
+        "name": "application (all-docker-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101018,
+        "name": "application (all-docker-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101042,
+        "name": "application (all-docker-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101050,
+        "name": "application (hybrid-cli-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101053,
+        "name": "application (kubernetes-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101067,
+        "name": "application (hybrid-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101068,
+        "name": "application (all-docker-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101089,
+        "name": "application (auth-image-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101106,
+        "name": "application (kubernetes-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101110,
+        "name": "application (kubernetes-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101114,
+        "name": "application (hybrid-cli-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101115,
+        "name": "application (hybrid-cli-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101142,
+        "name": "application (hybrid-cli-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101144,
+        "name": "application (screen-reader-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101147,
+        "name": "application (kubernetes-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101160,
+        "name": "application (upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101162,
+        "name": "application (kubernetes-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101167,
+        "name": "application (hybrid-cli-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101180,
+        "name": "application (hybrid-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101181,
+        "name": "application (kubernetes-replica-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101182,
+        "name": "application (restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101215,
+        "name": "application (kubernetes-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103582101221,
+        "name": "application (hybrid-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103583878481,
+        "name": "bundle",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "pr": {
+    "runId": 34704343976,
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34704343976",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 103581569537,
+        "name": "browser",
+        "conclusion": "success"
+      },
+      {
+        "id": 103581569657,
+        "name": "application-integration",
+        "conclusion": "success"
+      },
+      {
+        "id": 103581569664,
+        "name": "main",
+        "conclusion": "success"
+      },
+      {
+        "id": 103581569680,
+        "name": "foundation-integration (postgres-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103581569709,
+        "name": "foundation-integration (storage-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103581569774,
+        "name": "foundation-integration (operations-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103581569794,
+        "name": "foundation-integration (qualify-redis)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "release": {
+    "published": true,
+    "accepted": false,
+    "url": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-5bda2bffba3a",
+    "tag": "phase-2-candidate-5bda2bffba3a",
+    "assets": [
+      "phase-2-candidate.sigstore.json",
+      "phase-2-candidate.tar.gz",
+      "release-manifest.json",
+      "release-manifest.sigstore.json"
+    ]
+  },
+  "limits": [
+    "All twenty-nine candidate jobs and all seven PR jobs passed.",
+    "The new all-Docker authenticated certificate job passed.",
+    "This record verifies workflow and release metadata. Independent extracted-bundle execution remains separate.",
+    "The current extracted-bundle experiments use the independently verified a807c35 candidate.",
+    "Final source qualification, complete extracted-bundle workflows, and accepted release assembly remain open."
+  ]
+}

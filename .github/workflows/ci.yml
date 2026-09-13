@@ -5,6 +5,16 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run browser and infrastructure integration checks
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   actions: read
@@ -27,14 +37,24 @@ jobs:
       - run: npm ci
 
       - run: npm exec nx format:check -- --base="remotes/origin/main"
-      - run: npm exec nx run-many -- -t lint,test,build,typecheck -p deployment,frontend,api,worker
+      - name: Select comparison revision
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git cat-file -e "${BASE_REVISION:-missing}^{commit}" 2>/dev/null; then
+            echo "NX_BASE=$BASE_REVISION" >> "$GITHUB_ENV"
+          else
+            echo "NX_BASE=$(git rev-parse HEAD^)" >> "$GITHUB_ENV"
+          fi
+      - run: npm exec nx affected -- -t lint,test,build,typecheck --base="$NX_BASE" --head=HEAD
         env:
           NX_NO_CLOUD: ${{ vars.NX_CLOUD_ENABLED != 'true' }}
       - run: npm exec nx run api-e2e:e2e
       - run: npm exec nx run deployment:validate-examples
-      - run: npm exec nx run-many -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test -p deployment
+      - run: npm exec nx affected -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test --base="$NX_BASE" --head=HEAD
 
   foundation-integration:
+    if: github.event_name == 'push' || inputs.full == true
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -58,6 +78,7 @@ jobs:
           NX_NO_CLOUD: 'true'
 
   browser:
+    if: github.event_name == 'push' || inputs.full == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -70,3 +91,40 @@ jobs:
       - run: npm exec nx run frontend-e2e:e2e -- --args="--project=chromium"
         env:
           NX_NO_CLOUD: 'true'
+
+  application-integration:
+    if: github.event_name == 'push' || inputs.full == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
+        with:
+          version: v29.7.2
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - uses: docker/setup-compose-action@4eb059ff7f16592f9c84d5ca339c53cb7c5064e2 # v2
+        with:
+          version: v5.5.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm exec nx run-many -- -t image -p api,frontend,worker --parallel=2
+        env:
+          NX_NO_CLOUD: 'true'
+          CC_IMAGE_VERSION: phase-2-ci
+      - run: npm exec nx run api-e2e:auth-image-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - run: npm exec nx run api-e2e:all-docker-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-2-application-evidence
+          path: dist/phase-2-evidence/
+          if-no-files-found: warn

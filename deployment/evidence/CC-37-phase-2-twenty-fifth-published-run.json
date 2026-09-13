@@ -1,0 +1,27 @@
+{
+  "status": "failed",
+  "sourceRevision": "d370bbd079cdcac9372b87c2d1b1e6f42e686428",
+  "candidateRun": "https://github.com/CampusCommander/campus-commander/actions/runs/34709851020",
+  "jobs": {
+    "passed": 27,
+    "failed": 1,
+    "skipped": 3
+  },
+  "failure": {
+    "job": "application (hybrid-upgrade-integration)",
+    "jobId": 103597115907,
+    "stage": "persistence-verification",
+    "code": "ECONNRESET",
+    "message": "socket hang up",
+    "durationMilliseconds": 74691.202055,
+    "failedRequest": "undetermined: Kestra execution read or API readiness read"
+  },
+  "logSha256": "f10dd074ce51f8f8f4fc1a044671ab2fb2cb53bfded203ef1928f981ced9cf9a",
+  "limits": [
+    "The failure followed PostgreSQL restart and readiness recovery.",
+    "No qualification artifact was uploaded for the failed target.",
+    "The candidate did not reach bundle publication.",
+    "The error does not identify the failed request or prove its cause.",
+    "All seven PR CI jobs passed for this revision."
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "name": "google-client-import",
+  "engine": {
+    "name": "axe-core",
+    "version": "4.13.0"
+  },
+  "recordedAt": "2026-09-13T03:29:21.292Z",
+  "violations": [],
+  "incomplete": [],
+  "passedRuleIds": [
+    "aria-allowed-attr",
+    "aria-conditional-attr",
+    "aria-deprecated-role",
+    "aria-hidden-body",
+    "aria-prohibited-attr",
+    "aria-required-attr",
+    "aria-roles",
+    "aria-valid-attr-value",
+    "aria-valid-attr",
+    "button-name",
+    "bypass",
+    "color-contrast",
+    "document-title",
+    "duplicate-id-aria",
+    "form-field-multiple-labels",
+    "html-has-lang",
+    "html-lang-valid",
+    "label",
+    "link-in-text-block",
+    "link-name",
+    "list",
+    "listitem",
+    "meta-viewport",
+    "nested-interactive",
+    "target-size"
+  ],
+  "accessibilityTree": "- main:\n  - paragraph: Campus Commander\n  - heading \"Configure Google sign-in\" [level=1]\n  - heading \"Create the Google client\" [level=2]\n  - list:\n    - listitem:\n      - text: Open\n      - link \"Google Auth branding\":\n        - /url: https://console.cloud.google.com/auth/branding\n      - text: for your test project.\n    - listitem: Select an Internal audience for your Google Workspace organization.\n    - listitem:\n      - text: Create a\n      - link \"Web application client\":\n        - /url: https://console.cloud.google.com/auth/clients\n      - text: .\n    - listitem:\n      - text: \"Add this exact redirect URI:\"\n      - code: https://127.0.0.1:37615/api/auth/callback\n      - button \"Copy redirect URI\"\n    - listitem: Download the client JSON.\n  - paragraph: This configures application sign-in. It does not grant access to Gmail, Drive, or user administration.\n  - text: Google Web application client JSON\n  - button \"Google Web application client JSON\"\n  - button \"Import Google client\"\n  - status: Connected. Create and import your Google client.\n  - alert",
+  "computedTheme": {
+    "color": "rgb(0, 0, 0)",
+    "background": "rgba(0, 0, 0, 0)"
+  },
+  "screenReaderWalkthrough": "not-run"
+}

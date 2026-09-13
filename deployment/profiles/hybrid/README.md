@@ -101,3 +101,14 @@ The execution, internal storage, and shared artifact survived both outages.
 
 [`full-integration-result.json`](full-integration-result.json) records the redacted machine result.
 This same-host fixture does not qualify separate hosts, district DNS, firewall rules, or shared storage infrastructure.
+
+## Repeated preparation and API replicas
+
+The controller applies the configured API replica count and retains resource limits for each replica.
+Migration and bootstrap jobs remain single instances. Each generated worker fragment retains one worker for its assigned host.
+
+Repeated preparation preserves verified Kestra runtime files when their inputs remain unchanged.
+The protected `runtime/kestra/preparation.json` record binds source inputs and generated files to checksums.
+Changed configuration, changed credentials, missing files, or mismatched checksums require regeneration.
+Credential rotation still requires the documented restart of affected services.
+Preserving unchanged TLS stores prevents resume from replacing a password that the running Kestra JVM still uses.

@@ -20,12 +20,17 @@ Profile startup commands do not enforce this marker automatically.
 Stop API, workers, and Kestra before backup. Disable their automatic restart and external dispatch access.
 Stop every other database client and filesystem writer, including monitoring clients that connect to these databases.
 Record the operator identity and stop time in `quiesce` immediately before backup.
-The command rejects records older than five minutes and existing database connections.
+The command rejects records older than five minutes.
+Each connection check uses a five-second observation budget for database clients that are closing.
+Every observation clears the transaction statistics snapshot and requires zero other database connections.
+Persistent connections produce `DATABASE_CONNECTIONS_ACTIVE`. The command never terminates another client.
+Individual database query timeouts also apply. The observation budget does not bound total command duration.
 It holds SHARE locks on both databases' user tables throughout dumps and file reads.
 It rejects active artifact attempts, changed file inventories, changed table counts, and connections observed after copying.
 These checks support a cold backup. They do not replace the operator's control over stopped writers and storage mounts.
 
 PostgreSQL documents consistent single-database dumps in [pg_dump](https://www.postgresql.org/docs/18/app-pgdump.html).
+PostgreSQL documents statistics snapshot refresh in [monitoring statistics](https://www.postgresql.org/docs/18/monitoring-stats.html).
 The cross-component boundary requires stopped writers because a database dump does not capture filesystem state.
 See [table locks](https://www.postgresql.org/docs/18/sql-lock.html) and [transactional restore](https://www.postgresql.org/docs/18/app-pgrestore.html).
 The recovery point is the recorded stop time. Changes after that point are outside this backup.
@@ -44,6 +49,25 @@ Place the exact tools on `PATH` before execution. The fixture creates and remove
 It uses the production runner without a Docker command adapter.
 It checks encrypted backup, isolated restore, configuration, artifact integrity, Kestra fixtures, and the fresh-Redis release requirement.
 The fixture uses loopback PostgreSQL without TLS. It does not qualify district endpoints or shared storage.
+
+Run `npm exec nx run deployment:operations-cli-integration` to test the same fixture through the operator CLI.
+This target requires Linux user namespaces, mount namespaces, and the exact native tools on `PATH`.
+It creates private operator files and mounts secret references at `/run/secrets` inside an isolated namespace.
+It tests key generation, backup, verification, restore, and rejection of invalid operations.
+The CLI uses the production database runner. The fixture does not change host secret mounts or weaken configuration validation.
+
+The application restore targets invoke the CLI with native tools inside the pinned PostgreSQL image.
+All Docker and Kubernetes fixtures mount private operator inputs and source storage into a temporary operator container.
+On Docker Desktop, set `CC_OPERATIONS_CLI_HOST=1` when container host networking cannot reach the operator host loopback listeners.
+This option uses native tools on `PATH` and isolated Linux secret mounts for those two fixtures.
+The fixture records the selected runner. It does not change the backup or restore command.
+The hybrid fixture invokes the CLI inside its existing operator container with verified district-service TLS.
+These fixtures use the qualification Node binary and retain the PostgreSQL image digest in their evidence.
+They verify restored application access and reject old sessions after fresh Redis starts.
+Their synthetic infrastructure does not qualify district storage or recovery-key custody.
+The Kubernetes fixture gives each database connection an independent `kubectl port-forward` process.
+This transport preserves the backup lock session when a database tool closes its connection.
+It bounds concurrent tunnels and terminates every owned tunnel during cleanup. Database TLS verification remains enabled.
 
 Copy `operator.example.json` into a protected operator directory and replace every example value.
 Keep the backup directory outside all primary volumes and source trees.
@@ -122,3 +146,24 @@ The integration fixture uses the qualified PostgreSQL image and disposable synth
 It checks encrypted backup, both database restores, artifact reads, Kestra fixture state, and missing or corrupt components.
 It also checks missing source storage, busy databases, nonempty targets, and failure before a restore success report.
 It does not establish actual Kestra engine recovery, district shared-storage recovery, or a complete profile restart.
+
+## Failure reasons
+
+A failed command exits with status 1 and prints a fixed `Reason: <CODE>.` classification.
+The classification never prints the underlying exception message, SQL, connection material, or private paths.
+Unknown failures use `UNCLASSIFIED_FAILURE`.
+
+| Reason                                                     | Operator action                                                                         |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `QUIESCENCE_REQUIRED`                                      | Stop writers and provide a recent operator record.                                      |
+| `DATABASE_CONNECTIONS_ACTIVE`                              | Stop other database clients before another backup attempt.                              |
+| `ARTIFACT_ATTEMPTS_ACTIVE`                                 | Resolve active artifact attempts before backup.                                         |
+| `STORAGE_CHANGED` or `DATABASE_CHANGED`                    | Identify the remaining writer and repeat the cold backup procedure.                     |
+| `POSTGRES_VERSION_MISMATCH` or `POSTGRES_TOOL_UNAVAILABLE` | Install the required PostgreSQL tools and verify their path.                            |
+| `POSTGRES_TOOL_FAILED`                                     | Inspect the protected operator environment and database prerequisites.                  |
+| `FILESYSTEM_FULL` or `FILESYSTEM_ACCESS_DENIED`            | Correct storage capacity or operator permissions.                                       |
+| `BACKUP_INCOMPLETE` or `BACKUP_AUTHENTICATION_FAILED`      | Verify the selected backup and its independently recovered key.                         |
+| `RESTORE_DATABASE_NOT_EMPTY`                               | Provision another empty restore target.                                                 |
+| `UNCLASSIFIED_FAILURE`                                     | Retain protected inputs and investigate the failed command in the operator environment. |
+
+A failure code identifies a category. It does not authorize startup or reuse of a partial restore target.

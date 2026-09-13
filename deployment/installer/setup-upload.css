@@ -1,0 +1,117 @@
+@font-face {
+  font-family: Roboto;
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/roboto-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: Roboto;
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/roboto-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: Roboto;
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/roboto-latin-700-normal.woff2') format('woff2');
+}
+:root {
+  color-scheme: light dark;
+  --app: #f8fafc;
+  --card: #fff;
+  --text: #202124;
+  --border: #80868b;
+  --link: #1556b0;
+  --error: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --app: #121212;
+    --card: #1e1e1e;
+    --text: #e8eaed;
+    --border: #9aa0a6;
+    --link: #8ab4f8;
+    --error: #f28b82;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--app);
+  color: var(--text);
+  font:
+    14px/20px Roboto,
+    sans-serif;
+}
+main {
+  max-width: 720px;
+  margin: 32px auto;
+  padding: 24px;
+  background: var(--card);
+}
+h1 {
+  font-size: 24px;
+  line-height: 32px;
+}
+h2 {
+  font-size: 16px;
+  line-height: 24px;
+}
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+input {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--card);
+}
+button {
+  margin-top: 16px;
+  padding: 12px 24px;
+  border: 0;
+  border-radius: 4px;
+  background: #1a73e8;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+button.secondary {
+  background: var(--card);
+  color: var(--link);
+  border: 1px solid var(--border);
+}
+a {
+  color: var(--link);
+}
+code {
+  overflow-wrap: anywhere;
+}
+li {
+  margin-bottom: 12px;
+}
+:focus-visible {
+  outline: 3px solid var(--link);
+  outline-offset: 3px;
+}
+#error {
+  color: var(--error);
+}
+[hidden] {
+  display: none;
+}

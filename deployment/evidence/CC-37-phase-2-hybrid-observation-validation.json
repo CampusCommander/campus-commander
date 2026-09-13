@@ -1,0 +1,25 @@
+{
+  "status": "passed",
+  "checkedAt": "2026-09-12T18:18:26.338600+00:00",
+  "baseRevision": "b8bc284e6ae53912358ec01e41f4dc65c0afd1bb",
+  "applicationImageRevision": "d370bbd079cdcac9372b87c2d1b1e6f42e686428",
+  "sourceFile": "deployment/profiles/hybrid/full-integration.mjs",
+  "sourceSha256": "cc4011c1af2585fe45546a58b64d18521daf2e79f67d5c8246adc494c47c9bce",
+  "change": "Distinct fixed stage labels identify the Kestra execution read, worker artifact read, and API readiness read. Request and acceptance behavior remain unchanged.",
+  "validation": {
+    "target": "api-e2e:hybrid-upgrade-integration",
+    "status": "passed",
+    "durationMilliseconds": 125329.152839,
+    "report": "deployment/evidence/CC-36-phase-2-hybrid-upgrade-probe-d370bbd.json",
+    "reportSha256": "64a1c22e82d7c171371e40f13871760669cecf54933fbcae5751a6e17d76672b",
+    "deploymentLint": "passed",
+    "implementationRecordLocalReferences": 139
+  },
+  "logSha256": "6e6005ccffcc5d69bb74d8c2a5a0472f3068a9fea5e6c92db6b65fc817754ca4",
+  "limits": [
+    "The earlier ECONNRESET did not reproduce locally. Its request and cause remain unidentified.",
+    "The fixture uses the same published application images and one Docker host.",
+    "Stage labels improve future failure evidence. They do not correct a proven connection defect.",
+    "District infrastructure and full published release acceptance remain open."
+  ]
+}

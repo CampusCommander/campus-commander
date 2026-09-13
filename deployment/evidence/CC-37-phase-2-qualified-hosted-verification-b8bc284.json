@@ -1,0 +1,119 @@
+{
+  "status": "passed",
+  "sourceRevision": "b8bc284e6ae53912358ec01e41f4dc65c0afd1bb",
+  "qualification": "profile-qualified",
+  "districtInfrastructureAcceptance": "not-qualified",
+  "manifestSha256": "343c204443c638ce3782cf5f1f517b793b4be3ca08f37c4cd1a54a0579ab169d",
+  "files": 1383,
+  "reports": [
+    {
+      "profile": "all-docker",
+      "check": "faults",
+      "status": "passed",
+      "path": "release-evidence/all-docker/faults.json",
+      "sha256": "7a8fe0a74a597d9c68e92f5cf1aecd860eb9c389bb0aeefca38e6b89e89b9c43"
+    },
+    {
+      "profile": "all-docker",
+      "check": "install",
+      "status": "passed",
+      "path": "release-evidence/all-docker/install.json",
+      "sha256": "fc0e0ae9f999b4dfb255028295d14ded1edb7a006f4ae6d1a74e12792a900925"
+    },
+    {
+      "profile": "all-docker",
+      "check": "restore",
+      "status": "passed",
+      "path": "release-evidence/all-docker/restore.json",
+      "sha256": "743b57f2f88a07d3dc387db468b758c8587242dfdae4bfd45e222a0d2f3eb4d9"
+    },
+    {
+      "profile": "all-docker",
+      "check": "resume",
+      "status": "passed",
+      "path": "release-evidence/all-docker/resume.json",
+      "sha256": "93feb8f264f65249e82090dac9d2d0b92ba5b8cfac67b8965e41c9367592e035"
+    },
+    {
+      "profile": "all-docker",
+      "check": "upgrade",
+      "status": "passed",
+      "path": "release-evidence/all-docker/upgrade.json",
+      "sha256": "887c44218407903e7bfa7b5937e3bb01908ac7d1e7a08704dd658c7c4f6345d3"
+    },
+    {
+      "profile": "hybrid",
+      "check": "faults",
+      "status": "passed",
+      "path": "release-evidence/hybrid/faults.json",
+      "sha256": "74a6aa6837390d717d3983beda2747422343faeb58743b7269f0443f0a8b99ba"
+    },
+    {
+      "profile": "hybrid",
+      "check": "install",
+      "status": "passed",
+      "path": "release-evidence/hybrid/install.json",
+      "sha256": "11628a17053a7b8a184c79985cec01889868a78694aab22ee8ccbb60d0f2165b"
+    },
+    {
+      "profile": "hybrid",
+      "check": "restore",
+      "status": "passed",
+      "path": "release-evidence/hybrid/restore.json",
+      "sha256": "6852bcd665132ef536922c86f003cdeb2e0b175d1199bec073cf3c5739420179"
+    },
+    {
+      "profile": "hybrid",
+      "check": "resume",
+      "status": "passed",
+      "path": "release-evidence/hybrid/resume.json",
+      "sha256": "d1bf50c9d5434218502ab0512fd615d0987e856db27b07063b9d221fa5e5e21c"
+    },
+    {
+      "profile": "hybrid",
+      "check": "upgrade",
+      "status": "passed",
+      "path": "release-evidence/hybrid/upgrade.json",
+      "sha256": "ad2ee4fa42999d7b697c8f71c00266056592969a9cae0a42e3cdc5ff140ee49e"
+    },
+    {
+      "profile": "kubernetes",
+      "check": "faults",
+      "status": "passed",
+      "path": "release-evidence/kubernetes/faults.json",
+      "sha256": "57524a6ff94d51521ffd4375efb503cf8c2266150b227928902ca27f587872ee"
+    },
+    {
+      "profile": "kubernetes",
+      "check": "install",
+      "status": "passed",
+      "path": "release-evidence/kubernetes/install.json",
+      "sha256": "05db5a34d603a17f7f36b7d101d1a718bb48e3c405d3149904ad280acc2297d3"
+    },
+    {
+      "profile": "kubernetes",
+      "check": "restore",
+      "status": "passed",
+      "path": "release-evidence/kubernetes/restore.json",
+      "sha256": "08359d8f44da7bafdd24335f8bf4a29ce8f23f6a9a96bd40ac86dcedf08fc7a3"
+    },
+    {
+      "profile": "kubernetes",
+      "check": "resume",
+      "status": "passed",
+      "path": "release-evidence/kubernetes/resume.json",
+      "sha256": "ffb153a28722ee9372d21819ce1d65c9e2dbd852512737ddb5753682cb5a2200"
+    },
+    {
+      "profile": "kubernetes",
+      "check": "upgrade",
+      "status": "passed",
+      "path": "release-evidence/kubernetes/upgrade.json",
+      "sha256": "b183ab902b1de96279710acbb448e4f5f892a53173afeb785911efbe6a7b29dc"
+    }
+  ],
+  "verifiedBy": "current hosted installer with live Cosign archive, manifest, and three image signatures, followed by file and fifteen-report evidence validation",
+  "root": "/tmp/cc-phase2-b8bc284-qualified-hosted-verification/release.WETQvkZv/bundle",
+  "run": "https://github.com/CampusCommander/campus-commander/actions/runs/34710449485",
+  "release": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-qualified-b8bc284e6ae5"
+}

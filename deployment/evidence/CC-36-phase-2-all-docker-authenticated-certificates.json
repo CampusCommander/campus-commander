@@ -1,0 +1,298 @@
+{
+  "status": "passed",
+  "profile": "all-docker",
+  "sourceRevision": "8a5f82306ea29bc497a7200914b9bd9dddfe1f01",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:3d093a4f3c817cf1e223bbdc2021626e02b56a64d9de45847f35d74d4e2458a7",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:3751a40c2a4c058417c7997ed821732accb3b27ea4c8b6706f68d22e81356c65",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:6e6a03d619709328f6c7cbd00e0c5e6262c6529bc3d43424085f372ebe8d4384"
+  },
+  "recordedAt": "2026-09-12T15:57:58.356Z",
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "b7e489f1-3c99-4b3c-aa90-d2be76502595",
+        "observedAt": "2026-09-12T15:56:42.817Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "5fedbb29-787f-452f-be24-210585b9355e",
+        "observedAt": "2026-09-12T15:56:42.894Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "9da7a424-e197-4234-98d2-7d41e5283f06",
+        "observedAt": "2026-09-12T15:56:44.752Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "de123717-5ada-43d4-a671-62a3e3d0d151",
+        "observedAt": "2026-09-12T15:56:44.869Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "eede182b-def3-453d-9d48-6a7598e30d19",
+        "observedAt": "2026-09-12T15:56:47.495Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "63ef294d-4625-4d62-b9dc-9f7bab55d623",
+        "observedAt": "2026-09-12T15:56:47.578Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "378c20a3-3140-4dc2-a4f5-8f228eb21d32",
+        "observedAt": "2026-09-12T15:56:48.199Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "bc21a56f-60e8-4fc1-8dd9-7c5c8b4d5d84",
+        "observedAt": "2026-09-12T15:56:48.301Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "25161921-0489-402a-988e-c5c6f0100a73",
+        "observedAt": "2026-09-12T15:57:02.795Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "ae807116-5a06-4274-a968-150bb31cf68b",
+        "observedAt": "2026-09-12T15:57:02.879Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "d66bbc8b-df0b-4328-b301-d721cd1bc5ed",
+        "observedAt": "2026-09-12T15:57:03.498Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "ee33d2c9-5ce0-497f-ac50-d13d9ad52c5f",
+        "observedAt": "2026-09-12T15:57:03.598Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "e162f277-df5f-44fd-881f-d0317801b109",
+        "observedAt": "2026-09-12T15:57:20.826Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "e7a35407-2e5b-4b53-ba32-18d95f19d49f",
+        "observedAt": "2026-09-12T15:57:20.908Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "7a3ce995-8308-4dc6-a64d-f0025b83bdaf",
+        "observedAt": "2026-09-12T15:57:21.533Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "5542c2f2-212a-4e43-b7b5-fc3fa4a47709",
+        "observedAt": "2026-09-12T15:57:21.631Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "92f0725f-a6cc-40bc-a6c0-e214bb106675",
+        "observedAt": "2026-09-12T15:57:38.874Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "abb1fb56-7962-43c1-bfb2-3ba66fefe7f1",
+        "observedAt": "2026-09-12T15:57:38.956Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "1493dd56-0980-4d78-902b-192e44231494",
+        "observedAt": "2026-09-12T15:57:39.573Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "ce667c23-cd2f-4319-868a-928109780bbb",
+        "observedAt": "2026-09-12T15:57:39.677Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "9cefeb71-91b9-4469-bd41-651c1a9b87e9",
+        "observedAt": "2026-09-12T15:57:49.024Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "5eedf5be-0c2e-4044-85b9-ceb1a27a5b76",
+        "observedAt": "2026-09-12T15:57:49.106Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "6006fd47-1654-4660-8813-c9cce568daae",
+        "observedAt": "2026-09-12T15:57:49.715Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "77fa2bc0-b720-498c-a2f6-47e53f1623a7",
+        "observedAt": "2026-09-12T15:57:49.808Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "lifecycle": {
+      "certificates": {
+        "status": "passed",
+        "recoveryBoundSeconds": 180,
+        "cases": [
+          {
+            "name": "expired",
+            "status": "passed",
+            "startedAt": "2026-09-12T15:57:04.793Z",
+            "tlsError": "CERT_HAS_EXPIRED",
+            "durableState": {
+              "principalCount": 1,
+              "preservedSecurityEvents": 12,
+              "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+              "preservedKestraExecutions": 1,
+              "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c",
+              "preservedInternalFiles": 1
+            },
+            "recoveryMs": 10131
+          },
+          {
+            "name": "wrong-host",
+            "status": "passed",
+            "startedAt": "2026-09-12T15:57:22.846Z",
+            "tlsError": "ERR_TLS_CERT_ALTNAME_INVALID",
+            "durableState": {
+              "principalCount": 1,
+              "preservedSecurityEvents": 12,
+              "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+              "preservedKestraExecutions": 1,
+              "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c",
+              "preservedInternalFiles": 1
+            },
+            "recoveryMs": 10064
+          }
+        ],
+        "originalSecretBytesRestored": true,
+        "limits": [
+          "One Docker host retains host and local-volume failure points.",
+          "The fixture uses synthetic certificates and an independent synthetic identity provider."
+        ]
+      }
+    },
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "certificates": {
+    "status": "passed",
+    "recoveryBoundSeconds": 180,
+    "cases": [
+      {
+        "name": "expired",
+        "status": "passed",
+        "startedAt": "2026-09-12T15:57:04.793Z",
+        "tlsError": "CERT_HAS_EXPIRED",
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c",
+          "preservedInternalFiles": 1
+        },
+        "recoveryMs": 10131
+      },
+      {
+        "name": "wrong-host",
+        "status": "passed",
+        "startedAt": "2026-09-12T15:57:22.846Z",
+        "tlsError": "ERR_TLS_CERT_ALTNAME_INVALID",
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c",
+          "preservedInternalFiles": 1
+        },
+        "recoveryMs": 10064
+      }
+    ],
+    "originalSecretBytesRestored": true,
+    "limits": [
+      "One Docker host retains host and local-volume failure points.",
+      "The fixture uses synthetic certificates and an independent synthetic identity provider."
+    ]
+  },
+  "certificateFaults": {
+    "status": "passed",
+    "profile": "all-docker",
+    "scope": "complete-profile-edge-certificate-faults",
+    "qualifiesProfile": false,
+    "acceptedRelease": false,
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:3d093a4f3c817cf1e223bbdc2021626e02b56a64d9de45847f35d74d4e2458a7",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:3751a40c2a4c058417c7997ed821732accb3b27ea4c8b6706f68d22e81356c65",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:6e6a03d619709328f6c7cbd00e0c5e6262c6529bc3d43424085f372ebe8d4384"
+    },
+    "sourceState": {
+      "baseGitRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+      "workingTree": "uncommitted-candidate"
+    },
+    "records": [
+      {
+        "fault": "expired",
+        "status": "passed",
+        "tlsError": "CERT_HAS_EXPIRED",
+        "elapsedMilliseconds": 16618,
+        "recoveredChecks": 8,
+        "fixturesPreserved": true
+      },
+      {
+        "fault": "wrong-host",
+        "status": "passed",
+        "tlsError": "ERR_TLS_CERT_ALTNAME_INVALID",
+        "elapsedMilliseconds": 16400,
+        "recoveredChecks": 8,
+        "fixturesPreserved": true
+      }
+    ],
+    "originalSecretBytesRestored": true
+  },
+  "installerChecks": [
+    "actual CLI prepare and resume",
+    "stop and resume preserve data",
+    "uninstall and resume preserve volumes",
+    "encrypted backup verified before upgrade",
+    "different image digests upgrade with artifact and ledger preservation",
+    "active secrets preserved",
+    "input release inventory metadata preserved"
+  ],
+  "ownedResourcesRemoved": true,
+  "limits": [
+    "One Docker host retains host and local-volume failure points.",
+    "Near-full storage requires separate complete-profile evidence."
+  ]
+}

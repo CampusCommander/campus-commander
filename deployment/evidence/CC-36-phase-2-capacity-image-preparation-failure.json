@@ -1,0 +1,26 @@
+{
+  "status": "corrected-locally",
+  "sourceRevision": "8a5f82306ea29bc497a7200914b9bd9dddfe1f01",
+  "ci": {
+    "runId": 34699568200,
+    "jobId": 103569377739,
+    "jobStatus": "failure",
+    "runStatus": "in-progress-at-recording",
+    "failure": "No such image: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "stage": "complete-profile-startup",
+    "logSha256": "7d3884a736139a1d2be5811d8a383488d4fa1b1534d7c1bd417c3c5b03e3628c"
+  },
+  "cause": "The authenticated capacity target did not fetch pinned infrastructure images before its offline Compose startup.",
+  "correction": "Explicitly download pinned PostgreSQL, Redis, and Kestra images before preparing the capacity installation.",
+  "verification": {
+    "target": "api-e2e:all-docker-capacity-integration",
+    "status": "passed",
+    "durationSeconds": 51.63,
+    "logSha256": "b1f3940b2cd430fb98f947d57721400da7a1e713a2376b37b87ae59001015bac",
+    "report": "deployment/evidence/CC-36-phase-2-all-docker-capacity-image-preparation.json"
+  },
+  "limits": [
+    "Local Docker already cached infrastructure layers. The test executed each pinned download before the complete capacity check.",
+    "Final published revision CI remains required."
+  ]
+}
