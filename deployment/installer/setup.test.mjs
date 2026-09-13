@@ -373,6 +373,36 @@ for (const phase of [1, 2])
       { ...deps, answers: {} },
     );
     assert.equal(enrollments.length, phase === 2 ? 2 : 0);
+    const uninstallOptions = {
+      releaseRoot: release,
+      root,
+      command: 'uninstall',
+    };
+    assert.equal(
+      (
+        await runSetup(uninstallOptions, {
+          ...deps,
+          answers: {},
+          installer: () => assert.fail('Cancellation must preserve services.'),
+        })
+      ).status,
+      'cancelled',
+    );
+    assert.equal(
+      (
+        await runSetup(uninstallOptions, {
+          ...deps,
+          answers: { confirmUninstall: JSON.parse(before).project },
+          installer: async (input) => {
+            assert.equal(input.command, 'uninstall');
+            return { status: 'uninstalled', dataPreserved: true };
+          },
+        })
+      ).status,
+      'uninstalled',
+    );
+    assert.equal(enrollments.length, phase === 2 ? 2 : 0);
+    assert.deepEqual(await readFile(join(root, 'operator.json')), before);
     if (phase === 2)
       assert.equal(
         enrollments[0].config.applicationAuth.clientId,

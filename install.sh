@@ -437,7 +437,9 @@ Run: sudo apt-get install --no-remove $2"; then
       --root) cc_value "$@"; cc_root=$2; shift 2 ;;
       --answers) cc_value "$@"; cc_answers=$2; shift 2 ;;
       --cache-dir) cc_value "$@"; cc_cache=$2; shift 2 ;;
-      --command) cc_value "$@"; cc_command=$2; shift 2 ;;
+      --command) cc_value "$@"; [ -z "$cc_command" ] || cc_fail 'Select one installation operation.'; cc_command=$2; shift 2 ;;
+      --update) [ -z "$cc_command" ] || cc_fail 'Select one installation operation.'; cc_command=update; shift ;;
+      --uninstall) [ -z "$cc_command" ] || cc_fail 'Select one installation operation.'; cc_command=uninstall; shift ;;
       --qualification) cc_qualification=yes; shift ;;
       --accept-license) cc_accept_license=yes; shift ;;
       --install-dependencies) cc_dependencies=yes; shift ;;
@@ -456,7 +458,10 @@ Usage: sh install.sh [options]
   --accept-license                       Accept the supplied community license.
   --install-dependencies                 Allow proposed prerequisite repairs.
   --no-install-dependencies              Show manual prerequisite instructions.
-  --command install|resume|status         Select the installation operation.
+  --command install|resume|status|update|uninstall
+                                         Select the installation operation.
+  --update                               Update the existing installation.
+  --uninstall                            Remove services and preserve data.
   --cache-dir ABSOLUTE_PATH               Use a private download directory.
   --verify-only                          Verify a release without installation.
 
@@ -472,7 +477,7 @@ HELP
     esac
   done
   case "$cc_profile" in ''|all-docker|hybrid|kubernetes) ;; *) cc_fail 'Select all-docker, hybrid, or kubernetes.' ;; esac
-  case "$cc_command" in ''|install|resume|status) ;; *) cc_fail 'Select install, resume, or status.' ;; esac
+  case "$cc_command" in ''|install|resume|status|update|uninstall) ;; *) cc_fail 'Select install, resume, status, update, or uninstall.' ;; esac
   if [ -n "$cc_release" ]; then
     printf '%s\n' "$cc_release" | LC_ALL=C grep -Eq '^phase-([12]-candidate|2-qualified)-[a-f0-9]{12}$' || cc_fail 'Use a complete immutable release tag.'
   fi
@@ -551,10 +556,15 @@ HELP
       if(a.root!==undefined&&(typeof a.root!=="string"||require("node:path").resolve(a.root)!==a.root))throw Error("Use an absolute installation root");
       if(process.argv[3]&&a.profile&&process.argv[3]!==a.profile)throw Error("Profile and answers differ");
       if(process.argv[4]&&a.root&&process.argv[4]!==a.root)throw Error("Installation root and answers differ");
-      fs.writeFileSync(process.argv[2],JSON.stringify({profile:a.profile||"",root:a.root||""}));
-    ' "$cc_answers" "$cc_stage/answers-routing.json" "$cc_profile" "$cc_root" || cc_fail 'Correct the protected answers file, then repeat the installer.'
+      if(a.command!==undefined&&!["install","resume","status","update","uninstall"].includes(a.command))throw Error("Invalid installation operation");
+      if(process.argv[5]&&a.command&&process.argv[5]!==a.command)throw Error("Command and answers differ");
+      fs.writeFileSync(process.argv[2],JSON.stringify({profile:a.profile||"",root:a.root||"",command:a.command||"",confirmUninstall:a.confirmUninstall||""}));
+    ' "$cc_answers" "$cc_stage/answers-routing.json" "$cc_profile" "$cc_root" "$cc_command" || cc_fail 'Correct the protected answers file, then repeat the installer.'
     if [ -z "$cc_profile" ]; then cc_profile=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).profile' "$cc_stage/answers-routing.json"); fi
     if [ -z "$cc_root" ]; then cc_root=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).root' "$cc_stage/answers-routing.json"); fi
+  fi
+  if [ -n "$cc_answers" ] && [ -z "$cc_command" ]; then
+    cc_command=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).command' "$cc_stage/answers-routing.json")
   fi
   cc_existing=no
   cc_existing_root=${cc_root:-$HOME/.campus-commander}
@@ -567,8 +577,20 @@ HELP
     if(!file){fs.writeFileSync(out,"{}");process.exit(0);}
     const info=fs.lstatSync(file);
     if(!info.isFile()||info.isSymbolicLink()||(info.mode&0o077)||fs.realpathSync(file)!==file)throw Error("Existing setup must use a private regular file");
-    const data=JSON.parse(fs.readFileSync(file));const o=file===operator?data:data.plan?.operator;
+    const data=JSON.parse(fs.readFileSync(file));let o=file===operator?data:data.plan?.operator;
     if(!o||o.installationRoot!==root||o.configurationPath!==path.join(root,"deployment.json")||!path.isAbsolute(o.releaseRoot))throw Error("Existing installation binding differs");
+    let lifecycleOperator=operator,updating=false;
+    const updatePath=path.join(root,"setup-update.json");
+    if(fs.existsSync(updatePath)){
+      const stat=fs.lstatSync(updatePath);
+      if(!stat.isFile()||stat.isSymbolicLink()||(stat.mode&0o077)||fs.realpathSync(updatePath)!==updatePath)throw Error("Use a protected update record");
+      const update=JSON.parse(fs.readFileSync(updatePath));
+      if(update.schemaVersion!==1||!/^[a-f0-9]{40}$/.test(update.revision)||update.targetOperator?.installationRoot!==root||update.targetOperator.configurationPath!==path.join(root,"updates",update.revision,"deployment.json")||!path.isAbsolute(update.targetOperator.releaseRoot))throw Error("Invalid update binding");
+      const state=JSON.parse(fs.readFileSync(path.join(root,"installer-state.json")));
+      if(state.releaseHash===update.targetReleaseHash)lifecycleOperator=path.join(root,"updates",update.revision,"operator.json");
+      else if(state.releaseHash!==update.previousReleaseHash)throw Error("Update state differs");
+      o=update.targetOperator;updating=true;
+    }
     const manifest=JSON.parse(fs.readFileSync(path.join(o.releaseRoot,"release-manifest.json")));
     if(!/^[a-f0-9]{40}$/.test(manifest.sourceRevision))throw Error("Existing release identity is invalid");
     let profile;
@@ -579,29 +601,45 @@ HELP
     }else profile=data.plan?.config?.profile;
     if(!["all-docker","hybrid","kubernetes"].includes(profile))throw Error("Invalid existing profile");
     const releaseKind=manifest.phase===2&&manifest.qualification==="profile-qualified"?"qualified":"candidate";
-    fs.writeFileSync(out,JSON.stringify({downloads:path.dirname(o.releaseRoot),tag:"phase-"+(manifest.phase??1)+"-"+releaseKind+"-"+manifest.sourceRevision.slice(0,12),profile}));
+    fs.writeFileSync(out,JSON.stringify({downloads:path.dirname(o.releaseRoot),tag:"phase-"+(manifest.phase??1)+"-"+releaseKind+"-"+manifest.sourceRevision.slice(0,12),profile,phase:manifest.phase??1,updating,lifecycleOperator,project:o.kubernetes?.namespace||o.project}));
   ' "$cc_existing_root" "$cc_stage/existing.json" || cc_fail 'Inspect the existing installation before resuming.'
   cc_saved_downloads=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).downloads||""' "$cc_stage/existing.json")
   if [ -n "$cc_saved_downloads" ]; then
     cc_saved_release=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).tag' "$cc_stage/existing.json")
-    [ -z "$cc_release" ] || [ "$cc_release" = "$cc_saved_release" ] || cc_fail 'Use the installed release for resume. Use the documented upgrade procedure to change releases.'
-    cc_release=$cc_saved_release
+    cc_installed_phase=$(node -p 'String(JSON.parse(require("fs").readFileSync(process.argv[1])).phase)' "$cc_stage/existing.json")
+    cc_updating=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).updating?"yes":"no"' "$cc_stage/existing.json")
+    if [ -z "$cc_command" ] && [ -z "$cc_answers" ] && [ "$cc_verify_only" != yes ]; then
+      while :; do
+        cc_prompt 'Existing installation: resume, status, update, or uninstall? [status]'
+        case "$cc_reply" in '') cc_command=status; break ;; resume|status|update|uninstall) cc_command=$cc_reply; break ;; esac
+      done
+    fi
+    if [ "$cc_command" != update ] || [ "$cc_updating" = yes ]; then
+      [ -z "$cc_release" ] || [ "$cc_release" = "$cc_saved_release" ] || cc_fail 'Use the installed release for resume. Use the documented upgrade procedure or --update to change releases.'
+      cc_release=$cc_saved_release
+    fi
     cc_saved_profile=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).profile' "$cc_stage/existing.json")
     [ -z "$cc_profile" ] || [ "$cc_profile" = "$cc_saved_profile" ] || cc_fail 'Use the existing installation profile when resuming.'
     cc_profile=$cc_saved_profile
-    cc_existing=yes
-    cc_say "Using the original verified release for $cc_existing_root."
+    if [ "$cc_command" = update ] && [ "$cc_updating" != yes ]; then
+      cc_say "Selecting an update for $cc_existing_root."
+    else
+      cc_existing=yes
+      cc_say "Using the original verified release for $cc_existing_root."
+    fi
+  elif [ "$cc_command" = update ] || [ "$cc_command" = uninstall ]; then
+    cc_fail 'Install this directory before requesting update or uninstall.'
   fi
   if [ -z "$cc_release" ]; then
     cc_download "https://api.github.com/repos/$cc_repo/releases?per_page=100" "$cc_stage/releases.json"
     cc_release=$(node -e '
       const fs=require("node:fs"); const releases=JSON.parse(fs.readFileSync(process.argv[1]));
       if(!Array.isArray(releases))throw Error("Invalid release list");
-      const release=releases.filter(r=>!r.draft&&/^phase-([12]-candidate|2-qualified)-[a-f0-9]{12}$/.test(r.tag_name))
+      const release=releases.filter(r=>!r.draft&&/^phase-([12]-candidate|2-qualified)-[a-f0-9]{12}$/.test(r.tag_name)&&(!process.argv[2]||r.tag_name.startsWith("phase-"+process.argv[2]+"-")))
         .sort((a,b)=>Date.parse(b.published_at)-Date.parse(a.published_at))[0];
       if(!release)throw Error("No supported published release exists");
       process.stdout.write(release.tag_name);
-    ' "$cc_stage/releases.json") || cc_fail 'Could not select a published release. Retry or provide --release.'
+    ' "$cc_stage/releases.json" "${cc_installed_phase:-}") || cc_fail 'Could not select a published release. Retry or provide --release.'
   fi
   case "$cc_release" in
     phase-2-candidate-*)
@@ -657,7 +695,7 @@ HELP
       const stat=fs.lstatSync(filename);if(!stat.isFile()||stat.size>64*1024*1024||stat.size!==item.sizeBytes)throw Error("Invalid release file");
       if(crypto.createHash("sha256").update(fs.readFileSync(filename)).digest("hex")!==item.sha256)throw Error("Release file checksum differs");
     }
-    for(const file of ["deployment/installer/setup.mjs","deployment/installer/platforms.mjs","LICENSE.md"]){if(!seen.has(file))throw Error("Release lacks the hosted installer, platform requirements, or license. Select a newer candidate.");}
+    for(const file of ["deployment/installer/setup.mjs","deployment/installer/cli.mjs","deployment/installer/platforms.mjs","LICENSE.md"]){if(!seen.has(file))throw Error("Release lacks the hosted installer, platform requirements, or license. Select a newer candidate.");}
     const images=[];for(const [key,name] of [["frontend","frontend"],["api","api"],["workers","worker"]]){
       const image=manifest.images?.[key];if(typeof image!=="string"||!new RegExp("^ghcr\\.io/campuscommander/campus-commander-"+name+"@sha256:[a-f0-9]{64}$").test(image))throw Error("Unexpected application image");images.push(image);}
     fs.writeFileSync(root+"/images.txt",images.join("\n")+"\n",{mode:0o600});
@@ -713,6 +751,36 @@ HELP
       cc_say 'The installer will create configuration and print the deployment commands for each worker host.'
       cc_say "Preparation guide: $cc_stage/bundle/deployment/profiles/hybrid/README.md"
     fi
+  fi
+  if [ "$cc_command" = uninstall ]; then
+    cc_project=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).project||""' "$cc_stage/existing.json")
+    [ -n "$cc_project" ] || cc_fail 'The installation project is missing.'
+    cc_say "Uninstall removes application services for $cc_project. Application data, credentials, and external resources remain."
+    if [ -n "$cc_answers" ]; then
+      cc_reply=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).confirmUninstall' "$cc_stage/answers-routing.json")
+    else
+      cc_prompt "Type $cc_project to uninstall, or cancel:"
+    fi
+    if [ "$cc_reply" != "$cc_project" ]; then cc_say 'Uninstall cancelled. No application services were removed.'; return 0; fi
+    cc_operator=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).lifecycleOperator' "$cc_stage/existing.json")
+    cc_saved_qualification=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).qualification===true?"yes":"no"' "$cc_existing_root/setup-record.json")
+    cc_step '5 / 5  Remove application services'
+    set -- uninstall "$cc_operator"
+    if [ "$cc_saved_qualification" = yes ]; then set -- "$@" --qualification; fi
+    node --input-type=module -e '
+      import {spawn} from "node:child_process";
+      import {performance} from "node:perf_hooks";
+      const started=performance.now();
+      const report=()=>process.stderr.write(`Working: removing application services. Elapsed: ${Math.floor((performance.now()-started)/1000)}s.\n`);
+      report();const timer=setInterval(report,5000);timer.unref();
+      const child=spawn(process.execPath,process.argv.slice(1),{stdio:"inherit"});
+      for(const signal of ["SIGINT","SIGTERM"])process.once(signal,()=>child.kill(signal));
+      child.once("error",()=>{clearInterval(timer);process.exitCode=1;});
+      child.once("exit",code=>{clearInterval(timer);process.exitCode=code??1;});
+    ' "$cc_stage/bundle/deployment/installer/cli.mjs" "$@" || cc_fail 'Uninstall failed. Preserve the installation directory and inspect its service status.'
+    cc_say 'Application data and credentials remain in place. Resume restores the application services.'
+    if [ "$cc_profile" = hybrid ]; then cc_say 'Uninstall each worker fragment on its declared host. Preserve shared storage and protected mounts.'; fi
+    return 0
   fi
   cc_step '4 / 5  Configure your installation'
   set -- --release-root "$cc_stage/bundle" --profile "$cc_profile"

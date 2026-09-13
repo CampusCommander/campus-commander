@@ -19,6 +19,7 @@ const tag = `phase-1-candidate-${revision.slice(0, 12)}`;
 async function fixture(
   t,
   {
+    revision = 'a'.repeat(40),
     link = false,
     tamper = false,
     phase = 1,
@@ -46,6 +47,8 @@ async function fixture(
   };
   content['deployment/installer/setup.mjs'] =
     'import fs from "node:fs";fs.writeFileSync(process.env.CC_ENTRY_EXECUTED,JSON.stringify(process.argv.slice(2)));\n';
+  content['deployment/installer/cli.mjs'] =
+    content['deployment/installer/setup.mjs'];
   const manifest = {
     schemaVersion: 1,
     ...(phase === 2 ? { phase: wrongPhase ? 1 : 2 } : {}),
@@ -344,3 +347,194 @@ for (const variant of [
     assert.match(switched.stderr, /documented upgrade procedure/);
   });
 }
+
+async function installedFixture(t) {
+  const f = await fixture(t, { phase: 2 });
+  const root = join(f.root, 'installation');
+  await mkdir(root, { mode: 0o700 });
+  const result = f.run([
+    '--profile',
+    'all-docker',
+    '--root',
+    root,
+    '--answers',
+    f.answers,
+    '--accept-license',
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+  const args = JSON.parse(await f.executed());
+  const releaseRoot = args[args.indexOf('--release-root') + 1];
+  const operator = {
+    installationRoot: root,
+    configurationPath: join(root, 'deployment.json'),
+    releaseRoot,
+    project: 'cc-entry-test',
+  };
+  await writeFile(join(root, 'operator.json'), JSON.stringify(operator), {
+    mode: 0o600,
+  });
+  await writeFile(
+    join(root, 'deployment.json'),
+    JSON.stringify({ profile: 'all-docker' }),
+    { mode: 0o600 },
+  );
+  await writeFile(
+    join(root, 'setup-record.json'),
+    JSON.stringify({ qualification: true }),
+    { mode: 0o600 },
+  );
+  await rm(join(f.root, 'executed'));
+  return { ...f, installationRoot: root, operator };
+}
+
+test('hosted uninstall uses the installed CLI, requires exact confirmation, and preserves the installation directory', async (t) => {
+  const f = await installedFixture(t);
+  await writeFile(
+    f.answers,
+    JSON.stringify({ confirmUninstall: 'wrong-project' }),
+  );
+  const args = [
+    '--uninstall',
+    '--root',
+    f.installationRoot,
+    '--answers',
+    f.answers,
+    '--accept-license',
+  ];
+  const denied = f.run(args);
+  assert.equal(denied.status, 0, denied.stderr);
+  assert.equal(await f.executed(), null);
+  await writeFile(
+    f.answers,
+    JSON.stringify({ confirmUninstall: 'cc-entry-test' }),
+  );
+  const result = f.run(args);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(await f.executed()), [
+    'uninstall',
+    join(f.installationRoot, 'operator.json'),
+    '--qualification',
+  ]);
+  assert.deepEqual(
+    JSON.parse(await readFile(join(f.installationRoot, 'operator.json'))),
+    f.operator,
+  );
+  assert.match(result.stderr, /data and credentials remain/);
+});
+
+test('hosted update verifies a different release before handing it to guided setup', async (t) => {
+  const old = await installedFixture(t);
+  const next = await fixture(t, { phase: 2, revision: 'b'.repeat(40) });
+  await writeFile(next.answers, JSON.stringify({ command: 'update' }));
+  const result = next.run([
+    '--root',
+    old.installationRoot,
+    '--answers',
+    next.answers,
+    '--accept-license',
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+  const args = JSON.parse(await next.executed());
+  assert.equal(args[args.indexOf('--command') + 1], 'update');
+  assert.notEqual(
+    args[args.indexOf('--release-root') + 1],
+    old.operator.releaseRoot,
+  );
+  assert.deepEqual(
+    JSON.parse(await readFile(join(old.installationRoot, 'operator.json'))),
+    old.operator,
+  );
+  const trace = await next.trace();
+  assert.match(trace, /phase-2-candidate-bbbbbbbbbbbb/);
+  assert.equal((trace.match(/cosign \["verify"/g) || []).length, 3);
+});
+
+test('maintenance flags reject missing installations and conflicting commands', async (t) => {
+  const f = await fixture(t);
+  for (const args of [
+    ['--update'],
+    ['--uninstall'],
+    ['--update', '--command', 'uninstall'],
+  ]) {
+    const result = f.run([
+      ...args,
+      '--root',
+      join(f.root, 'absent'),
+      '--profile',
+      'all-docker',
+      '--answers',
+      f.answers,
+      '--accept-license',
+    ]);
+    assert.notEqual(result.status, 0);
+    assert.equal(await f.executed(), null);
+  }
+});
+
+test('pending update selects its cached release and the state-bound uninstall operator', async (t) => {
+  const old = await installedFixture(t);
+  const next = await fixture(t, { phase: 2, revision: 'b'.repeat(40) });
+  const args = [
+    '--update',
+    '--root',
+    old.installationRoot,
+    '--answers',
+    next.answers,
+    '--accept-license',
+  ];
+  const updated = next.run(args);
+  assert.equal(updated.status, 0, updated.stderr);
+  const setupArgs = JSON.parse(await next.executed());
+  const releaseRoot = setupArgs[setupArgs.indexOf('--release-root') + 1];
+  const staged = join(old.installationRoot, 'updates', 'b'.repeat(40));
+  await mkdir(staged, { recursive: true, mode: 0o700 });
+  const targetOperator = {
+    ...old.operator,
+    releaseRoot,
+    configurationPath: join(staged, 'deployment.json'),
+  };
+  for (const [path, value] of [
+    [join(staged, 'deployment.json'), { profile: 'all-docker' }],
+    [join(staged, 'operator.json'), targetOperator],
+    [
+      join(old.installationRoot, 'setup-update.json'),
+      {
+        schemaVersion: 1,
+        revision: 'b'.repeat(40),
+        previousReleaseHash: 'a'.repeat(64),
+        targetReleaseHash: 'b'.repeat(64),
+        targetOperator,
+      },
+    ],
+  ])
+    await writeFile(path, JSON.stringify(value), { mode: 0o600 });
+  await writeFile(
+    next.answers,
+    JSON.stringify({ confirmUninstall: 'cc-entry-test' }),
+  );
+  const downloads = (await next.trace())
+    .split('\n')
+    .filter((line) => line.startsWith('download'));
+  for (const admitted of [false, true]) {
+    await writeFile(
+      join(old.installationRoot, 'installer-state.json'),
+      JSON.stringify({ releaseHash: (admitted ? 'b' : 'a').repeat(64) }),
+      { mode: 0o600 },
+    );
+    const result = next.run(['--uninstall', ...args.slice(1)]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(await next.executed()), [
+      'uninstall',
+      admitted
+        ? join(staged, 'operator.json')
+        : join(old.installationRoot, 'operator.json'),
+      '--qualification',
+    ]);
+  }
+  assert.deepEqual(
+    (await next.trace())
+      .split('\n')
+      .filter((line) => line.startsWith('download')),
+    downloads,
+  );
+});

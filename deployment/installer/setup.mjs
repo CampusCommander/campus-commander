@@ -23,6 +23,11 @@ import { OnboardingError, parseGoogleClient } from './google-client.mjs';
 import { startSetupUpload } from './setup-upload.mjs';
 import { enrollAdministrator } from './application-enrollment.mjs';
 import { privateTerminalOutput } from './private-output.mjs';
+import {
+  pendingUpdate,
+  updateOperator,
+  updateInstallation,
+} from './maintenance.mjs';
 
 const profiles = ['all-docker', 'hybrid', 'kubernetes'];
 const exceptionNames = [
@@ -100,9 +105,11 @@ export function parseArguments(args) {
     fail('Select all-docker, hybrid, or kubernetes.');
   if (
     options.command &&
-    !['install', 'resume', 'status'].includes(options.command)
+    !['install', 'resume', 'status', 'update', 'uninstall'].includes(
+      options.command,
+    )
   )
-    fail('Select install, resume, or status.');
+    fail('Select install, resume, status, update, or uninstall.');
   return options;
 }
 
@@ -835,7 +842,7 @@ export async function runSetup(
   } = {},
 ) {
   const q = createQuestions(answers, ask);
-  for (const key of ['profile', 'root']) {
+  for (const key of ['profile', 'root', 'command']) {
     if (options[key] !== undefined && Object.hasOwn(answers, key))
       await q(key, key, options[key], (v) => v === options[key]);
   }
@@ -849,6 +856,7 @@ export async function runSetup(
     ));
   await privateDirectory(root);
   const operatorPath = join(root, 'operator.json');
+  const updateJournal = await pendingUpdate(root);
   let operator,
     config,
     qualification = Boolean(options.qualification),
@@ -858,9 +866,11 @@ export async function runSetup(
     if (!stat.isFile() || stat.isSymbolicLink() || stat.mode & 0o077)
       fail('Use a private regular operator file.');
     operator = await protectedJson(operatorPath);
+    if (updateJournal) operator = await updateOperator(root, updateJournal);
     if (
       operator.installationRoot !== root ||
-      operator.configurationPath !== join(root, 'deployment.json')
+      (!updateJournal &&
+        operator.configurationPath !== join(root, 'deployment.json'))
     )
       fail('Use the authoritative installation directory.');
     config = await protectedJson(operator.configurationPath);
@@ -873,21 +883,27 @@ export async function runSetup(
       fail('Use the existing installation profile and acceptance mode.');
     command ??= await q(
       'command',
-      'Existing installation command (resume/status)',
+      'Existing installation command (resume/status/update/uninstall)',
       'status',
-      (v) => ['resume', 'status'].includes(v),
+      (v) => ['resume', 'status', 'update', 'uninstall'].includes(v),
     );
     if (command === 'install') command = 'resume';
+    if (command === 'uninstall') q.reserve('confirmUninstall');
+    if (command === 'update' || (updateJournal && command === 'resume')) {
+      q.reserve('update.backupDirectory');
+      q.reserve('confirmUpdate');
+      q.reserve('workersReady');
+    }
     if (config.profile === 'hybrid' && command !== 'status')
       q.reserve('workersReady');
     q.finish();
   } else {
     if (
-      command === 'status' ||
+      ['status', 'update', 'uninstall'].includes(command) ||
       (command === 'resume' &&
         !(await exists(join(root, 'setup-pending.json'))))
     )
-      fail('Install this directory before requesting resume or status.');
+      fail('Install this directory before requesting a maintenance operation.');
     if (await exists(join(root, 'installer-state.json')))
       fail(
         'Preserve this existing installation. Use its authoritative operator file.',
@@ -1006,6 +1022,54 @@ export async function runSetup(
     command = 'install';
   }
   installer ??= (await import('./orchestrator.mjs')).executeInstaller;
+  if (command === 'update' || (updateJournal && command === 'resume')) {
+    output('5 / 5  Update application services');
+    const result = await updateInstallation({
+      root,
+      releaseRoot: options.releaseRoot,
+      operator,
+      config,
+      qualification,
+      q,
+      output,
+      installer,
+    });
+    output(
+      `Update status: ${result.status}. URL: ${config.services.edge.endpoint.url}`,
+    );
+    return { ...result, operatorPath };
+  }
+  if (command === 'uninstall') {
+    output('5 / 5  Remove application services');
+    const project =
+      config.profile === 'kubernetes'
+        ? operator.kubernetes.namespace
+        : operator.project;
+    output(
+      `Uninstall removes application services for ${project}. It preserves application data, credentials, and external resources.`,
+    );
+    const confirm = await q(
+      'confirmUninstall',
+      `Type ${project} to uninstall, or cancel`,
+      'cancel',
+      (value) => [project, 'cancel'].includes(value),
+    );
+    if (confirm !== project) return { status: 'cancelled', operatorPath };
+    const result = await withProgress(
+      (onProgress) =>
+        installer({ command, operator, qualification, onProgress }),
+      output,
+      'removing application services',
+    );
+    output(
+      `Uninstall status: ${result.status}. Application data and credentials are preserved.`,
+    );
+    if (result.remoteWorkerActionRequired)
+      output(
+        'Uninstall each declared worker fragment on its host. Preserve its shared storage and protected mounts.',
+      );
+    return { ...result, operatorPath };
+  }
   output('5 / 5  Check configuration and start services');
   output(
     `Running ${command} for ${config.profile}. Configuration: ${operatorPath}`,

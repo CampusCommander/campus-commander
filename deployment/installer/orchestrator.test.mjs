@@ -12,6 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { replaceBootstrap } from '../bootstrap/access.mjs';
+import { updateInstallation } from './maintenance.mjs';
+import { createQuestions } from './setup.mjs';
 import {
   authenticateRelease,
   archiveKubernetesManifest,
@@ -67,6 +69,105 @@ async function setup() {
   };
   return { root, config, release, operator, dependencies, calls };
 }
+
+test('guided update prepares through the real orchestrator before starting the target and retains lifecycle access', async () => {
+  const f = await setup();
+  try {
+    const root = f.operator.installationRoot;
+    await mkdir(root, { mode: 0o700 });
+    f.operator.configurationPath = join(root, 'deployment.json');
+    await writeFile(f.operator.configurationPath, JSON.stringify(f.config), {
+      mode: 0o600,
+    });
+    await writeFile(join(root, 'operator.json'), JSON.stringify(f.operator), {
+      mode: 0o600,
+    });
+    const installer = (input) =>
+      executeInstaller({ ...input, dependencies: f.dependencies });
+    assert.equal(
+      (
+        await installer({
+          command: 'install',
+          operator: f.operator,
+          qualification: true,
+        })
+      ).status,
+      'ready',
+    );
+    const releaseRoot = join(f.root, 'target');
+    await mkdir(releaseRoot, { mode: 0o700 });
+    const target = {
+      ...f.release,
+      sourceRevision: 'b'.repeat(40),
+      images: {
+        ...f.config.images,
+        api: `registry.example.org/api@sha256:${'c'.repeat(64)}`,
+      },
+    };
+    await writeFile(
+      join(releaseRoot, 'release-manifest.json'),
+      JSON.stringify(target),
+    );
+    const backupDirectory = join(f.root, 'backup');
+    await mkdir(backupDirectory, { mode: 0o700 });
+    const backup = {
+      profile: 'all-docker',
+      release: f.release,
+      keyRecovery: {
+        reference: { provider: 'file', path: '/run/secrets/backup-key' },
+      },
+    };
+    await writeFile(
+      join(backupDirectory, 'manifest.json'),
+      JSON.stringify(backup),
+      { mode: 0o600 },
+    );
+    f.dependencies.verifyBackup = async () => backup;
+    f.calls.length = 0;
+    const result = await updateInstallation({
+      root,
+      releaseRoot,
+      config: f.config,
+      operator: f.operator,
+      qualification: true,
+      q: createQuestions({
+        'update.backupDirectory': backupDirectory,
+        confirmUpdate: 'update',
+      }),
+      output: () => undefined,
+      verify: async () => backup,
+      installer: async (input) => {
+        const result = await installer(input);
+        if (input.command === 'upgrade') {
+          assert.equal(result.status, 'prepared');
+          assert.equal(
+            f.calls.some(([, args]) => args.includes('up')),
+            false,
+          );
+        }
+        return result;
+      },
+    });
+    assert.equal(result.status, 'ready');
+    const operator = JSON.parse(await readFile(join(root, 'operator.json')));
+    assert.equal(
+      (await installer({ command: 'status', operator, qualification: true }))
+        .readiness.status,
+      'ready',
+    );
+    assert.equal(
+      (await installer({ command: 'uninstall', operator, qualification: true }))
+        .dataPreserved,
+      true,
+    );
+    assert.equal(
+      f.calls.some(([, args]) => args.includes('--volumes')),
+      false,
+    );
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
 
 test('HTTP registry qualification accepts only explicit loopback registries', async () => {
   for (const [registry, allowed] of [

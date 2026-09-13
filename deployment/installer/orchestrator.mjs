@@ -482,6 +482,7 @@ export async function executeInstaller({
   qualification = false,
   dependencies = {},
   onProgress = () => undefined,
+  prepareOnly = false,
 }) {
   const run = dependencies.run ?? runCommand;
   try {
@@ -656,7 +657,7 @@ export async function executeInstaller({
             'UPGRADE',
             'Provide the protected recovery backup and key reference before upgrade.',
           );
-        const backup = await verifyBackup({
+        const backup = await (dependencies.verifyBackup ?? verifyBackup)({
           ...operator.upgradeBackup,
           resolveSecret: (ref) =>
             readFile(installationSecretPath(join(root, 'private'), ref)),
@@ -1145,7 +1146,7 @@ export async function executeInstaller({
       state.phase = 'prepared';
       if (!state.steps.includes('prepared')) state.steps.push('prepared');
       await save();
-      if (command === 'prepare')
+      if (command === 'prepare' || (command === 'upgrade' && prepareOnly))
         return { status: 'prepared', acceptedRelease: state.acceptedRelease };
       onProgress('Starting services and downloading missing images');
       if (config.profile === 'kubernetes')

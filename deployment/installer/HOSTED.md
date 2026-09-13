@@ -157,7 +157,7 @@ Failed configuration checks print each missing requirement and its corrective in
 ## Repeat, resume, and inspect
 
 Use the same installation directory when repeating the command.
-Existing configuration and credentials remain authoritative. Choose resume or status when prompted.
+Existing configuration and credentials remain authoritative. Choose resume, status, update, or uninstall when prompted.
 The script selects the installation’s original cached release. It does not silently upgrade that installation.
 
 ```sh
@@ -276,3 +276,59 @@ The advanced `file` import accepts one protected Google client JSON path on the 
 Generic OIDC retains its client ID and protected secret-file workflow.
 Kubernetes retains explicit Secret names, keys, ownership, and provider egress CIDRs.
 The imported secret must match the selected existing Kubernetes Secret. The installer does not replace cluster credentials.
+
+## Update an installation
+
+Use the same installation directory. The update option selects the newest published release for the installed phase.
+Use `--release` to select a specific immutable release.
+
+```sh
+sh install.sh --root /home/seaston/cc-phase2-lab --update
+```
+
+The script verifies the target archive, manifest, files, and application image signatures before executing the update.
+It displays the installed revision and target revision.
+Provide the directory for an existing verified recovery backup. The backup must match the installed profile and images.
+The recovery key must exist in the protected installation store under its recorded reference.
+Follow the [backup procedure](../operations/README.md) before starting an update without a matching backup.
+The update option verifies that backup. It does not create a backup automatically.
+
+Type `update` to confirm the displayed target. The installer preserves configuration, credentials, administrator access, and persistent data.
+It prepares the update, restarts services, and waits for readiness.
+For hybrid installations, it pauses after preparation until you update the declared worker hosts.
+An update retains the installed phase. Use the [phase migration procedure](PHASE-2.md#upgrade-from-phase-1) to change phases.
+
+After interruption, repeat the script with `--command resume` and the same installation directory.
+The update record retains the exact target release and backup references.
+Resume selects the target inputs after upgrade admission. It completes interrupted configuration publication without repeating a completed upgrade.
+Preserve `setup-update.json`, the `updates` directory, and both cached releases until recovery completes.
+Status and uninstall select the inputs that match the current installation state.
+
+## Uninstall application services
+
+```sh
+sh install.sh --root /home/seaston/cc-phase2-lab --uninstall
+```
+
+The script displays the installation project or namespace. Type that exact name to confirm.
+Any other answer cancels uninstall. The script reports activity while it removes services.
+It preserves persistent data, configuration, credentials, external databases, external storage, and district-managed Secrets.
+It keeps Docker, system packages, downloaded releases, and the installation directory.
+For hybrid installations, uninstall each declared worker fragment on its host.
+Use `--command resume` to restore application services with preserved data.
+Permanent data erasure remains a separate operator procedure.
+
+Both operations also accept `--command update` and `--command uninstall`.
+For unattended update, use these keys in a protected answers file:
+
+```json
+{
+  "command": "update",
+  "update.backupDirectory": "/protected/backups/current",
+  "confirmUpdate": "update"
+}
+```
+
+For unattended uninstall, use `command: "uninstall"` and `confirmUninstall` with the exact installation project or namespace.
+Replace example paths and names with the values for your installation.
+These options require the updated entry script. Guided update also requires a release that includes the maintenance implementation.

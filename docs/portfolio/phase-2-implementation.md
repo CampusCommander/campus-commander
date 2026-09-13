@@ -1223,3 +1223,16 @@ All seven PR jobs passed for both revisions.
 Complete published bundle workflows, final assembly, the restore failure diagnosis, district qualification, and final acceptance remain open.
 
 [The discovery verification record](../../deployment/evidence/CC-37-phase-2-bundle-discovery-validation.json) binds the Nx regression, application run, and unchanged archive inventory.
+
+## Hosted maintenance options
+
+The operator requested update and uninstall options in the install script.
+The hosted entry script now offers both operations alongside resume and status.
+Uninstall requires the exact installation name and preserves persistent data, credentials, and external resources.
+Update verifies a target release, requires a matching recovery backup, and retains the installed phase.
+A protected update record binds interrupted work to its original target inputs.
+Hybrid update pauses for declared worker hosts after preparation.
+The [maintenance instructions](../../deployment/installer/HOSTED.md#update-an-installation) describe confirmation, automation, and recovery.
+All 113 installer tests, seven operations tests, and seven release tests passed. Deployment build and lint passed.
+The [validation record](../../deployment/evidence/CC-37-hosted-maintenance-validation.json) identifies the tested files and execution limits.
+Release publication and VM validation remain open under CC-37 and CC-38.
