@@ -263,6 +263,11 @@ Do not include these files in support attachments. Credential rotation follows t
 
 Step 5 reports service activity and elapsed time. After readiness, it prints the administrator setup address.
 Open that address, enter the new administrator pairing code, and sign in with the intended account.
+Choose the browser profile for the administrator account before entering this code.
+The first pairing request binds the code to that browser, before Google sign-in completes.
+If you switch browser profiles afterward, the second browser must use a new pairing code.
+Stop the waiting installer with Ctrl+C and repeat its resume command. Open the setup page in the intended profile.
+Use the new administrator pairing code. Existing Google credentials and application data remain in place.
 Return to the terminal. Inspect the verified account and type `yes` to grant initial administrator access.
 Any other answer cancels enrollment. Resume when ready to retry.
 The browser reports completion after the database confirms enrollment. Select **Sign in to Campus Commander**.

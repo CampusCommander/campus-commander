@@ -15,6 +15,7 @@ export class Setup implements OnInit, OnDestroy {
   protected readonly busy = signal(false);
   protected readonly state = signal('pair');
   protected readonly error = signal('');
+  protected readonly restartRequired = signal(false);
   private timer?: ReturnType<typeof setTimeout>;
   private destroyed = false;
   ngOnInit() {
@@ -36,6 +37,7 @@ export class Setup implements OnInit, OnDestroy {
     if (this.busy()) return;
     this.busy.set(true);
     this.error.set('');
+    this.restartRequired.set(false);
     try {
       const response = await fetch('/api/auth/enrollment/start', {
         method: 'POST',
@@ -45,7 +47,18 @@ export class Setup implements OnInit, OnDestroy {
         signal: AbortSignal.timeout(15000),
       });
       this.code = '';
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        const failure: { code?: unknown } = await response.json();
+        if (failure.code === 'enrollment-browser-bound') {
+          this.restartRequired.set(true);
+          this.error.set(
+            'This pairing code has already started sign-in in a browser.',
+          );
+          this.busy.set(false);
+          return;
+        }
+        throw new Error();
+      }
       const result: { url: string } = await response.json();
       window.location.assign(result.url);
     } catch {

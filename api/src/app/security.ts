@@ -7,6 +7,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { EnrollmentBrowserBoundException } from './auth/enrollment.errors';
 
 export function securityHeaders(
   request: Request & { correlationId?: string },
@@ -58,10 +59,16 @@ export class ApplicationExceptionFilter implements ExceptionFilter {
       404: ['not-found', 'This route is unavailable.'],
       429: ['busy', 'A check is already running. Wait before another request.'],
     };
-    const [code, message] = errors[status] ?? [
-      'unavailable',
-      'The service is unavailable. Retry or contact the installation operator.',
-    ];
+    const [code, message] =
+      exception instanceof EnrollmentBrowserBoundException
+        ? [
+            'enrollment-browser-bound',
+            'This pairing code has already started browser sign-in. Resume the installer for a new code.',
+          ]
+        : (errors[status] ?? [
+            'unavailable',
+            'The service is unavailable. Retry or contact the installation operator.',
+          ]);
     response
       .status(status)
       .json({ code, message, correlationId: request.correlationId });

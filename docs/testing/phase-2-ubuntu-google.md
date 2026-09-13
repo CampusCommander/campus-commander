@@ -206,7 +206,7 @@ Leave the installation command running after service readiness.
 The installer prints an administrator setup address and a new private pairing code.
 This code differs from the Google upload code. It expires after ten minutes.
 
-1. Open the printed administrator setup address on Windows.
+1. Select the Windows browser profile for your intended administrator account. Open the printed administrator setup address there.
 2. Handle the certificate warning for this isolated localhost lab as described in step 7.
 3. Enter the new pairing code.
 4. Sign in with the Google account that will become the first administrator.
@@ -220,6 +220,11 @@ This code differs from the Google upload code. It expires after ten minutes.
 You do not need a Google account identifier lookup or a separate enrollment command.
 If the account is wrong, decline confirmation and resume installation to retry.
 If setup expires, use the resume command in step 10 to obtain a new pairing code.
+
+The pairing code belongs to the first browser that submits it, even before Google sign-in completes.
+If you switch browser profiles after submission, stop the waiting installer with Ctrl+C.
+Run the resume command in step 10 and enter the new administrator code in the intended browser profile.
+Do not reset the VM or recreate the Google client for this recovery.
 
 **7. Open the application on Windows**
 

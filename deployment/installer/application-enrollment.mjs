@@ -237,7 +237,13 @@ export async function enrollAdministrator({
   try {
     privateOutput(`Private administrator pairing code: ${attempt.code}`);
     output(
-      'Open the setup page in your browser. Enter the pairing code and select the administrator account.',
+      'Choose the browser profile for the administrator account. Open the setup page there and enter the administrator pairing code.',
+    );
+    output(
+      'This code works once. Keep that browser open until enrollment completes.',
+    );
+    output(
+      'To switch browsers after pairing, press Ctrl+C and resume this installation for a new code.',
     );
     while (Date.now() < attempt.expires) {
       const status = await request(config, operator, {

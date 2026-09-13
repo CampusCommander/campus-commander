@@ -1252,3 +1252,18 @@ The first lab workflow reported success but skipped the final bundle test and la
 Its intentionally skipped capacity job propagated through GitHub's default downstream success condition.
 The bundle test now requires successful direct dependencies and explicitly permits the skipped capacity ancestor.
 The workflow regression checks that condition. Lab publication still requires the actual bundle test to pass.
+
+## Administrator browser-profile recovery
+
+The operator completed enrollment after retrying with a fresh administrator pairing code.
+The first attempt paired a personal browser profile before the operator switched to the administrator browser profile.
+The second browser reused the code and received a generic forbidden response.
+Pairing binds the code before Google sign-in completes. Reuse must not transfer the original browser authorization.
+This interaction requires specific recovery guidance and an instruction to select the intended browser profile before pairing.
+
+The setup page and installer now give that instruction before pairing.
+Reusing a valid paired code returns a specific error with installer resume steps.
+Wrong codes still receive the generic denial. Pairing remains limited to the original browser.
+The [recovery validation record](../../deployment/evidence/CC-41-browser-recovery-validation.json) retains the regression and UI checks.
+The Ubuntu test recipe now includes recovery without a VM reset or Google client replacement.
+The current successful installation can continue testing. New message validation on the operator VM remains open.

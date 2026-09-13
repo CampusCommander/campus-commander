@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { CacheService } from '../cache/cache.service';
 import { DatabaseService } from '../database/database.service';
 import { ConfigurationService } from '../configuration/configuration.service';
+import { EnrollmentBrowserBoundException } from './enrollment.errors';
 
 const opaque = () => randomBytes(32).toString('hex');
 const hash = (value: string) =>
@@ -115,8 +116,12 @@ export class EnrollmentService {
     if (!parsed.success) throw new ForbiddenException();
     await this.empty();
     const { raw, attempt } = await this.active();
-    if (attempt.stage !== 'pending' || attempt.failures >= 10)
+    if (attempt.stage !== 'pending') {
+      if (attempt.codeHash === hash(parsed.data))
+        throw new EnrollmentBrowserBoundException();
       throw new ForbiddenException();
+    }
+    if (attempt.failures >= 10) throw new ForbiddenException();
     if (attempt.codeHash !== hash(parsed.data)) {
       await this.cache.replace(
         activeKey,

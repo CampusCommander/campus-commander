@@ -727,7 +727,13 @@ test(
         pairAttempt(concurrent.code),
       ]);
       assert.equal(pairs.filter((result) => result.status === 201).length, 1);
-      assert.equal((await pairAttempt(concurrent.code)).status, 403);
+      const reusedPairing = await pairAttempt(concurrent.code);
+      assert.equal(reusedPairing.status, 403);
+      assert.equal(
+        JSON.parse(reusedPairing.text).code,
+        'enrollment-browser-bound',
+      );
+      assert.equal((await pairAttempt('0'.repeat(64))).status, 403);
       await operatorEnrollment(
         config,
         {},
@@ -783,7 +789,7 @@ test(
         );
       }
       const enrollmentOutput = [];
-      const enrollmentRun = enrollAdministrator({
+      const enrollmentOptions = {
         config,
         operator: {},
         access: (_operator, payload) => callOperator(payload),
@@ -792,7 +798,8 @@ test(
         privateOutput: (line) => enrollmentOutput.push(line),
         ask: async () => 'yes',
         pause: () => delay(50),
-      });
+      };
+      let enrollmentRun = enrollAdministrator(enrollmentOptions);
       enrollmentRun.catch(() => undefined);
       let pairingCode;
       for (let attempt = 0; attempt < 100; attempt++) {
@@ -866,6 +873,107 @@ test(
       } finally {
         await uploadServer.close();
       }
+      // The first browser starts pairing, then the operator switches profiles.
+      const firstBrowser = await browser.newContext({
+        ignoreHTTPSErrors: true,
+      });
+      try {
+        const firstPage = await firstBrowser.newPage();
+        await firstPage.goto(`${publicOrigin}/setup`);
+        const firstPairStatus = await firstPage.evaluate(async (code) => {
+          const response = await fetch('/api/auth/enrollment/start', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ code }),
+          });
+          return response.status;
+        }, pairingCode);
+        assert.equal(firstPairStatus, 201);
+        await enrollmentPage.setViewportSize({ width: 360, height: 1000 });
+        await enrollmentPage.emulateMedia({ colorScheme: 'light' });
+        await enrollmentPage.goto(`${publicOrigin}/setup`);
+        await enrollmentPage
+          .getByLabel('Installer pairing code')
+          .fill(pairingCode);
+        await enrollmentPage
+          .getByRole('button', { name: 'Sign in to enroll administrator' })
+          .click();
+        await expect(enrollmentPage.getByRole('alert')).toHaveText(
+          'This pairing code has already started sign-in in a browser.',
+        );
+        await expect(
+          enrollmentPage.getByRole('region', {
+            name: 'Restart administrator enrollment',
+          }),
+        ).toBeVisible();
+        await expect(enrollmentPage.locator('mat-label')).toHaveCSS(
+          'color',
+          'rgb(179, 38, 30)',
+        );
+        await auditAccessibility(
+          enrollmentPage,
+          'administrator-browser-recovery',
+        );
+        await enrollmentPage.screenshot({
+          path: 'dist/phase-2-evidence/administrator-browser-recovery-light.png',
+          fullPage: true,
+        });
+        await enrollmentPage.emulateMedia({ colorScheme: 'dark' });
+        await expect(enrollmentPage.locator('mat-label')).toHaveCSS(
+          'color',
+          'rgb(242, 139, 130)',
+        );
+        await auditAccessibility(
+          enrollmentPage,
+          'administrator-browser-recovery-dark',
+        );
+        await enrollmentPage.screenshot({
+          path: 'dist/phase-2-evidence/administrator-browser-recovery-dark.png',
+          fullPage: true,
+        });
+        await enrollmentPage.setViewportSize({ width: 640, height: 1000 });
+        await enrollmentPage.evaluate(() => {
+          document.body.style.zoom = '2';
+        });
+        assert.equal(
+          await enrollmentPage.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth,
+          ),
+          true,
+        );
+        await enrollmentPage.evaluate(() => {
+          document.body.style.zoom = '';
+        });
+        await enrollmentPage.setViewportSize({ width: 360, height: 720 });
+        assert.equal(
+          (await migrator.query('SELECT id FROM cc.application_principals'))
+            .rowCount,
+          0,
+        );
+        await operatorEnrollment(config, {}, { action: 'cancel' });
+        await assert.rejects(enrollmentRun);
+        const usedCode = pairingCode;
+        enrollmentOutput.length = 0;
+        enrollmentRun = enrollAdministrator(enrollmentOptions);
+        enrollmentRun.catch(() => undefined);
+        for (let attempt = 0; attempt < 100; attempt++) {
+          pairingCode = enrollmentOutput
+            .find((line) =>
+              line.startsWith('Private administrator pairing code: '),
+            )
+            ?.split(': ')[1];
+          if (pairingCode) break;
+          await delay(100);
+        }
+        assert.ok(pairingCode && pairingCode !== usedCode);
+        assert.equal((await pairAttempt(usedCode)).status, 403);
+        await expect(
+          enrollmentPage.getByLabel('Installer pairing code'),
+        ).toHaveValue('');
+      } finally {
+        await firstBrowser.close();
+      }
+      await enrollmentPage.emulateMedia({ colorScheme: 'light' });
       await enrollmentPage.goto(`${publicOrigin}/setup`);
       await auditAccessibility(enrollmentPage, 'administrator-enrollment');
       await enrollmentPage.emulateMedia({ colorScheme: 'dark' });
@@ -1887,6 +1995,7 @@ test(
               'paired Google client JSON browser upload and private storage unit coverage',
               'installer-authorized browser enrollment and explicit operator confirmation',
               'enrollment expiry, cancellation, replay, concurrent pairing, and forged callbacks',
+              'browser-profile switch rejection, recovery guidance, and enrollment after installer restart',
               'already-enrolled resume and runtime migration privilege denial',
               'setup form accessibility in both themes and keyboard enrollment',
               'OIDC sign-in and forged callback denial',

@@ -4,8 +4,11 @@
     <h1 id="setup-title">Enroll the first administrator</h1>
     @if (state() === 'pair') {
     <p>
-      Use the private pairing code from the installer terminal. Then sign in
-      with the administrator account.
+      Choose the browser profile for your administrator account before entering
+      the private administrator pairing code from the installer terminal.
+    </p>
+    <p>
+      The code works once. Keep this browser open until enrollment completes.
     </p>
     <form (ngSubmit)="pair()">
       <mat-form-field appearance="outline"
@@ -38,6 +41,21 @@
     <button mat-stroked-button (click)="check()">Check enrollment</button>
     } @if (error()) {
     <p role="alert" class="error">{{ error() }}</p>
+    @if (restartRequired()) {
+    <section aria-label="Restart administrator enrollment">
+      <p>
+        Obtain a new pairing code to continue in this browser:
+      </p>
+      <ol>
+        <li>In the installer terminal, press Ctrl+C.</li>
+        <li>Run the same installer command again and select Resume.</li>
+        <li>Enter its new administrator pairing code in this browser.</li>
+      </ol>
+      <p>
+        Your Google client configuration and application data remain in place.
+      </p>
+    </section>
+    }
     <a mat-stroked-button href="/login">Return to sign-in</a> }
   </section>
 </main>
