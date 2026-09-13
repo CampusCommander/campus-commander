@@ -1,0 +1,100 @@
+{
+  "conclusion": "failure",
+  "headSha": "0185173a5b71831b813e890469661805cd9d69ee",
+  "jobs": [
+    {
+      "conclusion": "success",
+      "databaseId": 103543596318,
+      "name": "validate"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103543763429,
+      "name": "publish (api)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103543763465,
+      "name": "publish (worker)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103543763467,
+      "name": "publish (frontend)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084323,
+      "name": "capacity"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084412,
+      "name": "application (hybrid-upgrade-integration)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084419,
+      "name": "application (kubernetes-integration)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084423,
+      "name": "application (kubernetes-restore-integration)"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 103544084425,
+      "name": "application (hybrid-cli-integration)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084427,
+      "name": "application (all-docker-integration)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084433,
+      "name": "application (hybrid-integration)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084436,
+      "name": "application (hybrid-restore-integration)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084437,
+      "name": "application (screen-reader-integration)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084439,
+      "name": "application (auth-image-integration)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084441,
+      "name": "application (kubernetes-upgrade-integration)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084476,
+      "name": "application (restore-integration)"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103544084482,
+      "name": "application (upgrade-integration)"
+    },
+    {
+      "conclusion": "skipped",
+      "databaseId": 103545045463,
+      "name": "bundle"
+    }
+  ],
+  "status": "completed",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34690048874",
+  "failure": "The distributed hybrid fixture exported a Kestra image absent from the outer Docker cache. Application assertions did not run in that target.",
+  "acceptedRelease": false
+}

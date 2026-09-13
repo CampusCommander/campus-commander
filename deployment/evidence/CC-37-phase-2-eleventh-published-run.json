@@ -1,0 +1,159 @@
+{
+  "databaseId": 34692002250,
+  "headSha": "294124f3d39bc5803e9635298d5a18a4f60db581",
+  "status": "completed",
+  "conclusion": "failure",
+  "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34692002250",
+  "recordedAt": "2026-09-12T12:02:27.449610+00:00",
+  "jobs": [
+    {
+      "databaseId": 103548792052,
+      "name": "validate",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103548960351,
+      "name": "publish (frontend)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103548960355,
+      "name": "publish (api)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103548960363,
+      "name": "publish (worker)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235508,
+      "name": "capacity",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235591,
+      "name": "application (hybrid-cli-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "databaseId": 103549235636,
+      "name": "application (restore-integration)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235639,
+      "name": "application (auth-image-integration)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235645,
+      "name": "application (upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235647,
+      "name": "application (hybrid-cli-integration)",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "databaseId": 103549235654,
+      "name": "application (kubernetes-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235664,
+      "name": "application (kubernetes-integration)",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "databaseId": 103549235668,
+      "name": "application (hybrid-restore-integration)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235669,
+      "name": "application (hybrid-cli-process-fault-integration)",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "databaseId": 103549235671,
+      "name": "application (screen-reader-integration)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235673,
+      "name": "application (kubernetes-restore-integration)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235680,
+      "name": "application (all-docker-integration)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235683,
+      "name": "application (hybrid-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103549235746,
+      "name": "application (hybrid-integration)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "databaseId": 103550138770,
+      "name": "bundle",
+      "status": "completed",
+      "conclusion": "skipped"
+    }
+  ],
+  "failures": [
+    {
+      "targets": [
+        "hybrid-cli-integration",
+        "hybrid-cli-upgrade-integration",
+        "hybrid-cli-process-fault-integration"
+      ],
+      "stage": "browser and lifecycle after API restart",
+      "assertion": "Diagnostics heading did not appear within 15000 milliseconds.",
+      "sourceLocation": "api-e2e/hybrid-cli.test.mjs:470",
+      "limits": "All three passed provider discovery, sign-in, and initial Diagnostics. The fault target did not reach its six fault cases."
+    },
+    {
+      "targets": ["kubernetes-integration"],
+      "stage": "runtime image preparation",
+      "assertion": "Redis image download failed with connection reset by peer.",
+      "limits": "The application did not start in this job. Kubernetes upgrade and restore jobs passed."
+    }
+  ],
+  "pullRequestCi": {
+    "databaseId": 34692004179,
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34692004179"
+  },
+  "limits": [
+    "The candidate failed and published no bundle.",
+    "Fifteen full profile release gates remain open."
+  ]
+}

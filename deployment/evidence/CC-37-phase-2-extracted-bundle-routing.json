@@ -1,0 +1,174 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T16:34:41.661299+00:00",
+  "bundleSourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+  "fixtureSource": {
+    "baseGitRevision": "5bda2bffba3a215c49063a03ac362244c620dfe4",
+    "workingTree": "uncommitted-candidate",
+    "files": [
+      {
+        "path": ".github/workflows/phase-2-candidate.yml",
+        "sha256": "0750e6b0f1a6dd5ea2d127f43909d742607b31a33f05684208b9d7ad9cf58239"
+      },
+      {
+        "path": "deployment/release/qualification.mjs",
+        "sha256": "305d216c37563be67b7fe414257cb380f9f4ab6ae58727ea6640ba477a2e2a91"
+      },
+      {
+        "path": "deployment/release/qualification.test.mjs",
+        "sha256": "0dbeaa352bd2e2614c252459b0bb72bd44a290624938ee25ca13eb26fc0fb106"
+      },
+      {
+        "path": "deployment/release/bundle-qualification.mjs",
+        "sha256": "0274a84b382b50e4069d1e602399b643c169c958cbfd0df84a9fbe65e418db3d"
+      },
+      {
+        "path": "deployment/release/bundle-qualification.test.mjs",
+        "sha256": "36f1a33bc54e98512e3a70d5fe7c546738c9b8aabe91b4167cf3a9fadd4d6e92"
+      },
+      {
+        "path": "deployment/installer/integration.mjs",
+        "sha256": "1b256d53e4b34d40a116c804ef7e4669b9e6ca78b380f8aefd2ebf073b8d1bf0"
+      },
+      {
+        "path": "deployment/operations/cli-fixture.mjs",
+        "sha256": "0997af4903b3129768d7aacfa9aea869ccc15f433f561254d255f631c9502863"
+      },
+      {
+        "path": "deployment/profiles/hybrid/restore-integration.mjs",
+        "sha256": "41283a018db7ade87262221b7447078fe550707f48aaaad5baa3f7044d04da3a"
+      },
+      {
+        "path": "api-e2e/upgrade.test.mjs",
+        "sha256": "1ff41e7013f2fb635696795197d516536d310cec9a8f07075b7d484338b3d982"
+      },
+      {
+        "path": "api-e2e/hybrid-cli.test.mjs",
+        "sha256": "d252fd98557add78cf40c53212b27f82f2bbe12a74712a134e95d4be49136c82"
+      },
+      {
+        "path": "api-e2e/kubernetes-installer-fixture.mjs",
+        "sha256": "20b7327ff392fbe3b82f3a914d2f3a8b905b6c185a4bb6d00db34c1f5a0f86d8"
+      },
+      {
+        "path": "api-e2e/kubernetes.test.mjs",
+        "sha256": "f9f36248f48ffab4ae6b154a2d9756e783d83b2f2b9066e740b58cce5b6dcd9a"
+      }
+    ]
+  },
+  "reports": [
+    {
+      "path": "deployment/evidence/CC-37-phase-2-extracted-all-docker-a807c35.json",
+      "sha256": "fa74a15904cf05cea5cbd7a9a0080997e4d390dee9a85198594ae1d651d50be7"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-extracted-all-docker-upgrade-a807c35.json",
+      "sha256": "b0c0afd98d89df34e7cc0482523fb64d37796ca0030a52cfb1ed28f8189c6995"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-extracted-all-docker-verification.json",
+      "sha256": "d5338b7a63bceffa25d491d767536504579d585ab645fe75e2590e6f8a595c91"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-extracted-hybrid-a807c35.json",
+      "sha256": "91a9d8dbc9463d01f0334654fe5ed93879e2f142203a32048f4a9518966ba1b8"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-extracted-hybrid-restore-a807c35.json",
+      "sha256": "be8e4a3be3de5d068fd56fde3a8c2c176233c232414e2e8d0dfa2471154493c2"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-extracted-kubernetes-a807c35.json",
+      "sha256": "6a4a83cdd3d282e0bad4b2826ba4f7187c41f5c1d833a188c40368e195f3545c"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-extracted-kubernetes-upgrade-a807c35.json",
+      "sha256": "5ecae09bff1e412f7702c06781dfaba9717e07ed88991aa43fa6994bd2de68be"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-extracted-kubernetes-verification.json",
+      "sha256": "52f4cf9a59b68e042ec9602026b0630816cb0c760c52e2ef6cc8ef8de9c09444"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-extracted-operator-cli-a807c35.json",
+      "sha256": "f149b9ffd76b8cbbdeeb2d2b315e66e4e9022ed33227430f2939617ec06bf561"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-twentieth-published-run.json",
+      "sha256": "f8068d3ab3025e46608b381905f74d447657817ebdd5ad6ba36d6fe52ffae4fd"
+    }
+  ],
+  "tests": [
+    {
+      "target": "api-e2e:all-docker-integration",
+      "status": "passed",
+      "logSha256": "6a4ffd82b1a4c400ee51df389e4839bac3faa671b399a62cd52c18d04f60526b"
+    },
+    {
+      "target": "api-e2e:kubernetes-integration",
+      "status": "passed",
+      "logSha256": "e59335e9b60d257d1141de6226f29aa53f18dd66feaa97841914b1907fa84b5c"
+    },
+    {
+      "target": "api-e2e:hybrid-cli-integration",
+      "status": "passed",
+      "logSha256": "7700ebbe2595a7b8fc153c30cc42a1b9c9e303637d272fddd4db12016bc69262"
+    },
+    {
+      "target": "api-e2e:upgrade-integration",
+      "status": "passed",
+      "logSha256": "9eba8530a83982dd4b2c09732e8c71b373c6859ece96cdfc291755daba246a9b"
+    },
+    {
+      "target": "api-e2e:kubernetes-upgrade-integration",
+      "status": "passed",
+      "logSha256": "5939246b320b1a2a0339ccf1d405b075207c7a5d01cbbfb620aa629cc5d1190c"
+    },
+    {
+      "target": "api-e2e:hybrid-restore-integration",
+      "status": "passed",
+      "logSha256": "2964f19b220d8185f3906d882a07dcdec7178e026bc8a7182b2ce86de3e34386"
+    },
+    {
+      "target": "deployment:operations-cli-integration",
+      "status": "passed",
+      "logSha256": "878197bbd2130424feda5bdbe5b360fbdd87264943f65398522cbee83d0fcce6"
+    },
+    {
+      "target": "deployment:release-test",
+      "status": "passed",
+      "logSha256": "a170e1743e6945d50c7c9db540bf7366edc3ddd3859a0c368c5e590f1dadceb6"
+    },
+    {
+      "target": "api-e2e:lint, deployment:lint",
+      "status": "passed",
+      "logSha256": "b2f7e0f07a5cabeedf4841228602c654998841c9fb9f7cd3343b130f1564b541"
+    },
+    {
+      "target": "api-e2e:kubernetes-shutdown-test",
+      "status": "passed",
+      "logSha256": "31a9f1d9b7ec5241a2b28c8f0976b13195b1f421971cd4c9b3e652035fa3cd47"
+    }
+  ],
+  "verifiedContextTargets": [
+    "all-docker-integration",
+    "upgrade-integration",
+    "hybrid-cli-integration",
+    "kubernetes-upgrade-integration",
+    "hybrid-restore-integration"
+  ],
+  "workflow": {
+    "expandedJobs": 41,
+    "extractedBundleTargets": 12,
+    "targetParityVerified": true,
+    "shellSyntaxVerified": true,
+    "publishedExecutionRequired": true
+  },
+  "limits": [
+    "The experiments used the independently verified a807c35 candidate and its matching images.",
+    "The all-Docker and Kubernetes fresh workflows preceded the new routing changes. Their independent verification records preserve this scope.",
+    "Current fixture changes qualify bundle routing. Final source qualification remains required.",
+    "The twelve-job extracted-bundle CI matrix has not run on the published revision.",
+    "Complete extracted-bundle evidence, accepted release assembly, and district acceptance remain open."
+  ]
+}

@@ -267,71 +267,148 @@ test('hybrid and Kubernetes retain real topology and guide operational inputs', 
   }
 });
 
-test('runSetup records acceptance and preserves credentials and configuration during resume', async (t) => {
-  const root = join(await fixture(t), 'installation');
-  const release = join(await fixture(t), 'release');
-  const { cp } = await import('node:fs/promises');
-  await mkdir(release);
-  await cp(
-    join(releaseRoot, 'deployment/examples'),
-    join(release, 'deployment/examples'),
-    { recursive: true },
-  );
-  await mkdir(join(release, 'deployment/installer'), { recursive: true });
-  await cp(
-    join(releaseRoot, 'deployment/installer/operator.example.json'),
-    join(release, 'deployment/installer/operator.example.json'),
-  );
-  await writeFile(
-    join(release, 'release-manifest.json'),
-    JSON.stringify(manifest),
-  );
-  const calls = [],
-    output = [];
-  const deps = {
-    answers: {
-      profile: 'all-docker',
+for (const phase of [1, 2])
+  test(`runSetup Phase ${phase} preserves configuration and integrates enrollment during resume`, async (t) => {
+    const root = join(await fixture(t), 'installation');
+    const release = join(await fixture(t), 'release');
+    const { cp } = await import('node:fs/promises');
+    await mkdir(release);
+    await cp(
+      join(releaseRoot, 'deployment/examples'),
+      join(release, 'deployment/examples'),
+      { recursive: true },
+    );
+    await mkdir(join(release, 'deployment/installer'), { recursive: true });
+    await cp(
+      join(releaseRoot, 'deployment/installer/operator.example.json'),
+      join(release, 'deployment/installer/operator.example.json'),
+    );
+    await writeFile(
+      join(release, 'release-manifest.json'),
+      JSON.stringify(manifest),
+    );
+    const calls = [],
+      output = [];
+    const enrollments = [];
+    const googleFile = join(release, 'google.json');
+    await writeFile(
+      googleFile,
+      JSON.stringify({
+        web: {
+          client_id: '123-test.apps.googleusercontent.com',
+          client_secret: 'synthetic-client-secret',
+          project_id: 'campus-test',
+          redirect_uris: ['https://localhost:8443/api/auth/callback'],
+        },
+      }),
+      { mode: 0o600 },
+    );
+    const deps = {
+      answers: {
+        phase,
+        ...(phase === 2
+          ? {
+              'applicationAuth.provider': 'google',
+              'applicationAuth.googleImport': 'file',
+              'applicationAuth.googleClientFile': googleFile,
+            }
+          : {}),
+        profile: 'all-docker',
+        root,
+        candidateAcknowledgement: 'candidate-lab',
+        labCertificate: 'yes',
+      },
+      enroll: async (input) => enrollments.push(input),
+      validate: (config) => assert.equal(config.profile, 'all-docker'),
+      run: async (file, args) => {
+        assert.equal(file, 'openssl');
+        await writeFile(args[args.indexOf('-out') + 1], 'certificate');
+        await writeFile(args[args.indexOf('-keyout') + 1], 'private-key');
+      },
+      installer: async (call) => {
+        calls.push(call);
+        call.onProgress('Waiting for service readiness');
+        return { status: 'ready' };
+      },
+      output: (line) => output.push(line),
+    };
+    await runSetup(
+      {
+        releaseRoot: release,
+        root,
+        profile: 'all-docker',
+        qualification: true,
+      },
+      deps,
+    );
+    const before = await readFile(join(root, 'operator.json'));
+    assert.equal((await stat(join(root, 'operator.json'))).mode & 0o777, 0o600);
+    assert.equal(
+      (await stat(join(root, 'private/edge-private-key'))).mode & 0o777,
+      0o600,
+    );
+    assert.equal(
+      JSON.parse(await readFile(join(root, 'setup-record.json'))).qualification,
+      true,
+    );
+    await runSetup(
+      { releaseRoot: '/different-release', root, command: 'resume' },
+      { ...deps, answers: {} },
+    );
+    assert.deepEqual(await readFile(join(root, 'operator.json')), before);
+    assert.equal(calls[1].command, 'resume');
+    assert.equal(calls[1].qualification, true);
+    assert.equal(calls[1].operator.releaseRoot, release);
+    assert.ok(output.some((line) => line.includes('https://localhost:8443')));
+    assert.equal(
+      output.filter((line) =>
+        line.includes('Working: Waiting for service readiness'),
+      ).length,
+      2,
+    );
+    assert.ok(!output.some((line) => line.includes('private-key')));
+    assert.equal(enrollments.length, phase === 2 ? 2 : 0);
+    await runSetup(
+      { releaseRoot: release, root, command: 'status' },
+      { ...deps, answers: {} },
+    );
+    assert.equal(enrollments.length, phase === 2 ? 2 : 0);
+    const uninstallOptions = {
+      releaseRoot: release,
       root,
-      candidateAcknowledgement: 'candidate-lab',
-      labCertificate: 'yes',
-    },
-    validate: (config) => assert.equal(config.profile, 'all-docker'),
-    run: async (file, args) => {
-      assert.equal(file, 'openssl');
-      await writeFile(args[args.indexOf('-out') + 1], 'certificate');
-      await writeFile(args[args.indexOf('-keyout') + 1], 'private-key');
-    },
-    installer: async (call) => {
-      calls.push(call);
-      return { status: 'ready' };
-    },
-    output: (line) => output.push(line),
-  };
-  await runSetup(
-    { releaseRoot: release, root, profile: 'all-docker', qualification: true },
-    deps,
-  );
-  const before = await readFile(join(root, 'operator.json'));
-  assert.equal((await stat(join(root, 'operator.json'))).mode & 0o777, 0o600);
-  assert.equal(
-    (await stat(join(root, 'private/edge-private-key'))).mode & 0o777,
-    0o600,
-  );
-  assert.equal(
-    JSON.parse(await readFile(join(root, 'setup-record.json'))).qualification,
-    true,
-  );
-  await runSetup(
-    { releaseRoot: '/different-release', root, command: 'resume' },
-    { ...deps, answers: {} },
-  );
-  assert.deepEqual(await readFile(join(root, 'operator.json')), before);
-  assert.equal(calls[1].command, 'resume');
-  assert.equal(calls[1].qualification, true);
-  assert.equal(calls[1].operator.releaseRoot, release);
-  assert.ok(output.some((line) => line.includes('https://localhost:8443')));
-  assert.ok(!output.some((line) => line.includes('private-key')));
-});
+      command: 'uninstall',
+    };
+    assert.equal(
+      (
+        await runSetup(uninstallOptions, {
+          ...deps,
+          answers: {},
+          installer: () => assert.fail('Cancellation must preserve services.'),
+        })
+      ).status,
+      'cancelled',
+    );
+    assert.equal(
+      (
+        await runSetup(uninstallOptions, {
+          ...deps,
+          answers: { confirmUninstall: JSON.parse(before).project },
+          installer: async (input) => {
+            assert.equal(input.command, 'uninstall');
+            return { status: 'uninstalled', dataPreserved: true };
+          },
+        })
+      ).status,
+      'uninstalled',
+    );
+    assert.equal(enrollments.length, phase === 2 ? 2 : 0);
+    assert.deepEqual(await readFile(join(root, 'operator.json')), before);
+    if (phase === 2)
+      assert.equal(
+        enrollments[0].config.applicationAuth.clientId,
+        '123-test.apps.googleusercontent.com',
+      );
+  });
 
 test('candidate acknowledgement and unknown answers block installation', async (t) => {
   const root = join(await fixture(t), 'installation');

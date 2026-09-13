@@ -1,19 +1,25 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  writeFile,
+} from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import {
-  backupFoundation,
-  restoreFoundation,
-} from '../../operations/index.mjs';
+import { verifyBackup } from '../../operations/index.mjs';
+import { createOperationsCliFixture } from '../../operations/cli-fixture.mjs';
 import { connectionOptions, provision } from '../../postgres/index.mjs';
 import { normalizePostgresSecret } from '../../postgres/secrets.mjs';
 import { createArtifactStore } from '../../storage/index.mjs';
 import { probeRedis } from '../../redis/probe.mjs';
+import { parseDeploymentConfig } from '../../../dist/deployment/lib/deployment.js';
 
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const json = async (path) => JSON.parse(await readFile(path, 'utf8'));
@@ -69,6 +75,14 @@ async function operatorPhase(phase, inputPath) {
     version: 1,
     reference: { provider: 'file', path: '/run/secrets/restore-backup-key' },
   };
+  const operatorCli =
+    phase === 'redis'
+      ? undefined
+      : await createOperationsCliFixture(
+          join(root, `operator-cli-${phase}`),
+          secret,
+          { mountedSecrets: true },
+        );
   const executionDigest = async (config) => {
     const client = new pg.Client(
       await connectionOptions(config.services.kestraDatabase, secret),
@@ -138,7 +152,7 @@ async function operatorPhase(phase, inputPath) {
       pool,
       root: sourceConfig.artifacts.location,
     });
-    let artifact, ledger;
+    let artifact, ledger, application;
     try {
       const bytes = Buffer.from('CC17 hybrid restore École 学校');
       artifact = await store.stage(
@@ -155,6 +169,22 @@ async function operatorPhase(phase, inputPath) {
           'SELECT id,checksum FROM cc.schema_migrations ORDER BY id',
         )
       ).rows;
+      if (sourceConfig.phase === 2) {
+        application = {
+          principals: (
+            await pool.query(
+              'SELECT to_jsonb(p) AS value FROM cc.application_principals p ORDER BY id',
+            )
+          ).rows,
+          securityEvents: (
+            await pool.query(
+              'SELECT to_jsonb(e) AS value FROM cc.security_events e ORDER BY id',
+            )
+          ).rows,
+        };
+        assert.ok(application.principals.length > 0);
+        assert.ok(application.securityEvents.length > 0);
+      }
     } finally {
       await store.close();
       await pool.end();
@@ -162,6 +192,7 @@ async function operatorPhase(phase, inputPath) {
     const expected = {
       artifact,
       ledger,
+      ...(application ? { application } : {}),
       execution: await executionDigest(sourceConfig),
       kestraFiles: await treeChecksums(
         sourceConfig.services.kestra.internalStorage.location,
@@ -174,7 +205,7 @@ async function operatorPhase(phase, inputPath) {
     };
     assert.ok(expected.kestraFiles.length > 0);
     await writeJson(join(root, 'expected.json'), expected);
-    const manifest = await backupFoundation({
+    const { result: backupResult } = await operatorCli.run('backup', {
       config: sourceConfig,
       release: input.release,
       backupDirectory: join(root, 'backup'),
@@ -188,10 +219,21 @@ async function operatorPhase(phase, inputPath) {
         stoppedAt: new Date().toISOString(),
         stoppedServices: ['api', 'workers', 'kestra'],
       },
-      resolveSecret: secret,
       applicationCredentials: credentials(false),
     });
+    assert.equal(backupResult.status, 'complete');
+    const { result: verifiedBackup } = await operatorCli.run('verify', {
+      backupDirectory: join(root, 'backup'),
+      keyRecovery,
+    });
+    assert.equal(verifiedBackup.status, 'verified');
+    const manifest = await verifyBackup({
+      backupDirectory: join(root, 'backup'),
+      keyRecovery,
+      resolveSecret: secret,
+    });
     await writeJson(join(root, 'backup-summary.json'), {
+      operatorCli: { ...operatorCli.execution, commands: operatorCli.commands },
       encryptedFiles: manifest.files.length,
       durationMilliseconds: manifest.durationMilliseconds,
     });
@@ -239,14 +281,15 @@ async function operatorPhase(phase, inputPath) {
     } finally {
       await admin.end();
     }
-    const report = await restoreFoundation({
+    const { result: restoreResult } = await operatorCli.run('restore', {
       backupDirectory: join(root, 'backup'),
       targetConfig,
       targetDirectory: join(root, 'restored'),
       keyRecovery,
-      resolveSecret: secret,
       applicationCredentials: credentials(true),
     });
+    assert.equal(restoreResult.status, 'verified-services-disabled');
+    const report = await json(join(root, 'restored', 'restore-report.json'));
     const expected = await json(join(root, 'expected.json'));
     const pool = new pg.Pool(
       await connectionOptions(
@@ -259,6 +302,23 @@ async function operatorPhase(phase, inputPath) {
       root: targetConfig.artifacts.location,
     });
     try {
+      if (expected.application) {
+        assert.deepEqual(
+          {
+            principals: (
+              await pool.query(
+                'SELECT to_jsonb(p) AS value FROM cc.application_principals p ORDER BY id',
+              )
+            ).rows,
+            securityEvents: (
+              await pool.query(
+                'SELECT to_jsonb(e) AS value FROM cc.security_events e ORDER BY id',
+              )
+            ).rows,
+          },
+          expected.application,
+        );
+      }
       const digest = createHash('sha256');
       for await (const bytes of await store.openRead(
         expected.artifact.artifactId,
@@ -330,7 +390,7 @@ async function operatorPhase(phase, inputPath) {
     );
     assert.deepEqual(
       await json(join(root, 'restored', 'target-configuration.json')),
-      targetConfig,
+      parseDeploymentConfig(targetConfig),
     );
     assert.match(
       await readFile(join(root, 'restored', 'RESTORE_DISABLED'), 'utf8'),
@@ -341,7 +401,19 @@ async function operatorPhase(phase, inputPath) {
       releaseRequiresFreshRedis: true,
     });
     await writeJson(join(root, 'verification.json'), {
+      operatorCli: { ...operatorCli.execution, commands: operatorCli.commands },
       status: report.status,
+      ...(expected.application
+        ? {
+            application: {
+              principals: expected.application.principals.length,
+              securityEvents: expected.application.securityEvents.length,
+              identityStateSha256: hash(JSON.stringify(expected.application)),
+              exactIdentityAndPreferences: true,
+              exactSecurityEvents: true,
+            },
+          }
+        : {}),
       durationMilliseconds: report.durationMilliseconds,
       artifact: {
         artifactId: expected.artifact.artifactId,
@@ -375,15 +447,25 @@ async function operatorPhase(phase, inputPath) {
   } else throw new Error('Invalid isolated operator phase.');
 }
 
-async function qualify() {
-  if (process.env.CC_HYBRID_RESTORE_SOURCE_RELEASED !== 'yes')
+export async function qualifyHybridRestore({
+  sourceRoot: ownedSourceRoot,
+  executionId: ownedExecutionId,
+  onRestored,
+} = {}) {
+  if (
+    !ownedSourceRoot &&
+    process.env.CC_HYBRID_RESTORE_SOURCE_RELEASED !== 'yes'
+  )
     throw new Error(
       'Obtain the hybrid fixture owner release before stopping its writers.',
     );
-  const sourceRoot = resolve(process.env.CC_HYBRID_RESTORE_SOURCE_ROOT ?? '');
+  const sourceRoot = resolve(
+    ownedSourceRoot ?? process.env.CC_HYBRID_RESTORE_SOURCE_ROOT ?? '',
+  );
   if (!sourceRoot.startsWith('/tmp/cc-hybrid-full-'))
     throw new Error('Use a dedicated retained hybrid fixture.');
-  const executionId = process.env.CC_HYBRID_RESTORE_EXECUTION_ID;
+  const executionId =
+    ownedExecutionId ?? process.env.CC_HYBRID_RESTORE_EXECUTION_ID;
   if (!/^[a-zA-Z0-9]+$/.test(executionId ?? ''))
     throw new Error('Provide the successful synthetic execution identity.');
   const prefix = basename(sourceRoot).match(
@@ -558,6 +640,9 @@ async function qualify() {
         );
     };
     checkStopped();
+    const operatorSecretRoot = join(root, 'operator-secrets');
+    await cp(sourcePrivate, operatorSecretRoot, { recursive: true });
+    await cp(join(root, 'private'), operatorSecretRoot, { recursive: true });
     const runOperator = (phase, network) =>
       docker([
         'run',
@@ -573,12 +658,20 @@ async function qualify() {
         `${process.execPath}:/opt/cc-node:ro`,
         '-v',
         `${fileURLToPath(new URL('../../../', import.meta.url))}:/workspace:ro`,
+        ...(process.env.CC_AUTH_INSTALLER_ROOT
+          ? [
+              '-v',
+              `${process.env.CC_AUTH_INSTALLER_ROOT}:/release:ro`,
+              '-e',
+              'CC_AUTH_INSTALLER_ROOT=/release',
+            ]
+          : []),
         '-v',
         `${root}:${root}`,
         '-v',
         `${sourcePrivate}:${sourcePrivate}:ro`,
         '-v',
-        `${join(sourcePrivate, 'district-ca')}:/run/secrets/district-ca:ro`,
+        `${operatorSecretRoot}:/run/secrets:ro`,
         ...(phase === 'backup'
           ? [
               '-v',
@@ -691,7 +784,20 @@ async function qualify() {
     runOperator('redis', targetNetwork);
     checkStopped();
     const verification = await json(join(root, 'verification.json'));
+    const application = onRestored
+      ? await onRestored({
+          root,
+          sourceRoot,
+          targetConfig,
+          targetNetwork,
+          targetPg,
+          targetRedis,
+          images,
+        })
+      : undefined;
+    checkStopped();
     const result = {
+      ...(application ? { application } : {}),
       schemaVersion: 1,
       status: 'passed',
       profile: 'hybrid',
@@ -710,7 +816,7 @@ async function qualify() {
       },
       sourceOfflineDuringVerification: true,
       targetNetworkIsolated: true,
-      targetServicesReleased: false,
+      targetServicesReleased: Boolean(application),
       fixtureDirectory: root,
       limits: [
         'One Docker host simulates district dependencies and worker hosts.',
@@ -722,7 +828,8 @@ async function qualify() {
       process.env.CC_HYBRID_RESTORE_EVIDENCE ?? join(root, 'result.json'),
       result,
     );
-    console.log(JSON.stringify(result, null, 2));
+    if (!ownedSourceRoot) console.log(JSON.stringify(result, null, 2));
+    return result;
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -746,18 +853,25 @@ async function qualify() {
   }
 }
 
-if (['backup', 'restore', 'redis'].includes(process.argv[2])) {
-  try {
-    await operatorPhase(process.argv[2], process.argv[3]);
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        phase: process.argv[2],
-        errorType: error.name,
-        code: error.code,
-        frames: error.stack?.split('\n').filter((line) => /^\s+at /.test(line)),
-      }),
-    );
-    process.exitCode = 1;
-  }
-} else await qualify();
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === resolve(process.argv[1])
+) {
+  if (['backup', 'restore', 'redis'].includes(process.argv[2])) {
+    try {
+      await operatorPhase(process.argv[2], process.argv[3]);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          phase: process.argv[2],
+          errorType: error.name,
+          code: error.code,
+          frames: error.stack
+            ?.split('\n')
+            .filter((line) => /^\s+at /.test(line)),
+        }),
+      );
+      process.exitCode = 1;
+    }
+  } else await qualifyHybridRestore();
+}

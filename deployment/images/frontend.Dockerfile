@@ -6,11 +6,16 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY nx.json tsconfig.base.json eslint.config.mjs ./
 COPY frontend ./frontend
+COPY libs/application-contracts ./libs/application-contracts
 RUN npm exec -- nx run frontend:build
 RUN find /workspace/dist/frontend -exec touch -d "@${SOURCE_DATE_EPOCH}" {} +
 
 FROM node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995
 ENV NODE_ENV=production PORT=8080
+ARG CC_VERSION=development
+ARG CC_BUILD_ID=unreleased
+LABEL org.opencontainers.image.version=${CC_VERSION} org.opencontainers.image.revision=${CC_BUILD_ID}
+RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 WORKDIR /app
 COPY --chown=node:node deployment/images/frontend-server.mjs ./server.mjs
 COPY --from=build --chown=node:node /workspace/dist/frontend/browser ./browser

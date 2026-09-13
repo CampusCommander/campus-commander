@@ -1,0 +1,50 @@
+{
+  "status": "passed",
+  "scope": "operator-failure-code-regression",
+  "recordedAt": "2026-09-12T15:13:56.274010+00:00",
+  "tests": [
+    {
+      "target": "deployment:operations-test",
+      "stage": "before-correction",
+      "status": "failed-as-expected",
+      "observed": "The CLI returned only the generic failure message for a missing quiescence record.",
+      "logPath": "/tmp/cc-phase2-operations-failure-reason-red.log",
+      "logSha256": "bf277c34eb699cbee10b58d8fb5e4fcd6e822681e93423f342b29638abb736a4"
+    },
+    {
+      "target": "deployment:operations-test",
+      "stage": "after-correction",
+      "status": "passed",
+      "tests": 4,
+      "logPath": "/tmp/cc-phase2-operations-failure-reason-green.log",
+      "logSha256": "37278f79341180801aa030017146c9521831579c744fbcb29d0463762aba2e37"
+    },
+    {
+      "target": "deployment:operations-cli-integration",
+      "status": "passed",
+      "logPath": "/tmp/cc-phase2-operations-reason-native-integration.log",
+      "logSha256": "baf64b9106d6dcffce281a258ff2768216db0acbe29525c845e0485d6c05ec15"
+    },
+    {
+      "target": "api-e2e:kubernetes-restore-integration",
+      "status": "passed",
+      "processSession": 25958,
+      "processExitCode": 0,
+      "applicationWorkflowMilliseconds": 322966,
+      "report": "deployment/evidence/CC-34-phase-2-kubernetes-reason-regression.json",
+      "observedClusterAbsent": true,
+      "logPath": "/tmp/cc-phase2-kubernetes-restore-reason-regression.log",
+      "logSha256": "d4ea215c4c4e49322e6fc926d4a0b33984901b192216ecb2913ffb21ef5356f0"
+    }
+  ],
+  "security": [
+    "Only fixed allowlisted codes reach stderr.",
+    "The regression rejects private operator input and private paths in stderr.",
+    "Unknown errors retain UNCLASSIFIED_FAILURE."
+  ],
+  "limits": [
+    "The local Kubernetes run used published 8a5f823 application images and native host tools.",
+    "The retained Kubernetes console log ends before its terminal summary. The resumed process returned exit zero and the workflow report records success.",
+    "The published f76a701 Kubernetes backup failure remains unclassified. This change adds diagnostics and does not establish a backup fix."
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "recordedAt": "2026-09-12T11:42:10.467Z",
+  "epic": "CC-22",
+  "tasks": [
+    {
+      "key": "CC-23",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": []
+    },
+    {
+      "key": "CC-24",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-23"]
+    },
+    {
+      "key": "CC-25",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-24"]
+    },
+    {
+      "key": "CC-26",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-25"]
+    },
+    {
+      "key": "CC-27",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-25"]
+    },
+    {
+      "key": "CC-28",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-26", "CC-27"]
+    },
+    {
+      "key": "CC-29",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-28"]
+    },
+    {
+      "key": "CC-30",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-28"]
+    },
+    {
+      "key": "CC-31",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-28"]
+    },
+    {
+      "key": "CC-32",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-29", "CC-31"]
+    },
+    {
+      "key": "CC-33",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-26", "CC-31", "CC-32"]
+    },
+    {
+      "key": "CC-34",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-33"]
+    },
+    {
+      "key": "CC-35",
+      "parent": "CC-22",
+      "status": "Done",
+      "blockers": ["CC-27", "CC-29", "CC-30", "CC-32", "CC-33", "CC-34"]
+    },
+    {
+      "key": "CC-36",
+      "parent": "CC-22",
+      "status": "In Progress",
+      "blockers": ["CC-34", "CC-35"]
+    },
+    {
+      "key": "CC-37",
+      "parent": "CC-22",
+      "status": "In Progress",
+      "blockers": ["CC-36"]
+    },
+    {
+      "key": "CC-38",
+      "parent": "CC-22",
+      "status": "In Progress",
+      "blockers": ["CC-37"]
+    }
+  ],
+  "status": "passed",
+  "verifiedBlockingLinks": 25
+}

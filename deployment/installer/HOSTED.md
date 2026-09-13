@@ -90,6 +90,23 @@ Select `candidate` when asked for the release mode.
 Type `candidate-lab` when asked to acknowledge the disposable test installation.
 This choice records `acceptedRelease: false`. It does not waive signature verification.
 
+Phase 2 also publishes profile-qualified prereleases after its twelve extracted-bundle workflows and final assembly pass.
+The tag is `phase-2-qualified-<revision12>`. Its archive and signature use the `phase-2-qualified` prefix.
+Use the installer from the selected source revision when testing a branch prerelease.
+
+```sh
+sh /absolute/path/to/install.sh --release phase-2-qualified-REVISION12 --verify-only
+```
+
+Replace `REVISION12` with the first twelve characters of the published source revision.
+Remove `--verify-only` to continue through guided installation.
+Both Phase 2 tag types use the independently trusted Phase 2 workflow signing identity.
+Automatic selection includes supported candidate and profile-qualified tags. Resume retains the installation's original tag and cached assets.
+
+Profile-qualified prereleases still require candidate mode.
+The installer rejects accepted mode for a candidate manifest, a profile-qualified manifest, or an explicit unqualified district gate.
+Fifteen automated profile reports do not complete district infrastructure acceptance.
+
 For an all-Docker laboratory installation:
 
 1. Select method `1`.
@@ -140,7 +157,7 @@ Failed configuration checks print each missing requirement and its corrective in
 ## Repeat, resume, and inspect
 
 Use the same installation directory when repeating the command.
-Existing configuration and credentials remain authoritative. Choose resume or status when prompted.
+Existing configuration and credentials remain authoritative. Choose resume, status, update, or uninstall when prompted.
 The script selects the installation’s original cached release. It does not silently upgrade that installation.
 
 ```sh
@@ -207,3 +224,111 @@ Downloaded release code executes only after signature and file verification succ
 The initial entry script relies on HTTPS and repository control.
 Download and inspect it before execution if your installation policy requires script review.
 The [release guide](../release/README.md) documents the signing identity and candidate acceptance limits.
+
+## Startup activity
+
+Guided setup reports activity during step 5 while installation work remains pending.
+It prints the active stage immediately and repeats that stage with elapsed time every five seconds.
+Stage changes identify release verification, prerequisites, preparation, service startup, and readiness.
+Output uses plain text in terminals and redirected logs. It does not print command output or estimate a completion percentage.
+The activity timer stops on success, failure, or a pause for operator input.
+The final readiness result determines whether startup succeeded.
+
+## Guided Google setup and administrator enrollment
+
+These changes require an installer and application images built from the onboarding implementation.
+The earlier `phase-2-qualified-436d3b0698a5` release uses the previous manual enrollment procedure.
+
+Choose `google` as the Phase 2 sign-in provider. Choose `browser` for credential import.
+The installer opens a temporary listener on `127.0.0.1:8765`. It never binds this listener to the server network address.
+For a remote Ubuntu server, connect from Windows PowerShell with both local forwards:
+
+```powershell
+ssh -o ExitOnForwardFailure=yes -L 127.0.0.1:8443:127.0.0.1:8443 -L 127.0.0.1:8765:127.0.0.1:8765 UBUNTU_USER@VM_IP
+```
+
+Replace `UBUNTU_USER` and `VM_IP`. Keep this SSH connection open throughout installation.
+Use `https://localhost:8443` as the application address for this disposable lab.
+Open the printed Google setup address on Windows. Enter the private setup pairing code from the terminal.
+Follow the Google Console links to create an Internal Web application client.
+Copy the exact callback URI shown on the page. Download the client JSON and select it in the upload form.
+The installer extracts the client ID and secret. It validates the client type, size, Google endpoints, and exact callback.
+Invalid uploads show a recovery message. Correct the file and retry within the same paired browser.
+
+Credential upload expires after fifteen minutes. Administrator pairing uses a separate code that expires after ten minutes.
+Both codes print directly to the controlling terminal. Redirected installer output excludes them.
+The upload listener closes after import or expiry. Imported files use directory mode `0700` and file mode `0600`.
+The private installation directory retains `google-client.json` and `google-client-secret` for resume.
+Do not include these files in support attachments. Credential rotation follows the application access guide.
+
+Step 5 reports service activity and elapsed time. After readiness, it prints the administrator setup address.
+Open that address, enter the new administrator pairing code, and sign in with the intended account.
+Return to the terminal. Inspect the verified account and type `yes` to grant initial administrator access.
+Any other answer cancels enrollment. Resume when ready to retry.
+The browser reports completion after the database confirms enrollment. Select **Sign in to Campus Commander**.
+
+After an interruption, preserve the installation directory and resume the same installation.
+A completed credential import survives a missing derived secret file. Resume reconstructs that file from the protected import.
+A completed administrator grant survives terminal disconnection. Resume reports existing enrollment without replacing access.
+Use `status` for read-only service inspection. Use interactive `resume` to finish pending enrollment.
+
+The advanced `file` import accepts one protected Google client JSON path on the server.
+Generic OIDC retains its client ID and protected secret-file workflow.
+Kubernetes retains explicit Secret names, keys, ownership, and provider egress CIDRs.
+The imported secret must match the selected existing Kubernetes Secret. The installer does not replace cluster credentials.
+
+## Update an installation
+
+Use the same installation directory. The update option selects the newest published release for the installed phase.
+Use `--release` to select a specific immutable release.
+
+```sh
+sh install.sh --root /home/seaston/cc-phase2-lab --update
+```
+
+The script verifies the target archive, manifest, files, and application image signatures before executing the update.
+It displays the installed revision and target revision.
+Provide the directory for an existing verified recovery backup. The backup must match the installed profile and images.
+The recovery key must exist in the protected installation store under its recorded reference.
+Follow the [backup procedure](../operations/README.md) before starting an update without a matching backup.
+The update option verifies that backup. It does not create a backup automatically.
+
+Type `update` to confirm the displayed target. The installer preserves configuration, credentials, administrator access, and persistent data.
+It prepares the update, restarts services, and waits for readiness.
+For hybrid installations, it pauses after preparation until you update the declared worker hosts.
+An update retains the installed phase. Use the [phase migration procedure](PHASE-2.md#upgrade-from-phase-1) to change phases.
+
+After interruption, repeat the script with `--command resume` and the same installation directory.
+The update record retains the exact target release and backup references.
+Resume selects the target inputs after upgrade admission. It completes interrupted configuration publication without repeating a completed upgrade.
+Preserve `setup-update.json`, the `updates` directory, and both cached releases until recovery completes.
+Status and uninstall select the inputs that match the current installation state.
+
+## Uninstall application services
+
+```sh
+sh install.sh --root /home/seaston/cc-phase2-lab --uninstall
+```
+
+The script displays the installation project or namespace. Type that exact name to confirm.
+Any other answer cancels uninstall. The script reports activity while it removes services.
+It preserves persistent data, configuration, credentials, external databases, external storage, and district-managed Secrets.
+It keeps Docker, system packages, downloaded releases, and the installation directory.
+For hybrid installations, uninstall each declared worker fragment on its host.
+Use `--command resume` to restore application services with preserved data.
+Permanent data erasure remains a separate operator procedure.
+
+Both operations also accept `--command update` and `--command uninstall`.
+For unattended update, use these keys in a protected answers file:
+
+```json
+{
+  "command": "update",
+  "update.backupDirectory": "/protected/backups/current",
+  "confirmUpdate": "update"
+}
+```
+
+For unattended uninstall, use `command: "uninstall"` and `confirmUninstall` with the exact installation project or namespace.
+Replace example paths and names with the values for your installation.
+These options require the updated entry script. Guided update also requires a release that includes the maintenance implementation.

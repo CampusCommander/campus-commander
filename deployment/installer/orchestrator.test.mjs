@@ -12,6 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { replaceBootstrap } from '../bootstrap/access.mjs';
+import { updateInstallation } from './maintenance.mjs';
+import { createQuestions } from './setup.mjs';
 import {
   authenticateRelease,
   archiveKubernetesManifest,
@@ -67,6 +69,156 @@ async function setup() {
   };
   return { root, config, release, operator, dependencies, calls };
 }
+
+test('guided update prepares through the real orchestrator before starting the target and retains lifecycle access', async () => {
+  const f = await setup();
+  try {
+    const root = f.operator.installationRoot;
+    await mkdir(root, { mode: 0o700 });
+    f.operator.configurationPath = join(root, 'deployment.json');
+    await writeFile(f.operator.configurationPath, JSON.stringify(f.config), {
+      mode: 0o600,
+    });
+    await writeFile(join(root, 'operator.json'), JSON.stringify(f.operator), {
+      mode: 0o600,
+    });
+    const installer = (input) =>
+      executeInstaller({ ...input, dependencies: f.dependencies });
+    assert.equal(
+      (
+        await installer({
+          command: 'install',
+          operator: f.operator,
+          qualification: true,
+        })
+      ).status,
+      'ready',
+    );
+    const releaseRoot = join(f.root, 'target');
+    await mkdir(releaseRoot, { mode: 0o700 });
+    const target = {
+      ...f.release,
+      sourceRevision: 'b'.repeat(40),
+      images: {
+        ...f.config.images,
+        api: `registry.example.org/api@sha256:${'c'.repeat(64)}`,
+      },
+    };
+    await writeFile(
+      join(releaseRoot, 'release-manifest.json'),
+      JSON.stringify(target),
+    );
+    const backupDirectory = join(f.root, 'backup');
+    await mkdir(backupDirectory, { mode: 0o700 });
+    const backup = {
+      profile: 'all-docker',
+      release: f.release,
+      keyRecovery: {
+        reference: { provider: 'file', path: '/run/secrets/backup-key' },
+      },
+    };
+    await writeFile(
+      join(backupDirectory, 'manifest.json'),
+      JSON.stringify(backup),
+      { mode: 0o600 },
+    );
+    f.dependencies.verifyBackup = async () => backup;
+    f.calls.length = 0;
+    const result = await updateInstallation({
+      root,
+      releaseRoot,
+      config: f.config,
+      operator: f.operator,
+      qualification: true,
+      q: createQuestions({
+        'update.backupDirectory': backupDirectory,
+        confirmUpdate: 'update',
+      }),
+      output: () => undefined,
+      verify: async () => backup,
+      installer: async (input) => {
+        const result = await installer(input);
+        if (input.command === 'upgrade') {
+          assert.equal(result.status, 'prepared');
+          assert.equal(
+            f.calls.some(([, args]) => args.includes('up')),
+            false,
+          );
+        }
+        return result;
+      },
+    });
+    assert.equal(result.status, 'ready');
+    const operator = JSON.parse(await readFile(join(root, 'operator.json')));
+    assert.equal(
+      (await installer({ command: 'status', operator, qualification: true }))
+        .readiness.status,
+      'ready',
+    );
+    assert.equal(
+      (await installer({ command: 'uninstall', operator, qualification: true }))
+        .dataPreserved,
+      true,
+    );
+    assert.equal(
+      f.calls.some(([, args]) => args.includes('--volumes')),
+      false,
+    );
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
+test('HTTP registry qualification accepts only explicit loopback registries', async () => {
+  for (const [registry, allowed] of [
+    ['localhost:5000', true],
+    ['127.0.0.1:5000', true],
+    ['localhost.attacker.example:5000', false],
+    ['127.0.0.1.attacker.example:5000', false],
+    ['192.168.1.2:5000', false],
+    ['ghcr.io', false],
+  ]) {
+    const f = await setup();
+    try {
+      f.operator.localRegistryHttp = true;
+      const reference = `${registry}/qualification/api@sha256:${'a'.repeat(64)}`;
+      f.dependencies.preflight = async (_config, { run }) => {
+        await run('docker', ['manifest', 'inspect', reference]);
+        return { status: 'passed', checks: [] };
+      };
+      const prepare = executeInstaller({
+        command: 'prepare',
+        operator: f.operator,
+        qualification: true,
+        dependencies: f.dependencies,
+      });
+      if (allowed) {
+        assert.equal((await prepare).status, 'prepared');
+        assert.ok(
+          f.calls.some(
+            ([file, args]) =>
+              file === 'docker' &&
+              JSON.stringify(args) ===
+                JSON.stringify([
+                  'manifest',
+                  'inspect',
+                  '--insecure',
+                  reference,
+                ]),
+          ),
+        );
+      } else {
+        await assert.rejects(prepare, { code: 'REGISTRY' });
+        assert.equal(
+          f.calls.some(([, args]) => args.includes('--insecure')),
+          false,
+        );
+      }
+    } finally {
+      await rm(f.root, { recursive: true, force: true });
+    }
+  }
+});
 
 test('Kubernetes uninstall includes retired upgrade resources and preserves external resources', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cc-kube-history-'));
@@ -557,6 +709,76 @@ test('stop and uninstall preserve volumes while erase needs explicit owned proje
     await rm(f.root, { recursive: true, force: true });
   }
 });
+test('profile-qualified prereleases cannot enter accepted mode with fifteen valid reports', async () => {
+  const f = await setup();
+  try {
+    const manifest = {
+      ...f.release,
+      phase: 2,
+      qualification: 'profile-qualified',
+      districtInfrastructureAcceptance: 'not-qualified',
+      files: [],
+      evidence: {},
+    };
+    for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
+      manifest.evidence[profile] = { workerHosts: ['host-a', 'host-b'] };
+      for (const check of [
+        'install',
+        'resume',
+        'upgrade',
+        'restore',
+        'faults',
+      ]) {
+        const path = `${profile}-${check}.json`;
+        const bytes = Buffer.from(
+          JSON.stringify({
+            status: 'passed',
+            profile,
+            check,
+            sourceRevision: manifest.sourceRevision,
+            images: manifest.images,
+          }),
+        );
+        const sha256 = createHash('sha256').update(bytes).digest('hex');
+        await writeFile(join(f.root, path), bytes);
+        manifest.files.push({ path, sizeBytes: bytes.length, sha256 });
+        manifest.evidence[profile][check] = {
+          status: 'passed',
+          sourceRevision: manifest.sourceRevision,
+          images: manifest.images,
+          reportPath: path,
+          reportSha256: sha256,
+        };
+      }
+    }
+    const bytes = Buffer.from(JSON.stringify(manifest));
+    await writeFile(f.operator.releasePath, bytes);
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const signaturePath = join(f.root, 'signature');
+    const publicKeyPath = join(f.root, 'public.pem');
+    await writeFile(signaturePath, sign(null, bytes, privateKey));
+    await writeFile(
+      publicKeyPath,
+      publicKey.export({ type: 'spki', format: 'pem' }),
+    );
+    const operator = {
+      ...f.operator,
+      trust: { kind: 'ed25519', signaturePath, publicKeyPath },
+    };
+    await assert.rejects(
+      authenticateRelease(operator, { qualification: false }),
+      { code: 'RELEASE' },
+    );
+    assert.equal(
+      (await authenticateRelease(operator, { qualification: true }))
+        .acceptedRelease,
+      false,
+    );
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
 test('normal installation rejects unsigned and incomplete signed releases', async () => {
   const f = await setup();
   try {

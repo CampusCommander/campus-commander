@@ -1,0 +1,41 @@
+{
+  "status": "corrected-fixture-failures",
+  "recordedAt": "2026-09-12T15:13:56.273777+00:00",
+  "failures": [
+    {
+      "stage": "bounded-volume-probe",
+      "status": "failed",
+      "observed": "The bind consumer could not find the artifacts directory through the Docker volume mountpoint.",
+      "correction": "Mount the owned named tmpfs volume directly into each owned Kind node through a scoped Docker wrapper.",
+      "logPath": "/tmp/cc-phase2-kubernetes-capacity-volume-probe.log",
+      "logSha256": "4519c7b1d74cb26570bee98924e715368c8eaf7b301e7e39147ffd53cfa9ddb2"
+    },
+    {
+      "stage": "fresh-phase-2-baseline",
+      "status": "failed",
+      "observed": "The durable-state probe rejected an empty Kestra internal file inventory before fault injection.",
+      "correction": "Upload and read a synthetic namespace file through the authenticated Kestra API before capturing the durable baseline.",
+      "logPath": "/tmp/cc-phase2-kubernetes-capacity-first.log",
+      "logSha256": "b57a0084e1b4e650f2b68bf9f649be8e49cf997e1aeeb5623e7f18ee34d7a7cd"
+    }
+  ],
+  "correctedChecks": [
+    {
+      "check": "named-volume-consumer",
+      "status": "passed",
+      "logPath": "/tmp/cc-phase2-kubernetes-capacity-volume-corrected.log",
+      "logSha256": "7040db23ec9ed478ed66a9abd8b6e71e82dac2b2d194c58eb79ca93935c0296a"
+    },
+    {
+      "check": "api-e2e:kubernetes-capacity-integration",
+      "status": "passed",
+      "logPath": "/tmp/cc-phase2-kubernetes-capacity-seeded.log",
+      "logSha256": "3af0490c5960a191f1ac06e420b398a9e320042f07ddfdcfc6f0981486ac2378"
+    }
+  ],
+  "limits": [
+    "Both failures concerned disposable qualification fixtures.",
+    "The corrected full target requires observed tmpfs limits before writing the filler.",
+    "The fixture does not qualify district storage."
+  ]
+}

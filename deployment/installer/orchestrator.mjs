@@ -27,6 +27,7 @@ import { verifyBackup } from '../operations/index.mjs';
 import { installationSecretPath, prepareSecrets } from './secrets.mjs';
 import { createSupportBundle } from './support.mjs';
 import { httpsStartup } from '../qualification/faults.mjs';
+import { supportedUpgrade } from './upgrade-policy.mjs';
 import { connectDatabase } from '../postgres/index.mjs';
 import { normalizePostgresSecret } from '../postgres/secrets.mjs';
 import {
@@ -393,6 +394,15 @@ export async function authenticateRelease(
 ) {
   const bytes = await readFile(operator.releasePath),
     manifest = JSON.parse(bytes);
+  if (
+    !qualification &&
+    (['candidate-only', 'profile-qualified'].includes(manifest.qualification) ||
+      manifest.districtInfrastructureAcceptance === 'not-qualified')
+  )
+    fail(
+      'RELEASE',
+      'This prerelease requires candidate mode until release acceptance is complete.',
+    );
   if (qualification) {
     if (
       manifest.schemaVersion !== 1 ||
@@ -471,6 +481,8 @@ export async function executeInstaller({
   operator,
   qualification = false,
   dependencies = {},
+  onProgress = () => undefined,
+  prepareOnly = false,
 }) {
   const run = dependencies.run ?? runCommand;
   try {
@@ -521,6 +533,7 @@ export async function executeInstaller({
       'erase',
       'reset-bootstrap',
     ].includes(command);
+    onProgress('Verifying the installation release');
     let release;
     if (localLifecycle) {
       await privateRoot(operator.installationRoot);
@@ -644,7 +657,7 @@ export async function executeInstaller({
             'UPGRADE',
             'Provide the protected recovery backup and key reference before upgrade.',
           );
-        const backup = await verifyBackup({
+        const backup = await (dependencies.verifyBackup ?? verifyBackup)({
           ...operator.upgradeBackup,
           resolveSecret: (ref) =>
             readFile(installationSecretPath(join(root, 'private'), ref)),
@@ -661,11 +674,10 @@ export async function executeInstaller({
             'UPGRADE',
             'Recovery backup differs from the current installation release.',
           );
-        const withoutImages = (value) => ({ ...value, images: {} });
-        if (canonical(withoutImages(old)) !== canonical(withoutImages(config)))
+        if (!supportedUpgrade(old, config))
           fail(
             'UPGRADE',
-            'Phase 1 fixture upgrade must preserve configuration except application image digests.',
+            'Upgrade must preserve deployment settings except images and Phase 2 authentication.',
           );
         state = {
           ...state,
@@ -962,12 +974,16 @@ export async function executeInstaller({
           args[0] === 'manifest' &&
           args[1] === 'inspect'
         ) {
-          if (!/^localhost:[0-9]+\//.test(args[2]))
-            fail('REGISTRY', 'HTTP fixture registries must use localhost.');
+          if (!/^(?:localhost|127\.0\.0\.1):[0-9]+\//.test(args[2]))
+            fail(
+              'REGISTRY',
+              'HTTP fixture registries must use a loopback address.',
+            );
           return run(file, [...args.slice(0, 2), '--insecure', args[2]]);
         }
         return run(file, args);
       };
+      onProgress('Checking host and service prerequisites');
       const prerequisites = await (dependencies.preflight ?? preflight)(
         config,
         {
@@ -1006,6 +1022,7 @@ export async function executeInstaller({
             'Your installation directory retains configuration and prerequisite results.',
           ].join('\n'),
         );
+      onProgress('Preparing credentials and service configuration');
       if (config.profile === 'all-docker')
         await prepareAllDocker(operator.configurationPath, root);
       else if (
@@ -1129,8 +1146,9 @@ export async function executeInstaller({
       state.phase = 'prepared';
       if (!state.steps.includes('prepared')) state.steps.push('prepared');
       await save();
-      if (command === 'prepare')
+      if (command === 'prepare' || (command === 'upgrade' && prepareOnly))
         return { status: 'prepared', acceptedRelease: state.acceptedRelease };
+      onProgress('Starting services and downloading missing images');
       if (config.profile === 'kubernetes')
         await kube('apply', '-f', kubernetesFile);
       else
@@ -1142,6 +1160,7 @@ export async function executeInstaller({
       state.phase = 'started';
       if (!state.steps.includes('started')) state.steps.push('started');
       await save();
+      onProgress('Waiting for service readiness');
       let ready;
       for (
         let attempt = 0;

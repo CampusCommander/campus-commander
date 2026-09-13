@@ -1,0 +1,43 @@
+<main class="login-page">
+  <section class="card" aria-labelledby="setup-title">
+    <p class="wordmark">Campus Commander</p>
+    <h1 id="setup-title">Enroll the first administrator</h1>
+    @if (state() === 'pair') {
+    <p>
+      Use the private pairing code from the installer terminal. Then sign in
+      with the administrator account.
+    </p>
+    <form (ngSubmit)="pair()">
+      <mat-form-field appearance="outline"
+        ><mat-label>Installer pairing code</mat-label
+        ><input
+          matInput
+          name="code"
+          type="password"
+          [(ngModel)]="code"
+          autocomplete="off"
+          required
+          maxlength="64"
+      /></mat-form-field>
+      <button mat-flat-button type="submit" [disabled]="busy() || !code.trim()">
+        Sign in to enroll administrator
+      </button>
+    </form>
+    @if (busy()) {
+    <p role="status">Connecting to sign-in.</p>
+    } } @else if (state() === 'complete') {
+    <p role="status">
+      Administrator enrollment completed. Sign in to open Campus Commander.
+    </p>
+    <a mat-flat-button href="/api/auth/login">Sign in to Campus Commander</a>
+    } @else {
+    <p role="status">
+      Complete sign-in, then confirm the administrator in the installer
+      terminal.
+    </p>
+    <button mat-stroked-button (click)="check()">Check enrollment</button>
+    } @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+    <a mat-stroked-button href="/login">Return to sign-in</a> }
+  </section>
+</main>

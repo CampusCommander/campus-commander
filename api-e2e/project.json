@@ -4,12 +4,301 @@
   "implicitDependencies": ["api"],
   "projectType": "application",
   "targets": {
+    "hybrid-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/hybrid.test.mjs"
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "all-docker-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs"
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "auth-image-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/auth.test.mjs",
+        "env": {
+          "CC_AUTH_PACKAGED_IMAGES": "true"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "auth-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/auth.test.mjs"
+      },
+      "dependsOn": [
+        "api:build",
+        "frontend:build",
+        "worker:build",
+        "deployment:build"
+      ]
+    },
     "e2e": {
       "executor": "nx:run-commands",
       "options": {
         "command": "node --test api-e2e/api.test.mjs"
       },
       "dependsOn": ["api:build"]
+    },
+    "kubernetes-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs"
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "upgrade-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/upgrade.test.mjs",
+        "env": {
+          "CC_INSTALLER_FAULTS": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "screen-reader-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "dbus-run-session -- xvfb-run -a node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_SCREEN_READER": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "restore-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/upgrade.test.mjs",
+        "env": {
+          "CC_AUTH_APPLICATION_RESTORE": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "hybrid-upgrade-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/hybrid.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_UPGRADE": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "hybrid-restore-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/hybrid.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_UPGRADE": "1",
+          "CC_AUTH_HYBRID_RESTORE": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "kubernetes-upgrade-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs",
+        "env": {
+          "CC_AUTH_KUBERNETES_UPGRADE": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "kubernetes-restore-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs",
+        "env": {
+          "CC_AUTH_KUBERNETES_UPGRADE": "1",
+          "CC_AUTH_KUBERNETES_RESTORE": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "hybrid-cli-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/hybrid-cli.test.mjs"
+      }
+    },
+    "hybrid-cli-upgrade-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/hybrid-cli.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_CLI_UPGRADE": "1"
+        }
+      }
+    },
+    "hybrid-cli-process-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/hybrid-cli.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_CLI_UPGRADE": "1",
+          "CC_AUTH_HYBRID_CLI_FAULTS": "1"
+        }
+      }
+    },
+    "hybrid-fixture-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/hybrid-network-fixture.test.mjs"
+      }
+    },
+    "all-docker-process-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/upgrade.test.mjs",
+        "env": {
+          "CC_INSTALLER_FAULTS": "1",
+          "CC_AUTH_ALL_DOCKER_FAULTS": "1"
+        }
+      }
+    },
+    "kubernetes-process-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs",
+        "env": {
+          "CC_AUTH_KUBERNETES_UPGRADE": "1",
+          "CC_AUTH_KUBERNETES_FAULTS": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "kubernetes-fault-fixture-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes-faults-fixture.test.mjs"
+      }
+    },
+    "all-docker-capacity-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker-capacity.test.mjs"
+      }
+    },
+    "kubernetes-certificate-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs",
+        "env": {
+          "CC_AUTH_KUBERNETES_UPGRADE": "1",
+          "CC_AUTH_KUBERNETES_CERTIFICATES": "1"
+        }
+      },
+      "dependsOn": ["deployment:build"]
+    },
+    "navigation-fixture-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/navigation-fixture.test.mjs"
+      }
+    },
+    "hybrid-cli-capacity-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/hybrid-cli.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_CLI_UPGRADE": "1",
+          "CC_AUTH_HYBRID_CAPACITY": "1"
+        }
+      }
+    },
+    "kubernetes-replica-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs",
+        "env": {
+          "CC_AUTH_KUBERNETES_UPGRADE": "1",
+          "CC_AUTH_KUBERNETES_REPLICAS": "1"
+        }
+      }
+    },
+    "kubernetes-capacity-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs",
+        "env": {
+          "CC_AUTH_KUBERNETES_CAPACITY": "1"
+        }
+      }
+    },
+    "hybrid-cli-certificate-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/hybrid-cli.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_CLI_UPGRADE": "1",
+          "CC_AUTH_HYBRID_CERTIFICATES": "1"
+        }
+      }
+    },
+    "kubernetes-shutdown-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes-shutdown.test.mjs"
+      }
+    },
+    "all-docker-certificate-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/upgrade.test.mjs",
+        "env": {
+          "CC_INSTALLER_FAULTS": "1",
+          "CC_AUTH_ALL_DOCKER_CERTIFICATES": "1"
+        }
+      }
     }
   }
 }

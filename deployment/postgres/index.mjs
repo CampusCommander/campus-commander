@@ -95,17 +95,19 @@ export async function verifyConnection(client) {
 }
 
 export async function loadMigrations() {
-  const sql = await readFile(
-    new URL('./migrations/001-foundation.sql', import.meta.url),
-    'utf8',
+  return Promise.all(
+    ['001-foundation', '002-application-auth'].map(async (id) => {
+      const sql = await readFile(
+        new URL(`./migrations/${id}.sql`, import.meta.url),
+        'utf8',
+      );
+      return {
+        id,
+        sql,
+        checksum: createHash('sha256').update(sql).digest('hex'),
+      };
+    }),
   );
-  return [
-    {
-      id: '001-foundation',
-      sql,
-      checksum: createHash('sha256').update(sql).digest('hex'),
-    },
-  ];
 }
 
 export async function migrate(client, { runtimeRole, migrations } = {}) {
@@ -154,6 +156,11 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
     await client.query(
       `GRANT SELECT, INSERT, UPDATE, DELETE ON cc.artifacts, cc.bootstrap_access TO ${role}`,
     );
+    if (migrations.some(({ id }) => id === '002-application-auth')) {
+      await client.query(`GRANT SELECT ON cc.application_principals TO ${role};
+        GRANT UPDATE (preferences) ON cc.application_principals TO ${role};
+        GRANT SELECT, INSERT ON cc.security_events TO ${role}`);
+    }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);
   }

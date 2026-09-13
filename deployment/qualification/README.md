@@ -6,7 +6,9 @@ Its result cannot qualify the complete profile fault gate.
 
 `runProcessFaults` stops and restarts API, workers, Redis, both PostgreSQL services, and Kestra in sequence.
 Each fault requires a ready baseline and verified durable fixtures.
-Each recovery has a deadline and repeats the fixture verification.
+Each recovery uses a 180-second default deadline and repeats the fixture verification.
+`faultRecoveryTimeoutSeconds` supplies the shared foundation budget.
+The distributed Phase 2 process fixture uses that same budget for the complete recovery check sequence.
 The harness restores the interrupted service or artifact permissions even when an observation fails.
 
 The harness requires a `cc-fault-*` Compose project and `qualificationOnly: true`.

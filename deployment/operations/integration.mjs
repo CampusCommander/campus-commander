@@ -18,6 +18,9 @@ import { pipeline } from 'node:stream/promises';
 import pg from 'pg';
 import { migrate, provision } from '../postgres/index.mjs';
 import { createArtifactStore } from '../storage/index.mjs';
+import { changeApplicationAccess } from '../bootstrap/application-access.mjs';
+import { createOperationsCliFixture } from './cli-fixture.mjs';
+import { noOtherConnections } from './quiescence.mjs';
 import {
   backupFoundation,
   postgresToolArguments,
@@ -27,7 +30,8 @@ import {
 
 const name = `cc-restore-${randomUUID()}`,
   root = await mkdtemp(join(tmpdir(), 'cc-restore-'));
-const native = process.env.CC_OPERATIONS_NATIVE === '1';
+const cli = process.env.CC_OPERATIONS_CLI === '1';
+const native = cli || process.env.CC_OPERATIONS_NATIVE === '1';
 const toolVersions = native
   ? Object.fromEntries(
       ['pg_dump', 'pg_restore'].map((tool) => [
@@ -36,8 +40,8 @@ const toolVersions = native
       ]),
     )
   : undefined;
-const password = randomUUID(),
-  encryptionKey = randomBytes(32);
+const password = randomUUID();
+let encryptionKey = randomBytes(32);
 const docker = (...args) =>
   execFileSync('docker', args, {
     encoding: 'utf8',
@@ -58,9 +62,23 @@ const resolveSecret = async (reference) =>
   reference.path === '/run/secrets/backup-key'
     ? encryptionKey
     : Buffer.from(`${password}\r\n`);
-let admin, pool, store;
+let admin, pool, store, operatorCli;
 const clients = [];
 try {
+  if (cli) {
+    operatorCli = await createOperationsCliFixture(
+      join(root, 'operator-cli'),
+      resolveSecret,
+      {
+        container: process.env.CC_OPERATIONS_CLI_CONTAINER === '1',
+        mountDirectories: [root],
+      },
+    );
+    encryptionKey.fill(0);
+    encryptionKey = await operatorCli.generateKey();
+    assert.equal(encryptionKey.length, 32);
+    await assert.rejects(operatorCli.generateKey());
+  }
   await writeFile(
     join(root, 'postgres.env'),
     `POSTGRES_PASSWORD=${password}\n`,
@@ -124,6 +142,26 @@ try {
   });
   await migration.connect();
   await migrate(migration, { runtimeRole: 'app-source' });
+  const { principalId } = await changeApplicationAccess(
+    migration,
+    {
+      action: 'initialize',
+      issuer: 'https://identity.example.invalid',
+      subject: 'restore-administrator',
+      displayName: 'Restore administrator',
+    },
+    'https://identity.example.invalid',
+  );
+  await migration.query(
+    'UPDATE cc.application_principals SET preferences=$1 WHERE id=$2',
+    [{ theme: 'dark', navigationCollapsed: true }, principalId],
+  );
+  const originalPrincipals = (
+    await migration.query('SELECT * FROM cc.application_principals ORDER BY id')
+  ).rows;
+  const originalEvents = (
+    await migration.query('SELECT * FROM cc.security_events ORDER BY id')
+  ).rows;
   await migration.end();
   const sourceRoots = {
     artifacts: join(root, 'source-artifacts'),
@@ -184,6 +222,19 @@ try {
       database,
       role,
     });
+  config.phase = 2;
+  config.services.edge.access = 'application';
+  config.applicationAuth = {
+    issuer: 'https://identity.example.invalid',
+    clientId: 'restore-fixture',
+    clientSecretRef: {
+      provider: 'file',
+      path: '/run/secrets/oidc-client-secret',
+    },
+    publicOrigin: 'https://campus.example.invalid',
+    sessionLifetimeSeconds: 28800,
+    sessionIdleSeconds: 1800,
+  };
   config.artifacts.location = sourceRoots.artifacts;
   config.services.kestra.internalStorage.location = sourceRoots.kestraInternal;
   const release = {
@@ -253,6 +304,48 @@ try {
     stoppedServices: ['api', 'workers', 'kestra'],
   };
   const backupDirectory = join(root, 'backup');
+  const observer = new pg.Client({
+    ...connection,
+    user: 'migrator-source',
+    database: 'app-source',
+  });
+  const closingClient = new pg.Client({
+    ...connection,
+    user: 'app-source',
+    database: 'app-source',
+  });
+  let closed;
+  try {
+    await observer.connect();
+    await closingClient.connect();
+    await observer.query('BEGIN');
+    assert.equal(
+      (
+        await observer.query(
+          'SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()',
+        )
+      ).rows[0].count,
+      1,
+    );
+    closed = new Promise((done) => setTimeout(done, 100)).then(() =>
+      closingClient.end(),
+    );
+    await noOtherConnections(observer);
+    await closed;
+    assert.equal(
+      (
+        await observer.query(
+          'SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()',
+        )
+      ).rows[0].count,
+      0,
+    );
+    await observer.query('ROLLBACK');
+  } finally {
+    if (closed) await closed;
+    else await closingClient.end();
+    await observer.end();
+  }
   const busy = new pg.Client({
     ...connection,
     user: 'app-source',
@@ -273,6 +366,18 @@ try {
     }),
     /Stop every/,
   );
+  if (cli)
+    await assert.rejects(
+      operatorCli.run('backup', {
+        config,
+        release,
+        backupDirectory,
+        sourceRoots,
+        keyRecovery,
+        quiesce,
+        applicationCredentials,
+      }),
+    );
   await busy.end();
   await assert.rejects(
     backupFoundation({
@@ -290,17 +395,36 @@ try {
       runTool,
     }),
   );
-  const manifest = await backupFoundation({
-    config,
-    release,
-    backupDirectory,
-    sourceRoots,
-    keyRecovery,
-    quiesce,
-    resolveSecret,
-    applicationCredentials,
-    runTool,
-  });
+  if (cli) {
+    const backup = await operatorCli.run('backup', {
+      config,
+      release,
+      backupDirectory,
+      sourceRoots,
+      keyRecovery,
+      quiesce,
+      applicationCredentials,
+    });
+    assert.equal(backup.result.status, 'complete');
+    const verified = await operatorCli.run('verify', {
+      backupDirectory,
+      keyRecovery,
+    });
+    assert.equal(verified.result.status, 'verified');
+  }
+  const manifest = cli
+    ? await verifyBackup({ backupDirectory, keyRecovery, resolveSecret })
+    : await backupFoundation({
+        config,
+        release,
+        backupDirectory,
+        sourceRoots,
+        keyRecovery,
+        quiesce,
+        resolveSecret,
+        applicationCredentials,
+        runTool,
+      });
   assert.ok(
     manifest.files.every((file) => file.encryptedPath.endsWith('.enc')),
   );
@@ -327,6 +451,10 @@ try {
   const corrupt = join(root, 'corrupt');
   await cp(backupDirectory, corrupt, { recursive: true });
   await writeFile(join(corrupt, manifest.files[0].encryptedPath), 'corrupt');
+  if (cli)
+    await assert.rejects(
+      operatorCli.run('verify', { backupDirectory: corrupt, keyRecovery }),
+    );
   await assert.rejects(
     verifyBackup({ backupDirectory: corrupt, keyRecovery, resolveSecret }),
   );
@@ -403,16 +531,30 @@ try {
     ).includes('stopped'),
   );
   await assert.rejects(readFile(join(failedDirectory, 'restore-report.json')));
-  const report = await restoreFoundation({
-    backupDirectory,
-    targetConfig,
-    targetDirectory,
-    keyRecovery,
-    resolveSecret,
-    applicationCredentials: targetCredentials,
-    runTool,
-  });
+  const cliRestore = cli
+    ? await operatorCli.run('restore', {
+        backupDirectory,
+        targetConfig,
+        targetDirectory,
+        keyRecovery,
+        applicationCredentials: targetCredentials,
+      })
+    : undefined;
+  const report = cli
+    ? JSON.parse(
+        await readFile(join(targetDirectory, 'restore-report.json'), 'utf8'),
+      )
+    : await restoreFoundation({
+        backupDirectory,
+        targetConfig,
+        targetDirectory,
+        keyRecovery,
+        resolveSecret,
+        applicationCredentials: targetCredentials,
+        runTool,
+      });
   assert.equal(report.status, 'verified-services-disabled');
+  if (cli) assert.equal(cliRestore.result.status, 'verified-services-disabled');
   assert.deepEqual(report.redisRecovery, {
     policy: 'discard-cache',
     releaseRequiresFreshRedis: true,
@@ -424,7 +566,7 @@ try {
         'utf8',
       ),
     ),
-    targetConfig,
+    cliRestore?.configuration ?? targetConfig,
   );
   assert.ok(
     (
@@ -455,6 +597,15 @@ try {
     user: 'app-target',
     database: 'app-target',
   });
+  assert.deepEqual(
+    (await pool.query('SELECT * FROM cc.application_principals ORDER BY id'))
+      .rows,
+    originalPrincipals,
+  );
+  assert.deepEqual(
+    (await pool.query('SELECT * FROM cc.security_events ORDER BY id')).rows,
+    originalEvents,
+  );
   store = await createArtifactStore({
     pool,
     root: targetConfig.artifacts.location,
@@ -479,17 +630,35 @@ try {
     }),
     /empty/,
   );
+  if (cli)
+    await assert.rejects(
+      operatorCli.run('restore', {
+        backupDirectory,
+        targetConfig,
+        targetDirectory,
+        keyRecovery,
+        applicationCredentials: targetCredentials,
+      }),
+    );
   console.log(
     JSON.stringify(
       {
-        runner: native ? 'default-native' : 'injected-docker',
+        runner: cli
+          ? 'operator-cli-native'
+          : native
+            ? 'default-native'
+            : 'injected-docker',
+        ...(cli ? { commands: operatorCli.commands } : {}),
+        ...(cli ? { operatorCli: operatorCli.execution } : {}),
         toolVersions,
         backupMilliseconds: manifest.durationMilliseconds,
         restoreMilliseconds: report.durationMilliseconds,
         encryptedFiles: manifest.files.length,
         results: [
           'actual connection quiescence enforced',
+          'delayed connection teardown observed through fresh transaction statistics',
           'both database dumps restored',
+          'Phase 2 identity, preferences, permission version, and security events restored',
           'artifact identity and Unicode bytes restored',
           'Kestra synthetic state and internal files restored',
           'missing/wrong keys rejected',

@@ -29,6 +29,7 @@ import {
 import { connectDatabase, migrate } from '../postgres/index.mjs';
 import { normalizePostgresSecret } from '../postgres/secrets.mjs';
 import { secretPath } from '../redis/runtime.mjs';
+import { noOtherConnections } from './quiescence.mjs';
 
 const databaseIdentity = (service) => {
   const url = new URL(service.endpoint.url);
@@ -324,18 +325,6 @@ async function tableInventory(client) {
       ).rows[0].count,
     });
   return tables;
-}
-async function noOtherConnections(client) {
-  if (
-    (
-      await client.query(
-        'SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()',
-      )
-    ).rows[0].count
-  )
-    throw new Error(
-      'Stop every application and Kestra database connection before backup or restore.',
-    );
 }
 async function lockTables(client) {
   await noOtherConnections(client);

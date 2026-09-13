@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { credentialFromAuthorization } from './access.mjs';
 import { secretPath } from '../redis/runtime.mjs';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
+import { proxyApplication } from './application-edge.mjs';
 
 const assetPath =
   /^\/(?:assets\/)?[A-Za-z0-9_/-]+\.(?:js|css|ico|png|svg|woff2?)$/;
@@ -15,7 +16,7 @@ const finish = (response, status, message) => {
   response.end(message);
 };
 
-/** Serve only the protected Phase 1 surface through the configured TLS edge. */
+/** Serve application routes and protected installer checks through the TLS edge. */
 export async function createBootstrapEdge({
   config: input,
   verify,
@@ -50,8 +51,6 @@ export async function createBootstrapEdge({
       'content-security-policy',
       "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
     );
-    if (request.method !== 'GET' && request.method !== 'HEAD')
-      return finish(response, 405, 'Method unavailable.\n');
     const path = request.url || '';
     if (path === '/health/live') return finish(response, 200, 'live\n');
     if (path === '/health' || path === '/health/ready') {
@@ -66,10 +65,26 @@ export async function createBootstrapEdge({
         return finish(response, 503, 'not-ready\n');
       }
     }
-    const api = path === '/api' || path === '/api/startup';
+    if (config.phase === 2 && path !== '/api/startup')
+      return proxyApplication(
+        request,
+        response,
+        upstreams,
+        config.applicationAuth.publicOrigin,
+      );
+    if (request.method !== 'GET' && request.method !== 'HEAD')
+      return finish(response, 405, 'Method unavailable.\n');
+    const api =
+      path === '/api' || path === '/api/startup' || path === '/api/application';
     if (
       path.includes('..') ||
-      !(api || path === '/' || path === '/index.html' || assetPath.test(path))
+      !(
+        api ||
+        path === '/' ||
+        path === '/startup' ||
+        path === '/index.html' ||
+        assetPath.test(path)
+      )
     ) {
       return finish(response, 404, 'Route unavailable.\n');
     }

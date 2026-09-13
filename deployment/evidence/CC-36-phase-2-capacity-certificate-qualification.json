@@ -1,0 +1,144 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T14:31:23.884519+00:00",
+  "fixtureSource": {
+    "baseGitRevision": "c5fef81c0dcc89dae1965cd9256560d8f2e0a0a1",
+    "workingTree": "uncommitted-candidate",
+    "files": [
+      {
+        "path": ".github/workflows/phase-2-candidate.yml",
+        "sha256": "ea3dd4052912d7814cbb1fd0855962d2ae86bf73303eba1dc96314b965825058"
+      },
+      {
+        "path": "api-e2e/all-docker.test.mjs",
+        "sha256": "4e0b07cc85d04663c2e902c3a1b249f64df2dc6fb43449039bbc599c9a6b6f61"
+      },
+      {
+        "path": "api-e2e/kubernetes-faults-fixture.mjs",
+        "sha256": "1d00576ce2cb51f608364b22391324c253785adbc3b45949b665357fac3344a7"
+      },
+      {
+        "path": "api-e2e/kubernetes.test.mjs",
+        "sha256": "3329f4bf85b783bedf3cecff6a829199bcad4dc96964152c99c6043e78fcc8ab"
+      },
+      {
+        "path": "api-e2e/project.json",
+        "sha256": "6308fad605614a0347064e909acda656dd78d046417942bec8381df9aec6da3c"
+      },
+      {
+        "path": "api/src/app/storage/storage.service.ts",
+        "sha256": "0ea0da9ce2196c9aa43bcedc1e5f584a0e7b184f8e3b01906261dafcbadab59e"
+      },
+      {
+        "path": "deployment/qualification/profile-capacity-integration.mjs",
+        "sha256": "b227c6e2a55909ccdf296217361abdbb5883b33a0a4868f83e042ea972ec4484"
+      },
+      {
+        "path": "deployment/release/candidate.mjs",
+        "sha256": "5f9031c732aaf09672de26d8da4a2d726502508fc9ef06b1c3239c71e9017d9e"
+      },
+      {
+        "path": "deployment/release/candidate.test.mjs",
+        "sha256": "0c716bc2f0b3bcb90faed444d2da5431b34d52c2a289621b6fd0659f0342ffda"
+      },
+      {
+        "path": "api-e2e/all-docker-capacity.test.mjs",
+        "sha256": "f4d7e8b5371df2a50d22d0f9b8adb2691ac44b6a016bc1590431b73b0b9b7c2a"
+      },
+      {
+        "path": "api-e2e/kubernetes-certificates-fixture.mjs",
+        "sha256": "90735ec8d3064448c914d9a4cb09410e4c28ce4b63239e567a96e569fb2fbdc7"
+      },
+      {
+        "path": "api-e2e/kubernetes-durable-fixture.mjs",
+        "sha256": "1a8c5cf727a96d2d00bf310362a60ff3fb7e42e45bc1b5ffb786d452bf633027"
+      },
+      {
+        "path": "api-e2e/navigation-fixture.mjs",
+        "sha256": "e13e7fb5b8f70b3e6ee49fb80a9d8d1b5144d4d81ddeaba752e2ecbd7fe4cb11"
+      },
+      {
+        "path": "api-e2e/navigation-fixture.test.mjs",
+        "sha256": "6ddf4c0583784f19867e7f3fb56a44954f7305ccde09da46e699ed8d1cae66c2"
+      }
+    ]
+  },
+  "reports": [
+    {
+      "path": "deployment/evidence/CC-32-phase-2-artifact-cleanup-regression.json",
+      "sha256": "3b285c217505a44cd93e330a8a787c848fe0a6d35146b451dd02777eb1ccb000"
+    },
+    {
+      "path": "deployment/evidence/CC-32-phase-2-cleanup-packaged-authentication.json",
+      "sha256": "9462ea29272fb555ea1e1683a6ad0a18804ed7433098185f407ca686bd307200"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-all-docker-authenticated-capacity.json",
+      "sha256": "d3b52e76ab815428c80d944162bd4cce0d7937cb10268b6a210d1b836684b7e4"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-all-docker-navigation-recovery.json",
+      "sha256": "60b0d520eb5977359a6fbfa0f3dbfdc37f6902dfb6790efb96cd2480f7aa93c3"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-browser-navigation-regression.json",
+      "sha256": "4e01e249cd25c7f71a276b7a202998d739599a0da6efe97c6f338e02840093e5"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-kubernetes-authenticated-certificates.json",
+      "sha256": "e2798e902321cd774823129c88260ab5658087780bb28d1808f29235d346cc6f"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-kubernetes-certificate-fixture-failure.json",
+      "sha256": "76368b37afa489d8644824f779de907dc3ed7f969ff6da5c01ee01963c975667"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-fifteenth-published-run.json",
+      "sha256": "442cb3b41f19382091cea61981be8c1b7a1435d5e75641175bb4e6509f297a1c"
+    }
+  ],
+  "tests": [
+    {
+      "target": "api-e2e:all-docker-capacity-integration",
+      "status": "passed",
+      "logSha256": "f0aae1f807090cdac77a5ae00334998355355699f1d12afbffdce84c0482a9dc"
+    },
+    {
+      "target": "api-e2e:auth-image-integration",
+      "status": "passed",
+      "logSha256": "3953bc3b61c315ac31628a1c5faff938dd6356144604bb509f670e3a0c60f80a"
+    },
+    {
+      "target": "api-e2e:kubernetes-certificate-integration",
+      "status": "passed",
+      "logSha256": "6b86f03a29af842206bb2e2b02a7171ad894338a0a900bb32a2aea9507ae6ca6"
+    },
+    {
+      "target": "api-e2e:all-docker-integration",
+      "status": "passed",
+      "logSha256": "b2fdce7e92da8569a3a9e12b2c2ef1a0529ffbdc7624ed700ad4c7400dfec3ed"
+    },
+    {
+      "target": "api-e2e:navigation-fixture-test",
+      "status": "passed",
+      "logSha256": "fdccda67b27e495e281a6a67da0010c199790b5951bb74dcb358417da6ea0365"
+    },
+    {
+      "target": "deployment:release-test",
+      "status": "passed",
+      "logSha256": "c0ce4b41c208cb544744d362cbedba4b6e5ef1037b883276bf731ae0ef3162db"
+    },
+    {
+      "target": "api:build, api:lint, api-e2e:lint, deployment:lint",
+      "status": "passed",
+      "logSha256": "53920f977027e496f7c148414931b46079dd0ef483bd3120888167eabd792927"
+    }
+  ],
+  "limits": [
+    "Capacity and packaged authentication use rebuilt local images with the c5fef81 source plus the artifact cleanup fix.",
+    "Kubernetes certificates and all-Docker navigation use published c5fef81 images with current fixtures.",
+    "The complete local navigation run did not reproduce ERR_NETWORK_CHANGED. The controlled regression verifies the retry boundary.",
+    "Hybrid and Kubernetes capacity, remaining profile certificate coverage, final revision qualification, and accepted release assembly remain open.",
+    "Synthetic single-host infrastructure does not establish district platform acceptance."
+  ]
+}

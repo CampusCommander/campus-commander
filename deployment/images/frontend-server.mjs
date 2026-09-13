@@ -13,6 +13,8 @@ const contentTypes = {
   '.json': 'application/json; charset=utf-8',
   '.map': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
 };
 
 const certificatePath = process.env.TLS_CERT_FILE;

@@ -1,0 +1,68 @@
+{
+  "runner": "operator-cli-native",
+  "commands": [
+    {
+      "command": "generate-key",
+      "status": "passed"
+    },
+    {
+      "command": "generate-key",
+      "status": "rejected"
+    },
+    {
+      "command": "backup",
+      "status": "rejected"
+    },
+    {
+      "command": "backup",
+      "status": "passed"
+    },
+    {
+      "command": "verify",
+      "status": "passed"
+    },
+    {
+      "command": "verify",
+      "status": "rejected"
+    },
+    {
+      "command": "restore",
+      "status": "passed"
+    },
+    {
+      "command": "restore",
+      "status": "rejected"
+    }
+  ],
+  "operatorCli": {
+    "runner": "operator-host-native",
+    "nodeVersion": "v24.19.0",
+    "secretMount": "/run/secrets",
+    "injectedDatabaseTool": false,
+    "source": "extracted-published-bundle",
+    "bundleManifestSha256": "9481f643d8c225ec22f0aed0d6ab6a6101475c8d36b971207eea9ee698650a5d"
+  },
+  "toolVersions": {
+    "pg_dump": "pg_dump (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)",
+    "pg_restore": "pg_restore (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)"
+  },
+  "backupMilliseconds": 198,
+  "restoreMilliseconds": 149,
+  "encryptedFiles": 6,
+  "results": [
+    "actual connection quiescence enforced",
+    "both database dumps restored",
+    "Phase 2 identity, preferences, permission version, and security events restored",
+    "artifact identity and Unicode bytes restored",
+    "Kestra synthetic state and internal files restored",
+    "missing/wrong keys rejected",
+    "corrupt and missing backup files rejected",
+    "backup inside primary volume rejected",
+    "nonempty target rejected",
+    "absent source volume rejected",
+    "failed restore retains disabled marker without success report",
+    "services remain disabled; Redis requires fresh instance"
+  ],
+  "hybrid": "not-run: district shared mount absent",
+  "kubernetes": "not-run: qualified RWX storage absent"
+}

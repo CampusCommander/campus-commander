@@ -18,12 +18,15 @@ Mount configuration and certificates read-only into the Redis container.
 Run Redis without root privileges or published host ports.
 
 The runtime enables authentication and limits keys and channels to `cc:*`.
-The Phase 1 ACL permits PING, GET, SET, DEL, EXISTS, EXPIRE, and TTL.
-Later phases must add commands only with their protocol tests.
+The application ACL permits PING, GET, GETDEL, SET, DEL, EXISTS, EXPIRE, TTL, and EVAL.
+Phase 2 uses GETDEL to consume each login transaction once.
+Phase 2 uses EVAL for atomic owner-checked diagnostic reservation cleanup.
+The runtime and hybrid qualification fixture share this ACL definition.
 Redis denies administrative commands to the application credential.
 TLS listeners use the declared certificate and private key.
 TLS clients must verify the endpoint hostname and certificate trust.
-External operators own Redis provisioning and must match this policy before application readiness succeeds.
+External operators own Redis provisioning and must apply this policy before Phase 2 sign-in.
+Infrastructure readiness checks connectivity. The authenticated Diagnostics workflow verifies the application commands.
 
 ## Persistence and memory
 
@@ -37,7 +40,7 @@ The container uses a disposable `/data` mount.
 | ------------------------------------- | -------------------------------------------- | --------------------------------------------------- |
 | Synthetic Phase 1 keys                | Disposable fixture                           | Absent after restart                                |
 | Future browsing caches and selections | Rebuildable state                            | Rebuild or expire                                   |
-| Future sessions                       | Temporary access state                       | Require sign-in again                               |
+| Application sessions                  | Temporary access state                       | Require sign-in again                               |
 | Future admission holds                | PostgreSQL job state with Redis coordination | Phase 5 must qualify reconciliation before dispatch |
 
 The runtime sets `noeviction` and allocates half the declared memory limit to Redis data.
