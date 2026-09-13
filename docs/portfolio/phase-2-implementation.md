@@ -1247,3 +1247,8 @@ Lab publication follows authentication checks and the extracted All-Docker insta
 Lab manifests cannot enter profile-qualified release assembly.
 The [validation record](../../deployment/evidence/CC-37-development-workflow-validation.json) records 125 passing tests and workflow validation.
 Local checks completed in 20.4 seconds. The first hosted run must establish actual elapsed time.
+
+The first lab workflow reported success but skipped the final bundle test and lab publication.
+Its intentionally skipped capacity job propagated through GitHub's default downstream success condition.
+The bundle test now requires successful direct dependencies and explicitly permits the skipped capacity ancestor.
+The workflow regression checks that condition. Lab publication still requires the actual bundle test to pass.

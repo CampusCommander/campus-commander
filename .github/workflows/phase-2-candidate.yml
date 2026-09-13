@@ -472,6 +472,7 @@ jobs:
 
   bundle-application:
     needs: [bundle, plan]
+    if: ${{ !cancelled() && needs.bundle.result == 'success' && needs.plan.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

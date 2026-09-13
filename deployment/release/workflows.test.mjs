@@ -52,6 +52,11 @@ test('release triggers skip prose and evidence but include installer and applica
   assert.equal(labPublisher.if, "inputs.mode != 'full'");
   assert.match(labPublisher.run, /phase-2-lab-/);
   assert.doesNotMatch(labPublisher.if, /always|cancelled/);
+  // A skipped capacity ancestor must not suppress the successful lab bundle.
+  assert.equal(
+    release.jobs['bundle-application'].if,
+    "${{ !cancelled() && needs.bundle.result == 'success' && needs.plan.result == 'success' }}",
+  );
 });
 
 test('the executed workflow plan keeps lab checks focused and retains the complete full matrix', async (t) => {
