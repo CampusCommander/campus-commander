@@ -3,6 +3,7 @@
 **Result: PASS, reported by the operator.**
 
 The operator reported: “All tests passed.”
+The [historical local recipe](phase-2-ubuntu-google-436d3b0.md) preserves the instructions for this release.
 This report follows the [Ubuntu testing recipe](https://easton-consulting.atlassian.net/browse/CC-38?focusedCommentId=10183) and the subsequent disk-recovery instructions.
 
 | Item                       | Record                                                                              |

@@ -1,23 +1,20 @@
-**Phase 2 testing recipe: fresh Ubuntu and Google Workspace**
+**Historical Phase 2 testing recipe: release 436d3b0**
 
 Start here after installing Ubuntu on your test VM.
 Use your ordinary Ubuntu login with sudo access. Use your Windows computer for the browser and Google setup.
 The reference platform is Ubuntu 24.04 LTS on Intel or AMD 64-bit hardware.
 Allow 8 GB RAM and sufficient disk space. This recipe uses the all-Docker installation mode.
 
-Target test release: `phase-2-candidate-8b8d5a15c756`.
-Installer source revision: `8b8d5a15c756017255a9e74caa0de2553b2e871f`.
-This recipe tests browser credential import, installer administrator enrollment, progress output, update, and uninstall.
+Test release: `phase-2-qualified-436d3b0698a5`.
+This recipe preserves the procedure used for that release.
+The [new guided onboarding procedure](../../deployment/installer/HOSTED.md#guided-google-setup-and-administrator-enrollment) requires updated installer and application images.
+It replaces manual credential extraction, Playground lookup, and the separate enrollment script.
+Source revision: `436d3b0698a54b3268e608d83524b0d5c7195a25`.
+Its 42 CI jobs passed. Independent verification passed 1,391 files and fifteen profile reports.
+Each new Google configuration and VM requires its own test.
 
-**Publication gate:** This recipe does not establish that the target release is available.
-Check the [target workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34738281104) before starting.
-Wait for successful completion and the [target release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-8b8d5a15c756).
-If the workflow fails or the release page is missing, stop and report that result.
-Do not substitute release `436d3b0698a5`. It contains the previous onboarding flow.
-
-The [historical recipe](phase-2-ubuntu-google-436d3b0.md) preserves the previous procedure.
-The [September 12 result](phase-2-ubuntu-google-results-2026-09-12.md) applies only to that earlier test.
-Record new results for this revision and VM.
+The operator reported all tests passed on September 12, 2026, including resume after a full disk.
+The [manual test record](phase-2-ubuntu-google-results-2026-09-12.md) preserves that result and the pending process notes.
 
 Run commands one block at a time. Stop when an expected result fails.
 Commands labeled PowerShell run on Windows. Commands labeled bash run on Ubuntu.
@@ -56,7 +53,7 @@ Open Windows Terminal or PowerShell on your Windows computer.
 Replace `UBUNTU_USER` and `VM_IP`, then run:
 
 ```powershell
-ssh -o ExitOnForwardFailure=yes -L 127.0.0.1:8443:127.0.0.1:8443 -L 127.0.0.1:8765:127.0.0.1:8765 UBUNTU_USER@VM_IP
+ssh -o ExitOnForwardFailure=yes -L 127.0.0.1:8443:127.0.0.1:8443 UBUNTU_USER@VM_IP
 ```
 
 On the first connection, check the host fingerprint before accepting it.
@@ -69,12 +66,12 @@ sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
 Enter the Ubuntu password. Keep this terminal open throughout browser testing.
 Commands entered in this connected terminal now run on Ubuntu.
 
-The tunnel connects Windows port 8443 to the application and port 8765 to temporary Google credential setup.
+The tunnel connects Windows port 8443 to the application's private Ubuntu port 8443.
 Your browser will use `https://localhost:8443`, even though the application runs inside the VM.
 You do not need an application DNS record or a public application port for this recipe.
 
 If PowerShell cannot find `ssh`, install Windows' OpenSSH Client optional feature.
-Keep Windows ports 8443 and 8765 free before opening this tunnel.
+If port 8443 is occupied on Windows, stop the program using that port before continuing.
 
 **3. Register the test application with Google**
 
@@ -94,7 +91,7 @@ Create or select a dedicated test project under your Workspace organization.
 https://localhost:8443/api/auth/callback
 ```
 
-8. Download the client JSON file.
+8. Save the client ID and download its client JSON file.
 9. Rename the downloaded file to `client_secret.json` in your Windows Downloads folder.
 
 The application requests only `openid profile` for sign-in.
@@ -108,17 +105,82 @@ Workspace app controls can require an administrator to permit the test OAuth cli
 Google documents [consent setup](https://developers.google.com/workspace/guides/configure-oauth-consent) and [client creation](https://developers.google.com/workspace/guides/create-credentials).
 Its [web-server flow documentation](https://developers.google.com/identity/protocols/oauth2/web-server) permits localhost test redirects and requires exact redirect matching.
 
-**Expected result:** Your Windows computer holds the downloaded Web application client JSON with the exact redirect URI above.
-Keep this file for browser upload during installation. Keep it outside the Ubuntu installation directory during a test reset.
+**Expected result:** You have a client ID, a private client JSON file, and the exact redirect URI above.
 
-**4. Download and verify the exact Phase 2 release**
+**4. Identify the Google account that will become the first administrator**
+
+Campus Commander requires Google's stable account identifier, called `sub`.
+An email address is not a substitute. Google describes this identifier in its [OpenID reference](https://developers.google.com/identity/openid-connect/reference).
+
+Use the intended administrator's Google account for the following lookup:
+
+1. Open Google's [OAuth Playground](https://developers.google.com/oauthplayground/).
+2. Select online access in its settings. Keep the default Google client and leave your own credentials disabled.
+3. Enter `openid profile` in the custom scopes field.
+4. Select **Authorize APIs** and choose the intended administrator account.
+5. Complete Google's consent screen.
+6. Select **Exchange authorization code for tokens**.
+7. In Playground step 3, select `GET` and enter this request address:
+
+```text
+https://openidconnect.googleapis.com/v1/userinfo
+```
+
+8. Send the request. Copy only the response's `sub` value.
+9. Keep that value as text, including every digit.
+
+This lookup uses Google's Playground client to read your basic identity.
+Google's `sub` identifies the same Google account across clients.
+Do not copy access tokens, refresh tokens, or Playground credential links into chat or Jira.
+If Workspace blocks Playground, ask your administrator for an approved way to retrieve your verified Google `sub`.
+Do not substitute an email address or an unrelated directory field.
+
+**5. Place the Google client secret on Ubuntu**
+
+In your connected Ubuntu terminal:
+
+```bash
+umask 077
+mkdir -p "$HOME/cc-test-inputs"
+chmod 700 "$HOME/cc-test-inputs"
+```
+
+Open a second PowerShell tab on Windows. Replace both placeholders and copy the downloaded file:
+
+```powershell
+scp "$env:USERPROFILE\Downloads\client_secret.json" UBUNTU_USER@VM_IP:cc-test-inputs/google-client.json
+```
+
+Return to the Ubuntu terminal. Run this block to extract the secret without printing it:
+
+```bash
+chmod 600 "$HOME/cc-test-inputs/google-client.json"
+python3 - <<'PY'
+import json
+from pathlib import Path
+root = Path.home() / 'cc-test-inputs'
+client = json.loads((root / 'google-client.json').read_text())['web']
+secret = root / 'oidc-client'
+with secret.open('x') as output:
+    output.write(client['client_secret'])
+secret.chmod(0o600)
+print('Client ID:', client['client_id'])
+print('Secret file:', secret)
+PY
+```
+
+The command prints the client ID and file path. It does not print the secret.
+Keep the printed client ID for setup.
+If the secret file already exists, inspect your previous setup before replacing it.
+
+**6. Download and verify the exact Phase 2 release**
 
 Run these commands on Ubuntu:
 
 ```bash
 mkdir -p "$HOME/cc-test-tools"
-curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/8b8d5a15c756017255a9e74caa0de2553b2e871f/install.sh -o "$HOME/cc-test-tools/install.sh"
-sh "$HOME/cc-test-tools/install.sh" --release phase-2-candidate-8b8d5a15c756 --verify-only
+curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/436d3b0698a54b3268e608d83524b0d5c7195a25/install.sh -o "$HOME/cc-test-tools/install.sh"
+sh "$HOME/cc-test-tools/install.sh" --release phase-2-qualified-436d3b0698a5 --verify-only
 ```
 
 **Expected result:** The installer reports that release signatures and file checksums passed.
@@ -126,16 +188,14 @@ It prints `Verified release:` followed by a private cache directory.
 Stop at a verification failure. Do not remove verification flags or change image digests.
 
 This step downloads the installer runtime privately. It does not install the application.
-The script uses its private Node runtime. Ubuntu's `node --version` can still report Node 12 afterward.
-Use the script commands in this recipe to select the required runtime.
 
-**5. Install the application**
+**7. Install the application**
 
 Run on Ubuntu:
 
 ```bash
 sh "$HOME/cc-test-tools/install.sh" \
-  --release phase-2-candidate-8b8d5a15c756 \
+  --release phase-2-qualified-436d3b0698a5 \
   --profile all-docker \
   --root "$HOME/cc-phase2-lab"
 ```
@@ -146,76 +206,85 @@ Read the license and select acceptance only if you agree.
 
 Use these answers when the corresponding prompts appear:
 
-| Question                                         | Answer                                      |
-| ------------------------------------------------ | ------------------------------------------- |
-| Release mode                                     | `candidate`                                 |
-| Candidate acknowledgment                         | `candidate-lab`                             |
-| Installation project or namespace                | `cc-phase2-lab`                             |
-| Generate a self-signed lab certificate           | `yes`                                       |
-| Public HTTPS URL                                 | `https://localhost:8443`                    |
-| HTTPS bind IPv4 address                          | `127.0.0.1`                                 |
-| Readiness connection IPv4 address                | `127.0.0.1`                                 |
-| Lab prerequisite exceptions                      | `none`                                      |
-| Application phase                                | `2`                                         |
-| Sign-in provider                                 | `google`                                    |
-| Google client import                             | `browser`                                   |
-| Absolute session lifetime                        | `3600` seconds for this lab.                |
-| Idle session lifetime                            | `300` seconds for this lab.                 |
-| Storage capacities and internal service settings | Accept the defaults for this all-Docker VM. |
-| Responsible operator labels                      | Your name or the displayed lab default.     |
+| Question                                         | Answer                                                                                       |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Release mode                                     | `candidate`                                                                                  |
+| Candidate acknowledgment                         | `candidate-lab`                                                                              |
+| Installation project or namespace                | `cc-phase2-lab`                                                                              |
+| Generate a self-signed lab certificate           | `yes`                                                                                        |
+| Public HTTPS URL                                 | `https://localhost:8443`                                                                     |
+| HTTPS bind IPv4 address                          | `127.0.0.1`                                                                                  |
+| Readiness connection IPv4 address                | `127.0.0.1`                                                                                  |
+| Lab prerequisite exceptions                      | `none`                                                                                       |
+| Application phase                                | `2`                                                                                          |
+| OIDC issuer HTTPS URL                            | `https://accounts.google.com`                                                                |
+| OIDC client identifier                           | The client ID from step 5.                                                                   |
+| Absolute session lifetime                        | `3600` seconds for this lab.                                                                 |
+| Idle session lifetime                            | `300` seconds for this lab.                                                                  |
+| Application authentication protected source file | Paste the absolute secret-file path printed in step 5. Do not type `$HOME` into this prompt. |
+| Storage capacities and internal service settings | Accept the defaults for this all-Docker VM.                                                  |
+| Responsible operator labels                      | Your name or the displayed lab default.                                                      |
 
-Use candidate mode for this laboratory test.
+Candidate mode is required even though this release passed automated profile qualification.
 It preserves signature checks and records that full district acceptance remains open.
 The shorter lab session limits make expiry practical to test. They are not a production session recommendation.
 
 The installer creates PostgreSQL, Redis, Kestra, worker, API, frontend, and edge services.
-It generates the internal credentials.
-When the terminal prints the Google setup address, complete these steps on Windows:
-
-1. Open the printed setup address through the SSH tunnel.
-2. Enter the private pairing code shown in the Ubuntu terminal.
-3. Compare the displayed callback URI with your Google client's registered URI.
-4. Select your downloaded `client_secret.json` in the upload form.
-5. Submit the file and wait for confirmation.
-6. Return to the Ubuntu terminal and complete the remaining questions.
-
-The installer extracts and protects the client ID and secret.
-The upload listener closes after success. Its pairing code expires after fifteen minutes.
-Keep pairing codes and credential files out of screenshots and reports.
-
-At `5 / 5  Check configuration and start services`, watch the activity messages.
-The installer reports its current task and elapsed time every five seconds while work remains pending.
-A changed task produces a new message. A prompt pauses the activity timer.
-Record a failure if startup stays silent while work continues without a prompt.
+It generates the internal credentials. Supply only the Google client-secret file when requested.
+Do not substitute the Google secret for an internal service credential.
 
 **Expected result:** Installation reports `ready` and the application URL.
-Continue with administrator enrollment below while the installation command remains active.
+Keep the printed bootstrap credential file private. It is not a Google sign-in password.
 
 If a prerequisite fails, follow its named corrective instruction and repeat the same command.
 Do not create a different installation directory to conceal the failure.
 
-**6. Enroll the first administrator during installation**
+**8. Enroll the first application administrator**
 
-Leave the installation command running after service readiness.
-The installer prints an administrator setup address and a new private pairing code.
-This code differs from the Google upload code. It expires after ten minutes.
+The application does not automatically admit everyone in your Google domain.
+Initialization grants access to exactly the Google identity you specify.
 
-1. Open the printed administrator setup address on Windows.
-2. Handle the certificate warning for this isolated localhost lab as described in step 7.
-3. Enter the new pairing code.
-4. Sign in with the Google account that will become the first administrator.
-5. Return to the Ubuntu terminal.
-6. Inspect the verified account shown there.
-7. Type `yes` only when it identifies the intended administrator.
-8. Wait for the browser to confirm enrollment.
-9. Select **Sign in to Campus Commander**.
+Run this on Ubuntu. Paste the `sub` from step 4 when prompted:
 
-**Expected result:** The installer grants access to the verified account after your terminal confirmation.
-You do not need a Google account identifier lookup or a separate enrollment command.
-If the account is wrong, decline confirmation and resume installation to retry.
-If setup expires, use the resume command in step 10 to obtain a new pairing code.
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+print('Google sub for the initial administrator: ', end='', flush=True)
+with open('/dev/tty') as terminal:
+    subject = terminal.readline().strip()
+if not subject or '@' in subject:
+    raise SystemExit('Enter the Google sub, not an email address.')
+path = Path.home() / 'cc-test-inputs' / 'access-request.json'
+with path.open('x') as output:
+    json.dump({
+        'action': 'initialize',
+        'issuer': 'https://accounts.google.com',
+        'subject': subject,
+        'displayName': 'Phase 2 test administrator'
+    }, output)
+path.chmod(0o600)
+print('Enrollment request created.')
+PY
+```
 
-**7. Open the application on Windows**
+Submit that request through the installation's migration service:
+
+```bash
+sudo docker compose \
+  -f "$HOME/cc-phase2-lab/docker-compose.json" \
+  -p cc-phase2-lab \
+  run --rm --no-deps --interactive --no-tty database-migrate \
+  node /app/deployment/bootstrap/application-access-cli.mjs \
+  /run/config/profile.json /run/config/operator.json /dev/stdin \
+  < "$HOME/cc-test-inputs/access-request.json"
+```
+
+**Expected result:** JSON containing a principal identifier and a correlation identifier.
+Initialization succeeds only when no application principal exists. Do not repeat it after success.
+Keep the principal identifier with your private test notes.
+
+**9. Open the application on Windows**
 
 Keep the SSH tunnel open. In your Windows browser, visit:
 
@@ -230,11 +299,11 @@ Do not disable browser certificate verification globally.
 Record the certificate warning as a lab limitation. This does not test district browser trust.
 If browser policy prevents continuation, use an administrator-approved trusted certificate instead.
 
-Select **Sign in to Campus Commander** and choose the Google account enrolled in step 6.
+Select **Sign in to Campus Commander** and choose the Google account enrolled in step 8.
 You should reach **Your account**.
-The footer's build should identify revision `8b8d5a1`. The version can retain the `phase-2-candidate` image label.
+The footer's build should identify revision `436d3b0`. The version can retain the `phase-2-candidate` image label.
 
-**8. Complete the first browser test**
+**10. Complete the first browser test**
 
 Record Pass or Fail for every row. A blank result is not a pass.
 Run the service checks one at a time. They use synthetic data and do not administer your Google domain.
@@ -265,7 +334,7 @@ A Google session can remain active after Campus Commander sign-out.
 Immediate Google account selection or automatic Google authentication does not mean the application logout failed.
 The protected-page check verifies the application session boundary.
 
-**9. Test a service restart and an outage**
+**11. Test a service restart and an outage**
 
 Sign in again. Select a theme and complete all four Diagnostics checks.
 On Ubuntu, restart only this installation's API:
@@ -294,7 +363,7 @@ sudo docker compose -f "$HOME/cc-phase2-lab/docker-compose.json" -p cc-phase2-la
 Retry Refresh connections and all four checks after recovery.
 Stop here and report the failure if recovery does not restore the application.
 
-**10. Test session expiry and VM restart**
+**12. Test session expiry and VM restart**
 
 For idle expiry, sign in and close every Campus Commander browser tab.
 Wait at least six minutes. Reopen the application.
@@ -319,88 +388,13 @@ sh "$HOME/cc-test-tools/install.sh" --root "$HOME/cc-phase2-lab" --command resum
 
 **Expected result:** The same installation recovers with its saved application identity and preferences.
 The installer reuses its cached release. It does not silently upgrade the installation.
-It must retain the imported Google credentials and existing administrator enrollment.
-Completed enrollment must not request a new initial administrator.
-
-For disk-full recovery, first restore free space and check `df -h /`.
-Repeat the same resume command with the same installation directory.
-Preserve the installation files and Docker volumes while recovering.
-
-**11. Test uninstall and resume**
-
-Complete the browser checks before this step. Record your account and theme for comparison.
-Run this command on Ubuntu:
-
-```bash
-sh "$HOME/cc-test-tools/install.sh" --root "$HOME/cc-phase2-lab" --uninstall
-```
-
-First enter `cancel` at the confirmation prompt.
-**Expected result:** The installer cancels uninstall. The application remains available.
-
-Repeat the command. Enter `cc-phase2-lab` when the installer asks for the installation name.
-**Expected result:** Activity messages continue until the application services stop and their containers are removed.
-The application becomes unavailable. The installer preserves data, credentials, and configuration.
-
-Restore the application services:
-
-```bash
-sh "$HOME/cc-test-tools/install.sh" --root "$HOME/cc-phase2-lab" --command resume
-```
-
-Sign in with the same administrator. Verify the saved theme and repeat all four Diagnostics checks.
-**Expected result:** The same application account remains enrolled. Setup does not request credential import or initial enrollment again.
-
-**12. Test the update option**
-
-First test selection of the release that is already installed:
-
-```bash
-sh "$HOME/cc-test-tools/install.sh" \
-  --root "$HOME/cc-phase2-lab" \
-  --release phase-2-candidate-8b8d5a15c756 \
-  --update
-```
-
-**Expected result:** The installer reports `already-current`. It preserves the installation without requesting a recovery backup.
-This checks the update entry point. It does not test a change between releases.
-
-A release-change test needs a different verified Phase 2 release and a matching recovery backup.
-Follow the [backup procedure](../../deployment/operations/README.md) to create and verify that backup before continuing.
-That procedure requires stopped writers and a separately protected recovery key.
-Resume services after backup and confirm readiness before starting the update test.
-The update option verifies an existing backup. It does not create one.
-If those prerequisites are incomplete, record the release-change test as **Not run**.
-
-When the prerequisites are ready, replace `TARGET_RELEASE_TAG` with the agreed target release:
-
-```bash
-sh "$HOME/cc-test-tools/install.sh" \
-  --root "$HOME/cc-phase2-lab" \
-  --release TARGET_RELEASE_TAG \
-  --update
-```
-
-1. Check the installed and target revisions displayed by the installer.
-2. Enter the absolute directory of the verified recovery backup.
-3. Enter `cancel` on the first attempt.
-4. Confirm that your application still uses the installed revision.
-5. Repeat the command with the same target and backup.
-6. Type `update` to confirm the release change.
-7. Wait for activity messages and final readiness.
-8. Sign in and verify the target build revision, existing account, and saved theme.
-9. Repeat all four Diagnostics checks.
-
-After interruption, run the resume command in step 10.
-Preserve `setup-update.json`, the `updates` directory, and both cached releases until recovery completes.
-Record the source release, target release, and recovery result separately from the fresh installation test.
 
 **13. Record results and stop the lab**
 
 Use this format for each failure:
 
 ```text
-Release: phase-2-candidate-8b8d5a15c756
+Release: phase-2-qualified-436d3b0698a5
 Test:
 Expected:
 Observed:
@@ -422,25 +416,25 @@ To stop the lab while preserving its data:
 sudo docker compose -f "$HOME/cc-phase2-lab/docker-compose.json" -p cc-phase2-lab stop
 ```
 
-Use the resume command in step 10 to continue later.
+Use the resume command in step 12 to continue later.
 Do not erase volumes while you still need the test evidence or saved account.
 
 **Troubleshooting**
 
-| Symptom                                       | First check                                                                                                      |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| SSH fails                                     | Check the VM address, virtual switch, and `sudo systemctl status ssh` in the VM console.                         |
-| The browser cannot reach localhost            | Keep the SSH tunnel open. Check that Windows port 8443 is free.                                                  |
-| Signature verification fails                  | Keep the exact release and installer revision. Record the named error before continuing.                         |
-| Storage preflight fails                       | Check `df -h /`. Confirm Ubuntu uses the intended virtual disk capacity.                                         |
-| Time synchronization fails                    | Check `timedatectl status`. Let synchronization complete before repeating installation.                          |
-| Google reports redirect_uri_mismatch          | Compare the registered URI with `https://localhost:8443/api/auth/callback`, including scheme, port, and path.    |
-| Google blocks the app                         | Check the project's audience and Workspace app-access policy with your administrator.                            |
-| Google succeeds but application sign-in fails | Check the selected Google account, uploaded Web client JSON, callback URI, and terminal enrollment confirmation. |
-| Administrator enrollment fails                | Check the pairing expiry and terminal confirmation. Resume setup. Existing enrollment must remain intact.        |
-| A Diagnostics check fails                     | Record its message and support reference. Verify recovery before recording a pass.                               |
+| Symptom                                       | First check                                                                                                   |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| SSH fails                                     | Check the VM address, virtual switch, and `sudo systemctl status ssh` in the VM console.                      |
+| The browser cannot reach localhost            | Keep the SSH tunnel open. Check that Windows port 8443 is free.                                               |
+| Signature verification fails                  | Keep the exact release and installer revision. Record the named error before continuing.                      |
+| Storage preflight fails                       | Check `df -h /`. Confirm Ubuntu uses the intended virtual disk capacity.                                      |
+| Time synchronization fails                    | Check `timedatectl status`. Let synchronization complete before repeating installation.                       |
+| Google reports redirect_uri_mismatch          | Compare the registered URI with `https://localhost:8443/api/auth/callback`, including scheme, port, and path. |
+| Google blocks the app                         | Check the project's audience and Workspace app-access policy with your administrator.                         |
+| Google succeeds but application sign-in fails | Check the enrolled `sub`, selected Google account, client ID, secret file, and issuer.                        |
+| Initialization fails                          | Check whether a principal already exists. Preserve the database and use the documented inspection procedure.  |
+| A Diagnostics check fails                     | Record its message and support reference. Verify recovery before recording a pass.                            |
 
-This recipe covers guided all-Docker onboarding, application behavior, and the maintenance checks listed above.
+This first recipe covers a fresh all-Docker installation and manual application behavior.
 Hybrid services, Kubernetes, isolated backup restore, and Phase 1 upgrades require separate environment tests.
 Use the [Phase 2 installer procedure](../../deployment/installer/PHASE-2.md) and [operator recovery procedure](../../deployment/bootstrap/APPLICATION-ACCESS.md) for those later sessions.
-Consult the [target release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-8b8d5a15c756) for published evidence and its limits.
+The [current release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-qualified-436d3b0698a5) contains their automated evidence and its limits.
