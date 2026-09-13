@@ -5,6 +5,37 @@ Status: IN PROGRESS. No Phase 2 release has passed acceptance.
 
 ## Current qualification status
 
+The [436d3b0 release pipeline](https://github.com/CampusCommander/campus-commander/actions/runs/34712194718) passed all forty-two jobs in attempt 2.
+[PR CI](https://github.com/CampusCommander/campus-commander/actions/runs/34712197055) passed all seven jobs.
+The pipeline published [phase-2-qualified-436d3b0698a5](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-qualified-436d3b0698a5).
+Independent verification passed both release signatures, three application image signatures, and all 1,391 inventoried files.
+All 23 application reports and fifteen profile reports passed verification.
+The manifest records `qualification: profile-qualified` and `districtInfrastructureAcceptance: not-qualified`.
+
+On September 12, 2026, the operator reported that all manual Ubuntu and Google Workspace tests passed.
+The installation encountered a full disk. Resume reached readiness for the existing all-Docker installation.
+The operator subsequently confirmed that all tests passed, including the four requested Diagnostics checks.
+The [manual test record](../testing/phase-2-ubuntu-google-results-2026-09-12.md) preserves the report, environment, evidence limits, and pending process notes.
+The [testing recipe](../testing/phase-2-ubuntu-google.md) identifies the prescribed release and procedure.
+
+CC-23 through CC-35 remain Done. CC-36 through CC-38 and epic CC-22 remain In Progress.
+District hybrid and Kubernetes acceptance, trusted district TLS, upgrades, and isolated restore require their remaining environment evidence.
+Phase 1 acceptance remains separate.
+
+The operator supplied three onboarding improvements after the passing manual test.
+[CC-39](https://easton-consulting.atlassian.net/browse/CC-39) adds step 5 activity and elapsed time.
+The installer reports stages and elapsed time during service startup and administrator database operations.
+[CC-40](https://easton-consulting.atlassian.net/browse/CC-40) implements Google client JSON import through protected browser setup.
+[CC-41](https://easton-consulting.atlassian.net/browse/CC-41) implements first-administrator enrollment through installer-authorized sign-in.
+The [GAM research](../research/gam-onboarding-2026-09-13.md) records primary sources and the proposed onboarding design.
+All three onboarding tasks remain In Progress pending signed release qualification and operator retesting.
+The installed 436d3b0 release retains the original enrollment procedure.
+The updated [installer guide](../../deployment/installer/HOSTED.md#guided-google-setup-and-administrator-enrollment) documents the implemented flow.
+The [onboarding validation record](../../deployment/evidence/CC-39-41-onboarding/validation.json) preserves checks, security boundaries, and UI evidence.
+The epic now contains nineteen tasks. The manifest records twenty-eight blocking links, including three new onboarding dependencies.
+
+## Previous qualification checkpoint (historical)
+
 Jira records thirteen Done tasks, CC-23 through CC-35. CC-36 through CC-38 remain In Progress.
 [CC-37](https://easton-consulting.atlassian.net/browse/CC-37) records the current revision and release checks.
 CC-35 includes published-image browser and Orca 46.1 evidence. District identity-provider acceptance remains separate.
@@ -126,7 +157,7 @@ Phase 1 acceptance remains a separate record.
 
 ## Scope and tickets
 
-[The ticket manifest](phase-2-jira-tasks.json) records all 16 tasks and their acceptance criteria.
+[The ticket manifest](phase-2-jira-tasks.json) records nineteen tasks and their acceptance criteria, including the three onboarding follow-ups.
 Jira confirms that CC-23 through CC-38 belong to CC-22.
 The tasks cover all 24 items in the Phase 2 planning table.
 Jira confirms all 25 native blocking links against the ticket manifest.

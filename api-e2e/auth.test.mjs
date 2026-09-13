@@ -29,6 +29,12 @@ import {
   renderRedis,
 } from '../deployment/redis/runtime.mjs';
 import { changeApplicationAccess } from '../deployment/bootstrap/application-access.mjs';
+import {
+  initializeBootstrap,
+  generateBootstrapCredential,
+} from '../deployment/bootstrap/access.mjs';
+import { enrollAdministrator } from '../deployment/installer/application-enrollment.mjs';
+import { startSetupUpload } from '../deployment/installer/setup-upload.mjs';
 import { createBootstrapEdge } from '../deployment/bootstrap/edge.mjs';
 import { startKestraFixture } from './kestra-fixture.mjs';
 import { chromium, expect } from '@playwright/test';
@@ -477,28 +483,8 @@ test(
           ),
         );
       };
-      const { principalId } = await callOperator(initialize);
-      const inspected = await callOperator({ action: 'inspect' });
-      assert.equal(inspected.principals[0].id, principalId);
-      assert.equal(inspected.principals[0].permission_version, 1);
-      await assert.rejects(
-        callOperator({
-          ...initialize,
-          issuer: 'https://untrusted.example.invalid',
-        }),
-      );
-      await assert.rejects(
-        changeApplicationAccess(migrator, initialize, issuer),
-        /already exists/,
-      );
-      await assert.rejects(
-        changeApplicationAccess(
-          runtime,
-          { action: 'revoke', principalId, expectedVersion: 1 },
-          issuer,
-        ),
-        /permission denied/,
-      );
+      const bootstrapCredential = generateBootstrapCredential();
+      await initializeBootstrap(migrator, bootstrapCredential);
       let output = '';
       const startApi = async (listenPort = apiPort) => {
         const name = `cc-phase2-api-${id}-${children.length}`;
@@ -660,6 +646,301 @@ test(
       assert.equal(
         (await request(`${publicOrigin}/api/auth/session`, { ca })).status,
         401,
+      );
+      assert.equal(
+        (await login()).finish.headers.location,
+        '/login?error=sign-in-failed',
+      );
+      const operatorEnrollment = async (_config, _operator, body) => {
+        const response = await request(
+          `${publicOrigin}/api/auth/enrollment/operator`,
+          {
+            ca,
+            method: 'POST',
+            body,
+            headers: {
+              authorization: `Basic ${Buffer.from(`operator:${bootstrapCredential}`).toString('base64')}`,
+            },
+          },
+        );
+        assert.ok(
+          [200, 201].includes(response.status),
+          'Protected enrollment request failed.',
+        );
+        return JSON.parse(response.text);
+      };
+      assert.equal(
+        (
+          await request(`${publicOrigin}/api/auth/enrollment/operator`, {
+            ca,
+            method: 'POST',
+            body: { action: 'start' },
+          })
+        ).status,
+        401,
+      );
+      assert.equal(
+        (
+          await request(`${publicOrigin}/api/auth/enrollment/start`, {
+            ca,
+            method: 'POST',
+            body: { code: 'a'.repeat(64) },
+            headers: { origin: 'https://untrusted.example.invalid' },
+          })
+        ).status,
+        403,
+      );
+      const pairAttempt = (code) =>
+        request(`${publicOrigin}/api/auth/enrollment/start`, {
+          ca,
+          method: 'POST',
+          body: { code },
+          headers: { origin: publicOrigin },
+        });
+      const abandoned = await operatorEnrollment(
+        config,
+        {},
+        { action: 'start' },
+      );
+      await operatorEnrollment(
+        config,
+        {},
+        { action: 'cancel', id: abandoned.id },
+      );
+      assert.equal((await pairAttempt(abandoned.code)).status, 401);
+      const expired = await operatorEnrollment(config, {}, { action: 'start' });
+      await redis.expire('cc:auth:enrollment:active', 1);
+      await delay(1100);
+      assert.equal((await pairAttempt(expired.code)).status, 401);
+      const locked = await operatorEnrollment(config, {}, { action: 'start' });
+      for (let index = 0; index < 10; index++)
+        assert.equal((await pairAttempt('0'.repeat(64))).status, 403);
+      assert.equal((await pairAttempt(locked.code)).status, 403);
+      await operatorEnrollment(config, {}, { action: 'cancel', id: locked.id });
+      const concurrent = await operatorEnrollment(
+        config,
+        {},
+        { action: 'start' },
+      );
+      const pairs = await Promise.all([
+        pairAttempt(concurrent.code),
+        pairAttempt(concurrent.code),
+      ]);
+      assert.equal(pairs.filter((result) => result.status === 201).length, 1);
+      assert.equal((await pairAttempt(concurrent.code)).status, 403);
+      await operatorEnrollment(
+        config,
+        {},
+        { action: 'cancel', id: concurrent.id },
+      );
+      for (const fault of ['state', 'nonce', 'audience', 'issuer']) {
+        await operatorEnrollment(config, {}, { action: 'cancel' });
+        const attempt = await operatorEnrollment(
+          config,
+          {},
+          { action: 'start' },
+        );
+        const paired = await request(
+          `${publicOrigin}/api/auth/enrollment/start`,
+          {
+            ca,
+            method: 'POST',
+            body: { code: attempt.code },
+            headers: { origin: publicOrigin },
+          },
+        );
+        assert.equal(paired.status, 201);
+        const cookies = paired.headers['set-cookie']
+          .map((value) => value.split(';')[0])
+          .join('; ');
+        const authorization = await request(JSON.parse(paired.text).url, {
+          ca,
+        });
+        const callback = new URL(authorization.headers.location);
+        if (fault === 'state') callback.searchParams.set('state', 'forged');
+        invalidNonce = fault === 'nonce';
+        invalidAudience = fault === 'audience';
+        invalidIssuer = fault === 'issuer';
+        const denied = await request(callback, { ca, cookie: cookies });
+        invalidNonce = false;
+        invalidAudience = false;
+        invalidIssuer = false;
+        assert.equal(denied.headers.location, '/setup?error=sign-in-failed');
+        assert.equal(
+          (
+            await operatorEnrollment(
+              config,
+              {},
+              { action: 'inspect', id: attempt.id },
+            )
+          ).status,
+          'failed',
+        );
+        assert.equal(
+          (await migrator.query('SELECT id FROM cc.application_principals'))
+            .rowCount,
+          0,
+        );
+      }
+      const enrollmentOutput = [];
+      const enrollmentRun = enrollAdministrator({
+        config,
+        operator: {},
+        access: (_operator, payload) => callOperator(payload),
+        request: operatorEnrollment,
+        output: (line) => enrollmentOutput.push(line),
+        privateOutput: (line) => enrollmentOutput.push(line),
+        ask: async () => 'yes',
+        pause: () => delay(50),
+      });
+      enrollmentRun.catch(() => undefined);
+      let pairingCode;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        pairingCode = enrollmentOutput
+          .find((line) =>
+            line.startsWith('Private administrator pairing code: '),
+          )
+          ?.split(': ')[1];
+        if (pairingCode) break;
+        await delay(100);
+      }
+      assert.ok(
+        pairingCode,
+        'The installer must display an enrollment pairing code.',
+      );
+      browser = await chromium.launch({
+        args: ['--host-resolver-rules=MAP host.docker.internal 127.0.0.1'],
+      });
+      const enrollmentContext = await browser.newContext({
+        ignoreHTTPSErrors: true,
+      });
+      const enrollmentPage = await enrollmentContext.newPage();
+      const uploadServer = await startSetupUpload({ publicOrigin, port: 0 });
+      try {
+        await enrollmentPage.goto(uploadServer.origin);
+        await auditAccessibility(enrollmentPage, 'google-client-pairing');
+        await enrollmentPage.emulateMedia({ colorScheme: 'dark' });
+        await enrollmentPage.setViewportSize({ width: 360, height: 720 });
+        await auditAccessibility(enrollmentPage, 'google-client-pairing-dark');
+        assert.equal(
+          await enrollmentPage.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth,
+          ),
+          true,
+        );
+        await enrollmentPage.emulateMedia({ colorScheme: 'light' });
+        await enrollmentPage
+          .getByLabel('Installer pairing code')
+          .fill(uploadServer.pairingCode);
+        await enrollmentPage
+          .getByRole('button', { name: 'Connect to installer' })
+          .click();
+        await expect(
+          enrollmentPage.getByLabel('Google Web application client JSON'),
+        ).toBeVisible();
+        await auditAccessibility(enrollmentPage, 'google-client-import');
+        await enrollmentPage
+          .getByLabel('Google Web application client JSON')
+          .setInputFiles({
+            name: 'client.json',
+            mimeType: 'application/json',
+            buffer: Buffer.from(
+              JSON.stringify({
+                web: {
+                  client_id: '123-test.apps.googleusercontent.com',
+                  client_secret: 'synthetic-upload-secret',
+                  project_id: 'campus-test',
+                  redirect_uris: [`${publicOrigin}/api/auth/callback`],
+                },
+              }),
+            ),
+          });
+        await enrollmentPage
+          .getByRole('button', { name: 'Import Google client' })
+          .click();
+        await uploadServer.result;
+        await uploadServer.close();
+        await expect(enrollmentPage.getByRole('status')).toContainText(
+          'Client received.',
+        );
+      } finally {
+        await uploadServer.close();
+      }
+      await enrollmentPage.goto(`${publicOrigin}/setup`);
+      await auditAccessibility(enrollmentPage, 'administrator-enrollment');
+      await enrollmentPage.emulateMedia({ colorScheme: 'dark' });
+      await expect(enrollmentPage.locator('mat-label')).toHaveCSS(
+        'color',
+        'rgb(154, 160, 166)',
+      );
+      await auditAccessibility(enrollmentPage, 'administrator-enrollment-dark');
+      assert.equal(
+        await enrollmentPage.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        true,
+      );
+      await enrollmentPage.emulateMedia({ colorScheme: 'light' });
+      await enrollmentPage
+        .getByLabel('Installer pairing code')
+        .fill(pairingCode);
+      await enrollmentPage.keyboard.press('Tab');
+      await expect(
+        enrollmentPage.getByRole('button', {
+          name: 'Sign in to enroll administrator',
+        }),
+      ).toBeFocused();
+      await enrollmentPage.keyboard.press('Enter');
+      const enrolled = await enrollmentRun;
+      const principalId = enrolled.principalId;
+      assert.equal(enrolled.status, 'enrolled');
+      await expect(
+        enrollmentPage.getByText(
+          'Administrator enrollment completed. Sign in to open Campus Commander.',
+        ),
+      ).toBeVisible();
+      assert.equal(
+        (
+          await request(`${publicOrigin}/api/auth/enrollment/start`, {
+            ca,
+            method: 'POST',
+            body: { code: pairingCode },
+            headers: { origin: publicOrigin },
+          })
+        ).status,
+        409,
+      );
+      const resumed = await enrollAdministrator({
+        config,
+        operator: {},
+        access: (_operator, payload) => callOperator(payload),
+        request: () =>
+          assert.fail('Completed enrollment must not create another attempt.'),
+        output: () => undefined,
+      });
+      assert.equal(resumed.status, 'already-enrolled');
+      await browser.close();
+      browser = undefined;
+      const inspected = await callOperator({ action: 'inspect' });
+      assert.equal(inspected.principals[0].id, principalId);
+      assert.equal(inspected.principals[0].permission_version, 1);
+      await assert.rejects(
+        callOperator({
+          ...initialize,
+          issuer: 'https://untrusted.example.invalid',
+        }),
+      );
+      await assert.rejects(
+        changeApplicationAccess(migrator, initialize, issuer),
+        /already exists/,
+      );
+      await assert.rejects(
+        changeApplicationAccess(
+          runtime,
+          { action: 'revoke', principalId, expectedVersion: 1 },
+          issuer,
+        ),
+        /permission denied/,
       );
       const valid = await login();
       assert.equal(valid.finish.headers.location, '/', valid.finish.text);
@@ -1603,6 +1884,11 @@ test(
                 )
               : undefined,
             checks: [
+              'paired Google client JSON browser upload and private storage unit coverage',
+              'installer-authorized browser enrollment and explicit operator confirmation',
+              'enrollment expiry, cancellation, replay, concurrent pairing, and forged callbacks',
+              'already-enrolled resume and runtime migration privilege denial',
+              'setup form accessibility in both themes and keyboard enrollment',
               'OIDC sign-in and forged callback denial',
               'OIDC client credential rotation',
               'worker credential rotation',

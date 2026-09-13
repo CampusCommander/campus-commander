@@ -1,5 +1,5 @@
+import { pathToFileURL } from 'node:url';
 import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
-import { applicationAccess } from './access-fixture.mjs';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -48,6 +48,11 @@ test(
       ).trim();
     const operatorPath = join(root, 'operator.json');
     const installerRoot = resolve(process.env.CC_AUTH_INSTALLER_ROOT ?? '.');
+    const { applicationAccess, operatorEnrollmentRequest } = await import(
+      pathToFileURL(
+        join(installerRoot, 'deployment/installer/application-enrollment.mjs'),
+      ).href
+    );
     const cli = async (command) =>
       JSON.parse(
         (
@@ -270,12 +275,31 @@ process.exit(result.status??1);
       });
       assert.equal(readiness.status, 'ready');
       assert.equal(readiness.checks.length, 8);
-      const enrolled = applicationAccess(composePath, project, {
-        action: 'initialize',
-        issuer: provider.issuer,
-        subject: 'administrator',
-        displayName: 'Synthetic administrator',
+      const setupOperator = JSON.parse(await readFile(operatorPath, 'utf8'));
+      await writeFile(
+        join(root, 'setup-record.json'),
+        JSON.stringify({
+          selfSignedCertificate: true,
+        }),
+        { mode: 0o600 },
+      );
+      const attempt = await operatorEnrollmentRequest(config, setupOperator, {
+        action: 'start',
       });
+      assert.match(attempt.code, /^[a-f0-9]{64}$/);
+      await operatorEnrollmentRequest(config, setupOperator, {
+        action: 'cancel',
+        id: attempt.id,
+      });
+      const enrolled = await applicationAccess(
+        JSON.parse(await readFile(operatorPath, 'utf8')),
+        {
+          action: 'initialize',
+          issuer: provider.issuer,
+          subject: 'administrator',
+          displayName: 'Synthetic administrator',
+        },
+      );
       assert.ok(enrolled.principalId);
       const replicaObservations = [];
       const navigationRecovery = [];

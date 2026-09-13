@@ -8,17 +8,21 @@ const pages = new Set([
   '/account',
   '/diagnostics',
   '/startup',
+  '/setup',
 ]);
 const getRoutes = new Set([
   '/api/application',
   '/api/auth/login',
   '/api/auth/callback',
   '/api/auth/session',
+  '/api/auth/enrollment/status',
   '/api/diagnostics',
 ]);
 const postRoutes = new Set([
   '/api/auth/logout',
   '/api/auth/preferences',
+  '/api/auth/enrollment/start',
+  '/api/auth/enrollment/operator',
   '/api/diagnostics/postgresql',
   '/api/diagnostics/redis',
   '/api/diagnostics/kestra',
@@ -85,6 +89,11 @@ export async function proxyApplication(
     accept: request.headers.accept ?? '*/*',
   };
   if (api) {
+    if (
+      pathname === '/api/auth/enrollment/operator' &&
+      typeof request.headers.authorization === 'string'
+    )
+      headers.authorization = request.headers.authorization;
     for (const name of ['cookie', 'origin', 'x-csrf-token', 'content-type']) {
       if (typeof request.headers[name] === 'string')
         headers[name] = request.headers[name];

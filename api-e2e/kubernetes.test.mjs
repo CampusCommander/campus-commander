@@ -507,59 +507,17 @@ test(
             startForward,
           })
         : undefined;
-      const resources = installer.resources();
-      const template = structuredClone(
-        resources.items.find((item) => item.kind === 'Job').spec.template,
-      );
-      for (const volume of template.spec.volumes)
-        if (volume.configMap)
-          await kube(['get', 'configmap', volume.configMap.name]);
-      const request = {
+      const enrolled = await installer.applicationAccess({
         action: 'initialize',
         issuer: provider.issuer,
         subject: 'administrator',
         displayName: 'Synthetic administrator',
-      };
-      template.spec.containers[0].command = [
-        'node',
-        '/app/deployment/bootstrap/application-access-cli.mjs',
-        '/config/deployment.json',
-        '/config/operator.json',
-        '/run/enrollment/request',
-      ];
-      template.spec.containers[0].volumeMounts.push({
-        name: 'enrollment',
-        mountPath: '/run/enrollment',
-        readOnly: true,
       });
-      template.spec.volumes.push({
-        name: 'enrollment',
-        secret: { secretName: 'qualification-enrollment' },
+      assert.ok(enrolled.principalId);
+      const inspection = await installer.applicationAccess({
+        action: 'inspect',
       });
-      await kube(
-        ['apply', '-f', '-'],
-        JSON.stringify({
-          apiVersion: 'v1',
-          kind: 'Secret',
-          metadata: { name: 'qualification-enrollment', namespace: project },
-          stringData: { request: JSON.stringify(request) },
-        }),
-      );
-      await kube(
-        ['apply', '-f', '-'],
-        JSON.stringify({
-          apiVersion: 'batch/v1',
-          kind: 'Job',
-          metadata: { name: 'qualification-enrollment', namespace: project },
-          spec: { backoffLimit: 0, activeDeadlineSeconds: 60, template },
-        }),
-      );
-      await kube([
-        'wait',
-        '--for=condition=complete',
-        'job/qualification-enrollment',
-        '--timeout=90s',
-      ]);
+      assert.equal(inspection.principals.length, 1);
       let restoration;
       let applicationFaults;
       let certificateFaults;

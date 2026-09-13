@@ -15,6 +15,7 @@ import * as oidc from 'openid-client';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { DatabaseService } from '../database/database.service';
 import { CacheService } from '../cache/cache.service';
+import { EnrollmentService } from './enrollment.service';
 
 const sessionSchema = z.strictObject({
   principalId: z.uuid(),
@@ -26,6 +27,10 @@ const loginSchema = z.strictObject({
   state: z.string(),
   nonce: z.string(),
   verifier: z.string(),
+  enrollmentId: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
 });
 export const sessionCookie = '__Host-cc-session';
 export const loginCookie = '__Host-cc-login';
@@ -67,6 +72,7 @@ export class AuthService {
     private readonly configuration: ConfigurationService,
     private readonly database: DatabaseService,
     private readonly cache: CacheService,
+    private readonly enrollment: EnrollmentService,
   ) {}
 
   private provider() {
@@ -89,12 +95,13 @@ export class AuthService {
     return this.discovery;
   }
 
-  async start(correlationId: string) {
+  async start(correlationId: string, enrollmentId?: string) {
     const provider = await this.provider();
     const login = {
       state: oidc.randomState(),
       nonce: oidc.randomNonce(),
       verifier: oidc.randomPKCECodeVerifier(),
+      ...(enrollmentId ? { enrollmentId } : {}),
     };
     const token = opaqueToken();
     const url = oidc.buildAuthorizationUrl(provider, {
@@ -105,6 +112,7 @@ export class AuthService {
       nonce: login.nonce,
       code_challenge: await oidc.calculatePKCECodeChallenge(login.verifier),
       code_challenge_method: 'S256',
+      ...(enrollmentId ? { prompt: 'select_account' } : {}),
     });
     await this.database.audit('login-started', correlationId);
     await this.cache.set(key('login', token), JSON.stringify(login), 300);
@@ -127,18 +135,30 @@ export class AuthService {
       current.pathname !== '/api/auth/callback'
     )
       throw new UnauthorizedException();
-    const tokens = await oidc.authorizationCodeGrant(
-      await this.provider(),
-      current,
-      {
+    const tokens = await oidc
+      .authorizationCodeGrant(await this.provider(), current, {
         expectedState: login.state,
         expectedNonce: login.nonce,
         pkceCodeVerifier: login.verifier,
         idTokenExpected: true,
-      },
-    );
+      })
+      .catch(async (error: unknown) => {
+        if (login.enrollmentId)
+          await this.enrollment
+            .failed(login.enrollmentId)
+            .catch(() => undefined);
+        throw error;
+      });
     const claims = tokens.claims();
     if (!claims?.sub) throw new UnauthorizedException();
+    if (login.enrollmentId) {
+      await this.enrollment.verified(
+        login.enrollmentId,
+        claims.sub,
+        claims['name'],
+      );
+      return { enrollment: true as const };
+    }
     const result = await this.database.connection.query(
       'SELECT id,permission_version FROM cc.application_principals WHERE issuer=$1 AND subject=$2 AND enabled',
       [this.configuration.auth.issuer, claims.sub],

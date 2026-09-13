@@ -224,3 +224,55 @@ Downloaded release code executes only after signature and file verification succ
 The initial entry script relies on HTTPS and repository control.
 Download and inspect it before execution if your installation policy requires script review.
 The [release guide](../release/README.md) documents the signing identity and candidate acceptance limits.
+
+## Startup activity
+
+Guided setup reports activity during step 5 while installation work remains pending.
+It prints the active stage immediately and repeats that stage with elapsed time every five seconds.
+Stage changes identify release verification, prerequisites, preparation, service startup, and readiness.
+Output uses plain text in terminals and redirected logs. It does not print command output or estimate a completion percentage.
+The activity timer stops on success, failure, or a pause for operator input.
+The final readiness result determines whether startup succeeded.
+
+## Guided Google setup and administrator enrollment
+
+These changes require an installer and application images built from the onboarding implementation.
+The earlier `phase-2-qualified-436d3b0698a5` release uses the previous manual enrollment procedure.
+
+Choose `google` as the Phase 2 sign-in provider. Choose `browser` for credential import.
+The installer opens a temporary listener on `127.0.0.1:8765`. It never binds this listener to the server network address.
+For a remote Ubuntu server, connect from Windows PowerShell with both local forwards:
+
+```powershell
+ssh -o ExitOnForwardFailure=yes -L 127.0.0.1:8443:127.0.0.1:8443 -L 127.0.0.1:8765:127.0.0.1:8765 UBUNTU_USER@VM_IP
+```
+
+Replace `UBUNTU_USER` and `VM_IP`. Keep this SSH connection open throughout installation.
+Use `https://localhost:8443` as the application address for this disposable lab.
+Open the printed Google setup address on Windows. Enter the private setup pairing code from the terminal.
+Follow the Google Console links to create an Internal Web application client.
+Copy the exact callback URI shown on the page. Download the client JSON and select it in the upload form.
+The installer extracts the client ID and secret. It validates the client type, size, Google endpoints, and exact callback.
+Invalid uploads show a recovery message. Correct the file and retry within the same paired browser.
+
+Credential upload expires after fifteen minutes. Administrator pairing uses a separate code that expires after ten minutes.
+Both codes print directly to the controlling terminal. Redirected installer output excludes them.
+The upload listener closes after import or expiry. Imported files use directory mode `0700` and file mode `0600`.
+The private installation directory retains `google-client.json` and `google-client-secret` for resume.
+Do not include these files in support attachments. Credential rotation follows the application access guide.
+
+Step 5 reports service activity and elapsed time. After readiness, it prints the administrator setup address.
+Open that address, enter the new administrator pairing code, and sign in with the intended account.
+Return to the terminal. Inspect the verified account and type `yes` to grant initial administrator access.
+Any other answer cancels enrollment. Resume when ready to retry.
+The browser reports completion after the database confirms enrollment. Select **Sign in to Campus Commander**.
+
+After an interruption, preserve the installation directory and resume the same installation.
+A completed credential import survives a missing derived secret file. Resume reconstructs that file from the protected import.
+A completed administrator grant survives terminal disconnection. Resume reports existing enrollment without replacing access.
+Use `status` for read-only service inspection. Use interactive `resume` to finish pending enrollment.
+
+The advanced `file` import accepts one protected Google client JSON path on the server.
+Generic OIDC retains its client ID and protected secret-file workflow.
+Kubernetes retains explicit Secret names, keys, ownership, and provider egress CIDRs.
+The imported secret must match the selected existing Kubernetes Secret. The installer does not replace cluster credentials.

@@ -6,7 +6,27 @@ The installation operator configures OIDC and enrolls the initial administrator.
 Google background authorization and delegated user administration belong to Phase 3.
 An email address or domain match never grants application access.
 
-## Configure the provider
+## Guided installation
+
+Guided Phase 2 installation imports Google credentials and enrolls the initial administrator within the installer.
+Choose `google`, then upload the downloaded Web application client JSON through the paired setup page.
+The installer validates the exact callback URI and stores the client ID and secret together.
+Choose `oidc` for another provider or existing protected answers files.
+
+After service readiness, open the displayed `/setup` address and enter the private administrator pairing code.
+Sign in with the administrator account. Confirm the verified account in the installer terminal.
+The browser reports completion after the protected database operation commits. Then select **Sign in to Campus Commander**.
+No subject lookup, OAuth Playground, or separate enrollment script is required for guided installation.
+
+Pairing expires after ten minutes. Resume creates a new attempt if no principal exists.
+Resume preserves completed enrollment. It never replaces an existing principal.
+The installer performs the grant through its migration operation. Running application services never receive migration credentials.
+The existing transaction lock permits exactly one initial principal.
+An unattended installation reports pending enrollment. Resume interactively to complete sign-in, or use the advanced operator interface below.
+
+See [guided onboarding](../installer/HOSTED.md#guided-google-setup-and-administrator-enrollment) for remote browser access and credential storage.
+
+## Advanced provider configuration
 
 Register a confidential web client with the district identity provider.
 Enable authorization code flow, S256 PKCE, and the `openid profile` scopes.
@@ -44,7 +64,7 @@ The generated policy permits this traffic from API pods only.
 Keep the CIDRs current when the provider changes addresses.
 The API uses system certificate trust for OIDC.
 
-## Enroll and inspect access
+## Advanced enrollment and access inspection
 
 Apply the application migrations before enrollment.
 Use the application migration role through a protected operator connection.

@@ -52,6 +52,7 @@ Rule IDs provide references for implementation plans, review findings, and accep
 - Check colors against the actual composed background, including selected and hover states.
 - Use only the Material Symbols icon family. Keep icon style consistent within each context.
 - Bundle required fonts and their licenses. Do not make core rendering depend on a font CDN.
+- The temporary installer credential page uses native controls before the application starts. Apply shared tokens, bundled fonts, and accessibility rules.
 - Use tabular numerals for numeric columns. Use the code type role for technical identifiers and evidence.
 
 ## UI-05 — Controls and copy

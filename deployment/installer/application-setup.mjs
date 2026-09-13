@@ -28,7 +28,12 @@ const cidrs = (value) =>
     );
   });
 
-export async function configureApplication(config, operator, q) {
+export async function configureApplication(
+  config,
+  operator,
+  q,
+  { importGoogle } = {},
+) {
   config.phase = Number(
     await q(
       'phase',
@@ -39,20 +44,43 @@ export async function configureApplication(config, operator, q) {
   );
   if (config.phase !== 2) return;
   config.services.edge.access = 'application';
+  const provider = await q(
+    'applicationAuth.provider',
+    'Sign-in provider (google/oidc)',
+    q.interactive &&
+      !q.hasAnswer?.('applicationAuth.clientId') &&
+      !q.hasAnswer?.('applicationAuth.issuer')
+      ? 'google'
+      : 'oidc',
+    (value) => ['google', 'oidc'].includes(value),
+  );
+  const imported =
+    provider === 'google'
+      ? await importGoogle({
+          publicOrigin: new URL(config.services.edge.endpoint.url).origin,
+          q,
+        })
+      : undefined;
   config.applicationAuth = {
-    issuer: await q(
-      'applicationAuth.issuer',
-      'OIDC issuer HTTPS URL',
-      undefined,
-      issuerUrl,
-    ),
-    clientId: await q(
-      'applicationAuth.clientId',
-      'OIDC client identifier',
-      undefined,
-      (value) =>
-        typeof value === 'string' && value.length > 0 && value.length <= 512,
-    ),
+    issuer: imported
+      ? 'https://accounts.google.com'
+      : await q(
+          'applicationAuth.issuer',
+          'OIDC issuer HTTPS URL',
+          undefined,
+          issuerUrl,
+        ),
+    clientId: imported
+      ? imported.clientId
+      : await q(
+          'applicationAuth.clientId',
+          'OIDC client identifier',
+          undefined,
+          (value) =>
+            typeof value === 'string' &&
+            value.length > 0 &&
+            value.length <= 512,
+        ),
     clientSecretRef:
       config.profile === 'kubernetes'
         ? { provider: 'kubernetes', name: 'campus-oidc', key: 'client-secret' }
@@ -93,4 +121,5 @@ export async function configureApplication(config, operator, q) {
       .split(',')
       .map((value) => value.trim());
   }
+  return imported;
 }

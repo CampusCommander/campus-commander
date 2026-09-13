@@ -223,7 +223,7 @@
       "title": "Qualify Phase 2 in all Docker, hybrid, and Kubernetes",
       "items": [23],
       "packages": "P9.2, P9.3, P9.4",
-      "deps": [12, 13],
+      "deps": [12, 13, 19],
       "scope": "Operators install and run the same authenticated application across all three supported deployment modes.",
       "criteria": [
         "Extend typed configuration, secret mounts, images, and installer output for application authentication.",
@@ -233,14 +233,14 @@
         "Preserve Phase 1 installer, network, and lifecycle behavior. Record exact environments and measured limits."
       ],
       "key": "CC-36",
-      "blockers": ["CC-34", "CC-35"],
-      "description": "## Parent\n\nCC-22\n\n## What to build\n\nOperators install and run the same authenticated application across all three supported deployment modes.\n\nPlanning items: 23. Packages: P9.2, P9.3, P9.4.\n\n## Acceptance criteria\n\n- [ ] Extend typed configuration, secret mounts, images, and installer output for application authentication.\n- [ ] Run the complete Phase 2 checks in all Docker, hybrid, and district Kubernetes.\n- [ ] Verify shared sessions and authenticated requests across API replicas.\n- [ ] Test restart, reschedule, service loss, artifact persistence, and isolated restore.\n- [ ] Preserve Phase 1 installer, network, and lifecycle behavior. Record exact environments and measured limits.\n\n## Blocked by\n\n- CC-34\n- CC-35\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+      "blockers": ["CC-34", "CC-35", "CC-41"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nOperators install and run the same authenticated application across all three supported deployment modes.\n\nPlanning items: 23. Packages: P9.2, P9.3, P9.4.\n\n## Acceptance criteria\n\n- [ ] Extend typed configuration, secret mounts, images, and installer output for application authentication.\n- [ ] Run the complete Phase 2 checks in all Docker, hybrid, and district Kubernetes.\n- [ ] Verify shared sessions and authenticated requests across API replicas.\n- [ ] Test restart, reschedule, service loss, artifact persistence, and isolated restore.\n- [ ] Preserve Phase 1 installer, network, and lifecycle behavior. Record exact environments and measured limits.\n\n## Blocked by\n\n- CC-34\n- CC-35\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open.\n\n## Operator feedback follow-up\n\nCC-41 blocks final qualification of the revised onboarding workflow."
     },
     {
       "title": "Publish and qualify the Phase 2 release",
       "items": [24],
       "packages": "P0.1, P9.2, P9.4",
-      "deps": [14],
+      "deps": [14, 17],
       "scope": "An operator installs a tagged Phase 2 release and upgrades a Phase 1 installation using published images.",
       "criteria": [
         "Publish signed images, digests, checksums, SBOM, and a versioned release manifest.",
@@ -250,8 +250,8 @@
         "Record known defects, supported workflows, and limits without marking Phase 1 acceptance complete."
       ],
       "key": "CC-37",
-      "blockers": ["CC-36"],
-      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn operator installs a tagged Phase 2 release and upgrades a Phase 1 installation using published images.\n\nPlanning items: 24. Packages: P0.1, P9.2, P9.4.\n\n## Acceptance criteria\n\n- [ ] Publish signed images, digests, checksums, SBOM, and a versioned release manifest.\n- [ ] Demonstrate clean installation and Phase 1 upgrade in all three deployment modes.\n- [ ] Verify new migrations, preserved state, application login, utility checks, and recovery after upgrade.\n- [ ] Run release integrity, dependency, image, and regression checks.\n- [ ] Record known defects, supported workflows, and limits without marking Phase 1 acceptance complete.\n\n## Blocked by\n\n- CC-36\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+      "blockers": ["CC-36", "CC-39"],
+      "description": "## Parent\n\nCC-22\n\n## What to build\n\nAn operator installs a tagged Phase 2 release and upgrades a Phase 1 installation using published images.\n\nPlanning items: 24. Packages: P0.1, P9.2, P9.4.\n\n## Acceptance criteria\n\n- [ ] Publish signed images, digests, checksums, SBOM, and a versioned release manifest.\n- [ ] Demonstrate clean installation and Phase 1 upgrade in all three deployment modes.\n- [ ] Verify new migrations, preserved state, application login, utility checks, and recovery after upgrade.\n- [ ] Run release integrity, dependency, image, and regression checks.\n- [ ] Record known defects, supported workflows, and limits without marking Phase 1 acceptance complete.\n\n## Blocked by\n\n- CC-36\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open.\n\n## Operator feedback follow-up\n\nCC-39 blocks final qualification of the revised onboarding workflow."
     },
     {
       "title": "Record Phase 2 acceptance and Jira evidence",
@@ -269,6 +269,69 @@
       "key": "CC-38",
       "blockers": ["CC-37"],
       "description": "## Parent\n\nCC-22\n\n## What to build\n\nA reviewer can trace every Phase 2 requirement to implementation, test results, and a released workflow.\n\nPlanning items: 24. Packages: All Phase 2 packages.\n\n## Acceptance criteria\n\n- [ ] Link all child issues to the Phase 2 epic and record dependencies.\n- [ ] Update portfolio milestones, application documentation, security decisions, and operational procedures.\n- [ ] Record actual UI rule IDs and validation evidence.\n- [ ] Audit every Phase 2 and shared release criterion against current evidence.\n- [ ] Complete Jira tasks only after their criteria pass. Complete the epic only after the full phase passes.\n\n## Blocked by\n\n- CC-37\n\n## Evidence\n\nRecord implementation references, exact Nx checks, environment, results, and remaining limits. Use synthetic data.\n\nThe owner authorized Phase 2 development while Phase 1 acceptance remains open."
+    },
+    {
+      "title": "Show activity and elapsed time during installer service startup",
+      "items": [23, 24],
+      "packages": "P9.2, P9.4",
+      "deps": [],
+      "scope": "The operator saw no activity indicator during step 5, including resume after a full disk.",
+      "criteria": [
+        "Report configuration verification, prerequisites, preparation, startup, and readiness stages.",
+        "Cover guided install, resume, status, hybrid preparation, and Kubernetes credential checks.",
+        "Verify periodic output and timer cleanup on success and failure.",
+        "Pass final lint and formatting checks.",
+        "Publish the change in a signed release and verify terminal behavior on the test VM."
+      ],
+      "key": "CC-39",
+      "blockers": [],
+      "description": "The operator saw no activity indicator during step 5, including resume after a full disk.\n\nShow the active stage immediately. Repeat a plain-text activity line every five seconds while work remains pending. Include elapsed time and report actual stage changes. Stop activity output when the operation succeeds, fails, or pauses for worker confirmation. Preserve the existing readiness result and failure behavior. Do not print captured command output or credentials.\n\nAcceptance criteria:\n\n- [x] Report configuration verification, prerequisites, preparation, startup, and readiness stages.\n- [x] Cover guided install, resume, status, hybrid preparation, and Kubernetes credential checks.\n- [x] Verify periodic output and timer cleanup on success and failure.\n- [x] Pass final lint and formatting checks.\n- [ ] Publish the change in a signed release and verify terminal behavior on the test VM.\n\nLocal implementation: deployment/installer/progress.mjs, setup.mjs, and orchestrator.mjs. The installer test suite passed 88 tests. This change is not in the operator's installed release.\n\nSource: operator feedback following the [passing manual test](https://easton-consulting.atlassian.net/browse/CC-38?focusedCommentId=10184).",
+      "source": "Operator onboarding feedback after the September 12 manual test."
+    },
+    {
+      "title": "Guide Google OAuth setup and import the downloaded web client JSON",
+      "items": [4, 23],
+      "packages": "P1.2, P9.2",
+      "deps": [],
+      "scope": "Replace separate client ID and secret-file entry with guided Google Workspace setup and one credential JSON import.",
+      "criteria": [
+        "Validate Google's web client JSON and extract client ID and secret together.",
+        "Use the fixed Google issuer and validate the exact configured callback URI.",
+        "Reject installed-client, service-account, malformed, oversized, and mismatched callback files with specific recovery instructions.",
+        "Store imported secrets atomically in the protected installation store. Resume preserves the original credentials.",
+        "Provide a protected browser upload for a headless Ubuntu VM. Keep local JSON import as an advanced option. Do not require file transfer, Python extraction, or secret-value terminal entry.",
+        "Retain generic OIDC and protected answers-file automation.",
+        "Preserve the explicit Kubernetes Secret ownership contract. Verify imported material against the selected cluster Secret.",
+        "Keep sign-in at openid profile. Do not request Google administration scopes or service-account access.",
+        "Test valid import, invalid files, interrupted storage writes, resume, and each supported deployment mode."
+      ],
+      "key": "CC-40",
+      "blockers": [],
+      "description": "Replace separate client ID and secret-file entry with guided Google Workspace setup and one credential JSON import.\n\nGAM research found guided Cloud project setup, direct console links, credential validation, managed files, and browser authorization. GAM still requests manual client ID and secret entry. Its installed-app credentials do not replace this application's confidential web client.\n\nImplemented operator flow:\n\n1. Select Google Workspace during setup.\n2. Open the supplied Google Cloud console links.\n3. Create an Internal Web application client with the installer-generated callback URI.\n4. Download the client JSON and upload it through the protected browser setup page.\n5. Review the detected project, client identifier, and callback match. Never display the secret.\n\nAcceptance criteria:\n\n- [ ] Validate Google's web client JSON and extract client ID and secret together.\n- [ ] Use the fixed Google issuer and validate the exact configured callback URI.\n- [ ] Reject installed-client, service-account, malformed, oversized, and mismatched callback files with specific recovery instructions.\n- [ ] Store imported secrets atomically in the protected installation store. Resume preserves the original credentials.\n- [ ] Provide a protected browser upload for a headless Ubuntu VM. Keep local JSON import as an advanced option. Do not require file transfer, Python extraction, or secret-value terminal entry.\n- [ ] Retain generic OIDC and protected answers-file automation.\n- [ ] Preserve the explicit Kubernetes Secret ownership contract. Verify imported material against the selected cluster Secret.\n- [ ] Keep sign-in at openid profile. Do not request Google administration scopes or service-account access.\n- [ ] Test valid import, invalid files, interrupted storage writes, resume, and each supported deployment mode.\n\nStatus: implemented and locally tested. Signed release qualification and operator retesting remain open.\n\nSource: operator feedback after the [manual test](https://easton-consulting.atlassian.net/browse/CC-38?focusedCommentId=10184) and [GAM source](https://github.com/GAM-team/GAM/tree/e9f6e38f6448596ce10ac09093d4601c4cd5e177).",
+      "source": "Operator onboarding feedback after the September 12 manual test."
+    },
+    {
+      "title": "Enroll the first administrator through installer-authorized browser sign-in",
+      "items": [4, 6, 23],
+      "packages": "P1.2, P6.1, P9.1, P9.2",
+      "deps": [18],
+      "scope": "The current recipe requires OAuth Playground and a separate application-access script. Replace both with an enrollment step inside guided installation.",
+      "criteria": [
+        "Require installer authorization and explicit confirmation of the verified identity. An empty principal table alone never enables enrollment.",
+        "Use a random, single-use, expiring pairing credential. Keep it out of URLs, command arguments, ordinary logs, and support bundles.",
+        "Bind browser pairing, OIDC state, and the verified candidate to the same attempt. Bound attempts and deny replay.",
+        "Keep migration credentials outside API, frontend, edge, and worker containers. The installer performs the protected grant.",
+        "Serialize first-admin creation using the existing transaction lock. Exactly one principal wins concurrent enrollment.",
+        "Resume inspects existing access, preserves completed enrollment, and expires abandoned attempts. Redis loss grants no access.",
+        "Support headless Ubuntu with a Windows browser and all three deployment modes.",
+        "Provide pending, denied, expired, retry, and completed states under UI-05, UI-06, UI-08, UI-09, and FORM-01.",
+        "Test normal sign-in, wrong identity cancellation, forged callbacks, expired pairing, replay, concurrency, disk interruption, restart, and already-enrolled resume.",
+        "Replace Playground, subject lookup, and separate-script instructions after the complete flow passes browser and release qualification."
+      ],
+      "key": "CC-41",
+      "blockers": ["CC-40"],
+      "description": "The current recipe requires OAuth Playground and a separate application-access script. Replace both with an enrollment step inside guided installation.\n\nImplemented operator flow:\n\n1. After service readiness, the installer checks whether an application principal already exists.\n2. For an empty installation, the installer creates a short-lived enrollment attempt and displays its browser address and private pairing code.\n3. The operator pairs the browser with that installer attempt and selects Sign in with Google.\n4. The API verifies the normal OIDC callback, including issuer, audience, state, nonce, and PKCE.\n5. The installer displays the verified candidate for confirmation. Email and display name are labels, never identity authority.\n6. The installer grants initial access through its existing protected migration operation.\n7. The browser completes normal application sign-in after enrollment. The installer reports success and the audit reference.\n\nAcceptance criteria:\n\n- [ ] Require installer authorization and explicit confirmation of the verified identity. An empty principal table alone never enables enrollment.\n- [ ] Use a random, single-use, expiring pairing credential. Keep it out of URLs, command arguments, ordinary logs, and support bundles.\n- [ ] Bind browser pairing, OIDC state, and the verified candidate to the same attempt. Bound attempts and deny replay.\n- [ ] Keep migration credentials outside API, frontend, edge, and worker containers. The installer performs the protected grant.\n- [ ] Serialize first-admin creation using the existing transaction lock. Exactly one principal wins concurrent enrollment.\n- [ ] Resume inspects existing access, preserves completed enrollment, and expires abandoned attempts. Redis loss grants no access.\n- [ ] Support headless Ubuntu with a Windows browser and all three deployment modes.\n- [ ] Provide pending, denied, expired, retry, and completed states under UI-05, UI-06, UI-08, UI-09, and FORM-01.\n- [ ] Test normal sign-in, wrong identity cancellation, forged callbacks, expired pairing, replay, concurrency, disk interruption, restart, and already-enrolled resume.\n- [ ] Replace Playground, subject lookup, and separate-script instructions after the complete flow passes browser and release qualification.\n\nStatus: implemented and locally tested. Signed release qualification and operator retesting remain open.\n\nSource: operator feedback after the [manual test](https://easton-consulting.atlassian.net/browse/CC-38?focusedCommentId=10184). Preserve the [existing application-access boundary](https://github.com/CampusCommander/campus-commander/blob/436d3b0698a54b3268e608d83524b0d5c7195a25/deployment/bootstrap/APPLICATION-ACCESS.md).",
+      "source": "Operator onboarding feedback after the September 12 manual test."
     }
   ]
 }

@@ -12,6 +12,11 @@ const authenticated: CanActivateFn = async () => {
 
 export const routes: Routes = [
   {
+    path: 'setup',
+    title: 'Administrator setup · Campus Commander',
+    loadComponent: () => import('./setup/setup').then((m) => m.Setup),
+  },
+  {
     path: 'login',
     title: 'Sign in · Campus Commander',
     loadComponent: () => import('./login/login').then((m) => m.Login),

@@ -92,6 +92,11 @@ export async function prepareKubernetesInstaller({
       });
   }
   const installerRoot = resolve(process.env.CC_AUTH_INSTALLER_ROOT ?? '.');
+  const { applicationAccess } = await import(
+    pathToFileURL(
+      join(installerRoot, 'deployment/installer/application-enrollment.mjs'),
+    ).href
+  );
   const source = process.env.CC_AUTH_INSTALLER_ROOT
     ? 'verified-extracted-bundle'
     : 'workspace';
@@ -260,6 +265,15 @@ process.exit(result.status??1);
       assert.equal(await readFile(generatedPath, 'utf8'), original);
   };
   return {
+    applicationAccess: async (input) =>
+      applicationAccess(
+        JSON.parse(await readFile(operatorPath, 'utf8')),
+        input,
+        (file, args, options) => {
+          assert.equal(file, 'kubectl');
+          return kube(args.slice(4), options.input);
+        },
+      ),
     cli,
     resources: () => JSON.parse(original),
     resume: (startForward) =>

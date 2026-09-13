@@ -481,6 +481,7 @@ export async function executeInstaller({
   operator,
   qualification = false,
   dependencies = {},
+  onProgress = () => undefined,
 }) {
   const run = dependencies.run ?? runCommand;
   try {
@@ -531,6 +532,7 @@ export async function executeInstaller({
       'erase',
       'reset-bootstrap',
     ].includes(command);
+    onProgress('Verifying the installation release');
     let release;
     if (localLifecycle) {
       await privateRoot(operator.installationRoot);
@@ -980,6 +982,7 @@ export async function executeInstaller({
         }
         return run(file, args);
       };
+      onProgress('Checking host and service prerequisites');
       const prerequisites = await (dependencies.preflight ?? preflight)(
         config,
         {
@@ -1018,6 +1021,7 @@ export async function executeInstaller({
             'Your installation directory retains configuration and prerequisite results.',
           ].join('\n'),
         );
+      onProgress('Preparing credentials and service configuration');
       if (config.profile === 'all-docker')
         await prepareAllDocker(operator.configurationPath, root);
       else if (
@@ -1143,6 +1147,7 @@ export async function executeInstaller({
       await save();
       if (command === 'prepare')
         return { status: 'prepared', acceptedRelease: state.acceptedRelease };
+      onProgress('Starting services and downloading missing images');
       if (config.profile === 'kubernetes')
         await kube('apply', '-f', kubernetesFile);
       else
@@ -1154,6 +1159,7 @@ export async function executeInstaller({
       state.phase = 'started';
       if (!state.steps.includes('started')) state.steps.push('started');
       await save();
+      onProgress('Waiting for service readiness');
       let ready;
       for (
         let attempt = 0;
