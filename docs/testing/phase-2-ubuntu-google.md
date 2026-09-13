@@ -5,15 +5,15 @@ Use your ordinary Ubuntu login with sudo access. Use your Windows computer for t
 The reference platform is Ubuntu 24.04 LTS on Intel or AMD 64-bit hardware.
 Allow 8 GB RAM and sufficient disk space. This recipe uses the all-Docker installation mode.
 
-Target test release: `phase-2-lab-a1a6b227bf32`.
-Installer source revision: `a1a6b227bf32a3ee31205d6992428b26848fc0ef`.
+Target test release: `phase-2-lab-896e086ce3f3`.
+Installer source revision: `896e086ce3f32954c9abe7a15f93953f8a0ff40f`.
 This recipe tests browser credential import, installer administrator enrollment, progress output, update, and uninstall.
 The lab workflow uses eight active jobs. Full profile qualification runs separately on request.
 The workflow publishes the lab release only after authentication and extracted All-Docker installation checks pass.
 
 **Publication gate:** This recipe does not establish that the target release is available.
-Check the [target workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34780484347) before starting.
-Wait for successful completion and the [target release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-lab-a1a6b227bf32).
+Check the [target workflow](https://github.com/CampusCommander/campus-commander/actions/runs/34782185310) before starting.
+Wait for successful completion and the [target release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-lab-896e086ce3f3).
 If the workflow fails or the release page is missing, stop and report that result.
 Do not substitute release `436d3b0698a5`. It contains the previous onboarding flow.
 
@@ -119,8 +119,8 @@ Run these commands on Ubuntu:
 
 ```bash
 mkdir -p "$HOME/cc-test-tools"
-curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/a1a6b227bf32a3ee31205d6992428b26848fc0ef/install.sh -o "$HOME/cc-test-tools/install.sh"
-sh "$HOME/cc-test-tools/install.sh" --release phase-2-lab-a1a6b227bf32 --verify-only
+curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/896e086ce3f32954c9abe7a15f93953f8a0ff40f/install.sh -o "$HOME/cc-test-tools/install.sh"
+sh "$HOME/cc-test-tools/install.sh" --release phase-2-lab-896e086ce3f3 --verify-only
 ```
 
 **Expected result:** The installer reports that release signatures and file checksums passed.
@@ -139,7 +139,7 @@ Run on Ubuntu:
 
 ```bash
 sh "$HOME/cc-test-tools/install.sh" \
-  --release phase-2-lab-a1a6b227bf32 \
+  --release phase-2-lab-896e086ce3f3 \
   --profile all-docker \
   --root "$HOME/cc-phase2-lab"
 ```
@@ -238,7 +238,7 @@ If browser policy prevents continuation, use an administrator-approved trusted c
 
 Select **Sign in to Campus Commander** and choose the Google account enrolled in step 6.
 You should reach **Your account**.
-The footer's build should identify revision `a1a6b22`. The version can retain the `phase-2-candidate` image label.
+The footer's build should identify revision `896e086`. The version can retain the `phase-2-candidate` image label.
 
 **8. Complete the first browser test**
 
@@ -364,7 +364,7 @@ First test selection of the release that is already installed:
 ```bash
 sh "$HOME/cc-test-tools/install.sh" \
   --root "$HOME/cc-phase2-lab" \
-  --release phase-2-lab-a1a6b227bf32 \
+  --release phase-2-lab-896e086ce3f3 \
   --update
 ```
 
@@ -406,7 +406,7 @@ Record the source release, target release, and recovery result separately from t
 Use this format for each failure:
 
 ```text
-Release: phase-2-lab-a1a6b227bf32
+Release: phase-2-lab-896e086ce3f3
 Test:
 Expected:
 Observed:
@@ -449,4 +449,4 @@ Do not erase volumes while you still need the test evidence or saved account.
 This recipe covers guided all-Docker onboarding, application behavior, and the maintenance checks listed above.
 Hybrid services, Kubernetes, isolated backup restore, and Phase 1 upgrades require separate environment tests.
 Use the [Phase 2 installer procedure](../../deployment/installer/PHASE-2.md) and [operator recovery procedure](../../deployment/bootstrap/APPLICATION-ACCESS.md) for those later sessions.
-Consult the [target release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-lab-a1a6b227bf32) for published evidence and its limits.
+Consult the [target release](https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-lab-896e086ce3f3) for published evidence and its limits.
