@@ -281,6 +281,10 @@ The imported secret must match the selected existing Kubernetes Secret. The inst
 
 Use the same installation directory. The update option selects the newest published release for the installed phase.
 Use `--release` to select a specific immutable release.
+Phase 2 development builds use `phase-2-lab-<revision12>` tags.
+They retain signature verification and require candidate laboratory mode.
+Their release workflow publishes them after focused authentication and All-Docker bundle checks.
+Full profile qualification remains a separate workflow request.
 
 ```sh
 sh install.sh --root /home/seaston/cc-phase2-lab --update

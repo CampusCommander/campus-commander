@@ -387,6 +387,33 @@ test('candidate inventory excludes untracked secrets and cannot pass release qua
       );
     }
     await verifyReleaseFiles(phase2Output, phase2);
+    const labOutput = join(root, 'lab-bundle');
+    const lab = await assembleCandidate({
+      root,
+      output: labOutput,
+      artifacts: join(root, 'artifacts'),
+      sourceRevision,
+      phase: 2,
+      qualificationArtifacts,
+      mode: 'lab',
+    });
+    assert.equal(lab.validationScope, 'lab');
+    assert.equal(lab.qualification, 'candidate-only');
+    assert.deepEqual(Object.keys(lab.applicationEvidence), [
+      'auth-image-integration',
+    ]);
+    assert.equal(lab.evidence['all-docker'].install.status, 'not-run');
+    await verifyReleaseFiles(labOutput, lab);
+    assert.throws(() => assertReleaseEvidence(lab));
+    await assert.rejects(
+      assembleQualifiedRelease({
+        candidateRoot: labOutput,
+        qualifications: join(root, 'unused'),
+        output: join(root, 'lab-promotion'),
+        sourceRevision,
+      }),
+      /Lab builds require a full qualification/,
+    );
     const bundleQualifications = join(root, 'bundle-qualifications');
     const manifestSha256 = sha256(
       await readFile(join(phase2Output, 'release-manifest.json')),

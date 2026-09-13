@@ -124,6 +124,11 @@ export async function assembleQualifiedRelease({
     join(candidatePath, 'release-manifest.json'),
   );
   const candidateInput = JSON.parse(candidateBytes);
+  assert.notEqual(
+    candidateInput.validationScope,
+    'lab',
+    'Lab builds require a full qualification run before release promotion.',
+  );
   const { manifest: candidate, manifestSha256 } = await loadQualificationBundle(
     candidatePath,
     {

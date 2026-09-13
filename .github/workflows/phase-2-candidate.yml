@@ -2,14 +2,61 @@ name: Phase 2 candidate images
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Lab build or full profile qualification
+        type: choice
+        default: lab
+        options:
+          - lab
+          - full
   push:
     branches:
       - implementation/phase-2-cc-22
+    paths:
+      - 'api/**'
+      - 'frontend/**'
+      - 'worker/**'
+      - 'application-contracts/**'
+      - 'api-e2e/**'
+      - 'deployment/**'
+      - '!deployment/**/*.md'
+      - '!deployment/evidence/**'
+      - 'tools/**'
+      - 'install.sh'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'nx.json'
+      - 'tsconfig*.json'
+      - '.github/actions/**'
+      - '.github/workflows/phase-2-candidate.yml'
+
+concurrency:
+  group: phase-2-${{ github.ref }}-${{ inputs.mode || 'lab' }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      application: ${{ steps.select.outputs.application }}
+      bundle: ${{ steps.select.outputs.bundle }}
+    steps:
+      - id: select
+        env:
+          MODE: ${{ inputs.mode || 'lab' }}
+        run: |
+          if [ "$MODE" = full ]; then
+            echo 'application=["auth-image-integration","all-docker-integration","all-docker-process-fault-integration","all-docker-capacity-integration","all-docker-certificate-integration","hybrid-integration","hybrid-cli-integration","hybrid-cli-upgrade-integration","hybrid-cli-process-fault-integration","hybrid-cli-capacity-integration","hybrid-cli-certificate-integration","hybrid-upgrade-integration","hybrid-restore-integration","kubernetes-integration","kubernetes-upgrade-integration","kubernetes-process-fault-integration","kubernetes-certificate-integration","kubernetes-replica-integration","kubernetes-capacity-integration","kubernetes-restore-integration","upgrade-integration","restore-integration","screen-reader-integration"]' >> "$GITHUB_OUTPUT"
+            echo 'bundle=["all-docker-integration","upgrade-integration","restore-integration","all-docker-process-fault-integration","hybrid-cli-integration","hybrid-cli-upgrade-integration","hybrid-restore-integration","hybrid-cli-process-fault-integration","kubernetes-integration","kubernetes-upgrade-integration","kubernetes-restore-integration","kubernetes-process-fault-integration"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'application=["auth-image-integration"]' >> "$GITHUB_OUTPUT"
+            echo 'bundle=["all-docker-integration"]' >> "$GITHUB_OUTPUT"
+          fi
+
   validate:
     runs-on: ubuntu-latest
     steps:
@@ -26,7 +73,8 @@ jobs:
         env:
           NX_NO_CLOUD: 'true'
       - run: npm exec nx run-many -- -t bootstrap-test,redis-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test -p deployment
-      - run: npm exec nx run-many -- -t qualify-redis,postgres-integration,storage-integration,operations-integration -p deployment --parallel=2
+      - if: inputs.mode == 'full'
+        run: npm exec nx run-many -- -t qualify-redis,postgres-integration,storage-integration,operations-integration -p deployment --parallel=2
         env:
           NX_NO_CLOUD: 'true'
 
@@ -100,6 +148,7 @@ jobs:
           if-no-files-found: error
 
   capacity:
+    if: inputs.mode == 'full'
     needs: publish
     runs-on: ubuntu-latest
     permissions:
@@ -236,7 +285,7 @@ jobs:
           if-no-files-found: error
 
   application:
-    needs: publish
+    needs: [publish, plan]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -244,32 +293,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target:
-          [
-            auth-image-integration,
-            all-docker-integration,
-            all-docker-process-fault-integration,
-            all-docker-capacity-integration,
-            all-docker-certificate-integration,
-            hybrid-integration,
-            hybrid-cli-integration,
-            hybrid-cli-upgrade-integration,
-            hybrid-cli-process-fault-integration,
-            hybrid-cli-capacity-integration,
-            hybrid-cli-certificate-integration,
-            hybrid-upgrade-integration,
-            hybrid-restore-integration,
-            kubernetes-integration,
-            kubernetes-upgrade-integration,
-            kubernetes-process-fault-integration,
-            kubernetes-certificate-integration,
-            kubernetes-replica-integration,
-            kubernetes-capacity-integration,
-            kubernetes-restore-integration,
-            upgrade-integration,
-            restore-integration,
-            screen-reader-integration,
-          ]
+        target: ${{ fromJSON(needs.plan.outputs.application) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
@@ -312,7 +336,11 @@ jobs:
         run: |
           for service in api frontend worker; do
             reference="$(cat "image-evidence/${service}.reference")"
-            docker pull "$reference"
+            for attempt in 1 2 3; do
+              if docker pull "$reference"; then break; fi
+              if [ "$attempt" -eq 3 ]; then exit 1; fi
+              sleep "$((attempt * 2))"
+            done
             printf 'CC_AUTH_%s_IMAGE=%s\n' "${service^^}" "$reference" >> "$GITHUB_ENV"
           done
       - name: Install verified Kind binary
@@ -372,6 +400,9 @@ jobs:
 
   bundle:
     needs: [publish, capacity, application]
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' && needs.application.result == 'success' &&
+          (needs.capacity.result == 'success' || (inputs.mode != 'full' && needs.capacity.result == 'skipped')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -399,8 +430,10 @@ jobs:
         env:
           NX_NO_CLOUD: 'true'
       - name: Assemble and sign candidate bundle
+        env:
+          BUILD_MODE: ${{ inputs.mode || 'lab' }}
         run: |
-          node deployment/release/candidate.mjs candidate-bundle image-evidence "$GITHUB_SHA" 2 qualification-evidence
+          node deployment/release/candidate.mjs candidate-bundle image-evidence "$GITHUB_SHA" 2 qualification-evidence "$BUILD_MODE"
           source_time="$(git show -s --format=%ct "$GITHUB_SHA")"
           tar --sort=name --mtime="@${source_time}" --owner=0 --group=0 --numeric-owner -cf phase-2-candidate.tar -C candidate-bundle .
           gzip -n phase-2-candidate.tar
@@ -421,40 +454,32 @@ jobs:
           if-no-files-found: error
 
       - name: Publish project candidate release
+        if: inputs.mode == 'full'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_MODE: ${{ inputs.mode || 'lab' }}
         run: |
           candidate_tag="phase-2-candidate-${GITHUB_SHA:0:12}"
+          if [ "$BUILD_MODE" = lab ]; then candidate_tag="phase-2-lab-${GITHUB_SHA:0:12}"; fi
           cat > candidate-notes.md <<'NOTES'
           This candidate contains signed Linux amd64 application images and an installation bundle.
           The manifest records image digests, source revision, file checksums, and SBOMs.
+          Lab builds run focused authentication checks. Full profile qualification requires a separate workflow request.
           Profile qualification remains incomplete. Do not treat this candidate as an accepted Phase 2 release.
           Verify the bundle signature and the independently trusted workflow identity before extraction.
           NOTES
           gh release create "$candidate_tag" --target "$GITHUB_SHA" --prerelease --title "Phase 2 candidate ${GITHUB_SHA:0:12}" --notes-file candidate-notes.md phase-2-candidate.tar.gz phase-2-candidate.sigstore.json candidate-bundle/release-manifest.json candidate-bundle/release-manifest.sigstore.json
 
   bundle-application:
-    needs: bundle
+    needs: [bundle, plan]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: read
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - all-docker-integration
-          - upgrade-integration
-          - restore-integration
-          - all-docker-process-fault-integration
-          - hybrid-cli-integration
-          - hybrid-cli-upgrade-integration
-          - hybrid-restore-integration
-          - hybrid-cli-process-fault-integration
-          - kubernetes-integration
-          - kubernetes-upgrade-integration
-          - kubernetes-restore-integration
-          - kubernetes-process-fault-integration
+        target: ${{ fromJSON(needs.plan.outputs.bundle) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
@@ -497,7 +522,11 @@ jobs:
         run: |
           for service in api frontend worker; do
             reference="$(cat "image-evidence/${service}.reference")"
-            docker pull "$reference"
+            for attempt in 1 2 3; do
+              if docker pull "$reference"; then break; fi
+              if [ "$attempt" -eq 3 ]; then exit 1; fi
+              sleep "$((attempt * 2))"
+            done
             printf 'CC_AUTH_%s_IMAGE=%s\n' "${service^^}" "$reference" >> "$GITHUB_ENV"
           done
       - name: Install verified Kind binary
@@ -584,7 +613,21 @@ jobs:
           path: dist/phase-2-evidence/
           if-no-files-found: warn
 
+      - name: Publish tested lab release
+        if: inputs.mode != 'full'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          lab_tag="phase-2-lab-${GITHUB_SHA:0:12}"
+          cat > lab-notes.md <<'NOTES'
+          This lab build passed authentication checks and the extracted All-Docker installation test.
+          Its archive, manifest, and application images retain signature verification and vulnerability scans.
+          Full profile qualification has not run. Use candidate laboratory mode for installation.
+          NOTES
+          gh release create "$lab_tag" --target "$GITHUB_SHA" --prerelease --title "Phase 2 lab ${GITHUB_SHA:0:12}" --notes-file lab-notes.md published-bundle/phase-2-candidate.tar.gz published-bundle/phase-2-candidate.sigstore.json published-bundle/candidate-bundle/release-manifest.json published-bundle/candidate-bundle/release-manifest.sigstore.json
+
   qualified-bundle:
+    if: inputs.mode == 'full'
     needs: [bundle, bundle-application]
     runs-on: ubuntu-latest
     permissions:

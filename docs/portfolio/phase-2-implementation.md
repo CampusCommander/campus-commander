@@ -1236,3 +1236,14 @@ The [maintenance instructions](../../deployment/installer/HOSTED.md#update-an-in
 All 113 installer tests, seven operations tests, and seven release tests passed. Deployment build and lint passed.
 The [validation record](../../deployment/evidence/CC-37-hosted-maintenance-validation.json) identifies the tested files and execution limits.
 Release publication and VM validation remain open under CC-37 and CC-38.
+
+## Development feedback duration
+
+The operator rejected the 24-minute and 40-minute qualification waits during installation development.
+Routine source pushes now select eight active lab jobs. Documentation and evidence updates skip image publication.
+Pull requests retain affected checks without duplicate container qualification.
+Full profile qualification requires an explicit workflow request. Its complete test matrices remain available.
+Lab publication follows authentication checks and the extracted All-Docker installation test.
+Lab manifests cannot enter profile-qualified release assembly.
+The [validation record](../../deployment/evidence/CC-37-development-workflow-validation.json) records 125 passing tests and workflow validation.
+Local checks completed in 20.4 seconds. The first hosted run must establish actual elapsed time.

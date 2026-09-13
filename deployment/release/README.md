@@ -75,13 +75,29 @@ Create a new source commit for a new candidate. Do not replace assets or rebind 
 ## Phase 2 candidate
 
 The Phase 2 workflow uses `.github/workflows/phase-2-candidate.yml` on `implementation/phase-2-cc-22`.
+Routine source pushes select the eight-job lab path. Documentation and evidence changes do not trigger image publication.
+Lab builds retain production dependency checks, image scans, signatures, authentication tests, and the extracted All-Docker installation test.
+The workflow publishes `phase-2-lab-<revision12>` only after that installation test passes.
+The archive filenames remain `phase-2-candidate.tar.gz` and `phase-2-candidate.sigstore.json`.
+Lab manifests declare `validationScope: lab`, retain `candidate-only` status, and record unexecuted profile gates as `not-run`.
+The installer accepts lab tags through the same signature verification and candidate acknowledgment procedure.
+
+Select **Run workflow**, the implementation branch, and mode **full** to execute all profile qualification checks.
+Full runs retain every application and bundle test. Lab manifests cannot enter profile-qualified assembly.
+Lab and full runs use separate concurrency groups. Full runs do not cancel active qualification work.
+Pull requests run affected build, lint, unit, and deployment checks without duplicate container qualification.
+The CI workflow retains its larger integration jobs for main pushes and explicit `full` requests.
+
+The workflow uses GitHub's [path filters and manual inputs](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+The first hosted lab run must establish elapsed time. Job-count reduction does not guarantee runner availability or download speed.
+
 Its independently expected signing identity is:
 
 ```text
 https://github.com/CampusCommander/campus-commander/.github/workflows/phase-2-candidate.yml@refs/heads/implementation/phase-2-cc-22
 ```
 
-The workflow requires production dependency checks and scans each runtime image before publication.
+The full workflow requires production dependency checks and scans each runtime image before publication.
 It tests published application images and all three deployment profiles.
 All three deployment profiles have Phase 1 upgrade and isolated application restore targets.
 It also tests named diagnostic announcements through Orca in an isolated desktop session.

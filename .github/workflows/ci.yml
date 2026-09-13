@@ -5,6 +5,16 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run browser and infrastructure integration checks
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   actions: read
@@ -27,14 +37,24 @@ jobs:
       - run: npm ci
 
       - run: npm exec nx format:check -- --base="remotes/origin/main"
-      - run: npm exec nx run-many -- -t lint,test,build,typecheck -p deployment,frontend,api,worker,application-contracts
+      - name: Select comparison revision
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git cat-file -e "${BASE_REVISION:-missing}^{commit}" 2>/dev/null; then
+            echo "NX_BASE=$BASE_REVISION" >> "$GITHUB_ENV"
+          else
+            echo "NX_BASE=$(git rev-parse HEAD^)" >> "$GITHUB_ENV"
+          fi
+      - run: npm exec nx affected -- -t lint,test,build,typecheck --base="$NX_BASE" --head=HEAD
         env:
           NX_NO_CLOUD: ${{ vars.NX_CLOUD_ENABLED != 'true' }}
       - run: npm exec nx run api-e2e:e2e
       - run: npm exec nx run deployment:validate-examples
-      - run: npm exec nx run-many -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test -p deployment
+      - run: npm exec nx affected -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test --base="$NX_BASE" --head=HEAD
 
   foundation-integration:
+    if: github.event_name == 'push' || inputs.full == true
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -58,6 +78,7 @@ jobs:
           NX_NO_CLOUD: 'true'
 
   browser:
+    if: github.event_name == 'push' || inputs.full == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -72,6 +93,7 @@ jobs:
           NX_NO_CLOUD: 'true'
 
   application-integration:
+    if: github.event_name == 'push' || inputs.full == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

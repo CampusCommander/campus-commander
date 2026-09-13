@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-13T20:20:52.141451+00:00",
+  "scope": "Phase 2 development feedback and lab publication",
+  "checks": {
+    "installerTests": 114,
+    "releaseAndWorkflowTests": 11,
+    "failed": 0,
+    "deploymentBuild": "passed",
+    "deploymentLint": "passed",
+    "actionlint": "1.7.12 passed",
+    "shellSyntax": "passed"
+  },
+  "localNxElapsedSeconds": 20.4,
+  "workflowChanges": {
+    "automaticLabJobs": 8,
+    "fullApplicationTargets": 23,
+    "fullBundleTargets": 12,
+    "documentationTriggersImagePublication": false,
+    "labPublicationRequiresBundleTest": true,
+    "qualifiedPromotionAcceptsLabManifest": false
+  },
+  "limitations": [
+    "Hosted elapsed time requires the first run of the changed workflow.",
+    "Lab builds do not establish full profile qualification."
+  ],
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "f8076fc8f2ed5e362fd4c88ac3db96b75efc143d12c5bb416897a585e9d00839"
+    },
+    {
+      "path": ".github/workflows/phase-2-candidate.yml",
+      "sha256": "8f96a9b1289efd569d86ed069cbd0920f3e6b4f9d1982da7626c9e9896d44de0"
+    },
+    {
+      "path": "deployment/release/candidate.mjs",
+      "sha256": "62f2d8fd1806e43b340e58db4e2d16efa35d475e81da7ab91f90c708c0e9f7e1"
+    },
+    {
+      "path": "deployment/release/qualified.mjs",
+      "sha256": "444b4090ce18f9e169970a4f43fd12dc1cbd1fa6e6ab623788b70215d51ff19a"
+    },
+    {
+      "path": "deployment/release/workflows.test.mjs",
+      "sha256": "646731fb5f545edaf5f4279573aaba6a2234f2c20acc26a09b05c0e54cfe2b17"
+    },
+    {
+      "path": "deployment/release/candidate.test.mjs",
+      "sha256": "30e7320ae4c4982256f8850a74003d48662af7fe18a68966f9f9b7254feafa80"
+    },
+    {
+      "path": "deployment/installer/entry.test.mjs",
+      "sha256": "6e5a4284f112545a0c8c32620718ee7057bbcfe6a6a3915c5ac5e7f4c0fe5ed5"
+    },
+    {
+      "path": "install.sh",
+      "sha256": "a51f85d27de565f47aed6fbfdea328f14f3e75020b375528ad61eb2e184d51f1"
+    }
+  ]
+}

@@ -28,8 +28,11 @@ export async function assembleCandidate({
   sourceRevision,
   phase = 1,
   qualificationArtifacts,
+  mode = 'full',
 }) {
   if (![1, 2].includes(phase)) throw new Error('Select release phase 1 or 2.');
+  if (!['full', 'lab'].includes(mode) || (mode === 'lab' && phase !== 2))
+    throw new Error('Select full qualification or a Phase 2 lab build.');
   if (!/^[a-f0-9]{40}$/.test(sourceRevision))
     throw new Error('Candidate requires a source revision.');
   const head = (
@@ -142,7 +145,14 @@ export async function assembleCandidate({
   if (phase === 2) {
     if (!qualificationArtifacts)
       throw new Error('Phase 2 requires application qualification artifacts.');
-    for (const [target, filename] of Object.entries(applicationReports)) {
+    const reports =
+      mode === 'lab'
+        ? {
+            'auth-image-integration':
+              applicationReports['auth-image-integration'],
+          }
+        : applicationReports;
+    for (const [target, filename] of Object.entries(reports)) {
       const source = resolve(
         qualificationArtifacts,
         `qualification-${target}`,
@@ -182,6 +192,7 @@ export async function assembleCandidate({
     platform: 'linux/amd64',
     images,
     qualification: 'candidate-only',
+    ...(mode === 'lab' ? { validationScope: 'lab' } : {}),
     ...(phase === 2 ? { applicationEvidence } : {}),
     evidence: Object.fromEntries(
       ['all-docker', 'hybrid', 'kubernetes'].map((profile) => [
@@ -220,10 +231,11 @@ if (
     sourceRevision,
     phase = '1',
     qualificationArtifacts,
+    mode = 'full',
   ] = process.argv.slice(2);
   if (!output || !artifacts || !sourceRevision)
     throw new Error(
-      'Usage: candidate.mjs <new-output-directory> <image-artifacts> <source-revision> [phase] [qualification-artifacts]',
+      'Usage: candidate.mjs <new-output-directory> <image-artifacts> <source-revision> [phase] [qualification-artifacts] [full|lab]',
     );
   assembleCandidate({
     root: process.cwd(),
@@ -231,6 +243,7 @@ if (
     artifacts: resolve(artifacts),
     sourceRevision,
     phase: Number(phase),
+    mode,
     qualificationArtifacts: qualificationArtifacts
       ? resolve(qualificationArtifacts)
       : undefined,

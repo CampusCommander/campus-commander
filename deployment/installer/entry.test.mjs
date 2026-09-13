@@ -25,11 +25,12 @@ async function fixture(
     phase = 1,
     wrongPhase = false,
     qualified = false,
+    lab = false,
     wrongQualification = false,
   } = {},
 ) {
   const candidate = `phase-${phase}-${qualified ? 'qualified' : 'candidate'}`;
-  const tag = `${candidate}-${revision.slice(0, 12)}`;
+  const tag = `${lab ? 'phase-2-lab' : candidate}-${revision.slice(0, 12)}`;
   const root = await mkdtemp(join(tmpdir(), 'cc-entry-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const bundle = join(root, 'bundle'),
@@ -51,6 +52,7 @@ async function fixture(
     content['deployment/installer/setup.mjs'];
   const manifest = {
     schemaVersion: 1,
+    ...(lab ? { validationScope: 'lab', qualification: 'candidate-only' } : {}),
     ...(phase === 2 ? { phase: wrongPhase ? 1 : 2 } : {}),
     ...(qualified
       ? {
@@ -348,8 +350,8 @@ for (const variant of [
   });
 }
 
-async function installedFixture(t) {
-  const f = await fixture(t, { phase: 2 });
+async function installedFixture(t, options = {}) {
+  const f = await fixture(t, { phase: 2, ...options });
   const root = join(f.root, 'installation');
   await mkdir(root, { mode: 0o700 });
   const result = f.run([
@@ -420,6 +422,31 @@ test('hosted uninstall uses the installed CLI, requires exact confirmation, and 
     f.operator,
   );
   assert.match(result.stderr, /data and credentials remain/);
+});
+
+test('lab releases verify signatures and retain the lab identity during resume', async (t) => {
+  const f = await installedFixture(t, { lab: true });
+  const before = (await f.trace())
+    .split('\n')
+    .filter((line) => line.startsWith('download'));
+  assert.ok(before.some((line) => line.includes('phase-2-lab-aaaaaaaaaaaa')));
+  assert.equal(((await f.trace()).match(/cosign \["verify"/g) || []).length, 3);
+  const result = f.run([
+    '--root',
+    f.installationRoot,
+    '--command',
+    'resume',
+    '--answers',
+    f.answers,
+    '--accept-license',
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+  const args = JSON.parse(await f.executed());
+  assert.equal(args[args.indexOf('--command') + 1], 'resume');
+  assert.deepEqual(
+    (await f.trace()).split('\n').filter((line) => line.startsWith('download')),
+    before,
+  );
 });
 
 test('hosted update verifies a different release before handing it to guided setup', async (t) => {
