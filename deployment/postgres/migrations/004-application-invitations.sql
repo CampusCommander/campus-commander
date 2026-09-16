@@ -49,7 +49,8 @@ $$;
 
 CREATE FUNCTION cc.invitation_grants_allowed(p_actor uuid, p_grants jsonb) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, cc AS $$
-  SELECT jsonb_typeof(p_grants)='array' AND jsonb_array_length(p_grants)<=11 AND NOT EXISTS (
+  SELECT jsonb_typeof(p_grants)='array' AND jsonb_array_length(p_grants)<=11 AND
+    (SELECT count(DISTINCT g->>'action') FROM jsonb_array_elements(p_grants) AS g)=jsonb_array_length(p_grants) AND NOT EXISTS (
     SELECT 1 FROM jsonb_array_elements(p_grants) AS g WHERE
       jsonb_typeof(g) <> 'object' OR g - ARRAY['action','scope'] <> '{}'::jsonb OR
       g->'scope' IS DISTINCT FROM '{"kind":"platform"}'::jsonb OR NOT EXISTS (

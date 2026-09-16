@@ -12,7 +12,7 @@
   <section class="card" aria-labelledby="create-invitation-title">
     <h2 id="create-invitation-title">Invite a platform user</h2>
     <form (ngSubmit)="create()">
-      <mat-form-field appearance="outline"
+      <mat-form-field appearance="outline" subscriptSizing="dynamic"
         ><mat-label>Recipient label</mat-label>
         <input
           matInput
@@ -26,7 +26,7 @@
           >Use a label that helps you identify this invitation.</mat-hint
         >
       </mat-form-field>
-      <mat-form-field appearance="outline"
+      <mat-form-field appearance="outline" subscriptSizing="dynamic"
         ><mat-label>Known sign-in subject (optional)</mat-label>
         <input
           matInput
@@ -40,7 +40,7 @@
           address is not a subject.</mat-hint
         >
       </mat-form-field>
-      <mat-form-field appearance="outline"
+      <mat-form-field appearance="outline" subscriptSizing="dynamic"
         ><mat-label>Expires after (hours)</mat-label>
         <input
           matInput
@@ -79,7 +79,7 @@
     </form>
     @if (link()) {
     <div class="link-result">
-      <mat-form-field appearance="outline"
+      <mat-form-field appearance="outline" subscriptSizing="dynamic"
         ><mat-label>Invitation link</mat-label>
         <textarea
           matInput

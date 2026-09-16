@@ -50,3 +50,9 @@ dd {
 dt {
   font-weight: 500;
 }
+
+h3,
+p,
+li {
+  overflow-wrap: anywhere;
+}

@@ -14,6 +14,11 @@ export const createInvitationSchema = z.strictObject({
         message:
           'District and school invitations require their verified resource configuration.',
       },
+    )
+    .refine(
+      (grants) =>
+        new Set(grants.map((grant) => grant.action)).size === grants.length,
+      { message: 'Each grant must appear once.' },
     ),
 });
 export type CreateInvitation = z.infer<typeof createInvitationSchema>;

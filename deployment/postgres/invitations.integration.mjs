@@ -97,6 +97,16 @@ export async function qualifyInvitations({
   ])
     await assert.rejects(runtime.query(sql), /permission denied/);
   await assert.rejects(create({ version: 1 }), /Current platform authority/);
+  await assert.rejects(create({ version: null }), /Current platform authority/);
+  await assert.rejects(
+    create({
+      grants: [
+        { action: 'customer:read', scope: { kind: 'platform' } },
+        { action: 'customer:read', scope: { kind: 'platform' } },
+      ],
+    }),
+    /exceeds/,
+  );
   await assert.rejects(
     create({ grants: [{ action: 'unknown', scope: { kind: 'platform' } }] }),
     /exceeds/,
