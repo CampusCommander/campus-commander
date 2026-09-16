@@ -2030,6 +2030,7 @@ test(
         });
       if (applicationPhase === 3)
         await qualifyGoogleHealth({
+          auditAccessibility,
           page,
           publicOrigin,
           migrator,

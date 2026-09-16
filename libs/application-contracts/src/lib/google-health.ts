@@ -4,6 +4,9 @@ import {
   googleFailureSchema,
 } from './google-connection';
 
+// A passed observation becomes stale after five minutes. It never proves continuous access.
+export const GOOGLE_HEALTH_FRESH_SECONDS = 300;
+
 export const googleHealthCapabilitySchema = z.enum([
   'customer-identity',
   'domain-observations',

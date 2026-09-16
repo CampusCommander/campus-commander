@@ -9,6 +9,7 @@ export async function qualifyGoogleHealth({
   migrator,
   directory,
   evidenceDirectory,
+  auditAccessibility,
 }) {
   const admin = page.context().request;
   const root = `${publicOrigin}/api/google-connection`;
@@ -74,9 +75,31 @@ export async function qualifyGoogleHealth({
       partial.capabilities[1].lastSucceededAt,
       initial.capabilities[1].lastSucceededAt,
     );
+    await page.goto(`${publicOrigin}/diagnostics`);
+    const customerPanel = page.getByRole('article', {
+      name: 'Customer identity',
+      exact: true,
+    });
+    const domainPanel = page.getByRole('article', {
+      name: 'Customer domains',
+      exact: true,
+    });
+    await expect(customerPanel).toContainText('Last check passed');
+    await expect(domainPanel).toContainText('Delegation not authorized');
+    await expect(page.locator('footer')).toContainText(
+      '1 of 2 capabilities need attention',
+    );
     await ready();
     await fault('domain-privilege-denied');
-    const denied = await check(['domain-observations']);
+    await page.getByRole('button', { name: 'Refresh Google status' }).click();
+    await page
+      .getByRole('button', { name: 'Recheck Customer domains', exact: true })
+      .click();
+    await expect(domainPanel).toContainText('Google access denied');
+    await expect(
+      page.locator('#google-health [role=status]').first(),
+    ).toBeFocused();
+    const denied = await read();
     assert.equal(denied.capabilities[1].failure, 'permission-denied');
     assert.equal(denied.capabilities[1].scopeVerified, true);
     assert.deepEqual(denied.capabilities[0], partial.capabilities[0]);
@@ -150,7 +173,12 @@ export async function qualifyGoogleHealth({
     await running;
     await ready();
     await fault('');
-    const recovered = await check();
+    await page.getByRole('button', { name: 'Refresh Google status' }).click();
+    await page
+      .getByRole('button', { name: 'Check enabled Google capabilities' })
+      .click();
+    await expect(page.locator('footer')).toContainText('2 last checks passed');
+    const recovered = await read();
     assert.ok(
       recovered.capabilities.every(
         (item) => item.scopeVerified && item.failure === null,
@@ -158,6 +186,42 @@ export async function qualifyGoogleHealth({
     );
     assert.equal(recovered.backgroundFailure, null);
     assert.ok(recovered.check.finishedAt);
+    await page
+      .getByText('Configure required Google authorization', { exact: true })
+      .click();
+    await expect(
+      page.getByLabel('Required Google capability scopes'),
+    ).not.toContainText('orgunit');
+    for (const theme of ['light', 'dark']) {
+      await page.getByRole('button', { name: 'Choose theme' }).click();
+      await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
+      await expect(page.getByRole('menu')).toHaveCount(0);
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await auditAccessibility(page, `google-capability-health-${theme}`);
+      await page.screenshot({
+        path: `${evidenceDirectory}/google-capability-health-${theme}.png`,
+        fullPage: true,
+      });
+    }
+    for (const [width, zoom] of [
+      [320, 1],
+      [1280, 2],
+    ]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate((value) => {
+        document.documentElement.style.zoom = String(value);
+      }, zoom);
+      assert.equal(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        true,
+      );
+    }
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = '';
+    });
+    await page.setViewportSize({ width: 1280, height: 900 });
     const events = (
       await migrator.query(
         "SELECT detail FROM cc.security_events WHERE correlation_id=$1 AND event='connection-checked'",
@@ -175,6 +239,13 @@ export async function qualifyGoogleHealth({
       (await admin.get(`${publicOrigin}/api/auth/session`)).status(),
       200,
     );
+    // Restore the shared API token after the intentional combined-read rejection.
+    await ready();
+    const background = await admin.post(`${root}/check`, {
+      headers,
+      data: { customerId: input.customerId, generation: 1 },
+    });
+    assert.equal(background.status(), 201, await background.text());
   } finally {
     await rm(faultPath, { force: true });
   }
@@ -196,6 +267,8 @@ export async function qualifyGoogleHealth({
           'explicit recovery succeeds without customer reset',
           'health start and completion retain correlation evidence',
           'Google failure preserves local sign-in',
+          'real browser targeted check, footer health, result focus, and recovery',
+          'light and dark accessibility, 320-pixel reflow, and 200 percent CSS zoom',
         ],
         limits: [
           'Live restricted-role and revocation tests remain pending.',

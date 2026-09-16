@@ -1,7 +1,7 @@
 # Phase 3 Google capability health
 
 [CC-48](https://easton-consulting.atlassian.net/browse/CC-48) owns capability authorization and Google connection health.
-The backend is implemented. Browser integration and hosted qualification remain pending.
+The backend and browser workflow are implemented. Hosted browser qualification remains pending.
 
 ## Capability evidence
 
@@ -48,11 +48,43 @@ Capability writes, completion, and audit evidence commit together.
 Runtime roles cannot read the health tables or private projection directly.
 Health checks do not control local sign-in or installer readiness.
 
+## Browser contract
+
+The shared health store supplies Diagnostics and the shell footer.
+Connection read grants permit inspection. Matching diagnostic grants permit checks.
+Service diagnostics retain their separate permissions.
+The connection page links to capability health after customer confirmation.
+
+Each capability shows its required scope, token scope evidence, latest operation result, last success, and exact check timestamp.
+Relative observation age advances from the server timestamp and elapsed browser time.
+Passed observations become stale after the contract's five-minute freshness interval.
+The UI describes a passed check without claiming continuous authorization.
+Failed refreshes retain explicitly stale observations. Read denial clears them.
+
+The UI disables repeated checks while a request, saved lease, or cooldown remains active.
+Unknown results require a status refresh before another request.
+Expired checks retain previous observations and permit an explicit recheck.
+Session and permission-version changes invalidate pending responses.
+The result region receives keyboard focus after an explicit check.
+
+Generated authorization instructions include exact scope counts, copy controls, and a Google Admin console link.
+Per-capability evidence links explain the qualification boundary.
+Optional OU, inventory, and mutation scopes remain excluded.
+Applicable rules: UI-01 through UI-10 and FORM-01.
+
 ## Qualification status
 
 Local contract and provider tests, API build, lint, and deployment checks pass.
-Source API and PostgreSQL fault qualification remain pending hosted execution.
-Browser health, stale-state, recovery, and accessibility checks remain pending implementation.
+Hosted PostgreSQL qualification passed at `4bb7002` in run `35163609142`.
+Source capability fault checks passed at `3ea4ead` before an unrelated worker-fixture precondition failed.
+The qualification now restores the API token after intentional rejection, before the worker reuse proof.
+Final source and packaged qualification remain pending.
+
+Seven local Chromium checks pass.
+They cover partial access, targeted rechecks, stale and offline observations, denied reads, saved check expiry, uncertain requests, and read-only inspection.
+Both themes pass automated accessibility checks, 320-pixel reflow, and 200 percent CSS zoom.
+Three store regressions verify response ordering, permission-version fencing, and duplicate-check prevention.
+Human screen-reader and owner acceptance checks remain pending.
 
 The approved live fixture uses the owner's declared Super Admin role on easton-consulting.com.
 No Education fixture is available. Education capability validation remains pending.

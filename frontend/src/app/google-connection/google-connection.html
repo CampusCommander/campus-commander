@@ -45,6 +45,9 @@
       [ngTemplateOutletContext]="{ $implicit: connection.observation }"
     ></ng-container>
     <p>These domain observations describe the last successful Google read.</p>
+    <a mat-stroked-button routerLink="/diagnostics" fragment="google-health"
+      >Inspect Google capability health</a
+    >
   </section>
   } @else if (store.loaded()) {
   <ol class="steps" aria-label="Customer connection progress">
@@ -146,7 +149,8 @@
             >.
           </li>
           <li>
-            Add the service account client ID and both read-only scopes below.
+            Add the service account client ID and the {{ scopes.length }}
+            required read-only scopes below.
           </li>
         </ol>
         <pre

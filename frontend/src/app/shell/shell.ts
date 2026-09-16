@@ -12,6 +12,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { AuthStore } from '../auth.store';
 import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
+import { GoogleHealthStore } from '../google-connection/health.store';
 import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
 
 @Component({
@@ -33,6 +34,7 @@ export class Shell implements OnInit {
   protected readonly connection = inject(ConnectionStore);
   protected readonly router = inject(Router);
   protected readonly diagnostics = inject(DiagnosticsStore);
+  protected readonly googleHealth = inject(GoogleHealthStore);
   protected readonly preferenceError = signal<string | null>(null);
   private readonly document = inject(DOCUMENT);
   constructor() {
@@ -44,6 +46,17 @@ export class Shell implements OnInit {
   ngOnInit() {
     if (this.auth.session()?.identity.permissions.includes('diagnostics:read'))
       void this.diagnostics.refresh();
+  }
+  protected focusGoogleHealth(event: MouseEvent) {
+    if (
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
+    this.document.getElementById('google-health-title')?.focus();
   }
   protected async toggleNavigation() {
     const preferences = this.auth.session()?.identity.preferences;

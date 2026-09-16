@@ -35,3 +35,26 @@ code {
   background: var(--cc-surface-hover);
   margin-block: var(--cc-space-xs);
 }
+
+.google-health {
+  max-width: var(--cc-content-max-width);
+  margin-inline: auto;
+  overflow-wrap: anywhere;
+}
+.capability,
+.background-failure,
+.authorization {
+  border-top: 1px solid var(--cc-border);
+  margin-top: var(--cc-space-xl);
+  padding-top: var(--cc-space-lg);
+}
+.scope-text {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-block: var(--cc-space-lg);
+}
+summary {
+  min-height: 24px;
+  cursor: pointer;
+}
