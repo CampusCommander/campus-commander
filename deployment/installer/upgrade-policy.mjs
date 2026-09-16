@@ -16,5 +16,6 @@ export function supportedUpgrade(previous, next) {
     delete after.applicationAuth;
     after.services.edge.access = before.services.edge.access;
   }
+  if (before.phase === 2 && after.phase === 3) after.phase = 2;
   return isDeepStrictEqual(before, after);
 }

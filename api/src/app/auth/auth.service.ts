@@ -5,6 +5,9 @@ import {
 } from '@nestjs/common';
 import {
   identitySchema,
+  isAuthorized,
+  type Action,
+  type ResourceScope,
   type Permission,
   type Preferences,
   type SessionResponse,
@@ -217,7 +220,11 @@ export class AuthService {
       throw new UnauthorizedException('Your session expired. Sign in again.');
     }
     const result = await this.database.connection.query(
-      'SELECT * FROM cc.application_principals WHERE id=$1 AND enabled',
+      this.configuration.deployment?.phase === 3
+        ? `SELECT p.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('action',g.action,'scope',g.scope) ORDER BY g.action,g.scope)
+            FROM cc.application_grants g WHERE g.principal_id=p.id),'[]'::jsonb) AS grants
+           FROM cc.application_principals p WHERE p.id=$1 AND p.enabled`
+        : 'SELECT * FROM cc.application_principals WHERE id=$1 AND enabled',
       [session.principalId],
     );
     const principal = result.rows[0];
@@ -234,6 +241,8 @@ export class AuthService {
       id: principal.id,
       displayName: principal.display_name,
       permissions: principal.permissions,
+      permissionVersion: principal.permission_version,
+      grants: principal.grants ?? [],
       preferences: principal.preferences,
     });
     if (!identity.permissions.includes(permission)) {
@@ -268,6 +277,28 @@ export class AuthService {
 
   async recordDeniedLogin(correlationId: string) {
     await this.database.audit('login-denied', correlationId);
+  }
+
+  async authorize(
+    session: SessionResponse,
+    action: Action,
+    resource: ResourceScope,
+    correlationId: string,
+  ) {
+    if (
+      this.configuration.deployment?.phase !== 3 ||
+      !isAuthorized(session.identity.grants, action, resource)
+    ) {
+      await this.database.audit(
+        'access-denied',
+        correlationId,
+        session.identity.id,
+        action,
+      );
+      throw new ForbiddenException(
+        'This action requires additional permission.',
+      );
+    }
   }
 
   async recordDeniedRequest(correlationId: string, actorId: string) {

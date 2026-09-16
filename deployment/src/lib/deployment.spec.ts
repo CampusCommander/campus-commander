@@ -109,7 +109,7 @@ describe('Phase 1 deployment contract', () => {
       label: 'later phase',
       profile: 'all-docker',
       path: 'phase',
-      value: 3,
+      value: 4,
       error: 'phase',
     },
     {
@@ -558,6 +558,11 @@ describe('Phase 2 authentication configuration', () => {
         sessionIdleSeconds: 1800,
       };
       expect(parseDeploymentConfig(config).phase).toBe(2);
+      config.phase = 3;
+      expect(parseDeploymentConfig(config).phase).toBe(3);
+      expect(() =>
+        parseDeploymentConfig({ ...config, applicationAuth: undefined }),
+      ).toThrow('applicationAuth');
       config.applicationAuth.issuer = 'http://identity.example.org';
       expect(() => parseDeploymentConfig(config)).toThrow('issuer');
       config.applicationAuth.issuer = 'https://identity.example.org';

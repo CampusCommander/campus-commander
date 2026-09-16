@@ -37,12 +37,12 @@ export async function configureApplication(
   config.phase = Number(
     await q(
       'phase',
-      'Application phase (1 or 2)',
+      'Application phase (1, 2, or 3)',
       String(config.phase),
-      (value) => ['1', '2', 1, 2].includes(value),
+      (value) => ['1', '2', '3', 1, 2, 3].includes(value),
     ),
   );
-  if (config.phase !== 2) return;
+  if (config.phase < 2) return;
   config.services.edge.access = 'application';
   const provider = await q(
     'applicationAuth.provider',

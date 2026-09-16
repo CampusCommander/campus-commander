@@ -65,7 +65,7 @@ export async function createBootstrapEdge({
         return finish(response, 503, 'not-ready\n');
       }
     }
-    if (config.phase === 2 && path !== '/api/startup')
+    if (config.phase >= 2 && path !== '/api/startup')
       return proxyApplication(
         request,
         response,

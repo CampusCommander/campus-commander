@@ -134,7 +134,7 @@ const database = service.extend({
 
 const shape = z.strictObject({
   schemaVersion: z.literal(1),
-  phase: z.union([z.literal(1), z.literal(2)]),
+  phase: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   applicationAuth: z
     .strictObject({
       issuer: z.url().refine((value) => {
@@ -200,14 +200,14 @@ const shape = z.strictObject({
 
 export const deploymentConfigSchema = shape.superRefine((config, ctx) => {
   if (
-    (config.phase === 2) !== Boolean(config.applicationAuth) ||
-    (config.phase === 2) !== (config.services.edge.access === 'application')
+    config.phase >= 2 !== Boolean(config.applicationAuth) ||
+    config.phase >= 2 !== (config.services.edge.access === 'application')
   ) {
     ctx.addIssue({
       code: 'custom',
       path: ['applicationAuth'],
       message:
-        'Phase 2 requires application authentication and application edge access.',
+        'Phases 2 and 3 require application authentication and application edge access.',
     });
   }
   const reject = (path: (string | number)[], message: string) =>

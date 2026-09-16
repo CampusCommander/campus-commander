@@ -7,18 +7,9 @@ import { Pool, type PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { checkServerIdentity } from 'node:tls';
 import { ConfigurationService } from '../configuration/configuration.service';
+import type { SecurityEvent } from '@campus/application-contracts';
 
-export type SecurityEvent =
-  | 'login-started'
-  | 'login-succeeded'
-  | 'login-denied'
-  | 'logout'
-  | 'access-denied'
-  | 'session-expired'
-  | 'diagnostic-started'
-  | 'diagnostic-passed'
-  | 'diagnostic-failed'
-  | 'preferences-changed';
+export type { SecurityEvent } from '@campus/application-contracts';
 
 @Injectable()
 export class DatabaseService implements OnApplicationShutdown {

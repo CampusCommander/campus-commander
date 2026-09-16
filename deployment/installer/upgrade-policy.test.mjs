@@ -28,6 +28,20 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
     assert.equal(supportedUpgrade(before, after), true);
     assert.equal(supportedUpgrade(after, before), false);
     assert.equal(supportedUpgrade(after, structuredClone(after)), true);
+    const phase3 = { ...structuredClone(after), phase: 3 };
+    assert.equal(supportedUpgrade(after, phase3), true);
+    assert.equal(supportedUpgrade(phase3, after), false);
+    assert.equal(supportedUpgrade(before, phase3), false);
+    assert.equal(
+      supportedUpgrade(after, {
+        ...phase3,
+        applicationAuth: {
+          ...phase3.applicationAuth,
+          issuer: 'https://other.district.edu',
+        },
+      }),
+      false,
+    );
     for (const mutate of [
       (config) => {
         config.artifacts.location += '-replacement';

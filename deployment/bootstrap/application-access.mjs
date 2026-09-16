@@ -11,6 +11,12 @@ export const accessRequestSchema = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('inspect') }),
   z.strictObject({ action: z.literal('initialize'), ...identity }),
   z.strictObject({
+    action: z.literal('confirm-platform-administrator'),
+    principalId: z.uuid(),
+    expectedVersion: z.number().int().positive(),
+    confirmation: z.literal('grant-platform-administrator'),
+  }),
+  z.strictObject({
     action: z.literal('revoke'),
     principalId: z.uuid(),
     expectedVersion: z.number().int().positive(),
@@ -24,8 +30,15 @@ export const accessRequestSchema = z.discriminatedUnion('action', [
 ]);
 
 /** Require the migration role and serialize changes to installation access. */
-export async function changeApplicationAccess(client, input, configuredIssuer) {
+export async function changeApplicationAccess(
+  client,
+  input,
+  configuredIssuer,
+  phase = 2,
+) {
   const request = accessRequestSchema.parse(input);
+  if (request.action === 'confirm-platform-administrator' && phase !== 3)
+    throw new Error('Platform administrator confirmation requires Phase 3.');
   if (request.action === 'inspect') {
     const result = await client.query(
       'SELECT id,issuer,subject,display_name,enabled,permission_version FROM cc.application_principals ORDER BY created_at LIMIT 100',
@@ -60,6 +73,26 @@ export async function changeApplicationAccess(client, input, configuredIssuer) {
           ['identity:read', 'diagnostics:read', 'diagnostics:run'],
         ],
       );
+    } else if (request.action === 'confirm-platform-administrator') {
+      principalId = request.principalId;
+      const principal = await client.query(
+        'SELECT id FROM cc.application_principals WHERE id=$1 AND permission_version=$2 AND issuer=$3 AND enabled FOR UPDATE',
+        [principalId, request.expectedVersion, configuredIssuer],
+      );
+      if (!principal.rowCount)
+        throw new Error(
+          'The principal or permission version changed. Inspect current access before confirmation.',
+        );
+      await client.query(
+        `INSERT INTO cc.application_grants(principal_id,action,scope)
+         SELECT $1,action,'{"kind":"platform"}'::jsonb FROM cc.application_actions
+         ON CONFLICT DO NOTHING`,
+        [principalId],
+      );
+      await client.query(
+        'UPDATE cc.application_principals SET permission_version=permission_version+1 WHERE id=$1',
+        [principalId],
+      );
     } else {
       principalId = request.principalId;
       const result =
@@ -86,9 +119,11 @@ export async function changeApplicationAccess(client, input, configuredIssuer) {
     const event =
       request.action === 'initialize'
         ? 'access-granted'
-        : request.action === 'revoke'
-          ? 'access-revoked'
-          : 'identity-replaced';
+        : request.action === 'confirm-platform-administrator'
+          ? 'platform-administrator-confirmed'
+          : request.action === 'revoke'
+            ? 'access-revoked'
+            : 'identity-replaced';
     await client.query(
       "INSERT INTO cc.security_events(id,actor_id,event,correlation_id,detail) VALUES($1,$2,$3,$4,'installation-operator')",
       [randomUUID(), principalId, event, correlationId],

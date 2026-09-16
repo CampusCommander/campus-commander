@@ -96,17 +96,19 @@ export async function verifyConnection(client) {
 
 export async function loadMigrations() {
   return Promise.all(
-    ['001-foundation', '002-application-auth'].map(async (id) => {
-      const sql = await readFile(
-        new URL(`./migrations/${id}.sql`, import.meta.url),
-        'utf8',
-      );
-      return {
-        id,
-        sql,
-        checksum: createHash('sha256').update(sql).digest('hex'),
-      };
-    }),
+    ['001-foundation', '002-application-auth', '003-application-grants'].map(
+      async (id) => {
+        const sql = await readFile(
+          new URL(`./migrations/${id}.sql`, import.meta.url),
+          'utf8',
+        );
+        return {
+          id,
+          sql,
+          checksum: createHash('sha256').update(sql).digest('hex'),
+        };
+      },
+    ),
   );
 }
 
@@ -160,6 +162,11 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
       await client.query(`GRANT SELECT ON cc.application_principals TO ${role};
         GRANT UPDATE (preferences) ON cc.application_principals TO ${role};
         GRANT SELECT, INSERT ON cc.security_events TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '003-application-grants')) {
+      await client.query(
+        `GRANT SELECT ON cc.application_actions, cc.application_grants TO ${role}`,
+      );
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

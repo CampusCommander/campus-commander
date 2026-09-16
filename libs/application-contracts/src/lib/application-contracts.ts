@@ -1,7 +1,8 @@
 import * as z from 'zod';
+import { grantsSchema } from './authorization';
 
 export const applicationMetadataSchema = z.strictObject({
-  phase: z.union([z.literal(1), z.literal(2)]),
+  phase: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   authenticationConfigured: z.boolean(),
   version: z.string().min(1).max(80),
   build: z.string().min(1).max(128),
@@ -13,6 +14,40 @@ export const permissionSchema = z.enum([
   'diagnostics:read',
   'diagnostics:run',
 ]);
+export const securityEventSchema = z.enum([
+  'login-started',
+  'login-succeeded',
+  'login-denied',
+  'logout',
+  'access-denied',
+  'session-expired',
+  'access-granted',
+  'access-revoked',
+  'identity-replaced',
+  'diagnostic-started',
+  'diagnostic-passed',
+  'diagnostic-failed',
+  'preferences-changed',
+  'platform-administrator-confirmed',
+  'grants-changed',
+  'principal-disabled',
+  'principal-enabled',
+  'invitation-created',
+  'invitation-redeemed',
+  'invitation-confirmed',
+  'invitation-revoked',
+  'invitation-expired',
+  'customer-confirmed',
+  'customer-settings-changed',
+  'connection-authorized',
+  'connection-replaced',
+  'connection-revoked',
+  'connection-checked',
+  'credential-key-rotated',
+  'school-scope-changed',
+  'recovery-required',
+]);
+export type SecurityEvent = z.infer<typeof securityEventSchema>;
 export const preferencesSchema = z.strictObject({
   theme: z.enum(['system', 'light', 'dark']),
   navigationCollapsed: z.boolean(),
@@ -21,6 +56,8 @@ export const identitySchema = z.strictObject({
   id: z.uuid(),
   displayName: z.string().min(1).max(200),
   permissions: z.array(permissionSchema).max(3),
+  permissionVersion: z.number().int().positive().default(1),
+  grants: grantsSchema.default([]),
   preferences: preferencesSchema,
 });
 export const sessionResponseSchema = z.strictObject({
