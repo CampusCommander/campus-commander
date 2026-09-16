@@ -63,3 +63,8 @@ summary {
   background: var(--cc-surface-hover);
   border-radius: var(--cc-radius-control);
 }
+summary {
+  min-height: 24px;
+  padding-block: var(--cc-space-sm);
+  cursor: pointer;
+}
