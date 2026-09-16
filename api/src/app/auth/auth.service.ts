@@ -20,6 +20,7 @@ import { DatabaseService } from '../database/database.service';
 import { CacheService } from '../cache/cache.service';
 import { EnrollmentService } from './enrollment.service';
 import { InvitationService } from './invitation.service';
+import { AccessChangedException } from './access-changed.errors';
 
 const sessionSchema = z.strictObject({
   principalId: z.uuid(),
@@ -256,9 +257,13 @@ export class AuthService {
       principal.permission_version !== session.permissionVersion
     ) {
       await this.cache.remove(key('session', token));
-      throw new UnauthorizedException(
-        'Application access changed. Sign in again.',
+      await this.database.audit(
+        'access-denied',
+        correlationId,
+        session.principalId,
+        'permission-version',
       );
+      throw new AccessChangedException();
     }
     const identity = identitySchema.parse({
       id: principal.id,
@@ -348,19 +353,36 @@ export class AuthService {
     preferences: Preferences,
     correlationId: string,
   ) {
-    await this.database.transaction(async (client) => {
-      await client.query(
-        'UPDATE cc.application_principals SET preferences=$1 WHERE id=$2 AND enabled',
-        [preferences, session.identity.id],
-      );
-      await this.database.audit(
-        'preferences-changed',
-        correlationId,
-        session.identity.id,
-        undefined,
-        client,
-      );
-    });
+    try {
+      await this.database.transaction(async (client) => {
+        const changed = await client.query(
+          'UPDATE cc.application_principals SET preferences=$1 WHERE id=$2 AND enabled AND permission_version=$3 RETURNING id',
+          [
+            preferences,
+            session.identity.id,
+            session.identity.permissionVersion,
+          ],
+        );
+        if (changed.rowCount !== 1) throw new AccessChangedException();
+        await this.database.audit(
+          'preferences-changed',
+          correlationId,
+          session.identity.id,
+          undefined,
+          client,
+        );
+      });
+    } catch (error) {
+      if (error instanceof AccessChangedException) {
+        await this.database.audit(
+          'access-denied',
+          correlationId,
+          session.identity.id,
+          'permission-version',
+        );
+      }
+      throw error;
+    }
     return preferences;
   }
 }

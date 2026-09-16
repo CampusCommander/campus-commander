@@ -7,6 +7,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { AccessChangedException } from './auth/access-changed.errors';
 import { EnrollmentBrowserBoundException } from './auth/enrollment.errors';
 
 export function securityHeaders(
@@ -33,6 +34,16 @@ export class ApplicationExceptionFilter implements ExceptionFilter {
       .switchToHttp()
       .getRequest<Request & { correlationId: string }>();
     const response = host.switchToHttp().getResponse<Response>();
+    if (exception instanceof AccessChangedException) {
+      response
+        .status(401)
+        .json({
+          code: 'access-changed',
+          message: 'Application access changed. Sign in again.',
+          correlationId: request.correlationId,
+        });
+      return;
+    }
     if (
       !/^\/api\/(?:auth|diagnostics|application)(?:\/|$)/.test(request.path) &&
       exception instanceof HttpException

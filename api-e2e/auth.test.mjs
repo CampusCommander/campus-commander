@@ -1,3 +1,4 @@
+import { qualifyAccessRevocation } from './access-revocation-api.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
@@ -1998,6 +1999,18 @@ test(
       ).toBeVisible();
       assert.deepEqual(browserErrors, []);
       assert.deepEqual(policyErrors, []);
+      if (applicationPhase === 3)
+        await qualifyAccessRevocation({
+          login,
+          request,
+          publicOrigin,
+          replicaOrigin,
+          ca,
+          migrator,
+          observer: admin,
+          redis,
+          evidenceDirectory,
+        });
       await context.close();
       docker('stop', names[1]);
       assert.equal(
