@@ -36,7 +36,6 @@ jobs:
 
       - run: npm ci
 
-      - run: npm exec nx format:check -- --base="remotes/origin/main"
       - name: Select comparison revision
         env:
           BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -46,6 +45,7 @@ jobs:
           else
             echo "NX_BASE=$(git rev-parse HEAD^)" >> "$GITHUB_ENV"
           fi
+      - run: npm exec nx format:check -- --base="$NX_BASE"
       - run: npm exec nx affected -- -t lint,test,build,typecheck --base="$NX_BASE" --head=HEAD
         env:
           NX_NO_CLOUD: ${{ vars.NX_CLOUD_ENABLED != 'true' }}
