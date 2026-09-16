@@ -188,7 +188,12 @@ export async function qualifyGoogleConnection({
     envelope: null,
     failure: 'permission-denied',
   });
-  await assert.rejects(read(rejected));
+  const recoveredFailure = (await read(rejected)).rows[0].result;
+  assert.equal(recoveredFailure.status, 'failed');
+  assert.equal(recoveredFailure.failure, 'permission-denied');
+  assert.equal(recoveredFailure.envelope, null);
+  await assert.rejects(read({ ...rejected, actor: actors[1] }), denied);
+  await assert.rejects(confirm(rejected));
 
   const revoked = await stage(actors[2]);
   await migrator.query(
@@ -216,6 +221,75 @@ export async function qualifyGoogleConnection({
     )
   ).rows[0];
   assert.deepEqual(expired, { status: 'expired', envelope: null });
+
+  // Confirmation must check the deadline after it acquires the authority lock.
+  const delayed = await stage();
+  await finish(delayed);
+  const observer = await connect('cc-app', 'cc-app');
+  const runtimePid = (await runtime.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+  await migrator.query('BEGIN');
+  let pending;
+  try {
+    await migrator.query('SELECT pg_advisory_xact_lock(7240173008)');
+    await migrator.query(
+      `UPDATE cc.google_credential_candidates SET created_at=clock_timestamp()-interval '9 minutes',expires_at=clock_timestamp()+interval '750 milliseconds' WHERE id=$1`,
+      [delayed.id],
+    );
+    pending = confirm(delayed).then(() => null, (error) => error);
+    let waiting = false;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const activity = await observer.query(
+        "SELECT wait_event FROM pg_stat_activity WHERE pid=$1 AND state='active'",
+        [runtimePid],
+      );
+      if (activity.rows[0]?.wait_event === 'advisory') {
+        waiting = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(waiting, true, 'Confirmation must wait for the authority lock.');
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    await migrator.query('COMMIT');
+  } catch (error) {
+    await migrator.query('ROLLBACK');
+    throw error;
+  }
+  assert.equal((await pending)?.detail, 'candidate-changed');
+  assert.deepEqual(await current(), []);
+  assert.equal((await migrator.query('SELECT count(*) FROM cc.google_credentials')).rows[0].count, '0');
+  assert.equal((await migrator.query(
+    "SELECT count(*) FROM cc.security_events WHERE target_id=$1 AND event IN ('customer-confirmed','connection-authorized')",
+    [delayed.id],
+  )).rows[0].count, '0');
+  const expiredRead = (await read(delayed)).rows[0].result;
+  assert.equal(expiredRead.status, 'expired');
+  assert.equal(expiredRead.envelope, null);
+  await runtime.query('SELECT cc.expire_google_candidates($1)', [correlation]);
+  assert.equal((await read(delayed)).rows[0].result.status, 'expired');
+
+  // Terminal history cleanup must stop at its indexed batch limit.
+  await migrator.query(
+    `INSERT INTO cc.google_credential_candidates(id,actor_id,actor_version,browser_hash,client_id,delegated_subject,status,failure,created_at,expires_at)
+     SELECT gen_random_uuid(),$1,1,repeat('a',64),'123456789','fixture@example.invalid','failed','permission-denied',
+       now()-interval '2 days',now()-interval '2 days'+interval '10 minutes' FROM generate_series(1,501)`,
+    [actors[0]],
+  );
+  await runtime.query('SELECT cc.expire_google_candidates($1)', [correlation]);
+  assert.equal((await migrator.query(
+    "SELECT count(*) FROM cc.google_credential_candidates WHERE expires_at<now()-interval '1 day'",
+  )).rows[0].count, '1');
+  await runtime.query('SELECT cc.expire_google_candidates($1)', [correlation]);
+  assert.equal((await migrator.query(
+    "SELECT count(*) FROM cc.google_credential_candidates WHERE expires_at<now()-interval '1 day'",
+  )).rows[0].count, '0');
+
+  // Failed verification cannot bypass the per-actor staging rate limit.
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const limited = await stage(actors[2], 2);
+    await finish(limited, null, 'permission-denied');
+  }
+  await assert.rejects(stage(actors[2], 2), (error) => error.detail === 'busy');
 
   const candidates = [await stage(actors[0]), await stage(actors[1])];
   await finish(candidates[0]);
@@ -292,6 +366,8 @@ export async function qualifyGoogleConnection({
       generation: 0,
     }),
   );
+  assert.equal((await read(winner)).rows[0].result.status, 'consumed');
+  assert.equal((await read(winner)).rows[0].result.envelope, null);
   await assert.rejects(confirm(winner, customerId));
   await assert.rejects(stage());
   assert.equal(
@@ -368,7 +444,9 @@ export async function qualifyGoogleConnection({
   assert.equal(JSON.stringify(publicConnection).includes(privateKey), false);
   return [
     'candidate staging binds actor version and browser without runtime table access: pass',
-    'failed and expired candidates erase ciphertext with security events: pass',
+    'failed and expired candidates erase ciphertext with security events and retain authorized recovery metadata: pass',
+    'confirmation checks wall-clock expiry after lock contention and leaves no activation records: pass',
+    'terminal cleanup uses 500-row batches and staging rate limits include failed checks: pass',
     'revoked authority cannot finish verification or read staged credentials: pass',
     'customer confirmation rejects replay, wrong customer, and cross-browser substitution: pass',
     'audit failure rolls back customer, active credential, and candidate consumption: pass',

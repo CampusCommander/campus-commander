@@ -79,6 +79,10 @@ CREATE TABLE cc.google_credential_candidates (
 );
 CREATE INDEX google_candidate_expiry ON cc.google_credential_candidates(expires_at) WHERE status IN ('verifying','ready');
 
+CREATE INDEX google_candidate_terminal_expiry ON cc.google_credential_candidates(expires_at,id) WHERE status IN ('expired','failed','consumed');
+CREATE INDEX google_candidate_created ON cc.google_credential_candidates(created_at);
+CREATE INDEX google_candidate_actor_created ON cc.google_credential_candidates(actor_id,created_at);
+
 CREATE TABLE cc.google_credentials (
   id uuid PRIMARY KEY,
   generation integer NOT NULL UNIQUE CHECK(generation>0),
@@ -119,18 +123,23 @@ $$;
 
 CREATE FUNCTION cc.expire_google_candidates(p_correlation uuid) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE candidate_id uuid; expired integer:=0;
+DECLARE candidate_id uuid; expired integer:=0; cutoff timestamptz;
 BEGIN
   IF p_correlation IS NULL THEN RAISE EXCEPTION 'Correlation is required.'; END IF;
   PERFORM pg_advisory_xact_lock(7240173008);
+  cutoff:=clock_timestamp();
   FOR candidate_id IN UPDATE cc.google_credential_candidates SET status='expired',envelope=NULL
-    WHERE status IN ('verifying','ready') AND expires_at<=now() RETURNING id
+    WHERE status IN ('verifying','ready') AND expires_at<=cutoff RETURNING id
   LOOP
     expired:=expired+1;
     INSERT INTO cc.security_events(id,event,correlation_id,target_id,resource_scope)
       VALUES(gen_random_uuid(),'connection-stage-expired',p_correlation,candidate_id,'{"kind":"platform"}');
   END LOOP;
-  DELETE FROM cc.google_credential_candidates WHERE expires_at<now()-interval '1 day' AND status IN ('expired','failed','consumed');
+  DELETE FROM cc.google_credential_candidates WHERE id IN (
+    SELECT id FROM cc.google_credential_candidates
+    WHERE expires_at<cutoff-interval '1 day' AND status IN ('expired','failed','consumed')
+    ORDER BY expires_at,id LIMIT 500
+  );
   RETURN expired;
 END;
 $$;
@@ -138,7 +147,7 @@ $$;
 CREATE FUNCTION cc.stage_google_credential(p_actor uuid,p_version integer,p_id uuid,p_browser_hash text,
   p_client_id text,p_subject text,p_envelope jsonb,p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE expiry timestamptz;
+DECLARE expiry timestamptz; created timestamptz;
 BEGIN
   PERFORM cc.google_connection_actor(p_actor,p_version,'connection:manage');
   PERFORM cc.expire_google_candidates(p_correlation);
@@ -147,8 +156,13 @@ BEGIN
     (SELECT count(*) FROM cc.google_credential_candidates WHERE actor_id=p_actor AND status IN ('verifying','ready'))>=3 THEN
     RAISE EXCEPTION 'Wait for an existing credential check to expire.' USING DETAIL='busy';
   END IF;
-  INSERT INTO cc.google_credential_candidates(id,actor_id,actor_version,browser_hash,client_id,delegated_subject,status,envelope)
-    VALUES(p_id,p_actor,p_version,p_browser_hash,p_client_id,p_subject,'verifying',p_envelope) RETURNING expires_at INTO expiry;
+  created:=clock_timestamp();
+  IF (SELECT count(*) FROM cc.google_credential_candidates WHERE created_at>created-interval '10 minutes')>=100 OR
+    (SELECT count(*) FROM cc.google_credential_candidates WHERE actor_id=p_actor AND created_at>created-interval '10 minutes')>=10 THEN
+    RAISE EXCEPTION 'Wait before starting another credential check.' USING DETAIL='busy';
+  END IF;
+  INSERT INTO cc.google_credential_candidates(id,actor_id,actor_version,browser_hash,client_id,delegated_subject,status,envelope,created_at,expires_at)
+    VALUES(p_id,p_actor,p_version,p_browser_hash,p_client_id,p_subject,'verifying',p_envelope,created,created+interval '10 minutes') RETURNING expires_at INTO expiry;
   INSERT INTO cc.security_events(id,actor_id,event,correlation_id,target_id,resource_scope)
     VALUES(gen_random_uuid(),p_actor,'connection-staged',p_correlation,p_id,'{"kind":"platform"}');
   RETURN jsonb_build_object('id',p_id,'status','verifying','expiresAt',expiry);
@@ -165,7 +179,7 @@ BEGIN
     p_browser_hash IS NULL OR candidate.browser_hash<>p_browser_hash THEN
     RAISE EXCEPTION 'The credential transaction is unavailable.' USING ERRCODE='42501';
   END IF;
-  IF candidate.expires_at<=now() OR candidate.status NOT IN ('verifying','ready') THEN
+  IF candidate.expires_at<=clock_timestamp() OR candidate.status NOT IN ('verifying','ready') THEN
     RAISE EXCEPTION 'The credential transaction expired or changed.' USING DETAIL='candidate-changed';
   END IF;
   RETURN candidate;
@@ -196,10 +210,19 @@ CREATE FUNCTION cc.read_google_candidate(p_actor uuid,p_version integer,p_id uui
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE candidate cc.google_credential_candidates;
 BEGIN
-  candidate:=cc.google_candidate_for_actor(p_actor,p_version,p_id,p_browser_hash);
+  PERFORM cc.google_connection_actor(p_actor,p_version,'connection:manage');
+  SELECT * INTO candidate FROM cc.google_credential_candidates WHERE id=p_id FOR UPDATE;
+  IF candidate.id IS NULL OR candidate.actor_id<>p_actor OR candidate.actor_version<>p_version OR
+    p_browser_hash IS NULL OR candidate.browser_hash<>p_browser_hash THEN
+    RAISE EXCEPTION 'The credential transaction is unavailable.' USING ERRCODE='42501';
+  END IF;
+  IF candidate.status IN ('verifying','ready') AND candidate.expires_at<=clock_timestamp() THEN
+    candidate.status:='expired';
+    candidate.envelope:=NULL;
+  END IF;
   RETURN jsonb_build_object('id',candidate.id,'status',candidate.status,'expiresAt',candidate.expires_at,
     'clientId',candidate.client_id,'subject',candidate.delegated_subject,'observation',candidate.observation,
-    'observedAt',candidate.observed_at,'envelope',candidate.envelope);
+    'observedAt',candidate.observed_at,'failure',candidate.failure,'envelope',candidate.envelope);
 END;
 $$;
 
