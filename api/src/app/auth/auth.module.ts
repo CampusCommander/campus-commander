@@ -6,11 +6,13 @@ import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { AuthController } from './auth.controller';
 import { EnrollmentService } from './enrollment.service';
+import { InvitationService } from './invitation.service';
+import { InvitationController } from './invitation.controller';
 
 @Module({
   imports: [ConfigurationModule, DatabaseModule, CacheModule],
-  controllers: [AuthController],
-  providers: [AuthService, AuthGuard, EnrollmentService],
+  controllers: [AuthController, InvitationController],
+  providers: [AuthService, AuthGuard, EnrollmentService, InvitationService],
   exports: [AuthService, AuthGuard, EnrollmentService],
 })
 export class AuthModule {}

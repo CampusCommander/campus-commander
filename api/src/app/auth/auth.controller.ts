@@ -19,6 +19,7 @@ import {
 import { EnrollmentService, enrollmentCookie } from './enrollment.service';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { z } from 'zod';
+import { invitationCookie } from './invitation.service';
 import { AuthGuard, type AuthenticatedRequest } from './auth.guard';
 
 const cookieOptions = {
@@ -59,6 +60,7 @@ export class AuthController {
       ...cookieOptions,
       maxAge: 300000,
     });
+    response.clearCookie(invitationCookie, cookieOptions);
     response.cookie(enrollmentCookie, paired.token, {
       ...cookieOptions,
       maxAge: 600000,
@@ -81,6 +83,7 @@ export class AuthController {
       maxAge: 300000,
     });
     response.clearCookie(enrollmentCookie, cookieOptions);
+    response.clearCookie(invitationCookie, cookieOptions);
     response.redirect(303, result.url);
   }
 
@@ -100,6 +103,10 @@ export class AuthController {
         response.redirect(303, '/setup?verified=1');
         return;
       }
+      if ('invitation' in result) {
+        response.redirect(303, '/invitation');
+        return;
+      }
       response.cookie(sessionCookie, result.token, {
         ...cookieOptions,
         maxAge: result.seconds * 1000,
@@ -111,9 +118,11 @@ export class AuthController {
         .catch(() => undefined);
       response.redirect(
         303,
-        readCookie(request.headers.cookie, enrollmentCookie)
-          ? '/setup?error=sign-in-failed'
-          : '/login?error=sign-in-failed',
+        readCookie(request.headers.cookie, invitationCookie)
+          ? '/invitation?error=sign-in-failed'
+          : readCookie(request.headers.cookie, enrollmentCookie)
+            ? '/setup?error=sign-in-failed'
+            : '/login?error=sign-in-failed',
       );
     }
   }

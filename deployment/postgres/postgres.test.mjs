@@ -96,7 +96,12 @@ test('the release identifies its SQL migration by content checksum', async () =>
   const migrations = await loadMigrations();
   assert.deepEqual(
     migrations.map(({ id }) => id),
-    ['001-foundation', '002-application-auth', '003-application-grants'],
+    [
+      '001-foundation',
+      '002-application-auth',
+      '003-application-grants',
+      '004-application-invitations',
+    ],
   );
   for (const migration of migrations)
     assert.match(migration.checksum, /^[a-f0-9]{64}$/);
