@@ -1,6 +1,6 @@
 # Phase 3 platform access implementation
 
-Owner: CC-51. Status: database and API implementation in progress. Browser implementation and API integration qualification remain pending.
+Owner: CC-51. Status: platform database, API, and browser implementation exist. Hosted API and browser qualification remain pending.
 This branch builds on CC-50. It does not establish Phase 3 completion.
 
 ## Change contract
@@ -45,5 +45,9 @@ The real PostgreSQL suite adds exact-grant, revision, audit rollback, delegation
 The suite verified concurrent last-administrator protection, audit rollback, delegation ceilings, identity preservation, and bounded authorized reads.
 The API adds authenticated list, detail, review, and confirmation endpoints with origin, CSRF, and actor-version checks.
 Local API builds, lint, and edge route tests passed.
-Direct API integration and browser validation remain pending.
-UI rules UI-01 through UI-10 and FORM-01 apply to the forthcoming grant workflow.
+The browser lists authorized principals and shows identity, existing permissions, editable grants, and an explicit confirmation preview.
+Input changes invalidate that preview. Failed refreshes preserve edits and prevent confirmation until current access returns.
+Local light and dark checks reported zero automated accessibility violations. The editor fits a 320-pixel viewport without horizontal overflow.
+Hosted direct API and browser qualification remain pending.
+UI rules UI-01 through UI-10 and FORM-01 apply to the grant workflow.
+Human screen-reader validation remains not run. District and school presets remain unavailable until verified resource integration.

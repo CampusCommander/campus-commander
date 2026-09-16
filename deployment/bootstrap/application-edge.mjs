@@ -30,7 +30,11 @@ const postRoutes = new Set([
 ]);
 const assets =
   /^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.(?:js|css|ico|png|svg|woff2?)$/;
-const invitationPages = new Set(['/invitation', '/invitations']);
+const invitationPages = new Set([
+  '/invitation',
+  '/invitations',
+  '/platform-users',
+]);
 const invitationReads = new Set([
   '/api/auth/invitations',
   '/api/auth/invitations/status',

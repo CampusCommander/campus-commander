@@ -32,6 +32,7 @@ test('invitation routes require Phase 3 and exact methods and paths', async () =
     const id = '11111111-1111-4111-8111-111111111111';
     const routes = [
       ['GET', '/invitations', 'frontend'],
+      ['GET', '/platform-users', 'frontend'],
       ['GET', '/invitation', 'frontend'],
       ['GET', '/api/auth/invitations', 'api'],
       ['GET', '/api/auth/invitations/status', 'api'],
