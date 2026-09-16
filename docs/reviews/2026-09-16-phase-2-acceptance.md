@@ -34,3 +34,13 @@ This record does not claim a new release publication or a new automated test run
 
 The [Phase 3 handoff](../portfolio/phase-3-handoff.md) defines the next work and its first delivery slice.
 Phase 3 covers Google customer connection, customer settings, and delegated platform access.
+
+## Jira reconciliation
+
+Jira confirms Done for CC-22 and CC-36 through CC-41 after owner acceptance.
+The CC-22 description also records the owner's decision.
+The CC-40 transition timed out, but a subsequent read confirmed Done.
+
+The CC-20 transition timed out. Its final status remains unverified.
+Jira rejected the CC-21 transition because a site security policy restricted access.
+These tracker limits do not change the owner's Phase 1 closure decision or Phase 3 authorization.
