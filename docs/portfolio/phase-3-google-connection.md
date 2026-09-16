@@ -61,6 +61,8 @@ Authenticated data distinguishes tokens from service-account credentials.
 Each token binds its credential record, customer, generation, key version, and scope profile.
 A thirty-second database lease permits one renewal across API and worker processes.
 Consumers renew tokens with less than sixty seconds remaining.
+Directory clients disable the SDK early-refresh threshold after construction.
+The SDK ignores zero in constructor options. A regression checks tokens with ninety seconds remaining.
 Generation and lease checks reject results from replaced credentials and expired renewal attempts.
 A token identifier prevents a late failed request from invalidating a newer token.
 
@@ -71,7 +73,8 @@ Token changes and observations commit with their security events.
 The background read permits sixty seconds, with bounded database operations and a twenty-second renewal deadline.
 
 The API exposes a CSRF-protected `POST /api/google-connection/check` operation.
-It checks current operator authority before the read and before returning its result.
+It checks operator scope before the read and reauthenticates before returning its result.
+The observation transaction rechecks the actor permission version before writing observation and audit records.
 The worker exposes the internal `POST /dispatch/google-customer` operation through the existing dispatch authentication boundary.
 Dispatch accepts customer, generation, execution, and correlation identifiers.
 The worker loads credentials from PostgreSQL and the key from its local secret mount.

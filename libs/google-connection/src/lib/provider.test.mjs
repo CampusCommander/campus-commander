@@ -232,3 +232,33 @@ test('aborts and delegation failures retain actionable categories', async (t) =>
     t.mock.restoreAll();
   }
 });
+
+test('cached tokens within five minutes of expiry do not trigger an uncoordinated refresh', async (t) => {
+  const calls = [];
+  const transportPrototype = Object.getPrototypeOf(
+    new OAuth2Client().transporter,
+  );
+  t.mock.method(transportPrototype, 'request', async (options) => {
+    const url = new URL(options.url);
+    calls.push(url.pathname);
+    assert.equal(url.hostname, 'admin.googleapis.com');
+    assert.equal(
+      new Headers(options.headers).get('authorization'),
+      'Bearer cached-fixture-token',
+    );
+    return {
+      data: url.pathname.endsWith('/my_customer') ? customer : domains,
+      status: 200,
+    };
+  });
+  const result = await new GoogleCustomerVerifier().observe(
+    {
+      accessToken: 'cached-fixture-token',
+      expiresAt: Date.now() + 90_000,
+      scopeProfile: 'customer-domain-v1',
+    },
+    AbortSignal.timeout(5000),
+  );
+  assert.equal(result.customerId, customer.id);
+  assert.equal(calls.length, 2);
+});

@@ -215,7 +215,9 @@ export class GoogleCustomerVerifier {
     token: GoogleAccessToken,
     signal: AbortSignal,
   ): Promise<GoogleObservation> {
-    const client = new OAuth2Client({ eagerRefreshThresholdMillis: 0 });
+    const client = new OAuth2Client();
+    // The SDK constructor ignores zero. Only the database lease permits renewal.
+    client.eagerRefreshThresholdMillis = 0;
     const parsed = accessTokenSchema.parse(token);
     client.setCredentials({
       access_token: parsed.accessToken,
