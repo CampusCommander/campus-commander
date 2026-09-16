@@ -2013,25 +2013,29 @@ test(
             replica = await startApi(replicaPort);
           },
           restartRedis: async () => {
+            redis.destroy();
             docker('stop', names[1]);
             docker('start', names[1]);
+            const port = Number(
+              docker('port', names[1], '6379/tcp').split(':').at(-1),
+            );
+            assert.ok(Number.isInteger(port) && port > 0);
+            console.log(
+              `Redis fixture published port changed after restart: ${port !== redisPort}`,
+            );
+            redis = createClient({
+              url: `redis://127.0.0.1:${port}`,
+              password,
+            });
+            redis.on('error', () => undefined);
             await Promise.race([
-              (async () => {
-                const deadline = Date.now() + 15000;
-                while (Date.now() < deadline) {
-                  try {
-                    if ((await redis.ping()) === 'PONG') return;
-                  } catch {
-                    // Redis rejects requests from its previous connection.
-                  }
-                  await delay(100);
-                }
-                throw new Error('Redis did not recover after restart');
-              })(),
+              redis.connect(),
               delay(15000).then(() => {
                 throw new Error('Redis did not recover after restart');
               }),
             ]);
+            assert.equal(await redis.ping(), 'PONG');
+            return redis;
           },
           request,
           publicOrigin,

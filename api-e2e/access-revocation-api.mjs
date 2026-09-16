@@ -162,7 +162,7 @@ export async function qualifyAccessRevocation({
   assert.equal(afterRestart.status, 401);
   assert.equal(JSON.parse(afterRestart.text).code, 'access-changed');
   assert.equal(await redis.get(sessions[1].key), null);
-  await restartRedis();
+  redis = await restartRedis();
   for (const [index, origin] of [publicOrigin, replicaOrigin].entries()) {
     const stale = sessions[index];
     let missing;
