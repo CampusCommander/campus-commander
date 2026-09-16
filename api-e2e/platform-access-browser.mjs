@@ -85,9 +85,13 @@ export async function qualifyPlatformAccessBrowser({
       exact: true,
     })
     .check();
-  await page
-    .getByRole('button', { name: 'Confirm access changes', exact: true })
-    .focus();
+  const confirmation = page.getByRole('button', {
+    name: 'Confirm access changes',
+    exact: true,
+  });
+  await expect(confirmation).toBeEnabled();
+  await confirmation.focus();
+  await expect(confirmation).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('status')).toContainText(
     'Access changed. Previous sessions require sign-in. Receipt:',
