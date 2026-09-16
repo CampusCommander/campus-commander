@@ -48,11 +48,13 @@ export function validateServiceAccount(
       (key.asymmetricKeyDetails?.modulusLength ?? 0) < 2048
     )
       throw new Error();
+    const privateKey = key.export({ format: 'pem', type: 'pkcs8' }).toString();
+    if (privateKey.length > 16384) throw new Error();
     return {
       type: parsed.type,
       client_id: parsed.client_id,
       client_email: parsed.client_email,
-      private_key: parsed.private_key,
+      private_key: privateKey,
       private_key_id: parsed.private_key_id,
       token_uri: parsed.token_uri,
     };
@@ -77,11 +79,16 @@ const keyIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
 const base64url = (bytes: number) =>
   z
     .string()
-    .regex(/^[A-Za-z0-9_-]+$/)
-    .refine(
-      (value) =>
-        Buffer.from(value, 'base64url').length === bytes &&
-        Buffer.from(value, 'base64url').toString('base64url') === value,
+    .length(Math.ceil((bytes * 4) / 3))
+    .pipe(
+      z
+        .string()
+        .regex(/^[A-Za-z0-9_-]+$/)
+        .refine(
+          (value) =>
+            Buffer.from(value, 'base64url').length === bytes &&
+            Buffer.from(value, 'base64url').toString('base64url') === value,
+        ),
     );
 const envelopeSchema = z
   .object({
@@ -93,7 +100,7 @@ const envelopeSchema = z
       .string()
       .min(1)
       .max(32768)
-      .regex(/^[A-Za-z0-9_-]+$/),
+      .pipe(z.string().regex(/^[A-Za-z0-9_-]+$/)),
   })
   .strict();
 export type CredentialEnvelope = z.infer<typeof envelopeSchema>;
@@ -162,13 +169,13 @@ export class CredentialCipher {
           cipher.update(plaintext),
           cipher.final(),
         ]);
-        return {
+        return envelopeSchema.parse({
           format: 1,
           keyId: this.keyId,
           iv: iv.toString('base64url'),
           tag: cipher.getAuthTag().toString('base64url'),
           ciphertext: ciphertext.toString('base64url'),
-        };
+        });
       } finally {
         plaintext.fill(0);
       }

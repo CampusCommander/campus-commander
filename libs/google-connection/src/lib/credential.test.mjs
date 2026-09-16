@@ -179,3 +179,40 @@ test('requires exact encryption keys and isolates supplied key memory', () => {
     credential,
   );
 });
+
+test('normalizes accepted PEM padding before producing a readable envelope', () => {
+  const padded = { ...account, private_key: privateKey.padEnd(16384, '\n') };
+  assert.deepEqual(validateServiceAccount(padded, account.client_id), account);
+  const envelope = cipher.seal(
+    { ...credential, serviceAccount: padded },
+    context,
+  );
+  assert.ok(envelope.ciphertext.length <= 32768);
+  assert.deepEqual(cipher.open(envelope, context), credential);
+});
+
+test('rejects oversized IV and tag strings before base64 decoding', () => {
+  const envelope = cipher.seal(credential, context);
+  const original = Buffer.from;
+  let oversizedDecodes = 0;
+  Buffer.from = function (value, ...args) {
+    if (
+      typeof value === 'string' &&
+      value.length === 100000 &&
+      args[0] === 'base64url'
+    )
+      oversizedDecodes++;
+    return original(value, ...args);
+  };
+  try {
+    for (const field of ['iv', 'tag'])
+      assert.throws(
+        () =>
+          cipher.open({ ...envelope, [field]: 'a'.repeat(100000) }, context),
+        unavailable,
+      );
+    assert.equal(oversizedDecodes, 0);
+  } finally {
+    Buffer.from = original;
+  }
+});
