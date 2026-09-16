@@ -94,3 +94,7 @@ export const googleConnectionSchema = z.strictObject({
   subject: z.email().max(254),
 });
 export type GoogleConnection = z.infer<typeof googleConnectionSchema>;
+
+export const googleConnectionStateSchema = z.strictObject({
+  connection: googleConnectionSchema.nullable(),
+});

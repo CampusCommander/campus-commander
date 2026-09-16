@@ -25,8 +25,8 @@ export class GoogleConnectionController {
   ) {}
 
   @Get()
-  read(@Req() request: AuthenticatedRequest) {
-    return this.connection.read(request.session);
+  async read(@Req() request: AuthenticatedRequest) {
+    return { connection: await this.connection.read(request.session) };
   }
 
   @Get('candidates/:id')

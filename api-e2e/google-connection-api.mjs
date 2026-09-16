@@ -32,7 +32,7 @@ export async function qualifyGoogleConnectionApi({
     },
   };
   assert.equal((await admin.get(root)).status(), 200);
-  assert.equal(await (await admin.get(root)).json(), null);
+  assert.deepEqual(await (await admin.get(root)).json(), { connection: null });
   for (const invalidHeaders of [
     { origin: publicOrigin },
     { ...headers, origin: 'https://wrong.invalid' },
@@ -99,7 +99,7 @@ export async function qualifyGoogleConnectionApi({
   );
   assert.equal(confirmation.status(), 201, await confirmation.text());
   assert.equal((await confirmation.json()).customerId, 'C0123456');
-  const connection = await (await admin.get(root)).json();
+  const { connection } = await (await admin.get(root)).json();
   assert.equal(connection.customerId, 'C0123456');
   assert.equal(connection.generation, 1);
   assert.equal('envelope' in connection, false);
