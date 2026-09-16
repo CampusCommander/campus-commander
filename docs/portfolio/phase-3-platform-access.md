@@ -1,6 +1,6 @@
 # Phase 3 platform access implementation
 
-Owner: CC-51. Status: platform database, API, and browser implementation exist. The initial hosted platform qualification passed. Review fixes await hosted regression checks.
+Owner: CC-51. Status: platform database, API, and browser implementation exist. Hosted platform qualification passed after review fixes. District integration remains pending.
 This branch builds on CC-50. It does not establish Phase 3 completion.
 
 ## Change contract
@@ -56,7 +56,9 @@ Input changes invalidate that preview. Failed refreshes preserve edits and preve
 Local light and dark checks reported zero automated accessibility violations. The editor fits a 320-pixel viewport without horizontal overflow.
 [Full hosted qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35134910313) passed all seven jobs at `3cd35737dfd0c5d9534116816bf5436c1a879277`.
 This includes real PostgreSQL, direct API authorization, browser grant management, and earlier-phase compatibility.
-Subsequent review fixes require another hosted run.
+[Focused hosted qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35136921322) passed after review fixes at `e6bfd8d3c8800efe62e53068112ba1983b15ed1c`.
+The same revision passed real PostgreSQL checks. Its full compatibility run remains active.
+[Retained evidence](../../deployment/evidence/CC-51-platform-access.json) records the exact revisions, checks, review findings, and limits.
 Local regression checks cover failed detail reloads, unchanged reviews, durable receipts, and lost confirmation responses.
 A component test verifies that a failed session check preserves an already confirmed access change.
 UI rules UI-01 through UI-10 and FORM-01 apply to the grant workflow.

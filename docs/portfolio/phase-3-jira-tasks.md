@@ -275,7 +275,7 @@ Owner role: Platform access lead. Relative size: M. Stories: S06.
 Packages: P9.1, P6.1. Jira key: [CC-51](https://easton-consulting.atlassian.net/browse/CC-51).
 
 Status: In Progress. [Draft PR #8](https://github.com/CampusCommander/campus-commander/pull/8) adds platform grant management.
-Hosted database checks passed. API and browser qualification remain in progress.
+Hosted database, API, and browser checks passed. Confirmed-customer integration remains pending.
 CC-46 must provide the confirmed customer before district grants become available. CC-52 adds school grants afterward.
 
 A platform administrator reviews platform users and applies explicit platform, district, and viewer presets with visible effective permissions.
