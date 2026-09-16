@@ -2004,13 +2004,6 @@ test(
         await page.evaluate(() => document.activeElement !== document.body),
       );
       if (applicationPhase === 3)
-        await qualifyGoogleConnectionApi({
-          admin: page.context().request,
-          publicOrigin,
-          migrator,
-          evidenceDirectory,
-        });
-      if (applicationPhase === 3)
         await qualifyInvitationBrowser({
           browser,
           page,
@@ -2021,6 +2014,13 @@ test(
             subject = value;
           },
           auditAccessibility,
+          evidenceDirectory,
+        });
+      if (applicationPhase === 3)
+        await qualifyGoogleConnectionApi({
+          admin: page.context().request,
+          publicOrigin,
+          migrator,
           evidenceDirectory,
         });
       await page.getByRole('button', { name: 'Open user menu' }).click();
