@@ -70,6 +70,7 @@
     "@nestjs/platform-express": "^11.0.0",
     "@ngrx/signals": "22.0.0",
     "axios": "1.20.0",
+    "google-auth-library": "11.1.0",
     "openid-client": "6.8.8",
     "pg": "8.16.3",
     "redis": "5.11.0",

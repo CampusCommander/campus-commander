@@ -253,15 +253,15 @@
       "packages": ["P3.1"],
       "deps": [],
       "prerequisites": [
-        "Owner-authorized controlled Workspace customer, connection identity, OAuth client, callback, and protected credential-file path."
+        "Owner-authorized controlled Workspace customer, delegated identity, service account, DWD scopes, and protected credential-file path."
       ],
       "scope": "An operator authorizes a dedicated test identity and demonstrates unattended customer reads after browser closure, process restart, renewal, and credential replacement.",
       "criteria": [
-        "Record fixture authorization, exact library versions, customer identity, Google roles, OAuth audience, scopes, callback, and test environment.",
+        "Record fixture authorization, exact library versions, customer identity, delegated Google roles, service-account identity, DWD scopes, and test environment.",
         "Prove customer and domain reads with minimum verified scopes, including primary, secondary, and alias-domain coverage.",
         "Classify historical user and device proof rows as separate authorized experiments. Do not enable them in ordinary Phase 3 onboarding.",
-        "Use an established server OAuth library. Verify single-use state, exact callbacks, supported code protections, denied consent, and partial grants.",
-        "Prove browser closure, process restart, access-token reuse, renewal, refresh-token omission, revocation, and same-customer identity replacement.",
+        "Use the Google authentication library. Verify delegated subject, signed token exchange, exact granted scopes, missing delegation, and partial authorization.",
+        "Prove browser-independent access, process restart, access-token reuse, signed token renewal, DWD or key revocation, and same-customer identity replacement.",
         "Reject a wrong customer before changing stored ownership. Record unavailable live fixture cases and equivalent simulator coverage separately.",
         "Prove encrypted credential recovery with an independently restored key. Missing or incorrect keys must fail without exposing secrets.",
         "Record the credential profile decision and every passed, failed, or not-run case before dependent onboarding implementation."
@@ -271,16 +271,22 @@
         "Simulator denial and concurrency results.",
         "Credential profile decision with explicit missing-fixture limits."
       ],
-      "demo": "Authorize once, close the browser, restart the consumer, renew access, and read the same customer's identity.",
+      "demo": "Authorize DWD once, restart the consumer without a browser session, renew access, and read the same customer's identity.",
       "rules": [],
       "jiraKey": "CC-44",
       "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-44",
       "status": "published",
       "stableLabel": "p3-t01",
-      "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn operator authorizes a dedicated test identity and demonstrates unattended customer reads after browser closure, process restart, renewal, and credential replacement.\n\nStories: S01, S02, S04. Packages: P3.1.\n\n## Acceptance criteria\n\n- [ ] Record fixture authorization, exact library versions, customer identity, Google roles, OAuth audience, scopes, callback, and test environment.\n- [ ] Prove customer and domain reads with minimum verified scopes, including primary, secondary, and alias-domain coverage.\n- [ ] Classify historical user and device proof rows as separate authorized experiments. Do not enable them in ordinary Phase 3 onboarding.\n- [ ] Use an established server OAuth library. Verify single-use state, exact callbacks, supported code protections, denied consent, and partial grants.\n- [ ] Prove browser closure, process restart, access-token reuse, renewal, refresh-token omission, revocation, and same-customer identity replacement.\n- [ ] Reject a wrong customer before changing stored ownership. Record unavailable live fixture cases and equivalent simulator coverage separately.\n- [ ] Prove encrypted credential recovery with an independently restored key. Missing or incorrect keys must fail without exposing secrets.\n- [ ] Record the credential profile decision and every passed, failed, or not-run case before dependent onboarding implementation.\n\n## Blocked by\n\nNone within the backlog.\n- External prerequisite: Owner-authorized controlled Workspace customer, connection identity, OAuth client, callback, and protected credential-file path.\n\n## Evidence\n\n- Sanitized controlled-account capability report and exact commands.\n- Simulator denial and concurrency results.\n- Credential profile decision with explicit missing-fixture limits.\n\n## Demonstration\n\nAuthorize once, close the browser, restart the consumer, renew access, and read the same customer's identity.\n\n## Ownership and UI\n\nProposed owner role: Connection lead. Relative size: L.\nNo new product UI. Verify applicable authorization and operational behavior.",
+      "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn operator authorizes a dedicated test identity and demonstrates unattended customer reads after browser closure, process restart, renewal, and credential replacement.\n\nStories: S01, S02, S04. Packages: P3.1.\n\n## Acceptance criteria\n\n- [ ] Record fixture authorization, exact library versions, customer identity, delegated Google roles, service-account identity, DWD scopes, and test environment.\n- [ ] Prove customer and domain reads with minimum verified scopes, including primary, secondary, and alias-domain coverage.\n- [ ] Classify historical user and device proof rows as separate authorized experiments. Do not enable them in ordinary Phase 3 onboarding.\n- [ ] Use the Google authentication library. Verify delegated subject, signed token exchange, exact granted scopes, missing delegation, and partial authorization.\n- [ ] Prove browser-independent access, process restart, access-token reuse, signed token renewal, DWD or key revocation, and same-customer identity replacement.\n- [ ] Reject a wrong customer before changing stored ownership. Record unavailable live fixture cases and equivalent simulator coverage separately.\n- [ ] Prove encrypted credential recovery with an independently restored key. Missing or incorrect keys must fail without exposing secrets.\n- [ ] Record the credential profile decision and every passed, failed, or not-run case before dependent onboarding implementation.\n\n## Blocked by\n\nNone within the backlog.\n- External prerequisite: Owner-authorized controlled Workspace customer, delegated identity, service account, DWD scopes, and protected credential-file path.\n\n## Evidence\n\n- Sanitized controlled-account capability report and exact commands.\n- Simulator denial and concurrency results.\n- Credential profile decision with explicit missing-fixture limits.\n\n## Demonstration\n\nAuthorize DWD once, restart the consumer without a browser session, renew access, and read the same customer's identity.\n\n## Ownership and UI\n\nProposed owner role: Connection lead. Relative size: L.\nNo new product UI. Verify applicable authorization and operational behavior.",
       "blockers": [],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "implementation": {
+        "branch": "codex/cc-44-google-credential-proof",
+        "status": "live-read-proof-passed-additional-fixtures-pending",
+        "evidence": "../../deployment/evidence/CC-44-dwd-credential-proof.json",
+        "validatedRevision": "c5e9d9cd22359270dda8168ba31df84706a13b11"
+      }
     },
     {
       "id": "P3-T02",
@@ -337,9 +343,9 @@
       "prerequisites": [],
       "scope": "An authorized platform administrator connects the background Google identity, reviews the resolved customer, and confirms the installation binding.",
       "criteria": [
-        "Reuse accepted client import and administrator enrollment. Keep background consent separate from application sign-in.",
-        "Validate the callback transaction and current administrator authority. Reject replay, stale permission versions, and cross-browser substitution.",
-        "Encrypt candidate refresh credentials with an external versioned key. Never return tokens or client secrets to the browser.",
+        "Reuse administrator enrollment and keep the sign-in web client separate. Import and validate the background service account and delegated subject.",
+        "Validate the credential staging transaction and current administrator authority. Reject replay, stale permission versions, CSRF, and cross-browser substitution.",
+        "Encrypt candidate service-account credentials with an external versioned key. Never return tokens or private keys to the browser.",
         "Display the resolved stable customer ID and domain observations before explicit confirmation.",
         "Atomically bind one customer and activate its credential generation. Reject mismatches and concurrent competing first connections.",
         "Run a bounded authenticated worker read through the existing service boundary after browser closure and API restart.",
@@ -348,7 +354,7 @@
       ],
       "evidence": [
         "Browser-to-provider-to-worker connection report.",
-        "Customer mismatch, callback replay, and two-replica renewal tests.",
+        "Customer mismatch, staging replay, and two-replica renewal tests.",
         "Sanitized security-event and credential-storage inspection."
       ],
       "demo": "Connect the customer, confirm its identity, close the browser, and complete the same read from an independent worker.",
@@ -369,7 +375,7 @@
       "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-46",
       "status": "published",
       "stableLabel": "p3-t03",
-      "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn authorized platform administrator connects the background Google identity, reviews the resolved customer, and confirms the installation binding.\n\nStories: S01, S02. Packages: P3.1, P3.2, P9.1.\n\n## Acceptance criteria\n\n- [ ] Reuse accepted client import and administrator enrollment. Keep background consent separate from application sign-in.\n- [ ] Validate the callback transaction and current administrator authority. Reject replay, stale permission versions, and cross-browser substitution.\n- [ ] Encrypt candidate refresh credentials with an external versioned key. Never return tokens or client secrets to the browser.\n- [ ] Display the resolved stable customer ID and domain observations before explicit confirmation.\n- [ ] Atomically bind one customer and activate its credential generation. Reject mismatches and concurrent competing first connections.\n- [ ] Run a bounded authenticated worker read through the existing service boundary after browser closure and API restart.\n- [ ] Coordinate token renewal across replicas and reject late writes from retired credential generations.\n- [ ] Record connection changes atomically with security evidence and clean abandoned candidate credentials within a documented bound.\n\n## Blocked by\n\n- [CC-44](https://easton-consulting.atlassian.net/browse/CC-44) (P3-T01).\n- [CC-45](https://easton-consulting.atlassian.net/browse/CC-45) (P3-T02).\n\n## Evidence\n\n- Browser-to-provider-to-worker connection report.\n- Customer mismatch, callback replay, and two-replica renewal tests.\n- Sanitized security-event and credential-storage inspection.\n\n## Demonstration\n\nConnect the customer, confirm its identity, close the browser, and complete the same read from an independent worker.\n\n## Ownership and UI\n\nProposed owner role: Connection lead. Relative size: L.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
+      "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn authorized platform administrator connects the background Google identity, reviews the resolved customer, and confirms the installation binding.\n\nStories: S01, S02. Packages: P3.1, P3.2, P9.1.\n\n## Acceptance criteria\n\n- [ ] Reuse administrator enrollment and keep the sign-in web client separate. Import and validate the background service account and delegated subject.\n- [ ] Validate the credential staging transaction and current administrator authority. Reject replay, stale permission versions, CSRF, and cross-browser substitution.\n- [ ] Encrypt candidate service-account credentials with an external versioned key. Never return tokens or private keys to the browser.\n- [ ] Display the resolved stable customer ID and domain observations before explicit confirmation.\n- [ ] Atomically bind one customer and activate its credential generation. Reject mismatches and concurrent competing first connections.\n- [ ] Run a bounded authenticated worker read through the existing service boundary after browser closure and API restart.\n- [ ] Coordinate token renewal across replicas and reject late writes from retired credential generations.\n- [ ] Record connection changes atomically with security evidence and clean abandoned candidate credentials within a documented bound.\n\n## Blocked by\n\n- [CC-44](https://easton-consulting.atlassian.net/browse/CC-44) (P3-T01).\n- [CC-45](https://easton-consulting.atlassian.net/browse/CC-45) (P3-T02).\n\n## Evidence\n\n- Browser-to-provider-to-worker connection report.\n- Customer mismatch, staging replay, and two-replica renewal tests.\n- Sanitized security-event and credential-storage inspection.\n\n## Demonstration\n\nConnect the customer, confirm its identity, close the browser, and complete the same read from an independent worker.\n\n## Ownership and UI\n\nProposed owner role: Connection lead. Relative size: L.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-44", "CC-45"],
       "jiraStatus": "To Do",
       "jiraParent": "CC-42"
@@ -386,8 +392,8 @@
       "scope": "An administrator saves customer settings and resumes observed onboarding progress after browser closure, dependency failure, or service restart.",
       "criteria": [
         "Define and validate the Phase 3 customer settings allowlist. Keep per-user theme preferences separate from customer settings.",
-        "Persist confirmed steps and settings revisions in PostgreSQL. Keep short-lived OAuth transactions separate.",
-        "Restore progress after reload and API restart without repeating completed consent or discarding unsaved form input on errors.",
+        "Persist confirmed steps and settings revisions in PostgreSQL. Keep short-lived credential staging transactions separate.",
+        "Restore progress after reload and API restart without repeating completed credential verification or discarding unsaved form input on errors.",
         "Handle Redis loss by restarting only the expired authorization transaction while retaining durable business progress.",
         "Reject stale concurrent writes with a recoverable conflict response and unchanged confirmed state.",
         "Display Google approval and capability verification separately from local setup. Do not simulate inventory progress.",
@@ -417,14 +423,14 @@
       "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-47",
       "status": "published",
       "stableLabel": "p3-t04",
-      "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn administrator saves customer settings and resumes observed onboarding progress after browser closure, dependency failure, or service restart.\n\nStories: S03, S04. Packages: P3.2, P6.1.\n\n## Acceptance criteria\n\n- [ ] Define and validate the Phase 3 customer settings allowlist. Keep per-user theme preferences separate from customer settings.\n- [ ] Persist confirmed steps and settings revisions in PostgreSQL. Keep short-lived OAuth transactions separate.\n- [ ] Restore progress after reload and API restart without repeating completed consent or discarding unsaved form input on errors.\n- [ ] Handle Redis loss by restarting only the expired authorization transaction while retaining durable business progress.\n- [ ] Reject stale concurrent writes with a recoverable conflict response and unchanged confirmed state.\n- [ ] Display Google approval and capability verification separately from local setup. Do not simulate inventory progress.\n- [ ] Require scoped read/write authority and atomic security evidence for settings changes.\n- [ ] Preserve keyboard navigation, focus, field labels, both themes, and clear error recovery throughout the workflow.\n\n## Blocked by\n\n- [CC-46](https://easton-consulting.atlassian.net/browse/CC-46) (P3-T03).\n\n## Evidence\n\n- Interrupted onboarding and concurrent settings browser tests.\n- PostgreSQL persistence and audit transaction results.\n- Applicable UI rule evidence.\n\n## Demonstration\n\nSave settings, interrupt onboarding, restart the API, and resume at the last confirmed step.\n\n## Ownership and UI\n\nProposed owner role: Application experience lead. Relative size: M.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
+      "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn administrator saves customer settings and resumes observed onboarding progress after browser closure, dependency failure, or service restart.\n\nStories: S03, S04. Packages: P3.2, P6.1.\n\n## Acceptance criteria\n\n- [ ] Define and validate the Phase 3 customer settings allowlist. Keep per-user theme preferences separate from customer settings.\n- [ ] Persist confirmed steps and settings revisions in PostgreSQL. Keep short-lived credential staging transactions separate.\n- [ ] Restore progress after reload and API restart without repeating completed credential verification or discarding unsaved form input on errors.\n- [ ] Handle Redis loss by restarting only the expired authorization transaction while retaining durable business progress.\n- [ ] Reject stale concurrent writes with a recoverable conflict response and unchanged confirmed state.\n- [ ] Display Google approval and capability verification separately from local setup. Do not simulate inventory progress.\n- [ ] Require scoped read/write authority and atomic security evidence for settings changes.\n- [ ] Preserve keyboard navigation, focus, field labels, both themes, and clear error recovery throughout the workflow.\n\n## Blocked by\n\n- [CC-46](https://easton-consulting.atlassian.net/browse/CC-46) (P3-T03).\n\n## Evidence\n\n- Interrupted onboarding and concurrent settings browser tests.\n- PostgreSQL persistence and audit transaction results.\n- Applicable UI rule evidence.\n\n## Demonstration\n\nSave settings, interrupt onboarding, restart the API, and resume at the last confirmed step.\n\n## Ownership and UI\n\nProposed owner role: Application experience lead. Relative size: M.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-46"],
       "jiraStatus": "To Do",
       "jiraParent": "CC-42"
     },
     {
       "id": "P3-T05",
-      "title": "Explain capability consent and Google connection health",
+      "title": "Explain capability authorization and Google connection health",
       "size": "M",
       "owner": "Connection lead",
       "stories": ["S02", "S04"],
@@ -433,9 +439,9 @@
       "prerequisites": [],
       "scope": "An authorized operator sees which Phase 3 capabilities are enabled, granted, qualified, and available, then runs a bounded diagnostic or reconnects.",
       "criteria": [
-        "Generate consent text and scope counts from enabled, qualified capability records with checked sources and test evidence.",
+        "Generate DWD authorization instructions and scope counts from enabled, qualified capability records with checked sources and test evidence.",
         "Keep customer and domain reads separate from optional read-only OU references. Exclude later inventory and mutation capabilities.",
-        "Handle partial consent without marking unavailable capabilities healthy or repeatedly forcing unrelated consent.",
+        "Handle partial DWD authorization without marking unavailable capabilities healthy or repeatedly requesting unrelated scopes.",
         "Classify credential, scope, privilege, policy, license, quota, and network failures with explicit recovery actions.",
         "Show observation age and preserve last-known results during transient failures without presenting them as current success.",
         "Use the same health contract in the shell and Diagnostics. Google failure must not block local sign-in or installer readiness.",
@@ -465,7 +471,7 @@
       "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-48",
       "status": "published",
       "stableLabel": "p3-t05",
-      "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn authorized operator sees which Phase 3 capabilities are enabled, granted, qualified, and available, then runs a bounded diagnostic or reconnects.\n\nStories: S02, S04. Packages: P3.1, P3.3.\n\n## Acceptance criteria\n\n- [ ] Generate consent text and scope counts from enabled, qualified capability records with checked sources and test evidence.\n- [ ] Keep customer and domain reads separate from optional read-only OU references. Exclude later inventory and mutation capabilities.\n- [ ] Handle partial consent without marking unavailable capabilities healthy or repeatedly forcing unrelated consent.\n- [ ] Classify credential, scope, privilege, policy, license, quota, and network failures with explicit recovery actions.\n- [ ] Show observation age and preserve last-known results during transient failures without presenting them as current success.\n- [ ] Use the same health contract in the shell and Diagnostics. Google failure must not block local sign-in or installer readiness.\n- [ ] Bound diagnostic requests, retries, and concurrency. Require current permission and retain sanitized correlation evidence.\n- [ ] Verify reconnect and capability recheck after revocation or changed privileges without requiring a full installation reset.\n\n## Blocked by\n\n- [CC-47](https://easton-consulting.atlassian.net/browse/CC-47) (P3-T04).\n\n## Evidence\n\n- Capability registry and generated-scope tests.\n- Simulator fault classifications and controlled-account privilege results.\n- Browser health, retry, and stale-state evidence.\n\n## Demonstration\n\nRemove a required grant, observe a named capability failure, restore authority, and recheck successfully.\n\n## Ownership and UI\n\nProposed owner role: Connection lead. Relative size: M.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
+      "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn authorized operator sees which Phase 3 capabilities are enabled, granted, qualified, and available, then runs a bounded diagnostic or reconnects.\n\nStories: S02, S04. Packages: P3.1, P3.3.\n\n## Acceptance criteria\n\n- [ ] Generate DWD authorization instructions and scope counts from enabled, qualified capability records with checked sources and test evidence.\n- [ ] Keep customer and domain reads separate from optional read-only OU references. Exclude later inventory and mutation capabilities.\n- [ ] Handle partial DWD authorization without marking unavailable capabilities healthy or repeatedly requesting unrelated scopes.\n- [ ] Classify credential, scope, privilege, policy, license, quota, and network failures with explicit recovery actions.\n- [ ] Show observation age and preserve last-known results during transient failures without presenting them as current success.\n- [ ] Use the same health contract in the shell and Diagnostics. Google failure must not block local sign-in or installer readiness.\n- [ ] Bound diagnostic requests, retries, and concurrency. Require current permission and retain sanitized correlation evidence.\n- [ ] Verify reconnect and capability recheck after revocation or changed privileges without requiring a full installation reset.\n\n## Blocked by\n\n- [CC-47](https://easton-consulting.atlassian.net/browse/CC-47) (P3-T04).\n\n## Evidence\n\n- Capability registry and generated-scope tests.\n- Simulator fault classifications and controlled-account privilege results.\n- Browser health, retry, and stale-state evidence.\n\n## Demonstration\n\nRemove a required grant, observe a named capability failure, restore authority, and recheck successfully.\n\n## Ownership and UI\n\nProposed owner role: Connection lead. Relative size: M.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-47"],
       "jiraStatus": "To Do",
       "jiraParent": "CC-42"
@@ -482,7 +488,7 @@
       "scope": "An authorized administrator replaces the background Google identity or encryption key while preserving customer ownership and recoverable access.",
       "criteria": [
         "Stage and verify replacements against the existing stable customer ID before atomic activation.",
-        "Preserve a working credential when replacement consent fails. Reject a different customer without changing ownership.",
+        "Preserve a working credential when replacement verification fails. Reject a different customer without changing ownership.",
         "Coordinate replacement and renewal across replicas with credential generations and bounded transition behavior.",
         "Prove old generations cannot resume reads or overwrite new material after activation.",
         "Rotate encryption keys with versioned ciphertext and an explicit interrupted-rotation recovery procedure.",
@@ -513,7 +519,7 @@
       "jiraUrl": "https://easton-consulting.atlassian.net/browse/CC-49",
       "status": "published",
       "stableLabel": "p3-t06",
-      "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn authorized administrator replaces the background Google identity or encryption key while preserving customer ownership and recoverable access.\n\nStories: S01, S08. Packages: P3.1, P9.1, P9.3.\n\n## Acceptance criteria\n\n- [ ] Stage and verify replacements against the existing stable customer ID before atomic activation.\n- [ ] Preserve a working credential when replacement consent fails. Reject a different customer without changing ownership.\n- [ ] Coordinate replacement and renewal across replicas with credential generations and bounded transition behavior.\n- [ ] Prove old generations cannot resume reads or overwrite new material after activation.\n- [ ] Rotate encryption keys with versioned ciphertext and an explicit interrupted-rotation recovery procedure.\n- [ ] Expose revoked, expired, missing-key, and invalid-client states with actionable recovery while preserving local application access.\n- [ ] Document provider revocation scope and prevent background disconnect from silently invalidating application-login configuration.\n- [ ] Require current authority and retained security events for replacement, disconnect, key changes, and recovery.\n\n## Blocked by\n\n- [CC-48](https://easton-consulting.atlassian.net/browse/CC-48) (P3-T05).\n\n## Evidence\n\n- Replacement, renewal-race, and retired-generation integration results.\n- Interrupted key-rotation and missing-key reports.\n- Operator credential replacement and erasure procedure.\n\n## Demonstration\n\nReplace the connection identity within the same customer, rotate its key, restart consumers, and deny the retired credential.\n\n## Ownership and UI\n\nProposed owner role: Connection security lead. Relative size: L.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
+      "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn authorized administrator replaces the background Google identity or encryption key while preserving customer ownership and recoverable access.\n\nStories: S01, S08. Packages: P3.1, P9.1, P9.3.\n\n## Acceptance criteria\n\n- [ ] Stage and verify replacements against the existing stable customer ID before atomic activation.\n- [ ] Preserve a working credential when replacement verification fails. Reject a different customer without changing ownership.\n- [ ] Coordinate replacement and renewal across replicas with credential generations and bounded transition behavior.\n- [ ] Prove old generations cannot resume reads or overwrite new material after activation.\n- [ ] Rotate encryption keys with versioned ciphertext and an explicit interrupted-rotation recovery procedure.\n- [ ] Expose revoked, expired, missing-key, and invalid-client states with actionable recovery while preserving local application access.\n- [ ] Document provider revocation scope and prevent background disconnect from silently invalidating application-login configuration.\n- [ ] Require current authority and retained security events for replacement, disconnect, key changes, and recovery.\n\n## Blocked by\n\n- [CC-48](https://easton-consulting.atlassian.net/browse/CC-48) (P3-T05).\n\n## Evidence\n\n- Replacement, renewal-race, and retired-generation integration results.\n- Interrupted key-rotation and missing-key reports.\n- Operator credential replacement and erasure procedure.\n\n## Demonstration\n\nReplace the connection identity within the same customer, rotate its key, restart consumers, and deny the retired credential.\n\n## Ownership and UI\n\nProposed owner role: Connection security lead. Relative size: L.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-48"],
       "jiraStatus": "To Do",
       "jiraParent": "CC-42"
@@ -1065,5 +1071,11 @@
   ],
   "approvedAt": "2026-09-16",
   "approvalEvidence": "Owner approved the proposed Phase 3 breakdown in the planning task: I approve.",
-  "publishedAt": "2026-09-16"
+  "publishedAt": "2026-09-16",
+  "credentialProfileDecision": {
+    "profile": "service-account-dwd",
+    "selectedAt": "2026-09-16",
+    "authority": "Owner supplied a service account and configured DWD for background authentication.",
+    "document": "phase-3-google-credentials.md"
+  }
 }

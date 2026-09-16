@@ -344,6 +344,20 @@
       "options": {
         "command": "CC_OPERATIONS_CLI=1 node deployment/operations/integration.mjs"
       }
+    },
+    "google-proof-test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "options": {
+        "command": "node --test deployment/google-proof/*.test.mjs"
+      }
+    },
+    "google-proof": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node deployment/google-proof/cli.mjs"
+      }
     }
   }
 }
