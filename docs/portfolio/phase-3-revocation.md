@@ -27,7 +27,7 @@ This test uses an isolated synthetic installation. It changes no live Workspace 
 ## Remaining work
 
 - Qualify the new invitation revocation policy against real PostgreSQL and browser flows.
-- Preserve recoverable browser input and show explicit access-change guidance.
+- Qualify stale browser recovery through the real application and provider fixture.
 - Integrate school scope changes after CC-52.
 - Qualify concurrent grant writes, restart, Redis loss, unrelated users, and installation-operator recovery together.
 - Confirm that background Google credentials remain independent after the connection implementation exists.
@@ -57,3 +57,21 @@ The receipt retains the revoked invitation IDs.
 
 Installation-operator replacement, revocation, and administrator confirmation apply the same invalidation within their existing transaction.
 The private revocation function rejects direct runtime calls.
+
+## Stale browser recovery
+
+A Phase 3 unauthorized response suspends that tab's requests and preserves its component state.
+The shared shell explains the interruption and provides sign-in in another tab.
+The original tab retains unsent invitation fields and proposed grants while authentication proceeds.
+It clears invitation links, invitation confirmation, and grant confirmation.
+
+Recheck access accepts only the same stable principal ID.
+A different principal closes the previous form. Lost page authority redirects to the account page.
+Successful recovery still requires fresh observations and another explicit review before confirmation.
+Navigating away discards the retained form values. The browser stores no draft credentials or invitation tokens.
+A late unauthorized response cannot replace a newer session.
+Sign-out checks and revokes the current browser session even when the tab was interrupted.
+Phase 2 retains its existing sign-in redirect.
+
+Local store tests cover recovery, identity changes, late responses, sign-out, and Phase 2 compatibility.
+The hosted browser test exercises two stale tabs, separate-tab sign-in, restored fields, and invalidated confirmation.

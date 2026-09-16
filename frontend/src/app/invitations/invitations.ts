@@ -1,4 +1,11 @@
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import {
+  Component,
+  OnDestroy,
+  OnInit,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
@@ -49,6 +56,16 @@ export class Invitations implements OnInit, OnDestroy {
   protected verified = false;
   private readonly clearLink = () => this.link.set('');
 
+  constructor() {
+    effect(() => {
+      if (this.auth.interrupted()) {
+        this.clearLink();
+        this.review.set(null);
+        this.verified = false;
+        this.stale.set(true);
+      }
+    });
+  }
   ngOnInit() {
     window.addEventListener('pagehide', this.clearLink);
     void this.refresh();
@@ -89,7 +106,7 @@ export class Invitations implements OnInit, OnDestroy {
     }
   }
   protected async create() {
-    if (this.busy() || !this.canInvite()) return;
+    if (this.busy() || this.stale() || !this.canInvite()) return;
     const parsed = createInvitationSchema.safeParse({
       label: this.label,
       expiresInHours: Number(this.expiresInHours),

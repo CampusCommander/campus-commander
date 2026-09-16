@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, effect, inject, OnInit, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -53,6 +53,14 @@ export class PlatformAccess implements OnInit {
   protected enabled = true;
   protected chosen: Partial<Record<Action, boolean>> = {};
   protected confirmed = false;
+  constructor() {
+    effect(() => {
+      if (this.auth.interrupted()) {
+        this.invalidate();
+        this.stale.set(true);
+      }
+    });
+  }
   ngOnInit() {
     void this.refresh();
   }

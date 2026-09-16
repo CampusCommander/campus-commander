@@ -46,6 +46,7 @@ it('preserves confirmed access when the following session check fails', async ()
         useValue: {
           request,
           can: () => true,
+          interrupted: () => false,
           session: () => ({ identity: principal }),
         },
       },

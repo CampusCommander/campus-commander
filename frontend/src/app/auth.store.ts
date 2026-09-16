@@ -17,6 +17,8 @@ interface AuthState {
   metadata: ApplicationMetadata | null;
   error: string | null;
   loading: boolean;
+  interrupted: boolean;
+  interruptedPrincipalId: string | null;
 }
 
 export const AuthStore = signalStore(
@@ -26,6 +28,8 @@ export const AuthStore = signalStore(
     metadata: null,
     error: null,
     loading: false,
+    interrupted: false,
+    interruptedPrincipalId: null,
   }),
   withMethods((store, router = inject(Router)) => ({
     can(action: Action, resource: ResourceScope) {
@@ -79,7 +83,66 @@ export const AuthStore = signalStore(
         patchState(store, { loading: false });
       }
     },
+    async resume() {
+      const expected = store.interruptedPrincipalId();
+      if (!expected || store.loading()) return;
+      patchState(store, { loading: true });
+      try {
+        const response = await fetch('/api/auth/session', {
+          credentials: 'same-origin',
+          signal: AbortSignal.timeout(5000),
+        });
+        if (response.status === 401) {
+          patchState(store, {
+            error:
+              'Sign in in another tab, then recheck access here. Your form values remain in this tab.',
+          });
+          return;
+        }
+        if (!response.ok) throw new Error();
+        const session = sessionResponseSchema.parse(await response.json());
+        if (session.identity.id !== expected) {
+          patchState(store, {
+            session: null,
+            interrupted: false,
+            interruptedPrincipalId: null,
+            error:
+              'A different principal signed in. The previous form was closed.',
+          });
+          await router.navigateByUrl('/login');
+          return;
+        }
+        patchState(store, {
+          session,
+          interrupted: false,
+          interruptedPrincipalId: null,
+          error: null,
+        });
+        if (
+          (router.url.startsWith('/platform-users') ||
+            router.url.startsWith('/invitations')) &&
+          !isAuthorized(session.identity.grants, 'platform-users:read', {
+            kind: 'platform',
+          })
+        ) {
+          await router.navigateByUrl('/account');
+          patchState(store, {
+            error: 'Your current access does not permit the previous page.',
+          });
+        }
+      } catch {
+        patchState(store, {
+          error:
+            'Access verification is unavailable. Retry when your connection returns. Your form values remain in this tab.',
+        });
+      } finally {
+        patchState(store, { loading: false });
+      }
+    },
     async request(path: string, body?: unknown) {
+      if (store.interrupted())
+        return Response.json({ code: 'access-changed' }, { status: 401 });
+      const requestedSession = store.session();
       const response = await fetch(path, {
         method: body === undefined ? 'GET' : 'POST',
         credentials: 'same-origin',
@@ -93,12 +156,33 @@ export const AuthStore = signalStore(
               },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
-      if (response.status === 401) {
-        patchState(store, {
-          session: null,
-          error: 'Your session expired. Sign in again.',
-        });
-        await router.navigateByUrl('/login');
+      if (
+        response.status === 401 &&
+        !store.interrupted() &&
+        (!store.session() ||
+          store.session()?.csrfToken === requestedSession?.csrfToken)
+      ) {
+        if (store.metadata()?.phase === 3 && requestedSession) {
+          const result = await response
+            .clone()
+            .json()
+            .catch(() => null);
+          patchState(store, {
+            session: null,
+            interrupted: true,
+            interruptedPrincipalId: requestedSession.identity.id,
+            error:
+              result?.code === 'access-changed'
+                ? 'Your application access changed. Your form values remain in this tab.'
+                : 'Your session ended. Your form values remain in this tab.',
+          });
+        } else {
+          patchState(store, {
+            session: null,
+            error: 'Your session expired. Sign in again.',
+          });
+          await router.navigateByUrl('/login');
+        }
       }
       return response;
     },
@@ -117,9 +201,35 @@ export const AuthStore = signalStore(
     },
     async logout() {
       try {
-        const response = await this.request('/api/auth/logout', {});
+        let response: Response;
+        if (store.interrupted()) {
+          const current = await fetch('/api/auth/session', {
+            credentials: 'same-origin',
+            signal: AbortSignal.timeout(5000),
+          });
+          if (current.status === 401) response = current;
+          else {
+            if (!current.ok) throw new Error();
+            const session = sessionResponseSchema.parse(await current.json());
+            response = await fetch('/api/auth/logout', {
+              method: 'POST',
+              credentials: 'same-origin',
+              signal: AbortSignal.timeout(5000),
+              headers: {
+                'content-type': 'application/json',
+                'x-csrf-token': session.csrfToken,
+              },
+              body: '{}',
+            });
+          }
+        } else response = await this.request('/api/auth/logout', {});
         if (!response.ok && response.status !== 401) throw new Error();
-        patchState(store, { session: null, error: null });
+        patchState(store, {
+          session: null,
+          error: null,
+          interrupted: false,
+          interruptedPrincipalId: null,
+        });
         await router.navigateByUrl('/login');
       } catch {
         patchState(store, {

@@ -1,3 +1,4 @@
+import { qualifyAccessRevocationBrowser } from './access-revocation-browser.mjs';
 import { qualifyAccessRevocation } from './access-revocation-api.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
@@ -2009,6 +2010,17 @@ test(
           migrator,
           observer: admin,
           redis,
+          evidenceDirectory,
+        });
+      if (applicationPhase === 3)
+        await qualifyAccessRevocationBrowser({
+          browser,
+          publicOrigin,
+          migrator,
+          setSubject: (value) => {
+            subject = value;
+          },
+          auditAccessibility,
           evidenceDirectory,
         });
       await context.close();

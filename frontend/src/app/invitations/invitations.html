@@ -72,7 +72,7 @@
       <button
         mat-flat-button
         type="submit"
-        [disabled]="busy() || !label.trim()"
+        [disabled]="busy() || stale() || !label.trim()"
       >
         Create invitation
       </button>

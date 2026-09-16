@@ -104,6 +104,30 @@
     <p role="alert" class="error">{{ error }}</p>
     } @if (preferenceError(); as error) {
     <p role="alert" class="error">{{ error }}</p>
+    } @if (auth.interrupted()) {
+    <section aria-label="Restore application access">
+      <p>
+        Keep this tab open. Sign in in another tab, then recheck access here.
+      </p>
+      <a
+        mat-stroked-button
+        href="/api/auth/login"
+        target="_blank"
+        rel="noopener"
+        >Sign in in another tab</a
+      >
+      <button
+        mat-flat-button
+        (click)="auth.resume()"
+        [disabled]="auth.loading()"
+      >
+        Recheck access
+      </button>
+      <p>
+        Review current access before another confirmation. Navigating away
+        discards this tab's unsaved form values.
+      </p>
+    </section>
     }
     <router-outlet />
   </main>
