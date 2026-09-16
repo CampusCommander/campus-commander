@@ -5,6 +5,8 @@
 !tsconfig.base.json
 !eslint.config.mjs
 !worker/**
+!libs/application-contracts/**
+!libs/google-connection/**
 !deployment/project.json
 !deployment/tsconfig.json
 !deployment/tsconfig.lib.json

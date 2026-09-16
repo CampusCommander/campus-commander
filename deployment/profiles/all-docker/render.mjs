@@ -419,7 +419,9 @@ export function renderAllDocker(
         ...restart,
         ...hardening,
         ...resourceLimits(services.workers),
-        networks: ['internal'],
+        networks: config.googleConnection
+          ? ['internal', 'google-egress']
+          : ['internal'],
         healthcheck: health('/health', 3001),
         tmpfs: ['/tmp'],
         environment: {
@@ -430,6 +432,9 @@ export function renderAllDocker(
         secrets: [
           mountedSecret(refs.dispatch),
           mountedSecret(refs.appPassword),
+          ...(config.googleConnection
+            ? [mountedSecret(config.googleConnection.encryptionKeySecretRef)]
+            : []),
         ],
         volumes: [
           profileMount,
@@ -505,7 +510,11 @@ export function renderAllDocker(
         },
       },
     },
-    networks: { ingress: {}, internal: { internal: true } },
+    networks: {
+      ingress: {},
+      internal: { internal: true },
+      ...(config.googleConnection ? { 'google-egress': {} } : {}),
+    },
     volumes: {
       'application-postgres': {},
       'kestra-postgres': {},

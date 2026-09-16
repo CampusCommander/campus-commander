@@ -1,3 +1,4 @@
+import { qualifyGoogleWorker } from './google-connection-worker.mjs';
 import { qualifyGoogleConnectionApi } from './google-connection-api.mjs';
 import { qualifyAccessRevocationBrowser } from './access-revocation-browser.mjs';
 import { qualifyAccessRevocation } from './access-revocation-api.mjs';
@@ -2088,6 +2089,22 @@ test(
           evidenceDirectory,
         });
       await context.close();
+      if (applicationPhase === 3)
+        await qualifyGoogleWorker({
+          fixture: kestraFixture,
+          migrator,
+          directory,
+          evidenceDirectory,
+          restartApi: async () => {
+            for (const process of [api, replica]) {
+              const exited = once(process, 'exit');
+              process.kill('SIGTERM');
+              await exited;
+            }
+            api = await startApi();
+            replica = await startApi(replicaPort);
+          },
+        });
       docker('stop', names[1]);
       assert.equal(
         (

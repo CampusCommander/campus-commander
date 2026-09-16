@@ -20,6 +20,8 @@ import {
   CredentialError,
   GoogleConnectionError,
   GoogleCustomerVerifier,
+  GoogleConnectionProvider,
+  GoogleStoreError,
   validateServiceAccount,
 } from '@campus/google-connection';
 import { ConfigurationService } from '../configuration/configuration.service';
@@ -114,7 +116,11 @@ export class GoogleConnectionService
         const reason = parsed.data.detail;
         if (reason === 'busy') throw new HttpException({ reason: 'busy' }, 429);
         throw new ConflictException({
-          reason: reason === 'already-connected' ? reason : 'candidate-changed',
+          reason: ['already-connected', 'credential-changed'].includes(
+            reason ?? '',
+          )
+            ? reason
+            : 'candidate-changed',
         });
       }
       throw new ServiceUnavailableException({
@@ -138,6 +144,41 @@ export class GoogleConnectionService
           this.actor(session),
         ),
       );
+  }
+
+  async check(
+    session: SessionResponse,
+    customerId: string,
+    generation: number,
+    retry: boolean,
+    correlationId: string,
+  ) {
+    if (retry)
+      await this.query('SELECT cc.reset_google_access($1,$2,$3,$4,$5)', [
+        ...this.actor(session),
+        customerId,
+        generation,
+        correlationId,
+      ]);
+    try {
+      return await new GoogleConnectionProvider(
+        this.database.connection,
+        this.cipher(),
+      ).read({ customerId, generation, correlationId });
+    } catch (error) {
+      if (
+        error instanceof GoogleStoreError &&
+        error.code === 'credential-changed'
+      )
+        throw new ConflictException({ reason: error.code });
+      if (
+        error instanceof GoogleConnectionError ||
+        error instanceof GoogleStoreError ||
+        error instanceof CredentialError
+      )
+        throw new ServiceUnavailableException({ reason: error.code });
+      throw error;
+    }
   }
 
   async candidate(session: SessionResponse, id: string) {

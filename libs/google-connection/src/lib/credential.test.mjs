@@ -216,3 +216,42 @@ test('rejects oversized IV and tag strings before base64 decoding', () => {
     Buffer.from = original;
   }
 });
+
+test('access tokens use a distinct authenticated payload purpose', () => {
+  const token = {
+    accessToken: 'ya29.synthetic-token',
+    expiresAt: Date.now() + 3_500_000,
+    scopeProfile: 'customer-domain-v1',
+  };
+  const encrypted = cipher.sealAccessToken(token, context);
+  assert.deepEqual(
+    new CredentialCipher('key-1', key).openAccessToken(encrypted, context),
+    token,
+  );
+  assert.throws(() => cipher.open(encrypted, context), unavailable);
+  assert.throws(
+    () => cipher.openAccessToken(cipher.seal(credential, context), context),
+    unavailable,
+  );
+  assert.throws(
+    () => cipher.openAccessToken(encrypted, { ...context, generation: 2 }),
+    unavailable,
+  );
+  assert.throws(
+    () =>
+      cipher.sealAccessToken(token, {
+        ...context,
+        customerId: null,
+        generation: 0,
+      }),
+    unavailable,
+  );
+  assert.throws(
+    () =>
+      cipher.sealAccessToken(
+        { ...token, accessToken: 'invalid\r\nheader' },
+        context,
+      ),
+    unavailable,
+  );
+});

@@ -453,6 +453,7 @@ export function renderKubernetes(input, operatorInput) {
     if (key === 'workers')
       refs = collectRefs([
         service,
+        config.googleConnection,
         config.services.applicationDatabase.endpoint,
         config.services.applicationDatabase.passwordSecretRef,
       ]);
@@ -961,7 +962,7 @@ export function renderKubernetes(input, operatorInput) {
         ports: ports.map((port) => ({ protocol: 'TCP', port })),
       });
     }
-    if (source === 'api' && config.googleConnection)
+    if (['api', 'workers'].includes(source) && config.googleConnection)
       egress.push({
         to: operator.externalEgress.googleProvider.map((cidr) => ({
           ipBlock: { cidr },

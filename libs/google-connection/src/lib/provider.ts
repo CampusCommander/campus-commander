@@ -1,4 +1,4 @@
-import { JWT } from 'google-auth-library';
+import { JWT, OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import {
   googleCustomerIdSchema,
@@ -7,7 +7,11 @@ import {
   type GoogleFailure,
   type GoogleObservation,
 } from '@campus/application-contracts';
-import type { DelegatedCredential } from './credential';
+import {
+  accessTokenSchema,
+  type DelegatedCredential,
+  type GoogleAccessToken,
+} from './credential';
 
 export const GOOGLE_CONNECTION_SCOPES = Object.freeze([
   'https://www.googleapis.com/auth/admin.directory.customer.readonly',
@@ -135,10 +139,44 @@ const domainResponse = z.object({
     .max(1000),
 });
 
-/** Read customer identity with fixed methods, scopes, and request bounds. */
+/** Bound every SDK request, including signed token exchange and introspection. */
+function boundClient(client: OAuth2Client, signal: AbortSignal) {
+  const request = client.transporter.request.bind(client.transporter);
+  client.transporter.request = (options) => {
+    const url = new URL(options?.url ?? '');
+    const allowed =
+      (url.origin === 'https://oauth2.googleapis.com' &&
+        ['/token', '/tokeninfo'].includes(url.pathname)) ||
+      (url.origin === 'https://admin.googleapis.com' &&
+        (url.pathname === '/admin/directory/v1/customers/my_customer' ||
+          /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/domains$/.test(
+            url.pathname,
+          )));
+    if (!allowed) throw new GoogleConnectionError('request-failed');
+    return request({
+      ...options,
+      signal,
+      timeout: 10_000,
+      retry: false,
+      retryConfig: { retry: 0 },
+      maxRedirects: 0,
+      maxContentLength: responseLimit,
+      size: responseLimit,
+    });
+  };
+}
+
+/** Share fixed customer reads between staging, API checks, and workers. */
 export class GoogleCustomerVerifier {
   async verify(credential: DelegatedCredential): Promise<GoogleObservation> {
     const signal = AbortSignal.timeout(40_000);
+    return this.observe(await this.renew(credential, signal), signal);
+  }
+
+  async renew(
+    credential: DelegatedCredential,
+    signal: AbortSignal,
+  ): Promise<GoogleAccessToken> {
     const client = new JWT({
       email: credential.serviceAccount.client_email,
       key: credential.serviceAccount.private_key,
@@ -147,29 +185,7 @@ export class GoogleCustomerVerifier {
       scopes: [...GOOGLE_CONNECTION_SCOPES],
       eagerRefreshThresholdMillis: 60_000,
     });
-    const request = client.transporter.request.bind(client.transporter);
-    client.transporter.request = (options) => {
-      const url = new URL(options?.url ?? '');
-      const allowed =
-        (url.origin === 'https://oauth2.googleapis.com' &&
-          ['/token', '/tokeninfo'].includes(url.pathname)) ||
-        (url.origin === 'https://admin.googleapis.com' &&
-          (url.pathname === '/admin/directory/v1/customers/my_customer' ||
-            /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/domains$/.test(
-              url.pathname,
-            )));
-      if (!allowed) throw new GoogleConnectionError('request-failed');
-      return request({
-        ...options,
-        signal,
-        timeout: 10_000,
-        retry: false,
-        retryConfig: { retry: 0 },
-        maxRedirects: 0,
-        maxContentLength: responseLimit,
-        size: responseLimit,
-      });
-    };
+    boundClient(client, signal);
     try {
       const { token } = await client.getAccessToken();
       if (!token) throw new GoogleConnectionError('credential-rejected');
@@ -179,6 +195,34 @@ export class GoogleCustomerVerifier {
         GOOGLE_CONNECTION_SCOPES.some((scope) => !info.scopes.includes(scope))
       )
         throw new GoogleConnectionError('scope-mismatch');
+      const result = accessTokenSchema.parse({
+        accessToken: token,
+        expiresAt: info.expiry_date,
+        scopeProfile: 'customer-domain-v1',
+      });
+      if (
+        result.expiresAt <= Date.now() + 60_000 ||
+        result.expiresAt > Date.now() + 3_605_000
+      )
+        throw new GoogleConnectionError('invalid-response');
+      return result;
+    } catch (error) {
+      throw failure(error);
+    }
+  }
+
+  async observe(
+    token: GoogleAccessToken,
+    signal: AbortSignal,
+  ): Promise<GoogleObservation> {
+    const client = new OAuth2Client({ eagerRefreshThresholdMillis: 0 });
+    const parsed = accessTokenSchema.parse(token);
+    client.setCredentials({
+      access_token: parsed.accessToken,
+      expiry_date: parsed.expiresAt,
+    });
+    boundClient(client, signal);
+    try {
       const customer = customerResponse.parse(
         (
           await client.request({

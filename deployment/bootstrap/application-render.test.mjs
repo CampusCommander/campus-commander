@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { renderAllDocker } from '../profiles/all-docker/render.mjs';
-import { renderHybrid } from '../profiles/hybrid/render.mjs';
+import { renderHybrid, renderWorkerHost } from '../profiles/hybrid/render.mjs';
 import { renderKubernetes } from '../kubernetes/render.mjs';
 
 for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
@@ -96,7 +96,7 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
 }
 
 for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
-  test(`${profile} mounts the independent Google key only in the API`, async () => {
+  test(`${profile} mounts the independent Google key in API and worker processes`, async () => {
     const config = JSON.parse(
       await readFile(new URL(`../examples/${profile}.json`, import.meta.url)),
     );
@@ -148,7 +148,7 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
               JSON.stringify(item.spec.egress ?? []).includes('203.0.113.0/24'),
           )
           .map((item) => item.metadata.name),
-        ['api-egress'],
+        ['api-egress', 'workers-egress'],
       );
       const reused = structuredClone(config);
       reused.googleConnection.encryptionKeySecretRef =
@@ -164,7 +164,7 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
           item.spec.template.spec.volumes.some(
             (volume) => volume.secret?.secretName === 'campus-google-key',
           ),
-          item.metadata.name === 'api',
+          ['api', 'workers'].includes(item.metadata.name),
         );
       }
     } else {
@@ -187,8 +187,34 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
           (line) =>
             line.startsWith('cp ') && line.includes('google-encryption-key'),
         );
-      assert.equal(copies.length, 1);
-      assert.match(copies[0], /api-secrets/);
+      if (profile === 'hybrid') {
+        const remote = renderWorkerHost(config, release, {
+          hostIndex: 0,
+          bindAddress: '192.0.2.10',
+        });
+        copies.push(
+          ...remote.services['runtime-files'].command[2]
+            .split('\n')
+            .filter(
+              (line) =>
+                line.startsWith('cp ') &&
+                line.includes('google-encryption-key'),
+            ),
+        );
+        assert.ok(remote.services.workers.networks.includes('egress'));
+      } else {
+        assert.ok(compose.services.workers.networks.includes('google-egress'));
+        assert.ok(compose.networks['google-egress']);
+      }
+      assert.equal(copies.length, 2);
+      assert.equal(
+        copies.some((line) => line.includes('api-secrets')),
+        true,
+      );
+      assert.equal(
+        copies.some((line) => line.includes('workers-secrets')),
+        true,
+      );
     }
   });
 }

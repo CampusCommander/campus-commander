@@ -124,6 +124,30 @@ export async function qualifyGoogleConnectionApi({
   ).rows[0].envelope;
   assert.equal(stored.keyId, 'synthetic-google-key');
   assert.equal(JSON.stringify(stored).includes('PRIVATE KEY'), false);
+
+  assert.equal(
+    (
+      await admin.post(`${root}/check`, {
+        data: { customerId: 'C0123456', generation: 1 },
+      })
+    ).status(),
+    403,
+  );
+  assert.equal(
+    (
+      await admin.post(`${root}/check`, {
+        headers,
+        data: { customerId: 'C0123456', generation: 2 },
+      })
+    ).status(),
+    409,
+  );
+  const checked = await admin.post(`${root}/check`, {
+    headers,
+    data: { customerId: 'C0123456', generation: 1 },
+  });
+  assert.equal(checked.status(), 201, await checked.text());
+  assert.equal((await checked.json()).observation.customerId, 'C0123456');
   await writeFile(
     `${evidenceDirectory}/google-connection-api.json`,
     JSON.stringify(
@@ -136,6 +160,7 @@ export async function qualifyGoogleConnectionApi({
           'candidate metadata supports response recovery without credentials',
           'explicit exact customer confirmation required',
           'confirmation stores encrypted generation one and rejects replay',
+          'API checks require CSRF and the active credential generation',
         ],
       },
       null,

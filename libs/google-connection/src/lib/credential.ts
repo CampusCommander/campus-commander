@@ -126,11 +126,31 @@ function validated(value: unknown): DelegatedCredential {
   };
 }
 
-function additionalData(context: CredentialContext, keyId: string): Buffer {
+export const accessTokenSchema = z.strictObject({
+  accessToken: z
+    .string()
+    .min(1)
+    .max(8192)
+    .regex(/^[A-Za-z0-9._~+/-]+={0,2}$/),
+  expiresAt: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  scopeProfile: z.literal('customer-domain-v1'),
+});
+export type GoogleAccessToken = z.infer<typeof accessTokenSchema>;
+
+function additionalData(
+  context: CredentialContext,
+  keyId: string,
+  purpose: string,
+): Buffer {
   const parsed = contextSchema.parse(context);
+  if (
+    purpose === 'google-access-token' &&
+    (!parsed.customerId || parsed.generation < 1)
+  )
+    throw new Error();
   return Buffer.from(
     JSON.stringify([
-      'campus-commander:google-credential',
+      `campus-commander:${purpose}`,
       1,
       keyId,
       parsed.recordId,
@@ -159,12 +179,30 @@ export class CredentialCipher {
     value: DelegatedCredential,
     context: CredentialContext,
   ): CredentialEnvelope {
+    return this.sealValue(value, context, 'google-credential', validated);
+  }
+
+  sealAccessToken(
+    value: GoogleAccessToken,
+    context: CredentialContext,
+  ): CredentialEnvelope {
+    return this.sealValue(value, context, 'google-access-token', (input) =>
+      accessTokenSchema.parse(input),
+    );
+  }
+
+  private sealValue(
+    value: unknown,
+    context: CredentialContext,
+    purpose: string,
+    validate: (value: unknown) => unknown,
+  ): CredentialEnvelope {
     try {
-      const plaintext = Buffer.from(JSON.stringify(validated(value)));
+      const plaintext = Buffer.from(JSON.stringify(validate(value)));
       try {
         const iv = randomBytes(12);
         const cipher = createCipheriv('aes-256-gcm', this.#key, iv);
-        cipher.setAAD(additionalData(context, this.keyId));
+        cipher.setAAD(additionalData(context, this.keyId, purpose));
         const ciphertext = Buffer.concat([
           cipher.update(plaintext),
           cipher.final(),
@@ -185,6 +223,24 @@ export class CredentialCipher {
   }
 
   open(value: unknown, context: CredentialContext): DelegatedCredential {
+    return this.openValue(value, context, 'google-credential', validated);
+  }
+
+  openAccessToken(
+    value: unknown,
+    context: CredentialContext,
+  ): GoogleAccessToken {
+    return this.openValue(value, context, 'google-access-token', (input) =>
+      accessTokenSchema.parse(input),
+    );
+  }
+
+  private openValue<T>(
+    value: unknown,
+    context: CredentialContext,
+    purpose: string,
+    validate: (value: unknown) => T,
+  ): T {
     try {
       const envelope = envelopeSchema.parse(value);
       if (envelope.keyId !== this.keyId) throw new Error();
@@ -193,14 +249,14 @@ export class CredentialCipher {
         this.#key,
         Buffer.from(envelope.iv, 'base64url'),
       );
-      decipher.setAAD(additionalData(context, this.keyId));
+      decipher.setAAD(additionalData(context, this.keyId, purpose));
       decipher.setAuthTag(Buffer.from(envelope.tag, 'base64url'));
       const plaintext = Buffer.concat([
         decipher.update(Buffer.from(envelope.ciphertext, 'base64url')),
         decipher.final(),
       ]);
       try {
-        return validated(JSON.parse(plaintext.toString('utf8')));
+        return validate(JSON.parse(plaintext.toString('utf8')));
       } finally {
         plaintext.fill(0);
       }

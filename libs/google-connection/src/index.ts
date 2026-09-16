@@ -14,3 +14,10 @@ export {
   GoogleConnectionError,
   GOOGLE_CONNECTION_SCOPES,
 } from './lib/provider';
+
+export { GoogleConnectionProvider, GoogleStoreError } from './lib/coordinator';
+export type {
+  GoogleConnectionDatabase,
+  GoogleReadRequest,
+} from './lib/coordinator';
+export type { GoogleAccessToken } from './lib/credential';

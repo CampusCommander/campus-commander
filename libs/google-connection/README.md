@@ -2,6 +2,7 @@
 
 CC-46 owns the credential and provider boundary.
 The API uses this library for encrypted staging and customer verification.
+API and worker processes share its database-coordinated token provider.
 The credential proof uses its shared service-account validator.
 
 `validateServiceAccount` checks the expected client ID, fixed Google token endpoint, and RSA strength.
@@ -16,7 +17,10 @@ Requests use fixed endpoints, deadlines, response limits, and no retries or redi
 Provider failures expose bounded categories without response payloads.
 
 Database functions enforce current authority, candidate expiry, confirmation, and atomic security events.
-The provider does not yet coordinate token renewal or serve independent worker reads.
+`GoogleConnectionProvider` coordinates encrypted token reuse and renewal through a database lease.
+It rejects stale credential generations and separates token ciphertext from service-account ciphertext.
+Permanent failures require operator retry authorization.
+Transient failures enforce a thirty-second cooldown.
 The [connection contract](../../docs/portfolio/phase-3-google-connection.md) records the implementation and remaining scope.
 
 Run `npm exec nx run google-connection:test` for synthetic credential and provider checks.

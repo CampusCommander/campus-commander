@@ -6,6 +6,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY nx.json tsconfig.base.json eslint.config.mjs ./
 COPY worker ./worker
+COPY libs/application-contracts ./libs/application-contracts
+COPY libs/google-connection ./libs/google-connection
 COPY deployment ./deployment
 RUN npm exec -- nx run deployment:build
 RUN npm exec -- nx run worker:build

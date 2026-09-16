@@ -3,7 +3,8 @@
 [CC-46](https://easton-consulting.atlassian.net/browse/CC-46) owns this implementation.
 [PR #10](https://github.com/CampusCommander/campus-commander/pull/10) remains a draft.
 The implementation now includes credential storage, provider verification, and public API confirmation.
-The browser workflow, independent worker read, and coordinated token renewal remain incomplete.
+The worker and coordinated renewal implementation awaits hosted qualification.
+The browser workflow remains incomplete.
 
 ## Credential and customer transaction
 
@@ -53,13 +54,37 @@ Indexes support expiry and terminal-history selection.
 Staging permits at most twenty active candidates globally and three per actor.
 Ten-minute creation limits permit one hundred candidates globally and ten per actor, including failed checks.
 
+## Coordinated background reads
+
+Migration 008 stores one encrypted access token for the current credential generation.
+Authenticated data distinguishes tokens from service-account credentials.
+Each token binds its credential record, customer, generation, key version, and scope profile.
+A thirty-second database lease permits one renewal across API and worker processes.
+Consumers renew tokens with less than sixty seconds remaining.
+Generation and lease checks reject results from replaced credentials and expired renewal attempts.
+A token identifier prevents a late failed request from invalidating a newer token.
+
+Permanent credential, delegation, scope, privilege, and policy failures stop automatic renewal.
+A current operator with `connection:diagnose` authority can authorize another attempt.
+Transient network, quota, provider, and request failures require a thirty-second cooldown.
+Token changes and observations commit with their security events.
+The background read permits sixty seconds, with bounded database operations and a twenty-second renewal deadline.
+
+The API exposes a CSRF-protected `POST /api/google-connection/check` operation.
+It checks current operator authority before the read and before returning its result.
+The worker exposes the internal `POST /dispatch/google-customer` operation through the existing dispatch authentication boundary.
+Dispatch accepts customer, generation, execution, and correlation identifiers.
+The worker loads credentials from PostgreSQL and the key from its local secret mount.
+Browser sessions and API process memory do not supply its credentials.
+Worker responses contain validated observations and bounded failure categories.
+
 ## Deployment configuration
 
 Phase 3 accepts an optional `googleConnection` object with `keyId` and `encryptionKeySecretRef`.
 The secret contains exactly 32 raw bytes.
 The reference must differ from application secrets and operator credentials.
-All three renderers mount the key only into the API.
-Kubernetes also requires `operator.externalEgress.googleProvider` CIDRs and permits their HTTPS egress only from the API.
+All three renderers mount the key into API and worker processes.
+Kubernetes also requires `operator.externalEgress.googleProvider` CIDRs and permits their HTTPS egress from API and worker processes.
 Operators must maintain those network ranges for the fixed Google endpoints.
 
 A missing or unreadable encryption key returns a bounded connection error.
@@ -83,4 +108,5 @@ The [live provider check](../../deployment/evidence/CC-46-live-provider-read.jso
 That read used the approved service account and the new verifier.
 No live credential enters test fixtures, evidence files, or Git history.
 CC-44 still requires its remaining live qualification gates.
-CC-46 still requires browser integration, independent worker reads, coordinated renewal, and complete deployment qualification.
+CC-46 still requires browser integration and complete deployment qualification.
+The new worker and token coordination checks require hosted execution before their evidence becomes qualified.

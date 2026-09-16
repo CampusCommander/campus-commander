@@ -42,6 +42,8 @@ export const securityEventSchema = z.enum([
   'connection-staged',
   'connection-stage-failed',
   'connection-stage-expired',
+  'connection-token-renewed',
+  'connection-token-failed',
   'connection-authorized',
   'connection-replaced',
   'connection-revoked',

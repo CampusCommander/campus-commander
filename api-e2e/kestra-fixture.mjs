@@ -68,28 +68,44 @@ export async function startKestraFixture({
       .join('\n'),
     { mode: 0o600 },
   );
-  docker(
-    'run',
-    '-d',
-    '--name',
-    workerName,
-    '--network',
-    network,
-    '-p',
-    '127.0.0.1::3001',
-    '--user',
-    `${process.getuid()}:${process.getgid()}`,
-    ...(workerImage
-      ? []
-      : ['-v', `${process.cwd()}/dist/worker/main.js:/app/main.js:ro`]),
-    '-v',
-    `${directory}:${directory}:ro`,
-    '-e',
-    `WORKER_DISPATCH_SECRET_FILE=${join(directory, 'secrets/worker-dispatch')}`,
-    workerImage ?? nodeImage,
-    'node',
-    '/app/main.js',
-  );
+  const startWorker = (name) =>
+    docker(
+      'run',
+      '-d',
+      '--name',
+      name,
+      '--network',
+      network,
+      '-p',
+      '127.0.0.1::3001',
+      '--user',
+      `${process.getuid()}:${process.getgid()}`,
+      ...(workerImage
+        ? []
+        : [
+            '-v',
+            `${process.cwd()}/dist/worker/main.js:/app/main.js:ro`,
+            '-v',
+            `${process.cwd()}/node_modules:/app/node_modules:ro`,
+          ]),
+      '--workdir',
+      '/app',
+      '-v',
+      `${directory}/secrets:/run/secrets:ro`,
+      '-e',
+      `CC_CONFIG_FILE=${join(directory, 'profile.json')}`,
+      '-v',
+      `${directory}:${directory}:ro`,
+      '-e',
+      `WORKER_DISPATCH_SECRET_FILE=${join(directory, 'secrets/worker-dispatch')}`,
+      workerImage ?? nodeImage,
+      'node',
+      ...(config.phase === 3
+        ? ['--require', join(directory, 'google-connection-preload.cjs')]
+        : []),
+      '/app/main.js',
+    );
+  startWorker(workerName);
   const startKestra = (listenerPort = '') =>
     docker(
       'run',
@@ -181,6 +197,7 @@ export async function startKestraFixture({
     startKestra(port);
     await waitReady();
   };
+  config.services.workers.endpoint.url = `http://${workerName}:3001`;
   config.services.kestra.endpoint.url = `http://${kestraName}:8080`;
   return {
     workerName,
@@ -189,6 +206,21 @@ export async function startKestraFixture({
     authorization,
     get workerOrigin() {
       return workerOrigin;
+    },
+    async startWorkerReplica() {
+      const name = `${workerName}-replica`;
+      names.push(name);
+      startWorker(name);
+      const origin = `http://127.0.0.1:${Number(docker('port', name, '3001/tcp').split(':').at(-1))}`;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try {
+          if ((await fetch(`${origin}/health/live`)).ok) return origin;
+        } catch {
+          /* Await the independent worker process. */
+        }
+        await delay(100);
+      }
+      assert.fail('The second worker did not start.');
     },
     rotateWorker,
     rotateKestraDispatch,

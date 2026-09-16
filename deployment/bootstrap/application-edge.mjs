@@ -52,7 +52,7 @@ const principalWrite =
 const connectionRead =
   /^\/api\/google-connection(?:\/candidates\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
 const connectionWrite =
-  /^\/api\/google-connection\/candidates(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?$/;
+  /^\/api\/google-connection\/(?:check|candidates(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',

@@ -1,3 +1,4 @@
+import { qualifyGoogleTokens } from './google-token.integration.mjs';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { CredentialCipher } from '../../libs/google-connection/src/lib/credential.ts';
@@ -469,7 +470,20 @@ export async function qualifyGoogleConnection({
     denied,
   );
   assert.equal(JSON.stringify(publicConnection).includes(privateKey), false);
+  const tokenChecks = await qualifyGoogleTokens({
+    runtime,
+    migrator,
+    connect,
+    key,
+    cipher,
+    credential,
+    customerId,
+    binding,
+    actor: actors[0],
+    observation,
+  });
   return [
+    ...tokenChecks,
     'candidate staging binds actor version and browser without runtime table access: pass',
     'failed and expired candidates erase ciphertext with security events and retain authorized recovery metadata: pass',
     'confirmation checks wall-clock expiry after lock contention and leaves no activation records: pass',

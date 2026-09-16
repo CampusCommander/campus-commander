@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
-import { JWT } from 'google-auth-library';
+import { JWT, OAuth2Client } from 'google-auth-library';
 import {
   GoogleCustomerVerifier,
   GOOGLE_CONNECTION_SCOPES,
@@ -49,8 +49,11 @@ function stub(
     assert.equal(this.subject, credential.subject);
     return { token: 'private-fixture-token' };
   });
-  t.mock.method(JWT.prototype, 'getTokenInfo', async () => ({ scopes }));
-  t.mock.method(JWT.prototype, 'request', async (options) => {
+  t.mock.method(JWT.prototype, 'getTokenInfo', async () => ({
+    scopes,
+    expiry_date: Date.now() + 3_500_000,
+  }));
+  t.mock.method(OAuth2Client.prototype, 'request', async (options) => {
     calls.push(options);
     if (error) throw error;
     return { data: calls.length === 1 ? customer : response };

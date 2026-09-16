@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   googleCredentialImportSchema,
+  googleCustomerIdSchema,
   googleCustomerConfirmationSchema,
 } from '@campus/application-contracts';
 import { z } from 'zod';
@@ -27,6 +28,36 @@ export class GoogleConnectionController {
   @Get()
   async read(@Req() request: AuthenticatedRequest) {
     return { connection: await this.connection.read(request.session) };
+  }
+
+  @Post('check')
+  async check(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    const input = z
+      .strictObject({
+        customerId: googleCustomerIdSchema,
+        generation: z.number().int().positive(),
+        retry: z.boolean().default(false),
+      })
+      .parse(body);
+    const authorize = () =>
+      this.auth.authorize(
+        request.session,
+        'connection:diagnose',
+        { kind: 'platform' },
+        request.correlationId,
+      );
+    await authorize();
+    try {
+      return await this.connection.check(
+        request.session,
+        input.customerId,
+        input.generation,
+        input.retry,
+        request.correlationId,
+      );
+    } finally {
+      await authorize();
+    }
   }
 
   @Get('candidates/:id')

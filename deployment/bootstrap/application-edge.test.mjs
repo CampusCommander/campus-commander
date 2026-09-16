@@ -61,6 +61,7 @@ test('invitation routes require Phase 3 and exact methods and paths', async () =
       ['GET', '/api/google-connection', 'api'],
       ['GET', `/api/google-connection/candidates/${id}`, 'api'],
       ['POST', '/api/google-connection/candidates', 'api'],
+      ['POST', '/api/google-connection/check', 'api'],
       ['POST', `/api/google-connection/candidates/${id}/confirm`, 'api'],
       ['GET', '/invitations', 'frontend'],
       ['GET', '/platform-users', 'frontend'],
