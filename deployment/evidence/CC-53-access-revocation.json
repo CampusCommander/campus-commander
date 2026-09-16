@@ -1,0 +1,29 @@
+{
+  "status": "initial-server-regression-passed-remaining-scope-pending",
+  "sourceRevision": "117a8e7135f98bfe2bf204e907e041c612c4df8d",
+  "recordedAt": "2026-09-16T18:57:11.491Z",
+  "checks": [
+    "preference write waits behind a concurrent permission-version change",
+    "stale preference update and success audit both rejected",
+    "both API replicas reject previous sessions",
+    "restored Redis sessions cannot restore revoked access"
+  ],
+  "limits": [
+    "Pending invitation revocation, stale browser recovery, and school integration remain incomplete."
+  ],
+  "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35137274584",
+  "environment": "Hosted Docker worker, real PostgreSQL and Redis, two API replicas, synthetic HTTPS OIDC provider, and Chromium.",
+  "review": {
+    "base": "e6bfd8d",
+    "head": "117a8e7",
+    "standards": {
+      "documentedFindings": 0,
+      "heuristicSuggestions": [
+        "Share the access-change message between the typed exception and response filter."
+      ]
+    },
+    "spec": {
+      "findings": 0
+    }
+  }
+}

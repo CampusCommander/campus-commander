@@ -1,6 +1,6 @@
 # Phase 3 access revocation
 
-Owner: CC-53. Status: initial server changes implemented. Hosted validation remains pending.
+Owner: CC-53. Status: initial server changes implemented. Hosted initial regression checks passed.
 CC-52 remains the completion prerequisite for school scope integration.
 
 ## Current implementation
@@ -33,3 +33,10 @@ This test uses an isolated synthetic installation. It changes no live Workspace 
 - Confirm that background Google credentials remain independent after the connection implementation exists.
 
 The initial change does not establish CC-53 or Phase 3 completion.
+
+## Validation
+
+[Hosted initial qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35137274584) passed at `117a8e7`.
+The real PostgreSQL race and both API replica checks passed.
+Local API build and lint passed. Standards and Spec review found no defects in this bounded change.
+[Retained evidence](../../deployment/evidence/CC-53-access-revocation.json) records the tested revision and remaining scope.

@@ -729,8 +729,24 @@
       "stableLabel": "p3-t10",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn administrator reduces or revokes a platform user's access and sees subsequent protected actions fail across API replicas.\n\nStories: S07. Packages: P9.1, P9.3.\n\n## Acceptance criteria\n\n- [ ] Recheck the current permission version on every protected request and before committing an authorized state change.\n- [ ] Revoke affected sessions and pending invitations according to the reviewed policy without relying only on browser state.\n- [ ] Handle stale tabs and in-flight forms with explicit access-change responses while preserving recoverable input.\n- [ ] Prevent concurrent revocation from allowing later state changes under stale grant versions.\n- [ ] Test two API replicas, restored sessions, Redis loss, service restart, and direct requests with guessed resource identifiers.\n- [ ] Preserve the last-administrator safeguard and a controlled installation-operator recovery procedure.\n- [ ] Record revocation and denied attempts with bounded, secret-free security evidence.\n- [ ] Do not affect unrelated platform users or the independently authorized background Google connection.\n\n## Blocked by\n\n- [CC-52](https://easton-consulting.atlassian.net/browse/CC-52) (P3-T09).\n\n## Evidence\n\n- Two-replica revocation and concurrent-write results.\n- Browser stale-session and direct-API denial evidence.\n- Administrator recovery procedure and test.\n\n## Demonstration\n\nKeep the user signed in through two replicas, revoke access, and deny the next protected request through both.\n\n## Ownership and UI\n\nProposed owner role: Application security lead. Relative size: M.\nApplicable UI rules: UI-01, UI-02, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-52"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "implementation": {
+        "branch": "codex/cc-53-access-revocation",
+        "base": "codex/cc-51-platform-access",
+        "status": "initial-server-regression-qualified-remaining-scope-pending",
+        "contract": "phase-3-revocation.md",
+        "pr": "https://github.com/CampusCommander/campus-commander/pull/9",
+        "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35137274584",
+        "remainingIntegrations": [
+          "pending invitation revocation",
+          "stale browser recovery",
+          "CC-52 school scope integration",
+          "combined recovery qualification"
+        ],
+        "qualifiedRevision": "117a8e7135f98bfe2bf204e907e041c612c4df8d",
+        "evidence": "deployment/evidence/CC-53-access-revocation.json"
+      }
     },
     {
       "id": "P3-T11",
