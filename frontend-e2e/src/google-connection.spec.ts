@@ -340,6 +340,19 @@ test('customer import and review meet automated accessibility and overflow check
       path: testInfo.outputPath(`import-${theme}.png`),
       fullPage: true,
     });
+    await page.getByLabel('Delegated administrator email').focus();
+    await page.evaluate(async () => {
+      await Promise.all(
+        document
+          .getAnimations()
+          .map((animation) => animation.finished.catch(() => undefined)),
+      );
+    });
+    const focused = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+      .analyze();
+    expect(focused.violations).toEqual([]);
+    await page.getByRole('button', { name: 'Refresh saved status' }).focus();
   }
   await page.route('**/api/google-connection/candidates', (route) =>
     route.fulfill({

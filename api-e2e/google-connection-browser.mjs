@@ -72,6 +72,11 @@ export async function stageGoogleConnectionBrowser({
   for (const theme of ['light', 'dark']) {
     await page.getByRole('button', { name: 'Choose theme' }).click();
     await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(page.locator('html')).toHaveCSS(
+      'color',
+      theme === 'dark' ? 'rgb(232, 234, 237)' : 'rgb(32, 33, 36)',
+    );
     await expect(page.locator('mat-label').first()).toHaveCSS(
       'color',
       theme === 'dark' ? 'rgb(154, 160, 166)' : 'rgb(95, 99, 104)',
@@ -146,6 +151,11 @@ export async function stageGoogleConnectionBrowser({
   for (const theme of ['light', 'dark']) {
     await page.getByRole('button', { name: 'Choose theme' }).click();
     await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(page.locator('html')).toHaveCSS(
+      'color',
+      theme === 'dark' ? 'rgb(232, 234, 237)' : 'rgb(32, 33, 36)',
+    );
     await auditAccessibility(page, `google-connection-review-${theme}`);
     await page.screenshot({
       path: `${evidenceDirectory}/google-connection-review-${theme}.png`,
@@ -242,6 +252,11 @@ export async function confirmGoogleConnectionBrowser({
   for (const theme of ['light', 'dark']) {
     await page.getByRole('button', { name: 'Choose theme' }).click();
     await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(page.locator('html')).toHaveCSS(
+      'color',
+      theme === 'dark' ? 'rgb(232, 234, 237)' : 'rgb(32, 33, 36)',
+    );
     await auditAccessibility(page, `google-connection-confirmed-${theme}`);
   }
   await writeFile(
