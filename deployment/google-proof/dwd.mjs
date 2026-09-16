@@ -1,4 +1,4 @@
-import { createPrivateKey } from 'node:crypto';
+import { validateServiceAccount as validateCredential } from '../../libs/google-connection/src/lib/credential.ts';
 import { JWT } from 'google-auth-library';
 import { ProofError } from './store.mjs';
 
@@ -52,33 +52,7 @@ export function sanitizeError(error) {
 
 export function validateServiceAccount(input, expectedClientId) {
   try {
-    if (
-      input.type !== 'service_account' ||
-      !/^\d+$/.test(input.client_id) ||
-      input.client_id !== expectedClientId ||
-      !/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(
-        input.client_email,
-      ) ||
-      input.token_uri !== 'https://oauth2.googleapis.com/token' ||
-      (input.universe_domain && input.universe_domain !== 'googleapis.com') ||
-      typeof input.private_key_id !== 'string' ||
-      !input.private_key_id
-    )
-      throw new Error();
-    const key = createPrivateKey(input.private_key);
-    if (
-      key.asymmetricKeyType !== 'rsa' ||
-      key.asymmetricKeyDetails.modulusLength < 2048
-    )
-      throw new Error();
-    return {
-      type: input.type,
-      client_id: input.client_id,
-      client_email: input.client_email,
-      private_key: input.private_key,
-      private_key_id: input.private_key_id,
-      token_uri: input.token_uri,
-    };
+    return validateCredential(input, expectedClientId);
   } catch {
     throw new ProofError('invalid-service-account-file');
   }

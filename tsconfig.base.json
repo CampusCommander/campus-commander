@@ -23,7 +23,8 @@
       "deployment": ["./deployment/src/index.ts"],
       "@campus/application-contracts": [
         "./libs/application-contracts/src/index.ts"
-      ]
+      ],
+      "@campus/google-connection": ["./libs/google-connection/src/index.ts"]
     }
   }
 }
