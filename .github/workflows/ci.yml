@@ -11,9 +11,13 @@ on:
         description: Run browser and infrastructure integration checks
         type: boolean
         default: false
+      phase3Only:
+        description: Run only the Phase 3 source API and browser qualification
+        type: boolean
+        default: false
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ inputs.phase3Only && 'phase3' || 'full' }}
   cancel-in-progress: true
 
 permissions:
@@ -22,6 +26,7 @@ permissions:
 
 jobs:
   main:
+    if: inputs.phase3Only != true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -54,7 +59,7 @@ jobs:
       - run: npm exec nx affected -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test --base="$NX_BASE" --head=HEAD
 
   foundation-integration:
-    if: github.event_name == 'push' || inputs.full == true
+    if: inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -78,7 +83,7 @@ jobs:
           NX_NO_CLOUD: 'true'
 
   browser:
-    if: github.event_name == 'push' || inputs.full == true
+    if: inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -93,7 +98,7 @@ jobs:
           NX_NO_CLOUD: 'true'
 
   application-integration:
-    if: github.event_name == 'push' || inputs.full == true
+    if: inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -131,6 +136,35 @@ jobs:
           name: phase-2-application-evidence
           path: dist/phase-2-evidence/
           if-no-files-found: warn
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-3-authorization-evidence
+          path: dist/phase-3-evidence/
+          if-no-files-found: warn
+
+  phase3-authorization:
+    if: inputs.phase3Only == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1
+        with:
+          version: v29.7.2
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - uses: docker/setup-compose-action@4eb059ff7f16592f9c84d5ca339c53cb7c5064e2
+        with:
+          version: v5.5.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm exec nx run api-e2e:phase3-auth-integration
+        env:
+          NX_NO_CLOUD: 'true'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
