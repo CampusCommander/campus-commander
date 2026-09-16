@@ -606,8 +606,21 @@
       "stableLabel": "p3-t08",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nA platform administrator reviews platform users and applies explicit platform, district, and viewer presets with visible effective permissions.\n\nStories: S06. Packages: P9.1, P6.1.\n\n## Acceptance criteria\n\n- [ ] Expand presets into reviewed action/resource grants instead of treating preset names as unrestricted roles.\n- [ ] Provide authorized list, count, detail, grant, and enable/disable workflows with stable principal identity.\n- [ ] Show effective permissions and affected scope before confirming a grant change.\n- [ ] Prevent self-escalation and delegation beyond the actor's grant-management authority.\n- [ ] Protect the last enabled platform administrator through transactional checks under concurrent changes.\n- [ ] Increment permission versions atomically with grant changes and security events.\n- [ ] Preserve historical principal IDs, preferences, and events when migrating existing administrators.\n- [ ] Verify viewer and district-operator restrictions through direct API requests as well as navigation.\n\n## Blocked by\n\n- [CC-50](https://easton-consulting.atlassian.net/browse/CC-50) (P3-T07).\n\n## Evidence\n\n- Preset-by-action authorization matrix and integration results.\n- Concurrent last-administrator and self-escalation denial tests.\n- Grant preview, confirmation, and audit evidence.\n\n## Demonstration\n\nGrant district access to an invited user and demonstrate denial of platform administration and credential management.\n\n## Ownership and UI\n\nProposed owner role: Platform access lead. Relative size: M.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-50"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "implementation": {
+        "branch": "codex/cc-51-platform-access",
+        "base": "codex/cc-50-platform-invitations",
+        "status": "database-qualified-api-and-browser-qualification-in-progress",
+        "contract": "phase-3-platform-access.md",
+        "pr": "https://github.com/CampusCommander/campus-commander/pull/8",
+        "databaseQualifiedRevision": "0b39466",
+        "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35133833101",
+        "remainingIntegrations": [
+          "CC-46 confirmed customer scope",
+          "CC-52 verified school scope"
+        ]
+      }
     },
     {
       "id": "P3-T09",

@@ -274,6 +274,10 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 Owner role: Platform access lead. Relative size: M. Stories: S06.
 Packages: P9.1, P6.1. Jira key: [CC-51](https://easton-consulting.atlassian.net/browse/CC-51).
 
+Status: In Progress. [Draft PR #8](https://github.com/CampusCommander/campus-commander/pull/8) adds platform grant management.
+Hosted database checks passed. API and browser qualification remain in progress.
+CC-46 and CC-52 must provide verified resources before district and school grants become available.
+
 A platform administrator reviews platform users and applies explicit platform, district, and viewer presets with visible effective permissions.
 
 Acceptance criteria:
