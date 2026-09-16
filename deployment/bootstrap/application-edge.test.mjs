@@ -3,7 +3,7 @@ import http from 'node:http';
 import test from 'node:test';
 import { proxyApplication } from './application-edge.mjs';
 
-test('invitation routes require Phase 3 and exact methods and paths', async () => {
+test('application routes require Phase 3 and exact methods and paths', async () => {
   const listen = (server) =>
     new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = (server) => `http://127.0.0.1:${server.address().port}`;
@@ -58,6 +58,10 @@ test('invitation routes require Phase 3 and exact methods and paths', async () =
       413,
     );
     const routes = [
+      ['GET', '/api/customer', 'api'],
+      ['GET', `/api/customer/receipts/${id}`, 'api'],
+      ['POST', '/api/customer/settings', 'api'],
+      ['GET', '/customer-settings', 'frontend'],
       ['GET', '/api/google-connection', 'api'],
       ['GET', `/api/google-connection/candidates/${id}`, 'api'],
       ['POST', '/api/google-connection/candidates', 'api'],
@@ -86,6 +90,10 @@ test('invitation routes require Phase 3 and exact methods and paths', async () =
       assert.equal(response.headers.get('cache-control'), 'no-store');
     }
     for (const [method, path, status] of [
+      ['POST', '/api/customer', 405],
+      ['GET', '/api/customer/settings', 405],
+      ['POST', `/api/customer/receipts/${id}`, 405],
+      ['GET', '/api/customer/receipts/not-a-uuid', 404],
       ['GET', `/api/auth/invitations/${id}/confirm`, 405],
       ['POST', '/api/auth/invitations/status', 405],
       ['DELETE', '/api/auth/invitations', 405],

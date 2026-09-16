@@ -18,6 +18,10 @@ export async function qualifyGoogleConnectionApi({
     await admin.get(`${publicOrigin}/api/auth/session`)
   ).json();
   const headers = { origin: publicOrigin, 'x-csrf-token': session.csrfToken };
+  assert.deepEqual(
+    await (await admin.get(`${publicOrigin}/api/customer`)).json(),
+    { customer: null },
+  );
   const root = `${publicOrigin}/api/google-connection`;
   const { privateKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,

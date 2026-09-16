@@ -1,4 +1,5 @@
 import { qualifyGoogleConnection } from './google-connection.integration.mjs';
+import { qualifyCustomerSettings } from './customer-settings.integration.mjs';
 import { qualifyAccessRevocation } from './access-revocation.integration.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -492,6 +493,14 @@ try {
   );
   results.push(
     ...(await qualifyGoogleConnection({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyCustomerSettings({
       runtime,
       migrator: migrators[0],
       connect,

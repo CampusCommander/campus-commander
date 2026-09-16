@@ -1,3 +1,4 @@
+import { qualifyCustomerSettings } from './customer-settings.mjs';
 import { qualifyGoogleWorker } from './google-connection-worker.mjs';
 import { qualifyGoogleConnectionApi } from './google-connection-api.mjs';
 import { qualifyAccessRevocationBrowser } from './access-revocation-browser.mjs';
@@ -2026,6 +2027,26 @@ test(
           migrator,
           evidenceDirectory,
         });
+      if (applicationPhase === 3) {
+        subject = 'administrator';
+        await qualifyCustomerSettings({
+          page,
+          publicOrigin,
+          migrator,
+          redis,
+          auditAccessibility,
+          evidenceDirectory,
+          restartApi: async () => {
+            for (const process of [api, replica]) {
+              const exited = once(process, 'exit');
+              process.kill('SIGTERM');
+              await exited;
+            }
+            api = await startApi();
+            replica = await startApi(replicaPort);
+          },
+        });
+      }
       await page.getByRole('button', { name: 'Open user menu' }).click();
       await page.getByRole('menuitem', { name: 'Sign out' }).click();
       await expect(

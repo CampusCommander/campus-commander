@@ -4,7 +4,7 @@ registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === '@campus/application-contracts') {
       return nextResolve(
-        new URL('../application-contracts/src/index.ts', import.meta.url).href,
+        new URL('./src/index.ts', import.meta.url).href,
         context,
       );
     }
