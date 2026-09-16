@@ -60,6 +60,7 @@ prototype.request = async function (options) {
     if (fault === 'domain-privilege-denied')
       throw {
         response: {
+          config: options,
           status: 403,
           data: { error: { errors: [{ reason: 'forbidden' }] } },
         },
@@ -67,6 +68,7 @@ prototype.request = async function (options) {
     if (fault === 'quota')
       throw {
         response: {
+          config: options,
           status: 403,
           data: { error: { errors: [{ reason: 'quotaExceeded' }] } },
         },
