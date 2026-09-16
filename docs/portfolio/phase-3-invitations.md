@@ -1,6 +1,6 @@
 # Phase 3 invitation implementation
 
-Owner: CC-50. Status: implementation in progress. Hosted database and browser qualification remain pending.
+Owner: CC-50. Status: implementation complete for platform grants. Hosted database and browser qualification passed. Review remains pending.
 This branch builds on the tested CC-45 contracts in PR #5. Review and merge remain separate gates.
 
 ## Demonstration and boundaries
@@ -58,11 +58,15 @@ An invitation does not replace application sign-in or Google background credenti
 
 Local API and frontend builds, lint, unit tests, and PostgreSQL contract tests passed.
 The real PostgreSQL suite covers concurrent claims, audit rollback, revision checks, revoked inviters, expiry, and grant ceilings.
-The browser suite must prove create, separate-browser redemption, explicit confirmation, limited sign-in, denial, and recovery.
-Hosted results remain pending until their exact tested revision and artifacts are recorded.
+The browser suite passed create, separate-browser redemption, explicit confirmation, limited sign-in, denial, and recovery.
+[Full CI](https://github.com/CampusCommander/campus-commander/actions/runs/35131956143) passed all seven jobs at `55b53fe3d4164eac5c127a9026c25000cc60bcb8`.
+[Retained evidence](../../deployment/evidence/CC-50-platform-invitations.json) records the exact revision, checks, and accessibility artifact hashes.
+The edge restricts invitation pages and API routes to Phase 3. Local tests reject unsupported methods and paths.
+A test-only follow-up waits for page initialization and layout before checking fragment removal and responsive width.
 
 UI rules: UI-01 through UI-10 and FORM-01.
 The invitation form uses the shared form width, Material controls, theme tokens, and application shell.
 Loading, empty, error, stale, expiry, conflict, and offline recovery states preserve form values.
 Partial completion is inapplicable because every invitation mutation is atomic.
+Axe reported zero automated violations. Empty Material fields retained incomplete contrast checks.
 Human screen-reader evidence remains NOT RUN. Full release acceptance belongs to CC-61.
