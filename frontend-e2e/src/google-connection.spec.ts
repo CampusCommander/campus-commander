@@ -11,15 +11,20 @@ const account = {
 };
 const observation = {
   customerId: 'C0123456',
-  primaryDomain: 'example.invalid',
+  primaryDomain: 'fixture.invalid',
   domains: [
     {
-      name: 'example.invalid',
+      name: 'fixture.invalid',
       primary: true,
       verified: true,
-      aliases: [{ name: 'alias.invalid', verified: false }],
+      aliases: [{ name: 'alias.fixture.invalid', verified: false }],
     },
-    { name: 'secondary.invalid', primary: false, verified: true, aliases: [] },
+    {
+      name: 'secondary.fixture.invalid',
+      primary: false,
+      verified: true,
+      aliases: [],
+    },
   ],
 };
 const ready = (id = randomUUID()) => ({
@@ -27,7 +32,7 @@ const ready = (id = randomUUID()) => ({
   status: 'ready',
   expiresAt: new Date(Date.now() + 600000).toISOString(),
   clientId: account.client_id,
-  subject: 'admin@example.invalid',
+  subject: 'administrator@fixture.invalid',
   observation,
   observedAt: new Date().toISOString(),
   failure: null,
@@ -39,7 +44,7 @@ const connected = () => ({
   observedAt: new Date().toISOString(),
   confirmedAt: new Date().toISOString(),
   clientId: account.client_id,
-  subject: 'admin@example.invalid',
+  subject: 'administrator@fixture.invalid',
 });
 
 async function fixture(page: Page, manage = true, phase = 3) {
@@ -48,8 +53,8 @@ async function fixture(page: Page, manage = true, phase = 3) {
       json: {
         phase,
         authenticationConfigured: true,
-        version: 'test',
-        build: 'synthetic',
+        version: 'development',
+        build: 'unreleased',
       },
     }),
   );
@@ -58,11 +63,12 @@ async function fixture(page: Page, manage = true, phase = 3) {
       json: {
         identity: {
           id: principal,
-          displayName: 'Fixture administrator',
+          displayName: 'Synthetic administrator',
           permissionVersion: 1,
-          permissions: ['identity:read'],
+          permissions: ['identity:read', 'diagnostics:read'],
           grants: [
             'connection:read',
+            'platform-users:read',
             ...(manage ? ['connection:manage'] : []),
           ].map((action) => ({ action, scope: { kind: 'platform' } })),
           preferences: { theme: 'light', navigationCollapsed: false },
@@ -74,6 +80,15 @@ async function fixture(page: Page, manage = true, phase = 3) {
   );
   await page.route('**/api/google-connection', (route) =>
     route.fulfill({ json: { connection: null } }),
+  );
+  await page.route('**/api/diagnostics', (route) =>
+    route.fulfill({
+      json: {
+        status: 'ready',
+        observedAt: new Date().toISOString(),
+        checks: [],
+      },
+    }),
   );
   await page.goto('/google-connection');
   if (phase === 3)
@@ -95,7 +110,7 @@ async function select(page: Page) {
   ).toHaveValue(account.client_id);
   await page
     .getByLabel('Delegated administrator email')
-    .fill('admin@example.invalid');
+    .fill('administrator@fixture.invalid');
 }
 
 test('recovers lost import and confirmation responses without browser credential storage', async ({
@@ -142,7 +157,9 @@ test('recovers lost import and confirmation responses without browser credential
   ).toBeDisabled();
   await page.reload();
   await expect(
-    page.getByText('secondary.invalid — Secondary domain.', { exact: false }),
+    page.getByText('secondary.fixture.invalid — Secondary domain.', {
+      exact: false,
+    }),
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Confirm customer', exact: true }),
@@ -206,7 +223,7 @@ test('offline status preserves ordinary inputs and requires refresh before submi
     'Saved connection status is unavailable',
   );
   await expect(page.getByLabel('Delegated administrator email')).toHaveValue(
-    'admin@example.invalid',
+    'administrator@fixture.invalid',
   );
   await expect(
     page.getByRole('button', { name: 'Check credentials', exact: true }),
@@ -314,7 +331,7 @@ test('access interruption clears the private file before the same administrator 
     page.getByRole('button', { name: 'Check credentials', exact: true }),
   ).toBeDisabled();
   await expect(page.getByLabel('Delegated administrator email')).toHaveValue(
-    'admin@example.invalid',
+    'administrator@fixture.invalid',
   );
 });
 
@@ -380,6 +397,8 @@ test('customer import and review meet automated accessibility and overflow check
       fullPage: true,
     });
   }
+  await page.getByRole('button', { name: 'Choose theme' }).click();
+  await page.keyboard.press('Escape');
   for (const [width, zoom] of [
     [1280, '2'],
     [320, '1'],
@@ -388,10 +407,21 @@ test('customer import and review meet automated accessibility and overflow check
     await page.evaluate((zoom) => {
       document.body.style.zoom = zoom;
     }, zoom);
+    const overflow = await page.evaluate(() => ({
+      viewport: window.innerWidth,
+      width: document.documentElement.scrollWidth,
+      elements: [...document.querySelectorAll('body *')]
+        .filter((e) => e.getBoundingClientRect().right > window.innerWidth)
+        .map((e) => ({
+          tag: e.tagName,
+          className: e.className,
+          text: e.textContent?.slice(0, 100),
+          right: e.getBoundingClientRect().right,
+        })),
+    }));
     expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= window.innerWidth,
-      ),
+      overflow.width <= overflow.viewport,
+      JSON.stringify({ zoom, ...overflow }),
     ).toBe(true);
   }
 });

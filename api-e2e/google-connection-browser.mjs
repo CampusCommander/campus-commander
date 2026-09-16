@@ -176,12 +176,24 @@ export async function stageGoogleConnectionBrowser({
     await page.evaluate((zoom) => {
       document.body.style.zoom = zoom;
     }, zoom);
-    assert.equal(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= window.innerWidth,
-      ),
-      true,
-    );
+    const layout = await page.evaluate(() => ({
+      viewport: innerWidth,
+      width: document.documentElement.scrollWidth,
+      zoom: getComputedStyle(document.body).zoom,
+      overflow: [...document.querySelectorAll('body *')]
+        .filter((element) => element.getBoundingClientRect().right > innerWidth)
+        .slice(0, 20)
+        .map((element) => ({
+          tag: element.tagName,
+          className: element.className,
+          right: element.getBoundingClientRect().right,
+        })),
+    }));
+    await page.screenshot({
+      path: `${evidenceDirectory}/google-connection-zoom-${width}-${zoom}.png`,
+      fullPage: true,
+    });
+    assert.equal(layout.width <= layout.viewport, true, JSON.stringify(layout));
   }
   await page.evaluate(() => {
     document.body.style.zoom = '1';
