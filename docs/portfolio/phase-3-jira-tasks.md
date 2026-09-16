@@ -240,6 +240,10 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 Owner role: Platform access lead. Relative size: L. Stories: S05.
 Packages: P9.1, P6.1. Jira key: [CC-50](https://easton-consulting.atlassian.net/browse/CC-50).
 
+Status: In Review. [PR #7](https://github.com/CampusCommander/campus-commander/pull/7) passed full hosted integration.
+[Retained evidence](../../deployment/evidence/CC-50-platform-invitations.json) records the tested revision and limits.
+Review and merge remain pending.
+
 A platform administrator creates an invitation, shares its link independently, confirms the intended OIDC identity, and grants bounded application access.
 
 Acceptance criteria:
