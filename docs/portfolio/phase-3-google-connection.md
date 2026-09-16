@@ -4,7 +4,7 @@
 [PR #10](https://github.com/CampusCommander/campus-commander/pull/10) remains a draft.
 The implementation now includes credential storage, provider verification, and public API confirmation.
 Coordinated renewal and independent worker reads passed hosted qualification.
-The browser workflow passes local qualification. Hosted browser-to-API qualification remains pending.
+The browser workflow passed hosted qualification against the real API and PostgreSQL.
 
 ## Credential and customer transaction
 
@@ -73,6 +73,7 @@ The shared navigation displays the confirmed customer identity.
 Local Chromium checks cover response loss, expiry, read-only access, Phase 2 exclusion, offline input preservation, and access interruption.
 Both themes pass automated accessibility checks after Material color transitions finish.
 Keyboard confirmation, 200 percent CSS zoom, and 320-pixel overflow checks pass.
+Tests wait for saved theme preferences and responsive layout before measuring the final state.
 UI-01 through UI-10 and FORM-01 govern the page.
 Human screen-reader and owner acceptance checks remain unperformed.
 Hosted qualification uses the real API and PostgreSQL with synthetic Google transport.
@@ -126,9 +127,12 @@ Synthetic tests cover encryption, provider normalization, request bounds, error 
 Hosted PostgreSQL checks cover current authority, cleanup bounds, lock-delayed expiry, failure recovery, audit rollback, and competing confirmations.
 The API qualification uses a dedicated synthetic Google transport preload in the test process.
 Production code contains no provider-mock configuration switch.
-The [source-container qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35150914556) passed at revision `8da947c`.
-The [packaged qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35151231170) passed Phase 2 and Phase 3 application checks at `c4b48bc`.
+The [source-container qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35157399846) passed at revision `ad1d7ee`.
+It verifies browser import, explicit confirmation, lost-response recovery, and the existing API and worker boundaries.
+Six onboarding accessibility reports record zero automated violations across import, review, and confirmed states in both themes.
+The [packaged qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35157401813) passed Phase 2 and Phase 3 application checks at `ad1d7ee`.
 The full run passed all seven jobs, including the all-Docker installation check.
+Downloaded artifacts confirm packaged Phase 3 execution and six onboarding accessibility reports with zero automated violations.
 The [connection evidence](../../deployment/evidence/CC-46-customer-connection.json) records its checks and deployment limits.
 Synthetic qualification does not prove live DWD privileges or deployed Google connectivity.
 
@@ -137,7 +141,7 @@ The [live provider check](../../deployment/evidence/CC-46-live-provider-read.jso
 That read used the approved service account and the new verifier.
 No live credential enters test fixtures, evidence files, or Git history.
 CC-44 still requires its remaining live qualification gates.
-CC-46 still requires hosted browser qualification and complete deployment qualification.
+CC-46 still requires complete deployment-profile qualification and remaining live gates.
 Two independent worker processes shared one renewal and reused encrypted tokens after API and worker restarts.
 Wrong keys and denied database access failed closed.
 PostgreSQL qualification covered audit rollback, retired leases and generations, cooldowns, and concurrent operator revocation.

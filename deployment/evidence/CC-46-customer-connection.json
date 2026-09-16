@@ -1,13 +1,13 @@
 {
-  "status": "api-database-worker-qualified-ui-pending",
-  "sourceRevision": "c4b48bc826d7b2f11d03b591d322a7e5546c4f8c",
+  "status": "browser-api-database-worker-qualified-profile-qualification-pending",
+  "sourceRevision": "ad1d7ee7f1cee6e34adc562712225c2242b8303e",
   "recordedOn": "2026-09-16",
   "environment": "Hosted PostgreSQL and Redis, two API replicas, two independent worker containers, synthetic HTTPS OIDC and Google transport, Chromium, and source plus packaged application execution.",
   "ci": {
-    "focused": "https://github.com/CampusCommander/campus-commander/actions/runs/35150914556",
-    "focusedSourceRevision": "8da947c029907e2ac382f513933a648811da5877",
+    "focused": "https://github.com/CampusCommander/campus-commander/actions/runs/35157399846",
+    "focusedSourceRevision": "ad1d7ee7f1cee6e34adc562712225c2242b8303e",
     "focusedStatus": "passed",
-    "full": "https://github.com/CampusCommander/campus-commander/actions/runs/35151231170",
+    "full": "https://github.com/CampusCommander/campus-commander/actions/runs/35157401813",
     "fullStatus": "passed",
     "packagedPhase3Status": "passed",
     "fullJobsPassed": 7
@@ -51,7 +51,13 @@
     "typecheck": "passed",
     "configurationAndRenderers": "passed",
     "edgeRoutesAndBodyLimits": "passed",
-    "workerBuild": "passed"
+    "workerBuild": "passed",
+    "frontendBuild": "passed",
+    "frontendTests": "passed",
+    "onboardingAsyncRegressionCases": 3,
+    "onboardingChromiumCases": 7,
+    "productionBuildBrowserCases": 7,
+    "productionDependencyAudit": "zero vulnerabilities"
   },
   "review": {
     "standardsRemainingFindings": 0,
@@ -66,19 +72,22 @@
       "Kubernetes lacked separate Google-provider egress",
       "API check reused a stale authority snapshot",
       "API check rejected district-scoped authority",
-      "SDK constructor ignored the zero early-refresh threshold"
+      "SDK constructor ignored the zero early-refresh threshold",
+      "delayed staging response body restored an obsolete review",
+      "overlapping saved-state read hid a confirmed customer",
+      "rate-limited staging retained a nonexistent candidate"
     ],
     "authorityBoundary": "The controller reauthenticates before returning. Observation writes check actor and permission version inside their audit transaction."
   },
   "liveProviderEvidence": "CC-46-live-provider-read.json",
   "limits": [
-    "No browser onboarding workflow yet.",
     "All three deployment profiles still require complete Phase 3 qualification.",
     "The live provider check does not bind a deployed installation.",
     "CC-44 live revocation and delegated-identity replacement remain incomplete.",
     "Human screen-reader validation remains unperformed.",
     "The customer/domain live proof uses a declared Super Admin. Minimum custom-role privileges remain unqualified.",
-    "No Education-specific capability qualification applies."
+    "No Education-specific capability qualification applies.",
+    "Owner usability acceptance remains pending."
   ],
   "testStability": {
     "file": "deployment/kubernetes/isolated-port-forward.test.mjs",
@@ -87,7 +96,7 @@
     "validation": "Seven Kubernetes unit tests and deployment lint passed.",
     "runtimeChanged": false
   },
-  "runtimeRevision": "955d9eaee4954b645e4bdc3d860d6f885cbc8837",
+  "runtimeRevision": "2131292d47e5044901897bba9b9c5fd0b992a316",
   "workerChecks": [
     "reads after browser logout and closure",
     "encrypted token reuse after API and worker restart",
@@ -101,5 +110,50 @@
     "before": "SDK retained its five-minute default and attempted unavailable refresh.",
     "after": "Directory requests use the cached token. Only the database lease permits renewal.",
     "validation": "Regression failed before direct SDK property assignment and passed afterward."
+  },
+  "browserChecks": [
+    "keyboard file import and confirmation",
+    "reject sign-in client file",
+    "offline input preservation and stale-state denial",
+    "exact client ID and shared read-only scope text",
+    "lost import response and reload recover public candidate metadata",
+    "customer, primary and secondary domains, aliases, and verification flags before confirmation",
+    "confirmation requires explicit customer review",
+    "pending confirmation prevents duplicate submission",
+    "lost confirmation response recovers durable customer binding",
+    "credentials absent from DOM and browser storage",
+    "light and dark automated accessibility",
+    "200 percent CSS zoom and 320-pixel overflow"
+  ],
+  "browserQualification": {
+    "rules": [
+      "UI-01",
+      "UI-02",
+      "UI-03",
+      "UI-04",
+      "UI-05",
+      "UI-06",
+      "UI-07",
+      "UI-08",
+      "UI-09",
+      "UI-10",
+      "FORM-01"
+    ],
+    "themes": ["light", "dark"],
+    "states": ["import", "review", "confirmed"],
+    "automatedAccessibilityReports": 6,
+    "automatedAccessibilityViolations": 0,
+    "humanScreenReader": "not-run",
+    "ownerAcceptance": "not-run",
+    "fixture": "Real API and PostgreSQL with synthetic Google transport.",
+    "testCorrections": [
+      "Wait for saved theme, inherited nested text colors, and completed paint before accessibility scans.",
+      "Expand inherited collapsed navigation before customer identity visibility checks.",
+      "Wait for responsive layout after changing viewport and CSS zoom."
+    ],
+    "resizeEvidence": "Hosted immediate dimensions reported overflow. The following screenshot fit 320 pixels. Polling the final layout passed qualification.",
+    "packagedApplicationImages": true,
+    "packagedAccessibilityReports": 6,
+    "packagedAccessibilityViolations": 0
   }
 }
