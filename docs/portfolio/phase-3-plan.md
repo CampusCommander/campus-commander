@@ -105,6 +105,7 @@ flowchart TD
   T05 --> T06["T06 Credential replacement"]
   T02 --> T07["T07 Invitations"]
   T07 --> T08["T08 District grants"]
+  T03 --> T08
   T08 --> T09["T09 School scopes"]
   T05 --> T09
   T09 --> T10["T10 Access revocation"]

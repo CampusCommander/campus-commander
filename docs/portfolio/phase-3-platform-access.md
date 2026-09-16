@@ -33,7 +33,7 @@ The initial runtime accepts platform grants only.
 `application_scope_verified` rejects every unverified district and school scope.
 CC-46 must connect this check to the confirmed customer record before district grants become available.
 CC-52 must extend it with current school resource validation before school grants become available.
-These remaining integrations prevent CC-51 completion.
+The confirmed-customer integration prevents CC-51 completion. School grants remain the downstream CC-52 extension.
 Preset expansion continues to use the shared action and resource contract.
 No browser value establishes that a Google customer or school exists.
 
