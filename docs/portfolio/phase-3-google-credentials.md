@@ -72,7 +72,13 @@ Both runs used the encrypted credential without access to the original service-a
 Missing and incorrect key tests failed before any Google request.
 The [sanitized evidence](../../deployment/evidence/CC-44-dwd-credential-proof.json) retains these results and their limits.
 The owner confirmed the resolved customer on 2026-09-16.
-The delegated Google role remains unrecorded until the owner supplies it.
+The owner reported the delegated Google role as Super Admin on 2026-09-16.
+This declaration identifies the live fixture. It does not prove a minimum-privilege custom role.
+The owner has no Education test customer at present.
+Current customer, domain, and OU reads use the standard Workspace Directory API.
+An Education fixture is not a prerequisite for those Phase 3 checks.
+Education-specific capability validation remains outside the current fixture evidence.
+The owner has not supplied a second approved delegated administrator for identity replacement.
 Live DWD revocation, key disablement, and alternate same-customer identity replacement remain NOT RUN.
 An isolated second-customer identity remains unavailable. Simulator evidence proves wrong-customer rejection.
 Do not label CC-44 qualified while its required live cases remain incomplete.
