@@ -6,6 +6,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 export async function qualifyAccessRevocation({
   login,
+  setSubject,
+  restartReplica,
+  restartRedis,
   request,
   publicOrigin,
   replicaOrigin,
@@ -15,6 +18,22 @@ export async function qualifyAccessRevocation({
   redis,
   evidenceDirectory,
 }) {
+  setSubject('invited-platform-user');
+  let unrelatedCookie;
+  try {
+    const result = await login();
+    unrelatedCookie = result.finish.headers['set-cookie']
+      .find((value) => value.startsWith('__Host-cc-session='))
+      .split(';')[0];
+  } finally {
+    setSubject('administrator');
+  }
+  const unrelatedResponse = await request(`${publicOrigin}/api/auth/session`, {
+    ca,
+    cookie: unrelatedCookie,
+  });
+  assert.equal(unrelatedResponse.status, 200);
+  const unrelated = JSON.parse(unrelatedResponse.text).identity;
   const sessions = [];
   for (let index = 0; index < 2; index++) {
     const result = await login();
@@ -120,6 +139,70 @@ export async function qualifyAccessRevocation({
       assert.equal(await redis.get(stale.key), null);
     }
   }
+  for (const origin of [publicOrigin, replicaOrigin]) {
+    const response = await request(`${origin}/api/auth/session`, {
+      ca,
+      cookie: unrelatedCookie,
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(JSON.parse(response.text).identity, unrelated);
+    const denied = await request(
+      `${origin}/api/platform-users/${unrelated.id}`,
+      { ca, cookie },
+    );
+    assert.equal(denied.status, 401);
+    assert.equal(denied.text.includes(unrelated.id), false);
+  }
+  await restartReplica();
+  await redis.set(sessions[1].key, sessions[1].stored, { EX: 60 });
+  const afterRestart = await request(`${replicaOrigin}/api/auth/session`, {
+    ca,
+    cookie: sessions[1].cookie,
+  });
+  assert.equal(afterRestart.status, 401);
+  assert.equal(JSON.parse(afterRestart.text).code, 'access-changed');
+  assert.equal(await redis.get(sessions[1].key), null);
+  await restartRedis();
+  for (const [index, origin] of [publicOrigin, replicaOrigin].entries()) {
+    const stale = sessions[index];
+    const missing = await request(`${origin}/api/auth/session`, {
+      ca,
+      cookie: stale.cookie,
+    });
+    assert.equal(missing.status, 401);
+    await redis.set(stale.key, stale.stored, { EX: 60 });
+    const restored = await request(`${origin}/api/auth/session`, {
+      ca,
+      cookie: stale.cookie,
+    });
+    assert.equal(restored.status, 401);
+    assert.equal(JSON.parse(restored.text).code, 'access-changed');
+    assert.equal(await redis.get(stale.key), null);
+  }
+  assert.equal(
+    (
+      await request(`${publicOrigin}/api/auth/session`, {
+        ca,
+        cookie: unrelatedCookie,
+      })
+    ).status,
+    401,
+  );
+  setSubject('invited-platform-user');
+  try {
+    const result = await login();
+    const freshCookie = result.finish.headers['set-cookie']
+      .find((value) => value.startsWith('__Host-cc-session='))
+      .split(';')[0];
+    const response = await request(`${publicOrigin}/api/auth/session`, {
+      ca,
+      cookie: freshCookie,
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(JSON.parse(response.text).identity, unrelated);
+  } finally {
+    setSubject('administrator');
+  }
   await writeFile(
     `${evidenceDirectory}/access-revocation-api.json`,
     JSON.stringify(
@@ -134,9 +217,12 @@ export async function qualifyAccessRevocation({
           'stale preference update and success audit both rejected',
           'both API replicas reject previous sessions',
           'restored Redis sessions cannot restore revoked access',
+          'direct requests with guessed principal IDs disclose no data',
+          'API restart and Redis loss cannot restore revoked access',
+          'unrelated users retain access and recover unchanged after Redis loss',
         ],
         limits: [
-          'Pending invitation revocation, stale browser recovery, and school integration remain incomplete.',
+          'School integration and background Google credential independence require their remaining implementation.',
         ],
       },
       null,

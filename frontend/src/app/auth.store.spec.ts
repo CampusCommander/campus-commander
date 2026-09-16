@@ -127,3 +127,33 @@ it('preserves the Phase 2 sign-in redirect after session expiry', async () => {
   expect(router.navigateByUrl).toHaveBeenCalledWith('/login');
   expect(auth.interrupted()).toBe(false);
 });
+
+it('ignores an old unauthorized body that finishes after access recovery', async () => {
+  const { auth, fetcher } = await initialize();
+  let finishBody: () => void = () => {
+    throw new Error('Response not started');
+  };
+  const stream = new ReadableStream({
+    start(controller) {
+      finishBody = () => {
+        controller.enqueue(
+          new TextEncoder().encode(JSON.stringify({ code: 'access-changed' })),
+        );
+        controller.close();
+      };
+    },
+  });
+  const delayed = new Response(stream, { status: 401 });
+  const clone = vi.spyOn(delayed, 'clone');
+  fetcher.mockResolvedValueOnce(delayed);
+  const old = auth.request('/api/platform-users');
+  await vi.waitFor(() => expect(clone).toHaveBeenCalled());
+  fetcher.mockResolvedValueOnce(response({ code: 'access-changed' }, 401));
+  await auth.request('/api/platform-users');
+  fetcher.mockResolvedValueOnce(response(session('b'.repeat(64))));
+  await auth.resume();
+  finishBody();
+  await old;
+  expect(auth.interrupted()).toBe(false);
+  expect(auth.session()?.csrfToken).toBe('b'.repeat(64));
+});

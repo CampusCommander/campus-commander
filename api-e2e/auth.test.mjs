@@ -1599,7 +1599,7 @@ test(
         ).text,
       );
       const replicaPort = await freePort();
-      await startApi(replicaPort);
+      let replica = await startApi(replicaPort);
       const replicaOrigin = `https://127.0.0.1:${replicaPort}`;
       assert.equal(
         (
@@ -2003,6 +2003,25 @@ test(
       if (applicationPhase === 3)
         await qualifyAccessRevocation({
           login,
+          setSubject: (value) => {
+            subject = value;
+          },
+          restartReplica: async () => {
+            const exited = once(replica, 'exit');
+            replica.kill('SIGTERM');
+            await exited;
+            replica = await startApi(replicaPort);
+          },
+          restartRedis: async () => {
+            docker('stop', names[1]);
+            docker('start', names[1]);
+            await Promise.race([
+              redis.ping(),
+              delay(15000).then(() => {
+                throw new Error('Redis did not recover after restart');
+              }),
+            ]);
+          },
           request,
           publicOrigin,
           replicaOrigin,

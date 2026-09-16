@@ -79,12 +79,19 @@ export class Invitations implements OnInit, OnDestroy {
   }
   protected async refresh() {
     if (this.loading()) return;
+    const sessionToken = this.auth.session()?.csrfToken;
     this.loading.set(true);
     this.error.set('');
     try {
       const response = await this.auth.request('/api/auth/invitations');
       if (!response.ok) throw new Error();
-      this.items.set(invitationSchema.array().parse(await response.json()));
+      const items = invitationSchema.array().parse(await response.json());
+      if (
+        this.auth.interrupted() ||
+        sessionToken !== this.auth.session()?.csrfToken
+      )
+        return;
+      this.items.set(items);
       this.observedAt.set(new Date());
       this.stale.set(false);
       if (this.review()) {
@@ -107,6 +114,7 @@ export class Invitations implements OnInit, OnDestroy {
   }
   protected async create() {
     if (this.busy() || this.stale() || !this.canInvite()) return;
+    const sessionToken = this.auth.session()?.csrfToken;
     const parsed = createInvitationSchema.safeParse({
       label: this.label,
       expiresInHours: Number(this.expiresInHours),
@@ -134,6 +142,15 @@ export class Invitations implements OnInit, OnDestroy {
       );
       if (!response.ok) throw new Error();
       const result: { url: string } = await response.json();
+      if (
+        this.auth.interrupted() ||
+        sessionToken !== this.auth.session()?.csrfToken
+      ) {
+        this.message.set(
+          'The server created an invitation. Access changed before its link arrived. Refresh invitations before another request.',
+        );
+        return;
+      }
       this.link.set(result.url);
       this.message.set(
         'Invitation created. Copy the link before leaving this page.',

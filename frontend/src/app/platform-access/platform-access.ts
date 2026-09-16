@@ -69,6 +69,7 @@ export class PlatformAccess implements OnInit {
   }
   protected async refresh(offset = this.offset()) {
     if (this.loading() || this.busy()) return;
+    const sessionToken = this.auth.session()?.csrfToken;
     this.loading.set(true);
     this.error.set('');
     try {
@@ -77,6 +78,7 @@ export class PlatformAccess implements OnInit {
       );
       if (!response.ok) throw new Error();
       const page = platformPrincipalPageSchema.parse(await response.json());
+      if (!this.currentSession(sessionToken)) return;
       this.principals.set(page.items);
       this.total.set(page.total);
       this.offset.set(page.offset);
@@ -104,12 +106,16 @@ export class PlatformAccess implements OnInit {
       this.loading.set(false);
     }
   }
+  private currentSession(token: string | undefined) {
+    return token === this.auth.session()?.csrfToken && !this.auth.interrupted();
+  }
   protected invalidate() {
     this.preview.set(null);
     this.confirmed = false;
   }
   protected async inspect(id: string) {
     if (this.busy()) return;
+    const sessionToken = this.auth.session()?.csrfToken;
     this.invalidate();
     this.busy.set(true);
     this.error.set('');
@@ -117,6 +123,7 @@ export class PlatformAccess implements OnInit {
       const response = await this.auth.request(`/api/platform-users/${id}`);
       if (!response.ok) throw new Error();
       const principal = platformPrincipalSchema.parse(await response.json());
+      if (!this.currentSession(sessionToken)) return;
       this.selected.set(principal);
       this.stale.set(false);
       this.receipts.set(null);
@@ -169,6 +176,7 @@ export class PlatformAccess implements OnInit {
   protected async review() {
     const principal = this.selected();
     if (!principal || this.busy() || this.stale() || !this.canManage()) return;
+    const sessionToken = this.auth.session()?.csrfToken;
     this.busy.set(true);
     this.error.set('');
     this.invalidate();
@@ -192,7 +200,9 @@ export class PlatformAccess implements OnInit {
         this.error.set(await this.rejectionMessage(response));
         return;
       }
-      this.preview.set(platformAccessReviewSchema.parse(await response.json()));
+      const review = platformAccessReviewSchema.parse(await response.json());
+      if (!this.currentSession(sessionToken)) return;
+      this.preview.set(review);
       this.message.set(
         'Review this identity, enabled state, and exact grants before confirmation.',
       );
@@ -208,6 +218,7 @@ export class PlatformAccess implements OnInit {
   protected async loadReceipts(offset = 0) {
     const id = this.selected()?.id;
     if (!id) return;
+    const sessionToken = this.auth.session()?.csrfToken;
     this.receiptLoading.set(true);
     this.receiptError.set('');
     try {
@@ -218,7 +229,8 @@ export class PlatformAccess implements OnInit {
       const receipts = platformAccessReceiptPageSchema.parse(
         await response.json(),
       );
-      if (this.selected()?.id === id) this.receipts.set(receipts);
+      if (this.selected()?.id === id && this.currentSession(sessionToken))
+        this.receipts.set(receipts);
     } catch {
       if (this.selected()?.id === id)
         this.receiptError.set(

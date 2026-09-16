@@ -167,6 +167,11 @@ export const AuthStore = signalStore(
             .clone()
             .json()
             .catch(() => null);
+          if (
+            store.interrupted() ||
+            store.session()?.csrfToken !== requestedSession.csrfToken
+          )
+            return response;
           patchState(store, {
             session: null,
             interrupted: true,
