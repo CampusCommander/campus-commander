@@ -7,6 +7,9 @@ import {
   actionSchema,
   grantsForPreset,
   platformAccessResultSchema,
+  platformAccessRejectionSchema,
+  platformAccessReceiptPageSchema,
+  type PlatformAccessReceiptPage,
   platformAccessReviewSchema,
   platformPrincipalPageSchema,
   platformPrincipalSchema,
@@ -39,6 +42,9 @@ export class PlatformAccess implements OnInit {
   protected readonly observedAt = signal<Date | null>(null);
   protected readonly selected = signal<PlatformPrincipal | null>(null);
   protected readonly preview = signal<PlatformAccessReview | null>(null);
+  protected readonly receipts = signal<PlatformAccessReceiptPage | null>(null);
+  protected readonly receiptError = signal('');
+  protected readonly receiptLoading = signal(false);
   protected readonly error = signal('');
   protected readonly message = signal('');
   protected readonly loading = signal(false);
@@ -96,6 +102,7 @@ export class PlatformAccess implements OnInit {
   }
   protected async inspect(id: string) {
     if (this.busy()) return;
+    this.invalidate();
     this.busy.set(true);
     this.error.set('');
     try {
@@ -103,6 +110,9 @@ export class PlatformAccess implements OnInit {
       if (!response.ok) throw new Error();
       const principal = platformPrincipalSchema.parse(await response.json());
       this.selected.set(principal);
+      this.stale.set(false);
+      this.receipts.set(null);
+      void this.loadReceipts();
       this.enabled = principal.enabled;
       this.chosen = Object.fromEntries(
         principal.grants
@@ -114,6 +124,8 @@ export class PlatformAccess implements OnInit {
         'Current access loaded. Review changes before confirmation.',
       );
     } catch {
+      this.stale.set(true);
+      this.invalidate();
       this.error.set(
         'Access details are unavailable. Retry when the connection and your access return.',
       );
@@ -167,18 +179,69 @@ export class PlatformAccess implements OnInit {
           grants,
         },
       );
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        if (response.status >= 500) throw new Error();
+        this.error.set(await this.rejectionMessage(response));
+        return;
+      }
       this.preview.set(platformAccessReviewSchema.parse(await response.json()));
       this.message.set(
         'Review this identity, enabled state, and exact grants before confirmation.',
       );
     } catch {
+      this.stale.set(true);
       this.error.set(
-        'Access review failed. Reload current access and check your delegation authority. Keep one enabled platform administrator.',
+        'Access review is unavailable. Check your connection, then reload current access. Your edits remain in place.',
       );
     } finally {
       this.busy.set(false);
     }
+  }
+  protected async loadReceipts(offset = 0) {
+    const id = this.selected()?.id;
+    if (!id) return;
+    this.receiptLoading.set(true);
+    this.receiptError.set('');
+    try {
+      const response = await this.auth.request(
+        `/api/platform-users/${id}/receipts?offset=${offset}`,
+      );
+      if (!response.ok) throw new Error();
+      const receipts = platformAccessReceiptPageSchema.parse(
+        await response.json(),
+      );
+      if (this.selected()?.id === id) this.receipts.set(receipts);
+    } catch {
+      if (this.selected()?.id === id)
+        this.receiptError.set(
+          'Access receipts are unavailable. Retry receipt history when your connection and access return.',
+        );
+    } finally {
+      this.receiptLoading.set(false);
+    }
+  }
+  private async rejectionMessage(response: Response) {
+    const parsed = platformAccessRejectionSchema.safeParse(
+      await response.json().catch(() => null),
+    );
+    const reason = parsed.success
+      ? parsed.data.reason
+      : response.status === 403
+        ? 'forbidden'
+        : 'conflict';
+    if (reason === 'conflict' || reason === 'forbidden') this.stale.set(true);
+    return {
+      unchanged:
+        'No access changes selected. Change the enabled state or grants before review.',
+      conflict:
+        'Current access changed. Reload access and review your changes again.',
+      delegation:
+        'This change exceeds your current grants. Select only access that you can delegate.',
+      'last-administrator':
+        'Keep one enabled platform administrator with every platform grant. Grant another administrator access before this change.',
+      forbidden:
+        'Your current access does not permit this change. Reload your session or contact a platform administrator.',
+    }[reason];
   }
   protected async apply() {
     const preview = this.preview();
@@ -195,7 +258,12 @@ export class PlatformAccess implements OnInit {
           confirmation: 'change-platform-access',
         },
       );
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        if (response.status >= 500) throw new Error();
+        this.invalidate();
+        this.error.set(await this.rejectionMessage(response));
+        return;
+      }
       const result = platformAccessResultSchema.parse(await response.json());
       this.selected.set(result.principal);
       this.principals.update((items) =>
@@ -208,13 +276,19 @@ export class PlatformAccess implements OnInit {
         `Access changed. Previous sessions require sign-in. Receipt: ${result.receiptId}.`,
       );
       if (result.principal.id === this.auth.session()?.identity.id) {
-        await this.auth.request('/api/auth/session');
+        void this.auth.request('/api/auth/session').catch(() => {
+          this.error.set(
+            'Access changed. Session verification is unavailable. Sign in again to check your current access.',
+          );
+        });
+      } else {
+        void this.loadReceipts();
       }
     } catch {
       this.invalidate();
       this.stale.set(true);
       this.error.set(
-        'Confirmation did not complete. Refresh and reload current access before retrying. Your edits remain in place.',
+        'The confirmation outcome is unknown. Reload access and check receipt history before retrying. Your edits remain in place.',
       );
     } finally {
       this.busy.set(false);

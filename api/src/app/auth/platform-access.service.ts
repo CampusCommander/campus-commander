@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import {
   platformAccessResultSchema,
+  platformAccessRejectionSchema,
+  platformAccessReceiptPageSchema,
   platformAccessReviewSchema,
   platformPrincipalPageSchema,
   platformPrincipalSchema,
@@ -32,8 +34,21 @@ export class PlatformAccessService {
         error && typeof error === 'object' && 'code' in error
           ? error.code
           : undefined;
-      if (code === '42501') throw new ForbiddenException();
-      if (code === 'P0001') throw new ConflictException();
+      const detail =
+        error && typeof error === 'object' && 'detail' in error
+          ? error.detail
+          : undefined;
+      const rejection = platformAccessRejectionSchema.safeParse({
+        reason: detail,
+      });
+      if (code === '42501')
+        throw new ForbiddenException(
+          rejection.success ? rejection.data : { reason: 'forbidden' },
+        );
+      if (code === 'P0001')
+        throw new ConflictException(
+          rejection.success ? rejection.data : { reason: 'conflict' },
+        );
       throw error;
     }
   }
@@ -59,6 +74,15 @@ export class PlatformAccessService {
     );
     if (!result) throw new NotFoundException();
     return platformPrincipalSchema.parse(result);
+  }
+
+  async receipts(session: SessionResponse, id: string, offset: number) {
+    return platformAccessReceiptPageSchema.parse(
+      await this.query(
+        'SELECT cc.list_platform_access_receipts($1,$2,$3,$4) AS result',
+        [session.identity.id, session.identity.permissionVersion, id, offset],
+      ),
+    );
   }
 
   async review(
@@ -89,7 +113,7 @@ export class PlatformAccessService {
     correlation: string,
   ) {
     if (actorVersion !== session.identity.permissionVersion)
-      throw new ConflictException();
+      throw new ConflictException({ reason: 'conflict' });
     return platformAccessResultSchema.parse(
       await this.query(
         'SELECT cc.change_platform_access($1,$2,$3,$4,$5,$6,$7) AS result',

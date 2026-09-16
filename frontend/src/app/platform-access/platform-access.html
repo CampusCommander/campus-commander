@@ -79,6 +79,78 @@
       <dt>Sign-in subject</dt>
       <dd>{{ principal.subject }}</dd>
     </dl>
+    <section
+      aria-labelledby="access-receipts-title"
+      [attr.aria-busy]="receiptLoading()"
+    >
+      <h3 id="access-receipts-title">Access receipt history</h3>
+      <p>
+        Receipts record confirmed changes. Reopen this principal after
+        navigation or sign-in to read its receipts.
+      </p>
+      @if (receiptError()) {
+      <p role="alert" class="error">{{ receiptError() }}</p>
+      }
+      <button
+        mat-stroked-button
+        (click)="loadReceipts()"
+        [disabled]="receiptLoading()"
+      >
+        Refresh receipt history
+      </button>
+      @if (receipts(); as history) {
+      <p>
+        {{ history.items.length }} shown of {{ history.total }} access receipts
+      </p>
+      @for (receipt of history.items; track receipt.id) {
+      <details>
+        <summary>
+          Receipt {{ receipt.id }} · {{ receipt.createdAt | date:'medium' }}
+        </summary>
+        <p>
+          Principal: {{ receipt.principalId }} · Changed by: {{ receipt.actorId
+          }}
+        </p>
+        <p>
+          Access version: {{ receipt.previousVersion }} → {{
+          receipt.permissionVersion }}
+        </p>
+        <p>
+          Sign-in: {{ receipt.previous.enabled ? 'enabled' : 'disabled' }} → {{
+          receipt.applied.enabled ? 'enabled' : 'disabled' }}
+        </p>
+        <h4>Previous grants</h4>
+        <ul>
+          @for (grant of receipt.previous.grants; track $index) {
+          <li>{{ labels[grant.action] }} · {{ scope(grant) }}</li>
+          }
+        </ul>
+        <h4>Applied grants</h4>
+        <ul>
+          @for (grant of receipt.applied.grants; track $index) {
+          <li>{{ labels[grant.action] }} · {{ scope(grant) }}</li>
+          }
+        </ul>
+      </details>
+      }
+      <div class="actions">
+        <button
+          mat-stroked-button
+          (click)="loadReceipts(history.offset - 20)"
+          [disabled]="receiptLoading() || history.offset === 0"
+        >
+          Newer receipts
+        </button>
+        <button
+          mat-stroked-button
+          (click)="loadReceipts(history.offset + 20)"
+          [disabled]="receiptLoading() || history.offset + history.items.length >= history.total"
+        >
+          Older receipts
+        </button>
+      </div>
+      }
+    </section>
     <h3>Existing installation permissions</h3>
     <ul>
       @for (permission of principal.permissions; track permission) {

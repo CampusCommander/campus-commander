@@ -90,21 +90,21 @@ BEGIN
   current_principal:=cc.platform_principal(p_target);
   IF current_principal IS NULL OR p_target_version IS NULL OR
     (current_principal->>'permissionVersion')::integer<>p_target_version OR p_enabled IS NULL THEN
-    RAISE EXCEPTION 'The principal changed. Refresh its current access.';
+    RAISE EXCEPTION 'The principal changed. Refresh its current access.' USING DETAIL='conflict';
   END IF;
   IF NOT cc.access_grants_allowed(p_actor,p_grants) OR NOT cc.access_grants_allowed(p_actor,current_principal->'grants') THEN
-    RAISE EXCEPTION 'The change exceeds current delegation authority.' USING ERRCODE='42501';
+    RAISE EXCEPTION 'The change exceeds current delegation authority.' USING ERRCODE='42501', DETAIL='delegation';
   END IF;
   SELECT COALESCE(jsonb_agg(g ORDER BY g->>'action',g->'scope'),'[]'::jsonb) INTO proposed_grants FROM jsonb_array_elements(p_grants) AS g;
   IF (current_principal->>'enabled')::boolean=p_enabled AND current_principal->'grants'=proposed_grants THEN
-    RAISE EXCEPTION 'Select an access change before review.';
+    RAISE EXCEPTION 'Select an access change before review.' USING DETAIL='unchanged';
   END IF;
   IF cc.full_platform_administrator(p_target) AND (
     NOT p_enabled OR EXISTS(SELECT 1 FROM cc.application_actions a WHERE NOT EXISTS(
       SELECT 1 FROM jsonb_array_elements(proposed_grants) AS g WHERE g->>'action'=a.action AND g->'scope'='{"kind":"platform"}'::jsonb
     ))
   ) AND NOT EXISTS(SELECT 1 FROM cc.application_principals p WHERE p.id<>p_target AND cc.full_platform_administrator(p.id)) THEN
-    RAISE EXCEPTION 'Keep one enabled platform administrator.' USING ERRCODE='42501';
+    RAISE EXCEPTION 'Keep one enabled platform administrator.' USING ERRCODE='42501', DETAIL='last-administrator';
   END IF;
   RETURN jsonb_build_object('current',current_principal,'proposed',jsonb_build_object('enabled',p_enabled,'grants',proposed_grants),
     'actorVersion',p_version,'targetVersion',p_target_version);
@@ -145,3 +145,25 @@ REVOKE ALL ON FUNCTION cc.list_platform_principals(uuid,integer,integer,integer)
 REVOKE ALL ON FUNCTION cc.read_platform_principal(uuid,integer,uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION cc.review_platform_access(uuid,integer,uuid,integer,boolean,jsonb) FROM PUBLIC;
 REVOKE ALL ON FUNCTION cc.change_platform_access(uuid,integer,uuid,integer,boolean,jsonb,uuid) FROM PUBLIC;
+
+CREATE FUNCTION cc.list_platform_access_receipts(p_actor uuid,p_version integer,p_target uuid,p_offset integer) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE result jsonb;
+BEGIN
+  PERFORM cc.invitation_actor(p_actor,p_version,'platform-users:read');
+  IF p_offset IS NULL OR p_offset<0 OR p_offset>1000000 THEN
+    RAISE EXCEPTION 'The requested page is invalid.';
+  END IF;
+  SELECT jsonb_build_object('offset',p_offset,
+    'total',(SELECT count(*) FROM cc.application_access_changes WHERE principal_id=p_target),
+    'items',COALESCE(jsonb_agg(jsonb_build_object(
+      'id',r.id,'actorId',r.actor_id,'principalId',r.principal_id,'correlationId',r.correlation_id,
+      'createdAt',r.created_at,'previousVersion',r.previous_version,'permissionVersion',r.permission_version,
+      'previous',jsonb_build_object('enabled',r.previous_enabled,'grants',r.previous_grants),
+      'applied',jsonb_build_object('enabled',r.enabled,'grants',r.grants)
+    ) ORDER BY r.permission_version DESC),'[]'::jsonb)) INTO result
+    FROM (SELECT * FROM cc.application_access_changes WHERE principal_id=p_target ORDER BY permission_version DESC OFFSET p_offset LIMIT 20) r;
+  RETURN result;
+END;
+$$;
+REVOKE ALL ON FUNCTION cc.list_platform_access_receipts(uuid,integer,uuid,integer) FROM PUBLIC;

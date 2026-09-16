@@ -30,6 +30,12 @@ export async function qualifyPlatformAccessBrowser({
     name: 'Read security events',
     exact: true,
   });
+  await page
+    .getByRole('button', { name: 'Review access changes', exact: true })
+    .click();
+  await expect(page.getByRole('alert')).toContainText(
+    'No access changes selected.',
+  );
   await grant.check();
   await page.context().setOffline(true);
   await page
@@ -64,6 +70,45 @@ export async function qualifyPlatformAccessBrowser({
   await page
     .getByRole('checkbox', { name: 'Enable application sign-in', exact: true })
     .check();
+  await page
+    .getByRole('button', { name: 'Review access changes', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Confirm access changes', exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('checkbox', {
+      name: 'I reviewed this identity and its exact access changes.',
+      exact: true,
+    })
+    .check();
+  await page.context().setOffline(true);
+  await page
+    .getByRole('button', {
+      name: 'Reload access and discard edits',
+      exact: true,
+    })
+    .click();
+  await expect(page.getByRole('alert')).toContainText(
+    'Access details are unavailable.',
+  );
+  await expect(
+    page.getByRole('heading', { name: 'Confirm access changes', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Review access changes', exact: true }),
+  ).toBeDisabled();
+  await expect(grant).toBeChecked();
+  await page.context().setOffline(false);
+  await page
+    .getByRole('button', {
+      name: 'Reload access and discard edits',
+      exact: true,
+    })
+    .click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(grant).not.toBeChecked();
+  await grant.check();
   await page
     .getByRole('button', { name: 'Review access changes', exact: true })
     .click();
@@ -106,6 +151,65 @@ export async function qualifyPlatformAccessBrowser({
     'Current access loaded.',
   );
   await expect(grant).toBeChecked();
+  const receiptHistory = page.getByRole('region', {
+    name: 'Access receipt history',
+  });
+  await expect(receiptHistory.locator('summary')).not.toHaveCount(0);
+  const receiptText = await receiptHistory
+    .locator('summary')
+    .first()
+    .textContent();
+  await page.reload();
+  await page
+    .locator(`[data-principal-id="${identity.id}"]`)
+    .getByRole('button')
+    .click();
+  await expect(receiptHistory).toContainText(receiptText);
+  await expect(grant).toBeChecked();
+  await grant.uncheck();
+  await page
+    .getByRole('button', { name: 'Review access changes', exact: true })
+    .click();
+  await page
+    .getByRole('checkbox', {
+      name: 'I reviewed this identity and its exact access changes.',
+      exact: true,
+    })
+    .check();
+  const mutationUrl = `${publicOrigin}/api/platform-users/${identity.id}/access`;
+  await page.route(
+    mutationUrl,
+    async (route) => {
+      const result = await route.fetch();
+      expect(result.status()).toBe(201);
+      await route.abort('connectionreset');
+    },
+    { times: 1 },
+  );
+  await page
+    .getByRole('button', { name: 'Confirm access changes', exact: true })
+    .click();
+  await expect(page.getByRole('alert')).toContainText(
+    'The confirmation outcome is unknown.',
+  );
+  await expect(
+    page.getByRole('button', { name: 'Review access changes', exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole('button', {
+      name: 'Reload access and discard edits',
+      exact: true,
+    })
+    .click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(grant).not.toBeChecked();
+  await expect(receiptHistory.locator('summary').first()).not.toHaveText(
+    receiptText,
+  );
+  await receiptHistory.locator('summary').first().click();
+  await expect(
+    receiptHistory.getByRole('heading', { name: 'Applied grants' }).first(),
+  ).toBeVisible();
   await page.setViewportSize({ width: 320, height: 720 });
   await expect
     .poll(() =>
@@ -134,6 +238,10 @@ export async function qualifyPlatformAccessBrowser({
         checks: [
           'principal list and exact identity detail',
           'offline draft preservation and disabled review',
+          'failed detail reload invalidates confirmed preview',
+          'unchanged review explains the required edit',
+          'receipt history survives browser reload',
+          'lost confirmation response reports unknown outcome and reconciles committed receipt',
           'server review and explicit grant confirmation',
           'editing invalidates reviewed changes',
           'audited receipt and persisted exact grants',

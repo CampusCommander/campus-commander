@@ -24,7 +24,7 @@ export async function qualifyPlatformAccessApi({
     enabled: true,
     grants,
   };
-  for (const path of [root, target])
+  for (const path of [root, target, `${target}/receipts`])
     assert.equal((await recipient.get(path)).status(), 403);
   const forbiddenSession = await (
     await recipient.get(`${publicOrigin}/api/auth/session`)
@@ -65,6 +65,12 @@ export async function qualifyPlatformAccessApi({
     ).status(),
     403,
   );
+  const unchanged = await admin.post(`${target}/review`, {
+    headers,
+    data: { ...change, grants: identity.grants },
+  });
+  assert.equal(unchanged.status(), 409);
+  assert.deepEqual(await unchanged.json(), { reason: 'unchanged' });
   const reviewResponse = await admin.post(`${target}/review`, {
     headers,
     data: change,
@@ -108,6 +114,16 @@ export async function qualifyPlatformAccessApi({
     identity.permissionVersion + 1,
   );
   assert.ok(result.receiptId && result.correlationId);
+  const receipts = await (await admin.get(`${target}/receipts`)).json();
+  assert.equal(receipts.total, 1);
+  assert.equal(receipts.items[0].id, result.receiptId);
+  assert.deepEqual(receipts.items[0].previous.grants, identity.grants);
+  assert.deepEqual(receipts.items[0].applied.grants, grants);
+  assert.equal((await admin.get(`${target}/receipts?offset=-1`)).status(), 400);
+  assert.deepEqual(
+    (await (await admin.get(`${target}/receipts?offset=20`)).json()).items,
+    [],
+  );
   assert.equal(
     (await recipient.get(`${publicOrigin}/api/auth/session`)).status(),
     401,
@@ -164,9 +180,7 @@ export async function qualifyPlatformAccessApi({
           'last platform administrator disable denied',
           'principal disable and enable preserve stable identity',
         ],
-        limits: [
-          'Browser grant editing and verified district resource integration remain pending.',
-        ],
+        limits: ['Verified district resource integration remains pending.'],
       },
       null,
       2,

@@ -54,6 +54,26 @@ export class PlatformAccessController {
     return this.access.read(request.session, z.uuid().parse(id));
   }
 
+  @Get(':id/receipts')
+  async receipts(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Query() query: unknown,
+  ) {
+    await this.auth.authorize(
+      request.session,
+      'platform-users:read',
+      { kind: 'platform' },
+      request.correlationId,
+    );
+    const input = pageSchema.omit({ limit: true }).parse(query);
+    return this.access.receipts(
+      request.session,
+      z.uuid().parse(id),
+      input.offset,
+    );
+  }
+
   @Post(':id/review')
   async review(
     @Req() request: AuthenticatedRequest,

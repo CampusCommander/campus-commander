@@ -172,6 +172,39 @@ export async function qualifyPlatformAccess({
   ).rows[0];
   assert.deepEqual(receipt.previous_grants, []);
   assert.deepEqual(receipt.grants, readGrant);
+  const receipts = (
+    await runtime.query(
+      'SELECT cc.list_platform_access_receipts($1,$2,$3,$4) AS result',
+      [principalId, 2, target, 0],
+    )
+  ).rows[0].result;
+  assert.equal(receipts.total, 1);
+  assert.equal(receipts.items[0].id, changed.receiptId);
+  assert.deepEqual(receipts.items[0].previous.grants, []);
+  assert.deepEqual(receipts.items[0].applied.grants, readGrant);
+  for (const [actor, version, offset] of [
+    [target, 2, 0],
+    [principalId, 1, 0],
+    [principalId, 2, -1],
+  ]) {
+    await assert.rejects(
+      runtime.query('SELECT cc.list_platform_access_receipts($1,$2,$3,$4)', [
+        actor,
+        version,
+        target,
+        offset,
+      ]),
+    );
+  }
+  assert.deepEqual(
+    (
+      await runtime.query(
+        'SELECT cc.list_platform_access_receipts($1,$2,$3,$4) AS result',
+        [principalId, 2, target, 20],
+      )
+    ).rows[0].result.items,
+    [],
+  );
   await assert.rejects(call(), /principal changed/);
   await assert.rejects(call({ targetVersion: 2 }), /Select an access change/);
   const disabled = await call({ targetVersion: 2, enabled: false });

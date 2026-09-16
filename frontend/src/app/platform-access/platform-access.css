@@ -54,7 +54,8 @@ p,
 li,
 h2,
 h3,
-strong {
+strong,
+summary {
   overflow-wrap: anywhere;
 }
 .loading-placeholder {

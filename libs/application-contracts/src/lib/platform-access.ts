@@ -38,3 +38,32 @@ export const platformAccessResultSchema = z.strictObject({
   correlationId: z.uuid(),
   principal: platformPrincipalSchema,
 });
+
+export const platformAccessRejectionSchema = z.strictObject({
+  reason: z.enum([
+    'unchanged',
+    'conflict',
+    'delegation',
+    'last-administrator',
+    'forbidden',
+  ]),
+});
+export const platformAccessReceiptSchema = z.strictObject({
+  id: z.uuid(),
+  actorId: z.uuid(),
+  principalId: z.uuid(),
+  correlationId: z.uuid(),
+  createdAt: z.string(),
+  previousVersion: z.number().int().positive(),
+  permissionVersion: z.number().int().positive(),
+  previous: z.strictObject({ enabled: z.boolean(), grants: grantsSchema }),
+  applied: z.strictObject({ enabled: z.boolean(), grants: grantsSchema }),
+});
+export const platformAccessReceiptPageSchema = z.strictObject({
+  items: z.array(platformAccessReceiptSchema).max(20),
+  offset: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+export type PlatformAccessReceiptPage = z.infer<
+  typeof platformAccessReceiptPageSchema
+>;

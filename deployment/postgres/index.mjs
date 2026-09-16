@@ -186,6 +186,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
       await client.query(`GRANT EXECUTE ON FUNCTION
         cc.list_platform_principals(uuid,integer,integer,integer),
         cc.read_platform_principal(uuid,integer,uuid),
+        cc.list_platform_access_receipts(uuid,integer,uuid,integer),
         cc.review_platform_access(uuid,integer,uuid,integer,boolean,jsonb),
         cc.change_platform_access(uuid,integer,uuid,integer,boolean,jsonb,uuid) TO ${role}`);
     }
