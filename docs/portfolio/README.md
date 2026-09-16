@@ -1,6 +1,6 @@
 # Campus Commander — Design Portfolio
 
-**Status: current planning baseline, revised 2026-09-05. Phase 2 implementation is in progress. Release acceptance remains open.**
+**Status: Phase 1 closed. The owner accepted Phase 2 on 2026-09-16. Phase 3 is authorized.**
 
 This portfolio integrates the contractor review and the owner's subsequent decisions about orchestration, Redis admission holds, deployment, and job storage.
 The owner authorized this integration on 2026-09-05. That authorization adopts a planning direction. It does not certify untested behavior.
@@ -20,9 +20,11 @@ The [archive](../archive/README.md) preserves earlier sources as history. Archiv
 ## Implementation status
 
 The repository contains deployment code and Phase 2 application code alongside records of Figma prototypes.
-The [Phase 2 implementation record](phase-2-implementation.md) links current tests, profile evidence, and remaining release gates.
+The [owner acceptance record](../reviews/2026-09-16-phase-2-acceptance.md) closes Phase 2 with its recorded limitations.
+The [Phase 3 handoff](phase-3-handoff.md) defines the next work and credential proof.
+The [Phase 2 implementation record](phase-2-implementation.md) preserves tests, profile evidence, and historical release gates.
 The [September 12 manual test record](../testing/phase-2-ubuntu-google-results-2026-09-12.md) records the operator's passing Ubuntu and Google Workspace tests.
-Resume reached readiness after a full disk during installation. The remaining district acceptance work stays open.
+Resume reached readiness after a full disk during installation. The owner subsequently accepted the work as it is.
 Passing local checks does not establish release acceptance. Preserve unrelated work during implementation.
 A prototype board illustrates an interaction. It does not prove permissions, API behavior, performance, or recovery.
 

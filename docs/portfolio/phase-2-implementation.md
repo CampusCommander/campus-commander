@@ -1,9 +1,16 @@
 # Phase 2 implementation record
 
 Epic: [CC-22](https://easton-consulting.atlassian.net/browse/CC-22).
-Status: IN PROGRESS. No Phase 2 release has passed acceptance.
+Status: ACCEPTED AND CLOSED by the owner on 2026-09-16. Phase 3 is authorized.
 
-## Current qualification status
+## Owner acceptance
+
+The owner reported completing the test and accepted the work as it is.
+The [acceptance record](../reviews/2026-09-16-phase-2-acceptance.md) supersedes the pending acceptance statements below.
+It preserves historical test results and release limitations.
+The [Phase 3 handoff](phase-3-handoff.md) defines the next work.
+
+## Qualification status before owner acceptance
 
 The [436d3b0 release pipeline](https://github.com/CampusCommander/campus-commander/actions/runs/34712194718) passed all forty-two jobs in attempt 2.
 [PR CI](https://github.com/CampusCommander/campus-commander/actions/runs/34712197055) passed all seven jobs.
