@@ -101,6 +101,7 @@ export async function loadMigrations() {
       '002-application-auth',
       '003-application-grants',
       '004-application-invitations',
+      '005-platform-access',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -180,6 +181,14 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.invitation_browser_status(text,uuid),
         cc.confirm_invitation(uuid,integer,uuid,integer,text,uuid),
         cc.revoke_invitation(uuid,integer,uuid,integer,uuid) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '005-platform-access')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.list_platform_principals(uuid,integer,integer,integer),
+        cc.read_platform_principal(uuid,integer,uuid),
+        cc.list_platform_access_receipts(uuid,integer,uuid,integer),
+        cc.review_platform_access(uuid,integer,uuid,integer,boolean,jsonb),
+        cc.change_platform_access(uuid,integer,uuid,integer,boolean,jsonb,uuid) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

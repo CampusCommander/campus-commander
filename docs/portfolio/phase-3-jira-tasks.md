@@ -4,7 +4,7 @@ Status: APPROVED by the owner on 2026-09-16. Jira publication and verification a
 
 This backlog implements the [Phase 3 plan](phase-3-plan.md).
 The [structured manifest](phase-3-jira-tasks.json) supplies the same tasks, criteria, dependencies, and publication fields.
-Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 29 verified Blocks links.
+Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 30 verified Blocks links.
 Stable planning IDs map to verified Jira keys in the manifest. The publication snapshot records To Do statuses. CC-45 is In Review after hosted integration passed.
 
 A timed-out request created [CC-43](https://easton-consulting.atlassian.net/browse/CC-43) as a delayed duplicate.
@@ -20,7 +20,7 @@ This administrative closure does not complete implementation.
 5. **P3-T05: Explain capability consent and Google connection health.** Blocked by: P3-T04. Stories: S02, S04.
 6. **P3-T06: Replace Google credentials and rotate encryption keys.** Blocked by: P3-T05. Stories: S01, S08.
 7. **P3-T07: Invite and confirm a platform user without mandatory email.** Blocked by: P3-T02. Stories: S05.
-8. **P3-T08: Manage explicit platform and district permission grants.** Blocked by: P3-T07. Stories: S06.
+8. **P3-T08: Manage explicit platform and district permission grants.** Blocked by: P3-T03, P3-T07. Stories: S06.
 9. **P3-T09: Define school scopes and assign scoped platform access.** Blocked by: P3-T05, P3-T08. Stories: S06.
 10. **P3-T10: Revoke platform access across active browsers and replicas.** Blocked by: P3-T09. Stories: S07.
 11. **P3-T11: Qualify complete Phase 3 browser and accessibility workflows.** Blocked by: P3-T06, P3-T10. Stories: S03, S04, S05, S06, S07, S08, S09.
@@ -274,6 +274,10 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 Owner role: Platform access lead. Relative size: M. Stories: S06.
 Packages: P9.1, P6.1. Jira key: [CC-51](https://easton-consulting.atlassian.net/browse/CC-51).
 
+Status: In Progress. [Draft PR #8](https://github.com/CampusCommander/campus-commander/pull/8) adds platform grant management.
+Hosted database, API, and browser checks passed. Confirmed-customer integration remains pending.
+CC-46 must provide the confirmed customer before district grants become available. CC-52 adds school grants afterward.
+
 A platform administrator reviews platform users and applies explicit platform, district, and viewer presets with visible effective permissions.
 
 Acceptance criteria:
@@ -287,7 +291,7 @@ Acceptance criteria:
 - [ ] Preserve historical principal IDs, preferences, and events when migrating existing administrators.
 - [ ] Verify viewer and district-operator restrictions through direct API requests as well as navigation.
 
-Blocked by: P3-T07.
+Blocked by: P3-T03, P3-T07.
 
 Evidence:
 

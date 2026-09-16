@@ -93,7 +93,7 @@ test('the executed workflow plan keeps lab checks focused and retains the comple
   }
 });
 
-test('pull requests avoid duplicate container and browser qualification', async () => {
+test('pull requests and focused authorization runs avoid duplicate qualification', async () => {
   const ci = await workflow('ci');
   for (const name of [
     'foundation-integration',
@@ -102,8 +102,11 @@ test('pull requests avoid duplicate container and browser qualification', async 
   ])
     assert.equal(
       ci.jobs[name].if,
-      "github.event_name == 'push' || inputs.full == true",
+      "inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)",
     );
+  assert.equal(ci.jobs['phase3-authorization'].if, 'inputs.phase3Only == true');
+  assert.equal(ci.jobs.main.if, 'inputs.phase3Only != true');
+  assert.equal(ci.on.workflow_dispatch.inputs.phase3Only.default, false);
   assert.equal(ci.concurrency['cancel-in-progress'], true);
   assert.ok(
     ci.jobs.main.steps.some((step) => step.run?.includes('nx affected')),

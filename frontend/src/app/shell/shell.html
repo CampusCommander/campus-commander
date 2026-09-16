@@ -36,6 +36,15 @@
     </a>
     } @if (auth.can('platform-users:read', {kind: 'platform'})) {
     <a
+      routerLink="/platform-users"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Platform access"
+    >
+      <mat-icon fontSet="material-symbols-outlined">manage_accounts</mat-icon
+      ><span class="nav-label">Platform access</span>
+    </a>
+    <a
       routerLink="/invitations"
       routerLinkActive="active"
       ariaCurrentWhenActive="page"
@@ -48,7 +57,8 @@
   </nav>
   <header>
     <span class="header-title"
-      >{{ router.url.startsWith('/invitations') ? 'Platform invitations' :
+      >{{ router.url.startsWith('/platform-users') ? 'Platform access' :
+      router.url.startsWith('/invitations') ? 'Platform invitations' :
       router.url.startsWith('/diagnostics') ? 'Diagnostics' : 'Your account'
       }}</span
     >

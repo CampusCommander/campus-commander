@@ -57,6 +57,24 @@ export const routes: Routes = [
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'account' },
       {
+        path: 'platform-users',
+        title: 'Platform access · Campus Commander',
+        canActivate: [
+          () => {
+            const auth = inject(AuthStore);
+            const router = inject(Router);
+            return (
+              auth.can('platform-users:read', { kind: 'platform' }) ||
+              router.parseUrl('/account')
+            );
+          },
+        ],
+        loadComponent: () =>
+          import('./platform-access/platform-access').then(
+            (m) => m.PlatformAccess,
+          ),
+      },
+      {
         path: 'invitations',
         title: 'Platform invitations · Campus Commander',
         canActivate: [

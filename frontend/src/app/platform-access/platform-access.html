@@ -1,0 +1,274 @@
+<div class="access-content">
+  <h1>Platform access</h1>
+  <p>
+    Review who can use Campus Commander and which actions each person can
+    perform.
+  </p>
+  @if (error()) {
+  <p role="alert" class="error">{{ error() }}</p>
+  }
+  <p role="status">{{ message() }}</p>
+  <section aria-labelledby="platform-users-title" [attr.aria-busy]="loading()">
+    <div class="actions">
+      <h2 id="platform-users-title">Platform users</h2>
+      <button
+        mat-stroked-button
+        (click)="refresh()"
+        [disabled]="loading() || busy()"
+      >
+        Refresh platform users
+      </button>
+    </div>
+    @if (loading()) {
+    <p role="status">Loading platform users.</p>
+    <div class="loading-placeholder" aria-hidden="true"></div>
+    } @if (observedAt()) {
+    <p>
+      {{ stale() ? 'Last available result' : 'Updated' }}: {{ observedAt() |
+      date:'medium' }}
+    </p>
+    <p>{{ principals().length }} shown of {{ total() }} platform users</p>
+    } @if (!loading() && !stale() && !principals().length) {
+    <p>No platform users match this page.</p>
+    }
+    <ul class="principals">
+      @for (principal of principals(); track principal.id) {
+      <li [attr.data-principal-id]="principal.id">
+        <div>
+          <strong>{{ principal.displayName }}</strong>
+          <p>{{ principal.subject }}</p>
+          <p>
+            {{ principal.enabled ? 'Enabled' : 'Disabled' }} · {{
+            principal.grants.length }} grants
+          </p>
+        </div>
+        <button
+          mat-stroked-button
+          (click)="inspect(principal.id)"
+          [disabled]="busy() || !!selected()"
+          [attr.aria-label]="'Review access for ' + principal.displayName"
+        >
+          Review access
+        </button>
+      </li>
+      }
+    </ul>
+    <div class="actions">
+      <button
+        mat-stroked-button
+        (click)="refresh(offset() - 50)"
+        [disabled]="offset() === 0 || loading() || busy()"
+      >
+        Previous users
+      </button>
+      <button
+        mat-stroked-button
+        (click)="refresh(offset() + 50)"
+        [disabled]="offset() + principals().length >= total() || loading() || busy()"
+      >
+        Next users
+      </button>
+    </div>
+  </section>
+  @if (selected(); as principal) {
+  <section class="editor" aria-labelledby="access-editor-title">
+    <h2 id="access-editor-title">Access for {{ principal.displayName }}</h2>
+    <dl>
+      <dt>Sign-in issuer</dt>
+      <dd>{{ principal.issuer }}</dd>
+      <dt>Sign-in subject</dt>
+      <dd>{{ principal.subject }}</dd>
+    </dl>
+    <section
+      aria-labelledby="access-receipts-title"
+      [attr.aria-busy]="receiptLoading()"
+    >
+      <h3 id="access-receipts-title">Access receipt history</h3>
+      <p>
+        Receipts record confirmed changes. Reopen this principal after
+        navigation or sign-in to read its receipts.
+      </p>
+      @if (receiptError()) {
+      <p role="alert" class="error">{{ receiptError() }}</p>
+      }
+      <button
+        mat-stroked-button
+        (click)="loadReceipts()"
+        [disabled]="receiptLoading()"
+      >
+        Refresh receipt history
+      </button>
+      @if (receipts(); as history) {
+      <p>
+        {{ history.items.length }} shown of {{ history.total }} access receipts
+      </p>
+      @for (receipt of history.items; track receipt.id) {
+      <details>
+        <summary>
+          Receipt {{ receipt.id }} · {{ receipt.createdAt | date:'medium' }}
+        </summary>
+        <p>
+          Principal: {{ receipt.principalId }} · Changed by: {{ receipt.actorId
+          }}
+        </p>
+        <p>
+          Access version: {{ receipt.previousVersion }} → {{
+          receipt.permissionVersion }}
+        </p>
+        <p>
+          Sign-in: {{ receipt.previous.enabled ? 'enabled' : 'disabled' }} → {{
+          receipt.applied.enabled ? 'enabled' : 'disabled' }}
+        </p>
+        <h4>Previous grants</h4>
+        <ul>
+          @for (grant of receipt.previous.grants; track $index) {
+          <li>{{ labels[grant.action] }} · {{ scope(grant) }}</li>
+          }
+        </ul>
+        <h4>Applied grants</h4>
+        <ul>
+          @for (grant of receipt.applied.grants; track $index) {
+          <li>{{ labels[grant.action] }} · {{ scope(grant) }}</li>
+          }
+        </ul>
+      </details>
+      }
+      <div class="actions">
+        <button
+          mat-stroked-button
+          (click)="loadReceipts(history.offset - 20)"
+          [disabled]="receiptLoading() || history.offset === 0"
+        >
+          Newer receipts
+        </button>
+        <button
+          mat-stroked-button
+          (click)="loadReceipts(history.offset + 20)"
+          [disabled]="receiptLoading() || history.offset + history.items.length >= history.total"
+        >
+          Older receipts
+        </button>
+      </div>
+      }
+    </section>
+    <h3>Existing installation permissions</h3>
+    <ul>
+      @for (permission of principal.permissions; track permission) {
+      <li>{{ permissionLabels[permission] }}</li>
+      }
+    </ul>
+    <p>These installation permissions remain unchanged by this form.</p>
+    @if (!canManage()) {
+    <p>
+      You can review access. Grant changes require platform access management
+      permission.
+    </p>
+    }
+    <fieldset [disabled]="!canManage() || busy()">
+      <legend>Proposed platform access</legend>
+      <mat-checkbox [(ngModel)]="enabled" (ngModelChange)="invalidate()"
+        >Enable application sign-in</mat-checkbox
+      >
+      <div class="actions">
+        <button
+          mat-stroked-button
+          (click)="preset(true)"
+          [disabled]="!fullPresetAllowed()"
+        >
+          Use platform administrator preset
+        </button>
+        <button mat-stroked-button (click)="preset(false)">
+          Clear platform grants
+        </button>
+      </div>
+      <p>
+        Presets select explicit grants. Review every selected grant before
+        confirmation.
+      </p>
+      @for (action of actions; track action) {
+      <mat-checkbox
+        [(ngModel)]="chosen[action]"
+        (ngModelChange)="invalidate()"
+        [disabled]="!canManage() || busy() || !auth.can(action, {kind:'platform'})"
+        >{{ labels[action] }}</mat-checkbox
+      >
+      }
+      <p>
+        Platform grants cover the installation. District and school presets
+        require verified resource configuration.
+      </p>
+      <p>
+        Keep one enabled platform administrator. Your current grants limit which
+        access you can change.
+      </p>
+    </fieldset>
+    @for (grant of principal.grants; track $index) { @if (grant.scope.kind !==
+    'platform') {
+    <p>{{ labels[grant.action] }} · {{ scope(grant) }}</p>
+    } }
+    <div class="actions">
+      @if (canManage()) {
+      <button
+        mat-flat-button
+        (click)="review()"
+        [disabled]="busy() || stale() || !!preview()"
+      >
+        Review access changes
+      </button>
+      }
+      <button
+        mat-stroked-button
+        (click)="inspect(principal.id)"
+        [disabled]="busy()"
+      >
+        Reload access and discard edits
+      </button>
+      <button mat-stroked-button (click)="close()" [disabled]="busy()">
+        Discard edits and close
+      </button>
+    </div>
+    @if (preview(); as review) {
+    <section class="review" aria-labelledby="access-confirmation-title">
+      <h3 id="access-confirmation-title">Confirm access changes</h3>
+      <p>{{ review.current.displayName }} · {{ review.current.subject }}</p>
+      <p>
+        Sign-in: {{ review.current.enabled ? 'enabled' : 'disabled' }} → {{
+        review.proposed.enabled ? 'enabled' : 'disabled' }}
+      </p>
+      <h4>Current grants</h4>
+      <ul>
+        @for (grant of review.current.grants; track $index) {
+        <li>{{ labels[grant.action] }} · {{ scope(grant) }}</li>
+        }
+      </ul>
+      @if (!review.current.grants.length) {
+      <p>No current grants.</p>
+      }
+      <h4>Grants after confirmation</h4>
+      <ul>
+        @for (grant of review.proposed.grants; track $index) {
+        <li>{{ labels[grant.action] }} · {{ scope(grant) }}</li>
+        }
+      </ul>
+      @if (!review.proposed.grants.length) {
+      <p>No platform grants after confirmation.</p>
+      }
+      <p>
+        This change affects one principal. Previous sessions require another
+        sign-in.
+      </p>
+      <mat-checkbox [(ngModel)]="confirmed"
+        >I reviewed this identity and its exact access changes.</mat-checkbox
+      >
+      <button
+        mat-flat-button
+        (click)="apply()"
+        [disabled]="!confirmed || busy() || stale()"
+      >
+        Confirm access changes
+      </button>
+    </section>
+    }
+  </section>
+  }
+</div>

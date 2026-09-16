@@ -23,6 +23,7 @@ import {
 } from '../bootstrap/access.mjs';
 import { changeApplicationAccess } from '../bootstrap/application-access.mjs';
 import { qualifyInvitations } from './invitations.integration.mjs';
+import { qualifyPlatformAccess } from './platform-access.integration.mjs';
 
 const qualification = JSON.parse(
   await readFile(new URL('./qualification.json', import.meta.url), 'utf8'),
@@ -463,6 +464,15 @@ try {
   );
   results.push(
     ...(await qualifyInvitations({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      principalId,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyPlatformAccess({
       runtime,
       migrator: migrators[0],
       connect,

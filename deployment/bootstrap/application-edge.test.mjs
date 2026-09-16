@@ -32,6 +32,7 @@ test('invitation routes require Phase 3 and exact methods and paths', async () =
     const id = '11111111-1111-4111-8111-111111111111';
     const routes = [
       ['GET', '/invitations', 'frontend'],
+      ['GET', '/platform-users', 'frontend'],
       ['GET', '/invitation', 'frontend'],
       ['GET', '/api/auth/invitations', 'api'],
       ['GET', '/api/auth/invitations/status', 'api'],
@@ -39,6 +40,11 @@ test('invitation routes require Phase 3 and exact methods and paths', async () =
       ['POST', '/api/auth/invitations/redeem', 'api'],
       ['POST', `/api/auth/invitations/${id}/confirm`, 'api'],
       ['POST', `/api/auth/invitations/${id}/revoke`, 'api'],
+      ['GET', '/api/platform-users', 'api'],
+      ['GET', `/api/platform-users/${id}`, 'api'],
+      ['GET', `/api/platform-users/${id}/receipts`, 'api'],
+      ['POST', `/api/platform-users/${id}/review`, 'api'],
+      ['POST', `/api/platform-users/${id}/access`, 'api'],
     ];
     for (const [method, path, expected] of routes) {
       const response = await fetch(`${origin(edge)}${path}`, { method });
@@ -53,6 +59,10 @@ test('invitation routes require Phase 3 and exact methods and paths', async () =
       ['POST', '/api/auth/invitations/not-a-uuid/revoke', 404],
       ['POST', `/api/auth/invitations/${id}/arbitrary`, 404],
       ['GET', '/api/auth/invitations/private', 404],
+      ['GET', `/api/platform-users/${id}/access`, 405],
+      ['POST', `/api/platform-users/${id}`, 405],
+      ['POST', `/api/platform-users/${id}/receipts`, 405],
+      ['POST', '/api/platform-users/not-a-uuid/access', 404],
     ]) {
       assert.equal(
         (await fetch(`${origin(edge)}${path}`, { method })).status,

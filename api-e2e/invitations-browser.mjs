@@ -3,6 +3,8 @@ import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { expect } from '@playwright/test';
 import { setTimeout as delay } from 'node:timers/promises';
+import { qualifyPlatformAccessApi } from './platform-access-api.mjs';
+import { qualifyPlatformAccessBrowser } from './platform-access-browser.mjs';
 
 export async function qualifyInvitationBrowser({
   browser,
@@ -232,6 +234,20 @@ export async function qualifyInvitationBrowser({
       403,
     );
     setSubject('administrator');
+    await qualifyPlatformAccessApi({
+      admin: page.context().request,
+      recipient: recipient.request,
+      identity: session.identity,
+      publicOrigin,
+      evidenceDirectory,
+    });
+    await qualifyPlatformAccessBrowser({
+      page,
+      publicOrigin,
+      identity: session.identity,
+      auditAccessibility,
+      evidenceDirectory,
+    });
     const adminSession = await (
       await page.context().request.get(`${publicOrigin}/api/auth/session`)
     ).json();

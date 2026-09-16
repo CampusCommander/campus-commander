@@ -23,8 +23,10 @@ The repository contains deployment code and Phase 2 application code alongside r
 The [owner acceptance record](../reviews/2026-09-16-phase-2-acceptance.md) closes Phase 2 with its recorded limitations.
 The [Phase 3 handoff](phase-3-handoff.md) defines the next work and credential proof.
 The [Phase 3 delivery plan](phase-3-plan.md) defines eighteen approved slices with acceptance criteria, dependencies, and Git and Jira procedures.
-The owner approved the plan on 2026-09-16. Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 29 verified dependencies. Phase 3 implementation is active under CC-45.
+The owner approved the plan on 2026-09-16. Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 30 verified dependencies. CC-45 and CC-50 are in review. CC-51 implementation is active.
 The [Phase 3 authorization contract](phase-3-authorization.md) records the action matrix, preset boundaries, and integration status.
+The [invitation record](phase-3-invitations.md) retains qualified platform invitation evidence.
+The [platform access record](phase-3-platform-access.md) tracks grant management and remaining resource integrations.
 The [Phase 2 implementation record](phase-2-implementation.md) preserves tests, profile evidence, and historical release gates.
 The [September 12 manual test record](../testing/phase-2-ubuntu-google-results-2026-09-12.md) records the operator's passing Ubuntu and Google Workspace tests.
 Resume reached readiness after a full disk during installation. The owner subsequently accepted the work as it is.
@@ -54,7 +56,7 @@ The V0 report remains historical experiment evidence. Its former delivery refere
 | [Phase 1 Jira task backlog](phase-1-jira-tasks.md)                      | 17 published Jira tasks, 36 verified blocking links, and acceptance criteria.          |
 | [Phase 2 implementation](phase-2-implementation.md)                     | Authentication contracts, nineteen Jira tasks, and current implementation evidence.    |
 | [Phase 3 delivery plan](phase-3-plan.md)                                | Scope, contracts, sequence, validation, release gates, and Git and Jira procedures.    |
-| [Phase 3 Jira tasks](phase-3-jira-tasks.md)                             | Eighteen published tasks with acceptance criteria and 29 verified native dependencies. |
+| [Phase 3 Jira tasks](phase-3-jira-tasks.md)                             | Eighteen published tasks with acceptance criteria and 30 verified native dependencies. |
 | [07 — Issues and Opportunities](07-issues-and-opportunities.md)         | Remaining gaps, feature opportunities, and review integration map                      |
 | [Prototype map](prototype-map.md)                                       | Existing board inventory and required alignment work                                   |
 
