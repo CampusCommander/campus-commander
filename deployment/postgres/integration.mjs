@@ -21,6 +21,7 @@ import {
   revokeBootstrap,
   verifyBootstrap,
 } from '../bootstrap/access.mjs';
+import { changeApplicationAccess } from '../bootstrap/application-access.mjs';
 
 const qualification = JSON.parse(
   await readFile(new URL('./qualification.json', import.meta.url), 'utf8'),
@@ -306,10 +307,30 @@ try {
   const migrators = await Promise.all(
     Array.from({ length: 8 }, () => connect('cc-migrator', 'cc-app')),
   );
+  const migrations = await loadMigrations();
+  await migrate(migrators[0], {
+    runtimeRole: 'cc-app',
+    migrations: migrations.slice(0, 2),
+  });
+  const issuer = 'https://phase3-identity.example.test';
+  const { principalId } = await changeApplicationAccess(
+    migrators[0],
+    {
+      action: 'initialize',
+      issuer,
+      subject: 'existing-phase2-owner',
+      displayName: 'Existing owner',
+    },
+    issuer,
+  );
+  const beforeUpgrade = (
+    await runtime.query('SELECT * FROM cc.application_principals WHERE id=$1', [
+      principalId,
+    ])
+  ).rows[0];
   await Promise.all(
     migrators.map((client) => migrate(client, { runtimeRole: 'cc-app' })),
   );
-  const migrations = await loadMigrations();
   const ledger = await runtime.query(
     'SELECT id,checksum FROM cc.schema_migrations ORDER BY id',
   );
@@ -319,6 +340,126 @@ try {
   );
   assert.equal(await checkReadiness(runtime), true);
   results.push('eight concurrent migrations apply each migration once: pass');
+  assert.deepEqual(
+    (
+      await runtime.query(
+        'SELECT * FROM cc.application_principals WHERE id=$1',
+        [principalId],
+      )
+    ).rows[0],
+    beforeUpgrade,
+  );
+  assert.equal(
+    (await runtime.query('SELECT * FROM cc.application_grants')).rowCount,
+    0,
+  );
+  for (const sql of [
+    'DELETE FROM cc.application_grants',
+    "UPDATE cc.application_actions SET scope_kinds=ARRAY['platform']",
+    "UPDATE cc.security_events SET detail='changed'",
+    'DELETE FROM cc.security_events',
+  ])
+    await assert.rejects(runtime.query(sql), /permission denied/);
+  const confirmation = {
+    action: 'confirm-platform-administrator',
+    principalId,
+    expectedVersion: 1,
+    confirmation: 'grant-platform-administrator',
+  };
+  await assert.rejects(
+    changeApplicationAccess(migrators[0], confirmation, issuer, 2),
+    /Phase 3/,
+  );
+  await assert.rejects(
+    changeApplicationAccess(
+      migrators[0],
+      { ...confirmation, confirmation: 'yes' },
+      issuer,
+      3,
+    ),
+  );
+  await assert.rejects(
+    changeApplicationAccess(runtime, confirmation, issuer, 3),
+    /permission denied/,
+  );
+  await migrators[0].query(
+    "ALTER TABLE cc.security_events ADD CONSTRAINT reject_confirmation CHECK(event <> 'platform-administrator-confirmed')",
+  );
+  await assert.rejects(
+    changeApplicationAccess(migrators[0], confirmation, issuer, 3),
+    /reject_confirmation/,
+  );
+  assert.equal(
+    (await runtime.query('SELECT * FROM cc.application_grants')).rowCount,
+    0,
+  );
+  assert.deepEqual(
+    (
+      await runtime.query(
+        'SELECT * FROM cc.application_principals WHERE id=$1',
+        [principalId],
+      )
+    ).rows[0],
+    beforeUpgrade,
+  );
+  await migrators[0].query(
+    'ALTER TABLE cc.security_events DROP CONSTRAINT reject_confirmation',
+  );
+  await changeApplicationAccess(migrators[0], confirmation, issuer, 3);
+  const grants = (
+    await runtime.query(
+      'SELECT action,scope FROM cc.application_grants WHERE principal_id=$1',
+      [principalId],
+    )
+  ).rows;
+  assert.equal(grants.length, 11);
+  assert.ok(grants.every(({ scope }) => scope.kind === 'platform'));
+  const afterConfirmation = (
+    await runtime.query('SELECT * FROM cc.application_principals WHERE id=$1', [
+      principalId,
+    ])
+  ).rows[0];
+  assert.deepEqual(afterConfirmation, {
+    ...beforeUpgrade,
+    permission_version: 2,
+  });
+  await assert.rejects(
+    changeApplicationAccess(migrators[0], confirmation, issuer, 3),
+    /permission version changed/,
+  );
+  assert.equal(
+    (
+      await runtime.query(
+        "SELECT * FROM cc.security_events WHERE event='platform-administrator-confirmed'",
+      )
+    ).rowCount,
+    1,
+  );
+  for (const [action, scope] of [
+    ['connection:manage', { kind: 'district', customerId: 'Ctest' }],
+    ['customer:read', { kind: 'district' }],
+    [
+      'schools:read',
+      { kind: 'school', customerId: 'Ctest', schoolId: 'missing' },
+    ],
+    ['customer:read', { kind: 'platform', customerId: 'Ctest' }],
+    ['unrecognized:action', { kind: 'platform' }],
+  ])
+    await assert.rejects(
+      migrators[0].query(
+        'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
+        [principalId, action, scope],
+      ),
+    );
+  results.push(
+    'Phase 2 identity, preferences, and permissions preserved without implicit grants: pass',
+  );
+  results.push(
+    'explicit Phase 3 operator confirmation, stale-version denial, and audit rollback: pass',
+  );
+  results.push(
+    'runtime grant writes and audit rewriting denied; malformed and unsupported scopes rejected: pass',
+  );
   const broken = [
     ...migrations,
     {

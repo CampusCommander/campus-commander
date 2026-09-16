@@ -1,7 +1,7 @@
 # Phase 3 delivery plan
 
 Plan date: 2026-09-16.
-Status: APPROVED by the owner on 2026-09-16. Jira publication and verification are complete. Implementation has not started.
+Status: APPROVED by the owner on 2026-09-16. Jira publication and verification are complete. Implementation is active under CC-45.
 The [owner acceptance record](../reviews/2026-09-16-phase-2-acceptance.md) closes Phase 2 with its recorded limitations.
 
 ## Outcome and completion boundary
@@ -326,7 +326,8 @@ The approved plan and full issue bodies define the publication scope.
 
 Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 29 verified native Blocks links.
 The publication check verified every parent, status, label, description, and dependency against the manifest.
-The epic and its implementation tasks remain To Do. The 138 task acceptance criteria match the approved backlog.
+The initial publication snapshot recorded To Do statuses. The epic remains In Progress. CC-45 is In Review after hosted integration passed.
+The 138 task acceptance criteria match the approved backlog.
 No Jira issue is published merely to reserve a number.
 
 The initial Jira query found no Phase 3 epic or phase-3 labels.

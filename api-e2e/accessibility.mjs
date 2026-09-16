@@ -2,13 +2,16 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
 
-export async function auditAccessibility(page, name) {
+export async function auditAccessibility(
+  page,
+  name,
+  directory = 'dist/phase-2-evidence',
+) {
   await page.mouse.move(0, 0);
   await page.evaluate(() => document.fonts.ready);
   const result = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();
-  const directory = 'dist/phase-2-evidence';
   await mkdir(directory, { recursive: true });
   const report = {
     name,

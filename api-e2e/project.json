@@ -44,6 +44,20 @@
         "deployment:build"
       ]
     },
+    "phase3-auth-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/auth.test.mjs",
+        "env": { "CC_AUTH_PHASE": "3" }
+      },
+      "dependsOn": [
+        "api:build",
+        "frontend:build",
+        "worker:build",
+        "deployment:build"
+      ]
+    },
     "e2e": {
       "executor": "nx:run-commands",
       "options": {

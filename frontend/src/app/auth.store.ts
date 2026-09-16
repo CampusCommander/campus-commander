@@ -7,6 +7,9 @@ import {
   type ApplicationMetadata,
   type SessionResponse,
   type Preferences,
+  isAuthorized,
+  type Action,
+  type ResourceScope,
 } from '@campus/application-contracts';
 
 interface AuthState {
@@ -25,6 +28,12 @@ export const AuthStore = signalStore(
     loading: false,
   }),
   withMethods((store, router = inject(Router)) => ({
+    can(action: Action, resource: ResourceScope) {
+      return (
+        store.metadata()?.phase === 3 &&
+        isAuthorized(store.session()?.identity.grants ?? [], action, resource)
+      );
+    },
     async metadataReady(refresh = false) {
       if (store.metadata() && !refresh) return store.metadata();
       try {

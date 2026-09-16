@@ -38,7 +38,7 @@ import { startSetupUpload } from '../deployment/installer/setup-upload.mjs';
 import { createBootstrapEdge } from '../deployment/bootstrap/edge.mjs';
 import { startKestraFixture } from './kestra-fixture.mjs';
 import { chromium, expect } from '@playwright/test';
-import { auditAccessibility } from './accessibility.mjs';
+import { auditAccessibility as auditPageAccessibility } from './accessibility.mjs';
 
 const docker = (...args) =>
   execFileSync('docker', args, {
@@ -46,6 +46,11 @@ const docker = (...args) =>
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 const packaged = process.env.CC_AUTH_PACKAGED_IMAGES === 'true';
+const applicationPhase = Number(process.env.CC_AUTH_PHASE ?? 2);
+assert.ok([2, 3].includes(applicationPhase));
+const evidenceDirectory = `dist/phase-${applicationPhase}-evidence`;
+const auditAccessibility = (page, name) =>
+  auditPageAccessibility(page, name, evidenceDirectory);
 const applicationImages = {
   api: process.env.CC_AUTH_API_IMAGE ?? 'campus-commander/api:cc-6',
   frontend:
@@ -247,7 +252,7 @@ test(
         /permission denied/,
       );
 
-      config.phase = 2;
+      config.phase = applicationPhase;
       config.services.edge.access = 'application';
       config.services.applicationDatabase.endpoint.url = `postgresql://${names[0]}:5432`;
       config.services.applicationDatabase.database = 'cc-app';
@@ -915,7 +920,7 @@ test(
           'administrator-browser-recovery',
         );
         await enrollmentPage.screenshot({
-          path: 'dist/phase-2-evidence/administrator-browser-recovery-light.png',
+          path: `${evidenceDirectory}/administrator-browser-recovery-light.png`,
           fullPage: true,
         });
         await enrollmentPage.emulateMedia({ colorScheme: 'dark' });
@@ -928,7 +933,7 @@ test(
           'administrator-browser-recovery-dark',
         );
         await enrollmentPage.screenshot({
-          path: 'dist/phase-2-evidence/administrator-browser-recovery-dark.png',
+          path: `${evidenceDirectory}/administrator-browser-recovery-dark.png`,
           fullPage: true,
         });
         await enrollmentPage.setViewportSize({ width: 640, height: 1000 });
@@ -1064,6 +1069,33 @@ test(
         ).text,
       );
       assert.equal(session.identity.id, principalId);
+      assert.deepEqual(session.identity.grants, []);
+      assert.ok(Number.isInteger(session.identity.permissionVersion));
+      assert.equal(
+        JSON.parse(
+          (await request(`${publicOrigin}/api/application`, { ca })).text,
+        ).phase,
+        applicationPhase,
+      );
+      await migrator.query(
+        `INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,'customer:read','{"kind":"platform"}'::jsonb)`,
+        [principalId],
+      );
+      const grantedSession = await request(`${publicOrigin}/api/auth/session`, {
+        ca,
+        cookie: sessionCookie,
+      });
+      assert.equal(grantedSession.status, 200);
+      assert.deepEqual(
+        JSON.parse(grantedSession.text).identity.grants,
+        applicationPhase === 3
+          ? [{ action: 'customer:read', scope: { kind: 'platform' } }]
+          : [],
+      );
+      await migrator.query(
+        'DELETE FROM cc.application_grants WHERE principal_id=$1',
+        [principalId],
+      );
       await migrator.query(
         "UPDATE cc.application_principals SET permissions=ARRAY['identity:read'] WHERE id=$1",
         [principalId],
@@ -1795,7 +1827,7 @@ test(
           ),
         ).toBeVisible();
       }
-      const artifactDirectory = 'dist/phase-2-evidence';
+      const artifactDirectory = evidenceDirectory;
       await mkdir(artifactDirectory, { recursive: true });
       await expect(page.locator('html')).toHaveCSS(
         'background-color',
@@ -1968,6 +2000,10 @@ test(
         JSON.stringify(
           {
             status: 'passed',
+            phase: applicationPhase,
+            sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], {
+              encoding: 'utf8',
+            }).trim(),
             recordedAt: new Date().toISOString(),
             durationMs: Date.now() - startedAt,
             environment:

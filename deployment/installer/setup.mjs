@@ -1148,7 +1148,7 @@ export async function runSetup(
   output(
     `Readiness: ${result.readiness?.status ?? result.status ?? result.state?.phase ?? 'unknown'}. URL: ${config.services.edge.endpoint.url}`,
   );
-  if (config.phase === 2) {
+  if (config.phase >= 2) {
     output(
       `OIDC callback URL: ${config.applicationAuth.publicOrigin}/api/auth/callback`,
     );

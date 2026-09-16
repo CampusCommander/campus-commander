@@ -210,11 +210,12 @@
       "allDescriptionsMatch": true,
       "allStableLabelsUnique": true,
       "allImplementationStatuses": "To Do",
-      "duplicateDispositionVerified": true
+      "duplicateDispositionVerified": true,
+      "context": "Initial publication snapshot before implementation."
     }
   },
   "epic": {
-    "title": "Phase 3 — Onboarding, customer settings, and platform users",
+    "title": "Phase 3 \u2014 Onboarding, customer settings, and platform users",
     "scope": "Connect one Google customer account, preserve customer settings, and delegate audited Campus Commander access across all three deployment modes.",
     "criteria": [
       "Qualify unattended background authorization separately from application sign-in.",
@@ -299,8 +300,16 @@
       "stableLabel": "p3-t02",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn existing administrator retains sign-in and Diagnostics while the application gains explicit Phase 3 permission, configuration, and migration contracts.\n\nStories: S06, S07. Packages: P1.1, P1.2, P9.1.\n\n## Acceptance criteria\n\n- [ ] Record the action/resource grant matrix, preset boundaries, invitation identity policy, school-scope semantics, and privileged-change policy.\n- [ ] Extend phase metadata, runtime schemas, installer configuration, and release validation to recognize phase 3 consistently.\n- [ ] Add forward migrations for grants and required security-event categories without rewriting existing migration checksums.\n- [ ] Preserve existing identity and Diagnostics permissions. Require explicit operator confirmation before assigning a new platform-administrator preset.\n- [ ] Provide a shared authorization evaluator with deny-by-default behavior and consistent server and client capability responses.\n- [ ] Restrict runtime grant changes to controlled database operations. Preserve installer-only migrations and append-only security evidence.\n- [ ] Prove Phase 2 sign-in, session restoration, logout, Diagnostics, migration retry, and unauthorized-request behavior after the upgrade.\n- [ ] Document module ownership and the existing-runtime compatibility boundary before dependent slices merge.\n\n## Blocked by\n\nNone within the backlog.\n\n## Evidence\n\n- Reviewed grant and invitation policy matrices.\n- Real PostgreSQL migration and role-denial results.\n- Existing authentication and Diagnostics integration results.\n\n## Demonstration\n\nUpgrade an existing installation, sign in, run Diagnostics, and deny a Phase 3 action without its explicit grant.\n\n## Ownership and UI\n\nProposed owner role: Application security lead. Relative size: L.\nApplicable UI rules: UI-01, UI-02, UI-06, UI-08, UI-09, UI-10. Record actual validation results.",
       "blockers": [],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Review",
+      "jiraParent": "CC-42",
+      "implementation": {
+        "branch": "codex/cc-45-authorization-contracts",
+        "status": "hosted-integration-passed",
+        "contract": "phase-3-authorization.md",
+        "localValidation": "Build, lint, unit, installer, release, and type checks passed.",
+        "integrationValidation": "Hosted CI run 35124116097 passed all seven jobs at 52a14cb1abf3626e90d817dfd389acb9ecf21e6d. Review and merge remain pending.",
+        "pullRequest": "https://github.com/CampusCommander/campus-commander/pull/5"
+      }
     },
     {
       "id": "P3-T03",

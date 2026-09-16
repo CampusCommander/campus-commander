@@ -18,7 +18,7 @@ async function close(server) {
   await new Promise((done) => server.close(done));
 }
 
-for (const phase of [1, 2])
+for (const phase of [1, 2, 3])
   test(`Phase ${phase} HTTPS startup requires bootstrap access and limits edge routes`, async () => {
     const directory = await mkdtemp(join(tmpdir(), 'cc12-edge-'));
     const token = generateBootstrapCredential();
@@ -74,8 +74,8 @@ for (const phase of [1, 2])
       );
       config.services.frontend.endpoint.url = `http://127.0.0.1:${frontendPort}`;
       config.services.api.endpoint.url = `http://127.0.0.1:${apiPort}`;
-      if (phase === 2) {
-        config.phase = 2;
+      if (phase >= 2) {
+        config.phase = phase;
         config.services.edge.access = 'application';
         config.applicationAuth = {
           issuer: 'https://identity.example.invalid',

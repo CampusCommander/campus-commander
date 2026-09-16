@@ -557,6 +557,8 @@ export async function executeInstaller({
       };
     } else
       release = await authenticateRelease(operator, { qualification, run });
+    if (config.phase === 3 && release.manifest.phase !== 3)
+      fail('RELEASE', 'Phase 3 configuration requires a Phase 3 release.');
     if (canonical(config.images) !== canonical(release.manifest.images))
       fail(
         'RELEASE',
@@ -677,7 +679,7 @@ export async function executeInstaller({
         if (!supportedUpgrade(old, config))
           fail(
             'UPGRADE',
-            'Upgrade must preserve deployment settings except images and Phase 2 authentication.',
+            'Upgrade must preserve deployment settings except images and supported application phase changes.',
           );
         state = {
           ...state,

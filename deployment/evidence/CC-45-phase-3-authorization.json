@@ -1,0 +1,43 @@
+{
+  "status": "passed",
+  "phase": 3,
+  "sourceRevision": "52a14cb1abf3626e90d817dfd389acb9ecf21e6d",
+  "recordedAt": "2026-09-16T16:53:01.286Z",
+  "durationMs": 68844,
+  "environment": "one Docker host, synthetic HTTPS OIDC provider, two API replicas, real PostgreSQL, Redis, Kestra, worker, artifact storage, and Chromium",
+  "browser": "149.0.7827.55",
+  "packagedApplicationImages": false,
+  "checks": [
+    "paired Google client JSON browser upload and private storage unit coverage",
+    "installer-authorized browser enrollment and explicit operator confirmation",
+    "enrollment expiry, cancellation, replay, concurrent pairing, and forged callbacks",
+    "browser-profile switch rejection, recovery guidance, and enrollment after installer restart",
+    "already-enrolled resume and runtime migration privilege denial",
+    "setup form accessibility in both themes and keyboard enrollment",
+    "OIDC sign-in and forged callback denial",
+    "OIDC client credential rotation",
+    "worker credential rotation",
+    "cross-replica sessions and logout",
+    "absolute and idle expiry",
+    "revocation and recovery",
+    "database and Redis timeout recovery",
+    "four live utility operations",
+    "execution permission denial for all four utility operations",
+    "PostgreSQL transaction rejection, rollback, audit, and retry",
+    "Redis diagnostic key denial, preserved session, and retry",
+    "origin, CSRF, content-type, and preference-tampering rejection",
+    "uncached redacted errors without permissive CORS",
+    "browser sign-in and sign-out",
+    "persisted preferences",
+    "system and explicit themes",
+    "offline observation recovery",
+    "keyboard focus and menus",
+    "CSS zoom 200 percent",
+    "320 pixel reflow"
+  ],
+  "limits": [
+    "Full deployment profile qualification remains separate.",
+    "Human screen-reader walkthrough remains unperformed.",
+    "Synthetic provider evidence does not qualify a district identity provider."
+  ]
+}

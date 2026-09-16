@@ -119,6 +119,9 @@ jobs:
       - run: npm exec nx run api-e2e:auth-image-integration
         env:
           NX_NO_CLOUD: 'true'
+      - run: npm exec nx run api-e2e:phase3-auth-integration
+        env:
+          NX_NO_CLOUD: 'true'
       - run: npm exec nx run api-e2e:all-docker-integration
         env:
           NX_NO_CLOUD: 'true'
@@ -127,4 +130,10 @@ jobs:
         with:
           name: phase-2-application-evidence
           path: dist/phase-2-evidence/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-3-authorization-evidence
+          path: dist/phase-3-evidence/
           if-no-files-found: warn

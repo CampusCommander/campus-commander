@@ -40,6 +40,7 @@ try {
     client,
     JSON.parse(await readFile(requestPath, 'utf8')),
     config.applicationAuth.issuer,
+    config.phase,
   );
   process.stdout.write(`${JSON.stringify(result)}\n`);
 } catch {
