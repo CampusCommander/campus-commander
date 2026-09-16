@@ -1,21 +1,23 @@
 # Google connection server library
 
-CC-46 owns this server library. The API and worker will use its credential boundary.
-The credential proof already uses the shared service-account validator.
+CC-46 owns the credential and provider boundary.
+The API uses this library for encrypted staging and customer verification.
+The credential proof uses its shared service-account validator.
 
-`validateServiceAccount` accepts a Google service account with an exact client ID, fixed token endpoint, and RSA key of at least 2048 bits.
-It removes unrelated input fields and reports bounded errors without credential values.
+`validateServiceAccount` checks the expected client ID, fixed Google token endpoint, and RSA strength.
+It removes unrelated fields and reports bounded errors without credential values.
 
-`CredentialCipher` encrypts a delegated credential with AES-256-GCM and a fresh 96-bit IV.
-Callers provide a 256-bit key and its version identifier from storage outside PostgreSQL.
-Authenticated data binds ciphertext to the record ID, customer ID, generation, key version, and envelope format.
-Callers must obtain that context from their authorized database transaction.
-Changing customer identity or generation requires a new envelope.
-Changing a key requires decryption with the old key and encryption with the new key.
+`CredentialCipher` uses AES-256-GCM with a fresh 96-bit IV and an external 256-bit key.
+Authenticated data binds ciphertext to its record, customer, generation, key version, and envelope format.
+Changing that context requires a new envelope.
 
-This library does not authorize requests, store credentials, coordinate renewal, or change database generations.
-CC-46 must implement those boundaries before exposing connection workflows.
-The proof file store remains separate from production storage.
+`GoogleCustomerVerifier` checks exact customer and domain read-only scopes and returns validated observations.
+Requests use fixed endpoints, deadlines, response limits, and no retries or redirects.
+Provider failures expose bounded categories without response payloads.
 
-Run `npm exec nx run google-connection:test` for synthetic-key tamper and recovery checks.
-No test reads the controlled Workspace credential.
+Database functions enforce current authority, candidate expiry, confirmation, and atomic security events.
+The provider does not yet coordinate token renewal or serve independent worker reads.
+The [connection contract](../../docs/portfolio/phase-3-google-connection.md) records the implementation and remaining scope.
+
+Run `npm exec nx run google-connection:test` for synthetic credential and provider checks.
+Tests do not read the controlled Workspace credential.

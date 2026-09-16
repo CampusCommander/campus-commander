@@ -1,0 +1,21 @@
+{
+  "status": "passed",
+  "sourceRevision": "06cfc8c3a48203e08d7fc522fbb18d02fccacde3",
+  "recordedOn": "2026-09-16",
+  "customerId": "C01zcarnq",
+  "primaryDomain": "easton-consulting.com",
+  "domainCount": 1,
+  "aliasCount": 0,
+  "checks": [
+    "exact customer and domain read-only issued scopes",
+    "bounded token and Directory requests",
+    "customer identity matches owner confirmation",
+    "normalized live domain observations"
+  ],
+  "limits": [
+    "Read-only provider check from the development host.",
+    "No deployed PostgreSQL binding or independent worker claim.",
+    "No live revocation or delegated-identity replacement test.",
+    "Private keys, access tokens, and private credential paths are excluded."
+  ]
+}

@@ -43,3 +43,9 @@ Invitations and onboarding must work without mandatory SMTP configuration.
 
 Future UI implementation must follow the [UI contract](../ui/README.md) and record applicable rule IDs and validation evidence.
 This handoff changes no UI or runtime behavior.
+
+## Customer connection implementation
+
+[CC-46](https://easton-consulting.atlassian.net/browse/CC-46) now includes encrypted PostgreSQL staging and public API customer confirmation.
+The [connection contract](phase-3-google-connection.md) records credential boundaries, cleanup, deployment configuration, validation, and remaining scope.
+The live verifier passed for the owner-confirmed customer. Browser onboarding, independent worker reads, and coordinated renewal remain incomplete.
