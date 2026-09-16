@@ -1,8 +1,15 @@
+import { qualifyGoogleConnectionApi } from './google-connection-api.mjs';
 import { qualifyAccessRevocationBrowser } from './access-revocation-browser.mjs';
 import { qualifyAccessRevocation } from './access-revocation-api.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
+import {
+  createHash,
+  generateKeyPairSync,
+  randomUUID,
+  randomBytes,
+  sign,
+} from 'node:crypto';
 import { once } from 'node:events';
 import {
   chmod,
@@ -256,6 +263,19 @@ test(
       );
 
       config.phase = applicationPhase;
+      if (applicationPhase === 3) {
+        config.googleConnection = {
+          keyId: 'synthetic-google-key',
+          encryptionKeySecretRef: await secret(
+            'google-credential-key',
+            randomBytes(32),
+          ),
+        };
+        await writeFile(
+          join(directory, 'google-connection-preload.cjs'),
+          await readFile('api-e2e/google-connection-preload.cjs'),
+        );
+      }
       config.services.edge.access = 'application';
       config.services.applicationDatabase.endpoint.url = `postgresql://${names[0]}:5432`;
       config.services.applicationDatabase.database = 'cc-app';
@@ -536,6 +556,9 @@ test(
             `NODE_EXTRA_CA_CERTS=${cert}`,
             packaged ? applicationImages.api : image,
             'node',
+            ...(applicationPhase === 3
+              ? ['--require', join(directory, 'google-connection-preload.cjs')]
+              : []),
             packaged ? 'main.js' : 'dist/api/main.js',
           ],
           { stdio: ['ignore', 'pipe', 'pipe'] },
@@ -1980,6 +2003,13 @@ test(
       assert.ok(
         await page.evaluate(() => document.activeElement !== document.body),
       );
+      if (applicationPhase === 3)
+        await qualifyGoogleConnectionApi({
+          admin: page.context().request,
+          publicOrigin,
+          migrator,
+          evidenceDirectory,
+        });
       if (applicationPhase === 3)
         await qualifyInvitationBrowser({
           browser,

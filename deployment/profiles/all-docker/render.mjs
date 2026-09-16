@@ -119,6 +119,9 @@ export function renderAllDocker(
   const secretReferences = [
     ...Object.values(refs),
     ...(config.applicationAuth ? [config.applicationAuth.clientSecretRef] : []),
+    ...(config.googleConnection
+      ? [config.googleConnection.encryptionKeySecretRef]
+      : []),
     services.edge.serverTls.certificateSecretRef,
     services.edge.serverTls.privateKeySecretRef,
   ];
@@ -136,6 +139,9 @@ export function renderAllDocker(
     secrets[name] = { file: `./private/${name}` };
   const apiSecrets = [
     ...(config.applicationAuth ? [config.applicationAuth.clientSecretRef] : []),
+    ...(config.googleConnection
+      ? [config.googleConnection.encryptionKeySecretRef]
+      : []),
     refs.appPassword,
     refs.kestraPassword,
     refs.redisPassword,

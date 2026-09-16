@@ -1,9 +1,10 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
+    "outDir": "../../dist/out-tsc/application-contracts",
     "declaration": true,
-    "types": ["node"]
+    "types": ["node"],
+    "module": "NodeNext"
   },
   "include": ["src/**/*.ts"]
 }

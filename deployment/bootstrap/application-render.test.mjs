@@ -94,3 +94,101 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
     }
   });
 }
+
+for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
+  test(`${profile} mounts the independent Google key only in the API`, async () => {
+    const config = JSON.parse(
+      await readFile(new URL(`../examples/${profile}.json`, import.meta.url)),
+    );
+    config.phase = 3;
+    config.services.edge.access = 'application';
+    config.applicationAuth = {
+      issuer: 'https://identity.example.invalid',
+      clientId: 'campus-commander',
+      publicOrigin: 'https://campus.example.invalid',
+      clientSecretRef:
+        profile === 'kubernetes'
+          ? {
+              provider: 'kubernetes',
+              name: 'campus-oidc',
+              key: 'client-secret',
+            }
+          : { provider: 'file', path: '/run/secrets/oidc-client-secret' },
+    };
+    config.googleConnection = {
+      keyId: 'google-key-1',
+      encryptionKeySecretRef:
+        profile === 'kubernetes'
+          ? {
+              provider: 'kubernetes',
+              name: 'campus-google-key',
+              key: 'encryption-key',
+            }
+          : { provider: 'file', path: '/run/secrets/google-encryption-key' },
+    };
+    if (profile === 'kubernetes') {
+      config.services.api.placement.replicas = 2;
+      const operator = JSON.parse(
+        await readFile(
+          new URL('../kubernetes/operator.example.json', import.meta.url),
+        ),
+      );
+      operator.externalEgress.identityProvider = ['198.51.100.0/24'];
+      assert.throws(
+        () => renderKubernetes(config, operator),
+        /Google-provider egress/,
+      );
+      operator.externalEgress.googleProvider = ['203.0.113.0/24'];
+      const rendered = renderKubernetes(config, operator);
+      assert.deepEqual(
+        rendered.items
+          .filter(
+            (item) =>
+              item.kind === 'NetworkPolicy' &&
+              JSON.stringify(item.spec.egress ?? []).includes('203.0.113.0/24'),
+          )
+          .map((item) => item.metadata.name),
+        ['api-egress'],
+      );
+      const reused = structuredClone(config);
+      reused.googleConnection.encryptionKeySecretRef =
+        operator.migrationPasswordSecretRef;
+      assert.throws(
+        () => renderKubernetes(reused, operator),
+        /separate Google encryption key/,
+      );
+      for (const item of rendered.items.filter(
+        (item) => item.kind === 'Deployment',
+      )) {
+        assert.equal(
+          item.spec.template.spec.volumes.some(
+            (volume) => volume.secret?.secretName === 'campus-google-key',
+          ),
+          item.metadata.name === 'api',
+        );
+      }
+    } else {
+      const release = {
+        schemaVersion: 1,
+        platform: 'linux/amd64',
+        images: config.images,
+      };
+      const compose =
+        profile === 'all-docker'
+          ? renderAllDocker(config, release)
+          : renderHybrid(config, release);
+      const staging =
+        compose.services[
+          profile === 'all-docker' ? 'volume-permissions' : 'runtime-files'
+        ].command[2];
+      const copies = staging
+        .split('\n')
+        .filter(
+          (line) =>
+            line.startsWith('cp ') && line.includes('google-encryption-key'),
+        );
+      assert.equal(copies.length, 1);
+      assert.match(copies[0], /api-secrets/);
+    }
+  });
+}

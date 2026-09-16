@@ -9,3 +9,8 @@ export type {
   DelegatedCredential,
   ServiceAccountCredential,
 } from './lib/credential';
+export {
+  GoogleCustomerVerifier,
+  GoogleConnectionError,
+  GOOGLE_CONNECTION_SCOPES,
+} from './lib/provider';

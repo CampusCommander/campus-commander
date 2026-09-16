@@ -226,7 +226,8 @@ export async function qualifyGoogleConnection({
   const delayed = await stage();
   await finish(delayed);
   const observer = await connect('cc-app', 'cc-app');
-  const runtimePid = (await runtime.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+  const runtimePid = (await runtime.query('SELECT pg_backend_pid() AS pid'))
+    .rows[0].pid;
   await migrator.query('BEGIN');
   let pending;
   try {
@@ -235,7 +236,10 @@ export async function qualifyGoogleConnection({
       `UPDATE cc.google_credential_candidates SET created_at=clock_timestamp()-interval '9 minutes',expires_at=clock_timestamp()+interval '750 milliseconds' WHERE id=$1`,
       [delayed.id],
     );
-    pending = confirm(delayed).then(() => null, (error) => error);
+    pending = confirm(delayed).then(
+      () => null,
+      (error) => error,
+    );
     let waiting = false;
     for (let attempt = 0; attempt < 50; attempt += 1) {
       const activity = await observer.query(
@@ -248,7 +252,11 @@ export async function qualifyGoogleConnection({
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    assert.equal(waiting, true, 'Confirmation must wait for the authority lock.');
+    assert.equal(
+      waiting,
+      true,
+      'Confirmation must wait for the authority lock.',
+    );
     await new Promise((resolve) => setTimeout(resolve, 800));
     await migrator.query('COMMIT');
   } catch (error) {
@@ -257,11 +265,20 @@ export async function qualifyGoogleConnection({
   }
   assert.equal((await pending)?.detail, 'candidate-changed');
   assert.deepEqual(await current(), []);
-  assert.equal((await migrator.query('SELECT count(*) FROM cc.google_credentials')).rows[0].count, '0');
-  assert.equal((await migrator.query(
-    "SELECT count(*) FROM cc.security_events WHERE target_id=$1 AND event IN ('customer-confirmed','connection-authorized')",
-    [delayed.id],
-  )).rows[0].count, '0');
+  assert.equal(
+    (await migrator.query('SELECT count(*) FROM cc.google_credentials')).rows[0]
+      .count,
+    '0',
+  );
+  assert.equal(
+    (
+      await migrator.query(
+        "SELECT count(*) FROM cc.security_events WHERE target_id=$1 AND event IN ('customer-confirmed','connection-authorized')",
+        [delayed.id],
+      )
+    ).rows[0].count,
+    '0',
+  );
   const expiredRead = (await read(delayed)).rows[0].result;
   assert.equal(expiredRead.status, 'expired');
   assert.equal(expiredRead.envelope, null);
@@ -276,13 +293,23 @@ export async function qualifyGoogleConnection({
     [actors[0]],
   );
   await runtime.query('SELECT cc.expire_google_candidates($1)', [correlation]);
-  assert.equal((await migrator.query(
-    "SELECT count(*) FROM cc.google_credential_candidates WHERE expires_at<now()-interval '1 day'",
-  )).rows[0].count, '1');
+  assert.equal(
+    (
+      await migrator.query(
+        "SELECT count(*) FROM cc.google_credential_candidates WHERE expires_at<now()-interval '1 day'",
+      )
+    ).rows[0].count,
+    '1',
+  );
   await runtime.query('SELECT cc.expire_google_candidates($1)', [correlation]);
-  assert.equal((await migrator.query(
-    "SELECT count(*) FROM cc.google_credential_candidates WHERE expires_at<now()-interval '1 day'",
-  )).rows[0].count, '0');
+  assert.equal(
+    (
+      await migrator.query(
+        "SELECT count(*) FROM cc.google_credential_candidates WHERE expires_at<now()-interval '1 day'",
+      )
+    ).rows[0].count,
+    '0',
+  );
 
   // Failed verification cannot bypass the per-actor staging rate limit.
   for (let attempt = 0; attempt < 10; attempt += 1) {

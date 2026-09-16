@@ -49,6 +49,10 @@ const principalRead =
   /^\/api\/platform-users(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:\/receipts)?)?$/;
 const principalWrite =
   /^\/api\/platform-users\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(?:review|access)$/;
+const connectionRead =
+  /^\/api\/google-connection(?:\/candidates\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
+const connectionWrite =
+  /^\/api\/google-connection\/candidates(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?$/;
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
@@ -80,13 +84,16 @@ export async function proxyApplication(
   const readable =
     getRoutes.has(pathname) ||
     (phase === 3 &&
-      (invitationReads.has(pathname) || principalRead.test(pathname)));
+      (invitationReads.has(pathname) ||
+        principalRead.test(pathname) ||
+        connectionRead.test(pathname)));
   const writable =
     postRoutes.has(pathname) ||
     (phase === 3 &&
       (invitationWrites.has(pathname) ||
         invitationChange.test(pathname) ||
-        principalWrite.test(pathname)));
+        principalWrite.test(pathname) ||
+        connectionWrite.test(pathname)));
   const api = readable || writable;
   const page =
     pages.has(pathname) || (phase === 3 && invitationPages.has(pathname));
@@ -104,7 +111,11 @@ export async function proxyApplication(
     try {
       for await (const chunk of request) {
         size += chunk.length;
-        if (size > 4096)
+        const limit =
+          phase === 3 && pathname === '/api/google-connection/candidates'
+            ? 65536
+            : 4096;
+        if (size > limit)
           return finish(response, 413, 'The request exceeds the size limit.\n');
         chunks.push(chunk);
       }

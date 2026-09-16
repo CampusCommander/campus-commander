@@ -336,6 +336,7 @@ function renderBase(input, release) {
   );
   compose.services.api.secrets = secretsFor(
     config.applicationAuth?.clientSecretRef,
+    config.googleConnection?.encryptionKeySecretRef,
     services.api.serverTls.certificateSecretRef,
     services.api.serverTls.privateKeySecretRef,
     services.applicationDatabase.passwordSecretRef,

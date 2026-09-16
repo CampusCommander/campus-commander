@@ -68,7 +68,7 @@ CREATE TABLE cc.google_credential_candidates (
   status text NOT NULL CHECK(status IN ('verifying','ready','failed','expired','consumed')),
   envelope jsonb CHECK(envelope IS NULL OR cc.google_envelope_valid(envelope)),
   observation jsonb CHECK(observation IS NULL OR cc.google_observation_valid(observation)),
-  failure text CHECK(failure IN ('credential-rejected','scope-mismatch','permission-denied','quota','provider-unavailable','invalid-response','wrong-customer','request-failed')),
+  failure text CHECK(failure IN ('credential-rejected','delegation-not-authorized','api-not-enabled','policy-restricted','network-failure','scope-mismatch','permission-denied','quota','provider-unavailable','invalid-response','wrong-customer','request-failed')),
   created_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz NOT NULL DEFAULT now()+interval '10 minutes',
   observed_at timestamptz,
@@ -155,6 +155,9 @@ BEGIN
   IF (SELECT count(*) FROM cc.google_credential_candidates WHERE status IN ('verifying','ready'))>=20 OR
     (SELECT count(*) FROM cc.google_credential_candidates WHERE actor_id=p_actor AND status IN ('verifying','ready'))>=3 THEN
     RAISE EXCEPTION 'Wait for an existing credential check to expire.' USING DETAIL='busy';
+  END IF;
+  IF EXISTS(SELECT 1 FROM cc.google_credential_candidates WHERE id=p_id) THEN
+    RAISE EXCEPTION 'The credential transaction already exists.' USING DETAIL='candidate-changed';
   END IF;
   created:=clock_timestamp();
   IF (SELECT count(*) FROM cc.google_credential_candidates WHERE created_at>created-interval '10 minutes')>=100 OR

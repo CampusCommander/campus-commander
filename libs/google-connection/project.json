@@ -10,7 +10,7 @@
       "executor": "nx:run-commands",
       "cache": true,
       "options": {
-        "command": "node --test libs/google-connection/src/lib/*.test.mjs"
+        "command": "node --import ./libs/google-connection/test-register.mjs --test libs/google-connection/src/lib/*.test.mjs"
       }
     },
     "typecheck": {
