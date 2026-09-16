@@ -105,6 +105,7 @@ export async function loadMigrations() {
       '006-access-revocation',
       '007-google-connection',
       '008-google-token-coordination',
+      '009-customer-settings',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -198,6 +199,11 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.finish_google_access(text,integer,uuid,jsonb,timestamptz,text,uuid),
         cc.reject_google_access(text,integer,uuid,text,uuid),cc.record_google_observation(text,integer,jsonb,uuid,uuid,integer),
         cc.reset_google_access(uuid,integer,text,integer,uuid) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '009-customer-settings')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION cc.read_customer_settings(uuid,integer),
+        cc.save_customer_settings(uuid,integer,text,integer,uuid,jsonb,uuid),
+        cc.read_customer_settings_receipt(uuid,integer,uuid) TO ${role}`);
     }
     if (migrations.some(({ id }) => id === '007-google-connection')) {
       await client.query(`GRANT EXECUTE ON FUNCTION

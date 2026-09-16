@@ -35,6 +35,7 @@ const phase3Pages = new Set([
   '/invitations',
   '/platform-users',
   '/google-connection',
+  '/customer-settings',
 ]);
 const invitationReads = new Set([
   '/api/auth/invitations',
@@ -54,6 +55,8 @@ const connectionRead =
   /^\/api\/google-connection(?:\/candidates\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
 const connectionWrite =
   /^\/api\/google-connection\/(?:check|candidates(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
+const customerRead =
+  /^\/api\/customer(?:\/receipts\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
@@ -87,14 +90,16 @@ export async function proxyApplication(
     (phase === 3 &&
       (invitationReads.has(pathname) ||
         principalRead.test(pathname) ||
-        connectionRead.test(pathname)));
+        connectionRead.test(pathname) ||
+        customerRead.test(pathname)));
   const writable =
     postRoutes.has(pathname) ||
     (phase === 3 &&
       (invitationWrites.has(pathname) ||
         invitationChange.test(pathname) ||
         principalWrite.test(pathname) ||
-        connectionWrite.test(pathname)));
+        connectionWrite.test(pathname) ||
+        pathname === '/api/customer/settings'));
   const api = readable || writable;
   const page =
     pages.has(pathname) || (phase === 3 && phase3Pages.has(pathname));
