@@ -5,7 +5,7 @@ Status: APPROVED by the owner on 2026-09-16. Jira publication and verification a
 This backlog implements the [Phase 3 plan](phase-3-plan.md).
 The [structured manifest](phase-3-jira-tasks.json) supplies the same tasks, criteria, dependencies, and publication fields.
 Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 29 verified Blocks links.
-Stable planning IDs map to verified Jira keys in the manifest. The publication snapshot records To Do statuses. CC-45 is now In Progress.
+Stable planning IDs map to verified Jira keys in the manifest. The publication snapshot records To Do statuses. CC-45 is In Review after hosted integration passed.
 
 A timed-out request created [CC-43](https://easton-consulting.atlassian.net/browse/CC-43) as a delayed duplicate.
 CC-43 is closed, has no epic parent, and links to canonical task CC-44.

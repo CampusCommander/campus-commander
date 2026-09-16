@@ -326,7 +326,7 @@ The approved plan and full issue bodies define the publication scope.
 
 Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 29 verified native Blocks links.
 The publication check verified every parent, status, label, description, and dependency against the manifest.
-The initial publication snapshot recorded To Do statuses. The epic and CC-45 are now In Progress.
+The initial publication snapshot recorded To Do statuses. The epic remains In Progress. CC-45 is In Review after hosted integration passed.
 The 138 task acceptance criteria match the approved backlog.
 No Jira issue is published merely to reserve a number.
 
