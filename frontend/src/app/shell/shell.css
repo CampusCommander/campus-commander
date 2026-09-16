@@ -91,3 +91,11 @@ footer {
     padding: var(--cc-space-md);
   }
 }
+
+.customer-identity {
+  margin: var(--cc-space-md);
+  overflow-wrap: anywhere;
+}
+.customer-identity span {
+  display: block;
+}

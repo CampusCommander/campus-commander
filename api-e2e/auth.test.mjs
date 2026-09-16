@@ -2020,6 +2020,8 @@ test(
       if (applicationPhase === 3)
         await qualifyGoogleConnectionApi({
           admin: page.context().request,
+          page,
+          auditAccessibility,
           publicOrigin,
           migrator,
           evidenceDirectory,

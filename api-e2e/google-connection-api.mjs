@@ -1,9 +1,15 @@
+import {
+  stageGoogleConnectionBrowser,
+  confirmGoogleConnectionBrowser,
+} from './google-connection-browser.mjs';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 
 export async function qualifyGoogleConnectionApi({
   admin,
+  page,
+  auditAccessibility,
   publicOrigin,
   migrator,
   evidenceDirectory,
@@ -55,12 +61,14 @@ export async function qualifyGoogleConnectionApi({
   assert.deepEqual(await invalid.json(), {
     reason: 'invalid-service-account-file',
   });
-  const staged = await admin.post(`${root}/candidates`, {
-    headers,
-    data: input,
+  const candidate = await stageGoogleConnectionBrowser({
+    page,
+    publicOrigin,
+    input,
+    auditAccessibility,
+    evidenceDirectory,
   });
-  assert.equal(staged.status(), 201, await staged.text());
-  const candidate = await staged.json();
+  input.id = candidate.id;
   assert.equal(candidate.id, input.id);
   assert.equal(candidate.status, 'ready');
   assert.equal(candidate.observation.customerId, 'C0123456');
@@ -93,12 +101,12 @@ export async function qualifyGoogleConnectionApi({
     ).status(),
     409,
   );
-  const confirmation = await admin.post(
-    `${root}/candidates/${input.id}/confirm`,
-    { headers, data: { customerId: 'C0123456', confirmed: true } },
-  );
-  assert.equal(confirmation.status(), 201, await confirmation.text());
-  assert.equal((await confirmation.json()).customerId, 'C0123456');
+  await confirmGoogleConnectionBrowser({
+    page,
+    candidate,
+    evidenceDirectory,
+    auditAccessibility,
+  });
   const { connection } = await (await admin.get(root)).json();
   assert.equal(connection.customerId, 'C0123456');
   assert.equal(connection.generation, 1);

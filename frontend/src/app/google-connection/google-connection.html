@@ -1,0 +1,295 @@
+<div class="connection-content">
+  <h1>Google customer connection</h1>
+  <p>
+    Connect the Google Workspace customer that this installation will serve.
+  </p>
+  @if (error()) {
+  <p role="alert" class="error">{{ error() }}</p>
+  } @if (store.error()) {
+  <p role="alert" class="error">{{ store.error() }}</p>
+  }
+  <p role="status">{{ message() }}</p>
+  <div class="actions">
+    <button
+      mat-stroked-button
+      (click)="store.refresh()"
+      [disabled]="store.loading() || busy()"
+    >
+      Refresh saved status
+    </button>
+    @if (store.stale() && store.loaded()) {
+    <span>Saved observations are stale. Refresh before confirmation.</span> }
+  </div>
+  @if (store.loading() && !store.loaded()) {
+  <section aria-label="Loading connection status" aria-busy="true">
+    <p role="status">Loading saved connection status.</p>
+    <div class="skeleton" aria-hidden="true"></div>
+    <div class="skeleton" aria-hidden="true"></div>
+  </section>
+  } @if (store.connection(); as connection) {
+  <section class="card" aria-labelledby="connected-title">
+    <h2 id="connected-title">Customer connected</h2>
+    <p>This installation is bound to {{ connection.customerId }}.</p>
+    <dl>
+      <dt>Service account client ID</dt>
+      <dd class="identifier">{{ connection.clientId }}</dd>
+      <dt>Delegated administrator</dt>
+      <dd>{{ connection.subject }}</dd>
+      <dt>Confirmed</dt>
+      <dd>{{ connection.confirmedAt | date:'medium' }}</dd>
+      <dt>Last successful Google read</dt>
+      <dd>{{ connection.observedAt | date:'medium' }}</dd>
+    </dl>
+    <ng-container
+      [ngTemplateOutlet]="domains"
+      [ngTemplateOutletContext]="{ $implicit: connection.observation }"
+    ></ng-container>
+    <p>These domain observations describe the last successful Google read.</p>
+  </section>
+  } @else if (store.loaded()) {
+  <ol class="steps" aria-label="Customer connection progress">
+    <li [attr.aria-current]="!candidateId() ? 'step' : null">
+      Import and check credentials
+    </li>
+    <li [attr.aria-current]="candidateId() ? 'step' : null">
+      Review and confirm customer
+    </li>
+    <li>Customer connected</li>
+  </ol>
+  @if (!canManage()) {
+  <p>
+    No Google customer is connected. A platform administrator with Manage Google
+    credentials access must connect it.
+  </p>
+  } @else if (!candidateId()) {
+  <section class="card" aria-labelledby="import-title">
+    <h2 id="import-title">Import a service account</h2>
+    <p>
+      Use a service account with domain-wide delegation for background Google
+      access. Application sign-in keeps its existing client.
+    </p>
+    <form (ngSubmit)="stage()">
+      <input
+        #keyFile
+        hidden
+        type="file"
+        accept=".json,application/json"
+        aria-label="Service-account JSON key file"
+        (change)="selectFile($event)"
+        [disabled]="busy() || store.loading() || store.stale()"
+      />
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="keyFile.click()"
+        [disabled]="busy() || store.loading() || store.stale()"
+      >
+        Choose service-account file
+      </button>
+      <p aria-live="polite">
+        {{ fileName() ? 'Selected file: ' + fileName() : 'No key file selected.'
+        }}
+      </p>
+      <p>
+        The file stays in this tab until submission. The page clears it after
+        submission or when you leave.
+      </p>
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Service account client ID</mat-label>
+        <input
+          matInput
+          [value]="clientId()"
+          readonly
+          aria-describedby="client-id-help"
+        />
+        <mat-hint id="client-id-help"
+          >Select a service-account file to read its numeric client
+          ID.</mat-hint
+        >
+      </mat-form-field>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="copy(clientId())"
+        [disabled]="!clientId()"
+      >
+        Copy client ID
+      </button>
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Delegated administrator email</mat-label>
+        <input
+          matInput
+          name="subject"
+          type="email"
+          [(ngModel)]="subject"
+          maxlength="254"
+          autocomplete="off"
+          required
+          [disabled]="busy()"
+        />
+        <mat-hint
+          >Use an approved Google administrator in the intended
+          customer.</mat-hint
+        >
+      </mat-form-field>
+      <details>
+        <summary>Configure Google delegation</summary>
+        <ol>
+          <li>Enable the Admin SDK API in the service-account project.</li>
+          <li>
+            Open
+            <a
+              href="https://admin.google.com/ac/owl/domainwidedelegation"
+              target="_blank"
+              rel="noopener noreferrer"
+              >domain-wide delegation in the Google Admin console</a
+            >.
+          </li>
+          <li>
+            Add the service account client ID and both read-only scopes below.
+          </li>
+        </ol>
+        <pre
+          class="scope-text"
+          tabindex="0"
+          aria-label="Required Google scopes"
+        >
+{{ scopes.join(',\n') }}</pre
+        >
+        <button
+          mat-stroked-button
+          type="button"
+          (click)="copy(scopes.join(','))"
+        >
+          Copy required scopes
+        </button>
+        <p>
+          Google approval and propagation take time. Check the configuration
+          before retrying.
+        </p>
+      </details>
+      <button
+        mat-flat-button
+        type="submit"
+        [disabled]="busy() || store.loading() || store.stale() || !fileName() || !subject.trim()"
+      >
+        {{ busy() ? 'Checking credentials' : 'Check credentials' }}
+      </button>
+    </form>
+  </section>
+  } @else {
+  <section
+    class="card"
+    aria-labelledby="review-title"
+    [attr.aria-busy]="busy()"
+  >
+    <h2 id="review-title">Review Google customer</h2>
+    @if (uncertain()) {
+    <p>
+      The result is unknown. Refresh saved status and this review before
+      confirmation.
+    </p>
+    } @if (candidate(); as candidate) {
+    <dl>
+      <dt>Service account client ID</dt>
+      <dd class="identifier">{{ candidate.clientId }}</dd>
+      <dt>Delegated administrator</dt>
+      <dd>{{ candidate.subject }}</dd>
+      <dt>Review expires</dt>
+      <dd>{{ candidate.expiresAt | date:'medium' }}</dd>
+    </dl>
+    @if (expired() || candidate.status === 'expired') {
+    <p role="status">
+      This review expired. Import the credential again before confirming a
+      customer.
+    </p>
+    } @else if (candidate.status === 'verifying') {
+    <p role="status">
+      The credential check is pending. Refresh this review to retrieve its
+      result.
+    </p>
+    } @else if (candidate.status === 'failed') {
+    <p role="alert" class="error">{{ failure(candidate) }}</p>
+    } @else if (candidate.status === 'consumed') {
+    <p role="status">
+      This review was already confirmed. Refresh saved status to view the
+      connection.
+    </p>
+    } @if (candidate.observation; as observation) {
+    <ng-container
+      [ngTemplateOutlet]="domains"
+      [ngTemplateOutletContext]="{ $implicit: observation }"
+    ></ng-container>
+    <p>Google observation: {{ candidate.observedAt | date:'medium' }}.</p>
+    @if (candidate.status === 'ready' && !expired()) {
+    <p>
+      Confirm {{ observation.customerId }} ({{ observation.primaryDomain }}) as
+      this installation’s Google customer.
+    </p>
+    <p>
+      Confirmation activates background read access for this customer. It does
+      not change Google data.
+    </p>
+    <mat-checkbox
+      [(ngModel)]="confirmed"
+      [disabled]="busy() || uncertain() || store.loading() || store.stale()"
+      >I verified this customer ID and primary domain</mat-checkbox
+    >
+    <button
+      mat-flat-button
+      (click)="confirm()"
+      [disabled]="!confirmed || busy() || uncertain() || store.loading() || store.stale()"
+    >
+      Confirm customer
+    </button>
+    } } } @else {
+    <p role="status">
+      Retrieve the saved credential check to review its customer.
+    </p>
+    }
+    <div class="actions review-actions">
+      <button
+        mat-stroked-button
+        (click)="refreshCandidate()"
+        [disabled]="busy()"
+      >
+        Refresh review
+      </button>
+      <button
+        mat-button
+        (click)="newImport()"
+        [disabled]="busy() || store.loading() || store.stale()"
+      >
+        Start another import
+      </button>
+    </div>
+  </section>
+  } }
+</div>
+<ng-template #domains let-observation>
+  <dl>
+    <dt>Google customer ID</dt>
+    <dd class="identifier">{{ observation.customerId }}</dd>
+    <dt>Primary domain</dt>
+    <dd>{{ observation.primaryDomain }}</dd>
+  </dl>
+  <h3>Observed domains</h3>
+  <ul>
+    @for (domain of observation.domains; track domain.name) {
+    <li>
+      {{ domain.name }} — {{ domain.primary ? 'Primary domain' : 'Secondary
+      domain' }}. {{ domain.verified ? 'Verified' : 'Not verified' }}. @if
+      (domain.aliases.length) {
+      <ul>
+        @for (alias of domain.aliases; track alias.name) {
+        <li>
+          {{ alias.name }} — Alias. {{ alias.verified ? 'Verified' : 'Not
+          verified' }}.
+        </li>
+        }
+      </ul>
+      }
+    </li>
+    }
+  </ul>
+</ng-template>

@@ -49,4 +49,4 @@ This handoff changes no UI or runtime behavior.
 [CC-46](https://easton-consulting.atlassian.net/browse/CC-46) now includes encrypted PostgreSQL staging and public API customer confirmation.
 The [connection contract](phase-3-google-connection.md) records credential boundaries, cleanup, deployment configuration, validation, and remaining scope.
 The live verifier passed for the owner-confirmed customer. Coordinated renewal and independent worker reads passed source-container and packaged Phase 3 qualification.
-Browser onboarding and complete deployment-profile qualification remain incomplete.
+Browser onboarding passes local checks. Hosted browser qualification and complete deployment-profile qualification remain incomplete.

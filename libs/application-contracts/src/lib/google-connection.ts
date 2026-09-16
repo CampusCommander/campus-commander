@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+export const GOOGLE_CUSTOMER_SCOPES = Object.freeze([
+  'https://www.googleapis.com/auth/admin.directory.customer.readonly',
+  'https://www.googleapis.com/auth/admin.directory.domain.readonly',
+]);
+
 export const googleCustomerIdSchema = z.string().regex(/^C[A-Za-z0-9]{4,31}$/);
 export const googleDomainNameSchema = z
   .string()

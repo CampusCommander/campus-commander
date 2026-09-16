@@ -4,7 +4,7 @@
 [PR #10](https://github.com/CampusCommander/campus-commander/pull/10) remains a draft.
 The implementation now includes credential storage, provider verification, and public API confirmation.
 Coordinated renewal and independent worker reads passed hosted qualification.
-The browser workflow remains incomplete.
+The browser workflow passes local qualification. Hosted browser-to-API qualification remains pending.
 
 ## Credential and customer transaction
 
@@ -53,6 +53,30 @@ Each cleanup transaction removes at most 500 terminal records older than one day
 Indexes support expiry and terminal-history selection.
 Staging permits at most twenty active candidates globally and three per actor.
 Ten-minute creation limits permit one hundred candidates globally and ten per actor, including failed checks.
+
+## Browser onboarding
+
+The Phase 3 Google connection page imports a service-account file and requests the approved delegated administrator email.
+It displays the numeric client ID and both scopes from the shared provider contract.
+The page clears private file input after submission, navigation, or access interruption.
+Browser storage retains only the candidate UUID for the current principal.
+
+The review displays customer ID, primary domain, secondary domains, aliases, verification flags, and expiry.
+An explicit checkbox enables confirmation of that exact customer.
+Pending requests, expired reviews, stale saved state, and uncertain outcomes prevent confirmation.
+Lost responses recover through public candidate metadata and the durable customer binding.
+Rate-limited requests explain the limit without retaining a nonexistent candidate.
+Session checks discard delayed response bodies after access recovery.
+New saved-state reads supersede older requests.
+The shared navigation displays the confirmed customer identity.
+
+Local Chromium checks cover response loss, expiry, read-only access, Phase 2 exclusion, offline input preservation, and access interruption.
+Both themes pass automated accessibility checks after Material color transitions finish.
+Keyboard confirmation, 200 percent CSS zoom, and 320-pixel overflow checks pass.
+UI-01 through UI-10 and FORM-01 govern the page.
+Human screen-reader and owner acceptance checks remain unperformed.
+Hosted qualification uses the real API and PostgreSQL with synthetic Google transport.
+Its browser helper tests import, confirmation, duplicate prevention, and recovery after committed responses disappear.
 
 ## Coordinated background reads
 
@@ -113,7 +137,7 @@ The [live provider check](../../deployment/evidence/CC-46-live-provider-read.jso
 That read used the approved service account and the new verifier.
 No live credential enters test fixtures, evidence files, or Git history.
 CC-44 still requires its remaining live qualification gates.
-CC-46 still requires browser integration and complete deployment qualification.
+CC-46 still requires hosted browser qualification and complete deployment qualification.
 Two independent worker processes shared one renewal and reused encrypted tokens after API and worker restarts.
 Wrong keys and denied database access failed closed.
 PostgreSQL qualification covered audit rollback, retired leases and generations, cooldowns, and concurrent operator revocation.

@@ -30,10 +30,11 @@ const postRoutes = new Set([
 ]);
 const assets =
   /^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.(?:js|css|ico|png|svg|woff2?)$/;
-const invitationPages = new Set([
+const phase3Pages = new Set([
   '/invitation',
   '/invitations',
   '/platform-users',
+  '/google-connection',
 ]);
 const invitationReads = new Set([
   '/api/auth/invitations',
@@ -96,7 +97,7 @@ export async function proxyApplication(
         connectionWrite.test(pathname)));
   const api = readable || writable;
   const page =
-    pages.has(pathname) || (phase === 3 && invitationPages.has(pathname));
+    pages.has(pathname) || (phase === 3 && phase3Pages.has(pathname));
   if (!api && !page && !assets.test(pathname))
     return finish(response, 404, 'Route unavailable.\n');
   const methodAllowed =

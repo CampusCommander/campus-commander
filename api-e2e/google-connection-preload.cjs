@@ -25,7 +25,23 @@ prototype.request = async function (options) {
   else if (url.pathname === '/admin/directory/v1/customer/C0123456/domains')
     data = {
       domains: [
-        { domainName: 'fixture.invalid', isPrimary: true, verified: true },
+        {
+          domainName: 'fixture.invalid',
+          isPrimary: true,
+          verified: true,
+          domainAliases: [
+            {
+              domainAliasName: 'alias.fixture.invalid',
+              parentDomainName: 'fixture.invalid',
+              verified: false,
+            },
+          ],
+        },
+        {
+          domainName: 'secondary.fixture.invalid',
+          isPrimary: false,
+          verified: true,
+        },
       ],
     };
   else throw new Error('Unexpected synthetic Google endpoint.');

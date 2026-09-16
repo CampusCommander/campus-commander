@@ -1,6 +1,7 @@
 import { JWT, OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import {
+  GOOGLE_CUSTOMER_SCOPES,
   googleCustomerIdSchema,
   googleDomainNameSchema,
   googleObservationSchema,
@@ -13,10 +14,7 @@ import {
   type GoogleAccessToken,
 } from './credential';
 
-export const GOOGLE_CONNECTION_SCOPES = Object.freeze([
-  'https://www.googleapis.com/auth/admin.directory.customer.readonly',
-  'https://www.googleapis.com/auth/admin.directory.domain.readonly',
-]);
+export const GOOGLE_CONNECTION_SCOPES = GOOGLE_CUSTOMER_SCOPES;
 const directory = 'https://admin.googleapis.com/admin/directory/v1';
 const responseLimit = 262144;
 
