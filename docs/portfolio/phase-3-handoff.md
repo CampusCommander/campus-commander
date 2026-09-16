@@ -2,6 +2,8 @@
 
 Status: AUTHORIZED on 2026-09-16. Implementation has not started.
 The owner closed Phase 1 and [accepted Phase 2](../reviews/2026-09-16-phase-2-acceptance.md).
+The [delivery plan](phase-3-plan.md) expands this handoff into eighteen slices with acceptance criteria and dependencies.
+The owner approved the [issue backlog](phase-3-jira-tasks.md) on 2026-09-16. Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains the published tasks and verified dependencies.
 
 ## Deliverable
 
@@ -20,7 +22,8 @@ The [Phase 3 work breakdown](06-work-breakdown.md#phase-3--onboarding-customer-s
 
 ## First delivery slice
 
-P3.1 owns the credential proof and provider contract.
+[CC-44](https://easton-consulting.atlassian.net/browse/CC-44) owns the credential proof and provider contract.
+[CC-45](https://easton-consulting.atlassian.net/browse/CC-45) can establish authorization contracts through the independent dependency path.
 Start from the [existing capability matrix and procedure](../validation/v0-2026-09-05/google-credential-proof.md).
 Record customer resolution, unattended reads after restart, token renewal, revocation, identity replacement, and least-privilege results.
 Record credential storage and recovery requirements before implementing the onboarding flow.
