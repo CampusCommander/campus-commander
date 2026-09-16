@@ -22,6 +22,8 @@ The [archive](../archive/README.md) preserves earlier sources as history. Archiv
 The repository contains deployment code and Phase 2 application code alongside records of Figma prototypes.
 The [owner acceptance record](../reviews/2026-09-16-phase-2-acceptance.md) closes Phase 2 with its recorded limitations.
 The [Phase 3 handoff](phase-3-handoff.md) defines the next work and credential proof.
+The [Phase 3 delivery plan](phase-3-plan.md) proposes eighteen slices with acceptance criteria, dependencies, and Git and Jira procedures.
+The plan awaits owner review before Jira publication. Phase 3 implementation has not started.
 The [Phase 2 implementation record](phase-2-implementation.md) preserves tests, profile evidence, and historical release gates.
 The [September 12 manual test record](../testing/phase-2-ubuntu-google-results-2026-09-12.md) records the operator's passing Ubuntu and Google Workspace tests.
 Resume reached readiness after a full disk during installation. The owner subsequently accepted the work as it is.
@@ -50,6 +52,8 @@ The V0 report remains historical experiment evidence. Its former delivery refere
 | [06 — Work Breakdown](06-work-breakdown.md)                             | Evidence-first slices, package ownership, dependencies, and acceptance gates          |
 | [Phase 1 Jira task backlog](phase-1-jira-tasks.md)                      | 17 published Jira tasks, 36 verified blocking links, and acceptance criteria.         |
 | [Phase 2 implementation](phase-2-implementation.md)                     | Authentication contracts, nineteen Jira tasks, and current implementation evidence.   |
+| [Phase 3 delivery plan](phase-3-plan.md)                                | Scope, contracts, sequence, validation, release gates, and Git and Jira procedures.   |
+| [Phase 3 Jira drafts](phase-3-jira-tasks.md)                            | Eighteen issue drafts with acceptance criteria and native dependency requirements.    |
 | [07 — Issues and Opportunities](07-issues-and-opportunities.md)         | Remaining gaps, feature opportunities, and review integration map                     |
 | [Prototype map](prototype-map.md)                                       | Existing board inventory and required alignment work                                  |
 

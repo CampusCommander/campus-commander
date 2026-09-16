@@ -2,6 +2,8 @@
 
 Status: AUTHORIZED on 2026-09-16. Implementation has not started.
 The owner closed Phase 1 and [accepted Phase 2](../reviews/2026-09-16-phase-2-acceptance.md).
+The [delivery plan](phase-3-plan.md) expands this handoff into eighteen slices with acceptance criteria and dependencies.
+The [issue drafts](phase-3-jira-tasks.md) await owner review before Jira publication.
 
 ## Deliverable
 
