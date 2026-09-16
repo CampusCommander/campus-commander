@@ -3,9 +3,7 @@
   "sourceRevision": "dcdc80d6156f8bab92447c6a00ea3fad2ce5b151",
   "recordedOn": "2026-09-16",
   "environment": "Hosted real PostgreSQL and Redis, two API replicas, synthetic Google transport, and Chromium.",
-  "settingsAllowlist": [
-    "displayName"
-  ],
+  "settingsAllowlist": ["displayName"],
   "ci": {
     "backend": "https://github.com/CampusCommander/campus-commander/actions/runs/35159796531",
     "backendStatus": "passed",
@@ -59,10 +57,7 @@
   "accessibility": {
     "automatedSourceReports": 2,
     "sourceViolations": 0,
-    "themes": [
-      "light",
-      "dark"
-    ],
+    "themes": ["light", "dark"],
     "visualInspection": "passed: hosted conflict screenshots in both themes",
     "screenReaderWalkthrough": "not-run",
     "automatedPackagedReports": 2,
