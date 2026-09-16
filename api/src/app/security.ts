@@ -35,13 +35,11 @@ export class ApplicationExceptionFilter implements ExceptionFilter {
       .getRequest<Request & { correlationId: string }>();
     const response = host.switchToHttp().getResponse<Response>();
     if (exception instanceof AccessChangedException) {
-      response
-        .status(401)
-        .json({
-          code: 'access-changed',
-          message: 'Application access changed. Sign in again.',
-          correlationId: request.correlationId,
-        });
+      response.status(401).json({
+        code: 'access-changed',
+        message: 'Application access changed. Sign in again.',
+        correlationId: request.correlationId,
+      });
       return;
     }
     if (
