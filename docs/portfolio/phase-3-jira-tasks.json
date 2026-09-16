@@ -626,13 +626,15 @@
       "implementation": {
         "branch": "codex/cc-51-platform-access",
         "base": "codex/cc-50-platform-invitations",
-        "status": "database-qualified-api-and-browser-qualification-in-progress",
+        "status": "platform-qualified-district-integration-pending",
         "contract": "phase-3-platform-access.md",
         "pr": "https://github.com/CampusCommander/campus-commander/pull/8",
-        "databaseQualifiedRevision": "0b39466",
-        "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35133833101",
+        "databaseQualifiedRevision": "e6bfd8d3c8800efe62e53068112ba1983b15ed1c",
+        "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35136921322",
         "remainingIntegrations": ["CC-46 confirmed customer scope"],
-        "downstreamExtension": "CC-52 verified school scope"
+        "downstreamExtension": "CC-52 verified school scope",
+        "evidence": "deployment/evidence/CC-51-platform-access.json",
+        "compatibilityCiRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35136924107"
       }
     },
     {
