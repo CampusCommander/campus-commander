@@ -1,6 +1,6 @@
 # Phase 3 authorization contracts
 
-Decision owner: CC-45. Status: implemented contracts, integration qualification pending.
+Decision owner: CC-45. Status: implemented contracts, hosted integration passed. Review remains pending.
 This document settles D05 through D08 for dependent implementation slices.
 
 ## Actions and resources
@@ -110,8 +110,12 @@ Redis failure retains the existing denial behavior.
 - `deployment/bootstrap/application-access.mjs` owns operator confirmation and recovery through the migration role.
 - `api-e2e` owns the Phase 2 compatibility and Phase 3 authorization integration runs.
 
-Local build, lint, and evaluator checks pass. Container integration remains pending in hosted CI.
+Local build, lint, and evaluator checks pass. [Hosted CI run 35124116097](https://github.com/CampusCommander/campus-commander/actions/runs/35124116097) passed all seven jobs.
+The run tested commit `52a14cb1abf3626e90d817dfd389acb9ecf21e6d`.
+Real PostgreSQL verified migration retries, preserved principals, restricted runtime roles, explicit administrator confirmation, and atomic security events.
+Phase 2 packaged authentication and Phase 3 source authentication passed with real PostgreSQL, Redis, and two API replicas.
+[Retained Phase 3 evidence](../../deployment/evidence/CC-45-phase-3-authorization.json) records the exact revision and qualification limits.
 The local environment has no running Docker engine.
 UI rules UI-01, UI-02, UI-06, UI-08, UI-09, and UI-10 apply to the retained sign-in and Diagnostics workflows.
-No new page or control belongs to this contract change. The integration suite must recheck those workflows in both phases.
+No new page or control belongs to this contract change. The integration suite rechecked those workflows in both phases.
 Release acceptance, live Google qualification, and a screen-reader walkthrough remain separate evidence.

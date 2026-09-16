@@ -215,7 +215,7 @@
     }
   },
   "epic": {
-    "title": "Phase 3 — Onboarding, customer settings, and platform users",
+    "title": "Phase 3 \u2014 Onboarding, customer settings, and platform users",
     "scope": "Connect one Google customer account, preserve customer settings, and delegate audited Campus Commander access across all three deployment modes.",
     "criteria": [
       "Qualify unattended background authorization separately from application sign-in.",
@@ -304,10 +304,11 @@
       "jiraParent": "CC-42",
       "implementation": {
         "branch": "codex/cc-45-authorization-contracts",
-        "status": "integration-qualification-pending",
+        "status": "hosted-integration-passed",
         "contract": "phase-3-authorization.md",
         "localValidation": "Build, lint, unit, installer, release, and type checks passed.",
-        "integrationValidation": "Local Docker engine unavailable. Hosted PostgreSQL and authentication checks pending."
+        "integrationValidation": "Hosted CI run 35124116097 passed all seven jobs at 52a14cb1abf3626e90d817dfd389acb9ecf21e6d. Review and merge remain pending.",
+        "pullRequest": "https://github.com/CampusCommander/campus-commander/pull/5"
       }
     },
     {
