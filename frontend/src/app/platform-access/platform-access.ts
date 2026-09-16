@@ -27,6 +27,11 @@ import { actionLabels } from '../action-labels';
 export class PlatformAccess implements OnInit {
   protected readonly auth = inject(AuthStore);
   protected readonly labels = actionLabels;
+  protected readonly permissionLabels = {
+    'identity:read': 'View own account',
+    'diagnostics:read': 'View installation diagnostics',
+    'diagnostics:run': 'Run installation diagnostics',
+  };
   protected readonly actions = actionSchema.options;
   protected readonly principals = signal<PlatformPrincipal[]>([]);
   protected readonly total = signal(0);

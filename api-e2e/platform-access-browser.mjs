@@ -14,6 +14,7 @@ export async function qualifyPlatformAccessBrowser({
     page.getByRole('heading', { name: 'Platform access', exact: true }),
   ).toBeVisible();
   await page
+    .locator(`[data-principal-id="${identity.id}"]`)
     .getByRole('button', {
       name: `Review access for ${identity.displayName}`,
       exact: true,

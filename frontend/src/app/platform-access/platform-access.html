@@ -33,9 +33,10 @@
     }
     <ul class="principals">
       @for (principal of principals(); track principal.id) {
-      <li>
+      <li [attr.data-principal-id]="principal.id">
         <div>
           <strong>{{ principal.displayName }}</strong>
+          <p>{{ principal.subject }}</p>
           <p>
             {{ principal.enabled ? 'Enabled' : 'Disabled' }} · {{
             principal.grants.length }} grants
@@ -78,11 +79,10 @@
       <dt>Sign-in subject</dt>
       <dd>{{ principal.subject }}</dd>
     </dl>
-    <p>Current permission version: {{ principal.permissionVersion }}</p>
     <h3>Existing installation permissions</h3>
     <ul>
       @for (permission of principal.permissions; track permission) {
-      <li>{{ permission }}</li>
+      <li>{{ permissionLabels[permission] }}</li>
       }
     </ul>
     <p>These installation permissions remain unchanged by this form.</p>
@@ -136,7 +136,11 @@
     } }
     <div class="actions">
       @if (canManage()) {
-      <button mat-flat-button (click)="review()" [disabled]="busy() || stale()">
+      <button
+        mat-flat-button
+        (click)="review()"
+        [disabled]="busy() || stale() || !!preview()"
+      >
         Review access changes
       </button>
       }
