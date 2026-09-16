@@ -1,6 +1,6 @@
 # Phase 3 access revocation
 
-Owner: CC-53. Status: initial server changes implemented. Hosted initial regression checks passed.
+Owner: CC-53. Status: platform revocation and browser recovery implemented. Combined recovery qualification is active.
 CC-52 remains the completion prerequisite for school scope integration.
 
 ## Current implementation
@@ -26,20 +26,31 @@ This test uses an isolated synthetic installation. It changes no live Workspace 
 
 ## Remaining work
 
-- Qualify the new invitation revocation policy against real PostgreSQL and browser flows.
-- Qualify stale browser recovery through the real application and provider fixture.
 - Integrate school scope changes after CC-52.
-- Qualify concurrent grant writes, restart, Redis loss, unrelated users, and installation-operator recovery together.
 - Confirm that background Google credentials remain independent after the connection implementation exists.
+- Complete human screen-reader validation for the combined workflows.
 
-The initial change does not establish CC-53 or Phase 3 completion.
+These changes do not establish CC-53 or Phase 3 completion.
 
 ## Validation
 
-[Hosted initial qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35137274584) passed at `117a8e7`.
-The real PostgreSQL race and both API replica checks passed.
-Local API build and lint passed. Standards and Spec review found no defects in this bounded change.
-[Retained evidence](../../deployment/evidence/CC-53-access-revocation.json) records the tested revision and remaining scope.
+[Full hosted qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35138700261) passed all seven jobs at `21b7d16`.
+The real PostgreSQL suite covers invitation state transitions, exact preview targets, audit rollback, and concurrent confirmation and revocation.
+It verifies operator replacement and revocation, accepted invitations, unrelated invitations, and rejection of token replay.
+[Hosted browser qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35139411091) passed at `490aa8c`.
+The interrupted-state accessibility report contains zero violations and zero incomplete checks.
+
+[Combined recovery qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35141232435) passed at `1c83a78`.
+This revision includes the delayed-response fixes, replica restart, Redis loss, guessed identifiers, and unrelated-user preservation.
+The [full compatibility run](https://github.com/CampusCommander/campus-commander/actions/runs/35141611500) remains pending.
+The first expanded run identified a Redis fixture reconnect failure after Docker changed its dynamically published port.
+The corrected fixture connects a fresh client to the current published port. The repeated recovery checks passed.
+Local Nx build, test, lint, and type checks passed across all thirteen affected tasks.
+Ten frontend tests include the delayed unauthorized-body and delayed access-review regressions.
+Both regressions fail without their session checks and pass with those checks.
+Standards and Spec review resolved both response findings and the test-fixture reconnect finding.
+UI rules UI-01 through UI-10 and FORM-01 apply to the workflow.
+[Retained evidence](../../deployment/evidence/CC-53-access-revocation.json) records exact revisions and remaining scope.
 
 ## Invitation revocation policy
 
@@ -69,9 +80,24 @@ Recheck access accepts only the same stable principal ID.
 A different principal closes the previous form. Lost page authority redirects to the account page.
 Successful recovery still requires fresh observations and another explicit review before confirmation.
 Navigating away discards the retained form values. The browser stores no draft credentials or invitation tokens.
-A late unauthorized response cannot replace a newer session.
+A late unauthorized response cannot replace a newer session, including a response whose body finishes after recovery.
+A late list, detail, receipt, or review response cannot restore observations from the previous session.
+A delayed invitation creation result confirms creation without exposing its link after access changes.
 Sign-out checks and revokes the current browser session even when the tab was interrupted.
 Phase 2 retains its existing sign-in redirect.
 
 Local store tests cover recovery, identity changes, late responses, sign-out, and Phase 2 compatibility.
 The hosted browser test exercises two stale tabs, separate-tab sign-in, restored fields, and invalidated confirmation.
+
+## Combined recovery checks
+
+The API fixture restarts one replica after revocation and restores an old session record.
+The restarted replica must reject the old session and remove its record.
+The fixture then restarts Redis with persistence disabled and waits for both APIs to reconnect.
+Missing sessions and restored stale sessions must fail through both replicas.
+Direct requests with another principal ID must return no protected data.
+
+An unrelated principal retains its session and exact identity before Redis loss.
+After Redis loss, that principal can sign in again with unchanged grants and preferences.
+Redis loss ends all browser sessions because the deployment intentionally keeps them in volatile storage.
+The tests distinguish this cache loss from revocation of one principal.

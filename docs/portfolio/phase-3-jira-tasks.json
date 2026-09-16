@@ -735,18 +735,19 @@
       "implementation": {
         "branch": "codex/cc-53-access-revocation",
         "base": "codex/cc-51-platform-access",
-        "status": "initial-server-regression-qualified-remaining-scope-pending",
+        "status": "platform-revocation-qualified-school-and-google-integration-pending",
         "contract": "phase-3-revocation.md",
         "pr": "https://github.com/CampusCommander/campus-commander/pull/9",
-        "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35137274584",
+        "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35141232435",
         "remainingIntegrations": [
-          "pending invitation revocation",
-          "stale browser recovery",
           "CC-52 school scope integration",
-          "combined recovery qualification"
+          "background Google credential independence",
+          "human screen-reader validation"
         ],
-        "qualifiedRevision": "117a8e7135f98bfe2bf204e907e041c612c4df8d",
-        "evidence": "deployment/evidence/CC-53-access-revocation.json"
+        "qualifiedRevision": "1c83a78196b46411d2ae40e1575a4da1bc065323",
+        "evidence": "deployment/evidence/CC-53-access-revocation.json",
+        "compatibilityRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35141611500",
+        "compatibilityStatus": "pending"
       }
     },
     {
