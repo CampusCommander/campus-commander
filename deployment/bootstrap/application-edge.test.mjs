@@ -63,6 +63,8 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', '/api/customer/settings', 'api'],
       ['GET', '/customer-settings', 'frontend'],
       ['GET', '/api/google-connection', 'api'],
+      ['GET', '/api/google-connection/health', 'api'],
+      ['POST', '/api/google-connection/health/check', 'api'],
       ['GET', `/api/google-connection/candidates/${id}`, 'api'],
       ['POST', '/api/google-connection/candidates', 'api'],
       ['POST', '/api/google-connection/check', 'api'],
@@ -90,6 +92,9 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       assert.equal(response.headers.get('cache-control'), 'no-store');
     }
     for (const [method, path, status] of [
+      ['POST', '/api/google-connection/health', 405],
+      ['GET', '/api/google-connection/health/check', 405],
+      ['GET', '/api/google-connection/health/private', 404],
       ['POST', '/api/customer', 405],
       ['GET', '/api/customer/settings', 405],
       ['POST', `/api/customer/receipts/${id}`, 405],

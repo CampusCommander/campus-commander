@@ -1,3 +1,4 @@
+import { qualifyGoogleHealth } from './google-health.mjs';
 import { qualifyCustomerSettings } from './customer-settings.mjs';
 import { qualifyGoogleWorker } from './google-connection-worker.mjs';
 import { qualifyGoogleConnectionApi } from './google-connection-api.mjs';
@@ -2025,6 +2026,14 @@ test(
           auditAccessibility,
           publicOrigin,
           migrator,
+          evidenceDirectory,
+        });
+      if (applicationPhase === 3)
+        await qualifyGoogleHealth({
+          page,
+          publicOrigin,
+          migrator,
+          directory,
           evidenceDirectory,
         });
       if (applicationPhase === 3) {

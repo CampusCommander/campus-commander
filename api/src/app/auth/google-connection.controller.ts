@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   googleCredentialImportSchema,
+  googleHealthCheckSchema,
   googleCustomerIdSchema,
   googleCustomerConfirmationSchema,
 } from '@campus/application-contracts';
@@ -28,6 +29,44 @@ export class GoogleConnectionController {
   @Get()
   async read(@Req() request: AuthenticatedRequest) {
     return { connection: await this.connection.read(request.session) };
+  }
+
+  @Get('health')
+  async health(@Req() request: AuthenticatedRequest) {
+    return { health: await this.connection.health(request.session) };
+  }
+
+  @Post('health/check')
+  async checkHealth(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: unknown,
+  ) {
+    const input = googleHealthCheckSchema.parse(body);
+    const authorize = (session = request.session) =>
+      this.auth.authorize(
+        session,
+        'connection:diagnose',
+        { kind: 'district', customerId: input.customerId },
+        request.correlationId,
+      );
+    await authorize();
+    try {
+      return {
+        health: await this.connection.checkHealth(
+          request.session,
+          input,
+          request.correlationId,
+        ),
+      };
+    } finally {
+      await authorize(
+        await this.auth.authenticate(
+          request.headers.cookie,
+          'identity:read',
+          request.correlationId,
+        ),
+      );
+    }
   }
 
   @Post('check')

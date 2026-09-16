@@ -4,3 +4,6 @@ export * from './lib/invitations';
 export * from './lib/platform-access';
 export * from './lib/google-connection';
 export * from './lib/customer-settings';
+
+export * from './lib/google-capabilities';
+export * from './lib/google-health';

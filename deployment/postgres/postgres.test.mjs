@@ -106,6 +106,7 @@ test('the release identifies its SQL migration by content checksum', async () =>
       '007-google-connection',
       '008-google-token-coordination',
       '009-customer-settings',
+      '010-google-capability-health',
     ],
   );
   for (const migration of migrations)
