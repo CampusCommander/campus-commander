@@ -1,7 +1,7 @@
 # Phase 3 delivery plan
 
 Plan date: 2026-09-16.
-Status: DRAFT FOR OWNER REVIEW. Phase 3 is authorized. Implementation has not started.
+Status: APPROVED by the owner on 2026-09-16. Jira publication and verification are complete. Implementation has not started.
 The [owner acceptance record](../reviews/2026-09-16-phase-2-acceptance.md) closes Phase 2 with its recorded limitations.
 
 ## Outcome and completion boundary
@@ -11,9 +11,9 @@ An authorized operator can resume onboarding, diagnose connection failures, repl
 The release preserves those functions after upgrade and isolated restore in all three deployment modes.
 
 This plan implements [Phase 3](06-work-breakdown.md#phase-3--onboarding-customer-settings-and-platform-users).
-The [issue drafts](phase-3-jira-tasks.md) define eighteen executable slices and their acceptance criteria.
-The [structured manifest](phase-3-jira-tasks.json) records stable draft IDs, dependencies, evidence requirements, and publication state.
-Draft IDs are planning references. They are not Jira issue keys.
+The [published backlog](phase-3-jira-tasks.md) defines eighteen executable slices and their acceptance criteria.
+The [structured manifest](phase-3-jira-tasks.json) records stable planning IDs, dependencies, evidence requirements, and publication state.
+Planning IDs remain stable. The manifest maps each planning ID to its verified Jira key.
 
 Completion requires the final acceptance decision and evidence against the selected release revision.
 An owner exception must identify the affected criterion, retained limitation, and resulting support boundary.
@@ -321,15 +321,19 @@ Every task must retain its Jira key, stable planning ID, native parent, blockers
 Keep defects as linked issues with release impact. Do not hide failed criteria by changing a task's status.
 An external input delay belongs in the issue's blocker record, not in an invented completion date.
 
-The publication checkpoint requires owner approval of this concrete breakdown under the to-issues skill.
-The plan and full issue bodies are reviewable before that checkpoint.
+The owner approved this concrete breakdown on 2026-09-16 under the to-issues publication checkpoint.
+The approved plan and full issue bodies define the publication scope.
+
+Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 29 verified native Blocks links.
+The publication check verified every parent, status, label, description, and dependency against the manifest.
+The epic and its implementation tasks remain To Do. The 138 task acceptance criteria match the approved backlog.
 No Jira issue is published merely to reserve a number.
 
 The initial Jira query found no Phase 3 epic or phase-3 labels.
 The complete project scan found no additional matching Phase 3 issues. CC-39 through CC-41 already cover the accepted installer work.
 CC-22 and CC-20 are Done. CC-21 still shows In Progress despite the recorded owner closure.
-The Blocks link type and Task creation fields are verified. Task requires project, type, summary, and the default reporter.
-Epic type `10006` exists. Its creation-field request timed out and must succeed before publication.
+The Blocks link type and Task and Epic creation fields are verified.
+Both issue types require project, type, summary, and the default reporter.
 Reconcile that historical tracker discrepancy separately when site permissions permit it. It does not block Phase 3 planning.
 This plan does not modify either closed phase's scope or acceptance decision.
 

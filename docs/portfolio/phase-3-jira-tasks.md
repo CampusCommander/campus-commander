@@ -1,12 +1,17 @@
-# Phase 3 Jira task drafts
+# Phase 3 Jira tasks
 
-Status: DRAFT FOR OWNER REVIEW. No Phase 3 Jira issues have been published.
+Status: APPROVED by the owner on 2026-09-16. Jira publication and verification are complete. Implementation has not started.
 
 This backlog implements the [Phase 3 plan](phase-3-plan.md).
 The [structured manifest](phase-3-jira-tasks.json) supplies the same tasks, criteria, dependencies, and publication fields.
-One epic contains eighteen tasks. Draft IDs become stable publication labels, not invented Jira keys.
+Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 29 verified Blocks links.
+Stable planning IDs map to verified Jira keys in the manifest. The epic and its implementation tasks remain To Do.
 
-## Proposed breakdown
+A timed-out request created [CC-43](https://easton-consulting.atlassian.net/browse/CC-43) as a delayed duplicate.
+CC-43 is closed, has no epic parent, and links to canonical task CC-44.
+This administrative closure does not complete implementation.
+
+## Approved breakdown
 
 1. **P3-T01: Prove unattended Google access with a controlled customer.** Blocked by: none internally. Stories: S01, S02, S04.
 2. **P3-T02: Extend authorization contracts while preserving existing sign-in.** Blocked by: none internally. Stories: S06, S07.
@@ -27,12 +32,14 @@ One epic contains eighteen tasks. Draft IDs become stable publication labels, no
 17. **P3-T17: Publish the qualified Phase 3 release and operator procedures.** Blocked by: P3-T14, P3-T15, P3-T16. Stories: S10.
 18. **P3-T18: Accept Phase 3 and reconcile Git, Jira, and portfolio evidence.** Blocked by: P3-T17. Stories: S01, S02, S03, S04, S05, S06, S07, S08, S09, S10.
 
-Review task size, dependency correctness, and any proposed splits or combinations before publication.
+The owner approved the task sizes, dependency relationships, and proposed breakdown before publication.
 T01 also requires controlled Google inputs. T15 and T16 require declared deployment fixtures. T18 requires operator participation.
 
 ## Epic
 
 **Phase 3 — Onboarding, customer settings, and platform users**
+
+Jira epic: [CC-42](https://easton-consulting.atlassian.net/browse/CC-42).
 
 Connect one Google customer account, preserve customer settings, and delegate audited Campus Commander access across all three deployment modes.
 
@@ -50,7 +57,7 @@ Connect one Google customer account, preserve customer settings, and delegate au
 ### P3-T01 — Prove unattended Google access with a controlled customer
 
 Owner role: Connection lead. Relative size: L. Stories: S01, S02, S04.
-Packages: P3.1. Jira key: not published.
+Packages: P3.1. Jira key: [CC-44](https://easton-consulting.atlassian.net/browse/CC-44).
 
 An operator authorizes a dedicated test identity and demonstrates unattended customer reads after browser closure, process restart, renewal, and credential replacement.
 
@@ -81,7 +88,7 @@ UI rules: not applicable to a new product surface. Retain applicable operational
 ### P3-T02 — Extend authorization contracts while preserving existing sign-in
 
 Owner role: Application security lead. Relative size: L. Stories: S06, S07.
-Packages: P1.1, P1.2, P9.1. Jira key: not published.
+Packages: P1.1, P1.2, P9.1. Jira key: [CC-45](https://easton-consulting.atlassian.net/browse/CC-45).
 
 An existing administrator retains sign-in and Diagnostics while the application gains explicit Phase 3 permission, configuration, and migration contracts.
 
@@ -111,7 +118,7 @@ UI rules: UI-01, UI-02, UI-06, UI-08, UI-09, UI-10. Record actual verification a
 ### P3-T03 — Connect and confirm one Google customer account
 
 Owner role: Connection lead. Relative size: L. Stories: S01, S02.
-Packages: P3.1, P3.2, P9.1. Jira key: not published.
+Packages: P3.1, P3.2, P9.1. Jira key: [CC-46](https://easton-consulting.atlassian.net/browse/CC-46).
 
 An authorized platform administrator connects the background Google identity, reviews the resolved customer, and confirms the installation binding.
 
@@ -141,7 +148,7 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 ### P3-T04 — Save customer settings and resume interrupted onboarding
 
 Owner role: Application experience lead. Relative size: M. Stories: S03, S04.
-Packages: P3.2, P6.1. Jira key: not published.
+Packages: P3.2, P6.1. Jira key: [CC-47](https://easton-consulting.atlassian.net/browse/CC-47).
 
 An administrator saves customer settings and resumes observed onboarding progress after browser closure, dependency failure, or service restart.
 
@@ -171,7 +178,7 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 ### P3-T05 — Explain capability consent and Google connection health
 
 Owner role: Connection lead. Relative size: M. Stories: S02, S04.
-Packages: P3.1, P3.3. Jira key: not published.
+Packages: P3.1, P3.3. Jira key: [CC-48](https://easton-consulting.atlassian.net/browse/CC-48).
 
 An authorized operator sees which Phase 3 capabilities are enabled, granted, qualified, and available, then runs a bounded diagnostic or reconnects.
 
@@ -201,7 +208,7 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 ### P3-T06 — Replace Google credentials and rotate encryption keys
 
 Owner role: Connection security lead. Relative size: L. Stories: S01, S08.
-Packages: P3.1, P9.1, P9.3. Jira key: not published.
+Packages: P3.1, P9.1, P9.3. Jira key: [CC-49](https://easton-consulting.atlassian.net/browse/CC-49).
 
 An authorized administrator replaces the background Google identity or encryption key while preserving customer ownership and recoverable access.
 
@@ -231,7 +238,7 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 ### P3-T07 — Invite and confirm a platform user without mandatory email
 
 Owner role: Platform access lead. Relative size: L. Stories: S05.
-Packages: P9.1, P6.1. Jira key: not published.
+Packages: P9.1, P6.1. Jira key: [CC-50](https://easton-consulting.atlassian.net/browse/CC-50).
 
 A platform administrator creates an invitation, shares its link independently, confirms the intended OIDC identity, and grants bounded application access.
 
@@ -261,7 +268,7 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 ### P3-T08 — Manage explicit platform and district permission grants
 
 Owner role: Platform access lead. Relative size: M. Stories: S06.
-Packages: P9.1, P6.1. Jira key: not published.
+Packages: P9.1, P6.1. Jira key: [CC-51](https://easton-consulting.atlassian.net/browse/CC-51).
 
 A platform administrator reviews platform users and applies explicit platform, district, and viewer presets with visible effective permissions.
 
@@ -291,7 +298,7 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 ### P3-T09 — Define school scopes and assign scoped platform access
 
 Owner role: Scoped access lead. Relative size: L. Stories: S06.
-Packages: P9.1, P3.1, P6.1. Jira key: not published.
+Packages: P9.1, P3.1, P6.1. Jira key: [CC-52](https://easton-consulting.atlassian.net/browse/CC-52).
 
 A platform administrator defines a school scope using stable references and assigns a school operator or scoped viewer.
 
@@ -321,7 +328,7 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 ### P3-T10 — Revoke platform access across active browsers and replicas
 
 Owner role: Application security lead. Relative size: M. Stories: S07.
-Packages: P9.1, P9.3. Jira key: not published.
+Packages: P9.1, P9.3. Jira key: [CC-53](https://easton-consulting.atlassian.net/browse/CC-53).
 
 An administrator reduces or revokes a platform user's access and sees subsequent protected actions fail across API replicas.
 
@@ -351,7 +358,7 @@ UI rules: UI-01, UI-02, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Recor
 ### P3-T11 — Qualify complete Phase 3 browser and accessibility workflows
 
 Owner role: Application quality lead. Relative size: M. Stories: S03, S04, S05, S06, S07, S08, S09.
-Packages: P6.1, P9.1, Track 12. Jira key: not published.
+Packages: P6.1, P9.1, Track 12. Jira key: [CC-54](https://easton-consulting.atlassian.net/browse/CC-54).
 
 An operator completes the combined connection, settings, invitation, scope, revocation, and recovery workflows through the shipped browser application.
 
@@ -380,7 +387,7 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 ### P3-T12 — Qualify Phase 3 authorization, audit, and redaction boundaries
 
 Owner role: Application security lead. Relative size: L. Stories: S01, S05, S06, S07, S08.
-Packages: P9.1, P9.3. Jira key: not published.
+Packages: P9.1, P9.3. Jira key: [CC-55](https://easton-consulting.atlassian.net/browse/CC-55).
 
 A security reviewer verifies every Phase 3 data and write surface against the grant matrix, failure behavior, and retained audit evidence.
 
@@ -409,7 +416,7 @@ UI rules: not applicable to a new product surface. Retain applicable operational
 ### P3-T13 — Restore customer configuration and delegated access in isolation
 
 Owner role: Operations lead. Relative size: L. Stories: S08.
-Packages: P9.3. Jira key: not published.
+Packages: P9.3. Jira key: [CC-56](https://easton-consulting.atlassian.net/browse/CC-56).
 
 An installation operator restores Phase 3 customer state and access into an isolated target, recovers keys, and resumes authorized reads.
 
@@ -439,7 +446,7 @@ UI rules: not applicable to a new product surface. Retain applicable operational
 ### P3-T14 — Qualify the Phase 3 all-Docker installation and upgrade
 
 Owner role: Deployment lead. Relative size: L. Stories: S10.
-Packages: P9.2, P9.3. Jira key: not published.
+Packages: P9.2, P9.3. Jira key: [CC-57](https://easton-consulting.atlassian.net/browse/CC-57).
 
 An operator installs, resumes, upgrades, restores, and recovers the complete Phase 3 all-Docker release through the delivered installer.
 
@@ -468,7 +475,7 @@ UI rules: UI-01, UI-08, UI-09, UI-10, FORM-01. Record actual verification and ju
 ### P3-T15 — Qualify Phase 3 with district services and distributed workers
 
 Owner role: Deployment lead. Relative size: L. Stories: S10.
-Packages: P9.2, P9.3, P9.4. Jira key: not published.
+Packages: P9.2, P9.3, P9.4. Jira key: [CC-58](https://easton-consulting.atlassian.net/browse/CC-58).
 
 A hybrid operator installs and upgrades Phase 3 with external PostgreSQL and Redis, distributed workers, and shared credential and artifact contracts.
 
@@ -498,7 +505,7 @@ UI rules: UI-01, UI-08, UI-09, UI-10, FORM-01. Record actual verification and ju
 ### P3-T16 — Qualify Phase 3 on Kubernetes with shared authorization state
 
 Owner role: Deployment lead. Relative size: L. Stories: S10.
-Packages: P9.2, P9.3, P9.4. Jira key: not published.
+Packages: P9.2, P9.3, P9.4. Jira key: [CC-59](https://easton-consulting.atlassian.net/browse/CC-59).
 
 A Kubernetes operator installs and upgrades Phase 3, replaces pods, and restores customer and authorization state into an isolated target.
 
@@ -528,7 +535,7 @@ UI rules: UI-01, UI-08, UI-09, UI-10, FORM-01. Record actual verification and ju
 ### P3-T17 — Publish the qualified Phase 3 release and operator procedures
 
 Owner role: Release lead. Relative size: L. Stories: S10.
-Packages: P9.2, P9.3. Jira key: not published.
+Packages: P9.2, P9.3. Jira key: [CC-60](https://easton-consulting.atlassian.net/browse/CC-60).
 
 An operator downloads one signed Phase 3 release whose manifest binds the delivered installer, images, and completed qualification evidence.
 
@@ -557,7 +564,7 @@ UI rules: UI-10. Record actual verification and justified exclusions.
 ### P3-T18 — Accept Phase 3 and reconcile Git, Jira, and portfolio evidence
 
 Owner role: Product owner and release lead. Relative size: M. Stories: S01, S02, S03, S04, S05, S06, S07, S08, S09, S10.
-Packages: P3.1, P3.2, P3.3, P9.1, P9.2, P9.3. Jira key: not published.
+Packages: P3.1, P3.2, P3.3, P9.1, P9.2, P9.3. Jira key: [CC-61](https://easton-consulting.atlassian.net/browse/CC-61).
 
 The owner reviews the delivered Phase 3 workflows and records an acceptance decision against one exact release.
 
