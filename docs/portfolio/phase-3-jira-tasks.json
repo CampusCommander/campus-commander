@@ -28,7 +28,19 @@
         "blockerParameter": "inwardIssue",
         "blockedParameter": "outwardIssue"
       },
-      "issueTypeMetadata": "request-timed-out-recheck-before-publication"
+      "issueTypeMetadata": {
+        "Task": {
+          "id": "10008",
+          "status": "required-fields-verified",
+          "requiredFields": ["issuetype", "project", "reporter", "summary"],
+          "defaultedFields": ["reporter"]
+        },
+        "Epic": {
+          "id": "10006",
+          "status": "type-observed-creation-fields-timeout-recheck-before-publication"
+        }
+      },
+      "issueCount": 39
     }
   },
   "epic": {

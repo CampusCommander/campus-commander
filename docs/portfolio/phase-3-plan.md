@@ -310,6 +310,17 @@ After a timeout, search or read the affected issue before retrying a write.
 Keep an issue To Do until an owner starts it. Describe external prerequisites in its blocker section.
 Do not label unqualified credential work ready for unattended implementation.
 
+An implementation task is ready when its blockers are complete, contracts are settled, inputs exist, and an owner accepts it.
+Before implementation, record the demonstration, relevant UI rules, required fixtures, migration impact, and exact validation targets.
+Use In Progress for active work and In Review when its PR and evidence are ready.
+Use Reviewed after review approval when the merge or remaining checks still prevent completion.
+Use Done only after the merged result satisfies its criteria or records an explicit owner acceptance exception.
+Experimental tasks also require a committed report and an explicit qualification decision before Done.
+
+Every task must retain its Jira key, stable planning ID, native parent, blockers, PR, evidence, and remaining limits.
+Keep defects as linked issues with release impact. Do not hide failed criteria by changing a task's status.
+An external input delay belongs in the issue's blocker record, not in an invented completion date.
+
 The publication checkpoint requires owner approval of this concrete breakdown under the to-issues skill.
 The plan and full issue bodies are reviewable before that checkpoint.
 No Jira issue is published merely to reserve a number.
@@ -317,7 +328,8 @@ No Jira issue is published merely to reserve a number.
 The initial Jira query found no Phase 3 epic or phase-3 labels.
 The complete project scan found no additional matching Phase 3 issues. CC-39 through CC-41 already cover the accepted installer work.
 CC-22 and CC-20 are Done. CC-21 still shows In Progress despite the recorded owner closure.
-The Blocks link type is available. The issue-type metadata request timed out and must succeed before publication.
+The Blocks link type and Task creation fields are verified. Task requires project, type, summary, and the default reporter.
+Epic type `10006` exists. Its creation-field request timed out and must succeed before publication.
 Reconcile that historical tracker discrepancy separately when site permissions permit it. It does not block Phase 3 planning.
 This plan does not modify either closed phase's scope or acceptance decision.
 
