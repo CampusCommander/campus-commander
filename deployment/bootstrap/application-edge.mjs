@@ -41,6 +41,10 @@ const invitationWrites = new Set([
 ]);
 const invitationChange =
   /^\/api\/auth\/invitations\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(?:confirm|revoke)$/;
+const principalRead =
+  /^\/api\/platform-users(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
+const principalWrite =
+  /^\/api\/platform-users\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(?:review|access)$/;
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
@@ -70,11 +74,15 @@ export async function proxyApplication(
     return finish(response, 421, 'Use the configured application address.\n');
   const pathname = path.split('?')[0];
   const readable =
-    getRoutes.has(pathname) || (phase === 3 && invitationReads.has(pathname));
+    getRoutes.has(pathname) ||
+    (phase === 3 &&
+      (invitationReads.has(pathname) || principalRead.test(pathname)));
   const writable =
     postRoutes.has(pathname) ||
     (phase === 3 &&
-      (invitationWrites.has(pathname) || invitationChange.test(pathname)));
+      (invitationWrites.has(pathname) ||
+        invitationChange.test(pathname) ||
+        principalWrite.test(pathname)));
   const api = readable || writable;
   const page =
     pages.has(pathname) || (phase === 3 && invitationPages.has(pathname));

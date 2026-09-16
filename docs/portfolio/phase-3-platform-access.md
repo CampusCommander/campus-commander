@@ -1,6 +1,6 @@
 # Phase 3 platform access implementation
 
-Owner: CC-51. Status: database implementation in progress. API, browser, and hosted qualification remain pending.
+Owner: CC-51. Status: database and API implementation in progress. Browser implementation and API integration qualification remain pending.
 This branch builds on CC-50. It does not establish Phase 3 completion.
 
 ## Change contract
@@ -41,6 +41,9 @@ No browser value establishes that a Google customer or school exists.
 
 Local contract tests, migration contract tests, deployment tests, and lint passed.
 The real PostgreSQL suite adds exact-grant, revision, audit rollback, delegation, and concurrent last-administrator checks.
-Hosted PostgreSQL results remain pending.
-API authorization and browser validation remain pending.
+[Hosted PostgreSQL qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35132226844) passed at commit `0b39466`.
+The suite verified concurrent last-administrator protection, audit rollback, delegation ceilings, identity preservation, and bounded authorized reads.
+The API adds authenticated list, detail, review, and confirmation endpoints with origin, CSRF, and actor-version checks.
+Local API builds, lint, and edge route tests passed.
+Direct API integration and browser validation remain pending.
 UI rules UI-01 through UI-10 and FORM-01 apply to the forthcoming grant workflow.
