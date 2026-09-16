@@ -165,10 +165,15 @@ export async function qualifyAccessRevocation({
   await restartRedis();
   for (const [index, origin] of [publicOrigin, replicaOrigin].entries()) {
     const stale = sessions[index];
-    const missing = await request(`${origin}/api/auth/session`, {
-      ca,
-      cookie: stale.cookie,
-    });
+    let missing;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      missing = await request(`${origin}/api/auth/session`, {
+        ca,
+        cookie: stale.cookie,
+      });
+      if (missing.status !== 503) break;
+      await delay(100);
+    }
     assert.equal(missing.status, 401);
     await redis.set(stale.key, stale.stored, { EX: 60 });
     const restored = await request(`${origin}/api/auth/session`, {

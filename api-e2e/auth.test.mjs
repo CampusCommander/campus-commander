@@ -2016,7 +2016,18 @@ test(
             docker('stop', names[1]);
             docker('start', names[1]);
             await Promise.race([
-              redis.ping(),
+              (async () => {
+                const deadline = Date.now() + 15000;
+                while (Date.now() < deadline) {
+                  try {
+                    if ((await redis.ping()) === 'PONG') return;
+                  } catch {
+                    // Redis rejects requests from its previous connection.
+                  }
+                  await delay(100);
+                }
+                throw new Error('Redis did not recover after restart');
+              })(),
               delay(15000).then(() => {
                 throw new Error('Redis did not recover after restart');
               }),
