@@ -70,11 +70,17 @@ function failure(error: unknown): GoogleConnectionError {
     return new GoogleConnectionError('policy-restricted');
   const network = z
     .object({
-      code: z.string().optional(),
+      code: z.unknown().optional(),
       name: z.string().optional(),
-      cause: z.object({ code: z.string().optional() }).optional(),
+      cause: z
+        .object({ code: z.unknown().optional() })
+        .optional()
+        .catch(undefined),
     })
     .safeParse(error);
+  const networkCode = network.success
+    ? (network.data.code ?? network.data.cause?.code)
+    : undefined;
   if (
     network.success &&
     ([
@@ -83,7 +89,7 @@ function failure(error: unknown): GoogleConnectionError {
       'ECONNREFUSED',
       'ENOTFOUND',
       'EAI_AGAIN',
-    ].includes(network.data.code ?? network.data.cause?.code ?? '') ||
+    ].includes(typeof networkCode === 'string' ? networkCode : '') ||
       ['AbortError', 'TimeoutError'].includes(network.data.name ?? ''))
   )
     return new GoogleConnectionError('network-failure');

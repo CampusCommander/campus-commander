@@ -199,3 +199,33 @@ test('HTTP status survives a malformed error body', async (t) => {
     t.mock.restoreAll();
   }
 });
+
+test('aborts and delegation failures retain actionable categories', async (t) => {
+  for (const [error, expected] of [
+    [new DOMException('Synthetic abort', 'AbortError'), 'network-failure'],
+    [{ code: 'ENOTFOUND' }, 'network-failure'],
+    [
+      { response: { status: 400, data: { error: 'unauthorized_client' } } },
+      'delegation-not-authorized',
+    ],
+    [
+      {
+        response: {
+          status: 403,
+          data: { error: { errors: [{ reason: 'accessNotConfigured' }] } },
+        },
+      },
+      'api-not-enabled',
+    ],
+    [
+      { response: { status: 403, data: { error: 'admin_policy_enforced' } } },
+      'policy-restricted',
+    ],
+  ]) {
+    stub(t, { error });
+    await assert.rejects(new GoogleCustomerVerifier().verify(credential), {
+      code: expected,
+    });
+    t.mock.restoreAll();
+  }
+});
