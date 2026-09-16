@@ -110,13 +110,14 @@ export class PlatformAccessService {
     id: string,
     change: PlatformAccessChange,
     actorVersion: number,
+    invitationIds: string[],
     correlation: string,
   ) {
     if (actorVersion !== session.identity.permissionVersion)
       throw new ConflictException({ reason: 'conflict' });
     return platformAccessResultSchema.parse(
       await this.query(
-        'SELECT cc.change_platform_access($1,$2,$3,$4,$5,$6,$7) AS result',
+        'SELECT cc.change_platform_access($1,$2,$3,$4,$5,$6,$7,$8) AS result',
         [
           session.identity.id,
           actorVersion,
@@ -125,6 +126,7 @@ export class PlatformAccessService {
           change.enabled,
           JSON.stringify(change.grants),
           correlation,
+          JSON.stringify(invitationIds),
         ],
       ),
     );

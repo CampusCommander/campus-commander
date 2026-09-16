@@ -102,6 +102,7 @@ export async function loadMigrations() {
       '003-application-grants',
       '004-application-invitations',
       '005-platform-access',
+      '006-access-revocation',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -188,7 +189,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.read_platform_principal(uuid,integer,uuid),
         cc.list_platform_access_receipts(uuid,integer,uuid,integer),
         cc.review_platform_access(uuid,integer,uuid,integer,boolean,jsonb),
-        cc.change_platform_access(uuid,integer,uuid,integer,boolean,jsonb,uuid) TO ${role}`);
+        cc.change_platform_access(uuid,integer,uuid,integer,boolean,jsonb,uuid${migrations.some(({ id }) => id === '006-access-revocation') ? ',jsonb' : ''}) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

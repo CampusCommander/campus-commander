@@ -338,6 +338,9 @@ UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, 
 Owner role: Application security lead. Relative size: M. Stories: S07.
 Packages: P9.1, P9.3. Jira key: [CC-53](https://easton-consulting.atlassian.net/browse/CC-53).
 
+Status: In Progress. [Draft PR #9](https://github.com/CampusCommander/campus-commander/pull/9) adds commit-time preference checks and explicit access-change responses.
+Hosted concurrent-write and two-replica checks passed. Browser recovery and invitation revocation remain pending. CC-52 remains the completion prerequisite.
+
 An administrator reduces or revokes a platform user's access and sees subsequent protected actions fail across API replicas.
 
 Acceptance criteria:

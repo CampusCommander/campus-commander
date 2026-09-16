@@ -116,6 +116,12 @@ export async function changeApplicationAccess(
           'The principal or permission version changed. Inspect current access before recovery.',
         );
     }
+    if (phase === 3 && request.action !== 'initialize') {
+      await client.query('SELECT cc.revoke_principal_invitations($1,NULL,$2)', [
+        principalId,
+        correlationId,
+      ]);
+    }
     const event =
       request.action === 'initialize'
         ? 'access-granted'

@@ -87,6 +87,9 @@ export async function qualifyPlatformAccessApi({
   const confirmed = {
     ...change,
     actorVersion: review.actorVersion,
+    invitationIds: review.invitationsToRevoke.map(
+      (invitation) => invitation.id,
+    ),
     confirmation: 'change-platform-access',
   };
   assert.equal(

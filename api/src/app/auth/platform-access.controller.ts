@@ -21,6 +21,7 @@ const pageSchema = z.strictObject({
 const confirmationSchema = platformAccessChangeSchema.extend({
   actorVersion: z.number().int().positive(),
   confirmation: z.literal('change-platform-access'),
+  invitationIds: z.array(z.uuid()).max(50),
 });
 
 @Controller('api/platform-users')
@@ -111,6 +112,7 @@ export class PlatformAccessController {
       z.uuid().parse(id),
       input,
       input.actorVersion,
+      input.invitationIds,
       request.correlationId,
     );
   }

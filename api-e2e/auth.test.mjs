@@ -1,3 +1,5 @@
+import { qualifyAccessRevocationBrowser } from './access-revocation-browser.mjs';
+import { qualifyAccessRevocation } from './access-revocation-api.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
@@ -1597,7 +1599,7 @@ test(
         ).text,
       );
       const replicaPort = await freePort();
-      await startApi(replicaPort);
+      let replica = await startApi(replicaPort);
       const replicaOrigin = `https://127.0.0.1:${replicaPort}`;
       assert.equal(
         (
@@ -1998,6 +2000,63 @@ test(
       ).toBeVisible();
       assert.deepEqual(browserErrors, []);
       assert.deepEqual(policyErrors, []);
+      if (applicationPhase === 3)
+        await qualifyAccessRevocation({
+          login,
+          setSubject: (value) => {
+            subject = value;
+          },
+          restartReplica: async () => {
+            const exited = once(replica, 'exit');
+            replica.kill('SIGTERM');
+            await exited;
+            replica = await startApi(replicaPort);
+          },
+          restartRedis: async () => {
+            redis.destroy();
+            docker('stop', names[1]);
+            docker('start', names[1]);
+            const port = Number(
+              docker('port', names[1], '6379/tcp').split(':').at(-1),
+            );
+            assert.ok(Number.isInteger(port) && port > 0);
+            console.log(
+              `Redis fixture published port changed after restart: ${port !== redisPort}`,
+            );
+            redis = createClient({
+              url: `redis://127.0.0.1:${port}`,
+              password,
+            });
+            redis.on('error', () => undefined);
+            await Promise.race([
+              redis.connect(),
+              delay(15000).then(() => {
+                throw new Error('Redis did not recover after restart');
+              }),
+            ]);
+            assert.equal(await redis.ping(), 'PONG');
+            return redis;
+          },
+          request,
+          publicOrigin,
+          replicaOrigin,
+          ca,
+          migrator,
+          observer: admin,
+          redis,
+          evidenceDirectory,
+        });
+      if (applicationPhase === 3)
+        await qualifyAccessRevocationBrowser({
+          browser,
+          publicOrigin,
+          migrator,
+          setSubject: (value) => {
+            subject = value;
+          },
+          auditAccessibility,
+          evidenceDirectory,
+        });
       await context.close();
       docker('stop', names[1]);
       assert.equal(

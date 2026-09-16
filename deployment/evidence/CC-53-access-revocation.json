@@ -1,0 +1,95 @@
+{
+  "status": "platform-revocation-qualified-school-and-google-integration-pending",
+  "sourceRevision": "1c83a78196b46411d2ae40e1575a4da1bc065323",
+  "recordedAt": "2026-09-16T19:36:15.446Z",
+  "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35141232435",
+  "environment": "Hosted Docker worker, real PostgreSQL and Redis, two API replicas, synthetic HTTPS OIDC provider, and Chromium.",
+  "apiChecks": [
+    "preference write waits behind a concurrent permission-version change",
+    "stale preference update and success audit both rejected",
+    "both API replicas reject previous sessions",
+    "restored Redis sessions cannot restore revoked access",
+    "direct requests with guessed principal IDs disclose no data",
+    "API restart and Redis loss cannot restore revoked access",
+    "unrelated users retain access and recover unchanged after Redis loss"
+  ],
+  "browserChecks": [
+    "stale invitation and access tabs remain open with recoverable values",
+    "revocation clears reviewed confirmation and disables changes",
+    "separate-tab sign-in restores only the same principal",
+    "fresh observations and explicit review required after recovery",
+    "different principal closes the previous draft",
+    "interrupted state passes automated accessibility"
+  ],
+  "databaseQualification": {
+    "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35141611500",
+    "sourceRevision": "1c83a78196b46411d2ae40e1575a4da1bc065323",
+    "job": "foundation-integration (postgres-integration)",
+    "status": "passed",
+    "checks": [
+      "issued, redeeming, and pending invitations revoke atomically with access changes",
+      "review freezes invitation IDs and rejects competing new invitations",
+      "audit failure rolls back grants, enablement, versions, invitations, and receipts",
+      "accepted and unrelated invitations retain their state",
+      "reenabling access cannot revive revoked invitations or tokens",
+      "operator replacement and revocation invalidate outstanding invitations",
+      "invitation confirmation and access revocation serialize without stale acceptance"
+    ]
+  },
+  "compatibilityQualification": {
+    "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35141611500",
+    "status": "passed",
+    "jobsPassed": 7,
+    "sourceRevision": "1c83a78196b46411d2ae40e1575a4da1bc065323"
+  },
+  "previousCompatibilityQualification": {
+    "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35138700261",
+    "sourceRevision": "21b7d168be94bba5a14bf7d3300897ff14ed773e",
+    "status": "passed",
+    "jobsPassed": 7
+  },
+  "review": {
+    "base": "117a8e7135f98bfe2bf204e907e041c612c4df8d",
+    "head": "1c83a78196b46411d2ae40e1575a4da1bc065323",
+    "standards": {
+      "remainingFindings": 0,
+      "resolved": [
+        "delayed unauthorized body clears renewed session",
+        "delayed review restores invalid confirmation"
+      ]
+    },
+    "spec": {
+      "remainingFindings": 0,
+      "resolved": [
+        "delayed unauthorized body clears renewed session",
+        "test fixture reconnect after Redis restart"
+      ]
+    }
+  },
+  "localValidation": {
+    "affectedTasksPassed": 13,
+    "frontendTestsPassed": 10,
+    "format": "passed",
+    "delayedResponseRegressions": "Both tests fail without their guards and pass with their guards."
+  },
+  "accessibility": {
+    "report": "access-revocation-interrupted-accessibility.json",
+    "engine": {
+      "name": "axe-core",
+      "version": "4.13.0"
+    },
+    "violations": 0,
+    "incomplete": 0
+  },
+  "qualificationCorrection": {
+    "failedRuns": ["35140667541", "35140726788"],
+    "cause": "Docker changed the dynamically published Redis port after container restart. The qualification client retained the previous port.",
+    "correction": "Reconnect a fresh qualification client to the current published port. The corrected hosted run confirms that the port changed and all recovery checks passed."
+  },
+  "limits": [
+    "CC-52 school scope integration remains incomplete.",
+    "Background Google credential independence requires the remaining connection implementation.",
+    "Human screen-reader validation remains not run.",
+    "These results do not establish CC-53 or Phase 3 completion."
+  ]
+}
