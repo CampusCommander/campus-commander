@@ -10,7 +10,13 @@ export async function stageGoogleConnectionBrowser({
   auditAccessibility,
   evidenceDirectory,
 }) {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${publicOrigin}/google-connection`);
+  const navigation = page.getByRole('button', { name: 'Toggle navigation' });
+  if ((await navigation.getAttribute('aria-expanded')) === 'false') {
+    await navigation.click();
+    await expect(navigation).toHaveAttribute('aria-expanded', 'true');
+  }
   await expect(
     page.getByRole('heading', {
       name: 'Import a service account',
