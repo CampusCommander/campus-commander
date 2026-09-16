@@ -119,6 +119,14 @@
           Sign-in: {{ receipt.previous.enabled ? 'enabled' : 'disabled' }} → {{
           receipt.applied.enabled ? 'enabled' : 'disabled' }}
         </p>
+        <p>{{ receipt.revokedInvitationIds.length }} invitations revoked</p>
+        @if (receipt.revokedInvitationIds.length) {
+        <ul>
+          @for (id of receipt.revokedInvitationIds; track id) {
+          <li>{{ id }}</li>
+          }
+        </ul>
+        }
         <h4>Previous grants</h4>
         <ul>
           @for (grant of receipt.previous.grants; track $index) {
@@ -257,6 +265,16 @@
         This change affects one principal. Previous sessions require another
         sign-in.
       </p>
+      <p>
+        {{ review.invitationsToRevoke.length }} unaccepted invitations will be
+        revoked.
+      </p>
+      <p>Recipients need a new invitation after this access change.</p>
+      <ul>
+        @for (invitation of review.invitationsToRevoke; track invitation.id) {
+        <li>{{ invitation.label }} · {{ invitation.id }}</li>
+        }
+      </ul>
       <mat-checkbox [(ngModel)]="confirmed"
         >I reviewed this identity and its exact access changes.</mat-checkbox
       >

@@ -29,6 +29,7 @@ it('preserves confirmed access when the following session check fails', async ()
             proposed: { enabled: false, grants: [] },
             actorVersion: 1,
             targetVersion: 1,
+            invitationsToRevoke: [],
           }
         : path.includes('/receipts')
           ? { items: [], offset: 0, total: 0 }

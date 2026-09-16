@@ -102,6 +102,7 @@ test('the release identifies its SQL migration by content checksum', async () =>
       '003-application-grants',
       '004-application-invitations',
       '005-platform-access',
+      '006-access-revocation',
     ],
   );
   for (const migration of migrations)

@@ -1,3 +1,4 @@
+import { qualifyAccessRevocation } from './access-revocation.integration.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -477,6 +478,14 @@ try {
       migrator: migrators[0],
       connect,
       principalId,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyAccessRevocation({
+      runtime,
+      migrator: migrators[0],
+      connect,
       issuer,
     })),
   );

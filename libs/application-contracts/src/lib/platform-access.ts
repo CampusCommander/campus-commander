@@ -31,6 +31,9 @@ export const platformAccessReviewSchema = z.strictObject({
   proposed: z.strictObject({ enabled: z.boolean(), grants: grantsSchema }),
   actorVersion: z.number().int().positive(),
   targetVersion: z.number().int().positive(),
+  invitationsToRevoke: z
+    .array(z.strictObject({ id: z.uuid(), label: z.string() }))
+    .max(50),
 });
 export type PlatformAccessReview = z.infer<typeof platformAccessReviewSchema>;
 export const platformAccessResultSchema = z.strictObject({
@@ -42,6 +45,7 @@ export const platformAccessResultSchema = z.strictObject({
 export const platformAccessRejectionSchema = z.strictObject({
   reason: z.enum([
     'unchanged',
+    'invitations-changed',
     'conflict',
     'delegation',
     'last-administrator',
@@ -54,6 +58,7 @@ export const platformAccessReceiptSchema = z.strictObject({
   principalId: z.uuid(),
   correlationId: z.uuid(),
   createdAt: z.string(),
+  revokedInvitationIds: z.array(z.uuid()).max(50),
   previousVersion: z.number().int().positive(),
   permissionVersion: z.number().int().positive(),
   previous: z.strictObject({ enabled: z.boolean(), grants: grantsSchema }),

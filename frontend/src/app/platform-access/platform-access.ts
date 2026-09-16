@@ -231,6 +231,8 @@ export class PlatformAccess implements OnInit {
         : 'conflict';
     if (reason === 'conflict' || reason === 'forbidden') this.stale.set(true);
     return {
+      'invitations-changed':
+        'Pending invitations changed. Review access again before confirmation.',
       unchanged:
         'No access changes selected. Change the enabled state or grants before review.',
       conflict:
@@ -254,6 +256,9 @@ export class PlatformAccess implements OnInit {
         {
           expectedVersion: preview.targetVersion,
           actorVersion: preview.actorVersion,
+          invitationIds: preview.invitationsToRevoke.map(
+            (invitation) => invitation.id,
+          ),
           ...preview.proposed,
           confirmation: 'change-platform-access',
         },

@@ -26,7 +26,7 @@ This test uses an isolated synthetic installation. It changes no live Workspace 
 
 ## Remaining work
 
-- Revoke affected pending invitations under a documented policy.
+- Qualify the new invitation revocation policy against real PostgreSQL and browser flows.
 - Preserve recoverable browser input and show explicit access-change guidance.
 - Integrate school scope changes after CC-52.
 - Qualify concurrent grant writes, restart, Redis loss, unrelated users, and installation-operator recovery together.
@@ -40,3 +40,20 @@ The initial change does not establish CC-53 or Phase 3 completion.
 The real PostgreSQL race and both API replica checks passed.
 Local API build and lint passed. Standards and Spec review found no defects in this bounded change.
 [Retained evidence](../../deployment/evidence/CC-53-access-revocation.json) records the tested revision and remaining scope.
+
+## Invitation revocation policy
+
+Every runtime access change ends the principal's issued, redeeming, and pending invitations.
+This applies to grant additions, grant removals, enablement changes, and operator identity replacement.
+An invitation represents intent under the previous access version. Reenabling access does not restore that invitation.
+Accepted invitations and invitations from unrelated principals retain their state.
+
+The access preview lists exact invitation IDs and recipient labels.
+Confirmation checks the same sorted IDs under the shared authority lock.
+A new or removed invitation requires another review before confirmation.
+Grant changes, invitation revocations, versions, receipts, and security events share one transaction.
+An audit failure rejects the entire transaction.
+The receipt retains the revoked invitation IDs.
+
+Installation-operator replacement, revocation, and administrator confirmation apply the same invalidation within their existing transaction.
+The private revocation function rejects direct runtime calls.

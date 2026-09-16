@@ -43,6 +43,7 @@ export async function qualifyPlatformAccess({
     enabled = true,
     grants = readGrant,
     apply = true,
+    invitationIds,
     client = runtime,
   } = {}) => {
     const values = [
@@ -53,10 +54,20 @@ export async function qualifyPlatformAccess({
       enabled,
       JSON.stringify(grants),
     ];
-    if (apply) values.push(correlation);
+    if (apply) {
+      const ids =
+        invitationIds ??
+        (
+          await migrator.query(
+            "SELECT id FROM cc.application_invitations WHERE created_by=$1 AND status IN ('issued','redeeming','pending') ORDER BY id",
+            [id],
+          )
+        ).rows.map((row) => row.id);
+      values.push(correlation, JSON.stringify(ids));
+    }
     return (
       await client.query(
-        `SELECT cc.${apply ? 'change' : 'review'}_platform_access($1,$2,$3,$4,$5,$6${apply ? ',$7' : ''}) AS result`,
+        `SELECT cc.${apply ? 'change' : 'review'}_platform_access($1,$2,$3,$4,$5,$6${apply ? ',$7,$8' : ''}) AS result`,
         values,
       )
     ).rows[0].result;
