@@ -43,7 +43,8 @@
   },
   "compatibilityQualification": {
     "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35136924107",
-    "status": "in-progress"
+    "status": "passed",
+    "jobsPassed": 7
   },
   "review": {
     "base": "29ee2ccf860f6fa4e2130601cab2bf578da8be4f",
