@@ -1,0 +1,166 @@
+<div class="entity-grid flex flex-col">
+  <!-- GRID-01: filter/action row. Chips and Add a filter left; Refresh then Bulk Actions right. -->
+  <div class="entity-grid-filter-row flex items-center gap-sm flex-wrap">
+    <div class="flex items-center gap-xs flex-wrap">
+      @for (filter of filters(); track filter.fieldId + filter.operator + filter.valueLabel) {
+        <app-filter-chip
+          [field]="filter.fieldLabel"
+          [operator]="filter.operator"
+          [value]="filter.valueLabel"
+          (remove)="removeFilter(filter)"
+        />
+      }
+      @if (addingFilter()) {
+        <div class="filter-entry flex items-center gap-xs">
+          <label class="secondary" for="filter-field">Field</label>
+          <select
+            id="filter-field"
+            class="filter-entry-control"
+            [value]="entry()?.fieldId ?? ''"
+            (change)="updateEntry({ fieldId: $any($event.target).value })"
+            (keydown.escape)="cancelFilterEntry()"
+          >
+            <option value="" disabled>Select a field</option>
+            @for (field of entryFields(); track field.fieldId) {
+              <option [value]="field.fieldId">{{ field.label }}</option>
+            }
+          </select>
+          <label class="secondary" for="filter-operator">Operator</label>
+          <select
+            id="filter-operator"
+            class="filter-entry-control"
+            [value]="entry()?.operator ?? ''"
+            (change)="updateEntry({ operator: $any($event.target).value })"
+            (keydown.escape)="cancelFilterEntry()"
+          >
+            <option value="" disabled>Select an operator</option>
+            @for (operator of entryOperators(); track operator) {
+              <option [value]="operator">{{ operator }}</option>
+            }
+          </select>
+          <label class="secondary" for="filter-value">Value</label>
+          <input
+            id="filter-value"
+            class="filter-entry-control"
+            type="text"
+            [value]="entry()?.value ?? ''"
+            (input)="updateEntry({ value: $any($event.target).value })"
+            (keydown.escape)="cancelFilterEntry()"
+          />
+          <button
+            type="button"
+            class="filter-entry-apply"
+            [disabled]="!entryValid()"
+            (click)="applyFilterEntry()"
+          >
+            Apply
+          </button>
+          <button type="button" class="filter-entry-cancel" (click)="cancelFilterEntry()">
+            Cancel
+          </button>
+        </div>
+      } @else {
+        <button type="button" class="add-filter" (click)="beginFilterEntry()">
+          Add a filter
+        </button>
+      }
+      @if (filters().length > 0) {
+        <button type="button" class="clear-filters" (click)="clearFilters()">
+          Clear filters
+        </button>
+      }
+    </div>
+    <div class="flex items-center gap-xs entity-grid-actions">
+      <button type="button" mat-button [matMenuTriggerFor]="refreshMenu">
+        Refresh
+      </button>
+      <mat-menu #refreshMenu="matMenu">
+        <button
+          type="button"
+          mat-menu-item
+          [disabled]="!hasSelection()"
+          (click)="refreshSelected.emit()"
+        >
+          Refresh selected
+        </button>
+        <button type="button" mat-menu-item (click)="refreshAll.emit()">
+          Refresh all
+        </button>
+      </mat-menu>
+      <button type="button" mat-button [matMenuTriggerFor]="bulkMenu">
+        Bulk Actions
+      </button>
+      <mat-menu #bulkMenu="matMenu">
+        @for (action of config().bulkActions; track action.id) {
+          <button
+            type="button"
+            mat-menu-item
+            [disabled]="action.disabled ?? false"
+            [attr.title]="action.disabledReason ?? null"
+            (click)="bulkAction.emit(action)"
+          >
+            {{ action.label }}
+          </button>
+        }
+      </mat-menu>
+    </div>
+  </div>
+
+  <!-- GRID-01: conditional draft panel between the filter row and the grid.
+       GRID-05: batch editing is unqualified for server-side grids, so the
+       bridge renders no editors. Pages project draft status here. -->
+  @if (draftPanelVisible()) {
+    <ng-content select="[entityGridDraftPanel]" />
+  }
+
+  <!-- GRID-01: entity viewport. All six UI-08 states route through the data region. -->
+  <app-data-region
+    [state]="state()"
+    [skeletonRows]="8"
+    (retry)="retry.emit()"
+    (refresh)="refresh.emit()"
+    (reconnect)="reconnect.emit()"
+  >
+    <div class="entity-grid-viewport" #viewport></div>
+  </app-data-region>
+
+  <!-- SELECT-01: persistent selection footer. Stays mounted across states. -->
+  <div class="entity-grid-footer flex items-center gap-md flex-wrap">
+    @if (selectionExpired()) {
+      <span class="entity-grid-footer-expired">
+        Selection expired. Select the records again.
+      </span>
+    }
+    <span class="entity-grid-footer-count">{{ footerCount() }} selected</span>
+    @if (selectionScope(); as scope) {
+      <span class="secondary">{{ scope }}</span>
+    }
+    <button type="button" class="footer-action" (click)="selectAll.emit()">
+      Select All
+    </button>
+    <button
+      type="button"
+      class="footer-action"
+      [disabled]="!hasSelection()"
+      (click)="deselectAll.emit()"
+    >
+      Deselect All
+    </button>
+    @if (showSelectedOnly()) {
+      <button type="button" class="footer-action" (click)="showAllRows.emit()">
+        Show All Rows
+      </button>
+    } @else {
+      <button
+        type="button"
+        class="footer-action"
+        [disabled]="!hasSelection()"
+        (click)="showAllSelected.emit()"
+      >
+        Show All Selected
+      </button>
+    }
+    <ng-content select="[entityGridPagination]" />
+    <ng-content select="[entityGridFreshness]" />
+  </div>
+</div>

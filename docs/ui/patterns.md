@@ -61,6 +61,15 @@ Examples describe display requirements. They do not define new API payloads or b
 Verify package compatibility and virtualization behavior during implementation.
 Do not copy historical package versions from a design document.
 
+Qualified on 2026-09-16 against the public npm registry:
+
+- `@libregrid/angular` 1.3.4. Peer range `@angular/core >=20` covers the installed Angular 22.
+- `@libregrid/server-side-row-model` 1.3.4. Supplies the server-side row model GRID-01 requires.
+- `@libregrid/server-side-selection` 1.3.4. Supplies the SELECT-01 selection footer contract.
+- `ag-grid-community` and `ag-grid-angular` 36.2.0. Both satisfy the LibreGrid peer range `>=36.1.0 <37`.
+- Keep all `@libregrid/*` packages on one release version so they resolve one `@libregrid/core` instance.
+- `@libregrid/batch-edit` remains unqualified for server-side grids. See GRID-05.
+
 ## Selection
 
 **SELECT-01 — Persistent scope.** Keep browsing selection separate from displayed query state and approved job targets.
@@ -143,6 +152,8 @@ Keep drafts outside the loaded grid row cache.
 
 **GRID-05 — Batch-edit integration qualification.** The package publisher documents client-row-model support only.
 The public registry README was checked on September 5, 2026, with latest version 1.3.0.
+The registry was checked again on September 16, 2026. Latest version is 1.3.4, published September 10, 2026.
+The 1.3.4 README still states client-side row model support only. The qualification blocker stands.
 The portfolio still requires server-side entity grids and drafts outside the row cache.
 
 - Qualify or extend the module integration before shipping server-side batch editing.
