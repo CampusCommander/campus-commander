@@ -90,6 +90,9 @@ async function fixture(page: Page, manage = true, phase = 3) {
       },
     }),
   );
+  await page.route('**/api/auth/preferences', (route) =>
+    route.fulfill({ json: {} }),
+  );
   await page.goto('/google-connection');
   if (phase === 3)
     await expect(
@@ -341,9 +344,19 @@ test('customer import and review meet automated accessibility and overflow check
   await fixture(page);
   await page.getByText('Configure Google delegation', { exact: true }).click();
   for (const theme of ['light', 'dark']) {
-    await page.evaluate((theme) => {
-      document.documentElement.dataset['theme'] = theme;
-    }, theme);
+    await page.getByRole('button', { name: 'Choose theme' }).click();
+    await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const color = theme === 'dark' ? 'rgb(232, 234, 237)' : 'rgb(32, 33, 36)';
+    for (const item of await page.locator('.card li').all()) {
+      await expect(item).toHaveCSS('color', color);
+    }
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+    );
     await page.evaluate(() => document.fonts.ready);
     await expect(page.locator('mat-label').first()).toHaveCSS(
       'color',
@@ -385,9 +398,19 @@ test('customer import and review meet automated accessibility and overflow check
     page.getByRole('button', { name: 'Confirm customer', exact: true }),
   ).toBeDisabled();
   for (const theme of ['light', 'dark']) {
-    await page.evaluate((theme) => {
-      document.documentElement.dataset['theme'] = theme;
-    }, theme);
+    await page.getByRole('button', { name: 'Choose theme' }).click();
+    await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const color = theme === 'dark' ? 'rgb(232, 234, 237)' : 'rgb(32, 33, 36)';
+    for (const item of await page.locator('.card li').all()) {
+      await expect(item).toHaveCSS('color', color);
+    }
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+    );
     const result = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze();

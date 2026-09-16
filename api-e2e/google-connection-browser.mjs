@@ -2,6 +2,24 @@ import assert from 'node:assert/strict';
 import { expect } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
+async function selectTheme(page, theme) {
+  await page.getByRole('button', { name: 'Choose theme' }).click();
+  await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+  const color = theme === 'dark' ? 'rgb(232, 234, 237)' : 'rgb(32, 33, 36)';
+  await expect(page.locator('html')).toHaveCSS('color', color);
+  // Verify inherited list colors after the saved theme reaches nested content.
+  for (const item of await page.locator('.card li').all()) {
+    await expect(item).toHaveCSS('color', color);
+  }
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }),
+  );
+}
+
 /** Use the public page with the real API and a test-owned Google transport. */
 export async function stageGoogleConnectionBrowser({
   page,
@@ -76,13 +94,7 @@ export async function stageGoogleConnectionBrowser({
     'admin.directory.domain.readonly',
   );
   for (const theme of ['light', 'dark']) {
-    await page.getByRole('button', { name: 'Choose theme' }).click();
-    await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
-    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    await expect(page.locator('html')).toHaveCSS(
-      'color',
-      theme === 'dark' ? 'rgb(232, 234, 237)' : 'rgb(32, 33, 36)',
-    );
+    await selectTheme(page, theme);
     await expect(page.locator('mat-label').first()).toHaveCSS(
       'color',
       theme === 'dark' ? 'rgb(154, 160, 166)' : 'rgb(95, 99, 104)',
@@ -155,13 +167,7 @@ export async function stageGoogleConnectionBrowser({
     page.getByRole('button', { name: 'Confirm customer', exact: true }),
   ).toBeDisabled();
   for (const theme of ['light', 'dark']) {
-    await page.getByRole('button', { name: 'Choose theme' }).click();
-    await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
-    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    await expect(page.locator('html')).toHaveCSS(
-      'color',
-      theme === 'dark' ? 'rgb(232, 234, 237)' : 'rgb(32, 33, 36)',
-    );
+    await selectTheme(page, theme);
     await auditAccessibility(page, `google-connection-review-${theme}`);
     await page.screenshot({
       path: `${evidenceDirectory}/google-connection-review-${theme}.png`,
@@ -261,13 +267,7 @@ export async function confirmGoogleConnectionBrowser({
       .getByText(candidate.observation.customerId, { exact: true }),
   ).toBeVisible();
   for (const theme of ['light', 'dark']) {
-    await page.getByRole('button', { name: 'Choose theme' }).click();
-    await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
-    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    await expect(page.locator('html')).toHaveCSS(
-      'color',
-      theme === 'dark' ? 'rgb(232, 234, 237)' : 'rgb(32, 33, 36)',
-    );
+    await selectTheme(page, theme);
     await auditAccessibility(page, `google-connection-confirmed-${theme}`);
   }
   await writeFile(
