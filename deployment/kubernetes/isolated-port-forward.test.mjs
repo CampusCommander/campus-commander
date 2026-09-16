@@ -21,8 +21,13 @@ test(
             '-e',
             `
         import { createServer } from 'node:net';
+        import { spawn } from 'node:child_process';
         const server = createServer(socket => socket.on('data', bytes => {
-          if (bytes.toString() === 'reset') process.exit(2);
+          if (bytes.toString() === 'reset') {
+            // Retain inherited output streams after the tunnel process exits.
+            spawn(process.execPath, ['-e', 'setTimeout(() => {}, 200)'], {stdio: ['ignore', process.stdout, process.stderr]});
+            process.exit(2);
+          }
           else socket.write(bytes);
         }));
         server.listen(0, '127.0.0.1', () => console.log('Forwarding from 127.0.0.1:' + server.address().port + ' -> 5432'));
@@ -48,11 +53,13 @@ test(
       assert.equal(children.length, 2);
       assert.notEqual(children[0].pid, children[1].pid);
       const closed = once(sockets[1], 'close');
+      const tunnelClosed = once(children[1], 'close');
       sockets[1].write('reset');
       await closed;
       const echoed = once(sockets[0], 'data');
       sockets[0].write('lock-remains-held');
       assert.equal((await echoed)[0].toString(), 'lock-remains-held');
+      await tunnelClosed;
       assert.equal(forward.observation.peakConnections, 2);
       assert.equal(forward.observation.failedTunnels, 1);
     } finally {

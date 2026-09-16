@@ -28,6 +28,11 @@
             "glob": "LICENSE",
             "input": "node_modules/@fontsource/material-symbols-outlined",
             "output": "licenses/material-symbols-outlined"
+          },
+          {
+            "glob": "LICENSE",
+            "input": "node_modules/@fontsource/roboto-mono",
+            "output": "licenses/roboto-mono"
           }
         ],
         "styles": ["frontend/src/styles.scss"]

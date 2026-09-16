@@ -1,9 +1,11 @@
 # Phase 3 handoff
 
-Status: AUTHORIZED on 2026-09-16. Implementation is active under CC-45.
+Status: AUTHORIZED on 2026-09-16. Phase 3 implementation is active.
 The owner closed Phase 1 and [accepted Phase 2](../reviews/2026-09-16-phase-2-acceptance.md).
 The [delivery plan](phase-3-plan.md) expands this handoff into eighteen slices with acceptance criteria and dependencies.
 The owner approved the [issue backlog](phase-3-jira-tasks.md) on 2026-09-16. Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains the published tasks and verified dependencies.
+
+The owner selected service-account DWD on 2026-09-16. The [credential decision](phase-3-google-credentials.md) records its revised validation gates.
 
 ## Deliverable
 
@@ -12,7 +14,7 @@ The [Phase 3 work breakdown](06-work-breakdown.md#phase-3--onboarding-customer-s
 
 ## Delivery order
 
-1. Prove the district-owned offline OAuth credential flow against a controlled account.
+1. Prove the district-owned service-account DWD credential flow against a controlled account.
 2. Bind the stable Google customer ID and supported domains to the installation.
 3. Persist customer settings and onboarding progress across browser and service restarts.
 4. Request scopes for enabled capabilities and expose Google connection diagnostics.
@@ -41,3 +43,10 @@ Invitations and onboarding must work without mandatory SMTP configuration.
 
 Future UI implementation must follow the [UI contract](../ui/README.md) and record applicable rule IDs and validation evidence.
 This handoff changes no UI or runtime behavior.
+
+## Customer connection implementation
+
+[CC-46](https://easton-consulting.atlassian.net/browse/CC-46) now includes encrypted PostgreSQL staging and public API customer confirmation.
+The [connection contract](phase-3-google-connection.md) records credential boundaries, cleanup, deployment configuration, validation, and remaining scope.
+The live verifier passed for the owner-confirmed customer. Coordinated renewal and independent worker reads passed source-container and packaged Phase 3 qualification.
+Browser onboarding passed source and packaged API and database qualification. Complete deployment-profile qualification remains incomplete.

@@ -1,7 +1,7 @@
 # Phase 3 delivery plan
 
 Plan date: 2026-09-16.
-Status: APPROVED by the owner on 2026-09-16. Jira publication and verification are complete. Implementation is active under CC-45.
+Status: APPROVED by the owner on 2026-09-16. Jira publication and verification are complete. Phase 3 implementation is active.
 The [owner acceptance record](../reviews/2026-09-16-phase-2-acceptance.md) closes Phase 2 with its recorded limitations.
 
 ## Outcome and completion boundary
@@ -44,9 +44,9 @@ The runtime database role must not gain migration, unrestricted grant-editing, o
 
 Included:
 
-- A qualified district-owned offline OAuth credential profile for enabled read capabilities.
+- A qualified district-owned service-account DWD credential profile for enabled read capabilities.
 - Stable Google customer identity, primary domains, secondary domains, and alias-domain context.
-- Persisted onboarding progress, customer settings, capability consent, and connection health.
+- Persisted onboarding progress, customer settings, capability authorization, and connection health.
 - Platform-user invitations, explicit grants, presets, school scopes, and prompt revocation.
 - Credential replacement, key recovery, audit evidence, and isolated restore.
 - Phase 3 installation, upgrade from the accepted Phase 2 baseline, and release evidence in every profile.
@@ -56,7 +56,7 @@ Excluded:
 - EntityCache, device inventory pages, background collection, and entity search. These start in Phase 4.
 - Google entity mutations, JobService, Jobs, and mutation notifications. These start in Phase 5.
 - Managed Google users, OU management, and group management. These retain their later phase boundaries.
-- Mandatory SMTP, enterprise DWD implementation, optional AI, and cross-customer aggregation.
+- Mandatory SMTP, background browser OAuth, optional AI, and cross-customer aggregation.
 - Requalification of every historical Phase 1 or Phase 2 gate as a prerequisite for starting Phase 3.
 
 Phase 3 can read customer, domain, and OU references for connection and permission configuration.
@@ -128,21 +128,25 @@ Large means a protocol, security, or deployment boundary requiring staged commit
 Assign people and calendar dates after proof inputs and implementation capacity are known.
 Record Google approval time separately from engineering effort and operator setup time.
 
+The owner selected service-account DWD for background authentication on 2026-09-16.
+The [credential decision](phase-3-google-credentials.md) supersedes the original background offline OAuth proposal.
+Application sign-in retains its web OAuth client and callback protections.
+
 ## Contract decisions and proof gates
 
 These proposals make the plan executable. Their owning slices must record final contract decisions before dependent code merges.
 
 | Decision                 | Proposed direction                                                                                                                             | Owner and required evidence                                                                                        |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| D01: Credential profile  | District-owned offline OAuth. Use an established Google server library and keep login authorization separate.                                  | T01. Prove restart, renewal, revocation, replacement, roles, and required endpoints.                               |
+| D01: Credential profile  | District-owned service-account DWD. Use the Google authentication library and keep login authorization separate.                               | T01. Prove restart, renewal, revocation, replacement, roles, and required endpoints.                               |
 | D02: Capability scope    | Start with customer and domain reads. Add read-only OU references only for an enabled school-scope selector.                                   | T01/T05/T09. Record exact methods, scopes, Google privileges, and observed coverage.                               |
-| D03: Credential custody  | Encrypt refresh credentials in PostgreSQL. Store versioned encryption keys outside database backups.                                           | T01/T03/T06/T13. Prove missing-key failure, key rotation, and independent key recovery.                            |
+| D03: Credential custody  | Encrypt service-account private credentials in PostgreSQL. Store versioned encryption keys outside database backups.                           | T01/T03/T06/T13. Prove missing-key failure, key rotation, and independent key recovery.                            |
 | D04: Customer binding    | Confirm one resolved stable customer ID. Never infer tenancy from an email suffix or silently replace the customer.                            | T03. Prove wrong-customer rejection and concurrent first-connection protection.                                    |
 | D05: Invitation identity | Use a single-use invitation and verified OIDC identity. Require inviter confirmation before a previously unknown identity receives grants.     | T02/T07. Prove leaked-link, wrong-identity, replay, expiry, and concurrent redemption denial.                      |
 | D06: Grant policy        | Deny by default. Expand named presets into explicit action and resource grants.                                                                | T02/T08. Record a matrix for every Phase 3 API and data surface.                                                   |
 | D07: School scopes       | Use district-defined school IDs with explicit stable resource references. Support multiple OU roots without equating a school to one subtree.  | T02/T09. Record include/exclude precedence, overlap, stale references, and synthetic cross-school denial evidence. |
 | D08: Privileged changes  | Restrict platform administration and credential management to platform administrators. Prevent removal of the last enabled administrator.      | T02/T08/T10. Verify concurrent changes, self-escalation denial, and operator recovery.                             |
-| D09: Durable progress    | Persist business progress in PostgreSQL. Keep expiring authorization transactions in Redis and bind callbacks to their initiating browser.     | T03/T04. Prove restart, Redis loss, stale callbacks, duplicate requests, and concurrent edits.                     |
+| D09: Durable progress    | Persist business progress in PostgreSQL. Keep expiring staging transactions in Redis and bind them to their initiating browser.                | T03/T04. Prove restart, Redis loss, stale staging transactions, duplicate requests, and concurrent edits.          |
 | D10: Restore             | Preserve customer binding, settings, grants, scope definitions, credentials, and security events. Invalidate sessions and pending invitations. | T13. Require key recovery and connection revalidation before enabling background reads.                            |
 | D11: Initial setup mode  | Provide a read-only real connection. Keep any future sample-data mode isolated and outside this phase's release claim.                         | T03/T04. Never request mutation scopes or activate inventory collection.                                           |
 
@@ -181,10 +185,10 @@ Retain existing identity and Diagnostics access during that transition.
 Test restoration from the preceding backup instead of assuming destructive schema rollback.
 
 Credential consumers use a single provider contract across API checks and independent workers.
-The callback stores only a validated candidate credential before customer confirmation.
-Use bounded cleanup for abandoned authorization attempts and unconfirmed candidate credentials.
+Credential import stores only a validated candidate service account and delegated subject before customer confirmation.
+Use bounded cleanup for abandoned credential staging attempts and unconfirmed candidate credentials.
 The provider reuses valid access tokens and coordinates renewal across replicas.
-Version checks prevent a late refresh response from overwriting a replacement credential.
+Version checks prevent a late token renewal response from overwriting a replacement credential.
 Do not put tokens in Kestra variables, job payloads, URLs, logs, or public evidence.
 
 Google connection failure must not prevent local application sign-in or installer health checks.
@@ -220,23 +224,23 @@ Use the current token file and shared Material controls for both themes.
 
 ## Validation plan
 
-| Area                | Required proof                                                                                                                   | Slice owners        |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| OAuth protocol      | Exact callback, state, supported code protections, consent denial, replay, partial scope grant, and token omission               | T01, T03            |
-| Customer boundary   | Correct customer, primary/secondary/alias domains, wrong-customer rejection, and concurrent connection                           | T01, T03            |
-| Background access   | Browser closure, API/worker restart, token reuse, renewal races, retired credentials, and missing keys                           | T01, T03, T06       |
-| Progress            | Reload, Redis loss, service restart, stale writes, duplicate callback, and interrupted configuration                             | T04                 |
-| Health              | Privilege denial, scope denial, revoked token, quota, network error, and bounded recovery                                        | T05                 |
-| Invitations         | Intended identity, link leakage, hash storage, expiry, revocation, replay, race, and optional email delivery                     | T07                 |
-| Grants              | Every preset, least privilege, self-escalation denial, last-administrator protection, and permission migration                   | T02, T08            |
-| School boundary     | Overlapping scopes, excluded resources, stale references, path changes, counts, and guessed identifiers                          | T09                 |
-| Revocation          | Active browser, two API replicas, queued checks, stale forms, concurrent writes, and direct API requests                         | T10                 |
-| Audit and redaction | Atomic state/event persistence, audit-write failure, constrained database roles, and secret-free support output                  | T12                 |
-| Accessibility       | Both themes, keyboard, focus, reader announcements, contrast, targets, zoom, and long labels                                     | Every UI slice, T11 |
-| Recovery            | Distinct restore target, recovered keys, revoked old sessions, expired invitations, preserved grants, and exact customer binding | T13                 |
-| Profile lifecycle   | Clean install, repeated resume, Phase 2 upgrade, isolated restore, faults, and operator commands                                 | T14–T16             |
-| Release identity    | Exact commit, image digests, signatures, inventory, SBOM, dependency scans, and evidence hashes                                  | T17                 |
-| Operator acceptance | Prescribed release, observed workflows, defects, accepted exceptions, and final decision                                         | T18                 |
+| Area                | Required proof                                                                                                                           | Slice owners        |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| DWD protocol        | Valid service-account key, fixed Google endpoints, delegated subject, exact scopes, missing delegation, key rejection, and token renewal | T01, T03            |
+| Customer boundary   | Correct customer, primary/secondary/alias domains, wrong-customer rejection, and concurrent connection                                   | T01, T03            |
+| Background access   | Browser closure, API/worker restart, token reuse, renewal races, retired credentials, and missing keys                                   | T01, T03, T06       |
+| Progress            | Reload, Redis loss, service restart, stale writes, duplicate staging request, and interrupted configuration                              | T04                 |
+| Health              | Privilege denial, scope denial, revoked token, quota, network error, and bounded recovery                                                | T05                 |
+| Invitations         | Intended identity, link leakage, hash storage, expiry, revocation, replay, race, and optional email delivery                             | T07                 |
+| Grants              | Every preset, least privilege, self-escalation denial, last-administrator protection, and permission migration                           | T02, T08            |
+| School boundary     | Overlapping scopes, excluded resources, stale references, path changes, counts, and guessed identifiers                                  | T09                 |
+| Revocation          | Active browser, two API replicas, queued checks, stale forms, concurrent writes, and direct API requests                                 | T10                 |
+| Audit and redaction | Atomic state/event persistence, audit-write failure, constrained database roles, and secret-free support output                          | T12                 |
+| Accessibility       | Both themes, keyboard, focus, reader announcements, contrast, targets, zoom, and long labels                                             | Every UI slice, T11 |
+| Recovery            | Distinct restore target, recovered keys, revoked old sessions, expired invitations, preserved grants, and exact customer binding         | T13                 |
+| Profile lifecycle   | Clean install, repeated resume, Phase 2 upgrade, isolated restore, faults, and operator commands                                         | T14–T16             |
+| Release identity    | Exact commit, image digests, signatures, inventory, SBOM, dependency scans, and evidence hashes                                          | T17                 |
+| Operator acceptance | Prescribed release, observed workflows, defects, accepted exceptions, and final decision                                                 | T18                 |
 
 Use a deterministic Google simulator for repeatable faults and concurrency.
 Use controlled real Google accounts for protocol, privileges, domain coverage, and unattended credential proof.
@@ -327,8 +331,9 @@ The approved plan and full issue bodies define the publication scope.
 
 Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 29 verified native Blocks links.
 The publication check verified every parent, status, label, description, and dependency against the manifest.
-The initial publication snapshot recorded To Do statuses. The epic remains In Progress. CC-45 is In Review after hosted integration passed.
-The 138 task acceptance criteria match the approved backlog.
+The initial publication contained eighteen To Do tasks and 138 acceptance criteria.
+The epic remains In Progress. CC-45 is In Review after hosted integration passed.
+The owner-selected DWD profile revises credential criteria. The later CC-46 dependency amendment adds the thirtieth Blocks link.
 No Jira issue is published merely to reserve a number.
 
 The initial Jira query found no Phase 3 epic or phase-3 labels.
@@ -341,17 +346,17 @@ This plan does not modify either closed phase's scope or acceptance decision.
 
 ## Risks and dependencies
 
-| Risk or missing input                                                             | Action and owner                                                                            | Work that remains independent         |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------- |
-| Controlled Google account, client, roles, callback, and protected credential path | T01 obtains authorized inputs and records exact fixture boundaries.                         | T02, then T07 and T08                 |
-| Default credential profile fails district policy                                  | T01 records the failure and resolves the profile decision before onboarding implementation. | Local platform access work            |
-| Unknown invitation identity                                                       | T02/T07 settle identity confirmation before any invitation grants access.                   | Credential proof                      |
-| School mapping ambiguity                                                          | T02/T09 settle precedence and stable reference behavior with explicit denial examples.      | District grants and customer settings |
-| Token renewal or key-rotation races                                               | T03/T06 test concurrent replicas and credential generations.                                | Invitation workflow                   |
-| External consent approval delays                                                  | T04 records pending approval and resumes without losing local progress.                     | Platform access work                  |
-| Stale PR base or duplicated implementation                                        | Keep the stacked PR base explicit and exclude the archival snapshot.                        | Planning and issue review             |
-| Jira timeout or site restriction                                                  | Preserve drafts and publication results. Recheck before retrying permitted writes.          | Git plan review                       |
-| Test evidence describes a different release                                       | T17 rejects mismatched hashes and retains previous evidence as history.                     | Defect diagnosis                      |
+| Risk or missing input                                                                                  | Action and owner                                                                            | Work that remains independent         |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Controlled Google account, service account, delegated roles, DWD scopes, and protected credential path | T01 obtains authorized inputs and records exact fixture boundaries.                         | T02, then T07 and T08                 |
+| Default credential profile fails district policy                                                       | T01 records the failure and resolves the profile decision before onboarding implementation. | Local platform access work            |
+| Unknown invitation identity                                                                            | T02/T07 settle identity confirmation before any invitation grants access.                   | Credential proof                      |
+| School mapping ambiguity                                                                               | T02/T09 settle precedence and stable reference behavior with explicit denial examples.      | District grants and customer settings |
+| Token renewal or key-rotation races                                                                    | T03/T06 test concurrent replicas and credential generations.                                | Invitation workflow                   |
+| External DWD approval delays                                                                           | T04 records pending approval and resumes without losing local progress.                     | Platform access work                  |
+| Stale PR base or duplicated implementation                                                             | Keep the stacked PR base explicit and exclude the archival snapshot.                        | Planning and issue review             |
+| Jira timeout or site restriction                                                                       | Preserve drafts and publication results. Recheck before retrying permitted writes.          | Git plan review                       |
+| Test evidence describes a different release                                                            | T17 rejects mismatched hashes and retains previous evidence as history.                     | Defect diagnosis                      |
 
 ## Sources and validation
 
@@ -368,3 +373,5 @@ Google sources checked on 2026-09-16:
 These sources support the proposed protocol plan. They do not replace the controlled-account proof.
 Planning validation checks draft IDs, dependency ordering, cycles, story coverage, local links, and document formatting.
 No application behavior changes in this planning PR. Runtime and live-account tests are not run for this document change.
+
+- [Service-account DWD](https://developers.google.com/identity/protocols/oauth2/service-account) documents delegated subjects, signed token exchange, and administrator authorization.

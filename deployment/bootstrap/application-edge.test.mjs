@@ -30,10 +30,43 @@ test('invitation routes require Phase 3 and exact methods and paths', async () =
     );
     await listen(edge);
     const id = '11111111-1111-4111-8111-111111111111';
+    assert.equal(
+      (
+        await fetch(`${origin(edge)}/api/google-connection/candidates`, {
+          method: 'POST',
+          body: 'x'.repeat(12000),
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await fetch(`${origin(edge)}/api/google-connection/candidates`, {
+          method: 'POST',
+          body: 'x'.repeat(65537),
+        })
+      ).status,
+      413,
+    );
+    assert.equal(
+      (
+        await fetch(
+          `${origin(edge)}/api/google-connection/candidates/${id}/confirm`,
+          { method: 'POST', body: 'x'.repeat(4097) },
+        )
+      ).status,
+      413,
+    );
     const routes = [
+      ['GET', '/api/google-connection', 'api'],
+      ['GET', `/api/google-connection/candidates/${id}`, 'api'],
+      ['POST', '/api/google-connection/candidates', 'api'],
+      ['POST', '/api/google-connection/check', 'api'],
+      ['POST', `/api/google-connection/candidates/${id}/confirm`, 'api'],
       ['GET', '/invitations', 'frontend'],
       ['GET', '/platform-users', 'frontend'],
       ['GET', '/invitation', 'frontend'],
+      ['GET', '/google-connection', 'frontend'],
       ['GET', '/api/auth/invitations', 'api'],
       ['GET', '/api/auth/invitations/status', 'api'],
       ['POST', '/api/auth/invitations', 'api'],

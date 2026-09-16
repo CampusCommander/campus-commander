@@ -154,6 +154,21 @@ export function renderKubernetes(input, operatorInput) {
     ].includes(operator.migrationRole)
   )
     throw new Error('Use a separate application migration role.');
+  if (
+    config.googleConnection &&
+    collectRefs([
+      operator.migrationPasswordSecretRef,
+      operator.databaseAdmins,
+      operator.kestraRuntime && {
+        provider: 'kubernetes',
+        name: operator.kestraRuntime.name,
+        key: operator.kestraRuntime.applicationKey,
+      },
+    ]).some(
+      (ref) => ref.name === config.googleConnection.encryptionKeySecretRef.name,
+    )
+  )
+    throw new Error('Use a separate Google encryption key secret.');
   for (const [key, service] of Object.entries(config.services)) {
     if (
       service.placement.kind === 'local' &&
@@ -426,6 +441,7 @@ export function renderKubernetes(input, operatorInput) {
       refs = collectRefs([
         service,
         config.applicationAuth,
+        config.googleConnection,
         ...Object.values(config.services).map(
           ({ endpoint, passwordSecretRef, authSecretRef }) => ({
             endpoint,
@@ -437,6 +453,7 @@ export function renderKubernetes(input, operatorInput) {
     if (key === 'workers')
       refs = collectRefs([
         service,
+        config.googleConnection,
         config.services.applicationDatabase.endpoint,
         config.services.applicationDatabase.passwordSecretRef,
       ]);
@@ -885,6 +902,10 @@ export function renderKubernetes(input, operatorInput) {
     throw new Error(
       'Phase 2 requires explicit identity-provider egress CIDRs.',
     );
+  if (config.googleConnection && !operator.externalEgress.googleProvider)
+    throw new Error(
+      'Google connections require explicit Google-provider egress CIDRs.',
+    );
   const ingress = new Map();
   for (const [source, targets] of Object.entries(dependencies)) {
     if (
@@ -941,6 +962,13 @@ export function renderKubernetes(input, operatorInput) {
         ports: ports.map((port) => ({ protocol: 'TCP', port })),
       });
     }
+    if (['api', 'workers'].includes(source) && config.googleConnection)
+      egress.push({
+        to: operator.externalEgress.googleProvider.map((cidr) => ({
+          ipBlock: { cidr },
+        })),
+        ports: [{ protocol: 'TCP', port: 443 }],
+      });
     items.push(
       object(
         'networking.k8s.io/v1',

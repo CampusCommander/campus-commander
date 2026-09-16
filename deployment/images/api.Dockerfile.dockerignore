@@ -6,6 +6,7 @@
 !eslint.config.mjs
 !api/**
 !libs/application-contracts/**
+!libs/google-connection/**
 !deployment/project.json
 !deployment/tsconfig.json
 !deployment/tsconfig.lib.json

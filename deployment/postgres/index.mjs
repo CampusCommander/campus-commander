@@ -103,6 +103,8 @@ export async function loadMigrations() {
       '004-application-invitations',
       '005-platform-access',
       '006-access-revocation',
+      '007-google-connection',
+      '008-google-token-coordination',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -190,6 +192,21 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.list_platform_access_receipts(uuid,integer,uuid,integer),
         cc.review_platform_access(uuid,integer,uuid,integer,boolean,jsonb),
         cc.change_platform_access(uuid,integer,uuid,integer,boolean,jsonb,uuid${migrations.some(({ id }) => id === '006-access-revocation') ? ',jsonb' : ''}) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '008-google-token-coordination')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION cc.acquire_google_access(text,integer,uuid),
+        cc.finish_google_access(text,integer,uuid,jsonb,timestamptz,text,uuid),
+        cc.reject_google_access(text,integer,uuid,text,uuid),cc.record_google_observation(text,integer,jsonb,uuid,uuid,integer),
+        cc.reset_google_access(uuid,integer,text,integer,uuid) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '007-google-connection')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.expire_google_candidates(uuid),
+        cc.stage_google_credential(uuid,integer,uuid,text,text,text,jsonb,uuid),
+        cc.finish_google_candidate(uuid,integer,uuid,text,jsonb,text,uuid),
+        cc.read_google_candidate(uuid,integer,uuid,text),
+        cc.confirm_google_customer(uuid,integer,uuid,text,text,jsonb,uuid),
+        cc.read_google_connection(uuid,integer) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

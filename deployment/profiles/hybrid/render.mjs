@@ -336,6 +336,7 @@ function renderBase(input, release) {
   );
   compose.services.api.secrets = secretsFor(
     config.applicationAuth?.clientSecretRef,
+    config.googleConnection?.encryptionKeySecretRef,
     services.api.serverTls.certificateSecretRef,
     services.api.serverTls.privateKeySecretRef,
     services.applicationDatabase.passwordSecretRef,
@@ -352,6 +353,7 @@ function renderBase(input, release) {
     ].map(caReference),
   );
   compose.services.workers.secrets = secretsFor(
+    config.googleConnection?.encryptionKeySecretRef,
     services.workers.dispatchSecretRef,
     services.workers.serverTls.certificateSecretRef,
     services.workers.serverTls.privateKeySecretRef,
@@ -422,12 +424,14 @@ function renderBase(input, release) {
   };
   const apiNeedsEgress =
     Boolean(config.applicationAuth) ||
+    Boolean(config.googleConnection) ||
     !local(services.applicationDatabase) ||
     !local(services.kestraDatabase) ||
     !local(services.redis) ||
     !local(services.kestra) ||
     config.host.workerHosts > 1;
   if (apiNeedsEgress) addNetwork(compose.services.api, 'egress');
+  if (config.googleConnection) addNetwork(compose.services.workers, 'egress');
   if (!local(services.applicationDatabase)) {
     addNetwork(compose.services['database-migrate'], 'egress');
     addNetwork(compose.services['bootstrap-initialize'], 'egress');
@@ -543,6 +547,7 @@ export function renderWorkerHost(input, release, { hostIndex, bindAddress }) {
     },
   ];
   worker.secrets = secretsFor(
+    config.googleConnection?.encryptionKeySecretRef,
     config.services.workers.dispatchSecretRef,
     config.services.workers.serverTls.certificateSecretRef,
     config.services.workers.serverTls.privateKeySecretRef,

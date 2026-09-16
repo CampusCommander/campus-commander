@@ -1,6 +1,7 @@
 import { inject } from '@angular/core';
 import { Router, type CanActivateFn, type Routes } from '@angular/router';
 import { AuthStore } from './auth.store';
+import { ConnectionStore } from './google-connection/connection.store';
 
 const authenticated: CanActivateFn = async () => {
   const auth = inject(AuthStore),
@@ -56,6 +57,19 @@ export const routes: Routes = [
     canActivate: [authenticated],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'account' },
+      {
+        path: 'google-connection',
+        title: 'Google customer connection · Campus Commander',
+        canActivate: [
+          () =>
+            inject(ConnectionStore).readable() ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () =>
+          import('./google-connection/google-connection').then(
+            (m) => m.GoogleConnectionPage,
+          ),
+      },
       {
         path: 'platform-users',
         title: 'Platform access · Campus Commander',

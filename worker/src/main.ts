@@ -5,7 +5,12 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
-import { handleSyntheticDispatch, readDispatchSecret } from './dispatch';
+import {
+  handleSyntheticDispatch,
+  handleGoogleDispatch,
+  readDispatchSecret,
+} from './dispatch';
+import { GoogleWorker } from './google-connection';
 
 const port = Number(process.env.PORT ?? 3001);
 const dispatchSecretPath = process.env['WORKER_DISPATCH_SECRET_FILE'];
@@ -14,6 +19,7 @@ if (!dispatchSecretPath) {
 }
 const dispatchSecret = readDispatchSecret(dispatchSecretPath);
 const stopping = new AbortController();
+const google = new GoogleWorker();
 
 const certificatePath = process.env['TLS_CERT_FILE'];
 const keyPath = process.env['TLS_KEY_FILE'];
@@ -51,6 +57,15 @@ const handleRequest: RequestListener = async (request, response) => {
     return;
   }
 
+  if (
+    await handleGoogleDispatch(
+      request,
+      response,
+      { secret: dispatchSecret, signal: stopping.signal },
+      google,
+    )
+  )
+    return;
   respond(response, 404, { error: 'not-found' });
 };
 
@@ -75,6 +90,10 @@ server.listen(port, '0.0.0.0', () => {
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     stopping.abort();
+    void google.close().catch(() => {
+      console.error('Worker database shutdown failed');
+      process.exitCode = 1;
+    });
     const deadline = setTimeout(() => server.closeAllConnections(), 5000);
     deadline.unref();
     server.close((error) => {

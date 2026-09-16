@@ -164,6 +164,12 @@ const shape = z.strictObject({
       sessionIdleSeconds: z.number().int().min(60).max(3600).default(1800),
     })
     .optional(),
+  googleConnection: z
+    .strictObject({
+      keyId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
+      encryptionKeySecretRef: secretReferenceSchema,
+    })
+    .optional(),
   profile: z.enum(['all-docker', 'hybrid', 'kubernetes']),
   host: z.strictObject({
     os: z.literal('linux'),
@@ -212,6 +218,21 @@ export const deploymentConfigSchema = shape.superRefine((config, ctx) => {
   }
   const reject = (path: (string | number)[], message: string) =>
     ctx.addIssue({ code: 'custom', path, message });
+  if (config.googleConnection && config.phase !== 3)
+    reject(['googleConnection'], 'Google connections require Phase 3.');
+  const googleKey = config.googleConnection?.encryptionKeySecretRef;
+  if (
+    googleKey?.provider === 'file' &&
+    [
+      'postgres-migrator',
+      'application-postgres-admin-password',
+      'kestra-postgres-admin-password',
+    ].includes(googleKey.path.split('/').at(-1) ?? '')
+  )
+    reject(
+      ['googleConnection', 'encryptionKeySecretRef'],
+      'Operator secrets cannot supply the Google encryption key.',
+    );
   const services = config.services;
   const distributed =
     config.profile === 'kubernetes' || config.host.workerHosts > 1;
@@ -426,6 +447,16 @@ export const deploymentConfigSchema = shape.superRefine((config, ctx) => {
     for (const [key, child] of Object.entries(value)) {
       if (key.endsWith('SecretRef')) {
         const ref = secretReferenceSchema.safeParse(child);
+        if (
+          ref.success &&
+          config.googleConnection &&
+          path[0] !== 'googleConnection' &&
+          sameSecret(ref.data, config.googleConnection.encryptionKeySecretRef)
+        )
+          reject(
+            ['googleConnection', 'encryptionKeySecretRef'],
+            'The Google encryption key requires a separate secret reference.',
+          );
         if (ref.success && ref.data.provider !== expectedProvider)
           reject([...path, key], 'Secret provider does not match the runtime.');
       } else inspectSecrets(child, [...path, key]);

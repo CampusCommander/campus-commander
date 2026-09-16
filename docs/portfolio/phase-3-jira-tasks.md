@@ -1,15 +1,18 @@
 # Phase 3 Jira tasks
 
-Status: APPROVED by the owner on 2026-09-16. Jira publication and verification are complete. CC-45 implementation is active.
+Status: APPROVED by the owner on 2026-09-16. Jira publication and verification are complete. Phase 3 implementation is active.
 
 This backlog implements the [Phase 3 plan](phase-3-plan.md).
 The [structured manifest](phase-3-jira-tasks.json) supplies the same tasks, criteria, dependencies, and publication fields.
 Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 30 verified Blocks links.
 Stable planning IDs map to verified Jira keys in the manifest. The publication snapshot records To Do statuses. CC-45 is In Review after hosted integration passed.
+CC-44 implements the owner-selected DWD credential profile. Status fields in the manifest retain their last verified observation.
 
 A timed-out request created [CC-43](https://easton-consulting.atlassian.net/browse/CC-43) as a delayed duplicate.
 CC-43 is closed, has no epic parent, and links to canonical task CC-44.
 This administrative closure does not complete implementation.
+
+The owner selected service-account DWD on 2026-09-16. The [credential decision](phase-3-google-credentials.md) records the revised gates.
 
 ## Approved breakdown
 
@@ -17,7 +20,7 @@ This administrative closure does not complete implementation.
 2. **P3-T02: Extend authorization contracts while preserving existing sign-in.** Blocked by: none internally. Stories: S06, S07.
 3. **P3-T03: Connect and confirm one Google customer account.** Blocked by: P3-T01, P3-T02. Stories: S01, S02.
 4. **P3-T04: Save customer settings and resume interrupted onboarding.** Blocked by: P3-T03. Stories: S03, S04.
-5. **P3-T05: Explain capability consent and Google connection health.** Blocked by: P3-T04. Stories: S02, S04.
+5. **P3-T05: Explain capability authorization and Google connection health.** Blocked by: P3-T04. Stories: S02, S04.
 6. **P3-T06: Replace Google credentials and rotate encryption keys.** Blocked by: P3-T05. Stories: S01, S08.
 7. **P3-T07: Invite and confirm a platform user without mandatory email.** Blocked by: P3-T02. Stories: S05.
 8. **P3-T08: Manage explicit platform and district permission grants.** Blocked by: P3-T03, P3-T07. Stories: S06.
@@ -63,17 +66,17 @@ An operator authorizes a dedicated test identity and demonstrates unattended cus
 
 Acceptance criteria:
 
-- [ ] Record fixture authorization, exact library versions, customer identity, Google roles, OAuth audience, scopes, callback, and test environment.
+- [ ] Record fixture authorization, exact library versions, customer identity, delegated Google roles, service-account identity, DWD scopes, and test environment.
 - [ ] Prove customer and domain reads with minimum verified scopes, including primary, secondary, and alias-domain coverage.
 - [ ] Classify historical user and device proof rows as separate authorized experiments. Do not enable them in ordinary Phase 3 onboarding.
-- [ ] Use an established server OAuth library. Verify single-use state, exact callbacks, supported code protections, denied consent, and partial grants.
-- [ ] Prove browser closure, process restart, access-token reuse, renewal, refresh-token omission, revocation, and same-customer identity replacement.
+- [ ] Use the Google authentication library. Verify delegated subject, signed token exchange, exact granted scopes, missing delegation, and partial authorization.
+- [ ] Prove browser-independent access, process restart, access-token reuse, signed token renewal, DWD or key revocation, and same-customer identity replacement.
 - [ ] Reject a wrong customer before changing stored ownership. Record unavailable live fixture cases and equivalent simulator coverage separately.
 - [ ] Prove encrypted credential recovery with an independently restored key. Missing or incorrect keys must fail without exposing secrets.
 - [ ] Record the credential profile decision and every passed, failed, or not-run case before dependent onboarding implementation.
 
 Blocked by: none within this backlog.
-External prerequisite: Owner-authorized controlled Workspace customer, connection identity, OAuth client, callback, and protected credential-file path.
+External prerequisite: Owner-authorized controlled Workspace customer, delegated identity, service account, DWD scopes, and protected credential-file path.
 
 Evidence:
 
@@ -81,7 +84,7 @@ Evidence:
 - Simulator denial and concurrency results.
 - Credential profile decision with explicit missing-fixture limits.
 
-Demonstration: Authorize once, close the browser, restart the consumer, renew access, and read the same customer's identity.
+Demonstration: Authorize DWD once, restart the consumer without a browser session, renew access, and read the same customer's identity.
 
 UI rules: not applicable to a new product surface. Retain applicable operational and security checks.
 
@@ -124,9 +127,9 @@ An authorized platform administrator connects the background Google identity, re
 
 Acceptance criteria:
 
-- [ ] Reuse accepted client import and administrator enrollment. Keep background consent separate from application sign-in.
-- [ ] Validate the callback transaction and current administrator authority. Reject replay, stale permission versions, and cross-browser substitution.
-- [ ] Encrypt candidate refresh credentials with an external versioned key. Never return tokens or client secrets to the browser.
+- [ ] Reuse administrator enrollment and keep the sign-in web client separate. Import and validate the background service account and delegated subject.
+- [ ] Validate the credential staging transaction and current administrator authority. Reject replay, stale permission versions, CSRF, and cross-browser substitution.
+- [ ] Encrypt candidate service-account credentials with an external versioned key. Never return tokens or private keys to the browser.
 - [ ] Display the resolved stable customer ID and domain observations before explicit confirmation.
 - [ ] Atomically bind one customer and activate its credential generation. Reject mismatches and concurrent competing first connections.
 - [ ] Run a bounded authenticated worker read through the existing service boundary after browser closure and API restart.
@@ -138,7 +141,7 @@ Blocked by: P3-T01, P3-T02.
 Evidence:
 
 - Browser-to-provider-to-worker connection report.
-- Customer mismatch, callback replay, and two-replica renewal tests.
+- Customer mismatch, staging replay, and two-replica renewal tests.
 - Sanitized security-event and credential-storage inspection.
 
 Demonstration: Connect the customer, confirm its identity, close the browser, and complete the same read from an independent worker.
@@ -155,8 +158,8 @@ An administrator saves customer settings and resumes observed onboarding progres
 Acceptance criteria:
 
 - [ ] Define and validate the Phase 3 customer settings allowlist. Keep per-user theme preferences separate from customer settings.
-- [ ] Persist confirmed steps and settings revisions in PostgreSQL. Keep short-lived OAuth transactions separate.
-- [ ] Restore progress after reload and API restart without repeating completed consent or discarding unsaved form input on errors.
+- [ ] Persist confirmed steps and settings revisions in PostgreSQL. Keep short-lived credential staging transactions separate.
+- [ ] Restore progress after reload and API restart without repeating completed credential verification or discarding unsaved form input on errors.
 - [ ] Handle Redis loss by restarting only the expired authorization transaction while retaining durable business progress.
 - [ ] Reject stale concurrent writes with a recoverable conflict response and unchanged confirmed state.
 - [ ] Display Google approval and capability verification separately from local setup. Do not simulate inventory progress.
@@ -175,7 +178,7 @@ Demonstration: Save settings, interrupt onboarding, restart the API, and resume 
 
 UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual verification and justified exclusions.
 
-### P3-T05 — Explain capability consent and Google connection health
+### P3-T05 — Explain capability authorization and Google connection health
 
 Owner role: Connection lead. Relative size: M. Stories: S02, S04.
 Packages: P3.1, P3.3. Jira key: [CC-48](https://easton-consulting.atlassian.net/browse/CC-48).
@@ -184,9 +187,9 @@ An authorized operator sees which Phase 3 capabilities are enabled, granted, qua
 
 Acceptance criteria:
 
-- [ ] Generate consent text and scope counts from enabled, qualified capability records with checked sources and test evidence.
+- [ ] Generate DWD authorization instructions and scope counts from enabled, qualified capability records with checked sources and test evidence.
 - [ ] Keep customer and domain reads separate from optional read-only OU references. Exclude later inventory and mutation capabilities.
-- [ ] Handle partial consent without marking unavailable capabilities healthy or repeatedly forcing unrelated consent.
+- [ ] Handle partial DWD authorization without marking unavailable capabilities healthy or repeatedly requesting unrelated scopes.
 - [ ] Classify credential, scope, privilege, policy, license, quota, and network failures with explicit recovery actions.
 - [ ] Show observation age and preserve last-known results during transient failures without presenting them as current success.
 - [ ] Use the same health contract in the shell and Diagnostics. Google failure must not block local sign-in or installer readiness.
@@ -215,7 +218,7 @@ An authorized administrator replaces the background Google identity or encryptio
 Acceptance criteria:
 
 - [ ] Stage and verify replacements against the existing stable customer ID before atomic activation.
-- [ ] Preserve a working credential when replacement consent fails. Reject a different customer without changing ownership.
+- [ ] Preserve a working credential when replacement verification fails. Reject a different customer without changing ownership.
 - [ ] Coordinate replacement and renewal across replicas with credential generations and bounded transition behavior.
 - [ ] Prove old generations cannot resume reads or overwrite new material after activation.
 - [ ] Rotate encryption keys with versioned ciphertext and an explicit interrupted-rotation recovery procedure.

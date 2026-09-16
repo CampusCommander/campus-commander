@@ -1,3 +1,11 @@
+import { z } from 'zod';
+import {
+  GoogleConnectionError,
+  GoogleStoreError,
+  CredentialError,
+} from '@campus/google-connection';
+import { googleCustomerIdSchema } from '@campus/application-contracts';
+import type { GoogleWorker } from './google-connection';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -79,6 +87,60 @@ export async function handleSyntheticDispatch(
     }
   }
 
+  return true;
+}
+
+const googleReadSchema = z.strictObject({
+  customerId: googleCustomerIdSchema,
+  generation: z.number().int().positive(),
+  correlationId: z.uuid(),
+  executionId: z.uuid(),
+});
+
+export async function handleGoogleDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (request.method !== 'POST' || request.url !== '/dispatch/google-customer')
+    return false;
+  if (!authorized(request.headers.authorization, context.secret)) {
+    respond(response, 401, { error: 'unauthorized' });
+    request.resume();
+    return true;
+  }
+  if (
+    request.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !==
+    'application/json'
+  ) {
+    respond(response, 415, { error: 'application-json-required' });
+    request.resume();
+    return true;
+  }
+  try {
+    const input = googleReadSchema.parse(await readJson(request));
+    const { executionId, ...read } = input;
+    const result = await google.read(read, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status: 'completed',
+      ...result,
+    });
+  } catch (error) {
+    if (error instanceof DispatchError)
+      respond(response, error.statusCode, { error: error.code });
+    else if (error instanceof z.ZodError)
+      respond(response, 400, { error: 'invalid-payload' });
+    else if (
+      error instanceof GoogleConnectionError ||
+      error instanceof GoogleStoreError ||
+      error instanceof CredentialError
+    )
+      respond(response, 503, { error: error.code });
+    else respond(response, 503, { error: 'connection-unavailable' });
+  }
   return true;
 }
 

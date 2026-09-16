@@ -560,6 +560,50 @@ describe('Phase 2 authentication configuration', () => {
       expect(parseDeploymentConfig(config).phase).toBe(2);
       config.phase = 3;
       expect(parseDeploymentConfig(config).phase).toBe(3);
+      config.googleConnection = {
+        keyId: 'google-key-1',
+        encryptionKeySecretRef:
+          profile === 'kubernetes'
+            ? {
+                provider: 'kubernetes',
+                name: 'google-key',
+                key: 'encryption-key',
+              }
+            : { provider: 'file', path: '/run/secrets/google-key' },
+      };
+      expect(parseDeploymentConfig(config).googleConnection?.keyId).toBe(
+        'google-key-1',
+      );
+      expect(() => parseDeploymentConfig({ ...config, phase: 2 })).toThrow(
+        'Google connections require Phase 3',
+      );
+      expect(() =>
+        parseDeploymentConfig({
+          ...config,
+          googleConnection: {
+            ...config.googleConnection,
+            encryptionKeySecretRef: config.applicationAuth?.clientSecretRef,
+          },
+        }),
+      ).toThrow('separate secret reference');
+      if (profile !== 'kubernetes')
+        for (const name of [
+          'postgres-migrator',
+          'application-postgres-admin-password',
+          'kestra-postgres-admin-password',
+        ])
+          expect(() =>
+            parseDeploymentConfig({
+              ...config,
+              googleConnection: {
+                ...config.googleConnection,
+                encryptionKeySecretRef: {
+                  provider: 'file',
+                  path: `/run/secrets/${name}`,
+                },
+              },
+            }),
+          ).toThrow('Operator secrets');
       expect(() =>
         parseDeploymentConfig({ ...config, applicationAuth: undefined }),
       ).toThrow('applicationAuth');

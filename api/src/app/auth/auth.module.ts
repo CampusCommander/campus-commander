@@ -1,3 +1,5 @@
+import { GoogleConnectionController } from './google-connection.controller';
+import { GoogleConnectionService } from './google-connection.service';
 import { Module } from '@nestjs/common';
 import { ConfigurationModule } from '../configuration/configuration.module';
 import { DatabaseModule } from '../database/database.module';
@@ -13,8 +15,14 @@ import { PlatformAccessService } from './platform-access.service';
 
 @Module({
   imports: [ConfigurationModule, DatabaseModule, CacheModule],
-  controllers: [AuthController, InvitationController, PlatformAccessController],
+  controllers: [
+    GoogleConnectionController,
+    AuthController,
+    InvitationController,
+    PlatformAccessController,
+  ],
   providers: [
+    GoogleConnectionService,
     AuthService,
     AuthGuard,
     EnrollmentService,
