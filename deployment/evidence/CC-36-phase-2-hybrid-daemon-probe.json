@@ -1,0 +1,33 @@
+{
+  "status": "passed",
+  "image": "docker@sha256:5efed980cba3fc126cf54e21a5a6ff8849d05b6e0623d6e7612f48e9cd6cd17e",
+  "hosts": [
+    {
+      "host": "cc-phase2-daemon-probe-dfba355f98-controller",
+      "daemonId": "235a96eb-ec0a-4ecf-b30c-40c56148e951",
+      "serverVersion": "29.8.0",
+      "storageDriver": "overlayfs"
+    },
+    {
+      "host": "cc-phase2-daemon-probe-dfba355f98-worker-1",
+      "daemonId": "d1de62e4-ec4d-4d98-b6fa-87cdfbd90c94",
+      "serverVersion": "29.8.0",
+      "storageDriver": "overlayfs"
+    },
+    {
+      "host": "cc-phase2-daemon-probe-dfba355f98-worker-2",
+      "daemonId": "f0b8b732-cdf5-4b38-8109-e06d56c8d608",
+      "serverVersion": "29.8.0",
+      "storageDriver": "overlayfs"
+    }
+  ],
+  "publishedDaemonPorts": false,
+  "limits": [
+    "Only daemon startup and distinct daemon identities are verified.",
+    "The daemons share one physical Docker host.",
+    "This probe does not qualify the hybrid application or installer."
+  ],
+  "fixtureContainersRemoved": true,
+  "recordedAt": "2026-09-12T10:06:47.376844+00:00",
+  "reference": "https://hub.docker.com/_/docker"
+}

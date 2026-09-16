@@ -1,0 +1,106 @@
+<a class="skip-link" href="#main-content">Skip to content</a>
+<div
+  class="shell"
+  [class.collapsed]="auth.session()?.identity?.preferences?.navigationCollapsed"
+>
+  <nav aria-label="Application navigation">
+    <div class="nav-heading">
+      <button
+        mat-icon-button
+        (click)="toggleNavigation()"
+        aria-label="Toggle navigation"
+        [attr.aria-expanded]="!auth.session()?.identity?.preferences?.navigationCollapsed"
+      >
+        <mat-icon fontSet="material-symbols-outlined">menu</mat-icon>
+      </button>
+      <span class="nav-label wordmark">Campus Commander</span>
+    </div>
+    <a
+      routerLink="/account"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Your account"
+    >
+      <mat-icon fontSet="material-symbols-outlined">account_circle</mat-icon
+      ><span class="nav-label">Your account</span>
+    </a>
+    @if (auth.session()?.identity?.permissions?.includes('diagnostics:read')) {
+    <a
+      routerLink="/diagnostics"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Diagnostics"
+    >
+      <mat-icon fontSet="material-symbols-outlined">monitor_heart</mat-icon
+      ><span class="nav-label">Diagnostics</span>
+    </a>
+    }
+  </nav>
+  <header>
+    <span class="header-title"
+      >{{ router.url.startsWith('/diagnostics') ? 'Diagnostics' : 'Your account'
+      }}</span
+    >
+    <div class="header-actions">
+      <a
+        mat-icon-button
+        routerLink="/account"
+        fragment="application-help"
+        aria-label="Application help"
+        ><mat-icon fontSet="material-symbols-outlined">help</mat-icon></a
+      >
+      <button
+        mat-icon-button
+        [matMenuTriggerFor]="themes"
+        aria-label="Choose theme"
+      >
+        <mat-icon fontSet="material-symbols-outlined">contrast</mat-icon>
+      </button>
+      <mat-menu #themes="matMenu">
+        <button mat-menu-item (click)="theme('system')">
+          Use system theme
+        </button>
+        <button mat-menu-item (click)="theme('light')">Use light theme</button>
+        <button mat-menu-item (click)="theme('dark')">Use dark theme</button>
+      </mat-menu>
+      <button
+        mat-button
+        [matMenuTriggerFor]="account"
+        aria-label="Open user menu"
+      >
+        <mat-icon fontSet="material-symbols-outlined">account_circle</mat-icon
+        ><span>{{ auth.session()?.identity?.displayName }}</span>
+      </button>
+      <mat-menu #account="matMenu"
+        ><button mat-menu-item (click)="auth.logout()">
+          Sign out
+        </button></mat-menu
+      >
+    </div>
+  </header>
+  <main id="main-content" tabindex="-1">
+    @if (auth.error(); as error) {
+    <p role="alert" class="error">{{ error }}</p>
+    } @if (preferenceError(); as error) {
+    <p role="alert" class="error">{{ error }}</p>
+    }
+    <router-outlet />
+  </main>
+  <footer>
+    <span
+      >Version {{ auth.metadata()?.version }} · Build {{ auth.metadata()?.build
+      }}</span
+    >
+    @if (auth.session()?.identity?.permissions?.includes('diagnostics:read')) {
+    <a
+      routerLink="/diagnostics"
+      [class.error]="diagnostics.stale() || diagnostics.health()?.status === 'not-ready'"
+    >
+      @if (diagnostics.stale()) { Connection status unavailable } @else if
+      (!diagnostics.health()) { Checking connections } @else if
+      (diagnostics.health()?.status === 'ready') { Services ready } @else {
+      Services need attention }
+    </a>
+    }
+  </footer>
+</div>

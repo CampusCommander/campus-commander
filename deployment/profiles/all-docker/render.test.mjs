@@ -154,3 +154,20 @@ test('private source mounts reject missing daemon paths instead of creating dire
     ),
   );
 });
+
+test('applies API replica counts without duplicating migration jobs', () => {
+  const replicated = structuredClone(config);
+  replicated.services.api.placement.replicas = 2;
+  const compose = renderAllDocker(replicated, release);
+  assert.equal(compose.services.api.deploy.replicas, 2);
+  assert.deepEqual(
+    compose.services.api.deploy.resources,
+    renderAllDocker(config, release).services.api.deploy.resources,
+  );
+  for (const name of [
+    'database-migrate',
+    'bootstrap-initialize',
+    'volume-permissions',
+  ])
+    assert.equal(compose.services[name].deploy.replicas, undefined);
+});

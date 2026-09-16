@@ -1,0 +1,17 @@
+<h1>Your account</h1>
+<section class="card" aria-labelledby="identity-title">
+  <h2 id="identity-title">{{ auth.session()?.identity?.displayName }}</h2>
+  <p>You signed in to Campus Commander.</p>
+  <p>The installation operator manages your application access.</p>
+</section>
+<section class="card" id="application-help" aria-labelledby="help-title">
+  <h2 id="help-title">Application help</h2>
+  <p>
+    Use Diagnostics to inspect service connections and run fixed service checks.
+  </p>
+  <p>Use the theme menu to select light, dark, or system appearance.</p>
+  <p>Use the user menu to sign out. If your session expires, sign in again.</p>
+  <p>
+    If a check fails, give its support reference to the installation operator.
+  </p>
+</section>

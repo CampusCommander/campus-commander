@@ -1,5 +1,9 @@
 # Phase 1 closeout status
 
+Status update: the owner closed Phase 1 and accepted Phase 2 on 2026-09-16.
+The [acceptance record](../docs/reviews/2026-09-16-phase-2-acceptance.md) authorizes Phase 3.
+The audit below preserves the September 9 findings. Its pending acceptance statements are historical.
+
 Audit date: 2026-09-09.
 Phase 1 source is implemented. Required acceptance gates remain open.
 The public installer passed hosted installation and resume checks for all three profiles.

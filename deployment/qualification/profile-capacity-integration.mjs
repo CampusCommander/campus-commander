@@ -350,7 +350,10 @@ try {
 } finally {await store.close();await pool.end()}
 `;
 
-export async function qualifyProfileCapacity(reportPath) {
+export async function qualifyProfileCapacity(
+  reportPath,
+  { configureApplication } = {},
+) {
   if (!reportPath || !isAbsolute(reportPath)) {
     throw new Error('Provide an absolute new capacity evidence path.');
   }
@@ -394,6 +397,15 @@ export async function qualifyProfileCapacity(reportPath) {
       workers: workerImage,
     };
     config.services.edge.endpoint.url = `https://campus.example.org:${edgePort}`;
+    const applicationFixture = await configureApplication?.({
+      root,
+      publicOrigin: config.services.edge.endpoint.url,
+    });
+    if (applicationFixture) {
+      config.phase = 2;
+      config.services.edge.access = 'application';
+      config.applicationAuth = applicationFixture.auth;
+    }
     const release = {
       schemaVersion: 1,
       architectures: ['linux/amd64'],
@@ -406,9 +418,27 @@ export async function qualifyProfileCapacity(reportPath) {
       mode: 0o600,
     });
     const caFile = await certificate(root);
+    if (applicationFixture) {
+      await writeFile(
+        join(root, 'private/oidc-client'),
+        applicationFixture.password,
+        { mode: 0o600 },
+      );
+    }
     await prepareAllDocker(configPath, root);
     const rendered = await renderFiles(configPath, releasePath, composeFile);
     const bounded = boundedCapacityCompose(rendered, project, edgePort);
+    if (applicationFixture) {
+      bounded.services.api.environment.NODE_EXTRA_CA_CERTS =
+        '/run/qualification/provider-ca.pem';
+      bounded.services.api.extra_hosts = ['host.docker.internal:host-gateway'];
+      bounded.services.api.volumes.push({
+        type: 'bind',
+        source: applicationFixture.caFile,
+        target: '/run/qualification/provider-ca.pem',
+        read_only: true,
+      });
+    }
     await writeFile(composeFile, `${JSON.stringify(bounded, null, 2)}\n`, {
       mode: 0o600,
     });
@@ -516,133 +546,155 @@ export async function qualifyProfileCapacity(reportPath) {
       (await compose(['stats', '--no-stream', '--format', 'json'])).stdout,
     );
 
-    stage = 'near-full-fault';
-    const capacity = verifyBoundedFilesystem(
-      JSON.parse(await executeCode('workers', fillCode)),
-    );
-    const faultStartedAt = Date.now();
-    const faultReadiness = await waitFor(
-      async () => {
-        const status = await httpsStartup(edge);
-        return status.status !== 'ready' &&
-          status.checks?.some(
-            (check) =>
-              check.name === 'artifacts' && check.status === 'not-ready',
-          )
-          ? status
-          : undefined;
-      },
-      30,
-      'Artifact ENOSPC readiness failure',
-    );
-    const artifactId = randomUUID();
-    const attemptId = randomUUID();
-    const failedPublication = JSON.parse(
-      await executeCode('api', failedPublicationCode, [artifactId, attemptId]),
-    );
-    if (
-      !failedPublication.rejected ||
-      failedPublication.row?.publication_state === 'ready' ||
-      failedPublication.row?.active !== false ||
-      failedPublication.readyRows !== baselineArtifact.readyRows
-    ) {
-      throw new Error('ENOSPC created an authoritative artifact publication.');
-    }
-    const faultResources = parseLines(
-      (await compose(['stats', '--no-stream', '--format', 'json'])).stdout,
-    );
-
-    stage = 'capacity-recovery';
-    const recovery = JSON.parse(
-      await executeCode('api', recoverCode, [artifactId, attemptId]),
-    );
-    if (!recovery.removed || recovery.rowCount !== 0) {
-      throw new Error('Failed artifact cleanup did not complete.');
-    }
-    const recoveredReadiness = await waitFor(
-      async () => {
-        const status = await httpsStartup(edge);
-        return readyStatus(status) ? status : undefined;
-      },
-      60,
-      'Complete profile recovery',
-    );
-    const recoveredArtifact = JSON.parse(await executeCode('api', probeCode));
-    if (
-      JSON.stringify(recoveredArtifact) !== JSON.stringify(baselineArtifact)
-    ) {
-      throw new Error(
-        'The baseline artifact changed during capacity recovery.',
+    const runQualification = async (browser) => {
+      await browser?.beforeFault();
+      stage = 'near-full-fault';
+      const capacity = verifyBoundedFilesystem(
+        JSON.parse(await executeCode('workers', fillCode)),
       );
-    }
+      const faultStartedAt = Date.now();
+      const faultReadiness = await waitFor(
+        async () => {
+          const status = await httpsStartup(edge);
+          return status.status !== 'ready' &&
+            status.checks?.some(
+              (check) =>
+                check.name === 'artifacts' && check.status === 'not-ready',
+            )
+            ? status
+            : undefined;
+        },
+        30,
+        'Artifact ENOSPC readiness failure',
+      );
+      const artifactId = randomUUID();
+      const attemptId = randomUUID();
+      const failedPublication = JSON.parse(
+        await executeCode('api', failedPublicationCode, [
+          artifactId,
+          attemptId,
+        ]),
+      );
+      if (
+        !failedPublication.rejected ||
+        failedPublication.row?.publication_state === 'ready' ||
+        failedPublication.row?.active !== false ||
+        failedPublication.readyRows !== baselineArtifact.readyRows
+      ) {
+        throw new Error(
+          'ENOSPC created an authoritative artifact publication.',
+        );
+      }
+      await browser?.duringFault();
+      const faultResources = parseLines(
+        (await compose(['stats', '--no-stream', '--format', 'json'])).stdout,
+      );
 
-    const sourceState = (
-      await run('git', ['status', '--porcelain'], { timeout: 10_000 })
-    ).stdout.trim()
-      ? 'uncommitted workspace'
-      : 'clean';
-    const result = {
-      schemaVersion: 1,
-      checkedAt: new Date().toISOString(),
-      durationSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
-      status: 'PASS',
-      scope: 'complete-all-docker-artifact-capacity',
-      qualifiesProfile: 'all-docker-capacity-only',
-      sourceState,
-      images: {
-        frontend: frontendImage,
-        api: apiImage,
-        worker: workerImage,
-        kestra: topology.services.kestra.image,
-        applicationPostgres: topology.services['application-postgres'].image,
-        kestraPostgres: topology.services['kestra-postgres'].image,
-        redis: topology.services.redis.image,
-      },
-      topology: {
-        projectPattern: 'cc-fault-capacity-profile-<12 hex>',
-        componentCount: componentState.length,
-        components: componentState,
-        artifactMountConsumers: ['volume-permissions', 'api', 'workers'],
-        artifactVolumeDriver: 'local',
-        artifactVolumeType: 'tmpfs',
-        artifactVolumeCapacityBytes: capacityBytes,
-        writableHostBinds: false,
-      },
-      baseline: {
-        readiness: baselineReadiness,
-        artifact: baselineArtifact,
-        resources: baselineResources,
-      },
-      fault: {
-        kind: 'ENOSPC',
-        capacity,
-        readiness: faultReadiness,
-        publicationRejected: true,
-        failedPublicationState: failedPublication.row?.publication_state,
-        readyRowsUnchanged: true,
-        resources: faultResources,
-      },
-      recovery: {
-        elapsedMilliseconds: Date.now() - faultStartedAt,
-        readiness: recoveredReadiness,
-        failedAttemptRemoved: true,
-        originalArtifactPreserved: true,
-        artifact: recoveredArtifact,
-      },
-      cleanupPolicy: {
-        verifiedProjectVolumeLabels: true,
-        removedOnlyOwnedResources: false,
-        oldCampusCommanderVolumesTouched: false,
-        registryStopped: false,
-      },
-      limits: [
-        'The artifact filesystem is a synthetic tmpfs volume.',
-        'The result makes no storage persistence claim.',
-        'The check ran on one Docker host.',
-        'The check does not reproduce ext4, quota, NFS, or object-storage behavior.',
-        'The check qualifies only all-Docker artifact capacity behavior.',
-      ],
+      stage = 'capacity-recovery';
+      const recovery = JSON.parse(
+        await executeCode('api', recoverCode, [artifactId, attemptId]),
+      );
+      if (!recovery.removed || recovery.rowCount !== 0) {
+        throw new Error('Failed artifact cleanup did not complete.');
+      }
+      const recoveredReadiness = await waitFor(
+        async () => {
+          const status = await httpsStartup(edge);
+          return readyStatus(status) ? status : undefined;
+        },
+        60,
+        'Complete profile recovery',
+      );
+      const recoveredArtifact = JSON.parse(await executeCode('api', probeCode));
+      if (
+        JSON.stringify(recoveredArtifact) !== JSON.stringify(baselineArtifact)
+      ) {
+        throw new Error(
+          'The baseline artifact changed during capacity recovery.',
+        );
+      }
+
+      await browser?.afterRecovery();
+      const sourceState = (
+        await run('git', ['status', '--porcelain'], { timeout: 10_000 })
+      ).stdout.trim()
+        ? 'uncommitted workspace'
+        : 'clean';
+      const result = {
+        schemaVersion: 1,
+        checkedAt: new Date().toISOString(),
+        durationSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
+        status: 'PASS',
+        scope: 'complete-all-docker-artifact-capacity',
+        qualifiesProfile: 'all-docker-capacity-only',
+        sourceState,
+        images: {
+          frontend: frontendImage,
+          api: apiImage,
+          worker: workerImage,
+          kestra: topology.services.kestra.image,
+          applicationPostgres: topology.services['application-postgres'].image,
+          kestraPostgres: topology.services['kestra-postgres'].image,
+          redis: topology.services.redis.image,
+        },
+        topology: {
+          projectPattern: 'cc-fault-capacity-profile-<12 hex>',
+          componentCount: componentState.length,
+          components: componentState,
+          artifactMountConsumers: ['volume-permissions', 'api', 'workers'],
+          artifactVolumeDriver: 'local',
+          artifactVolumeType: 'tmpfs',
+          artifactVolumeCapacityBytes: capacityBytes,
+          writableHostBinds: false,
+        },
+        baseline: {
+          readiness: baselineReadiness,
+          artifact: baselineArtifact,
+          resources: baselineResources,
+        },
+        fault: {
+          kind: 'ENOSPC',
+          capacity,
+          readiness: faultReadiness,
+          publicationRejected: true,
+          failedPublicationState: failedPublication.row?.publication_state,
+          readyRowsUnchanged: true,
+          resources: faultResources,
+        },
+        recovery: {
+          elapsedMilliseconds: Date.now() - faultStartedAt,
+          readiness: recoveredReadiness,
+          failedAttemptRemoved: true,
+          originalArtifactPreserved: true,
+          artifact: recoveredArtifact,
+        },
+        cleanupPolicy: {
+          verifiedProjectVolumeLabels: true,
+          removedOnlyOwnedResources: false,
+          oldCampusCommanderVolumesTouched: false,
+          registryStopped: false,
+        },
+        limits: [
+          'The artifact filesystem is a synthetic tmpfs volume.',
+          'The result makes no storage persistence claim.',
+          'The check ran on one Docker host.',
+          'The check does not reproduce ext4, quota, NFS, or object-storage behavior.',
+          'The check qualifies only all-Docker artifact capacity behavior.',
+        ],
+      };
+
+      return result;
     };
+    const result = applicationFixture
+      ? await applicationFixture.check({
+          root,
+          project,
+          config,
+          composeFile,
+          executeCode,
+          runQualification,
+        })
+      : await runQualification();
 
     stage = 'owned-resource-cleanup';
     await compose(['down', '--remove-orphans', '--timeout', '3']);

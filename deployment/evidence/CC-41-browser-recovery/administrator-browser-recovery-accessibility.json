@@ -1,0 +1,142 @@
+{
+  "name": "administrator-browser-recovery",
+  "engine": {
+    "name": "axe-core",
+    "version": "4.13.0"
+  },
+  "recordedAt": "2026-09-13T22:06:29.465Z",
+  "violations": [],
+  "incomplete": [
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "tags": [
+        "cat.color",
+        "wcag2aa",
+        "wcag143",
+        "TTv5",
+        "TT13.c",
+        "EN-301-549",
+        "EN-9.1.4.3",
+        "ACT",
+        "RGAAv4",
+        "RGAA-3.2.1"
+      ],
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgOverlap",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it is overlapped by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<mat-label _ngcontent-ng-c2644793772=\"\">Installer pairing code</mat-label>",
+          "target": [
+            "mat-label"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgOverlap",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it is overlapped by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<input _ngcontent-ng-c26447...=\"\" matinput=\"\" name=\"code\" type=\"password\" autocomplete=\"off\" required=\"\" maxlength=\"64\" class=\"mat-mdc-input-elemen...\" id=\"mat-input-0\" aria-required=\"true\">",
+          "target": [
+            "#mat-input-0"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
+        },
+        {
+          "any": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.5pt (14px)",
+                "fontWeight": "normal",
+                "messageKey": "bgOverlap",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [],
+              "impact": "serious",
+              "message": "Element's background color could not be determined because it is overlapped by another element"
+            }
+          ],
+          "all": [],
+          "none": [],
+          "impact": "serious",
+          "html": "<p _ngcontent-ng-c2644793772=\"\" role=\"alert\" class=\"error\">This pairing code has already started sign-in in a browser.</p>",
+          "target": [
+            ".error"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
+        }
+      ]
+    }
+  ],
+  "passedRuleIds": [
+    "aria-allowed-attr",
+    "aria-conditional-attr",
+    "aria-deprecated-role",
+    "aria-hidden-body",
+    "aria-hidden-focus",
+    "aria-prohibited-attr",
+    "aria-required-attr",
+    "aria-roles",
+    "aria-valid-attr-value",
+    "aria-valid-attr",
+    "autocomplete-valid",
+    "avoid-inline-spacing",
+    "button-name",
+    "bypass",
+    "color-contrast",
+    "document-title",
+    "duplicate-id-aria",
+    "form-field-multiple-labels",
+    "html-has-lang",
+    "html-lang-valid",
+    "label",
+    "link-name",
+    "list",
+    "listitem",
+    "meta-viewport",
+    "nested-interactive",
+    "target-size"
+  ],
+  "accessibilityTree": "- main:\n  - region \"Enroll the first administrator\":\n    - paragraph: Campus Commander\n    - heading \"Enroll the first administrator\" [level=1]\n    - paragraph: Choose the browser profile for your administrator account before entering the private administrator pairing code from the installer terminal.\n    - paragraph: The code works once. Keep this browser open until enrollment completes.\n    - text: Installer pairing code\n    - textbox \"Installer pairing code\"\n    - button \"Sign in to enroll administrator\" [disabled]\n    - alert: This pairing code has already started sign-in in a browser.\n    - region \"Restart administrator enrollment\":\n      - paragraph: \"Obtain a new pairing code to continue in this browser:\"\n      - list:\n        - listitem: In the installer terminal, press Ctrl+C.\n        - listitem: Run the same installer command again and select Resume.\n        - listitem: Enter its new administrator pairing code in this browser.\n      - paragraph: Your Google client configuration and application data remain in place.\n    - link \"Return to sign-in\":\n      - /url: /login",
+  "computedTheme": {
+    "color": "rgb(32, 33, 36)",
+    "background": "rgb(248, 250, 252)"
+  },
+  "screenReaderWalkthrough": "not-run"
+}

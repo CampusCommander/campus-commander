@@ -109,7 +109,7 @@ describe('Phase 1 deployment contract', () => {
       label: 'later phase',
       profile: 'all-docker',
       path: 'phase',
-      value: 2,
+      value: 3,
       error: 'phase',
     },
     {
@@ -532,4 +532,43 @@ describe('pre-start CLI', () => {
       rmSync(directory, { recursive: true });
     }
   });
+});
+
+describe('Phase 2 authentication configuration', () => {
+  it.each(profiles)(
+    'requires secure application authentication for %s',
+    (profile) => {
+      const config = parseDeploymentConfig(fixture(profile));
+      config.phase = 2;
+      expect(() => parseDeploymentConfig(config)).toThrow('applicationAuth');
+      config.services.edge.access = 'application';
+      config.applicationAuth = {
+        issuer: 'https://identity.example.org',
+        clientId: 'campus-commander',
+        clientSecretRef:
+          profile === 'kubernetes'
+            ? {
+                provider: 'kubernetes',
+                name: 'application-auth',
+                key: 'client-secret',
+              }
+            : { provider: 'file', path: '/run/secrets/oidc-secret' },
+        publicOrigin: 'https://campus.example.org',
+        sessionLifetimeSeconds: 28800,
+        sessionIdleSeconds: 1800,
+      };
+      expect(parseDeploymentConfig(config).phase).toBe(2);
+      config.applicationAuth.issuer = 'http://identity.example.org';
+      expect(() => parseDeploymentConfig(config)).toThrow('issuer');
+      config.applicationAuth.issuer = 'https://identity.example.org';
+      config.applicationAuth.publicOrigin =
+        'https://campus.example.org/callback';
+      expect(() => parseDeploymentConfig(config)).toThrow('publicOrigin');
+      config.applicationAuth.publicOrigin = 'https://campus.example.org';
+      config.applicationAuth.sessionLifetimeSeconds = 86401;
+      expect(() => parseDeploymentConfig(config)).toThrow(
+        'sessionLifetimeSeconds',
+      );
+    },
+  );
 });

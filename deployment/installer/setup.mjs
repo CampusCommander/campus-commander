@@ -17,6 +17,17 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { configureApplication } from './application-setup.mjs';
+import { withProgress } from './progress.mjs';
+import { OnboardingError, parseGoogleClient } from './google-client.mjs';
+import { startSetupUpload } from './setup-upload.mjs';
+import { enrollAdministrator } from './application-enrollment.mjs';
+import { privateTerminalOutput } from './private-output.mjs';
+import {
+  pendingUpdate,
+  updateOperator,
+  updateInstallation,
+} from './maintenance.mjs';
 
 const profiles = ['all-docker', 'hybrid', 'kubernetes'];
 const exceptionNames = [
@@ -94,9 +105,11 @@ export function parseArguments(args) {
     fail('Select all-docker, hybrid, or kubernetes.');
   if (
     options.command &&
-    !['install', 'resume', 'status'].includes(options.command)
+    !['install', 'resume', 'status', 'update', 'uninstall'].includes(
+      options.command,
+    )
   )
-    fail('Select install, resume, or status.');
+    fail('Select install, resume, status, update, or uninstall.');
   return options;
 }
 
@@ -128,6 +141,8 @@ export function createQuestions(answers = {}, ask) {
     }
   };
   question.reserve = (key) => used.add(key);
+  question.interactive = Boolean(ask);
+  question.hasAnswer = (key) => Object.hasOwn(answers, key);
   question.finish = () => {
     if (Object.keys(answers).some((key) => !used.has(key)))
       fail('Remove unknown or inapplicable answer keys.');
@@ -292,6 +307,7 @@ export async function verifyClusterSecrets(config, operator, run = execute) {
     for (const child of Object.values(value)) visit(child);
   };
   visit(config.services);
+  visit(config.applicationAuth);
   const secrets = new Map();
   try {
     for (const ref of references.values()) {
@@ -342,11 +358,13 @@ export async function configure({
   qualification = false,
   questions: q,
   manifest,
+  importGoogle,
 }) {
   const config = await readJson(
     join(releaseRoot, 'deployment/examples', `${profile}.json`),
   );
   config.images = manifest.images;
+  config.phase = manifest.phase ?? config.phase;
   const project = await q(
     'project',
     'Installation project or namespace',
@@ -371,6 +389,12 @@ export async function configure({
   ).trust;
   operator.trust = {
     ...trust,
+    ...(manifest.phase === 2
+      ? {
+          identity:
+            'https://github.com/CampusCommander/campus-commander/.github/workflows/phase-2-candidate.yml@refs/heads/implementation/phase-2-cc-22',
+        }
+      : {}),
     bundlePath: join(releaseRoot, 'release-manifest.sigstore.json'),
   };
   const files = new Map();
@@ -643,6 +667,9 @@ export async function configure({
       );
   }
   await storage(config.artifacts, 'artifacts', profile !== 'all-docker');
+  const google = await configureApplication(config, operator, q, {
+    importGoogle,
+  });
   const generated = new Set([
     '/run/secrets/bootstrap',
     '/run/secrets/worker-dispatch',
@@ -683,12 +710,15 @@ export async function configure({
             )))
       )
         return;
-      const source = await q(
-        `files.${value.provider === 'file' ? value.path.split('/').at(-1) : `${value.name}.${value.key}`}`,
-        `${key} protected source FILE path${profile === 'kubernetes' ? ' matching the existing cluster Secret' : ''}`,
-        undefined,
-        absolute,
-      );
+      const source =
+        google && value === config.applicationAuth?.clientSecretRef
+          ? google.secretPath
+          : await q(
+              `files.${value.provider === 'file' ? value.path.split('/').at(-1) : `${value.name}.${value.key}`}`,
+              `${key} protected source FILE path${profile === 'kubernetes' ? ' matching the existing cluster Secret' : ''}`,
+              undefined,
+              absolute,
+            );
       if (files.has(target) && files.get(target) !== source)
         fail('Use one source file for each credential reference.');
       files.set(target, source);
@@ -698,6 +728,7 @@ export async function configure({
       await visit(child, key ? `${key}.${name}` : name);
   };
   await visit(config.services, 'services');
+  await visit(config.applicationAuth, 'applicationAuth');
   let migration;
   if (profile === 'hybrid') {
     migration = {
@@ -728,6 +759,74 @@ export async function configure({
   return { config, operator, files, lab, migration };
 }
 
+export async function importGoogleClient({
+  root,
+  publicOrigin,
+  q,
+  output,
+  privateOutput = privateTerminalOutput,
+  upload = startSetupUpload,
+}) {
+  const saved = join(root, 'private/google-client.json');
+  const secretPath = join(root, 'private/google-client-secret');
+  let json;
+  if (await exists(saved)) {
+    q.reserve?.('applicationAuth.googleImport');
+    q.reserve?.('applicationAuth.googleClientFile');
+    json = await protectedJson(saved);
+    output('Reusing the protected Google client import.');
+  } else {
+    const method = await q(
+      'applicationAuth.googleImport',
+      'Google client import (browser/file)',
+      q.interactive ? 'browser' : 'file',
+      (value) => ['browser', 'file'].includes(value),
+    );
+    if (method === 'file') {
+      const path = await q(
+        'applicationAuth.googleClientFile',
+        'Downloaded Google Web application JSON file',
+        undefined,
+        absolute,
+      );
+      if ((await lstat(path)).size > 65536)
+        throw new OnboardingError(
+          'Select a Google client JSON file smaller than 64 KiB.',
+        );
+      json = await protectedJson(path);
+    } else {
+      const server = await upload({ publicOrigin });
+      try {
+        output(`Google setup page: ${server.origin}`);
+        output(
+          `For a remote server, add this SSH forwarding option: -L 127.0.0.1:8765:127.0.0.1:8765`,
+        );
+        privateOutput(`Private setup pairing code: ${server.pairingCode}`);
+        output(
+          'Open the setup page on your computer. Pair the browser and upload the Google client JSON.',
+        );
+        json = JSON.parse(await server.result);
+      } finally {
+        await server.close();
+      }
+    }
+    parseGoogleClient(JSON.stringify(json), publicOrigin);
+    await persistJson(saved, json);
+  }
+  const client = parseGoogleClient(JSON.stringify(json), publicOrigin);
+  if (await exists(secretPath)) {
+    await copyPrivate(secretPath, secretPath);
+    if ((await readFile(secretPath, 'utf8')) !== client.clientSecret)
+      throw new OnboardingError(
+        'The saved Google secret differs from the imported client. Preserve the installation and inspect its protected configuration.',
+      );
+  } else await atomicPrivate(secretPath, Buffer.from(client.clientSecret));
+  output(
+    `Google project: ${client.projectId}. Client: ${client.clientId}. Callback validated.`,
+  );
+  return { clientId: client.clientId, secretPath };
+}
+
 export async function runSetup(
   options,
   {
@@ -737,10 +836,13 @@ export async function runSetup(
     validate,
     run = execute,
     output = (line) => process.stdout.write(`${line}\n`),
+    privateOutput = privateTerminalOutput,
+    upload = startSetupUpload,
+    enroll = enrollAdministrator,
   } = {},
 ) {
   const q = createQuestions(answers, ask);
-  for (const key of ['profile', 'root']) {
+  for (const key of ['profile', 'root', 'command']) {
     if (options[key] !== undefined && Object.hasOwn(answers, key))
       await q(key, key, options[key], (v) => v === options[key]);
   }
@@ -754,6 +856,7 @@ export async function runSetup(
     ));
   await privateDirectory(root);
   const operatorPath = join(root, 'operator.json');
+  const updateJournal = await pendingUpdate(root);
   let operator,
     config,
     qualification = Boolean(options.qualification),
@@ -763,9 +866,11 @@ export async function runSetup(
     if (!stat.isFile() || stat.isSymbolicLink() || stat.mode & 0o077)
       fail('Use a private regular operator file.');
     operator = await protectedJson(operatorPath);
+    if (updateJournal) operator = await updateOperator(root, updateJournal);
     if (
       operator.installationRoot !== root ||
-      operator.configurationPath !== join(root, 'deployment.json')
+      (!updateJournal &&
+        operator.configurationPath !== join(root, 'deployment.json'))
     )
       fail('Use the authoritative installation directory.');
     config = await protectedJson(operator.configurationPath);
@@ -778,21 +883,27 @@ export async function runSetup(
       fail('Use the existing installation profile and acceptance mode.');
     command ??= await q(
       'command',
-      'Existing installation command (resume/status)',
+      'Existing installation command (resume/status/update/uninstall)',
       'status',
-      (v) => ['resume', 'status'].includes(v),
+      (v) => ['resume', 'status', 'update', 'uninstall'].includes(v),
     );
     if (command === 'install') command = 'resume';
+    if (command === 'uninstall') q.reserve('confirmUninstall');
+    if (command === 'update' || (updateJournal && command === 'resume')) {
+      q.reserve('update.backupDirectory');
+      q.reserve('confirmUpdate');
+      q.reserve('workersReady');
+    }
     if (config.profile === 'hybrid' && command !== 'status')
       q.reserve('workersReady');
     q.finish();
   } else {
     if (
-      command === 'status' ||
+      ['status', 'update', 'uninstall'].includes(command) ||
       (command === 'resume' &&
         !(await exists(join(root, 'setup-pending.json'))))
     )
-      fail('Install this directory before requesting resume or status.');
+      fail('Install this directory before requesting a maintenance operation.');
     if (await exists(join(root, 'installer-state.json')))
       fail(
         'Preserve this existing installation. Use its authoritative operator file.',
@@ -861,6 +972,8 @@ export async function runSetup(
         qualification,
         questions: q,
         manifest,
+        importGoogle: (input) =>
+          importGoogleClient({ ...input, root, output, privateOutput, upload }),
       });
     }
     const profile = plan.config.profile;
@@ -909,16 +1022,65 @@ export async function runSetup(
     command = 'install';
   }
   installer ??= (await import('./orchestrator.mjs')).executeInstaller;
+  if (command === 'update' || (updateJournal && command === 'resume')) {
+    output('5 / 5  Update application services');
+    const result = await updateInstallation({
+      root,
+      releaseRoot: options.releaseRoot,
+      operator,
+      config,
+      qualification,
+      q,
+      output,
+      installer,
+    });
+    output(
+      `Update status: ${result.status}. URL: ${config.services.edge.endpoint.url}`,
+    );
+    return { ...result, operatorPath };
+  }
+  if (command === 'uninstall') {
+    output('5 / 5  Remove application services');
+    const project =
+      config.profile === 'kubernetes'
+        ? operator.kubernetes.namespace
+        : operator.project;
+    output(
+      `Uninstall removes application services for ${project}. It preserves application data, credentials, and external resources.`,
+    );
+    const confirm = await q(
+      'confirmUninstall',
+      `Type ${project} to uninstall, or cancel`,
+      'cancel',
+      (value) => [project, 'cancel'].includes(value),
+    );
+    if (confirm !== project) return { status: 'cancelled', operatorPath };
+    const result = await withProgress(
+      (onProgress) =>
+        installer({ command, operator, qualification, onProgress }),
+      output,
+      'removing application services',
+    );
+    output(
+      `Uninstall status: ${result.status}. Application data and credentials are preserved.`,
+    );
+    if (result.remoteWorkerActionRequired)
+      output(
+        'Uninstall each declared worker fragment on its host. Preserve its shared storage and protected mounts.',
+      );
+    return { ...result, operatorPath };
+  }
   output('5 / 5  Check configuration and start services');
   output(
     `Running ${command} for ${config.profile}. Configuration: ${operatorPath}`,
   );
   if (config.profile === 'hybrid' && command !== 'status') {
-    const prepared = await installer({
-      command: 'prepare',
-      operator,
-      qualification,
-    });
+    const prepared = await withProgress(
+      (onProgress) =>
+        installer({ command: 'prepare', operator, qualification, onProgress }),
+      output,
+      'Preparing worker configuration',
+    );
     output(`Worker preparation: ${prepared.status}.`);
     output(
       'Mount the configured shared storage on every declared worker host. Preserve identical paths and permissions.',
@@ -971,14 +1133,42 @@ export async function runSetup(
     }
   }
   if (config.profile === 'kubernetes' && command !== 'status')
-    await verifyClusterSecrets(config, operator, run);
-  const result = await installer({ command, operator, qualification });
+    await withProgress(
+      () => verifyClusterSecrets(config, operator, run),
+      output,
+      'Checking Kubernetes credentials',
+    );
+  const result = await withProgress(
+    (onProgress) => installer({ command, operator, qualification, onProgress }),
+    output,
+    command === 'status'
+      ? 'Checking installation status'
+      : 'Checking configuration and release',
+  );
   output(
     `Readiness: ${result.readiness?.status ?? result.status ?? result.state?.phase ?? 'unknown'}. URL: ${config.services.edge.endpoint.url}`,
   );
-  output(
-    `Bootstrap credential file: ${refPath(join(root, 'private'), config.services.edge.bootstrapSecretRef)}`,
-  );
+  if (config.phase === 2) {
+    output(
+      `OIDC callback URL: ${config.applicationAuth.publicOrigin}/api/auth/callback`,
+    );
+    if (
+      command !== 'status' &&
+      (result.readiness?.status ?? result.status) === 'ready'
+    )
+      await enroll({ config, operator, ask, output, privateOutput });
+    else
+      output(
+        'Resume the installer in a terminal to inspect or complete administrator enrollment.',
+      );
+    output(
+      'Follow deployment/bootstrap/APPLICATION-ACCESS.md for enrollment, recovery, and credential rotation.',
+    );
+  } else {
+    output(
+      `Bootstrap credential file: ${refPath(join(root, 'private'), config.services.edge.bootstrapSecretRef)}`,
+    );
+  }
   if (config.profile === 'hybrid')
     output(
       `Deploy docker-compose.worker-*.json on the declared worker hosts. Preserve shared storage paths and private credential mounts.`,
@@ -1015,7 +1205,7 @@ if (
     });
   } catch (error) {
     process.stderr.write(
-      `Setup failed. ${error.code ? `${error.code}: ` : ''}${error instanceof SetupError || error.name === 'InstallerError' ? error.message : 'Check protected configuration and installer-state.json.'}\n`,
+      `Setup failed. ${error.code ? `${error.code}: ` : ''}${error instanceof SetupError || error instanceof OnboardingError || error.name === 'InstallerError' ? error.message : 'Check protected configuration and installer-state.json.'}\n`,
     );
     process.exitCode = 1;
   } finally {

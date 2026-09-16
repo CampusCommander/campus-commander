@@ -1,0 +1,183 @@
+{
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "719e2834-b84a-46bb-9acb-df060f3d03e6",
+        "observedAt": "2026-09-12T16:20:00.200Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "fbdc055c-64e1-4332-a895-299a043e9cfe",
+        "observedAt": "2026-09-12T16:20:00.276Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "af415c3c-cf52-4a85-bfc6-d3220df89921",
+        "observedAt": "2026-09-12T16:20:02.153Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "f4fea259-a8e6-4221-a080-f15825acc9ef",
+        "observedAt": "2026-09-12T16:20:02.339Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "status": "passed",
+  "project": "cc-installer-43538c04-b",
+  "profile": "all-docker",
+  "acceptedRelease": false,
+  "installerSource": "extracted-published-bundle",
+  "bundleManifestSha256": "9481f643d8c225ec22f0aed0d6ab6a6101475c8d36b971207eea9ee698650a5d",
+  "workingTree": "uncommitted-candidate",
+  "baseGitRevision": "5bda2bffba3a215c49063a03ac362244c620dfe4",
+  "artifact": {
+    "artifactId": "b82e77c4-4207-4a9f-842f-303db27aeb2e",
+    "attemptId": "856f4925-4317-47cb-b347-204d2e1e5f26",
+    "schemaVersion": 1,
+    "sizeBytes": 28,
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7"
+  },
+  "before": {
+    "artifactId": "b82e77c4-4207-4a9f-842f-303db27aeb2e",
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "ledger": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ]
+  },
+  "after": {
+    "artifactId": "b82e77c4-4207-4a9f-842f-303db27aeb2e",
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "ledger": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      },
+      {
+        "id": "002-application-auth",
+        "checksum": "561767ba67da4525759616617a86555626a86de520ca8014671fe7429bc57acd"
+      }
+    ]
+  },
+  "releaseB": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:43ce28b44913a595da2151fbe0932ec3b3dd99f74da667199ab251d8f187d17a",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:cec237789c4f20b66c18a99add171ce2fa2d424907b76bcb6b9bd5026c0bef71",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b75ebcaac2b4a52be29fcce96ab93ebb83cacb565fc6ba8a3fac9d5346c86a2a"
+  },
+  "releaseInventories": [
+    {
+      "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+      "architectures": ["linux/amd64"],
+      "images": {
+        "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+        "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+        "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+      }
+    },
+    {
+      "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+      "architectures": ["linux/amd64"],
+      "images": {
+        "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:43ce28b44913a595da2151fbe0932ec3b3dd99f74da667199ab251d8f187d17a",
+        "api": "ghcr.io/campuscommander/campus-commander-api@sha256:cec237789c4f20b66c18a99add171ce2fa2d424907b76bcb6b9bd5026c0bef71",
+        "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b75ebcaac2b4a52be29fcce96ab93ebb83cacb565fc6ba8a3fac9d5346c86a2a"
+      }
+    }
+  ],
+  "faults": {
+    "status": "passed",
+    "profile": "all-docker",
+    "scope": "complete-profile-edge-certificate-faults",
+    "qualifiesProfile": false,
+    "acceptedRelease": false,
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:43ce28b44913a595da2151fbe0932ec3b3dd99f74da667199ab251d8f187d17a",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:cec237789c4f20b66c18a99add171ce2fa2d424907b76bcb6b9bd5026c0bef71",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b75ebcaac2b4a52be29fcce96ab93ebb83cacb565fc6ba8a3fac9d5346c86a2a"
+    },
+    "sourceState": {
+      "baseGitRevision": "5bda2bffba3a215c49063a03ac362244c620dfe4",
+      "workingTree": "uncommitted-candidate"
+    },
+    "records": [
+      {
+        "fault": "expired",
+        "status": "passed",
+        "tlsError": "CERT_HAS_EXPIRED",
+        "elapsedMilliseconds": 18794,
+        "recoveredChecks": 8,
+        "fixturesPreserved": true
+      },
+      {
+        "fault": "wrong-host",
+        "status": "passed",
+        "tlsError": "ERR_TLS_CERT_ALTNAME_INVALID",
+        "elapsedMilliseconds": 18666,
+        "recoveredChecks": 8,
+        "fixturesPreserved": true
+      }
+    ],
+    "originalSecretBytesRestored": true
+  },
+  "checks": [
+    "actual CLI prepare and resume",
+    "stop and resume preserve data",
+    "uninstall and resume preserve volumes",
+    "encrypted backup verified before upgrade",
+    "different image digests upgrade with artifact and ledger preservation",
+    "active secrets preserved",
+    "input release inventory metadata preserved"
+  ],
+  "prerequisiteExceptions": [
+    {
+      "name": "district-dns",
+      "reason": "Synthetic hostname resolves through explicit loopback connection override."
+    },
+    {
+      "name": "time-synchronization",
+      "reason": "Disposable development host does not expose district time-service evidence."
+    },
+    {
+      "name": "storage-capacity",
+      "reason": "Synthetic fixture uses small data rather than declared district capacity reservation."
+    }
+  ],
+  "baseline": {
+    "schemaVersion": 1,
+    "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+    "architectures": ["linux/amd64"],
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+    },
+    "phase": 1,
+    "qualification": "candidate-only",
+    "sourceTag": "phase-1-candidate-7dbeee83cc06",
+    "sourceManifestSha256": "3afe29148d358bf0629a3826442a2275071d0930190063ded32778e49de4462b",
+    "sourceUrl": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-1-candidate-7dbeee83cc06"
+  },
+  "imageBuildId": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+  "imageSourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+  "imageMirrors": [],
+  "registryTransport": "published-https",
+  "limits": [
+    "The fixture uses the real current installer CLI and published Phase 1 image digests.",
+    "Phase 2 target images remain development artifacts unless published references are supplied.",
+    "The fixture adds its synthetic provider CA and host mapping to the rendered API service.",
+    "This check does not certify release signatures or district infrastructure."
+  ]
+}

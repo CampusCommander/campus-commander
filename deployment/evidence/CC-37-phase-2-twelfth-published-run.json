@@ -1,0 +1,264 @@
+{
+  "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17",
+  "status": "success",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34693537292",
+  "recordedAt": "2026-09-12T12:42:47.822220+00:00",
+  "jobs": [
+    {
+      "name": "validate",
+      "conclusion": "success",
+      "databaseId": 103552966451
+    },
+    {
+      "name": "publish (frontend)",
+      "conclusion": "success",
+      "databaseId": 103553144219
+    },
+    {
+      "name": "publish (api)",
+      "conclusion": "success",
+      "databaseId": 103553144224
+    },
+    {
+      "name": "publish (worker)",
+      "conclusion": "success",
+      "databaseId": 103553144231
+    },
+    {
+      "name": "capacity",
+      "conclusion": "success",
+      "databaseId": 103553424419
+    },
+    {
+      "name": "application (hybrid-cli-process-fault-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424598
+    },
+    {
+      "name": "application (hybrid-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424600
+    },
+    {
+      "name": "application (kubernetes-restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424602
+    },
+    {
+      "name": "application (auth-image-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424603
+    },
+    {
+      "name": "application (hybrid-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424607
+    },
+    {
+      "name": "application (restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424620
+    },
+    {
+      "name": "application (kubernetes-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424621
+    },
+    {
+      "name": "application (upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424633
+    },
+    {
+      "name": "application (hybrid-restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424634
+    },
+    {
+      "name": "application (hybrid-cli-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424637
+    },
+    {
+      "name": "application (hybrid-cli-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424642
+    },
+    {
+      "name": "application (screen-reader-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424654
+    },
+    {
+      "name": "application (all-docker-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424659
+    },
+    {
+      "name": "application (kubernetes-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103553424679
+    },
+    {
+      "name": "bundle",
+      "conclusion": "success",
+      "databaseId": 103554442844
+    }
+  ],
+  "pullRequestChecks": {
+    "runId": 34693539602,
+    "status": "success"
+  },
+  "release": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-a41bb2fde8d5",
+  "reports": [
+    {
+      "artifact": "qualification-all-docker-integration/all-docker-profile.json",
+      "sha256": "8a53eea276e1afe4134f7433b2087485281d4956736514443aa66650db2dd60f",
+      "status": "passed",
+      "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17"
+    },
+    {
+      "artifact": "qualification-auth-image-integration/account-accessibility.json",
+      "sha256": "d263b4f856dd8c6fa20d0936d4f47e60903395f118633798abee3116b82e0bb9",
+      "status": null,
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-auth-image-integration/diagnostics-dark-accessibility.json",
+      "sha256": "0381523790cadd591d119a33de607f4f1838b242a2ab10a3a82274e179e3b726",
+      "status": null,
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-auth-image-integration/diagnostics-light-accessibility.json",
+      "sha256": "55b3de5894de3eef35e0e7ed418f91f41603fddbd944485cbac232f307a5adf3",
+      "status": null,
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-auth-image-integration/login-accessibility.json",
+      "sha256": "9867e97bac77799022c7d2837923aae0060ee0a4a5fdcbf4d0d0b04c875ffa1b",
+      "status": null,
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-auth-image-integration/packaged-integration.json",
+      "sha256": "f166794b64d1def235217dd04aa191e1af1dc91fafee06767ff46db2e98e1bb8",
+      "status": "passed",
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-capacity/capacity-result.json",
+      "sha256": "173af180e63a56d4f9d1d0b335e995a68232d656d3bee3f4fdb32fdd379f3090",
+      "status": "passed",
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-capacity/profile-capacity-result.json",
+      "sha256": "72186882f192b2704ded8d03d608ac003641c2954dd294559d4788b39298b54d",
+      "status": "PASS",
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-hybrid-cli-integration/hybrid-cli.json",
+      "sha256": "65b79a72ad69f32b400904e328e6fdf3ae73e2289698c81cb6c0e9b25f594fb1",
+      "status": "passed",
+      "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17"
+    },
+    {
+      "artifact": "qualification-hybrid-cli-process-fault-integration/hybrid-cli-process-faults.json",
+      "sha256": "b17bfcd11148d714782a2119d246acec9bac537c14a992195833202951b3cabd",
+      "status": "passed",
+      "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17"
+    },
+    {
+      "artifact": "qualification-hybrid-cli-upgrade-integration/hybrid-cli-upgrade.json",
+      "sha256": "faa56cd2283734609384540037ee6310970993fb608c82d39e460655cc7dd731",
+      "status": "passed",
+      "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17"
+    },
+    {
+      "artifact": "qualification-hybrid-integration/hybrid-profile.json",
+      "sha256": "ed8fe8777c385670d359fe03ade42039763cb26ace483b6fb6108ca9e3fb6c35",
+      "status": "PASS",
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-hybrid-restore-integration/hybrid-restore.json",
+      "sha256": "f09b2214950cd5ffc7a0180dd40b82eeed1024f53e20789fafc615cc463b713d",
+      "status": "passed",
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-hybrid-restore-integration/hybrid-upgrade.json",
+      "sha256": "62a2975a58268bad0c5d38dea1e183f14e48564f058d11cec76470e1c8fd843b",
+      "status": "PASS",
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-hybrid-upgrade-integration/hybrid-upgrade.json",
+      "sha256": "57543d70cda04f6800072d518b83f0ecf5f7104f147876c841993d6ca2e30f1e",
+      "status": "PASS",
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-kubernetes-integration/kubernetes-profile.json",
+      "sha256": "92de2a275a4cbce6986c9e4a87b095c243f709a7dc21838b5a90ce31d6e7f8a8",
+      "status": "PASS",
+      "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17"
+    },
+    {
+      "artifact": "qualification-kubernetes-restore-integration/kubernetes-restore.json",
+      "sha256": "ffdc76fec969728fe7f5cbf5504067ac7ea205832ca309f01f756f3182f338f1",
+      "status": "passed",
+      "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17"
+    },
+    {
+      "artifact": "qualification-kubernetes-restore-integration/kubernetes-upgrade.json",
+      "sha256": "d2d8864e374c503b93bbfb012b05dcbe642f26bb5e8c1b1a997a37f23ed0bb0c",
+      "status": "PASS",
+      "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17"
+    },
+    {
+      "artifact": "qualification-kubernetes-upgrade-integration/kubernetes-upgrade.json",
+      "sha256": "b932ff9185b42cee26220e11baba56bf9948eccfbff4ea05ab31defb2c340e20",
+      "status": "PASS",
+      "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17"
+    },
+    {
+      "artifact": "qualification-restore-integration/all-docker-restore.json",
+      "sha256": "abb857f1e10636e840c57630c6537bc4a3ee4df218059f246079c8b9003e7cd6",
+      "status": "passed",
+      "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17"
+    },
+    {
+      "artifact": "qualification-restore-integration/all-docker-upgrade.json",
+      "sha256": "ae202b76b3cb587c7d166d4c03f9c2a175683cca57cd48e4a7e1953c4a2b8d88",
+      "status": "passed",
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-screen-reader-integration/all-docker-profile.json",
+      "sha256": "435c5177c097e1ac6cc22c840d8022087ac9eb073f6b49959d267889f7f1b011",
+      "status": "passed",
+      "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17"
+    },
+    {
+      "artifact": "qualification-screen-reader-integration/screen-reader.json",
+      "sha256": "13314fc8679352cc9d900ce852b6f16dfe0e24dff0dd5af96aa3a1e2cda14c18",
+      "status": "passed",
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-upgrade-integration/all-docker-upgrade.json",
+      "sha256": "1d193d1cb1843fafd8629f2c78dc5bdc9f704add3cff6ec6f13c58f1ca2804e5",
+      "status": "passed",
+      "sourceRevision": null
+    }
+  ],
+  "limits": [
+    "Candidate publication does not establish release acceptance.",
+    "Native operator CLI qualification and accepted release assembly remain open.",
+    "Each fixture retains its deployment and capacity limits."
+  ]
+}

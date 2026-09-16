@@ -1,0 +1,99 @@
+{
+  "status": "failed",
+  "profile": "hybrid",
+  "stage": "distributed process and shared-storage faults",
+  "providerConnections": [
+    {
+      "replica": "76d556d24d9a931e1c9d376039e688b246ad9717d8bfcdb29cbadbe5d0203f93",
+      "status": 200
+    },
+    {
+      "replica": "2c49712db3b967ff82ab6bcc0abf53c1edf9055ad7dd5c47a68e8a3b141e1c42",
+      "status": 200
+    }
+  ],
+  "recordedAt": "2026-09-12T11:45:32.986Z",
+  "command": "npx nx run api-e2e:hybrid-cli-process-fault-integration",
+  "durationMs": 411406.793869,
+  "message": "Kestra operation did not recover within 120 seconds.",
+  "faultProgress": {
+    "status": "failed",
+    "cases": [
+      {
+        "name": "api-interruption",
+        "startedAt": "2026-09-12T11:42:53.245Z",
+        "status": "passed",
+        "observed": {
+          "httpStatus": 502
+        },
+        "interruptionMs": 4275,
+        "recoveryMs": 1853,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 36,
+          "artifactSha256": "bf5afe432e898cf4049a243192c6b3000edc3c83451a7f93817ce306ab839c25",
+          "internalStorageFiles": 2
+        }
+      },
+      {
+        "name": "worker-host-interruption",
+        "startedAt": "2026-09-12T11:43:02.018Z",
+        "status": "passed",
+        "observed": {
+          "httpStatus": 201,
+          "status": "failed",
+          "correlationId": "42bd5f93-9d6d-4c22-ae42-8d05d8611560"
+        },
+        "interruptionMs": 5417,
+        "recoveryMs": 902,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 36,
+          "artifactSha256": "bf5afe432e898cf4049a243192c6b3000edc3c83451a7f93817ce306ab839c25",
+          "internalStorageFiles": 2
+        }
+      },
+      {
+        "name": "external-redis-interruption",
+        "startedAt": "2026-09-12T11:43:10.798Z",
+        "status": "passed",
+        "observed": {
+          "httpStatus": 503,
+          "correlationId": "e38878e5-b5b6-446d-b68f-366d18cbba98"
+        },
+        "interruptionMs": 3767,
+        "sourceSessionRejected": true,
+        "recoveryMs": 1335,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 36,
+          "artifactSha256": "bf5afe432e898cf4049a243192c6b3000edc3c83451a7f93817ce306ab839c25",
+          "internalStorageFiles": 2
+        }
+      },
+      {
+        "name": "external-postgresql-interruption",
+        "startedAt": "2026-09-12T11:43:18.442Z",
+        "status": "in-progress",
+        "observed": {
+          "httpStatus": 503,
+          "correlationId": "ad724ae2-0767-4ca7-954a-35c072865438"
+        },
+        "interruptionMs": 4566
+      }
+    ],
+    "limits": [
+      "Process and shared-artifact access faults only. Capacity and certificate faults require separate evidence."
+    ]
+  },
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+  },
+  "qualificationSourceState": "Workspace qualification source based on d1df394 with network isolation and process fault changes.",
+  "limits": [
+    "The provider checks and three fault cases passed. The PostgreSQL recovery case failed. Remaining fault cases did not run.",
+    "The retained earlier passed report does not override this failure."
+  ]
+}

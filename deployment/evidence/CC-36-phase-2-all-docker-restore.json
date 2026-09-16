@@ -1,0 +1,218 @@
+{
+  "status": "passed",
+  "profile": "all-docker",
+  "images": {
+    "frontend": "127.0.0.1:38311/phase2/frontend@sha256:cbb4f734e1c4bb4ac7d48dbab9c74d56ab56d86059edf8e69e31aea8f962d70e",
+    "api": "127.0.0.1:38311/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+    "workers": "127.0.0.1:38311/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+  },
+  "recordedAt": "2026-09-12T06:05:44.762Z",
+  "durationMs": 46104,
+  "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "e0b300ca-1160-4619-bf91-a30055058194",
+        "observedAt": "2026-09-12T06:05:43.684Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "8ab6ea42-f0d6-4140-8874-3ec192666d3a",
+        "observedAt": "2026-09-12T06:05:43.744Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "a4780175-2aaa-4bd4-baa6-d5ac2cfa69d1",
+        "observedAt": "2026-09-12T06:05:44.526Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "95999604-528d-4aba-a61e-3f322346cf3e",
+        "observedAt": "2026-09-12T06:05:44.601Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "restoration": {
+    "schemaVersion": 1,
+    "status": "verified-services-disabled",
+    "profile": "all-docker",
+    "durationMilliseconds": 413,
+    "redisRecovery": {
+      "policy": "discard-cache",
+      "releaseRequiresFreshRedis": true
+    },
+    "backupCreatedAt": "2026-09-12T06:05:07.407Z",
+    "applicationTables": [
+      {
+        "schema": "cc",
+        "name": "application_principals",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "artifacts",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "bootstrap_access",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "schema_migrations",
+        "count": "2"
+      },
+      {
+        "schema": "cc",
+        "name": "security_events",
+        "count": "12"
+      }
+    ],
+    "kestraTables": [
+      {
+        "schema": "public",
+        "name": "concurrency_limit",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "dashboards",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "execution_queued",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "executions",
+        "count": "1"
+      },
+      {
+        "schema": "public",
+        "name": "executordelayed",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "executorstate",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "flow_topologies",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "flows",
+        "count": "1"
+      },
+      {
+        "schema": "public",
+        "name": "flyway_schema_history",
+        "count": "53"
+      },
+      {
+        "schema": "public",
+        "name": "kv_metadata",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "logs",
+        "count": "1"
+      },
+      {
+        "schema": "public",
+        "name": "metrics",
+        "count": "5"
+      },
+      {
+        "schema": "public",
+        "name": "multipleconditions",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "namespace_file_metadata",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "queues",
+        "count": "8"
+      },
+      {
+        "schema": "public",
+        "name": "service_instance",
+        "count": "20"
+      },
+      {
+        "schema": "public",
+        "name": "settings",
+        "count": "4"
+      },
+      {
+        "schema": "public",
+        "name": "sla_monitor",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "templates",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "triggers",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "worker_job_running",
+        "count": "0"
+      }
+    ],
+    "artifactFiles": [
+      {
+        "path": "artifacts/.cc16-fixture.json",
+        "sha256": "fc99abff58747e8a783694e872105834fbd7db8301a0bc7d0acc3e7971a839dc",
+        "sizeBytes": 213
+      },
+      {
+        "path": "artifacts/ed155c20-03e3-4bb8-bd07-478799ff72bf.dfad946f-c0d8-42f1-bb73-eba0e501267b",
+        "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+        "sizeBytes": 28
+      }
+    ]
+  },
+  "preserved": {
+    "principals": 1,
+    "securityEvents": 12,
+    "identityStateSha256": "1e8d354702b76e98a3881e5609021bfa5ad721fef6ddab2ec8e76e6ed04e9aef",
+    "artifactId": "ed155c20-03e3-4bb8-bd07-478799ff72bf",
+    "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "preference": "dark"
+  },
+  "oldSessionRejected": true,
+  "limits": [
+    "Separate Compose networks, databases, and volumes share one Docker host.",
+    "The stopped source and restored target reuse one loopback HTTPS origin.",
+    "Synthetic credentials remain unchanged for this restore and require district review before deployment.",
+    "The fixture adds a synthetic provider CA and host mapping."
+  ]
+}

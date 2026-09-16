@@ -1,0 +1,13 @@
+.login-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--cc-page-padding);
+}
+.card {
+  width: min(100%, var(--cc-content-max-width));
+  padding: var(--cc-space-xxl);
+}
+.wordmark {
+  font-weight: 500;
+}

@@ -94,6 +94,10 @@ test('private CA comes from the configured secret reference', async () => {
 
 test('the release identifies its SQL migration by content checksum', async () => {
   const migrations = await loadMigrations();
-  assert.equal(migrations.length, 1);
-  assert.match(migrations[0].checksum, /^[a-f0-9]{64}$/);
+  assert.deepEqual(
+    migrations.map(({ id }) => id),
+    ['001-foundation', '002-application-auth'],
+  );
+  for (const migration of migrations)
+    assert.match(migration.checksum, /^[a-f0-9]{64}$/);
 });

@@ -20,7 +20,10 @@
     "noUncheckedSideEffectImports": false,
     "types": ["*"],
     "paths": {
-      "deployment": ["./deployment/src/index.ts"]
+      "deployment": ["./deployment/src/index.ts"],
+      "@campus/application-contracts": [
+        "./libs/application-contracts/src/index.ts"
+      ]
     }
   }
 }

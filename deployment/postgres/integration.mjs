@@ -309,17 +309,20 @@ try {
   await Promise.all(
     migrators.map((client) => migrate(client, { runtimeRole: 'cc-app' })),
   );
-  const ledger = await runtime.query(
-    'SELECT count(*)::int AS count FROM cc.schema_migrations',
-  );
-  assert.equal(ledger.rows[0].count, 1);
-  assert.equal(await checkReadiness(runtime), true);
-  results.push('eight concurrent migrations apply one ledger entry: pass');
   const migrations = await loadMigrations();
+  const ledger = await runtime.query(
+    'SELECT id,checksum FROM cc.schema_migrations ORDER BY id',
+  );
+  assert.deepEqual(
+    ledger.rows,
+    migrations.map(({ id, checksum }) => ({ id, checksum })),
+  );
+  assert.equal(await checkReadiness(runtime), true);
+  results.push('eight concurrent migrations apply each migration once: pass');
   const broken = [
     ...migrations,
     {
-      id: '002-broken',
+      id: '003-broken',
       checksum: 'synthetic',
       sql: 'CREATE TABLE cc.rollback_probe(id int); SELECT 1/0;',
     },

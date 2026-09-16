@@ -1,0 +1,124 @@
+{
+  "conclusion": "failure",
+  "headSha": "d1df394d1b5d8f8c8a484f187c720fb48b415305",
+  "jobs": [
+    {
+      "conclusion": "success",
+      "databaseId": 103545856977,
+      "name": "validate",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546015230,
+      "name": "publish (api)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546015237,
+      "name": "publish (frontend)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546015271,
+      "name": "publish (worker)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285752,
+      "name": "capacity",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285841,
+      "name": "application (hybrid-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 103546285842,
+      "name": "application (hybrid-cli-upgrade-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 103546285845,
+      "name": "application (hybrid-cli-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285851,
+      "name": "application (all-docker-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285862,
+      "name": "application (restore-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285864,
+      "name": "application (auth-image-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285870,
+      "name": "application (kubernetes-restore-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285874,
+      "name": "application (kubernetes-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285876,
+      "name": "application (upgrade-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285882,
+      "name": "application (kubernetes-upgrade-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285898,
+      "name": "application (hybrid-restore-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285914,
+      "name": "application (screen-reader-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 103546285932,
+      "name": "application (hybrid-upgrade-integration)",
+      "status": "completed"
+    },
+    {
+      "conclusion": "skipped",
+      "databaseId": 103547233424,
+      "name": "bundle",
+      "status": "completed"
+    }
+  ],
+  "status": "completed",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34690914876",
+  "acceptedRelease": false,
+  "failure": "Both distributed hybrid CLI targets failed during browser sign-in. The fixture network collision has a reproduced routing failure and awaits CI verification."
+}

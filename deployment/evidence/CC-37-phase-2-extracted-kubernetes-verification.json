@@ -1,0 +1,37 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T16:18:48.978083+00:00",
+  "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:43ce28b44913a595da2151fbe0932ec3b3dd99f74da667199ab251d8f187d17a",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:cec237789c4f20b66c18a99add171ce2fa2d424907b76bcb6b9bd5026c0bef71",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b75ebcaac2b4a52be29fcce96ab93ebb83cacb565fc6ba8a3fac9d5346c86a2a"
+  },
+  "profile": "kubernetes",
+  "executedWorkflows": ["install", "resume"],
+  "target": "api-e2e:kubernetes-integration",
+  "exitCode": 0,
+  "durationSeconds": 226,
+  "report": {
+    "path": "deployment/evidence/CC-37-phase-2-extracted-kubernetes-a807c35.json",
+    "sha256": "6a4a83cdd3d282e0bad4b2826ba4f7187c41f5c1d833a188c40368e195f3545c"
+  },
+  "logSha256": "e59335e9b60d257d1141de6226f29aa53f18dd66feaa97841914b1907fa84b5c",
+  "bundle": {
+    "archiveSha256": "08ff651d663d20d60106f116bb473a4a6bbfc2b1a0b689a9427b4da9e175ce8a",
+    "manifestSha256": "9481f643d8c225ec22f0aed0d6ab6a6101475c8d36b971207eea9ee698650a5d",
+    "verifiedInventoryFiles": 1302,
+    "signatureEvidence": "deployment/evidence/CC-37-phase-2-nineteenth-published-run.json"
+  },
+  "ownedClusterRemoved": true,
+  "workerHosts": [
+    "cc-capacity-kube-4cfc155246d8-worker2",
+    "cc-capacity-kube-4cfc155246d8-worker"
+  ],
+  "limits": [
+    "This workflow exercises the extracted candidate CLI with qualification exceptions and synthetic browser trust.",
+    "Kind nodes share one physical host and do not enforce NetworkPolicy.",
+    "The candidate manifest remains unchanged with fifteen not-run acceptance records.",
+    "Upgrade, restore, complete faults, final source revision, and accepted release assembly require separate evidence."
+  ]
+}

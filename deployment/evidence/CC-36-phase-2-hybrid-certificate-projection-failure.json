@@ -1,0 +1,30 @@
+{
+  "status": "corrected-fixture-projection",
+  "recordedAt": "2026-09-12T15:28:28.321935+00:00",
+  "fullWorkflow": {
+    "target": "api-e2e:hybrid-cli-certificate-integration",
+    "status": "failed",
+    "durationMs": 300737,
+    "observed": "The expired certificate probe received TLS_ACCEPTED.",
+    "cause": "The fixture changed installer source files. The edge continued reading its separate runtime secret volume.",
+    "originalInstallerSecretBytesRestored": true,
+    "logSha256": "bc6b7042b58d3b74b32d15f7dbcf6749cf880e27198e72718460d35678fccd14"
+  },
+  "minimalProbe": {
+    "sourceSha256": "e97cff05fad4d73b5bfd2d57204327258ad2e505ace919607557f2a2feed43f7",
+    "before": {
+      "status": "failed-as-expected",
+      "observed": "The mounted volume retained original bytes after source file replacement.",
+      "logSha256": "3da08bf2fe03ca160f2e2de4cf34f07d30f5c8cd8c3bd13046281a71455bf983"
+    },
+    "after": {
+      "status": "passed",
+      "observed": "The runtime-files operator container copied replacement bytes into the mounted edge volume.",
+      "logSha256": "b3bc542795b3fde5e26c4aadb450b32ab2f4c31c7b75dd9595f2f0f5a2502925"
+    }
+  },
+  "correction": "Refresh only the two edge certificate files through the existing runtime-files service. Verify mounted certificate, key, and CA bytes before restart.",
+  "limits": [
+    "The minimal probe qualifies file projection only. Complete TLS rejection and authenticated recovery require the full workflow result."
+  ]
+}

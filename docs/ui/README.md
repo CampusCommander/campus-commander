@@ -1,6 +1,6 @@
 # Agent UI contract
 
-Version: 1.3.0. Updated: 2026-09-06.
+Version: 1.3.1. Updated: 2026-09-13.
 Scope: client pages, shared controls, feature flows, and UI reviews.
 Status: implementation requirements. Product implementation and owner acceptance remain separate evidence.
 

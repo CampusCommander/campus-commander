@@ -1,0 +1,144 @@
+{
+  "status": "passed",
+  "limits": [
+    "Retained JSON formatting changes report hashes. These contexts bind the current retained bytes.",
+    "Five existing workflows validate report compatibility. This is not twelve-workflow release qualification."
+  ],
+  "results": [
+    {
+      "target": "all-docker-integration",
+      "status": "passed",
+      "retainedReport": "CC-37-phase-2-extracted-all-docker-a807c35.json",
+      "context": {
+        "schemaVersion": 1,
+        "status": "passed",
+        "target": "all-docker-integration",
+        "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+        "images": {
+          "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:43ce28b44913a595da2151fbe0932ec3b3dd99f74da667199ab251d8f187d17a",
+          "api": "ghcr.io/campuscommander/campus-commander-api@sha256:cec237789c4f20b66c18a99add171ce2fa2d424907b76bcb6b9bd5026c0bef71",
+          "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b75ebcaac2b4a52be29fcce96ab93ebb83cacb565fc6ba8a3fac9d5346c86a2a"
+        },
+        "bundleManifestSha256": "9481f643d8c225ec22f0aed0d6ab6a6101475c8d36b971207eea9ee698650a5d",
+        "reports": [
+          {
+            "path": "all-docker-profile.json",
+            "sizeBytes": 9170,
+            "sha256": "fa74a15904cf05cea5cbd7a9a0080997e4d390dee9a85198594ae1d651d50be7"
+          }
+        ],
+        "limits": [
+          "This record binds one executed candidate workflow. It does not establish release acceptance."
+        ]
+      }
+    },
+    {
+      "target": "upgrade-integration",
+      "status": "passed",
+      "retainedReport": "CC-37-phase-2-extracted-all-docker-upgrade-a807c35.json",
+      "context": {
+        "schemaVersion": 1,
+        "status": "passed",
+        "target": "upgrade-integration",
+        "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+        "images": {
+          "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:43ce28b44913a595da2151fbe0932ec3b3dd99f74da667199ab251d8f187d17a",
+          "api": "ghcr.io/campuscommander/campus-commander-api@sha256:cec237789c4f20b66c18a99add171ce2fa2d424907b76bcb6b9bd5026c0bef71",
+          "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b75ebcaac2b4a52be29fcce96ab93ebb83cacb565fc6ba8a3fac9d5346c86a2a"
+        },
+        "bundleManifestSha256": "9481f643d8c225ec22f0aed0d6ab6a6101475c8d36b971207eea9ee698650a5d",
+        "reports": [
+          {
+            "path": "all-docker-upgrade.json",
+            "sizeBytes": 7666,
+            "sha256": "b0c0afd98d89df34e7cc0482523fb64d37796ca0030a52cfb1ed28f8189c6995"
+          }
+        ],
+        "limits": [
+          "This record binds one executed candidate workflow. It does not establish release acceptance."
+        ]
+      }
+    },
+    {
+      "target": "hybrid-cli-integration",
+      "status": "passed",
+      "retainedReport": "CC-37-phase-2-extracted-hybrid-a807c35.json",
+      "context": {
+        "schemaVersion": 1,
+        "status": "passed",
+        "target": "hybrid-cli-integration",
+        "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+        "images": {
+          "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:43ce28b44913a595da2151fbe0932ec3b3dd99f74da667199ab251d8f187d17a",
+          "api": "ghcr.io/campuscommander/campus-commander-api@sha256:cec237789c4f20b66c18a99add171ce2fa2d424907b76bcb6b9bd5026c0bef71",
+          "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b75ebcaac2b4a52be29fcce96ab93ebb83cacb565fc6ba8a3fac9d5346c86a2a"
+        },
+        "bundleManifestSha256": "9481f643d8c225ec22f0aed0d6ab6a6101475c8d36b971207eea9ee698650a5d",
+        "reports": [
+          {
+            "path": "hybrid-cli.json",
+            "sizeBytes": 8777,
+            "sha256": "91a9d8dbc9463d01f0334654fe5ed93879e2f142203a32048f4a9518966ba1b8"
+          }
+        ],
+        "limits": [
+          "This record binds one executed candidate workflow. It does not establish release acceptance."
+        ]
+      }
+    },
+    {
+      "target": "kubernetes-upgrade-integration",
+      "status": "passed",
+      "retainedReport": "CC-37-phase-2-extracted-kubernetes-upgrade-a807c35.json",
+      "context": {
+        "schemaVersion": 1,
+        "status": "passed",
+        "target": "kubernetes-upgrade-integration",
+        "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+        "images": {
+          "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:43ce28b44913a595da2151fbe0932ec3b3dd99f74da667199ab251d8f187d17a",
+          "api": "ghcr.io/campuscommander/campus-commander-api@sha256:cec237789c4f20b66c18a99add171ce2fa2d424907b76bcb6b9bd5026c0bef71",
+          "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b75ebcaac2b4a52be29fcce96ab93ebb83cacb565fc6ba8a3fac9d5346c86a2a"
+        },
+        "bundleManifestSha256": "9481f643d8c225ec22f0aed0d6ab6a6101475c8d36b971207eea9ee698650a5d",
+        "reports": [
+          {
+            "path": "kubernetes-upgrade.json",
+            "sizeBytes": 13205,
+            "sha256": "5ecae09bff1e412f7702c06781dfaba9717e07ed88991aa43fa6994bd2de68be"
+          }
+        ],
+        "limits": [
+          "This record binds one executed candidate workflow. It does not establish release acceptance."
+        ]
+      }
+    },
+    {
+      "target": "hybrid-restore-integration",
+      "status": "passed",
+      "retainedReport": "CC-37-phase-2-extracted-hybrid-restore-a807c35.json",
+      "context": {
+        "schemaVersion": 1,
+        "status": "passed",
+        "target": "hybrid-restore-integration",
+        "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+        "images": {
+          "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:43ce28b44913a595da2151fbe0932ec3b3dd99f74da667199ab251d8f187d17a",
+          "api": "ghcr.io/campuscommander/campus-commander-api@sha256:cec237789c4f20b66c18a99add171ce2fa2d424907b76bcb6b9bd5026c0bef71",
+          "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b75ebcaac2b4a52be29fcce96ab93ebb83cacb565fc6ba8a3fac9d5346c86a2a"
+        },
+        "bundleManifestSha256": "9481f643d8c225ec22f0aed0d6ab6a6101475c8d36b971207eea9ee698650a5d",
+        "reports": [
+          {
+            "path": "hybrid-restore.json",
+            "sizeBytes": 9982,
+            "sha256": "be8e4a3be3de5d068fd56fde3a8c2c176233c232414e2e8d0dfa2471154493c2"
+          }
+        ],
+        "limits": [
+          "This record binds one executed candidate workflow. It does not establish release acceptance."
+        ]
+      }
+    }
+  ]
+}

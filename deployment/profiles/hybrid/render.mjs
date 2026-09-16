@@ -335,6 +335,7 @@ function renderBase(input, release) {
     caReference(services.frontend),
   );
   compose.services.api.secrets = secretsFor(
+    config.applicationAuth?.clientSecretRef,
     services.api.serverTls.certificateSecretRef,
     services.api.serverTls.privateKeySecretRef,
     services.applicationDatabase.passwordSecretRef,
@@ -420,6 +421,7 @@ function renderBase(input, release) {
     },
   };
   const apiNeedsEgress =
+    Boolean(config.applicationAuth) ||
     !local(services.applicationDatabase) ||
     !local(services.kestraDatabase) ||
     !local(services.redis) ||

@@ -1,0 +1,237 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T16:06:02.469173+00:00",
+  "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331",
+  "candidate": {
+    "runId": 34702987891,
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34702987891",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 103577918330,
+        "name": "validate",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578159007,
+        "name": "publish (api)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578159013,
+        "name": "publish (frontend)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578159016,
+        "name": "publish (worker)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496205,
+        "name": "capacity",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496398,
+        "name": "application (hybrid-cli-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496403,
+        "name": "application (hybrid-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496414,
+        "name": "application (auth-image-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496415,
+        "name": "application (hybrid-cli-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496417,
+        "name": "application (kubernetes-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496419,
+        "name": "application (all-docker-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496420,
+        "name": "application (kubernetes-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496427,
+        "name": "application (hybrid-cli-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496428,
+        "name": "application (kubernetes-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496438,
+        "name": "application (all-docker-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496440,
+        "name": "application (hybrid-cli-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496444,
+        "name": "application (kubernetes-replica-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496446,
+        "name": "application (all-docker-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496447,
+        "name": "application (hybrid-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496463,
+        "name": "application (hybrid-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496470,
+        "name": "application (restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496472,
+        "name": "application (upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496484,
+        "name": "application (kubernetes-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496491,
+        "name": "application (screen-reader-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496492,
+        "name": "application (kubernetes-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496494,
+        "name": "application (hybrid-cli-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103578496532,
+        "name": "application (kubernetes-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103580434519,
+        "name": "bundle",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "pr": {
+    "runId": 34702989721,
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34702989721",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 103577923287,
+        "name": "main",
+        "conclusion": "success"
+      },
+      {
+        "id": 103577923426,
+        "name": "browser",
+        "conclusion": "success"
+      },
+      {
+        "id": 103577923427,
+        "name": "application-integration",
+        "conclusion": "success"
+      },
+      {
+        "id": 103577923455,
+        "name": "foundation-integration (storage-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103577923470,
+        "name": "foundation-integration (operations-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103577923546,
+        "name": "foundation-integration (postgres-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103577923551,
+        "name": "foundation-integration (qualify-redis)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "release": {
+    "url": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-a807c35228b3",
+    "qualification": "candidate-only",
+    "published": true,
+    "accepted": false,
+    "archiveSignatureVerified": true,
+    "manifestSignatureVerified": true,
+    "certificateIdentity": "https://github.com/CampusCommander/campus-commander/.github/workflows/phase-2-candidate.yml@refs/heads/implementation/phase-2-cc-22",
+    "certificateOidcIssuer": "https://token.actions.githubusercontent.com",
+    "archiveSha256": "08ff651d663d20d60106f116bb473a4a6bbfc2b1a0b689a9427b4da9e175ce8a",
+    "manifestSha256": "9481f643d8c225ec22f0aed0d6ab6a6101475c8d36b971207eea9ee698650a5d",
+    "verifiedFileCount": 1302,
+    "unrunProfileChecks": 15
+  },
+  "verifiedReports": [
+    {
+      "path": "qualification/hybrid-cli-certificate-integration/hybrid-certificates.json",
+      "sha256": "b52975400904ff1334b344899e071b702ce444d2ce0dab3d33fd97fc302e4b68",
+      "status": "passed",
+      "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331"
+    },
+    {
+      "path": "qualification/kubernetes-capacity-integration/kubernetes-capacity.json",
+      "sha256": "0e24ec4da55047390741f4ddd72bfd39ed6e837ef0caf14adf45766e419386d0",
+      "status": "passed",
+      "sourceRevision": "a807c35228b337763aa283a6bf81bd94cd9f5331"
+    },
+    {
+      "path": "qualification/hybrid-upgrade-integration/hybrid-upgrade.json",
+      "sha256": "2227f679277c06288da210e5177de5731b09acfc812a01da6f4ae370a286a2c6",
+      "status": "PASS",
+      "sourceRevision": null
+    }
+  ],
+  "limits": [
+    "All twenty-eight candidate jobs and seven PR jobs passed.",
+    "The extracted archive matches the independently verified signed manifest and file inventory.",
+    "Fifteen complete profile workflows remain marked not-run in this candidate manifest. Signature verification does not establish accepted release status.",
+    "All-Docker authenticated certificate coverage requires the next source revision.",
+    "Docker daemons and Kind nodes share one physical host. District infrastructure acceptance remains separate."
+  ]
+}

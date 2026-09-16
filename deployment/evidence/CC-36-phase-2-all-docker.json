@@ -1,0 +1,199 @@
+{
+  "status": "passed",
+  "profile": "all-docker",
+  "recordedAt": "2026-09-12T06:28:27.322Z",
+  "durationMs": 84592,
+  "images": {
+    "frontend": "campus-commander/frontend@sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5",
+    "api": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+    "workers": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+  },
+  "browser": {
+    "status": "passed",
+    "screenReader": {
+      "status": "passed",
+      "recordedAt": "2026-09-12T06:28:27.228Z",
+      "reader": "Orca version 50.2, AT-SPI2 version: 2.60.4, Session: tty",
+      "checks": {
+        "speechConnection": true,
+        "login": true,
+        "controls": true,
+        "completion": true,
+        "boundedAnnouncements": true,
+        "signOut": true
+      },
+      "utterances": [
+        "Screen reader on.",
+        "about:blank - Google Chrome for Testing",
+        "Campus Commander",
+        "document web",
+        "Browse mode",
+        "Finished loading Sign in · Campus Commander.",
+        "Page has 2 landmarks, 1 heading, 1 unvisited link.",
+        "Sign in to Campus Commander",
+        "link.",
+        "leaving main content.",
+        "Sign in · Campus Commander - Google Chrome for Testing",
+        "Campus Commander",
+        "document web",
+        "Browse mode",
+        "Finished loading Your account · Campus Commander.",
+        "Page has 6 landmarks, 3 headings, 5 unvisited links.",
+        "main content",
+        "Check PostgreSQL",
+        "button.",
+        "Browse mode",
+        "PostgreSQL: The check is running.",
+        "PostgreSQL: The check passed. The service returned the expected result.",
+        "Check Redis",
+        "button.",
+        "Redis: The check passed. The service returned the expected result.",
+        "Check Kestra",
+        "button.",
+        "Kestra: The check is running.",
+        "Kestra: The check passed. The service returned the expected result.",
+        "Check Artifact storage",
+        "button.",
+        "Artifact storage: The check is running.",
+        "Artifact storage: The check passed. The service returned the expected result.",
+        "leaving main content.",
+        "menu",
+        "Use system theme.",
+        "Focus mode",
+        "banner",
+        "Choose theme",
+        "collapsed button.",
+        "opens menu",
+        "collapsed",
+        "leaving banner.",
+        "Diagnostics · Campus Commander - Google Chrome for Testing",
+        "Campus Commander",
+        "document web",
+        "Browse mode",
+        "Finished loading Diagnostics · Campus Commander.",
+        "Page has 6 landmarks, 7 headings, 5 unvisited links.",
+        "PostgreSQL: The check is running.",
+        "PostgreSQL: The check passed. The service returned the expected result.",
+        "leaving information.",
+        "main content",
+        "Check Redis",
+        "button.",
+        "Redis: The check passed. The service returned the expected result.",
+        "Check Kestra",
+        "button.",
+        "Kestra: The check is running.",
+        "Kestra: The check passed. The service returned the expected result.",
+        "Check Artifact storage",
+        "button.",
+        "Artifact storage: The check is running.",
+        "Artifact storage: The check passed. The service returned the expected result.",
+        "leaving main content.",
+        "banner",
+        "Open user menu",
+        "collapsed button.",
+        "opens menu",
+        "Focus mode",
+        "leaving banner.",
+        "menu",
+        "Sign out.",
+        "Sign in · Campus Commander - Google Chrome for Testing",
+        "Sign in · Campus Commander",
+        "document web",
+        "Browse mode",
+        "Screen reader off."
+      ],
+      "rawEvidenceDirectory": "/tmp/cc-phase2-orca-C7WCfr",
+      "rules": ["UI-09", "UI-10"],
+      "limits": [
+        "Orca and eSpeak process the real Chromium accessibility tree and speech output.",
+        "The isolated ALSA null device discards audio. Human listening and usability remain separate.",
+        "This fixture covers representative Phase 2 controls and diagnostic completion announcements."
+      ]
+    },
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "c5b6e64d-0a85-4b18-baa0-921a8c102736",
+        "observedAt": "2026-09-12T06:27:44.707Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "29f77c38-9a07-4619-9ffe-acec75773c86",
+        "observedAt": "2026-09-12T06:27:47.730Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "913e8cb5-6b05-4294-a96b-ed3a10fcacc6",
+        "observedAt": "2026-09-12T06:27:51.797Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "71006502-7606-45c9-91dd-c13b8129c90d",
+        "observedAt": "2026-09-12T06:27:54.857Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "af5154d6-6322-4ce1-a2d6-3414664ae732",
+        "observedAt": "2026-09-12T06:28:10.883Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "6ef39731-4a86-4c5e-ac6b-40d20d18521d",
+        "observedAt": "2026-09-12T06:28:13.903Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "4d30fa24-f151-4ba9-9d6e-78245e6869e9",
+        "observedAt": "2026-09-12T06:28:17.228Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "fe4fb8f5-e633-4b61-9fc7-085f93cf52e1",
+        "observedAt": "2026-09-12T06:28:20.280Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "lifecycle": {
+      "restartRecoveryBoundSeconds": 60,
+      "networkAddresses": {
+        "before": {
+          "api": "172.28.0.7",
+          "frontend": "172.28.0.5",
+          "workers": "172.28.0.8"
+        },
+        "after": {
+          "api": "172.28.0.5",
+          "frontend": "172.28.0.7",
+          "workers": "172.28.0.8"
+        }
+      }
+    },
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "readinessChecks": [
+    "application-database",
+    "kestra-database",
+    "redis",
+    "frontend",
+    "api",
+    "workers",
+    "artifacts",
+    "kestra"
+  ],
+  "sessionSurvivedRestart": true,
+  "limits": [
+    "Synthetic provider CA and loopback port replace district ingress.",
+    "Upgrade and isolated restore require separate evidence."
+  ]
+}
