@@ -377,8 +377,24 @@
       "stableLabel": "p3-t03",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn authorized platform administrator connects the background Google identity, reviews the resolved customer, and confirms the installation binding.\n\nStories: S01, S02. Packages: P3.1, P3.2, P9.1.\n\n## Acceptance criteria\n\n- [ ] Reuse administrator enrollment and keep the sign-in web client separate. Import and validate the background service account and delegated subject.\n- [ ] Validate the credential staging transaction and current administrator authority. Reject replay, stale permission versions, CSRF, and cross-browser substitution.\n- [ ] Encrypt candidate service-account credentials with an external versioned key. Never return tokens or private keys to the browser.\n- [ ] Display the resolved stable customer ID and domain observations before explicit confirmation.\n- [ ] Atomically bind one customer and activate its credential generation. Reject mismatches and concurrent competing first connections.\n- [ ] Run a bounded authenticated worker read through the existing service boundary after browser closure and API restart.\n- [ ] Coordinate token renewal across replicas and reject late writes from retired credential generations.\n- [ ] Record connection changes atomically with security evidence and clean abandoned candidate credentials within a documented bound.\n\n## Blocked by\n\n- [CC-44](https://easton-consulting.atlassian.net/browse/CC-44) (P3-T01).\n- [CC-45](https://easton-consulting.atlassian.net/browse/CC-45) (P3-T02).\n\n## Evidence\n\n- Browser-to-provider-to-worker connection report.\n- Customer mismatch, staging replay, and two-replica renewal tests.\n- Sanitized security-event and credential-storage inspection.\n\n## Demonstration\n\nConnect the customer, confirm its identity, close the browser, and complete the same read from an independent worker.\n\n## Ownership and UI\n\nProposed owner role: Connection lead. Relative size: L.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-44", "CC-45"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "implementation": {
+        "branch": "codex/cc-46-google-customer",
+        "base": "codex/cc-53-access-revocation",
+        "pr": "https://github.com/CampusCommander/campus-commander/pull/10",
+        "status": "credential-boundary-implemented-customer-connection-pending",
+        "credentialRevision": "8aad6b124bf3087ae2c09e8ce41990944bd34243",
+        "evidence": "deployment/evidence/CC-46-credential-boundary.json",
+        "remainingIntegrations": [
+          "PostgreSQL candidate staging and expiry",
+          "current administrator authority and browser-bound transaction",
+          "stable customer confirmation and concurrent first connection",
+          "worker reads and coordinated token renewal",
+          "onboarding UI",
+          "CC-44 live qualification"
+        ]
+      }
     },
     {
       "id": "P3-T04",
