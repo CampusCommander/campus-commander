@@ -102,7 +102,7 @@ export async function qualifyInvitationBrowser({
         exact: true,
       }),
     ).toBeVisible();
-    assert.equal(new URL(recipientPage.url()).hash, '');
+    await expect.poll(() => new URL(recipientPage.url()).hash.length).toBe(0);
     await recipientPage
       .getByRole('button', {
         name: 'Sign in to accept invitation',
@@ -308,12 +308,11 @@ export async function qualifyInvitationBrowser({
       await auditAccessibility(recipientPage, `invitation-revoked-${theme}`);
     }
     await page.setViewportSize({ width: 320, height: 720 });
-    assert.equal(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-      true,
-    );
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      )
+      .toBe(true);
     await page
       .getByRole('button', { name: 'Refresh invitations', exact: true })
       .focus();
