@@ -59,14 +59,18 @@ The historical four-capability experiment does not authorize additional Phase 3 
 | Login/background separation                    | Web OAuth sign-in remains independent from the background service account                                      |
 
 Browser closure does not affect DWD because the provider uses no browser session.
-Fresh-process and restored-credential reads must still pass against Google.
+Fresh-process and independently restored-credential reads passed against Google.
 The owner must confirm the resolved stable customer before the proof activates its stored credential.
 A replacement must preserve that customer ID. A late writer must not replace a newer credential generation.
 
 ## Evidence and limits
 
 The initial live run passed customer, domain, OU, token reuse, and forced token renewal checks.
-It requested two access tokens across five Directory reads.
+Each run requested two access tokens across five Directory reads.
+Fresh-process and independent recovery runs passed at `c5e9d9cd22359270dda8168ba31df84706a13b11`.
+Both runs used the encrypted credential without access to the original service-account download.
+Missing and incorrect key tests failed before any Google request.
+The [sanitized evidence](../../deployment/evidence/CC-44-dwd-credential-proof.json) retains these results and their limits.
 The owner confirmed the resolved customer on 2026-09-16.
 The delegated Google role remains unrecorded until the owner supplies it.
 Live DWD revocation, key disablement, and alternate same-customer identity replacement remain NOT RUN.

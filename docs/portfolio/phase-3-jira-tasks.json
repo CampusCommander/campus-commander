@@ -267,7 +267,9 @@
       "jiraParent": "CC-42",
       "implementation": {
         "branch": "codex/cc-44-google-credential-proof",
-        "status": "live-read-proof-passed-additional-fixtures-pending"
+        "status": "live-read-proof-passed-additional-fixtures-pending",
+        "evidence": "../../deployment/evidence/CC-44-dwd-credential-proof.json",
+        "validatedRevision": "c5e9d9cd22359270dda8168ba31df84706a13b11"
       }
     },
     {
