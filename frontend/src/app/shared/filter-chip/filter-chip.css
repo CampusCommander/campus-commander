@@ -1,0 +1,30 @@
+.filter-chip {
+  min-height: var(--cc-row-height-grid);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-card);
+  font: inherit;
+}
+.filter-chip button {
+  font: inherit;
+  color: var(--cc-text-primary);
+  background: none;
+  border: none;
+  padding: 0 var(--cc-space-md);
+  min-height: 24px;
+  min-width: 24px;
+  cursor: pointer;
+}
+.filter-chip-body:hover {
+  background: var(--cc-surface-hover);
+  border-radius: var(--cc-radius-chip);
+}
+.filter-chip-remove {
+  border-left: 1px solid var(--cc-border);
+}
+.filter-chip-remove .material-symbols-outlined {
+  font-size: var(--cc-font-title-size);
+}
+.filter-chip-value {
+  color: var(--cc-text-secondary);
+}

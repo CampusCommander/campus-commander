@@ -1,0 +1,16 @@
+.error-state {
+  padding: var(--cc-space-xxl) var(--cc-card-padding);
+}
+.error-state h2 {
+  margin: 0;
+}
+.error-state p {
+  margin: 0;
+}
+.error-state-icon {
+  font-size: var(--cc-footer-height);
+  color: var(--cc-status-error-text);
+}
+.error-state-context:empty {
+  display: none;
+}

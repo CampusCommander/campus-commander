@@ -1,0 +1,6 @@
+.stale-badge {
+  margin: 0;
+}
+.stale-badge-label {
+  color: var(--cc-status-warning-text);
+}

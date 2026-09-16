@@ -272,3 +272,33 @@ The durable probe must return stable artifact metadata and Kestra marker checksu
 The helper rejects an artifact row unless its publication state equals `ready`.
 Review and sanitize the private result before publishing evidence.
 The recorded fixture result covers the Kubernetes certificate fault cell only.
+
+## Bounded Kubernetes capacity qualification
+
+`capacity-integration.mjs` creates a dedicated three-node Kind cluster and a shared 16 MiB Docker tmpfs volume.
+The fixture uses immutable images from an explicit release inventory.
+All application and upstream images must exist in the local Docker image store.
+Set `CC_KIND_BINARY` when the Kind executable is outside `PATH`.
+
+```sh
+CC_QUALIFICATION_RELEASE=/absolute/release-manifest.json npm exec -- nx run deployment:kubernetes-capacity-integration --args=/absolute/new-result.json
+```
+
+The fixture imports only Linux amd64 image content.
+It generates private TLS credentials and applies the complete Kubernetes profile.
+Both API replicas and both worker replicas share the bounded artifact volume.
+The fixture verifies the tmpfs type and capacity before writing filler data.
+
+The protected startup route must report eight ready checks before the fault.
+ENOSPC must identify the artifact component and reject a new publication.
+Recovery must preserve the original artifact, database metadata, migration ledger, bootstrap row, Kestra flow, and Kestra marker.
+The recovery deadline is 180 seconds.
+
+Cleanup removes the dedicated cluster, volume holder, and bounded volume after success or failure.
+The fixture checks resource ownership before removal.
+Private preparation files remain under the reported temporary fixture directory.
+Review each result before adding it to release evidence.
+
+This test qualifies synthetic Kubernetes capacity behavior on one Docker host.
+The tmpfs does not qualify persistence, district CSI storage, NFS, quotas, or object storage.
+The default Kind CNI does not enforce NetworkPolicy.

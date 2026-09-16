@@ -285,6 +285,92 @@ printf 'installer-script-input' | cc_as_root package_manager
   assert.equal(r.stdout, '');
 });
 
+async function progressFixture(t) {
+  const f = await fixture(t);
+  for (const name of ['mktemp', 'wc'])
+    await symlink(`/usr/bin/${name}`, join(f.bin, name));
+  // Accelerate only the reporter clock. Simulated package commands use real sleep.
+  await writeFile(join(f.bin, 'sleep'), '#!/bin/sh\nexec /bin/sleep 0.02\n', {
+    mode: 0o700,
+  });
+  return f;
+}
+
+test('package progress reports log activity and silence without exposing package output', async (t) => {
+  const f = await progressFixture(t);
+  const r = f.run(`
+cc_cache="$CC_TEST_STAGE"
+package_manager() {
+  printf 'private-package-output-must-stay-in-log'
+  /bin/sleep 0.25
+  printf 'more-private-output'
+  /bin/sleep 0.1
+}
+cc_run_system_step 'Install Docker Engine and Compose' package_manager
+printf 'next-step'
+`);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /Log activity.*new log bytes/);
+  assert.equal(
+    r.error,
+    undefined,
+    'The progress reporter must exit with the task.',
+  );
+  assert.match(r.stderr, /Waiting.*No new log output/);
+  assert.match(r.stderr, /Silence does not confirm progress/);
+  assert.match(r.stderr, /Completed.*Install Docker Engine and Compose/);
+  assert.doesNotMatch(
+    r.stderr + r.stdout,
+    /private-package-output|more-private-output/,
+  );
+  assert.equal(r.stdout, 'next-step');
+  const log = r.stderr.match(/Detailed output: (.*)/)[1];
+  assert.equal(
+    await readFile(log, 'utf8'),
+    'private-package-output-must-stay-in-logmore-private-output',
+  );
+});
+
+test('failed package task stops its progress reporter and retains its private log', async (t) => {
+  const f = await progressFixture(t);
+  const r = f.run(`
+cc_cache="$CC_TEST_STAGE"
+package_manager() { printf 'private-failure-details'; /bin/sleep 0.08; return 42; }
+cc_run_system_step 'Install prerequisites' package_manager
+printf 'unexpected-success'
+`);
+  assert.equal(r.status, 1, r.stderr);
+  assert.equal(
+    r.error,
+    undefined,
+    'A failed task must not leave a reporter running.',
+  );
+  assert.match(r.stderr, /Install prerequisites failed. Review/);
+  assert.doesNotMatch(r.stderr, /Completed|private-failure-details/);
+  assert.equal(r.stdout, '');
+  assert.equal(
+    await readFile(r.stderr.match(/Detailed output: (.*)/)[1], 'utf8'),
+    'private-failure-details',
+  );
+});
+
+test('interrupting a package step stops the reporter without claiming completion', async (t) => {
+  const f = await progressFixture(t);
+  const r = f.run(`
+cc_cache="$CC_TEST_STAGE"
+cc_run_system_step 'Interrupted task' /bin/sh -c '/bin/sleep 0.08; kill -TERM "$PPID"'
+printf 'unexpected-success'
+`);
+  assert.equal(r.status, 143, r.stderr);
+  assert.equal(
+    r.error,
+    undefined,
+    'An interrupted task must not leave a reporter running.',
+  );
+  assert.doesNotMatch(r.stderr, /Completed/);
+  assert.equal(r.stdout, '');
+});
+
 test('unattended sudo fails without reading a password or running a command', async (t) => {
   const f = await fixture(t);
   const r = f.run(`

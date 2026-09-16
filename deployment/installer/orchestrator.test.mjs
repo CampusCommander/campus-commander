@@ -68,6 +68,57 @@ async function setup() {
   return { root, config, release, operator, dependencies, calls };
 }
 
+test('HTTP registry qualification accepts only explicit loopback registries', async () => {
+  for (const [registry, allowed] of [
+    ['localhost:5000', true],
+    ['127.0.0.1:5000', true],
+    ['localhost.attacker.example:5000', false],
+    ['127.0.0.1.attacker.example:5000', false],
+    ['192.168.1.2:5000', false],
+    ['ghcr.io', false],
+  ]) {
+    const f = await setup();
+    try {
+      f.operator.localRegistryHttp = true;
+      const reference = `${registry}/qualification/api@sha256:${'a'.repeat(64)}`;
+      f.dependencies.preflight = async (_config, { run }) => {
+        await run('docker', ['manifest', 'inspect', reference]);
+        return { status: 'passed', checks: [] };
+      };
+      const prepare = executeInstaller({
+        command: 'prepare',
+        operator: f.operator,
+        qualification: true,
+        dependencies: f.dependencies,
+      });
+      if (allowed) {
+        assert.equal((await prepare).status, 'prepared');
+        assert.ok(
+          f.calls.some(
+            ([file, args]) =>
+              file === 'docker' &&
+              JSON.stringify(args) ===
+                JSON.stringify([
+                  'manifest',
+                  'inspect',
+                  '--insecure',
+                  reference,
+                ]),
+          ),
+        );
+      } else {
+        await assert.rejects(prepare, { code: 'REGISTRY' });
+        assert.equal(
+          f.calls.some(([, args]) => args.includes('--insecure')),
+          false,
+        );
+      }
+    } finally {
+      await rm(f.root, { recursive: true, force: true });
+    }
+  }
+});
+
 test('Kubernetes uninstall includes retired upgrade resources and preserves external resources', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cc-kube-history-'));
   const project = 'cc-kube-history';

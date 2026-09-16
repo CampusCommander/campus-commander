@@ -1,0 +1,64 @@
+@switch (state().status) {
+  @case ('loading') {
+    <app-skeleton [rows]="skeletonRows()" [variant]="skeletonVariant()" />
+    <p role="status" class="secondary">{{ loadingLabel() }}</p>
+  }
+  @case ('empty') {
+    @if (empty(); as state) {
+      <app-empty-state
+        [title]="state.title"
+        [reason]="state.reason"
+        [message]="state.message"
+      />
+      <ng-content select="[dataRegionAction]" />
+    }
+  }
+  @case ('error') {
+    @if (error(); as state) {
+      <app-error-state
+        [title]="state.title"
+        [cause]="state.cause"
+        [scope]="state.scope"
+        [retryLabel]="state.retryLabel ?? 'Retry'"
+        [retrying]="state.retrying ?? false"
+        (retry)="retry.emit()"
+      />
+      <ng-content select="[dataRegionContext]" />
+    }
+  }
+  @default {
+    <div class="flex flex-col gap-lg">
+      @if (partial(); as state) {
+        <app-job-status
+          status="completed-with-errors"
+          [succeeded]="state.succeeded"
+          [failed]="state.failed"
+          [total]="state.total ?? null"
+        />
+      }
+      @if (stale(); as state) {
+        <app-stale-badge
+          [observedAt]="state.observedAt"
+          [staleAfterSeconds]="state.staleAfterSeconds ?? 300"
+          [forceStale]="state.forceStale ?? false"
+          [refreshing]="state.refreshing ?? false"
+          (refresh)="refresh.emit()"
+        />
+      }
+      @if (offline(); as state) {
+        <app-offline-banner
+          [cachedAt]="state.cachedAt"
+          [writesDisabled]="true"
+          [reconnecting]="state.reconnecting ?? false"
+          (reconnect)="reconnect.emit()"
+        />
+      }
+      <div
+        class="data-region-content"
+        [attr.aria-disabled]="writesDisabled() || null"
+      >
+        <ng-content />
+      </div>
+    </div>
+  }
+}

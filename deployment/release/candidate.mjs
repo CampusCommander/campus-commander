@@ -14,6 +14,19 @@ import { sha256 } from './integrity.mjs';
 
 const run = promisify(execFile);
 const services = { frontend: 'frontend', api: 'api', worker: 'workers' };
+export const applicationReports = {
+  'auth-image-integration': 'packaged-integration.json',
+  'all-docker-integration': 'all-docker-profile.json',
+  'hybrid-integration': 'hybrid-profile.json',
+  'hybrid-upgrade-integration': 'hybrid-upgrade.json',
+  'hybrid-restore-integration': 'hybrid-restore.json',
+  'kubernetes-integration': 'kubernetes-profile.json',
+  'kubernetes-upgrade-integration': 'kubernetes-upgrade.json',
+  'kubernetes-restore-integration': 'kubernetes-restore.json',
+  'upgrade-integration': 'all-docker-upgrade.json',
+  'restore-integration': 'all-docker-restore.json',
+  'screen-reader-integration': 'screen-reader.json',
+};
 
 /** Package committed installation sources and the build output without local secret files. */
 export async function assembleCandidate({
@@ -21,7 +34,10 @@ export async function assembleCandidate({
   output,
   artifacts,
   sourceRevision,
+  phase = 1,
+  qualificationArtifacts,
 }) {
+  if (![1, 2].includes(phase)) throw new Error('Select release phase 1 or 2.');
   if (!/^[a-f0-9]{40}$/.test(sourceRevision))
     throw new Error('Candidate requires a source revision.');
   const head = (
@@ -119,19 +135,97 @@ export async function assembleCandidate({
     )
       throw new Error('Candidate image repository or digest is invalid.');
     images[key] = reference;
-    for (const suffix of ['reference', 'spdx.json', 'verification.json'])
+    for (const suffix of [
+      'reference',
+      'spdx.json',
+      'verification.json',
+      ...(phase === 2 ? ['vulnerabilities.json'] : []),
+    ])
       await add(
         resolve(artifacts, `${service}.${suffix}`),
         `provenance/${service}.${suffix}`,
       );
   }
+  const applicationEvidence = {};
+  if (phase === 2) {
+    if (!qualificationArtifacts)
+      throw new Error('Phase 2 requires application qualification artifacts.');
+    for (const [target, filename] of Object.entries(applicationReports)) {
+      const source = resolve(
+        qualificationArtifacts,
+        `qualification-${target}`,
+        filename,
+      );
+      const report = JSON.parse(await readFile(source, 'utf8'));
+      const actual = report.releaseB ?? report.images;
+      const applicationPassed =
+        target === 'auth-image-integration'
+          ? report.packagedApplicationImages === true
+          : (target === 'all-docker-integration'
+              ? report.browser
+              : report.application
+            )?.status === 'passed';
+      if (
+        report.status !==
+          ([
+            'hybrid-integration',
+            'hybrid-upgrade-integration',
+            'kubernetes-integration',
+            'kubernetes-upgrade-integration',
+          ].includes(target)
+            ? 'PASS'
+            : 'passed') ||
+        !applicationPassed ||
+        ([
+          'hybrid-upgrade-integration',
+          'kubernetes-upgrade-integration',
+        ].includes(target) &&
+          (report.upgrade?.status !== 'passed' ||
+            report.upgrade.runtimeImageContentVerified !== true)) ||
+        Object.entries(services).some(([service, key]) => {
+          const value = actual?.[key] ?? actual?.[service];
+          return (
+            (typeof value === 'string' ? value : value?.reference) !==
+            images[key]
+          );
+        })
+      )
+        throw new Error(
+          'Application qualification must pass against the candidate images.',
+        );
+      const reportPath = `qualification/${target}/${filename}`;
+      await add(source, reportPath);
+      applicationEvidence[target] = {
+        reportPath,
+        reportSha256: files.find((file) => file.path === reportPath).sha256,
+      };
+    }
+    for (const filename of [
+      'login-accessibility.json',
+      'account-accessibility.json',
+      'diagnostics-light-accessibility.json',
+      'diagnostics-dark-accessibility.json',
+      'diagnostics-light.png',
+      'diagnostics-dark.png',
+    ])
+      await add(
+        resolve(
+          qualificationArtifacts,
+          'qualification-auth-image-integration',
+          filename,
+        ),
+        `qualification/accessibility/${filename}`,
+      );
+  }
   const manifest = {
     schemaVersion: 1,
+    phase,
     sourceRevision,
     architectures: ['linux/amd64'],
     platform: 'linux/amd64',
     images,
     qualification: 'candidate-only',
+    ...(phase === 2 ? { applicationEvidence } : {}),
     evidence: Object.fromEntries(
       ['all-docker', 'hybrid', 'kubernetes'].map((profile) => [
         profile,
@@ -163,16 +257,26 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
-  const [output, artifacts, sourceRevision] = process.argv.slice(2);
+  const [
+    output,
+    artifacts,
+    sourceRevision,
+    phase = '1',
+    qualificationArtifacts,
+  ] = process.argv.slice(2);
   if (!output || !artifacts || !sourceRevision)
     throw new Error(
-      'Usage: candidate.mjs <new-output-directory> <image-artifacts> <source-revision>',
+      'Usage: candidate.mjs <new-output-directory> <image-artifacts> <source-revision> [phase] [qualification-artifacts]',
     );
   assembleCandidate({
     root: process.cwd(),
     output: resolve(output),
     artifacts: resolve(artifacts),
     sourceRevision,
+    phase: Number(phase),
+    qualificationArtifacts: qualificationArtifacts
+      ? resolve(qualificationArtifacts)
+      : undefined,
   }).catch(() => {
     process.stderr.write(
       'Candidate assembly failed. Check committed sources, build output, and signed image evidence.\n',

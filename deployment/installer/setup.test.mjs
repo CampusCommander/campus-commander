@@ -19,6 +19,7 @@ import { renderKubernetes } from '../kubernetes/render.mjs';
 import {
   configure,
   createQuestions,
+  detectSetupEnvironment,
   parseArguments,
   runSetup,
   prepareLabCertificate,
@@ -202,6 +203,144 @@ test('all-docker lab requires explicit certificate and exception choices', async
   );
 });
 
+test('setup detects Docker, Podman, and systemd without changing the host', async () => {
+  for (const [paths, env, expected] of [
+    [[], {}, { container: false, systemd: false }],
+    [['/.dockerenv'], {}, { container: true, systemd: false }],
+    [['/run/.containerenv'], {}, { container: true, systemd: false }],
+    [
+      ['/run/systemd/system'],
+      { container: 'lxc' },
+      { container: true, systemd: true },
+    ],
+  ]) {
+    assert.deepEqual(
+      await detectSetupEnvironment({
+        env,
+        pathExists: async (path) => paths.includes(path),
+      }),
+      expected,
+    );
+  }
+});
+
+test('interactive container lab explains and defaults certificate, bind, and clock choices', async () => {
+  const prompts = [],
+    lines = [];
+  const q = createQuestions({}, async (label) => {
+    prompts.push(label);
+    if (label.includes('Record the lab reason'))
+      return 'This container shares the synchronized Docker host clock.';
+    return '';
+  });
+  const plan = await configure({
+    releaseRoot,
+    root: '/tmp/cc-guided-container',
+    profile: 'all-docker',
+    qualification: true,
+    questions: q,
+    manifest,
+    environment: { container: true, systemd: false },
+    output: (line) => lines.push(line),
+  });
+  q.finish();
+  assert.equal(plan.lab, true);
+  assert.equal(plan.operator.bindAddress, '0.0.0.0');
+  assert.equal(plan.operator.connectAddress, '127.0.0.1');
+  assert.deepEqual(plan.operator.preflightExceptions, [
+    {
+      name: 'time-synchronization',
+      reason: 'This container shares the synchronized Docker host clock.',
+    },
+  ]);
+  assert.ok(prompts.some((label) => /self-signed.*\[yes\]/.test(label)));
+  assert.ok(
+    prompts.some((label) => /exceptions.*\[time-synchronization\]/.test(label)),
+  );
+  const guidance = lines.join('\n');
+  assert.match(guidance, /browser will show a certificate trust warning/);
+  assert.match(guidance, /-p 127\.0\.0\.1:8443:8443/);
+  assert.match(guidance, /Confirm that the Docker host clock is synchronized/);
+  for (const name of [
+    'none',
+    'time-synchronization',
+    'district-dns',
+    'storage-capacity',
+    'host-memory',
+  ])
+    assert.match(guidance, new RegExp(`${name}:`));
+});
+
+test('container recommendations preserve explicit loopback binding and no exceptions', async () => {
+  const lines = [];
+  const q = createQuestions(
+    {
+      labCertificate: 'yes',
+      bindAddress: '127.0.0.1',
+      exceptions: 'none',
+    },
+    async () => '',
+  );
+  const plan = await configure({
+    releaseRoot,
+    root: '/tmp/cc-container-explicit',
+    profile: 'all-docker',
+    qualification: true,
+    questions: q,
+    manifest,
+    environment: { container: true, systemd: false },
+    output: (line) => lines.push(line),
+  });
+  q.finish();
+  assert.equal(plan.operator.bindAddress, '127.0.0.1');
+  assert.deepEqual(plan.operator.preflightExceptions, []);
+  assert.match(lines.join('\n'), /loopback bind blocks browser access/);
+});
+
+test('automated container setup does not silently generate certificates or waive checks', async () => {
+  const q = createQuestions({
+    publicUrl: 'https://campus.district.edu',
+    'files.edge-certificate': '/private/certificate',
+    'files.edge-private-key': '/private/key',
+  });
+  const plan = await configure({
+    releaseRoot,
+    root: '/tmp/cc-container-automated',
+    profile: 'all-docker',
+    qualification: true,
+    questions: q,
+    manifest,
+    environment: { container: true, systemd: false },
+  });
+  q.finish();
+  assert.equal(plan.lab, false);
+  assert.deepEqual(plan.operator.preflightExceptions, []);
+  assert.equal(plan.operator.bindAddress, '0.0.0.0');
+});
+
+test('host and systemd-container labs retain all checks by default', async () => {
+  for (const environment of [
+    { container: false, systemd: true },
+    { container: true, systemd: true },
+  ]) {
+    const q = createQuestions({}, async () => '');
+    const plan = await configure({
+      releaseRoot,
+      root: '/tmp/cc-guided-host',
+      profile: 'all-docker',
+      qualification: true,
+      questions: q,
+      manifest,
+      environment,
+    });
+    assert.deepEqual(plan.operator.preflightExceptions, []);
+    assert.equal(
+      plan.operator.bindAddress,
+      environment.container ? '0.0.0.0' : '127.0.0.1',
+    );
+  }
+});
+
 test('hybrid and Kubernetes retain real topology and guide operational inputs', async () => {
   for (const profile of ['hybrid', 'kubernetes']) {
     const seen = new Set();
@@ -305,6 +444,7 @@ test('runSetup records acceptance and preserves credentials and configuration du
       calls.push(call);
       return { status: 'ready' };
     },
+    detectEnvironment: async () => ({ container: false, systemd: true }),
     output: (line) => output.push(line),
   };
   await runSetup(
@@ -323,12 +463,22 @@ test('runSetup records acceptance and preserves credentials and configuration du
   );
   await runSetup(
     { releaseRoot: '/different-release', root, command: 'resume' },
-    { ...deps, answers: {} },
+    {
+      ...deps,
+      answers: {},
+      detectEnvironment: async () => ({ container: true, systemd: false }),
+    },
   );
   assert.deepEqual(await readFile(join(root, 'operator.json')), before);
   assert.equal(calls[1].command, 'resume');
   assert.equal(calls[1].qualification, true);
   assert.equal(calls[1].operator.releaseRoot, release);
+  assert.equal(calls[1].operator.bindAddress, '127.0.0.1');
+  assert.ok(output.some((line) => line.includes('container loopback')));
+  assert.ok(output.some((line) => line.includes('Use HTTPS, not HTTP')));
+  assert.ok(
+    output.some((line) => line.includes('browser trust warning is expected')),
+  );
   assert.ok(output.some((line) => line.includes('https://localhost:8443')));
   assert.ok(!output.some((line) => line.includes('private-key')));
 });

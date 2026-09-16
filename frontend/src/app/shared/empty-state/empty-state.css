@@ -1,0 +1,16 @@
+.empty-state {
+  padding: var(--cc-space-xxl) var(--cc-card-padding);
+}
+.empty-state h2 {
+  margin: 0;
+}
+.empty-state p {
+  margin: 0;
+}
+.empty-state-icon {
+  font-size: var(--cc-footer-height);
+  color: var(--cc-text-secondary);
+}
+.empty-state-action:empty {
+  display: none;
+}

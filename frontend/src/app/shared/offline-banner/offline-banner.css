@@ -1,0 +1,12 @@
+.offline-banner {
+  padding: var(--cc-card-padding);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+.offline-banner p {
+  margin: 0;
+}
+.offline-banner-text {
+  flex: 1 1 280px;
+}

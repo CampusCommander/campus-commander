@@ -1,0 +1,35 @@
+.skeleton-block {
+  display: block;
+  height: var(--cc-row-height-grid);
+  border-radius: var(--cc-radius-control);
+  background: linear-gradient(
+    90deg,
+    var(--cc-surface-hover) 25%,
+    var(--cc-surface-selected) 50%,
+    var(--cc-surface-hover) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s linear infinite;
+}
+.skeleton-line {
+  height: var(--cc-font-body-line-height);
+}
+.skeleton-avatar {
+  width: var(--cc-footer-height);
+  height: var(--cc-footer-height);
+  border-radius: 50%;
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-block {
+    animation: none;
+    background: var(--cc-surface-hover);
+  }
+}

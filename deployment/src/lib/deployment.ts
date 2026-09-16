@@ -134,7 +134,36 @@ const database = service.extend({
 
 const shape = z.strictObject({
   schemaVersion: z.literal(1),
-  phase: z.literal(1),
+  phase: z.union([z.literal(1), z.literal(2)]),
+  applicationAuth: z
+    .strictObject({
+      issuer: z.url().refine((value) => {
+        const url = new URL(value);
+        return (
+          url.protocol === 'https:' &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash
+        );
+      }),
+      clientId: z.string().min(1).max(512),
+      clientSecretRef: secretReferenceSchema,
+      publicOrigin: z
+        .url()
+        .refine(
+          (value) =>
+            new URL(value).origin === value && value.startsWith('https://'),
+        ),
+      sessionLifetimeSeconds: z
+        .number()
+        .int()
+        .min(300)
+        .max(86400)
+        .default(28800),
+      sessionIdleSeconds: z.number().int().min(60).max(3600).default(1800),
+    })
+    .optional(),
   profile: z.enum(['all-docker', 'hybrid', 'kubernetes']),
   host: z.strictObject({
     os: z.literal('linux'),
@@ -163,13 +192,24 @@ const shape = z.strictObject({
     }),
     edge: service.extend({
       bootstrapSecretRef: secretReferenceSchema,
-      access: z.literal('bootstrap-only'),
+      access: z.enum(['bootstrap-only', 'application']),
     }),
   }),
   artifacts: persistence,
 });
 
 export const deploymentConfigSchema = shape.superRefine((config, ctx) => {
+  if (
+    (config.phase === 2) !== Boolean(config.applicationAuth) ||
+    (config.phase === 2) !== (config.services.edge.access === 'application')
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['applicationAuth'],
+      message:
+        'Phase 2 requires application authentication and application edge access.',
+    });
+  }
   const reject = (path: (string | number)[], message: string) =>
     ctx.addIssue({ code: 'custom', path, message });
   const services = config.services;

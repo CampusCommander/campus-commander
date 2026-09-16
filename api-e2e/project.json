@@ -4,12 +4,120 @@
   "implicitDependencies": ["api"],
   "projectType": "application",
   "targets": {
+    "hybrid-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/hybrid.test.mjs"
+      }
+    },
+    "all-docker-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs"
+      }
+    },
+    "auth-image-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/auth.test.mjs",
+        "env": {
+          "CC_AUTH_PACKAGED_IMAGES": "true"
+        }
+      }
+    },
+    "auth-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/auth.test.mjs"
+      },
+      "dependsOn": ["api:build", "frontend:build", "worker:build"]
+    },
     "e2e": {
       "executor": "nx:run-commands",
       "options": {
         "command": "node --test api-e2e/api.test.mjs"
       },
       "dependsOn": ["api:build"]
+    },
+    "kubernetes-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs"
+      }
+    },
+    "upgrade-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/upgrade.test.mjs"
+      }
+    },
+    "screen-reader-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "dbus-run-session -- xvfb-run -a node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_SCREEN_READER": "1"
+        }
+      }
+    },
+    "restore-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/upgrade.test.mjs",
+        "env": {
+          "CC_AUTH_APPLICATION_RESTORE": "1"
+        }
+      }
+    },
+    "hybrid-upgrade-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/hybrid.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_UPGRADE": "1"
+        }
+      }
+    },
+    "hybrid-restore-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/hybrid.test.mjs",
+        "env": {
+          "CC_AUTH_HYBRID_UPGRADE": "1",
+          "CC_AUTH_HYBRID_RESTORE": "1"
+        }
+      }
+    },
+    "kubernetes-upgrade-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs",
+        "env": {
+          "CC_AUTH_KUBERNETES_UPGRADE": "1"
+        }
+      }
+    },
+    "kubernetes-restore-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/kubernetes.test.mjs",
+        "env": {
+          "CC_AUTH_KUBERNETES_UPGRADE": "1",
+          "CC_AUTH_KUBERNETES_RESTORE": "1"
+        }
+      }
     }
   }
 }

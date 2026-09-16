@@ -1,0 +1,223 @@
+@use '@angular/material' as mat;
+@use './theme/tokens.css';
+@import 'tailwindcss' source(none);
+@source './';
+@import '@fontsource/roboto/latin-400.css';
+@import '@fontsource/roboto/latin-500.css';
+@import '@fontsource/roboto/latin-700.css';
+@import '@fontsource/roboto-mono/latin-400.css';
+@import '@fontsource/material-symbols-outlined/400.css';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme {
+  --color-surface-app: var(--cc-surface-app);
+  --color-surface-card: var(--cc-surface-card);
+  --color-surface-hover: var(--cc-surface-hover);
+  --color-surface-selected: var(--cc-surface-selected);
+  --color-surface-scrim: var(--cc-surface-scrim);
+  --color-border: var(--cc-border);
+  --color-border-control: var(--cc-border-control);
+  --color-accent: var(--cc-accent);
+  --color-text-primary: var(--cc-text-primary);
+  --color-text-secondary: var(--cc-text-secondary);
+  --color-text-disabled: var(--cc-text-disabled);
+  --color-text-link: var(--cc-text-link);
+  --color-text-on-accent: var(--cc-text-on-accent);
+  --color-status-success: var(--cc-status-success);
+  --color-status-warning: var(--cc-status-warning);
+  --color-status-error: var(--cc-status-error);
+  --color-status-info: var(--cc-status-info);
+  --color-status-success-text: var(--cc-status-success-text);
+  --color-status-warning-text: var(--cc-status-warning-text);
+  --color-status-error-text: var(--cc-status-error-text);
+
+  --spacing: var(--cc-space-xs);
+  --spacing-xs: var(--cc-space-xs);
+  --spacing-sm: var(--cc-space-sm);
+  --spacing-md: var(--cc-space-md);
+  --spacing-lg: var(--cc-space-lg);
+  --spacing-xl: var(--cc-space-xl);
+  --spacing-xxl: var(--cc-space-xxl);
+  --spacing-xxxl: var(--cc-space-xxxl);
+  --spacing-nav: var(--cc-nav-width);
+  --spacing-nav-collapsed: var(--cc-nav-width-collapsed);
+  --spacing-header: var(--cc-header-height);
+  --spacing-footer: var(--cc-footer-height);
+  --spacing-row-grid: var(--cc-row-height-grid);
+  --spacing-page: var(--cc-page-padding);
+  --spacing-card: var(--cc-card-padding);
+  --spacing-content: var(--cc-content-max-width);
+
+  --radius-control: var(--cc-radius-control);
+  --radius-chip: var(--cc-radius-chip);
+
+  --font-display: var(--cc-font-display-family);
+  --font-title: var(--cc-font-title-family);
+  --font-body: var(--cc-font-body-family);
+  --font-caption: var(--cc-font-caption-family);
+  --font-code: var(--cc-font-code-family);
+}
+
+html {
+  @include mat.theme(
+    (
+      color: (
+        theme-type: color-scheme,
+        primary: mat.$azure-palette,
+      ),
+      typography: Roboto,
+      density: 0,
+    )
+  );
+  @include mat.theme-overrides(
+    (
+      primary: var(--cc-accent),
+      on-primary: var(--cc-text-on-accent),
+      surface: var(--cc-surface-card),
+      on-surface: var(--cc-text-primary),
+      on-surface-variant: var(--cc-text-secondary),
+      outline: var(--cc-border-control),
+      error: var(--cc-status-error-text),
+      headline-small: var(--cc-font-display-weight) var(--cc-font-display-size) /
+        var(--cc-font-display-line-height) var(--cc-font-display-family),
+      headline-small-font: var(--cc-font-display-family),
+      headline-small-size: var(--cc-font-display-size),
+      headline-small-line-height: var(--cc-font-display-line-height),
+      headline-small-tracking: var(--cc-font-display-letter-spacing),
+      headline-small-weight: var(--cc-font-display-weight),
+      title-medium: var(--cc-font-title-weight) var(--cc-font-title-size) /
+        var(--cc-font-title-line-height) var(--cc-font-title-family),
+      title-medium-font: var(--cc-font-title-family),
+      title-medium-size: var(--cc-font-title-size),
+      title-medium-line-height: var(--cc-font-title-line-height),
+      title-medium-tracking: var(--cc-font-title-letter-spacing),
+      title-medium-weight: var(--cc-font-title-weight),
+      body-medium: var(--cc-font-body-weight) var(--cc-font-body-size) /
+        var(--cc-font-body-line-height) var(--cc-font-body-family),
+      body-medium-font: var(--cc-font-body-family),
+      body-medium-size: var(--cc-font-body-size),
+      body-medium-line-height: var(--cc-font-body-line-height),
+      body-medium-tracking: var(--cc-font-body-letter-spacing),
+      body-medium-weight: var(--cc-font-body-weight),
+      label-large: var(--cc-font-body-medium-weight) var(--cc-font-body-medium-size) /
+        var(--cc-font-body-medium-line-height) var(--cc-font-body-medium-family),
+      label-large-font: var(--cc-font-body-medium-family),
+      label-large-size: var(--cc-font-body-medium-size),
+      label-large-line-height: var(--cc-font-body-medium-line-height),
+      label-large-tracking: var(--cc-font-body-medium-letter-spacing),
+      label-large-weight: var(--cc-font-body-medium-weight),
+      body-small: var(--cc-font-caption-weight) var(--cc-font-caption-size) /
+        var(--cc-font-caption-line-height) var(--cc-font-caption-family),
+      body-small-font: var(--cc-font-caption-family),
+      body-small-size: var(--cc-font-caption-size),
+      body-small-line-height: var(--cc-font-caption-line-height),
+      body-small-tracking: var(--cc-font-caption-letter-spacing),
+      body-small-weight: var(--cc-font-caption-weight),
+      label-medium: var(--cc-font-caption-medium-weight) var(--cc-font-caption-medium-size) /
+        var(--cc-font-caption-medium-line-height) var(--cc-font-caption-medium-family),
+      label-medium-font: var(--cc-font-caption-medium-family),
+      label-medium-size: var(--cc-font-caption-medium-size),
+      label-medium-line-height: var(--cc-font-caption-medium-line-height),
+      label-medium-tracking: var(--cc-font-caption-medium-letter-spacing),
+      label-medium-weight: var(--cc-font-caption-medium-weight),
+    )
+  );
+  @include mat.button-overrides(
+    (
+      outlined-label-text-color: var(--cc-text-link),
+      text-label-text-color: var(--cc-text-link),
+      outlined-container-shape: var(--cc-radius-control),
+      filled-container-shape: var(--cc-radius-control),
+    )
+  );
+  background: var(--cc-surface-app);
+  color: var(--cc-text-primary);
+  font: var(--cc-font-body-weight) var(--cc-font-body-size) /
+    var(--cc-font-body-line-height) var(--cc-font-body-family);
+}
+body {
+  margin: 0;
+}
+* {
+  box-sizing: border-box;
+}
+h1 {
+  font-size: var(--cc-font-display-size);
+  line-height: var(--cc-font-display-line-height);
+  font-weight: var(--cc-font-display-weight);
+  letter-spacing: var(--cc-font-display-letter-spacing);
+}
+h2,
+h3 {
+  font-size: var(--cc-font-title-size);
+  line-height: var(--cc-font-title-line-height);
+  font-weight: var(--cc-font-title-weight);
+  letter-spacing: var(--cc-font-title-letter-spacing);
+}
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--cc-font-code-family);
+  font-size: var(--cc-font-code-size);
+  line-height: var(--cc-font-code-line-height);
+  font-weight: var(--cc-font-code-weight);
+  letter-spacing: var(--cc-font-code-letter-spacing);
+}
+a {
+  color: var(--cc-text-link);
+}
+p {
+  max-width: 80ch;
+}
+.card {
+  background: var(--cc-surface-card);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  padding: var(--cc-card-padding);
+}
+.error {
+  color: var(--cc-status-error-text);
+}
+.secondary {
+  color: var(--cc-text-secondary);
+}
+:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 3px;
+}
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 8px;
+  z-index: 100;
+  background: var(--cc-surface-card);
+  padding: var(--cc-space-md);
+}
+.skip-link:focus {
+  top: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

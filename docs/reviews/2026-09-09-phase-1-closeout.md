@@ -45,7 +45,7 @@ Those results do not establish every lifecycle, network, fault, or human accepta
 CC-10 passed worker-host publication and cross-host readback after the initial review.
 CC-15 passed 29 connection checks with Calico enforcement after the initial review.
 CC-16 passed hybrid and Kubernetes lifecycle checks, including backup-gated image upgrades and owned erasure.
-CC-18 passed hybrid faults and Kubernetes certificate preservation. Bounded Kubernetes capacity testing remains pending.
+CC-18 completed the synthetic fault matrix with bounded Kubernetes capacity recovery and durable fixture preservation.
 CC-20 needs the specified human walkthrough records and completion decision.
 
 The assisted customer session remains recorded separately from agent-operated tests.

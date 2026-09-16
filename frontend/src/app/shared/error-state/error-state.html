@@ -1,0 +1,25 @@
+<section
+  class="error-state flex flex-col items-center gap-md text-center"
+  role="alert"
+  [attr.aria-labelledby]="titleId"
+>
+  <span class="material-symbols-outlined error-state-icon" aria-hidden="true"
+    >error</span
+  >
+  <h2 [id]="titleId">{{ title() }}</h2>
+  <p>{{ cause() }}</p>
+  @if (scope(); as scope) {
+  <p class="secondary">Affected: {{ scope }}</p>
+  }
+  <div class="error-state-context secondary">
+    <ng-content select="[errorStateContext]"></ng-content>
+  </div>
+  <button
+    mat-stroked-button
+    (click)="retry.emit()"
+    [disabled]="retrying()"
+    [attr.aria-busy]="retrying()"
+  >
+    {{ retryLabel() }}
+  </button>
+</section>

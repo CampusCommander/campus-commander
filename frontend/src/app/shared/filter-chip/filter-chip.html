@@ -1,0 +1,19 @@
+<span class="filter-chip inline-flex items-center">
+  <button
+    type="button"
+    class="filter-chip-body flex items-center gap-xs"
+    (click)="edit.emit()"
+    [attr.aria-label]="'Edit filter: ' + description()"
+  >
+    <strong>{{ field() }}</strong> {{ operator() }}
+    <span class="filter-chip-value">{{ value() }}</span>
+  </button>
+  <button
+    type="button"
+    class="filter-chip-remove flex items-center justify-center"
+    (click)="remove.emit()"
+    [attr.aria-label]="'Remove filter: ' + field()"
+  >
+    <span class="material-symbols-outlined" aria-hidden="true">close</span>
+  </button>
+</span>

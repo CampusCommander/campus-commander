@@ -95,6 +95,9 @@ The fixture uses no host mount or privileged loop device.
 Its ephemeral tmpfs volume makes no persistence claim.
 The result qualifies only the all-Docker artifact capacity fault.
 
+The [Kubernetes capacity target](../kubernetes/README.md#bounded-kubernetes-capacity-qualification) applies the same bounded fault to a complete Kubernetes fixture.
+It creates a dedicated three-node Kind cluster and verifies fixture preservation after recovery.
+
 ## Explicit application image inventory
 
 The complete hybrid and complete-profile capacity fixtures accept `CC_QUALIFICATION_RELEASE`.

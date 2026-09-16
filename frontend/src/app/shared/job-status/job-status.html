@@ -1,0 +1,29 @@
+<div
+  class="job-status flex flex-col gap-sm"
+  role="status"
+  aria-live="polite"
+  aria-atomic="true"
+>
+  <strong class="job-status-label" [class]="statusClass()">{{ label() }}</strong>
+  @if (showProgress()) {
+  @if (progress(); as value) {
+  <mat-progress-bar
+    mode="determinate"
+    [value]="value"
+    [attr.aria-label]="label() + ': ' + value + ' percent of operations finished'"
+  ></mat-progress-bar>
+  } @else {
+  <mat-progress-bar
+    mode="indeterminate"
+    [attr.aria-label]="label()"
+  ></mat-progress-bar>
+  }
+  }
+  @if (outcomes().length > 0) {
+  <ul class="job-status-outcomes flex flex-wrap gap-md">
+    @for (outcome of outcomes(); track outcome.label) {
+    <li>{{ outcome.count }} {{ outcome.label }}</li>
+    }
+  </ul>
+  }
+</div>

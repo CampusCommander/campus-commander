@@ -1,0 +1,13 @@
+<section
+  class="empty-state flex flex-col items-center gap-md text-center"
+  [attr.aria-labelledby]="titleId"
+>
+  <span class="material-symbols-outlined empty-state-icon" aria-hidden="true">{{
+    icon()
+  }}</span>
+  <h2 [id]="titleId">{{ title() }}</h2>
+  <p class="secondary">{{ text() }}</p>
+  <div class="empty-state-action">
+    <ng-content select="[emptyStateAction]"></ng-content>
+  </div>
+</section>

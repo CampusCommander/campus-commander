@@ -1,0 +1,34 @@
+<div
+  class="offline-banner flex flex-wrap items-center gap-lg"
+  role="status"
+  aria-live="polite"
+  aria-atomic="true"
+>
+  <span class="material-symbols-outlined" aria-hidden="true">cloud_off</span>
+  <div class="offline-banner-text flex flex-col gap-xs">
+    <p><strong>You are offline.</strong> The server connection is unavailable.</p>
+    @if (cachedAt(); as cached) {
+    <p>
+      Showing data cached
+      <time [attr.datetime]="cached" [attr.title]="cached | date: 'medium'">{{
+        cached | date: 'medium'
+      }}</time
+      >.
+    </p>
+    }
+    @if (writesDisabled()) {
+    <p>
+      Writes are disabled until the server confirms access. Your local work is
+      preserved.
+    </p>
+    }
+  </div>
+  <button
+    mat-stroked-button
+    (click)="reconnect.emit()"
+    [disabled]="reconnecting()"
+    [attr.aria-busy]="reconnecting()"
+  >
+    Retry connection
+  </button>
+</div>

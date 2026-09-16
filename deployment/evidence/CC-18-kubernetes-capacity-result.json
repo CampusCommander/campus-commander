@@ -1,0 +1,517 @@
+{
+  "schemaVersion": 1,
+  "ticket": "CC-18",
+  "status": "passed",
+  "scope": "kubernetes-artifact-capacity",
+  "checkedAt": "2026-09-09T19:18:19.873Z",
+  "sourceRevision": "6940a5987a4ee3d0ac8e1eaf1d6572e71a476d52",
+  "sourceState": "uncommitted-candidate",
+  "harnessSha256": "4f9f359ac6564ac5d900a79c2e8e6911f1828332a36b5618548db681322ff61d",
+  "testedReleaseSourceRevision": "e940f20ab7d56b17c096e129368c9819d012f994",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ed60da2ecb278fc9def24eddce8a6d9f09af74eed6c4c168bf7102f660c4f865",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:8cf2cc43342be8df114c41efd0d98b855c103251dff23c268d8044b43ceb17f3"
+  },
+  "versions": {
+    "docker": "29.7.2",
+    "kind": "kind v0.33.0 go1.26.7 linux/amd64",
+    "kubernetes": "v1.35.8"
+  },
+  "topology": [
+    {
+      "component": "api",
+      "nodeIndex": "fixture-worker",
+      "containers": [
+        {
+          "name": "api",
+          "image": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+          "resources": {
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "api",
+      "nodeIndex": "fixture-worker2",
+      "containers": [
+        {
+          "name": "api",
+          "image": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+          "resources": {
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "applicationDatabase",
+      "nodeIndex": "fixture-worker2",
+      "containers": [
+        {
+          "name": "application-postgres",
+          "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+          "resources": {
+            "limits": {
+              "cpu": "1",
+              "memory": "1Gi"
+            },
+            "requests": {
+              "cpu": "250m",
+              "memory": "512Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "database-prepare",
+      "nodeIndex": "fixture-worker",
+      "containers": [
+        {
+          "name": "prepare",
+          "image": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+          "resources": {
+            "limits": {
+              "cpu": "500m",
+              "memory": "256Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "database-prepare",
+      "nodeIndex": "fixture-worker2",
+      "containers": [
+        {
+          "name": "prepare",
+          "image": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+          "resources": {
+            "limits": {
+              "cpu": "500m",
+              "memory": "256Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "edge",
+      "nodeIndex": "fixture-worker",
+      "containers": [
+        {
+          "name": "edge",
+          "image": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+          "resources": {
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "ghcr.io/campuscommander/campus-commander-api@sha256:62fa57c5ccfb6b951bc35ff83535f58f1f09d567194fba1ce8fa925476c2d8b2",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "frontend",
+      "nodeIndex": "fixture-worker2",
+      "containers": [
+        {
+          "name": "frontend",
+          "image": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ed60da2ecb278fc9def24eddce8a6d9f09af74eed6c4c168bf7102f660c4f865",
+          "resources": {
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ed60da2ecb278fc9def24eddce8a6d9f09af74eed6c4c168bf7102f660c4f865",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "kestra",
+      "nodeIndex": "fixture-worker2",
+      "containers": [
+        {
+          "name": "kestra",
+          "image": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+          "resources": {
+            "limits": {
+              "cpu": "2",
+              "memory": "2Gi"
+            },
+            "requests": {
+              "cpu": "500m",
+              "memory": "1Gi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "kestraDatabase",
+      "nodeIndex": "fixture-worker",
+      "containers": [
+        {
+          "name": "kestra-postgres",
+          "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+          "resources": {
+            "limits": {
+              "cpu": "1",
+              "memory": "1Gi"
+            },
+            "requests": {
+              "cpu": "250m",
+              "memory": "512Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "redis",
+      "nodeIndex": "fixture-worker2",
+      "containers": [
+        {
+          "name": "redis",
+          "image": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee",
+          "resources": {
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "docker.io/library/redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "workers",
+      "nodeIndex": "fixture-worker2",
+      "containers": [
+        {
+          "name": "workers",
+          "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:8cf2cc43342be8df114c41efd0d98b855c103251dff23c268d8044b43ceb17f3",
+          "resources": {
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "ghcr.io/campuscommander/campus-commander-worker@sha256:8cf2cc43342be8df114c41efd0d98b855c103251dff23c268d8044b43ceb17f3",
+          "restartCount": 0
+        }
+      ]
+    },
+    {
+      "component": "workers",
+      "nodeIndex": "fixture-worker",
+      "containers": [
+        {
+          "name": "workers",
+          "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:8cf2cc43342be8df114c41efd0d98b855c103251dff23c268d8044b43ceb17f3",
+          "resources": {
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            },
+            "requests": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        }
+      ],
+      "statuses": [
+        {
+          "imageID": "ghcr.io/campuscommander/campus-commander-worker@sha256:8cf2cc43342be8df114c41efd0d98b855c103251dff23c268d8044b43ceb17f3",
+          "restartCount": 0
+        }
+      ]
+    }
+  ],
+  "resourceBaseline": [
+    {
+      "node": "fixture-worker2",
+      "cpuPercent": "35.59%",
+      "memory": "1.019GiB / 31.34GiB",
+      "memoryPercent": "3.25%",
+      "blockIO": "15.1MB / 2.1GB",
+      "pids": "283"
+    },
+    {
+      "node": "fixture-worker",
+      "cpuPercent": "11.10%",
+      "memory": "578MiB / 31.34GiB",
+      "memoryPercent": "1.80%",
+      "blockIO": "22.3MB / 2.09GB",
+      "pids": "192"
+    },
+    {
+      "node": "fixture-control-plane",
+      "cpuPercent": "9.07%",
+      "memory": "813.6MiB / 31.34GiB",
+      "memoryPercent": "2.53%",
+      "blockIO": "19.1MB / 2.48GB",
+      "pids": "299"
+    }
+  ],
+  "before": {
+    "statusCode": 200,
+    "status": "ready",
+    "checks": [
+      {
+        "name": "application-database",
+        "status": "ready"
+      },
+      {
+        "name": "kestra-database",
+        "status": "ready"
+      },
+      {
+        "name": "redis",
+        "status": "ready"
+      },
+      {
+        "name": "frontend",
+        "status": "ready"
+      },
+      {
+        "name": "api",
+        "status": "ready"
+      },
+      {
+        "name": "workers",
+        "status": "ready"
+      },
+      {
+        "name": "artifacts",
+        "status": "ready"
+      },
+      {
+        "name": "kestra",
+        "status": "ready"
+      }
+    ]
+  },
+  "fault": {
+    "statusCode": 503,
+    "status": "not-ready",
+    "checks": [
+      {
+        "name": "application-database",
+        "status": "ready"
+      },
+      {
+        "name": "kestra-database",
+        "status": "ready"
+      },
+      {
+        "name": "redis",
+        "status": "ready"
+      },
+      {
+        "name": "frontend",
+        "status": "ready"
+      },
+      {
+        "name": "api",
+        "status": "ready"
+      },
+      {
+        "name": "workers",
+        "status": "ready"
+      },
+      {
+        "name": "artifacts",
+        "status": "not-ready"
+      },
+      {
+        "name": "kestra",
+        "status": "ready"
+      }
+    ]
+  },
+  "after": {
+    "statusCode": 200,
+    "status": "ready",
+    "checks": [
+      {
+        "name": "application-database",
+        "status": "ready"
+      },
+      {
+        "name": "kestra-database",
+        "status": "ready"
+      },
+      {
+        "name": "redis",
+        "status": "ready"
+      },
+      {
+        "name": "frontend",
+        "status": "ready"
+      },
+      {
+        "name": "api",
+        "status": "ready"
+      },
+      {
+        "name": "workers",
+        "status": "ready"
+      },
+      {
+        "name": "artifacts",
+        "status": "ready"
+      },
+      {
+        "name": "kestra",
+        "status": "ready"
+      }
+    ]
+  },
+  "capacity": {
+    "filesystemType": 16914836,
+    "totalBytes": 16777216,
+    "writtenBytes": 16769024,
+    "availableBytesBefore": 16769024,
+    "availableBytesAfter": 0
+  },
+  "rejected": {
+    "rejected": true,
+    "row": {
+      "publication_state": "staging",
+      "active": false
+    },
+    "readyRows": 1
+  },
+  "artifact": {
+    "artifactId": "bf41915e-3873-4f17-b3b2-b11568e63cd2",
+    "sha256": "d58f626efe1927d08325499ae7ae6913aeacb7934a37adf5c1cc15784904e335",
+    "sizeBytes": 40,
+    "readyRows": 1
+  },
+  "durableFixtureSha256": "a3c13e4d79f745bde6f464c34a40952001493178523a479980409b4667e6b52f",
+  "faultDurationMs": 4595,
+  "recoveryMs": 3577,
+  "assertions": {
+    "durableFixturesPreserved": true,
+    "partialPublicationPrevented": true,
+    "failedAttemptRemoved": true,
+    "artifactConsumersVerified": 4
+  },
+  "boundaries": [
+    "Three Kind nodes share one Docker host.",
+    "The 16 MiB tmpfs does not qualify district CSI storage or persistence.",
+    "The default Kind CNI does not enforce NetworkPolicy.",
+    "This result qualifies only the synthetic Kubernetes capacity cell."
+  ],
+  "cleanup": {
+    "clusterRemoved": true,
+    "holderRemoved": true,
+    "boundedVolumeRemoved": true
+  },
+  "durationMs": 116549
+}

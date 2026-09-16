@@ -49,6 +49,9 @@ It selects Docker and Compose packages that satisfy the verified release's versi
 Package upgrades require the displayed consent. They can restart existing Docker containers.
 The installer refuses package removals and forced downgrades.
 Package and signature commands write detailed output to private log files in the download cache.
+Package tasks show elapsed time and log activity every five seconds.
+If the log stops changing, the installer reports the silent interval without claiming download progress.
+Inspect the printed log path for package details. The activity indicator stops when the task completes or fails.
 Initial download-tool installation uses a private temporary log until the download cache is ready.
 Failure messages identify the applicable log. Keep these logs private because system package output includes local repository details.
 
@@ -69,7 +72,9 @@ docker exec -it cc-install bash
 Run the installer from that container shell. Docker and Node need no manual installation inside it.
 Privileged mode grants broad access to the outer host. Use a dedicated container and dedicated volumes.
 The installer exposes the nested Docker daemon only through its Unix socket.
-Select `0.0.0.0` for the application HTTPS bind address to use the published host port.
+Container setup defaults the application HTTPS bind address to `0.0.0.0` to accept the published host port.
+The readiness connection remains `127.0.0.1` inside the container.
+An explicit loopback bind remains available, but the installer warns that it blocks access through the host published port.
 The host port above accepts connections only from the outer host through `https://localhost:8443`.
 Keep `/var/lib/docker` and the installation directory on persistent volumes.
 After restarting the outer container, repeat the installer to start its daemon and resume the application.
@@ -95,17 +100,24 @@ For an all-Docker laboratory installation:
 1. Select method `1`.
 2. Choose a new private installation directory.
 3. Select candidate mode and enter the acknowledgment.
-4. Choose `yes` for a self-signed laboratory certificate.
-5. Accept `https://localhost:8443` to test from the installation host.
-6. Keep the loopback bind and readiness addresses for local testing.
+4. Accept `yes` for a self-signed laboratory certificate, or select `no` to supply your own certificate files.
+5. Accept `https://localhost:8443` for the browser URL. In a container test, open the browser on the Docker host.
+6. Accept `0.0.0.0` for container binding, or `127.0.0.1` for host-only testing. Keep the readiness address at `127.0.0.1`.
 7. Enter only the prerequisite exceptions required by your test environment.
 8. Enter a specific reason for each exception.
 9. Review the remaining database names, storage capacities, and operator labels.
 
 All-Docker storage uses managed Docker volumes. The installer retains their container paths automatically.
 
-A disposable container usually lacks a host time service.
-Use `time-synchronization` only when that applies to your environment.
+Interactive all-Docker candidate setup recommends a self-signed certificate and explains the browser trust warning.
+Continue past that warning only for your disposable test installation. Production requires an organization-trusted certificate.
+Use HTTPS, not HTTP, for the displayed browser URL.
+
+Interactive container setup recommends `time-synchronization` when it detects no systemd time service.
+Confirm that the Docker host clock is synchronized before accepting that laboratory exception.
+The installer explains every exception and requires a recorded reason for each selected exception.
+Enter `none` to keep all prerequisite checks enabled.
+Automated answers do not generate laboratory certificates or select exceptions without explicit answer keys.
 The supported exception names are `district-dns`, `time-synchronization`, `storage-capacity`, and `host-memory`.
 The `none` choice applies no exceptions. Docker, filesystem, certificate, registry, and architecture checks remain mandatory.
 

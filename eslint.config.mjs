@@ -17,6 +17,11 @@ export default [
           allow: ['^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$'],
           depConstraints: [
             {
+              sourceTag: 'type:contracts',
+              onlyDependOnLibsWithTags: ['type:contracts'],
+              bannedExternalImports: ['@angular/*', '@nestjs/*', 'pg', 'redis', 'openid-client'],
+            },
+            {
               sourceTag: '*',
               onlyDependOnLibsWithTags: ['*'],
             },

@@ -63,10 +63,16 @@ Preserve alpha when producing CSS. For example, `surface/selected` uses 8 percen
 Do not apply element opacity to a container and fade its text or controls.
 Feed the values into the shared Material theme and grid bridge. Avoid separate component palettes.
 
-The current [runtime stylesheet](../../frontend/src/theme/tokens.css) predates this contract.
-It lacks several tokens and contains older light warning and error text values.
-It is implementation evidence, not the design authority.
-Reconcile that stylesheet with `tokens.json` during theme implementation. No generator or runtime import is installed by this documentation change.
+The [runtime stylesheet](../../frontend/src/theme/tokens.css) implements this contract.
+Reconciled on 2026-09-14. The stylesheet now declares CSS custom properties for every typography style.
+`frontend/src/styles.scss` consumes those properties and maps them into the Material theme.
+The stylesheet is implementation output. `tokens.json` remains the design authority.
+No generator or runtime import is installed by this reconciliation.
+
+Adopted on 2026-09-14. Tailwind CSS 4 supplies the layout utility layer that UI-04 requires.
+`frontend/src/styles.scss` maps the Tailwind color, spacing, radius, and font namespaces to the `--cc-*` custom properties through `@theme`.
+Utilities resolve to `var(--cc-*)` references. `tokens.css` remains the single source of values.
+The dark variant follows the `data-theme='dark'` attribute. Tailwind scans only `frontend/src` for class candidates.
 
 ## Handoff record
 

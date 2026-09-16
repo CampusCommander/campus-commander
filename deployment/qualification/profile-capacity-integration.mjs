@@ -256,7 +256,7 @@ async function certificate(root) {
   return cert;
 }
 
-const seedCode = `
+export const seedCode = `
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
 import pg from 'pg';
@@ -276,7 +276,7 @@ try {
 } finally {await store.close();await pool.end()}
 `;
 
-const probeCode = `
+export const probeCode = `
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
 import pg from 'pg';
@@ -296,13 +296,13 @@ try {
 } finally {await store.close();await pool.end()}
 `;
 
-const fillCode = `
+export const fillCode = `
 import fs from 'node:fs';
 const config=JSON.parse(fs.readFileSync(process.env.CC_CONFIG_FILE));
 const path=config.artifacts.location+'/.cc18-capacity-filler';
 const before=fs.statfsSync(config.artifacts.location);
 const totalBytes=Number(before.blocks)*Number(before.bsize);
-if(totalBytes>16777216)throw new Error('Artifact filesystem exceeds the fixture cap.');
+if(Number(before.type)!==0x01021994||totalBytes<1||totalBytes>16777216)throw new Error('Artifact filesystem does not match the bounded tmpfs.');
 const file=fs.openSync(path,'wx',0o600),bytes=Buffer.alloc(65536,42);let writtenBytes=0,enospc=false;
 try {for(let index=0;index<300;index++){writtenBytes+=fs.writeSync(file,bytes)}}catch(error){if(error.code!=='ENOSPC')throw error;enospc=true}finally{fs.closeSync(file)}
 if(!enospc)throw new Error('Bounded artifact filesystem did not reach ENOSPC.');
@@ -310,7 +310,7 @@ const after=fs.statfsSync(config.artifacts.location);
 process.stdout.write(JSON.stringify({filesystemType:Number(before.type),totalBytes,writtenBytes,availableBytesBefore:Number(before.bavail)*Number(before.bsize),availableBytesAfter:Number(after.bavail)*Number(after.bsize)}));
 `;
 
-const failedPublicationCode = `
+export const failedPublicationCode = `
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
 import pg from 'pg';
@@ -331,7 +331,7 @@ try {
 } finally {await store.close();await pool.end()}
 `;
 
-const recoverCode = `
+export const recoverCode = `
 import fs from 'node:fs/promises';
 import pg from 'pg';
 import {connectionOptions} from '/app/deployment/postgres/index.mjs';

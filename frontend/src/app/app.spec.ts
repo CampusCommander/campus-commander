@@ -1,8 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
-import { App } from './app';
+import { Startup } from './startup/startup';
 
-describe('App', () => {
+describe('Startup', () => {
   beforeEach(async () => {
     vi.stubGlobal(
       'fetch',
@@ -11,12 +11,12 @@ describe('App', () => {
         .mockRejectedValue(new Error('Protected startup service unavailable')),
     );
     await TestBed.configureTestingModule({
-      imports: [App],
+      imports: [Startup],
     }).compileComponents();
   });
 
   it('renders truthful Phase 1 startup content', async () => {
-    const fixture = TestBed.createComponent(App);
+    const fixture = TestBed.createComponent(Startup);
     fixture.detectChanges();
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
@@ -41,7 +41,7 @@ describe('App', () => {
         { status: 200 },
       ),
     );
-    const fixture = TestBed.createComponent(App);
+    const fixture = TestBed.createComponent(Startup);
     fixture.detectChanges();
 
     await vi.waitFor(() => {

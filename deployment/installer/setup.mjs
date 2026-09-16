@@ -17,6 +17,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { configureApplication } from './application-setup.mjs';
 
 const profiles = ['all-docker', 'hybrid', 'kubernetes'];
 const exceptionNames = [
@@ -54,6 +55,19 @@ const exists = async (path) =>
       throw error;
     },
   );
+export async function detectSetupEnvironment({
+  pathExists = exists,
+  env = process.env,
+} = {}) {
+  return {
+    container: Boolean(
+      env.container ||
+        (await pathExists('/.dockerenv')) ||
+        (await pathExists('/run/.containerenv')),
+    ),
+    systemd: await pathExists('/run/systemd/system'),
+  };
+}
 const refPath = (root, ref) =>
   ref.provider === 'file'
     ? join(root, ref.path.split('/').at(-1))
@@ -128,6 +142,7 @@ export function createQuestions(answers = {}, ask) {
     }
   };
   question.reserve = (key) => used.add(key);
+  question.interactive = Boolean(ask);
   question.finish = () => {
     if (Object.keys(answers).some((key) => !used.has(key)))
       fail('Remove unknown or inapplicable answer keys.');
@@ -292,6 +307,7 @@ export async function verifyClusterSecrets(config, operator, run = execute) {
     for (const child of Object.values(value)) visit(child);
   };
   visit(config.services);
+  visit(config.applicationAuth);
   const secrets = new Map();
   try {
     for (const ref of references.values()) {
@@ -342,11 +358,14 @@ export async function configure({
   qualification = false,
   questions: q,
   manifest,
+  environment = {},
+  output = () => undefined,
 }) {
   const config = await readJson(
     join(releaseRoot, 'deployment/examples', `${profile}.json`),
   );
   config.images = manifest.images;
+  config.phase = manifest.phase ?? config.phase;
   const project = await q(
     'project',
     'Installation project or namespace',
@@ -371,16 +390,33 @@ export async function configure({
   ).trust;
   operator.trust = {
     ...trust,
+    ...(manifest.phase === 2
+      ? {
+          identity:
+            'https://github.com/CampusCommander/campus-commander/.github/workflows/phase-2-candidate.yml@refs/heads/implementation/phase-2-cc-22',
+        }
+      : {}),
     bundlePath: join(releaseRoot, 'release-manifest.sigstore.json'),
   };
   const files = new Map();
+  if (qualification && profile === 'all-docker') {
+    output(
+      'HTTPS requires a certificate. Choose yes to generate a temporary certificate for this disposable lab.',
+    );
+    output(
+      'Recommended for lab testing: yes. Your browser will show a certificate trust warning.',
+    );
+    output(
+      'Choose no to supply your own certificate and private key files. Production requires an organization-trusted certificate.',
+    );
+  }
   const lab =
     qualification &&
     profile === 'all-docker' &&
     (await q(
       'labCertificate',
-      'Generate a self-signed lab certificate (yes/no)',
-      'no',
+      'Generate a self-signed lab certificate (yes/no, recommended: yes)',
+      q.interactive ? 'yes' : 'no',
       (v) => ['yes', 'no'].includes(v),
     )) === 'yes';
   const url = await q(
@@ -427,11 +463,33 @@ export async function configure({
         : { mode };
   }
   if (profile !== 'kubernetes') {
+    if (environment.container) {
+      output(
+        'Container detected. Use 0.0.0.0 inside this container to accept traffic from the Docker host published port.',
+      );
+      output(
+        'Use a loopback-only host port mapping for local testing, such as -p 127.0.0.1:8443:8443.',
+      );
+      output(
+        'The container bind address is not the browser address. The outer Docker host controls external exposure.',
+      );
+    } else {
+      output(
+        '127.0.0.1 accepts HTTPS connections only from this machine. 0.0.0.0 listens on all IPv4 interfaces.',
+      );
+    }
     operator.bindAddress = await q(
       'bindAddress',
       'HTTPS bind IPv4 address',
-      '127.0.0.1',
+      environment.container ? '0.0.0.0' : '127.0.0.1',
       (v) => isIP(v) === 4,
+    );
+    if (environment.container && operator.bindAddress.startsWith('127.'))
+      output(
+        'Warning: this loopback bind blocks browser access through the outer Docker host published port.',
+      );
+    output(
+      'Readiness checks run here. Keep 127.0.0.1 for readiness when the HTTPS bind address is 0.0.0.0.',
     );
     operator.connectAddress = await q(
       'connectAddress',
@@ -441,10 +499,36 @@ export async function configure({
     );
   }
   if (qualification) {
+    const containerClock =
+      environment.container && !environment.systemd && profile !== 'kubernetes';
+    output(
+      'Lab exceptions skip selected prerequisite checks. They do not repair the missing requirement or establish production readiness.',
+    );
+    output('none: keep every prerequisite check enabled.');
+    output(
+      'time-synchronization: skip the local time-service check when the container shares a synchronized host clock.',
+    );
+    output(
+      'district-dns: skip district DNS checks for a disposable lab without district DNS.',
+    );
+    output(
+      'storage-capacity: skip storage-capacity checks for a disposable lab. Insufficient storage can stop services.',
+    );
+    output(
+      'host-memory: skip the host-memory check for a disposable lab. Insufficient memory can stop services.',
+    );
+    if (containerClock) {
+      output(
+        'This container has no systemd time service. Confirm that the Docker host clock is synchronized.',
+      );
+      output(
+        'For that lab configuration, select time-synchronization. Type none to keep the check enabled.',
+      );
+    }
     const names = await q(
       'exceptions',
       'Lab prerequisite exceptions, comma-separated names, or none',
-      'none',
+      containerClock && q.interactive ? 'time-synchronization' : 'none',
       (v) =>
         typeof v === 'string' &&
         (v === 'none' ||
@@ -454,6 +538,10 @@ export async function configure({
     for (const name of names === 'none'
       ? []
       : new Set(names.split(',').map((v) => v.trim()))) {
+      if (name === 'time-synchronization' && containerClock)
+        output(
+          'Example reason: This test container shares the synchronized Docker host clock and has no separate time service.',
+        );
       const reason = await q(
         `exceptions.${name}.reason`,
         `Record the lab reason for ${name}`,
@@ -643,6 +731,7 @@ export async function configure({
       );
   }
   await storage(config.artifacts, 'artifacts', profile !== 'all-docker');
+  await configureApplication(config, operator, q);
   const generated = new Set([
     '/run/secrets/bootstrap',
     '/run/secrets/worker-dispatch',
@@ -698,6 +787,7 @@ export async function configure({
       await visit(child, key ? `${key}.${name}` : name);
   };
   await visit(config.services, 'services');
+  await visit(config.applicationAuth, 'applicationAuth');
   let migration;
   if (profile === 'hybrid') {
     migration = {
@@ -737,6 +827,7 @@ export async function runSetup(
     validate,
     run = execute,
     output = (line) => process.stdout.write(`${line}\n`),
+    detectEnvironment = detectSetupEnvironment,
   } = {},
 ) {
   const q = createQuestions(answers, ask);
@@ -861,6 +952,8 @@ export async function runSetup(
         qualification,
         questions: q,
         manifest,
+        environment: await detectEnvironment(),
+        output,
       });
     }
     const profile = plan.config.profile;
@@ -976,9 +1069,41 @@ export async function runSetup(
   output(
     `Readiness: ${result.readiness?.status ?? result.status ?? result.state?.phase ?? 'unknown'}. URL: ${config.services.edge.endpoint.url}`,
   );
-  output(
-    `Bootstrap credential file: ${refPath(join(root, 'private'), config.services.edge.bootstrapSecretRef)}`,
-  );
+  if (config.profile !== 'kubernetes') {
+    output(
+      `Browser URL: ${config.services.edge.endpoint.url}. Use HTTPS, not HTTP.`,
+    );
+    if ((await detectEnvironment()).container) {
+      output(
+        'Open the browser on the Docker host. Its published port must match the browser URL port.',
+      );
+      if (operator.bindAddress?.startsWith('127.'))
+        output(
+          'Warning: this installation binds to container loopback. The Docker host published port cannot reach it.',
+        );
+    }
+  }
+  if (
+    (await protectedJson(join(root, 'setup-record.json'))).selfSignedCertificate
+  )
+    output(
+      'A browser trust warning is expected for this self-signed lab certificate. Continue only for your disposable test installation.',
+    );
+  if (config.phase === 2) {
+    output(
+      `OIDC callback URL: ${config.applicationAuth.publicOrigin}/api/auth/callback`,
+    );
+    output(
+      'Enroll the initial administrator with deployment/bootstrap/application-access-cli.mjs before application sign-in.',
+    );
+    output(
+      'Follow deployment/bootstrap/APPLICATION-ACCESS.md for enrollment, recovery, and credential rotation.',
+    );
+  } else {
+    output(
+      `Bootstrap credential file: ${refPath(join(root, 'private'), config.services.edge.bootstrapSecretRef)}`,
+    );
+  }
   if (config.profile === 'hybrid')
     output(
       `Deploy docker-compose.worker-*.json on the declared worker hosts. Preserve shared storage paths and private credential mounts.`,

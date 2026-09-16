@@ -5,6 +5,7 @@
 !tsconfig.base.json
 !eslint.config.mjs
 !api/**
+!libs/application-contracts/**
 !deployment/project.json
 !deployment/tsconfig.json
 !deployment/tsconfig.lib.json

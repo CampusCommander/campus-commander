@@ -305,6 +305,14 @@
         "command": "node deployment/kubernetes/network-integration.mjs"
       }
     },
+    "kubernetes-capacity-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/kubernetes/capacity-integration.mjs"
+      }
+    },
     "kubernetes-certificate-integration": {
       "executor": "nx:run-commands",
       "cache": false,

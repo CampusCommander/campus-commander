@@ -16,7 +16,12 @@ import test from 'node:test';
 const script = resolve('install.sh');
 const revision = 'a'.repeat(40);
 const tag = `phase-1-candidate-${revision.slice(0, 12)}`;
-async function fixture(t, { link = false, tamper = false } = {}) {
+async function fixture(
+  t,
+  { link = false, tamper = false, phase = 1, wrongPhase = false } = {},
+) {
+  const candidate = `phase-${phase}-candidate`;
+  const tag = `${candidate}-${revision.slice(0, 12)}`;
   const root = await mkdtemp(join(tmpdir(), 'cc-entry-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const bundle = join(root, 'bundle'),
@@ -36,6 +41,7 @@ async function fixture(t, { link = false, tamper = false } = {}) {
     'import fs from "node:fs";fs.writeFileSync(process.env.CC_ENTRY_EXECUTED,JSON.stringify(process.argv.slice(2)));\n';
   const manifest = {
     schemaVersion: 1,
+    ...(phase === 2 ? { phase: wrongPhase ? 1 : 2 } : {}),
     sourceRevision: revision,
     architectures: ['linux/amd64'],
     images: Object.fromEntries(
@@ -62,7 +68,7 @@ async function fixture(t, { link = false, tamper = false } = {}) {
   assert.equal(
     spawnSync('tar', [
       '-czf',
-      join(assets, 'phase-1-candidate.tar.gz'),
+      join(assets, `${candidate}.tar.gz`),
       '-C',
       bundle,
       '.',
@@ -74,7 +80,7 @@ async function fixture(t, { link = false, tamper = false } = {}) {
     tamper ? manifestBytes + ' ' : manifestBytes,
   );
   for (const name of [
-    'phase-1-candidate.sigstore.json',
+    `${candidate}.sigstore.json`,
     'release-manifest.sigstore.json',
   ])
     await writeFile(join(assets, name), '{}');
@@ -136,6 +142,24 @@ test('entry verifies both blobs and three images without executing during verify
     trace,
     /candidate-images.yml@refs\/heads\/implementation\/cc-5-through-cc-20/,
   );
+});
+test('Phase 2 entry binds the manifest and every signature to the fixed Phase 2 publisher', async (t) => {
+  const f = await fixture(t, { phase: 2 });
+  const result = f.run(['--verify-only']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await f.executed(), null);
+  const trace = await f.trace();
+  assert.match(
+    trace,
+    /phase-2-candidate\.yml@refs\/heads\/implementation\/phase-2-cc-22/,
+  );
+  assert.equal((trace.match(/cosign \["verify-blob"/g) || []).length, 2);
+  assert.equal((trace.match(/cosign \["verify"/g) || []).length, 3);
+});
+test('Phase 2 entry rejects a manifest for a different phase', async (t) => {
+  const f = await fixture(t, { phase: 2, wrongPhase: true });
+  assert.notEqual(f.run(['--verify-only']).status, 0);
+  assert.equal(await f.executed(), null);
 });
 for (const failure of ['verify-blob', 'manifest', 'verify']) {
   test(`entry fails closed on ${failure} signature failure`, async (t) => {

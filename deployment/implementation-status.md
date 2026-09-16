@@ -26,7 +26,7 @@ The matrix below follows each ticket's actual criteria. It does not add district
 | CC-15  | Complete   | Calico enforced 29 DNS, allowed-service, and denied-service connection checks                      |
 | CC-16  | Complete   | All three profiles passed lifecycle, backup-gated image upgrade, fixture preservation, and erasure |
 | CC-17  | Complete   | Isolated synthetic restores for all-Docker, hybrid, and Kubernetes                                 |
-| CC-18  | Open       | Hybrid faults and Kubernetes certificates passed. Complete bounded Kubernetes capacity testing     |
+| CC-18  | Complete   | Synthetic fault matrix passed across all profiles, including bounded Kubernetes capacity recovery  |
 | CC-19  | Complete   | Signed candidate publication, rejection gates, and report-content binding regression tests         |
 | CC-20  | Open       | Independent human walkthroughs, required records, and completion decision                          |
 

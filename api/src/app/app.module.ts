@@ -10,9 +10,12 @@ import {
 } from './health/readiness';
 import { STARTUP_RUNTIME, StartupRuntimeLifecycle } from './startup-runtime';
 import type { StartupRuntime } from './startup-runtime.contract';
+import { AuthModule } from './auth/auth.module';
+import { ConfigurationModule } from './configuration/configuration.module';
+import { DiagnosticsModule } from './diagnostics/diagnostics.module';
 
 @Module({
-  imports: [],
+  imports: [ConfigurationModule, AuthModule, DiagnosticsModule],
   controllers: [AppController, BootstrapController, HealthController],
 })
 export class AppModule {

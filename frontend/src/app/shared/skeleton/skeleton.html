@@ -1,0 +1,11 @@
+<div class="skeleton flex flex-col gap-sm" aria-hidden="true">
+  @if (avatar()) {
+  <span class="skeleton-block skeleton-avatar"></span>
+  }
+  @for (block of blocks(); track block) {
+  <span
+    class="skeleton-block"
+    [class.skeleton-line]="variant() === 'lines'"
+  ></span>
+  }
+</div>

@@ -1,0 +1,38 @@
+<h2 mat-dialog-title>{{ title() }}</h2>
+<mat-dialog-content class="flex flex-col gap-md">
+  <p>{{ data.consequence }}</p>
+  @if (data.level >= 2) {
+  <p>This action affects exactly {{ data.count }} {{ data.objectLabel }}.</p>
+  @if (data.previewSummary) {
+  <p class="secondary">{{ data.previewSummary }}</p>
+  }
+  }
+  @if (data.level === 2) {
+  <mat-checkbox
+    [checked]="acknowledged()"
+    (change)="acknowledged.set($event.checked)"
+    >I reviewed the {{ data.count }} affected {{ data.objectLabel }}.</mat-checkbox
+  >
+  }
+  @if (data.level === 3) {
+  <mat-form-field>
+    <mat-label>Type {{ data.confirmPhrase }} to confirm</mat-label>
+    <input
+      matInput
+      [value]="typed()"
+      (input)="typed.set($any($event.target).value)"
+    />
+  </mat-form-field>
+  }
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button (click)="cancel()">Cancel</button>
+  <button
+    mat-flat-button
+    [color]="data.level === 3 ? 'warn' : 'primary'"
+    [disabled]="!confirmed()"
+    (click)="confirm()"
+  >
+    {{ confirmText() }}
+  </button>
+</mat-dialog-actions>
