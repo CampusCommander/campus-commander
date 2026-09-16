@@ -1,3 +1,4 @@
+import { qualifyGoogleConnection } from './google-connection.integration.mjs';
 import { qualifyAccessRevocation } from './access-revocation.integration.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -483,6 +484,14 @@ try {
   );
   results.push(
     ...(await qualifyAccessRevocation({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyGoogleConnection({
       runtime,
       migrator: migrators[0],
       connect,
