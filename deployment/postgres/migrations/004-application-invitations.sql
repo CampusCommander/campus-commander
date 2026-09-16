@@ -131,12 +131,14 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION cc.invitation_browser_status(p_browser_hash text,p_correlation uuid) RETURNS text
+CREATE FUNCTION cc.invitation_browser_status(p_browser_hash text,p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, cc AS $$
-DECLARE result text;
+DECLARE result jsonb;
 BEGIN
   PERFORM cc.expire_invitations(p_correlation);
-  SELECT status INTO result FROM cc.application_invitations WHERE browser_hash=p_browser_hash;
+  SELECT jsonb_build_object('status',status,'candidate',CASE WHEN candidate_subject IS NULL THEN NULL ELSE
+    jsonb_build_object('issuer',issuer,'subject',candidate_subject,'displayName',candidate_name) END)
+    INTO result FROM cc.application_invitations WHERE browser_hash=p_browser_hash;
   RETURN result;
 END;
 $$;

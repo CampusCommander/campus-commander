@@ -44,6 +44,16 @@ export const invitationSchema = z.strictObject({
   expiresAt: z.string(),
   createdAt: z.string(),
 });
+export const invitationBrowserSchema = z.strictObject({
+  status: invitationStatusSchema,
+  candidate: z
+    .strictObject({
+      issuer: z.string(),
+      subject: z.string(),
+      displayName: z.string(),
+    })
+    .nullable(),
+});
 export type Invitation = z.infer<typeof invitationSchema>;
 export const invitationRevisionSchema = z.strictObject({
   version: z.number().int().positive(),

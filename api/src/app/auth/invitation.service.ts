@@ -9,6 +9,7 @@ import {
 import { createHash, randomBytes } from 'node:crypto';
 import {
   invitationSchema,
+  invitationBrowserSchema,
   type CreateInvitation,
   type SessionResponse,
 } from '@campus/application-contracts';
@@ -180,6 +181,6 @@ export class InvitationService {
       [hash(token), correlation],
     );
     if (!result.rows[0].status) throw new UnauthorizedException();
-    return { status: result.rows[0].status };
+    return invitationBrowserSchema.parse(result.rows[0].status);
   }
 }

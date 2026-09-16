@@ -4,7 +4,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import {
-  invitationStatusSchema,
+  invitationBrowserSchema,
   invitationTokenSchema,
 } from '@campus/application-contracts';
 
@@ -19,6 +19,11 @@ export class RedeemInvitation implements OnInit {
   protected readonly status = signal('start');
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  protected readonly candidate = signal<{
+    issuer: string;
+    subject: string;
+    displayName: string;
+  } | null>(null);
   ngOnInit() {
     const fragment = window.location.hash.slice(1);
     const failed = new URLSearchParams(window.location.search).has('error');
@@ -72,8 +77,9 @@ export class RedeemInvitation implements OnInit {
         return;
       }
       if (!response.ok) throw new Error();
-      const result: { status: unknown } = await response.json();
-      this.status.set(invitationStatusSchema.parse(result.status));
+      const result = invitationBrowserSchema.parse(await response.json());
+      this.status.set(result.status);
+      this.candidate.set(result.candidate);
     } catch {
       this.error.set(
         'Invitation status is unavailable. Check your connection, then retry.',

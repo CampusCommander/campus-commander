@@ -249,7 +249,7 @@ export async function qualifyInvitations({
         'SELECT cc.invitation_browser_status($1,$2) AS status',
         [hash(claimed.browser), correlation],
       )
-    ).rows[0].status,
+    ).rows[0].status.status,
     'accepted',
   );
 

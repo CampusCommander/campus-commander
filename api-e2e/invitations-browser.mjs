@@ -40,7 +40,7 @@ export async function qualifyInvitationBrowser({
     .getByLabel('Recipient label', { exact: true })
     .fill('Controlled recipient');
   await page
-    .getByLabel('Known sign-in subject (optional)', { exact: true })
+    .getByLabel('Sign-in subject', { exact: true })
     .fill('invited-platform-user');
   await page
     .getByRole('checkbox', { name: 'Read customer settings', exact: true })
@@ -139,6 +139,9 @@ export async function qualifyInvitationBrowser({
         `invitation-awaiting-confirmation-${theme}`,
       );
     }
+    await expect(
+      recipientPage.getByText('invited-platform-user', { exact: true }),
+    ).toBeVisible();
     setSubject('administrator');
     await page
       .getByRole('button', { name: 'Refresh invitations', exact: true })
