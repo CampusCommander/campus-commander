@@ -116,19 +116,26 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION cc.record_google_observation(p_customer text,p_generation integer,p_observation jsonb,p_correlation uuid) RETURNS jsonb
+CREATE FUNCTION cc.record_google_observation(p_customer text,p_generation integer,p_observation jsonb,p_correlation uuid,p_actor uuid DEFAULT NULL,p_version integer DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE connection cc.google_connection; observed timestamptz;
 BEGIN
+  IF p_actor IS NOT NULL OR p_version IS NOT NULL THEN
+    BEGIN
+      PERFORM cc.google_connection_actor(p_actor,p_version,'connection:diagnose');
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE EXCEPTION 'Current connection authority is required.' USING ERRCODE='42501',DETAIL='connection-authority-changed';
+    END;
+  END IF;
   connection:=cc.google_current_generation(p_customer,p_generation);
   IF p_observation IS NULL OR p_observation->>'customerId' IS DISTINCT FROM p_customer THEN
     RAISE EXCEPTION 'The observed customer differs from the binding.' USING DETAIL='credential-changed';
   END IF;
   observed:=clock_timestamp();
   UPDATE cc.google_connection SET observation=p_observation,observed_at=observed WHERE singleton;
-  INSERT INTO cc.security_events(id,event,correlation_id,target_id,resource_scope,detail)
-    VALUES(gen_random_uuid(),'connection-checked',p_correlation,connection.credential_id,
-      jsonb_build_object('kind','district','customerId',p_customer),'background-read');
+  INSERT INTO cc.security_events(id,actor_id,event,correlation_id,target_id,resource_scope,detail)
+    VALUES(gen_random_uuid(),p_actor,'connection-checked',p_correlation,connection.credential_id,
+      jsonb_build_object('kind','district','customerId',p_customer),CASE WHEN p_actor IS NULL THEN 'background-read' ELSE 'operator-read' END);
   RETURN jsonb_build_object('customerId',p_customer,'generation',p_generation,'observedAt',observed,'observation',p_observation);
 END;
 $$;
@@ -148,4 +155,4 @@ $$;
 
 REVOKE ALL ON FUNCTION cc.google_current_generation(text,integer),cc.acquire_google_access(text,integer,uuid),
   cc.finish_google_access(text,integer,uuid,jsonb,timestamptz,text,uuid),cc.reject_google_access(text,integer,uuid,text,uuid),
-  cc.record_google_observation(text,integer,jsonb,uuid),cc.reset_google_access(uuid,integer,text,integer,uuid) FROM PUBLIC;
+  cc.record_google_observation(text,integer,jsonb,uuid,uuid,integer),cc.reset_google_access(uuid,integer,text,integer,uuid) FROM PUBLIC;

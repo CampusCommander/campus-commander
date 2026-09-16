@@ -147,6 +147,58 @@ export async function qualifyGoogleTokens({
     verifier,
   ).read(input);
   assert.equal(renewals, 1);
+
+  const beforeObservation = (
+    await migrator.query('SELECT observed_at FROM cc.google_connection')
+  ).rows[0].observed_at;
+  const beforeAudit = (
+    await migrator.query(
+      "SELECT count(*)::int AS count FROM cc.security_events WHERE event='connection-checked'",
+    )
+  ).rows[0].count;
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const delayed = new GoogleConnectionProvider(runtime, cipher, {
+    renew: verifier.renew,
+    async observe() {
+      entered.resolve();
+      await release.promise;
+      return observation(customerId);
+    },
+  });
+  const stale = assert.rejects(
+    delayed.read(input, undefined, { actorId: actor, permissionVersion: 1 }),
+    { code: 'forbidden' },
+  );
+  await entered.promise;
+  try {
+    await migrator.query(
+      'UPDATE cc.application_principals SET permission_version=2 WHERE id=$1',
+      [actor],
+    );
+    release.resolve();
+    await stale;
+    assert.deepEqual(
+      (await migrator.query('SELECT observed_at FROM cc.google_connection'))
+        .rows[0].observed_at,
+      beforeObservation,
+    );
+    assert.equal(
+      (
+        await migrator.query(
+          "SELECT count(*)::int AS count FROM cc.security_events WHERE event='connection-checked'",
+        )
+      ).rows[0].count,
+      beforeAudit,
+    );
+    await providers[1].read(input);
+  } finally {
+    release.resolve();
+    await migrator.query(
+      'UPDATE cc.application_principals SET permission_version=1 WHERE id=$1',
+      [actor],
+    );
+  }
   const rejected = new GoogleConnectionProvider(runtime, cipher, {
     renew: verifier.renew,
     async observe() {
@@ -249,5 +301,6 @@ export async function qualifyGoogleTokens({
     'revoked access stops automatic renewal until current operator authority permits retry: pass',
     'lease expiry and credential replacement reject late renewal and observation writes: pass',
     'transient failures require a bounded cooldown before another renewal: pass',
+    'concurrent actor revocation prevents API observation and audit writes while independent workers retain service authority: pass',
   ];
 }

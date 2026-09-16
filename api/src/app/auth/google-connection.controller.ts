@@ -39,11 +39,11 @@ export class GoogleConnectionController {
         retry: z.boolean().default(false),
       })
       .parse(body);
-    const authorize = () =>
+    const authorize = (session = request.session) =>
       this.auth.authorize(
-        request.session,
+        session,
         'connection:diagnose',
-        { kind: 'platform' },
+        { kind: 'district', customerId: input.customerId },
         request.correlationId,
       );
     await authorize();
@@ -56,7 +56,13 @@ export class GoogleConnectionController {
         request.correlationId,
       );
     } finally {
-      await authorize();
+      await authorize(
+        await this.auth.authenticate(
+          request.headers.cookie,
+          'identity:read',
+          request.correlationId,
+        ),
+      );
     }
   }
 

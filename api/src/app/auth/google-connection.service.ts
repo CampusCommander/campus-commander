@@ -164,8 +164,13 @@ export class GoogleConnectionService
       return await new GoogleConnectionProvider(
         this.database.connection,
         this.cipher(),
-      ).read({ customerId, generation, correlationId });
+      ).read({ customerId, generation, correlationId }, undefined, {
+        actorId: session.identity.id,
+        permissionVersion: session.identity.permissionVersion,
+      });
     } catch (error) {
+      if (error instanceof GoogleStoreError && error.code === 'forbidden')
+        throw new ForbiddenException({ reason: 'forbidden' });
       if (
         error instanceof GoogleStoreError &&
         error.code === 'credential-changed'

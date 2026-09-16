@@ -48,7 +48,10 @@ const claimSchema = z.discriminatedUnion('status', [
   }),
 ]);
 export class GoogleStoreError extends Error {
-  readonly code: 'credential-changed' | 'connection-store-unavailable';
+  readonly code:
+    | 'credential-changed'
+    | 'connection-store-unavailable'
+    | 'forbidden';
   constructor(code: GoogleStoreError['code']) {
     super(code);
     this.name = 'GoogleStoreError';
@@ -81,6 +84,12 @@ export class GoogleConnectionProvider {
       const parsed = z
         .object({ code: z.string(), detail: z.string().optional() })
         .safeParse(error);
+      if (
+        parsed.success &&
+        parsed.data.code === '42501' &&
+        parsed.data.detail === 'connection-authority-changed'
+      )
+        throw new GoogleStoreError('forbidden');
       if (
         parsed.success &&
         parsed.data.code === 'P0001' &&
@@ -165,7 +174,11 @@ export class GoogleConnectionProvider {
     throw new GoogleConnectionError('network-failure');
   }
 
-  async read(request: GoogleReadRequest, stopping?: AbortSignal) {
+  async read(
+    request: GoogleReadRequest,
+    stopping?: AbortSignal,
+    authority?: { actorId: string; permissionVersion: number },
+  ) {
     const input = requestSchema.parse(request);
     const signal = AbortSignal.any([
       AbortSignal.timeout(60_000),
@@ -194,12 +207,14 @@ export class GoogleConnectionProvider {
       }
       return resultSchema.parse(
         await this.query(
-          'SELECT cc.record_google_observation($1,$2,$3,$4) AS result',
+          'SELECT cc.record_google_observation($1,$2,$3,$4,$5,$6) AS result',
           [
             input.customerId,
             input.generation,
             JSON.stringify(observation),
             input.correlationId,
+            authority?.actorId ?? null,
+            authority?.permissionVersion ?? null,
           ],
         ),
       );

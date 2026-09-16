@@ -148,6 +148,65 @@ export async function qualifyGoogleConnectionApi({
   });
   assert.equal(checked.status(), 201, await checked.text());
   assert.equal((await checked.json()).observation.customerId, 'C0123456');
+
+  const actor = session.identity.id;
+  const originalScopes = (
+    await migrator.query(
+      "SELECT scope FROM cc.application_grants WHERE principal_id=$1 AND action='connection:diagnose'",
+      [actor],
+    )
+  ).rows;
+  try {
+    await migrator.query(
+      "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='connection:diagnose'",
+      [actor],
+    );
+    await migrator.query(
+      "INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,'connection:diagnose',$2)",
+      [actor, JSON.stringify({ kind: 'district', customerId: 'C0123456' })],
+    );
+    assert.equal(
+      (
+        await admin.post(`${root}/check`, {
+          headers,
+          data: { customerId: 'C0123456', generation: 1, retry: true },
+        })
+      ).status(),
+      201,
+    );
+    assert.equal(
+      (
+        await admin.post(`${root}/check`, {
+          headers,
+          data: { customerId: 'C9999999', generation: 1 },
+        })
+      ).status(),
+      403,
+    );
+    await migrator.query(
+      "UPDATE cc.application_grants SET scope=$2 WHERE principal_id=$1 AND action='connection:diagnose'",
+      [actor, JSON.stringify({ kind: 'district', customerId: 'C9999999' })],
+    );
+    assert.equal(
+      (
+        await admin.post(`${root}/check`, {
+          headers,
+          data: { customerId: 'C0123456', generation: 1 },
+        })
+      ).status(),
+      403,
+    );
+  } finally {
+    await migrator.query(
+      "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='connection:diagnose'",
+      [actor],
+    );
+    for (const { scope } of originalScopes)
+      await migrator.query(
+        "INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,'connection:diagnose',$2)",
+        [actor, JSON.stringify(scope)],
+      );
+  }
   await writeFile(
     `${evidenceDirectory}/google-connection-api.json`,
     JSON.stringify(
@@ -161,6 +220,7 @@ export async function qualifyGoogleConnectionApi({
           'explicit exact customer confirmation required',
           'confirmation stores encrypted generation one and rejects replay',
           'API checks require CSRF and the active credential generation',
+          'platform and confirmed district grants permit checks while unrelated districts fail',
         ],
       },
       null,

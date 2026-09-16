@@ -196,7 +196,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
     if (migrations.some(({ id }) => id === '008-google-token-coordination')) {
       await client.query(`GRANT EXECUTE ON FUNCTION cc.acquire_google_access(text,integer,uuid),
         cc.finish_google_access(text,integer,uuid,jsonb,timestamptz,text,uuid),
-        cc.reject_google_access(text,integer,uuid,text,uuid),cc.record_google_observation(text,integer,jsonb,uuid),
+        cc.reject_google_access(text,integer,uuid,text,uuid),cc.record_google_observation(text,integer,jsonb,uuid,uuid,integer),
         cc.reset_google_access(uuid,integer,text,integer,uuid) TO ${role}`);
     }
     if (migrations.some(({ id }) => id === '007-google-connection')) {
