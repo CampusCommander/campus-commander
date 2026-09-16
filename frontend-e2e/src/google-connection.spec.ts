@@ -407,21 +407,16 @@ test('customer import and review meet automated accessibility and overflow check
     await page.evaluate((zoom) => {
       document.body.style.zoom = zoom;
     }, zoom);
-    const overflow = await page.evaluate(() => ({
-      viewport: window.innerWidth,
-      width: document.documentElement.scrollWidth,
-      elements: [...document.querySelectorAll('body *')]
-        .filter((e) => e.getBoundingClientRect().right > window.innerWidth)
-        .map((e) => ({
-          tag: e.tagName,
-          className: e.className,
-          text: e.textContent?.slice(0, 100),
-          right: e.getBoundingClientRect().right,
-        })),
-    }));
-    expect(
-      overflow.width <= overflow.viewport,
-      JSON.stringify({ zoom, ...overflow }),
-    ).toBe(true);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      )
+      .toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`zoom-${width}-${zoom}.png`),
+      fullPage: true,
+    });
   }
 });
