@@ -127,6 +127,7 @@ jobs:
       - run: npm exec nx run api-e2e:phase3-auth-integration
         env:
           NX_NO_CLOUD: 'true'
+          CC_AUTH_PACKAGED_IMAGES: 'true'
       - run: npm exec nx run api-e2e:all-docker-integration
         env:
           NX_NO_CLOUD: 'true'
