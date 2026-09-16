@@ -634,7 +634,8 @@
         "remainingIntegrations": ["CC-46 confirmed customer scope"],
         "downstreamExtension": "CC-52 verified school scope",
         "evidence": "deployment/evidence/CC-51-platform-access.json",
-        "compatibilityCiRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35136924107"
+        "compatibilityCiRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35136924107",
+        "compatibilityStatus": "passed"
       }
     },
     {
