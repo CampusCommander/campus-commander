@@ -60,5 +60,12 @@
     "The live provider check does not bind a deployed installation.",
     "CC-44 live revocation and delegated-identity replacement remain incomplete.",
     "Human screen-reader validation remains unperformed."
-  ]
+  ],
+  "testStability": {
+    "file": "deployment/kubernetes/isolated-port-forward.test.mjs",
+    "issue": "The socket closed before the child-process close event updated the failure count.",
+    "regression": "Inherited output streams delay process closure. The assertion failed before explicit synchronization and passed afterward.",
+    "validation": "Seven Kubernetes unit tests and deployment lint passed.",
+    "runtimeChanged": false
+  }
 }
