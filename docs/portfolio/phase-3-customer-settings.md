@@ -2,7 +2,7 @@
 
 [CC-47](https://easton-consulting.atlassian.net/browse/CC-47) owns customer settings and durable onboarding progress.
 Implementation starts from the qualified CC-46 customer binding.
-The issue remains In Progress. Browser implementation is present. Hosted browser qualification remains pending.
+The issue is In Review. Source and packaged browser qualification passed. Human acceptance remains pending.
 
 ## Settings contract
 
@@ -53,9 +53,20 @@ The page moves keyboard focus to pending, conflict, or receipt results after an 
 ## Validation
 
 Local API build, contract tests, lint, and deployment unit checks pass.
-Full CI passed all seven jobs at backend commit `0bac981`. PostgreSQL checks passed scope denial, competing writes, audit rollback, idempotency, and stale actor rejection.
-Run: https://github.com/CampusCommander/campus-commander/actions/runs/35159796531.
+The [backend full CI](https://github.com/CampusCommander/campus-commander/actions/runs/35159796531) passed all seven jobs at `0bac981`.
+PostgreSQL checks passed scope denial, competing writes, audit rollback, idempotency, and stale actor rejection.
+
 Eight local Chromium cases pass. They cover conflicts, exact retries, receipt recovery, offline input, access recovery, read-only access, validation, and accessibility.
 The browser checks include keyboard focus, both themes, 200 percent CSS zoom, and 320-pixel reflow.
-Browser and packaged application qualification remain pending.
+
+Source qualification passed at `dcdc80d` in [run 35160778901](https://github.com/CampusCommander/campus-commander/actions/runs/35160778901).
+The downloaded report confirms real API, PostgreSQL, and Redis recovery checks without repeated credential staging.
+Both hosted accessibility reports contain zero automated violations.
+Visual inspection of the light and dark conflict screenshots passed.
+
+[Full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35160781529) passed all seven jobs at `dcdc80d`.
+The downloaded artifacts confirm packaged Phase 3 execution and both accessibility reports with zero automated violations.
+The run also passed packaged Phase 2 compatibility and all-Docker installation checks.
+
+The [sanitized evidence](../../deployment/evidence/CC-47-customer-settings.json) records checks and limits.
 Human screen-reader and owner acceptance checks remain separate gates.
