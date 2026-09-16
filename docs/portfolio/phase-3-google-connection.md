@@ -3,7 +3,7 @@
 [CC-46](https://easton-consulting.atlassian.net/browse/CC-46) owns this implementation.
 [PR #10](https://github.com/CampusCommander/campus-commander/pull/10) remains a draft.
 The implementation now includes credential storage, provider verification, and public API confirmation.
-The worker and coordinated renewal implementation awaits hosted qualification.
+Coordinated renewal and independent worker reads passed hosted qualification.
 The browser workflow remains incomplete.
 
 ## Credential and customer transaction
@@ -70,7 +70,8 @@ Permanent credential, delegation, scope, privilege, and policy failures stop aut
 A current operator with `connection:diagnose` authority can authorize another attempt.
 Transient network, quota, provider, and request failures require a thirty-second cooldown.
 Token changes and observations commit with their security events.
-The background read permits sixty seconds, with bounded database operations and a twenty-second renewal deadline.
+Google requests share a sixty-second abort signal. Renewal has a twenty-second deadline.
+Database operations retain three-second connection and five-second query timeouts.
 
 The API exposes a CSRF-protected `POST /api/google-connection/check` operation.
 It checks operator scope before the read and reauthenticates before returning its result.
@@ -101,8 +102,9 @@ Synthetic tests cover encryption, provider normalization, request bounds, error 
 Hosted PostgreSQL checks cover current authority, cleanup bounds, lock-delayed expiry, failure recovery, audit rollback, and competing confirmations.
 The API qualification uses a dedicated synthetic Google transport preload in the test process.
 Production code contains no provider-mock configuration switch.
-The [API qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35146666164) passed for runtime revision `0a048b9`.
-The [full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35146668372) passed all seven jobs, including packaged application and installation checks.
+The [source-container qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35150914556) passed at revision `8da947c`.
+The [packaged qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35151231170) passed Phase 2 and Phase 3 application checks at `c4b48bc`.
+The full run passed all seven jobs, including the all-Docker installation check.
 The [connection evidence](../../deployment/evidence/CC-46-customer-connection.json) records its checks and deployment limits.
 Synthetic qualification does not prove live DWD privileges or deployed Google connectivity.
 
@@ -112,4 +114,6 @@ That read used the approved service account and the new verifier.
 No live credential enters test fixtures, evidence files, or Git history.
 CC-44 still requires its remaining live qualification gates.
 CC-46 still requires browser integration and complete deployment qualification.
-The new worker and token coordination checks require hosted execution before their evidence becomes qualified.
+Two independent worker processes shared one renewal and reused encrypted tokens after API and worker restarts.
+Wrong keys and denied database access failed closed.
+PostgreSQL qualification covered audit rollback, retired leases and generations, cooldowns, and concurrent operator revocation.

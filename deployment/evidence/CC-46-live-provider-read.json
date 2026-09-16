@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "sourceRevision": "06cfc8c3a48203e08d7fc522fbb18d02fccacde3",
+  "sourceRevision": "8da947c029907e2ac382f513933a648811da5877",
   "recordedOn": "2026-09-16",
   "customerId": "C01zcarnq",
   "primaryDomain": "easton-consulting.com",
@@ -16,6 +16,9 @@
     "Read-only provider check from the development host.",
     "No deployed PostgreSQL binding or independent worker claim.",
     "No live revocation or delegated-identity replacement test.",
-    "Private keys, access tokens, and private credential paths are excluded."
-  ]
+    "Private keys, access tokens, and private credential paths are excluded.",
+    "Super Admin success does not qualify a minimum custom admin role or Education-specific capabilities."
+  ],
+  "previousSourceRevision": "06cfc8c3a48203e08d7fc522fbb18d02fccacde3",
+  "operatorDeclaredRole": "Super Admin"
 }
