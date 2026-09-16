@@ -1,0 +1,191 @@
+<div class="settings-content">
+  <h1>Customer settings</h1>
+  <p>Set the customer name shown in this installation.</p>
+  @if (error()) {
+  <p class="error" role="alert">{{ error() }}</p>
+  } @if (store.error()) {
+  <p class="error" role="alert">{{ store.error() }}</p>
+  } @if (storageError()) {
+  <p class="error" role="alert">{{ storageError() }}</p>
+  }
+  <p id="settings-status" tabindex="-1" role="status">{{ message() }}</p>
+  @if (!store.readable() && !auth.interrupted()) {
+  <p role="alert">
+    Your current access does not permit customer settings. Contact a platform
+    administrator to restore access.
+  </p>
+  <a routerLink="/account">Return to your account</a>
+  }
+  <button
+    mat-stroked-button
+    (click)="store.refresh()"
+    [disabled]="store.loading() || busy() || !store.readable()"
+  >
+    Refresh saved settings
+  </button>
+  @if (store.stale() && store.loaded()) {
+  <p>Saved settings are stale. Refresh before saving.</p>
+  } @if (store.loading() && !store.loaded()) {
+  <section aria-label="Loading customer settings" aria-busy="true">
+    <p role="status">Loading saved customer settings.</p>
+    <div class="skeleton" aria-hidden="true"></div>
+    <div class="skeleton" aria-hidden="true"></div>
+  </section>
+  } @if (store.customer(); as customer) {
+  <section class="card" aria-labelledby="customer-identity-title">
+    <h2 id="customer-identity-title">Confirmed customer</h2>
+    <dl>
+      <dt>Google customer ID</dt>
+      <dd class="identifier">{{ customer.customerId }}</dd>
+      <dt>Primary domain</dt>
+      <dd>{{ customer.primaryDomain }}</dd>
+    </dl>
+  </section>
+  <section class="card" aria-labelledby="settings-title">
+    <h2 id="settings-title">Local customer name</h2>
+    <p>
+      Saved name: <strong>{{ customer.settings.displayName }}</strong>. Revision
+      {{ customer.revision }}.
+    </p>
+    @if (customer.lastRequestId && !pending()) {
+    <button
+      mat-stroked-button
+      (click)="viewReceipt()"
+      [disabled]="busy() || auth.interrupted()"
+    >
+      View latest save receipt
+    </button>
+    } @if (!canWrite()) {
+    <p>
+      You have read-only access. Editing requires Manage customer settings
+      access for this customer.
+    </p>
+    }
+    <form (ngSubmit)="save()">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Customer display name</mat-label>
+        <input
+          matInput
+          name="displayName"
+          [ngModel]="name()"
+          (ngModelChange)="edit($event)"
+          maxlength="256"
+          required
+          autocomplete="organization"
+          [readonly]="!canWrite() || busy() || !!pending()"
+          [attr.aria-invalid]="dirty() && !valid()"
+          [aria-describedby]="dirty() && !valid() ? 'name-help name-error' : 'name-help'"
+        />
+        <mat-hint id="name-help"
+          >This name changes local display text. It does not change Google
+          data.</mat-hint
+        >
+      </mat-form-field>
+      @if (dirty() && !valid()) {
+      <p id="name-error" class="error" role="alert">
+        Enter a name of 1–256 characters without control characters.
+      </p>
+      } @if (!pending()) {
+      <div class="actions">
+        <button
+          mat-flat-button
+          type="submit"
+          [disabled]="!canWrite() || busy() || !valid() || store.stale() || store.loading() || conflict()"
+        >
+          Save customer settings
+        </button>
+        <button
+          mat-button
+          type="button"
+          (click)="useLatest(false)"
+          [disabled]="busy() || store.stale() || !dirty()"
+        >
+          Discard edits and load saved name
+        </button>
+      </div>
+      }
+    </form>
+    @if (conflict()) {
+    <section aria-labelledby="conflict-title">
+      <h3 id="conflict-title" tabindex="-1">Review the latest saved name</h3>
+      <p>
+        Your edited name remains in the form. The saved name and revision appear
+        above.
+      </p>
+      <button
+        mat-stroked-button
+        (click)="useLatest(true)"
+        [disabled]="busy() || store.stale() || store.loading() || !canWrite()"
+      >
+        Keep my name and use latest revision
+      </button>
+    </section>
+    } @if (pending(); as pending) {
+    <section aria-labelledby="pending-title">
+      <h3 id="pending-title" tabindex="-1">Resolve the pending save</h3>
+      <p>
+        The save result is unknown. Editing remains locked until this request
+        has a confirmed result.
+      </p>
+      <p>Requested name: {{ pending.settings.displayName }}</p>
+      <div class="actions">
+        <button
+          mat-flat-button
+          (click)="checkReceipt()"
+          [disabled]="busy() || auth.interrupted() || !store.readable()"
+        >
+          Check save receipt
+        </button>
+        <button
+          mat-stroked-button
+          (click)="save()"
+          [disabled]="busy() || !canWrite() || store.stale() || store.loading()"
+        >
+          Retry same save
+        </button>
+      </div>
+    </section>
+    } @if (receipt(); as receipt) {
+    <section aria-labelledby="receipt-title">
+      <h3 id="receipt-title" tabindex="-1">Confirmed save receipt</h3>
+      <p>
+        {{ receipt.settings.displayName }} — revision {{ receipt.revision }},
+        saved {{ receipt.savedAt | date:'medium' }}.
+      </p>
+      <p>Later saves can change the current name shown above.</p>
+    </section>
+    }
+  </section>
+  <section class="card" aria-labelledby="progress-title">
+    <h2 id="progress-title">Confirmed setup progress</h2>
+    <ol>
+      <li>
+        Customer confirmed: {{ customer.onboarding.customerConfirmedAt |
+        date:'medium' }}.
+      </li>
+      <li>
+        @if (customer.onboarding.settingsConfirmedAt) { Settings first saved: {{
+        customer.onboarding.settingsConfirmedAt | date:'medium' }}. } @else {
+        Customer settings have not been saved. }
+      </li>
+    </ol>
+    <p>
+      Last successful Google observation: {{
+      customer.onboarding.lastGoogleObservationAt | date:'medium' }}.
+    </p>
+    <p>
+      Saved setup progress does not verify current Google approval or capability
+      access.
+    </p>
+    @if (auth.can('connection:read', {kind: 'district', customerId:
+    customer.customerId})) {
+    <a routerLink="/google-connection">Review Google connection</a> }
+  </section>
+  } @else if (store.loaded()) {
+  <p>
+    No customer is confirmed. Connect a Google customer before saving customer
+    settings.
+  </p>
+  @if (auth.can('connection:read', {kind: 'platform'})) {
+  <a routerLink="/google-connection">Connect Google customer</a> } }
+</div>

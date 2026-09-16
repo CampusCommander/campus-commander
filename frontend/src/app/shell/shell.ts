@@ -10,6 +10,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { AuthStore } from '../auth.store';
+import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
 
@@ -28,6 +29,7 @@ import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
 })
 export class Shell implements OnInit {
   protected readonly auth = inject(AuthStore);
+  protected readonly customer = inject(CustomerStore);
   protected readonly connection = inject(ConnectionStore);
   protected readonly router = inject(Router);
   protected readonly diagnostics = inject(DiagnosticsStore);

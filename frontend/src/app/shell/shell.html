@@ -15,7 +15,13 @@
       </button>
       <span class="nav-label wordmark">Campus Commander</span>
     </div>
-    @if (connection.connection(); as customer) {
+    @if (customer.customer(); as customer) {
+    <p class="customer-identity nav-label">
+      {{ customer.settings.displayName }}<span
+        >{{ customer.primaryDomain }}</span
+      ><span>{{ customer.customerId }}</span>
+    </p>
+    } @else if (connection.connection(); as customer) {
     <p class="customer-identity nav-label">
       {{ customer.observation.primaryDomain }}<span
         >{{ customer.customerId }}</span
@@ -31,6 +37,15 @@
       <mat-icon fontSet="material-symbols-outlined">domain</mat-icon
       ><span class="nav-label">Google connection</span>
     </a>
+    } @if (customer.readable()) {
+    <a
+      routerLink="/customer-settings"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Customer settings"
+      ><mat-icon fontSet="material-symbols-outlined">settings</mat-icon
+      ><span class="nav-label">Customer settings</span></a
+    >
     }
     <a
       routerLink="/account"
@@ -74,9 +89,10 @@
   </nav>
   <header>
     <span class="header-title"
-      >{{ router.url.startsWith('/google-connection') ? 'Google customer
-      connection' : router.url.startsWith('/platform-users') ? 'Platform access'
-      : router.url.startsWith('/invitations') ? 'Platform invitations' :
+      >{{ router.url.startsWith('/customer-settings') ? 'Customer settings' :
+      router.url.startsWith('/google-connection') ? 'Google customer connection'
+      : router.url.startsWith('/platform-users') ? 'Platform access' :
+      router.url.startsWith('/invitations') ? 'Platform invitations' :
       router.url.startsWith('/diagnostics') ? 'Diagnostics' : 'Your account'
       }}</span
     >

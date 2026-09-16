@@ -1,6 +1,7 @@
 import { inject } from '@angular/core';
 import { Router, type CanActivateFn, type Routes } from '@angular/router';
 import { AuthStore } from './auth.store';
+import { CustomerStore } from './customer-settings/customer.store';
 import { ConnectionStore } from './google-connection/connection.store';
 
 const authenticated: CanActivateFn = async () => {
@@ -57,6 +58,19 @@ export const routes: Routes = [
     canActivate: [authenticated],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'account' },
+      {
+        path: 'customer-settings',
+        title: 'Customer settings · Campus Commander',
+        canActivate: [
+          () =>
+            inject(CustomerStore).readable() ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () =>
+          import('./customer-settings/customer-settings').then(
+            (m) => m.CustomerSettingsPage,
+          ),
+      },
       {
         path: 'google-connection',
         title: 'Google customer connection · Campus Commander',
