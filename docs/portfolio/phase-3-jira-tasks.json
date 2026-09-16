@@ -753,7 +753,7 @@
         "qualifiedRevision": "1c83a78196b46411d2ae40e1575a4da1bc065323",
         "evidence": "deployment/evidence/CC-53-access-revocation.json",
         "compatibilityRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35141611500",
-        "compatibilityStatus": "pending"
+        "compatibilityStatus": "passed"
       }
     },
     {

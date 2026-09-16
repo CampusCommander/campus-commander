@@ -22,8 +22,8 @@
     "interrupted state passes automated accessibility"
   ],
   "databaseQualification": {
-    "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35140726788",
-    "sourceRevision": "aa02c0c07da2f832f47408074ebbfccd46d94317",
+    "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35141611500",
+    "sourceRevision": "1c83a78196b46411d2ae40e1575a4da1bc065323",
     "job": "foundation-integration (postgres-integration)",
     "status": "passed",
     "checks": [
@@ -38,7 +38,9 @@
   },
   "compatibilityQualification": {
     "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35141611500",
-    "status": "pending"
+    "status": "passed",
+    "jobsPassed": 7,
+    "sourceRevision": "1c83a78196b46411d2ae40e1575a4da1bc065323"
   },
   "previousCompatibilityQualification": {
     "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35138700261",

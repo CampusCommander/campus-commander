@@ -1,6 +1,6 @@
 # Phase 3 access revocation
 
-Owner: CC-53. Status: platform revocation and browser recovery implemented. Combined recovery qualification is active.
+Owner: CC-53. Status: platform revocation and browser recovery implemented. Combined recovery qualification passed.
 CC-52 remains the completion prerequisite for school scope integration.
 
 ## Current implementation
@@ -42,7 +42,7 @@ The interrupted-state accessibility report contains zero violations and zero inc
 
 [Combined recovery qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35141232435) passed at `1c83a78`.
 This revision includes the delayed-response fixes, replica restart, Redis loss, guessed identifiers, and unrelated-user preservation.
-The [full compatibility run](https://github.com/CampusCommander/campus-commander/actions/runs/35141611500) remains pending.
+The same revision passed all seven jobs in the [full compatibility run](https://github.com/CampusCommander/campus-commander/actions/runs/35141611500).
 The first expanded run identified a Redis fixture reconnect failure after Docker changed its dynamically published port.
 The corrected fixture connects a fresh client to the current published port. The repeated recovery checks passed.
 Local Nx build, test, lint, and type checks passed across all thirteen affected tasks.
