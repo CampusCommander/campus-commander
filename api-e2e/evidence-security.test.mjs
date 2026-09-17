@@ -421,3 +421,40 @@ test('popup closure preserves a completed token response before disposing of its
     }
   }
 });
+
+test('failed response diagnostics record bounded browser lifecycle fields without response details', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  const page = { isClosed: () => true, close: async () => undefined };
+  await security.close(page);
+  const response = {
+    url: () => `https://fixture.invalid/${secret}`,
+    status: () => 200,
+    request: () => ({
+      frame: () => ({ page: () => page }),
+      resourceType: () => 'font',
+    }),
+    headersArray: async () => {
+      throw new Error(`Target closed: ${secret}`);
+    },
+  };
+  context.emit('response', response);
+  await assert.rejects(security.observePendingResponses(), (error) => {
+    assert.equal(error.observations.includes(secret), false);
+    assert.deepEqual(JSON.parse(error.observations).failures[0], {
+      stage: 'headers',
+      route: 'other',
+      status: 200,
+      contextId: 1,
+      pageId: 1,
+      resourceType: 'font',
+      pageClosing: true,
+      pageClosed: true,
+      contextClosing: false,
+      contextClosed: false,
+      reason: 'target-closed',
+    });
+    return true;
+  });
+});

@@ -330,3 +330,15 @@ It counts 37 interrupted browser requests outside JSON body coverage. The source
 The packaged route fixture passed all 100 requests across 32 routes. The school workflow also passed.
 These results qualify the scanner and listed rollback probes at `86b91c1`. They do not complete CC-55 or Phase 3 release acceptance.
 Failed-run review, release archives, remaining mutation and resource-denial reconciliation, isolated recovery, and owner acceptance remain open.
+
+## Browser observation recurrence
+
+[Run 35188533234](https://github.com/CampusCommander/campus-commander/actions/runs/35188533234) failed the packaged Phase 3 browser check at `c7932e2`.
+The [retained failure](../../deployment/evidence/CC-55-c793-browser-observation-failure.json) records one header failure and one body failure with category `target-closed`.
+The first rejected screenshot precedes the access-revocation popup steps. This result does not establish which page caused the failures.
+Two local Chromium stress checks each passed 100 repetitions of guarded page or context closure during responses.
+Those checks did not reproduce the hosted failure. The cause remains unresolved.
+
+Failure diagnostics now include numeric context and page identities, resource categories, and closing or closed states.
+They exclude URLs, response contents, and underlying error messages. Observation failures still reject evidence.
+The diagnostic regression and existing scanner checks pass locally. Hosted qualification remains pending.

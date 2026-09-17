@@ -36,9 +36,55 @@ export class EvidenceSecurity {
   #incompleteResponses = 0;
   #failureStages = { headers: 0, body: 0 };
   #failedResponses = [];
+  #contextSequence = 0;
+  #pageSequence = 0;
+  #pageIds = new WeakMap();
+  #closing = new WeakSet();
 
   async newContext(browser, options) {
     const context = await browser.newContext(options);
+    const contextId = ++this.#contextSequence;
+    context.on('page', (page) => {
+      this.#pageIds.set(page, ++this.#pageSequence);
+    });
+    let contextClosed = false;
+    context.on('close', () => {
+      contextClosed = true;
+    });
+    const lifecycle = (request) => {
+      let page;
+      try {
+        page = request?.frame?.().page();
+      } catch {
+        // Worker requests do not have a page.
+      }
+      if (page && !this.#pageIds.has(page))
+        this.#pageIds.set(page, ++this.#pageSequence);
+      const type = request?.resourceType?.();
+      return {
+        contextId,
+        pageId: page ? this.#pageIds.get(page) : null,
+        resourceType: [
+          'document',
+          'stylesheet',
+          'image',
+          'media',
+          'font',
+          'script',
+          'xhr',
+          'fetch',
+          'eventsource',
+          'websocket',
+          'manifest',
+        ].includes(type)
+          ? type
+          : 'other',
+        pageClosing: page ? this.#closing.has(page) : false,
+        pageClosed: page?.isClosed() ?? null,
+        contextClosing: this.#closing.has(context),
+        contextClosed,
+      };
+    };
     const stateFor = (response, stage) => {
       const paths = new Set([
         '/pair',
@@ -60,13 +106,14 @@ export class EvidenceSecurity {
         status: response.status?.() ?? 0,
       };
     };
-    const observe = (state, operation) => {
+    const observe = (state, operation, request) => {
       const observation = operation().catch((error) => {
         this.#responseFailures++;
         this.#failureStages[state.stage]++;
         if (this.#failedResponses.length < 32)
           this.#failedResponses.push({
             ...state,
+            ...lifecycle(request),
             reason: /closed/i.test(error.message)
               ? 'target-closed'
               : /redirect/i.test(error.message)
@@ -82,35 +129,43 @@ export class EvidenceSecurity {
       void observation.then(() => this.#pending.delete(observation));
     };
     context.on('response', (response) => {
-      observe(stateFor(response, 'headers'), async () => {
-        const headers = await response.headersArray();
-        this.observeResponse(
-          {
-            'set-cookie': headers
-              .filter(({ name }) => name.toLowerCase() === 'set-cookie')
-              .map(({ value }) => value),
-          },
-          '',
-        );
-      });
+      observe(
+        stateFor(response, 'headers'),
+        async () => {
+          const headers = await response.headersArray();
+          this.observeResponse(
+            {
+              'set-cookie': headers
+                .filter(({ name }) => name.toLowerCase() === 'set-cookie')
+                .map(({ value }) => value),
+            },
+            '',
+          );
+        },
+        response.request?.(),
+      );
     });
     context.on('requestfinished', (request) => {
       const state = { stage: 'body', route: 'other', status: 0 };
-      observe(state, async () => {
-        const response = await request.response();
-        if (response) Object.assign(state, stateFor(response, 'body'));
-        const tokenResponse =
-          (state.route === '/api/auth/session' && state.status === 200) ||
-          (state.route === '/pair' && state.status === 200) ||
-          (state.route === '/api/auth/invitations' &&
-            state.status === 201 &&
-            request.method() === 'POST');
-        if (
-          tokenResponse &&
-          response.headers()['content-type']?.includes('application/json')
-        )
-          this.observeResponse({}, await response.text());
-      });
+      observe(
+        state,
+        async () => {
+          const response = await request.response();
+          if (response) Object.assign(state, stateFor(response, 'body'));
+          const tokenResponse =
+            (state.route === '/api/auth/session' && state.status === 200) ||
+            (state.route === '/pair' && state.status === 200) ||
+            (state.route === '/api/auth/invitations' &&
+              state.status === 201 &&
+              request.method() === 'POST');
+          if (
+            tokenResponse &&
+            response.headers()['content-type']?.includes('application/json')
+          )
+            this.observeResponse({}, await response.text());
+        },
+        request,
+      );
     });
     context.on('requestfailed', () => {
       this.#incompleteResponses++;
@@ -119,6 +174,7 @@ export class EvidenceSecurity {
   }
 
   async close(resource) {
+    this.#closing.add(resource);
     try {
       await this.observePendingResponses();
     } finally {
