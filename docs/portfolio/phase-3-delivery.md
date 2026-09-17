@@ -250,7 +250,13 @@ gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
 ```
 
 This fixture does not establish live privileges, revocation, or Education behavior.
-Hosted provider qualification remains pending.
+[Run 35219808031](https://github.com/CampusCommander/campus-commander/actions/runs/35219808031) passed at harness `476acd9` against application `a3601ef`.
+All four provider failures preserved customer state, policy hashes, and last-success timestamps.
+Local Diagnostics passed during each failure. Fresh sign-in passed during the network failure.
+The retired generation returned `credential-changed`. Recovery took 248 to 287 milliseconds.
+The provider segment took 34,776 milliseconds.
+The [retained provider report](../../deployment/evidence/CC-57-provider-faults.json) includes three original report hashes and complete fixture limits.
+PR CI passed at the same harness revision. Complete fault and profile acceptance remain open.
 
 ## Installed certificate failures
 

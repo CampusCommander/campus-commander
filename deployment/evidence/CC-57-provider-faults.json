@@ -1,0 +1,341 @@
+{
+  "harnessRevision": "476acd977955a84cd15f9fac9998adac324c6908",
+  "harnessWorkingTree": "clean",
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "command": "npm exec -- nx run api-e2e:phase3-provider-fault-integration",
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "all-docker",
+  "status": "passed",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "recordedAt": "2026-09-17T12:15:21.809Z",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "browser": "149.0.7827.55"
+  },
+  "durationScope": "Provider fault setup, public checks, local sign-in, recovery, and preservation probes.",
+  "recoveryBoundSeconds": 45,
+  "cases": [
+    {
+      "name": "network",
+      "status": "passed",
+      "failure": "network-failure",
+      "lastSuccessPreserved": true,
+      "localDiagnosticsPassed": true,
+      "freshSignInPassed": true,
+      "connectionPreserved": true,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "576303f5c886ab94243ae4a468e7ade437703f09a5327352620bca93fabf6994"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "dd78d9e2f0048e12038ad73c9cebdfadbb24d9042dc87b57472413510ba1eaec"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "8a5b0d45581e4def9cacae832d3ffc8d1229b6fcb4520509c86d8c2557744724"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "e7f12b04082bb4cd9885492425477db43febc9dcc4513e12dbde5a1bd9eb7d84"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "403986606063d02ce335a99ad0f8113ca8db981c3006812affafc29dde4ff582"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "ecccd831aaa1eca66f9aed0bd896e73f940794d78bc2742146e7517765b454c8"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      },
+      "recoveryMs": 273,
+      "recovered": true,
+      "durationMs": 7634
+    },
+    {
+      "name": "quota",
+      "status": "passed",
+      "failure": "quota",
+      "lastSuccessPreserved": true,
+      "localDiagnosticsPassed": true,
+      "connectionPreserved": true,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "576303f5c886ab94243ae4a468e7ade437703f09a5327352620bca93fabf6994"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "dd78d9e2f0048e12038ad73c9cebdfadbb24d9042dc87b57472413510ba1eaec"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "8a5b0d45581e4def9cacae832d3ffc8d1229b6fcb4520509c86d8c2557744724"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "e7f12b04082bb4cd9885492425477db43febc9dcc4513e12dbde5a1bd9eb7d84"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "403986606063d02ce335a99ad0f8113ca8db981c3006812affafc29dde4ff582"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "ecccd831aaa1eca66f9aed0bd896e73f940794d78bc2742146e7517765b454c8"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      },
+      "recoveryMs": 287,
+      "recovered": true,
+      "durationMs": 7566
+    },
+    {
+      "name": "domain-privilege-denied",
+      "status": "passed",
+      "failure": "permission-denied",
+      "lastSuccessPreserved": true,
+      "localDiagnosticsPassed": true,
+      "connectionPreserved": true,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "576303f5c886ab94243ae4a468e7ade437703f09a5327352620bca93fabf6994"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "dd78d9e2f0048e12038ad73c9cebdfadbb24d9042dc87b57472413510ba1eaec"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "8a5b0d45581e4def9cacae832d3ffc8d1229b6fcb4520509c86d8c2557744724"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "e7f12b04082bb4cd9885492425477db43febc9dcc4513e12dbde5a1bd9eb7d84"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "403986606063d02ce335a99ad0f8113ca8db981c3006812affafc29dde4ff582"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "ecccd831aaa1eca66f9aed0bd896e73f940794d78bc2742146e7517765b454c8"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      },
+      "recoveryMs": 253,
+      "recovered": true,
+      "durationMs": 6775
+    },
+    {
+      "name": "wrong-customer",
+      "status": "passed",
+      "failure": "wrong-customer",
+      "lastSuccessPreserved": true,
+      "localDiagnosticsPassed": true,
+      "connectionPreserved": true,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "576303f5c886ab94243ae4a468e7ade437703f09a5327352620bca93fabf6994"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "dd78d9e2f0048e12038ad73c9cebdfadbb24d9042dc87b57472413510ba1eaec"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "8a5b0d45581e4def9cacae832d3ffc8d1229b6fcb4520509c86d8c2557744724"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "e7f12b04082bb4cd9885492425477db43febc9dcc4513e12dbde5a1bd9eb7d84"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "403986606063d02ce335a99ad0f8113ca8db981c3006812affafc29dde4ff582"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "ecccd831aaa1eca66f9aed0bd896e73f940794d78bc2742146e7517765b454c8"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      },
+      "recoveryMs": 248,
+      "recovered": true,
+      "durationMs": 7258
+    }
+  ],
+  "limits": [
+    "Google responses and application sign-in use independent synthetic providers.",
+    "The fixture advances the health-check retry timestamp in its owned database.",
+    "Policy hashes exclude connection observation fields that successful health checks refresh. Each failed check separately preserves the full connection.",
+    "These checks do not establish live Google privileges, revocation, or Education behavior.",
+    "Capacity, certificates, and complete profile acceptance require separate evidence."
+  ],
+  "durationMs": 34776,
+  "retiredGenerationRejected": true,
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35219808031",
+    "artifact": "phase-3-provider-faults",
+    "reports": [
+      {
+        "path": "all-docker-faults.json",
+        "sizeBytes": 8511,
+        "sha256": "6dfdf4a0085454acf1d432b936e400c33fa9e3cf16f24035b7c64b403253a288"
+      },
+      {
+        "path": "all-docker-profile.json",
+        "sizeBytes": 12360,
+        "sha256": "4104ae025f9dfe722e1c8767a493b2cd29e1199b8d0b8ab98dbdcf28a3b30a12"
+      },
+      {
+        "path": "phase3-workflows.json",
+        "sizeBytes": 7520,
+        "sha256": "09a941cd914f7eecdc973e2b94449a6e1d76d0fc0c8b6c8d46d50f5522fcb099"
+      }
+    ]
+  },
+  "installedWorkflows": {
+    "customerConfirmation": true,
+    "settingsConfirmation": true,
+    "schoolScopeConfirmation": true,
+    "invitationRedemption": true,
+    "explicitIdentityConfirmation": true,
+    "scopedGrantAssignment": true,
+    "crossSchoolDenial": true,
+    "revocation": true,
+    "credentialReplacement": true,
+    "restartPersistence": true
+  },
+  "profileDurationMs": 198793,
+  "installer": {
+    "status": "passed",
+    "commands": [
+      "prepare",
+      "resume",
+      "resume",
+      "stop",
+      "resume",
+      "uninstall",
+      "resume"
+    ],
+    "repeatedResume": true,
+    "redisSessionsDiscarded": true,
+    "freshSignInPreservesPreferences": true,
+    "originalRenderPreserved": true,
+    "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+    "source": "extracted-published-bundle"
+  },
+  "replicaObservations": [
+    {
+      "phase": "initial-session",
+      "container": "5aba4891a07b24160d7bccd10e5d896e6e28833fa0b15b62da1a11f8f0789b7f",
+      "status": 200,
+      "principalId": "9e718bf6-d96b-480f-a8e3-a0b49b5aa2c8"
+    },
+    {
+      "phase": "initial-session",
+      "container": "05483aa4bf6598d36efc393bf1ffb2fdc2ad34f3545d0468f81b1ac205529957",
+      "status": 200,
+      "principalId": "9e718bf6-d96b-480f-a8e3-a0b49b5aa2c8"
+    },
+    {
+      "phase": "fault-recovery-session",
+      "container": "5aba4891a07b24160d7bccd10e5d896e6e28833fa0b15b62da1a11f8f0789b7f",
+      "status": 200,
+      "principalId": "9e718bf6-d96b-480f-a8e3-a0b49b5aa2c8"
+    },
+    {
+      "phase": "fault-recovery-session",
+      "container": "05483aa4bf6598d36efc393bf1ffb2fdc2ad34f3545d0468f81b1ac205529957",
+      "status": 200,
+      "principalId": "9e718bf6-d96b-480f-a8e3-a0b49b5aa2c8"
+    },
+    {
+      "phase": "restart-session",
+      "container": "5aba4891a07b24160d7bccd10e5d896e6e28833fa0b15b62da1a11f8f0789b7f",
+      "status": 200,
+      "principalId": "9e718bf6-d96b-480f-a8e3-a0b49b5aa2c8"
+    },
+    {
+      "phase": "restart-session",
+      "container": "05483aa4bf6598d36efc393bf1ffb2fdc2ad34f3545d0468f81b1ac205529957",
+      "status": 200,
+      "principalId": "9e718bf6-d96b-480f-a8e3-a0b49b5aa2c8"
+    },
+    {
+      "phase": "stop-resume-session",
+      "container": "5aba4891a07b24160d7bccd10e5d896e6e28833fa0b15b62da1a11f8f0789b7f",
+      "status": 200,
+      "principalId": "9e718bf6-d96b-480f-a8e3-a0b49b5aa2c8"
+    },
+    {
+      "phase": "stop-resume-session",
+      "container": "05483aa4bf6598d36efc393bf1ffb2fdc2ad34f3545d0468f81b1ac205529957",
+      "status": 200,
+      "principalId": "9e718bf6-d96b-480f-a8e3-a0b49b5aa2c8"
+    },
+    {
+      "phase": "uninstall-resume-session",
+      "container": "33151426d819c9dff6cb9587a73df119e55740f71f133f2b879ff3970a28c45b",
+      "status": 200,
+      "principalId": "9e718bf6-d96b-480f-a8e3-a0b49b5aa2c8"
+    },
+    {
+      "phase": "uninstall-resume-session",
+      "container": "6f54523476539da632c6fa6ff76e35efede44fcc2837908756e6a768d0e419d0",
+      "status": 200,
+      "principalId": "9e718bf6-d96b-480f-a8e3-a0b49b5aa2c8"
+    },
+    {
+      "phase": "signed-out-session",
+      "container": "33151426d819c9dff6cb9587a73df119e55740f71f133f2b879ff3970a28c45b",
+      "status": 401
+    },
+    {
+      "phase": "signed-out-session",
+      "container": "6f54523476539da632c6fa6ff76e35efede44fcc2837908756e6a768d0e419d0",
+      "status": 401
+    }
+  ]
+}
