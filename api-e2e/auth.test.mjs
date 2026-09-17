@@ -1,3 +1,4 @@
+import { qualifyPhase3RouteSecurity } from './phase3-route-security.mjs';
 import { qualifyGoogleLifecycleApi } from './google-lifecycle.mjs';
 import { qualifySchoolReferencesApi } from './school-references.mjs';
 import { qualifyGoogleHealth } from './google-health.mjs';
@@ -1117,6 +1118,15 @@ test(
         ).phase,
         applicationPhase,
       );
+      if (applicationPhase === 3)
+        await qualifyPhase3RouteSecurity({
+          request,
+          publicOrigin,
+          ca,
+          cookie: sessionCookie,
+          csrfToken: session.csrfToken,
+          evidenceDirectory,
+        });
       await migrator.query(
         `INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,'customer:read','{"kind":"platform"}'::jsonb)`,
         [principalId],
