@@ -109,6 +109,7 @@ export async function loadMigrations() {
       '010-google-capability-health',
       '011-google-credential-lifecycle',
       '012-school-references',
+      '013-school-definitions',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -207,6 +208,13 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
       await client.query(`GRANT EXECUTE ON FUNCTION cc.read_school_references(uuid,integer),
         cc.claim_school_references(uuid,integer,text,integer,uuid,uuid),
         cc.finish_school_references(uuid,integer,text,integer,uuid,jsonb,text) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '013-school-definitions')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION cc.read_school_definition(uuid,integer,uuid),
+        cc.list_school_definitions(uuid,integer,integer,integer),
+        cc.preview_school_definition(uuid,integer,uuid,text,integer,uuid,text,jsonb,uuid,uuid),
+        cc.confirm_school_definition(uuid,integer,uuid),cc.read_school_review(uuid,integer,uuid),
+        cc.list_school_audit(uuid,integer,uuid,integer) TO ${role}`);
     }
     if (migrations.some(({ id }) => id === '011-google-credential-lifecycle')) {
       await client.query(`GRANT EXECUTE ON FUNCTION

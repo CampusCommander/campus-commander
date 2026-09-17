@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { qualifySchoolDefinitions } from './school-definitions.integration.mjs';
 
 export async function qualifySchoolReferences({
   runtime,
@@ -151,6 +152,13 @@ export async function qualifySchoolReferences({
       );
     }
     await finish(rollback.id);
+    const schoolChecks = await qualifySchoolDefinitions({
+      runtime,
+      migrator,
+      issuer,
+      actor,
+      customer,
+    });
     await migrator.query(
       "UPDATE cc.school_reference_state SET observed_at=clock_timestamp()-interval '11 minutes' WHERE customer_id=$1",
       [customer],
@@ -173,6 +181,7 @@ export async function qualifySchoolReferences({
     );
     await assert.rejects(finish(retired.id), denied);
     return [
+      ...schoolChecks,
       'school reference reads require current manager authority and hide ciphertext: pass',
       'replicas admit one bounded reference refresh and reject replay: pass',
       'invalid and cross-customer hierarchies cannot replace verified references: pass',
