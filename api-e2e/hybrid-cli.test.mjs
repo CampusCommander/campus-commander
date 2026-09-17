@@ -20,7 +20,10 @@ import {
 } from '../deployment/profiles/all-docker/render.mjs';
 import { redisImage } from '../deployment/redis/runtime.mjs';
 import { createHybridHosts, outerDocker } from './hybrid-hosts-fixture.mjs';
-import { describeHybridFailure } from './hybrid-evidence-fixture.mjs';
+import {
+  describeHybridFailure,
+  assertHybridKeyMount,
+} from './hybrid-evidence-fixture.mjs';
 import { createHybridServices } from './hybrid-services-fixture.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
@@ -526,33 +529,61 @@ process.exit(result.status??1);
           for (const container of containers) {
             const service =
               container.Config.Labels['com.docker.compose.service'];
-            const keyMounts = container.Mounts.filter(
-              (mount) =>
-                mount.Destination === '/run/secrets/google-qualification-key',
-            );
             const authorized = ['api', 'workers'].includes(service);
-            assert.equal(
-              keyMounts.length,
-              authorized ? 1 : 0,
-              'Only API and worker containers receive the credential key.',
-            );
+            const hostProject =
+              host === controller ? project : `${project}-${host.role}`;
+            const consumer = host === controller ? 'api' : 'workers';
+            const volumeName = `${hostProject}_${consumer}-secrets`;
+            assertHybridKeyMount(container, { authorized, volumeName });
             if (authorized) {
-              assert.equal(keyMounts[0].RW, false);
-              assert.equal(
-                keyMounts[0].Source,
-                join(host.root, 'private/google-qualification-key'),
+              const projection = JSON.parse(
+                await hosts.run(
+                  host,
+                  [
+                    'docker',
+                    'exec',
+                    '-i',
+                    container.Id,
+                    'node',
+                    '--input-type=module',
+                    '-e',
+                    "import fs from 'node:fs';const chunks=[];for await(const chunk of process.stdin)chunks.push(chunk);const expected=Buffer.concat(chunks),path='/run/secrets/google-qualification-key',actual=fs.readFileSync(path),stat=fs.statSync(path);console.log(JSON.stringify({keyMatches:actual.equals(expected),mode:stat.mode&0o777,uid:stat.uid,gid:stat.gid}));expected.fill(0);actual.fill(0);",
+                  ],
+                  { input: key },
+                ),
               );
+              assert.deepEqual(projection, {
+                keyMatches: true,
+                mode: 0o600,
+                uid: 1000,
+                gid: 1000,
+              });
               credentialKeyProjection.push({
                 host: host.role,
                 daemonId: host.daemonId,
                 service,
                 containerId: container.Id,
                 readOnly: true,
+                volumeName,
+                keyBytesVerified: true,
+                fileMode: projection.mode,
+                fileUid: projection.uid,
+                fileGid: projection.gid,
                 keyId: config.googleConnection.keyId,
               });
+            } else {
+              await hosts.run(host, [
+                'docker',
+                'exec',
+                container.Id,
+                '/bin/sh',
+                '-ec',
+                'test ! -e /run/secrets/google-qualification-key',
+              ]);
             }
           }
         }
+        key.fill(0);
         assert.equal(
           credentialKeyProjection.filter((item) => item.service === 'api')
             .length,

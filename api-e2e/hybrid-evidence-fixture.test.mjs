@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { describeHybridFailure } from './hybrid-evidence-fixture.mjs';
+import { stageRuntimeFiles } from '../deployment/profiles/all-docker/render.mjs';
+import {
+  describeHybridFailure,
+  assertHybridKeyMount,
+} from './hybrid-evidence-fixture.mjs';
 
 test('hybrid failure evidence excludes arbitrary exception data', () => {
   const secret = 'private-fixture-credential';
@@ -26,4 +30,67 @@ test('hybrid failure evidence excludes arbitrary exception data', () => {
     category: 'unclassified',
     exitCode: null,
   });
+});
+
+test('hybrid key inspection accepts the delivered staged volume contract', () => {
+  const compose = {
+    services: {
+      'runtime-files': { command: ['/bin/sh', '-ec', 'true'], volumes: [] },
+      api: {
+        secrets: [
+          {
+            source: 'google-qualification-key',
+            target: 'google-qualification-key',
+          },
+        ],
+      },
+    },
+    volumes: {},
+    secrets: {
+      'google-qualification-key': {
+        file: './private/google-qualification-key',
+      },
+    },
+  };
+  stageRuntimeFiles(compose, { initializerName: 'runtime-files' });
+  assert.deepEqual(compose.services.api.volumes, [
+    'api-secrets:/run/secrets:ro',
+  ]);
+  const container = {
+    Mounts: [
+      {
+        Type: 'volume',
+        Name: 'fixture_api-secrets',
+        Destination: '/run/secrets',
+        RW: false,
+      },
+    ],
+  };
+  assertHybridKeyMount(container, {
+    authorized: true,
+    volumeName: 'fixture_api-secrets',
+  });
+  for (const changed of [
+    { RW: true },
+    { Name: 'unrelated-volume' },
+    { Type: 'bind' },
+    { Destination: '/unexpected' },
+  ]) {
+    assert.throws(() =>
+      assertHybridKeyMount(
+        { Mounts: [{ ...container.Mounts[0], ...changed }] },
+        { authorized: true, volumeName: 'fixture_api-secrets' },
+      ),
+    );
+  }
+  assert.throws(() =>
+    assertHybridKeyMount(container, {
+      authorized: false,
+      volumeName: 'fixture_api-secrets',
+    }),
+  );
+  assertHybridKeyMount(
+    { Mounts: [] },
+    { authorized: false, volumeName: 'fixture_api-secrets' },
+  );
 });

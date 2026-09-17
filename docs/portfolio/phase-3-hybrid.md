@@ -75,3 +75,18 @@ The workflow restores evidence ownership before upload, including failed runs.
 
 The workflow regression failed before the correction. Hosted qualification must verify the correction against the original failure.
 The original failure reports remain intact. This correction does not establish successful installation.
+
+## Delivered key-projection contract
+
+[Recheck 35229878452](https://github.com/CampusCommander/campus-commander/actions/runs/35229878452) passed image distribution, prepare, install, and repeated resume with UID/GID 1000.
+The [retained failure](../../deployment/evidence/CC-58-installation-attempt3.json) identifies credential-key projection as the next failed stage.
+The fixture expected a direct key-file mount. The delivered installer stages separate service secrets volumes with read-only consumer mounts.
+A local regression exercised the real staging function and reproduced the incorrect mount assertion.
+
+The corrected check requires the exact per-service secrets volume, read-only access, and its expected destination.
+It compares key bytes inside each running API and worker container through private standard input.
+Reports contain only the comparison result, ownership, permissions, and mount metadata.
+Unauthorized running containers must lack the key file and the authorized secrets volume.
+The initializer retains its established temporary provisioning access.
+
+The regression and API fixture lint pass. The correction requires hosted validation before installation qualification can pass.
