@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readdir, readFile, rm } from 'node:fs/promises';
+import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, extname, join, resolve } from 'node:path';
 
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -30,12 +30,29 @@ export class EvidenceSecurity {
   #markers = new Map();
   #counts = new Map();
   #screenshots = new Map();
-  #pending = new Set();
+  #pending = new Map();
   #responseFailures = 0;
+  #failureStages = { headers: 0, body: 0 };
 
   async newContext(browser, options) {
     const context = await browser.newContext(options);
     context.on('response', (response) => {
+      const paths = new Set([
+        '/pair',
+        '/import',
+        '/api/auth/session',
+        '/api/auth/login',
+        '/api/auth/callback',
+        '/api/auth/enrollment/start',
+        '/api/auth/enrollment/status',
+      ]);
+      const path = new URL(response.url?.() ?? 'http://fixture.invalid/')
+        .pathname;
+      const state = {
+        stage: 'headers',
+        route: paths.has(path) ? path : 'other',
+        status: response.status?.() ?? 0,
+      };
       const observation = (async () => {
         const headers = await response.headersArray();
         this.observeResponse(
@@ -46,6 +63,7 @@ export class EvidenceSecurity {
           },
           '',
         );
+        state.stage = 'body';
         if (
           headers.some(
             ({ name, value }) =>
@@ -56,8 +74,9 @@ export class EvidenceSecurity {
           this.observeResponse({}, await response.text());
       })().catch(() => {
         this.#responseFailures++;
+        this.#failureStages[state.stage]++;
       });
-      this.#pending.add(observation);
+      this.#pending.set(observation, state);
       void observation.then(() => this.#pending.delete(observation));
     });
     return context;
@@ -68,7 +87,7 @@ export class EvidenceSecurity {
     try {
       await Promise.race([
         (async () => {
-          while (this.#pending.size) await Promise.all(this.#pending);
+          while (this.#pending.size) await Promise.all(this.#pending.keys());
         })(),
         new Promise((_, reject) => {
           timer = setTimeout(
@@ -180,6 +199,27 @@ export class EvidenceSecurity {
       this.#screenshots.set(path, digest(bytes));
     } catch (error) {
       await rm(path, { force: true });
+      await writeFile(
+        `${path}.redaction-failure.json`,
+        JSON.stringify(
+          {
+            status: 'failed',
+            pendingResponses: this.#pending.size,
+            pendingStages: [...this.#pending.values()].slice(0, 32),
+            responseFailures: this.#failureStages,
+            reason:
+              error.message ===
+              'Browser response secret registration did not complete.'
+                ? 'response-observation-failed'
+                : error.message ===
+                    'Browser response secret registration exceeded its time limit.'
+                  ? 'response-observation-timeout'
+                  : 'screenshot-content-check-failed',
+          },
+          null,
+          2,
+        ),
+      );
       throw error;
     }
   }

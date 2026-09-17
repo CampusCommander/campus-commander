@@ -140,6 +140,16 @@ test('screenshot checks reject content changes and bind passing checks to exact 
       /protected fixture-secret/,
     );
     await assert.rejects(access(path));
+    const failureReport = await readFile(
+      `${path}.redaction-failure.json`,
+      'utf8',
+    );
+    assert.equal(failureReport.includes(secret), false);
+    assert.equal(
+      JSON.parse(failureReport).reason,
+      'screenshot-content-check-failed',
+    );
+    await rm(`${path}.redaction-failure.json`);
     content = 'safe document';
     exposeAfterCapture = false;
     await security.screenshot(page, { path });
