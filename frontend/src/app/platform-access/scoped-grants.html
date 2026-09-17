@@ -146,11 +146,15 @@
   </p>
   <fieldset [disabled]="disabled()">
     <legend>Actions for this resource</legend>
-    @for (action of selectedActions(); track action) {
+    @if (value().length >= capacity()) {
+    <p>
+      The proposal contains 256 grants. Remove a grant before adding another.
+    </p>
+    } @for (action of selectedActions(); track action) {
     <mat-checkbox
       [checked]="has(action)"
       (change)="toggle(action, $event.checked)"
-      [disabled]="disabled() || !auth.can(action, scope) || (!has(action) && !canAdd())"
+      [disabled]="disabled() || !auth.can(action, scope) || (!has(action) && (!canAdd() || value().length >= capacity()))"
       >{{ labels[action] }}</mat-checkbox
     >
     }

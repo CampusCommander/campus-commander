@@ -24,7 +24,12 @@ const initial: Grant[] = [
   { action: 'schools:read', scope: scopeB },
 ];
 
-async function fixture(page: Page, stale = false, limited = false) {
+async function fixture(
+  page: Page,
+  stale = false,
+  limited = false,
+  grants = initial,
+) {
   let principal: PlatformPrincipal = {
     id: targetId,
     issuer: 'https://identity.fixture.invalid',
@@ -33,7 +38,7 @@ async function fixture(page: Page, stale = false, limited = false) {
     enabled: true,
     permissionVersion: 1,
     permissions: ['identity:read'],
-    grants: structuredClone(initial),
+    grants: structuredClone(grants),
   };
   const schools: SchoolDefinition[] = [schoolA, schoolB].map((id, index) => ({
     id,
@@ -359,4 +364,55 @@ test('enforces delegation limits and qualifies scoped controls in both themes an
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test('keeps unchecked actions disabled at capacity and submits only displayed grants', async ({
+  page,
+}) => {
+  const grants: Grant[] = [
+    ...initial,
+    ...Array.from(
+      { length: 253 },
+      (_, index): Grant => ({
+        action: 'schools:read',
+        scope: {
+          kind: 'school',
+          customerId,
+          schoolId: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
+        },
+      }),
+    ),
+  ];
+  const state = await fixture(page, false, false, grants);
+  await page.getByRole('button', { name: 'Load permitted scopes' }).click();
+  await page
+    .getByRole('button', { name: 'Select school School A', exact: true })
+    .click();
+  const action = page
+    .getByRole('group', { name: 'Actions for this resource' })
+    .getByLabel('Read security events', { exact: true });
+  await expect(action).toBeDisabled();
+  await expect(action).not.toBeChecked();
+  await page
+    .getByRole('button', { name: 'Review access changes', exact: true })
+    .click();
+  expect(state.proposed()?.grants).toHaveLength(256);
+  expect(state.proposed()?.grants).toEqual(expect.arrayContaining(grants));
+  await page
+    .getByRole('button', {
+      name: `Remove Read school scopes for School ${schoolB} in ${customerId}`,
+    })
+    .click();
+  await expect(action).toBeEnabled();
+  await action.check();
+  await expect(action).toBeChecked();
+  await page
+    .getByRole('button', { name: 'Review access changes', exact: true })
+    .click();
+  expect(state.proposed()?.grants).toHaveLength(256);
+  expect(state.proposed()?.grants).toContainEqual({
+    action: 'security-events:read',
+    scope: scopeA,
+  });
+  expect(state.proposed()?.grants).not.toContainEqual(initial[2]);
 });
