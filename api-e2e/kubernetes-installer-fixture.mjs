@@ -74,7 +74,7 @@ export async function prepareKubernetesInstaller({
   );
   assert.equal(config.profile, 'kubernetes');
   const phase = config.phase ?? 1;
-  assert.ok([1, 2].includes(phase));
+  assert.ok([1, 2, 3].includes(phase));
   assert.equal(kubernetes.namespace, project);
   assert.deepEqual(config.images, release.images);
   await mkdir(installationRoot, { mode: 0o700 });
@@ -91,6 +91,11 @@ export async function prepareKubernetesInstaller({
         mode: 0o600,
       });
   }
+  if (phase === 3)
+    assert.ok(
+      process.env.CC_AUTH_INSTALLER_ROOT,
+      'Phase 3 requires an extracted release.',
+    );
   const installerRoot = resolve(process.env.CC_AUTH_INSTALLER_ROOT ?? '.');
   const { applicationAccess } = await import(
     pathToFileURL(
@@ -104,8 +109,9 @@ export async function prepareKubernetesInstaller({
     ? await loadQualificationBundle(installerRoot, targetRelease)
     : undefined;
   let inventory = { ...release, phase, qualification: 'candidate-only' };
-  if (bundle && phase === 2) {
+  if (bundle && phase >= 2) {
     inventory = bundle.manifest;
+    assert.equal(inventory.phase, phase);
     assert.equal(inventory.sourceRevision, release.sourceRevision);
     assert.deepEqual(inventory.images, release.images);
   }
@@ -144,7 +150,7 @@ export async function prepareKubernetesInstaller({
   const generatedPath = join(installationRoot, 'kubernetes.json');
   const runtimePath = join(installationRoot, 'qualification-runtime.json');
   const providerModule = pathToFileURL(
-    resolve('api-e2e/kubernetes-upgrade-fixture.mjs'),
+    resolve('deployment/kubernetes/qualification-provider.mjs'),
   ).href;
   await writeFile(
     join(bin, 'kubectl'),
@@ -155,7 +161,7 @@ import {configureKubernetesProvider} from ${JSON.stringify(providerModule)};
 const args=process.argv.slice(2), index=args.indexOf('-f')+1;
 if(args.includes('apply') && args[index]===${JSON.stringify(generatedPath)}) {
   const resources=JSON.parse(fs.readFileSync(args[index]));
-  configureKubernetesProvider(resources,${JSON.stringify({ hostGateway: application.hostGateway })});
+  configureKubernetesProvider(resources,${JSON.stringify({ hostGateway: application.hostGateway, phase })});
   fs.writeFileSync(${JSON.stringify(runtimePath)},JSON.stringify(resources),{mode:0o600});
   args[index]=${JSON.stringify(runtimePath)};
 }
@@ -166,6 +172,7 @@ process.exit(result.status??1);
   );
   const commands = [];
   const cli = async (command) => {
+    const started = Date.now();
     const result = JSON.parse(
       (
         await execute(
@@ -192,7 +199,11 @@ process.exit(result.status??1);
       const rendered = JSON.parse(await readFile(generatedPath, 'utf8'));
       await waitForKubernetesShutdown(kube, rendered);
     }
-    commands.push({ command, status: result.status });
+    commands.push({
+      command,
+      status: result.status,
+      durationMs: Date.now() - started,
+    });
     return result;
   };
   assert.equal((await cli('prepare')).status, 'prepared');
@@ -344,6 +355,7 @@ process.exit(result.status??1);
         workerHosts,
         originalRenderPreserved: true,
         source,
+        sourceRoot: installerRoot,
         ...(bundle ? { bundleManifestSha256: bundle.manifestSha256 } : {}),
       };
     },

@@ -47,6 +47,12 @@ jobs:
         run: |
           case "${PROFILE:-all-docker}" in
             all-docker) ;;
+            kubernetes)
+              if [ "$UPGRADE" = true ] || [ "$RESTORE" = true ] || [ "$FAULTS" = true ] || [ "$LIFECYCLE" = true ] || [ -n "$UPDATE_RELEASE" ]; then
+                echo 'Kubernetes qualification currently supports installation and resume.' >&2
+                exit 1
+              fi
+              ;;
             hybrid)
               if [ "$FAULTS" = true ] && [ "$FAULT_KIND" != services ] && [ "$FAULT_KIND" != certificates ] && [ "$FAULT_KIND" != capacity ] && [ "$FAULT_KIND" != provider ]; then
                 echo 'Hybrid qualification supports installation, Phase 2 upgrade, isolated restore, service faults, certificate faults, capacity faults, provider faults, lifecycle, and guided update.' >&2
@@ -216,8 +222,18 @@ jobs:
             cosign verify "$reference" --certificate-identity="$BASELINE_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com
             docker pull "$reference"
           done < published-baseline/images.txt
+      - name: Install verified Kind binary
+        if: inputs.profile == 'kubernetes'
+        run: |
+          curl --fail --location --retry 3 https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 --output "$RUNNER_TEMP/kind"
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
+          chmod 700 "$RUNNER_TEMP/kind"
+          printf 'CC_KIND_BINARY=%s\n' "$RUNNER_TEMP/kind" >> "$GITHUB_ENV"
+      - name: Verify Kubernetes fixture boundaries
+        if: inputs.profile == 'kubernetes'
+        run: npm exec nx run api-e2e:kubernetes-fixture-test
       - name: Prepare the shared-storage fixture account
-        if: inputs.profile == 'hybrid'
+        if: inputs.profile == 'hybrid' || inputs.profile == 'kubernetes'
         run: |
           if ! getent passwd 1000 > /dev/null; then
             sudo useradd --uid 1000 --user-group --create-home cc-qualification
@@ -235,6 +251,9 @@ jobs:
             sudo setfacl -m u:1000:x "$fixture_directory"
             fixture_directory="$(dirname "$fixture_directory")"
           done
+          if test -n "${CC_KIND_BINARY:-}"; then
+            sudo chown 1000:1000 "$CC_KIND_BINARY"
+          fi
           sudo chown -R 1000:1000 "$GITHUB_WORKSPACE"
           printf 'DOCKER_CONFIG=%s/.qualification-docker\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Qualify installed Phase 3 workflows
@@ -242,6 +261,12 @@ jobs:
         run: npm exec nx run api-e2e:phase3-install-integration
         env:
           NX_NO_CLOUD: 'true'
+      - name: Qualify installed Phase 3 Kubernetes workflows
+        if: inputs.profile == 'kubernetes'
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,CC_KIND_BINARY,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-kubernetes-install-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
       - name: Qualify installed Phase 3 hybrid workflows
         if: inputs.profile == 'hybrid' && inputs.upgrade != true && inputs.restore != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''
         run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-install-integration
@@ -332,11 +357,11 @@ jobs:
         env:
           NX_NO_CLOUD: 'true'
       - name: Restore evidence ownership
-        if: always() && inputs.profile == 'hybrid'
+        if: always() && (inputs.profile == 'hybrid' || inputs.profile == 'kubernetes')
         run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: ${{ inputs.profile == 'hybrid' && inputs.restore && 'phase-3-hybrid-restore' || inputs.profile == 'hybrid' && inputs.updateRelease != '' && 'phase-3-hybrid-update' || inputs.profile == 'hybrid' && inputs.lifecycle && 'phase-3-hybrid-lifecycle' || inputs.profile == 'hybrid' && inputs.upgrade && 'phase-3-hybrid-upgrade' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'provider' && 'phase-3-hybrid-provider-faults' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-hybrid-capacity-faults' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-hybrid-certificate-faults' || inputs.profile == 'hybrid' && inputs.faults && 'phase-3-hybrid-service-faults' || inputs.profile == 'hybrid' && 'phase-3-hybrid-installation' || inputs.updateRelease != '' && 'phase-3-guided-update' || inputs.lifecycle && 'phase-3-installer-lifecycle' || inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-capacity-faults' || inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-certificate-faults' || inputs.faults && inputs.faultKind == 'provider' && 'phase-3-provider-faults' || inputs.faults && 'phase-3-service-faults' || inputs.upgrade && 'phase-3-upgrade-workflows' || 'phase-3-installed-workflows' }}
-          path: ${{ inputs.profile == 'hybrid' && inputs.restore && 'dist/phase-3-hybrid-restore/' || inputs.profile == 'hybrid' && inputs.updateRelease != '' && 'dist/phase-3-hybrid-update/' || inputs.profile == 'hybrid' && inputs.lifecycle && 'dist/phase-3-hybrid-lifecycle/' || inputs.profile == 'hybrid' && inputs.upgrade && 'dist/phase-3-hybrid-upgrade/' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-hybrid-provider-faults/' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-hybrid-capacity-faults/' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-hybrid-certificate-faults/' || inputs.profile == 'hybrid' && inputs.faults && 'dist/phase-3-hybrid-faults/' || inputs.profile == 'hybrid' && 'dist/phase-3-hybrid-installation/' || inputs.updateRelease != '' && 'dist/phase-3-update/' || inputs.lifecycle && 'dist/phase-3-lifecycle/' || inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-capacity-faults/' || inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-certificate-faults/' || inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-provider-faults/' || inputs.faults && 'dist/phase-3-faults/' || inputs.upgrade && 'dist/phase-3-upgrade/' || 'dist/phase-3-installation/' }}
+          name: ${{ inputs.profile == 'hybrid' && inputs.restore && 'phase-3-hybrid-restore' || inputs.profile == 'hybrid' && inputs.updateRelease != '' && 'phase-3-hybrid-update' || inputs.profile == 'hybrid' && inputs.lifecycle && 'phase-3-hybrid-lifecycle' || inputs.profile == 'hybrid' && inputs.upgrade && 'phase-3-hybrid-upgrade' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'provider' && 'phase-3-hybrid-provider-faults' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-hybrid-capacity-faults' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-hybrid-certificate-faults' || inputs.profile == 'hybrid' && inputs.faults && 'phase-3-hybrid-service-faults' || inputs.profile == 'hybrid' && 'phase-3-hybrid-installation' || inputs.updateRelease != '' && 'phase-3-guided-update' || inputs.lifecycle && 'phase-3-installer-lifecycle' || inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-capacity-faults' || inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-certificate-faults' || inputs.faults && inputs.faultKind == 'provider' && 'phase-3-provider-faults' || inputs.faults && 'phase-3-service-faults' || inputs.upgrade && 'phase-3-upgrade-workflows' || inputs.profile == 'kubernetes' && 'phase-3-kubernetes-installation' || 'phase-3-installed-workflows' }}
+          path: ${{ inputs.profile == 'hybrid' && inputs.restore && 'dist/phase-3-hybrid-restore/' || inputs.profile == 'hybrid' && inputs.updateRelease != '' && 'dist/phase-3-hybrid-update/' || inputs.profile == 'hybrid' && inputs.lifecycle && 'dist/phase-3-hybrid-lifecycle/' || inputs.profile == 'hybrid' && inputs.upgrade && 'dist/phase-3-hybrid-upgrade/' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-hybrid-provider-faults/' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-hybrid-capacity-faults/' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-hybrid-certificate-faults/' || inputs.profile == 'hybrid' && inputs.faults && 'dist/phase-3-hybrid-faults/' || inputs.profile == 'hybrid' && 'dist/phase-3-hybrid-installation/' || inputs.updateRelease != '' && 'dist/phase-3-update/' || inputs.lifecycle && 'dist/phase-3-lifecycle/' || inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-capacity-faults/' || inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-certificate-faults/' || inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-provider-faults/' || inputs.faults && 'dist/phase-3-faults/' || inputs.upgrade && 'dist/phase-3-upgrade/' || inputs.profile == 'kubernetes' && 'dist/phase-3-kubernetes-installation/' || 'dist/phase-3-installation/' }}
           if-no-files-found: warn

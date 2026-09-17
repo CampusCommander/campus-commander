@@ -18,7 +18,7 @@ on:
       phase3Profile:
         description: Installation profile for the signed Phase 3 laboratory release
         type: choice
-        options: [all-docker, hybrid]
+        options: [all-docker, hybrid, kubernetes]
         default: all-docker
       phase3UpdateRelease:
         description: Different signed Phase 3 lab tag for guided update

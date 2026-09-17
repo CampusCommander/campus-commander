@@ -3,26 +3,6 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export function configureKubernetesProvider(resources, application) {
-  const pod = resources.items.find(
-    (item) => item.kind === 'Deployment' && item.metadata.name === 'api',
-  ).spec.template.spec;
-  pod.hostAliases = [
-    { ip: application.hostGateway, hostnames: ['host.docker.internal'] },
-  ];
-  pod.volumes.push({
-    name: 'qualification-provider',
-    secret: { secretName: 'qualification-provider' },
-  });
-  const api = pod.containers.find((container) => container.name === 'api');
-  api.env.push({ name: 'NODE_EXTRA_CA_CERTS', value: '/run/qualification/ca' });
-  api.volumeMounts.push({
-    name: 'qualification-provider',
-    mountPath: '/run/qualification',
-    readOnly: true,
-  });
-}
-
 async function checksums(root, relative = '') {
   const entries = [];
   for (const item of await readdir(join(root, relative), {

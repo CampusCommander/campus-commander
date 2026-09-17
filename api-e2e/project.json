@@ -487,6 +487,22 @@
       "options": {
         "command": "CC_AUTH_PHASE3_HYBRID_UPDATE=1 node --test api-e2e/hybrid-cli.test.mjs"
       }
+    },
+    "phase3-kubernetes-install-integration": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["deployment:build"],
+      "cache": false,
+      "options": {
+        "command": "CC_AUTH_PHASE3_KUBERNETES=1 node --test api-e2e/kubernetes.test.mjs"
+      }
+    },
+    "kubernetes-fixture-test": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["deployment:build"],
+      "cache": false,
+      "options": {
+        "command": "node --test api-e2e/phase3-kubernetes-fixture.test.mjs api-e2e/kubernetes-shutdown.test.mjs"
+      }
     }
   }
 }
