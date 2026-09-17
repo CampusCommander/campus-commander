@@ -1,5 +1,6 @@
 import { GoogleConnectionController } from './google-connection.controller';
 import { GoogleConnectionService } from './google-connection.service';
+import { SchoolReferencesController } from './school-references.controller';
 import { CustomerSettingsController } from './customer-settings.controller';
 import { CustomerSettingsService } from './customer-settings.service';
 import { Module } from '@nestjs/common';
@@ -18,6 +19,7 @@ import { PlatformAccessService } from './platform-access.service';
 @Module({
   imports: [ConfigurationModule, DatabaseModule, CacheModule],
   controllers: [
+    SchoolReferencesController,
     CustomerSettingsController,
     GoogleConnectionController,
     AuthController,

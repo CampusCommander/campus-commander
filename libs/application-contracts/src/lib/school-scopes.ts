@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { googleCustomerIdSchema } from './google-connection';
+import {
+  googleCustomerIdSchema,
+  googleFailureSchema,
+} from './google-connection';
 const ouId = z
   .string()
   .min(1)
@@ -20,6 +23,20 @@ export const schoolReferenceObservationSchema = z.strictObject({
   verified: z.literal(true),
   complete: z.literal(true),
   units: z.array(ouReferenceSchema).min(1).max(10000),
+});
+export const schoolReferenceRefreshSchema = z.strictObject({
+  customerId: googleCustomerIdSchema,
+  generation: z.number().int().positive(),
+});
+export const schoolReferenceStateSchema = z.strictObject({
+  customerId: googleCustomerIdSchema,
+  generation: z.number().int().positive(),
+  observation: schoolReferenceObservationSchema.nullable(),
+  failure: googleFailureSchema.or(z.literal('key-unavailable')).nullable(),
+  checkedAt: z.iso.datetime({ offset: true }).nullable(),
+  fresh: z.boolean(),
+  checking: z.boolean(),
+  retryAt: z.iso.datetime({ offset: true }).nullable(),
 });
 const schoolReferenceRuleSchema = z.strictObject({
   id: ouId,

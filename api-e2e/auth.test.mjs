@@ -1,4 +1,5 @@
 import { qualifyGoogleLifecycleApi } from './google-lifecycle.mjs';
+import { qualifySchoolReferencesApi } from './school-references.mjs';
 import { qualifyGoogleHealth } from './google-health.mjs';
 import { qualifyCustomerSettings } from './customer-settings.mjs';
 import { qualifyGoogleWorker } from './google-connection-worker.mjs';
@@ -2179,6 +2180,17 @@ test(
           directory,
           evidenceDirectory,
           fixture: kestraFixture,
+          setSubject: (value) => {
+            subject = value;
+          },
+        });
+      if (applicationPhase === 3)
+        await qualifySchoolReferencesApi({
+          browser,
+          publicOrigin,
+          migrator,
+          directory,
+          evidenceDirectory,
           setSubject: (value) => {
             subject = value;
           },
