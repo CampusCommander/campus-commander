@@ -53,12 +53,15 @@ Each restore creates a new boundary. Repeating invitation invalidation still pro
 
 The PostgreSQL fixture exercises key selection, provider failures, gate enforcement, audit rollback, and reference freshness with synthetic credentials.
 The provider fixture does not establish live grant revocation or minimum-role behavior.
-Hosted PostgreSQL qualification for this increment remains pending.
+[Run 35185727466](https://github.com/CampusCommander/campus-commander/actions/runs/35185727466) passed PostgreSQL, operations, browser, storage, Redis, and main checks at `f0837f1`.
+Its application job failed before runtime tests because the image context excluded the new Google build script.
+The image context now includes that script and its entry module. Packaged compatibility requires another full run.
+Both review axes found no actionable issues in `fa1993f...f0837f1`.
 
 ## Remaining recovery work
 
 - Inventory and verify complete customer, settings, school, grant, progress, receipt, credential, and security-event state.
-- Qualify the new gate against real PostgreSQL and test live revoked-grant and changed-privilege fixtures when available.
+- Test live revoked-grant and changed-privilege fixtures when available.
 - Execute the complete Phase 3 operator-CLI restore with distinct databases, networks, storage, and fresh Redis.
 - Record measured recovery time, backup age, fixture limits, operator recovery, and erasure procedures.
 
