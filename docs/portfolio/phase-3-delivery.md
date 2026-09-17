@@ -147,3 +147,10 @@ The fixture expected HTTP 403 for a school outside the granted scope.
 The established API contract returns HTTP 404 with `school-not-found` for both inaccessible and unknown schools.
 The corrected fixture requires that exact status and identical response bodies for both cases.
 The correction changes qualification expectations. It does not change application authorization.
+
+[Run 35214463198](https://github.com/CampusCommander/campus-commander/actions/runs/35214463198) passed all ten installed-workflow checks after that correction.
+It used application revision `a3601ef` and harness revision `e1fb81e` with a clean harness checkout.
+The complete profile took 176,766 milliseconds. The workflow and restart-persistence checks took 12,004 milliseconds within that profile.
+The [retained report](../../deployment/evidence/CC-57-installed-workflows.json) records both revisions, images, manifest hash, report hashes, and limits.
+It also records two-replica session checks, stop, uninstall, repeated resume, and preserved preferences after fresh sign-in.
+PR CI passed at the same harness revision. Upgrade and complete fault qualification remain open.

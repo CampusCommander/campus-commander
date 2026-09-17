@@ -1,0 +1,378 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-17T11:17:01.836Z",
+  "phase": 3,
+  "profile": "all-docker",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "harnessRevision": "e1fb81e378d438783ef7968aa45507f9f901e6e7",
+  "harnessWorkingTree": "clean",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "installer": {
+    "source": "extracted-published-bundle",
+    "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f"
+  },
+  "command": "npm exec -- nx run api-e2e:phase3-install-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "browser": "149.0.7827.55"
+  },
+  "status": "passed",
+  "durationMs": 12004,
+  "checks": {
+    "customerConfirmation": true,
+    "settingsConfirmation": true,
+    "schoolScopeConfirmation": true,
+    "invitationRedemption": true,
+    "explicitIdentityConfirmation": true,
+    "scopedGrantAssignment": true,
+    "crossSchoolDenial": true,
+    "revocation": true,
+    "credentialReplacement": true,
+    "restartPersistence": true
+  },
+  "observations": [
+    {
+      "path": "/api/customer",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/google-connection/candidates",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/google-connection/candidates/760d0608-fe1c-42ad-aea8-786c3c8c0d33/confirm",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "path": "/api/google-connection/candidates/760d0608-fe1c-42ad-aea8-786c3c8c0d33/confirm",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/google-connection",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/customer/settings",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/customer",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/schools/references/refresh",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/schools/reviews",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/schools/reviews/0e187d03-2f26-4fb2-8e1b-80679705f350/confirm",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/schools/7fd99604-b1ed-4d82-8b08-1927d336e4b3",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/schools/reviews",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/schools/reviews/d9344afe-1a3d-44be-acf0-fdd92c0fdd6e/confirm",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/schools/0ac75ba4-a868-48c2-a623-0007e7fa3e8a",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/auth/invitations",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/auth/session",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "path": "/api/auth/invitations",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/auth/invitations/c1175c8c-c77c-4a66-ba68-48003060f34c/confirm",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/auth/session",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/customer",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/platform-users",
+      "method": "GET",
+      "status": 403
+    },
+    {
+      "path": "/api/platform-users/27c43a46-18ae-4b20-800b-e032116377e4/review",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/platform-users/27c43a46-18ae-4b20-800b-e032116377e4/access",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/auth/session",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "path": "/api/schools/7fd99604-b1ed-4d82-8b08-1927d336e4b3",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/schools/0ac75ba4-a868-48c2-a623-0007e7fa3e8a",
+      "method": "GET",
+      "status": 404
+    },
+    {
+      "path": "/api/schools/115b2525-2587-46f0-a764-3c55385cdf66",
+      "method": "GET",
+      "status": 404
+    },
+    {
+      "path": "/api/platform-users/27c43a46-18ae-4b20-800b-e032116377e4/review",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/platform-users/27c43a46-18ae-4b20-800b-e032116377e4/access",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/auth/session",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "path": "/api/schools/7fd99604-b1ed-4d82-8b08-1927d336e4b3",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "path": "/api/platform-users/27c43a46-18ae-4b20-800b-e032116377e4/receipts",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/platform-users/27c43a46-18ae-4b20-800b-e032116377e4",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/google-connection/credentials",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/google-connection/replacements",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/google-connection/replacements/61776af9-3de7-42a4-aabd-1871e7adcee2/activate",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/customer",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/customer",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/google-connection/credentials",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/schools/7fd99604-b1ed-4d82-8b08-1927d336e4b3",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/schools/0ac75ba4-a868-48c2-a623-0007e7fa3e8a",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/platform-users/27c43a46-18ae-4b20-800b-e032116377e4",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/platform-users/27c43a46-18ae-4b20-800b-e032116377e4/receipts",
+      "method": "GET",
+      "status": 200
+    }
+  ],
+  "limits": [
+    "The installed application uses synthetic Google and OIDC providers.",
+    "This report covers public API workflows and selected browser steps. It does not establish complete accessibility or district acceptance."
+  ],
+  "durationScope": "Public workflows and restart persistence, including intervening installer diagnostics.",
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35214463198",
+    "artifact": "phase-3-installed-workflows",
+    "releaseTag": "phase-3-lab-a3601eff2a55",
+    "reports": [
+      {
+        "path": "phase3-workflows.json",
+        "sizeBytes": 6803,
+        "sha256": "f9d8e14d0b99ddb074998a1eb1d935f253c8d59e9e6197c634babf17bdc7571f"
+      },
+      {
+        "path": "all-docker-profile.json",
+        "sizeBytes": 10175,
+        "sha256": "2b2bf55514321d37967edc6acb4a379aa59da04f444ef221749820bdf3a67ed2"
+      }
+    ]
+  },
+  "profileVerification": {
+    "status": "passed",
+    "durationMs": 176766,
+    "installer": {
+      "status": "passed",
+      "commands": [
+        "prepare",
+        "resume",
+        "resume",
+        "stop",
+        "resume",
+        "uninstall",
+        "resume"
+      ],
+      "repeatedResume": true,
+      "redisSessionsDiscarded": true,
+      "freshSignInPreservesPreferences": true,
+      "originalRenderPreserved": true,
+      "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+      "source": "extracted-published-bundle"
+    },
+    "readinessChecks": [
+      "application-database",
+      "kestra-database",
+      "redis",
+      "frontend",
+      "api",
+      "workers",
+      "artifacts",
+      "kestra"
+    ],
+    "apiReplicaCount": 2,
+    "replicaObservations": [
+      {
+        "phase": "initial-session",
+        "container": "5429463ebcd12a2bdad5f7254ca9a3d5929b20120293a54d819e143df6ab4c96",
+        "status": 200,
+        "principalId": "cf65b60f-9d0c-49a3-b46a-61b28b23aff4"
+      },
+      {
+        "phase": "initial-session",
+        "container": "8a307e85fca8399b1dbc40a21c52db081691a90a58c7d6ccab28d8c4e4beb58b",
+        "status": 200,
+        "principalId": "cf65b60f-9d0c-49a3-b46a-61b28b23aff4"
+      },
+      {
+        "phase": "restart-session",
+        "container": "5429463ebcd12a2bdad5f7254ca9a3d5929b20120293a54d819e143df6ab4c96",
+        "status": 200,
+        "principalId": "cf65b60f-9d0c-49a3-b46a-61b28b23aff4"
+      },
+      {
+        "phase": "restart-session",
+        "container": "8a307e85fca8399b1dbc40a21c52db081691a90a58c7d6ccab28d8c4e4beb58b",
+        "status": 200,
+        "principalId": "cf65b60f-9d0c-49a3-b46a-61b28b23aff4"
+      },
+      {
+        "phase": "stop-resume-session",
+        "container": "5429463ebcd12a2bdad5f7254ca9a3d5929b20120293a54d819e143df6ab4c96",
+        "status": 200,
+        "principalId": "cf65b60f-9d0c-49a3-b46a-61b28b23aff4"
+      },
+      {
+        "phase": "stop-resume-session",
+        "container": "8a307e85fca8399b1dbc40a21c52db081691a90a58c7d6ccab28d8c4e4beb58b",
+        "status": 200,
+        "principalId": "cf65b60f-9d0c-49a3-b46a-61b28b23aff4"
+      },
+      {
+        "phase": "uninstall-resume-session",
+        "container": "188f9bdd6dc86696ac43028d336e7b2d008b73371b27bd9f993918fe1d81df4c",
+        "status": 200,
+        "principalId": "cf65b60f-9d0c-49a3-b46a-61b28b23aff4"
+      },
+      {
+        "phase": "uninstall-resume-session",
+        "container": "c2c768acaf9e6fb3322259808d8352af56e27fe8feb085a7a90420e1bd9812fa",
+        "status": 200,
+        "principalId": "cf65b60f-9d0c-49a3-b46a-61b28b23aff4"
+      },
+      {
+        "phase": "signed-out-session",
+        "container": "188f9bdd6dc86696ac43028d336e7b2d008b73371b27bd9f993918fe1d81df4c",
+        "status": 401
+      },
+      {
+        "phase": "signed-out-session",
+        "container": "c2c768acaf9e6fb3322259808d8352af56e27fe8feb085a7a90420e1bd9812fa",
+        "status": 401
+      }
+    ],
+    "sessionSurvivedRestart": true,
+    "logoutRejectedAcrossReplicas": true,
+    "limits": [
+      "Synthetic provider CA and loopback port replace district ingress.",
+      "Upgrade and isolated restore require separate evidence."
+    ],
+    "durationScope": "Complete installer, browser, restart, stop, uninstall, and resume fixture."
+  }
+}
