@@ -36,7 +36,6 @@ The existing Phase 2 targets retain their previous modes.
 
 ## Remaining evidence
 
-- Guided update qualification.
 - Prerequisite acceptance and complete hybrid acceptance.
 
 Three Docker daemons share one physical Docker host and synthetic shared storage.
@@ -515,7 +514,7 @@ A protected Redis marker, every private file, and an unrelated control volume mu
 The fixture restores the original operator file and removes its labeled control volume before reporting success.
 Separate progress evidence records failed stages without raw errors.
 
-This increment requires hosted qualification. It does not establish different-release guided update or district acceptance.
+The passed lifecycle checkpoint below records hosted qualification. District acceptance remains open.
 
 ## Guided update increment
 
@@ -537,7 +536,7 @@ Saved workflows, authenticated diagnostics, dark theme, and both API replicas mu
 A repeated update must report `already-current`. Distributed background renewal runs after browser closure against the updated workers.
 
 Reports distinguish source and target releases, commands, worker handoff, backup identity, durations, preserved state, and measured limits.
-Failed runs retain the current stage without raw errors. This increment requires hosted qualification.
+Failed runs retain the current stage without raw errors. The passed guided-update checkpoint below records hosted qualification.
 
 ## Passed lifecycle checkpoint
 
@@ -555,13 +554,13 @@ The Redis marker, private files, and unrelated volume survived. Cleanup restored
 
 The [retained report](../../deployment/evidence/CC-58-lifecycle.json) preserves all original fields and three source-report hashes.
 Its archive matches the published SHA-256 digest.
-Different-release guided update, district acceptance, five completed profile reports, and prerequisite acceptance remain open.
+District acceptance and prerequisite acceptance remain open.
 
 ## Hybrid report inventory
 
 The [profile inventory](../../deployment/evidence/CC-58-profile-evidence.json) binds five distinct report categories to signed application `a3601ef` and its manifest.
 Each entry records the retained file size and SHA-256 hash.
-Supplemental reports cover installed workflows, distributed credential renewal, replica permissions, and lifecycle.
+Supplemental reports cover installed workflows, distributed credential renewal, replica permissions, lifecycle, and guided update.
 
 | Report       | Evidence                                                                                                             |
 | ------------ | -------------------------------------------------------------------------------------------------------------------- |
@@ -573,5 +572,30 @@ Supplemental reports cover installed workflows, distributed credential renewal, 
 
 The fault aggregate references four independent runs against the same application. All thirteen fault cases passed their recorded recovery bounds.
 Every source report retains its preservation checks, provenance, and measured limits.
-The inventory remains incomplete until guided update qualification and prerequisite acceptance finish.
+The inventory remains incomplete until prerequisite acceptance finishes.
 It does not transfer source results to the guided-update target or permit full release assembly.
+
+## Passed guided-update checkpoint
+
+[Run 35251131690](https://github.com/CampusCommander/campus-commander/actions/runs/35251131690) passed at harness `bc5fc10`.
+The source application was `a3601ef`. The target application was `eb78e16`. Each release retained its distinct manifest and image identities.
+The complete fixture took 360,801 milliseconds. The guided-update segment took 77,270 milliseconds.
+
+Delivered native commands created and verified the cold backup.
+Cancelled update preserved configuration, operator files, installer state, and durable records.
+The target setup command reported `prepared-workers-pending` before both worker hosts received generated fragments.
+Delivered setup resume completed the update. Repeated update reported `already-current`.
+Actual container images matched the target release on all three daemons.
+
+The update preserved private files, original migration checksums, two principals, 75 original security events, thirteen grants, and two access changes.
+Connection, credentials, settings, schools, artifact bytes, and five completed Kestra executions remained intact.
+Nonempty internal storage, saved workflows, authenticated diagnostics, dark theme, and both API replicas passed.
+The update journal was absent after completion. Repeated delivered resume passed.
+
+Background renewal after browser closure passed in 9,016 milliseconds. Both updated worker hosts participated.
+Renewal events increased from one to two during concurrent reads and stayed at two after restart.
+Worker restart recovered in 2,132 milliseconds within the 30-second bound.
+
+The [retained report](../../deployment/evidence/CC-58-guided-update.json) preserves all original fields and three source-report hashes.
+Its archive matches the published SHA-256 digest.
+Source installation and fault results do not qualify the target release. Prerequisite acceptance and complete CC-58 acceptance remain open.

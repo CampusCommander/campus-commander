@@ -10,7 +10,7 @@
   },
   "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
   "status": "incomplete",
-  "recordedAt": "2026-09-17T17:12:41.756829+00:00",
+  "recordedAt": "2026-09-17T17:24:45.499585+00:00",
   "reports": [
     {
       "kind": "installation",
@@ -76,12 +76,16 @@
       "sizeBytes": 40539,
       "sha256": "e8fd3172223073eb35dc3ef7217329fe7fcdcb9ef1d04d10ed0675f3d2c67f49",
       "status": "passed"
+    },
+    {
+      "kind": "guided-update",
+      "path": "CC-58-guided-update.json",
+      "sizeBytes": 43348,
+      "sha256": "3eda45c10bc7faa2e6c15d2a2360b967af2c156fdbc0487d69d63a2e733fdcd2",
+      "status": "passed"
     }
   ],
-  "remaining": [
-    "Execute and retain the different-release guided update.",
-    "Reconcile CC-54, CC-55, and CC-56 prerequisite acceptance."
-  ],
+  "remaining": ["Reconcile CC-54, CC-55, and CC-56 prerequisite acceptance."],
   "limits": [
     "All listed profile reports bind application a3601eff2a55373074958c6bc93e9134adbea741. They do not qualify another application revision.",
     "This inventory records five distinct report categories. It does not close CC-58 or permit full release assembly.",
