@@ -3,6 +3,13 @@ name: Phase 2 candidate images
 on:
   workflow_dispatch:
     inputs:
+      phase:
+        description: Application phase to publish and qualify
+        type: choice
+        default: '2'
+        options:
+          - '2'
+          - '3'
       mode:
         description: Lab build or full profile qualification
         type: choice
@@ -32,14 +39,26 @@ on:
       - '.github/workflows/phase-2-candidate.yml'
 
 concurrency:
-  group: phase-2-${{ github.ref }}-${{ inputs.mode || 'lab' }}
+  group: phase-${{ inputs.phase || '2' }}-${{ github.ref }}-${{ inputs.mode || 'lab' }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  phase3:
+    if: inputs.phase == '3'
+    uses: ./.github/workflows/phase-3-candidate.yml
+    with:
+      mode: ${{ inputs.mode }}
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    secrets: inherit
+
   plan:
+    if: inputs.phase != '3'
     runs-on: ubuntu-latest
     outputs:
       application: ${{ steps.select.outputs.application }}
@@ -58,6 +77,7 @@ jobs:
           fi
 
   validate:
+    if: inputs.phase != '3'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

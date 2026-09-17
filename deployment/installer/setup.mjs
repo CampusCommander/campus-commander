@@ -389,6 +389,12 @@ export async function configure({
   ).trust;
   operator.trust = {
     ...trust,
+    ...(manifest.phase === 3
+      ? {
+          identity:
+            'https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery',
+        }
+      : {}),
     ...(manifest.phase === 2
       ? {
           identity:

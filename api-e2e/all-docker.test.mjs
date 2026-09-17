@@ -17,6 +17,7 @@ import { applicationBrowser } from './profile-browser.mjs';
 import { startRegistry } from './registry-fixture.mjs';
 import { qualifyApplicationRestore } from './restore-fixture.mjs';
 import { qualificationBrowserStep } from './qualification-sign-in.mjs';
+import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 
 const phase3Restore = process.env.CC_AUTH_PHASE3_RESTORE === '1';
 const applicationPhase = phase3Restore ? 3 : 2;
@@ -213,18 +214,20 @@ test(
       let installationRelease = registry
         ? await registry.mirror(release, `phase${applicationPhase}`)
         : release;
+      let bundleManifestSha256;
       if (process.env.CC_AUTH_INSTALLER_ROOT) {
         assert.equal(
           registry,
           undefined,
           'A published installer bundle requires published image references.',
         );
-        installationRelease = JSON.parse(
-          await readFile(join(installerRoot, 'release-manifest.json'), 'utf8'),
-        );
-        assert.deepEqual(installationRelease.images, images);
-        assert.equal(installationRelease.sourceRevision, sourceRevision);
-        assert.equal(installationRelease.phase, applicationPhase);
+        const bundle = await loadQualificationBundle(installerRoot, {
+          phase: applicationPhase,
+          sourceRevision,
+          images,
+        });
+        installationRelease = bundle.manifest;
+        bundleManifestSha256 = bundle.manifestSha256;
       }
       config.images = installationRelease.images;
       const configPath = join(root, 'deployment.json');
@@ -548,6 +551,15 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             status: 'passed',
             profile: 'all-docker',
             phase: applicationPhase,
+            command: phase3Restore
+              ? 'npm exec -- nx run api-e2e:phase3-restore-integration'
+              : 'npm exec -- nx run api-e2e:all-docker-integration',
+            environment: {
+              nodeVersion: process.version,
+              platform: process.platform,
+              architecture: process.arch,
+              ci: process.env.CI === 'true',
+            },
             recordedAt: new Date().toISOString(),
             durationMs: Date.now() - startedAt,
             images,
@@ -570,6 +582,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
               redisSessionsDiscarded: true,
               freshSignInPreservesPreferences: true,
               originalRenderPreserved: true,
+              bundleManifestSha256,
               source: process.env.CC_AUTH_INSTALLER_ROOT
                 ? 'extracted-published-bundle'
                 : 'workspace',

@@ -30,7 +30,7 @@ async function fixture(
   } = {},
 ) {
   const candidate = `phase-${phase}-${qualified ? 'qualified' : 'candidate'}`;
-  const tag = `${lab ? 'phase-2-lab' : candidate}-${revision.slice(0, 12)}`;
+  const tag = `${lab ? `phase-${phase}-lab` : candidate}-${revision.slice(0, 12)}`;
   const root = await mkdtemp(join(tmpdir(), 'cc-entry-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const bundle = join(root, 'bundle'),
@@ -53,7 +53,7 @@ async function fixture(
   const manifest = {
     schemaVersion: 1,
     ...(lab ? { validationScope: 'lab', qualification: 'candidate-only' } : {}),
-    ...(phase === 2 ? { phase: wrongPhase ? 1 : 2 } : {}),
+    ...(phase >= 2 ? { phase: wrongPhase ? 1 : phase } : {}),
     ...(qualified
       ? {
           qualification: wrongQualification
@@ -424,30 +424,38 @@ test('hosted uninstall uses the installed CLI, requires exact confirmation, and 
   assert.match(result.stderr, /data and credentials remain/);
 });
 
-test('lab releases verify signatures and retain the lab identity during resume', async (t) => {
-  const f = await installedFixture(t, { lab: true });
-  const before = (await f.trace())
-    .split('\n')
-    .filter((line) => line.startsWith('download'));
-  assert.ok(before.some((line) => line.includes('phase-2-lab-aaaaaaaaaaaa')));
-  assert.equal(((await f.trace()).match(/cosign \["verify"/g) || []).length, 3);
-  const result = f.run([
-    '--root',
-    f.installationRoot,
-    '--command',
-    'resume',
-    '--answers',
-    f.answers,
-    '--accept-license',
-  ]);
-  assert.equal(result.status, 0, result.stderr);
-  const args = JSON.parse(await f.executed());
-  assert.equal(args[args.indexOf('--command') + 1], 'resume');
-  assert.deepEqual(
-    (await f.trace()).split('\n').filter((line) => line.startsWith('download')),
-    before,
-  );
-});
+for (const phase of [2, 3])
+  test(`Phase ${phase} lab releases retain the lab identity during resume`, async (t) => {
+    const f = await installedFixture(t, { phase, lab: true });
+    const before = (await f.trace())
+      .split('\n')
+      .filter((line) => line.startsWith('download'));
+    assert.ok(
+      before.some((line) => line.includes(`phase-${phase}-lab-aaaaaaaaaaaa`)),
+    );
+    assert.equal(
+      ((await f.trace()).match(/cosign \["verify"/g) || []).length,
+      3,
+    );
+    const result = f.run([
+      '--root',
+      f.installationRoot,
+      '--command',
+      'resume',
+      '--answers',
+      f.answers,
+      '--accept-license',
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const args = JSON.parse(await f.executed());
+    assert.equal(args[args.indexOf('--command') + 1], 'resume');
+    assert.deepEqual(
+      (await f.trace())
+        .split('\n')
+        .filter((line) => line.startsWith('download')),
+      before,
+    );
+  });
 
 test('hosted update verifies a different release before handing it to guided setup', async (t) => {
   const old = await installedFixture(t);
@@ -565,3 +573,43 @@ test('pending update selects its cached release and the state-bound uninstall op
     downloads,
   );
 });
+
+for (const lab of [false, true])
+  test(`Phase 3 ${lab ? 'lab' : 'candidate'} entry verifies the fixed publisher before execution`, async (t) => {
+    const f = await fixture(t, { phase: 3, lab });
+    const result = f.run(['--verify-only']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(await f.executed(), null);
+    const trace = await f.trace();
+    const verifications = trace
+      .split('\n')
+      .filter((line) => line.startsWith('cosign '));
+    assert.equal(verifications.length, 5);
+    for (const line of verifications)
+      assert.match(
+        line,
+        /phase-3-candidate\.yml@refs\/heads\/codex\/cc-57-phase3-delivery/,
+      );
+    assert.match(trace, /phase-3-candidate\.tar\.gz/);
+    assert.doesNotMatch(trace, /phase-2-candidate/);
+  });
+
+for (const options of [
+  { wrongPhase: true },
+  { tamper: true },
+  { qualified: true },
+])
+  test(`Phase 3 entry rejects mismatched identity ${JSON.stringify(options)}`, async (t) => {
+    const f = await fixture(t, { phase: 3, ...options });
+    assert.notEqual(f.run(['--verify-only']).status, 0);
+    assert.equal(await f.executed(), null);
+  });
+
+for (const failure of ['verify-blob', 'manifest', 'verify'])
+  test(`Phase 3 entry rejects ${failure} signature failure`, async (t) => {
+    const f = await fixture(t, { phase: 3, lab: true });
+    const result = f.run(['--verify-only'], { CC_ENTRY_FAIL: failure });
+    assert.notEqual(result.status, 0);
+    assert.equal(await f.executed(), null);
+    assert.match(result.stderr, /signature verification failed/i);
+  });

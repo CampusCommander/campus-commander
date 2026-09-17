@@ -134,3 +134,76 @@ test('workflow shell steps remain valid and image pulls have bounded retries', a
     }
   }
 });
+
+test('Phase 3 dispatch rejects full mode and gates publication on extracted qualification', async () => {
+  const caller = await workflow('phase-2-candidate');
+  const release = await workflow('phase-3-candidate');
+  assert.deepEqual(caller.on.workflow_dispatch.inputs.phase.options, [
+    '2',
+    '3',
+  ]);
+  assert.equal(caller.jobs.phase3.if, "inputs.phase == '3'");
+  assert.equal(
+    caller.jobs.phase3.uses,
+    './.github/workflows/phase-3-candidate.yml',
+  );
+  assert.equal(caller.jobs.phase3.with.mode, '${{ inputs.mode }}');
+  for (const name of ['plan', 'validate'])
+    assert.equal(caller.jobs[name].if, "inputs.phase != '3'");
+  const guard = release.jobs.validate.steps[0];
+  for (const mode of ['lab', 'full', '']) {
+    let accepted = false;
+    try {
+      execFileSync('bash', ['-e', '-c', guard.run], {
+        env: { ...process.env, BUILD_MODE: mode },
+        stdio: 'pipe',
+      });
+      accepted = true;
+    } catch {
+      /* The guard must reject unsupported modes. */
+    }
+    assert.equal(accepted, mode === 'lab');
+  }
+  assert.equal(release.jobs.publish.needs, 'validate');
+  assert.equal(release.jobs.application.needs, 'publish');
+  assert.deepEqual(release.jobs.bundle.needs, ['publish', 'application']);
+  assert.equal(release.jobs.extracted.needs, 'bundle');
+  assert.match(
+    release.env.CC_SIGNING_IDENTITY,
+    /phase-3-candidate.yml@\$\{\{ github.ref \}\}/,
+  );
+  for (const job of ['application', 'extracted']) {
+    const steps = release.jobs[job].steps;
+    const prepare = steps.find(
+      (step) => step.name === 'Prepare published image references',
+    );
+    assert.ok(
+      prepare.run.indexOf('cosign verify') < prepare.run.indexOf('docker pull'),
+    );
+    assert.match(prepare.run, /--certificate-identity="\$CC_SIGNING_IDENTITY"/);
+  }
+  const steps = release.jobs.extracted.steps;
+  const extract = steps.find(
+    (step) => step.name === 'Verify and extract the candidate bundle',
+  );
+  assert.equal((extract.run.match(/cosign verify-blob/g) || []).length, 2);
+  assert.ok(
+    extract.run.lastIndexOf('cosign verify-blob') <
+      extract.run.indexOf('tar --extract'),
+  );
+  assert.match(extract.run, /loadQualificationBundle/);
+  const qualify = steps.findIndex(
+    (step) => step.name === 'Qualify extracted Phase 3 installer and restore',
+  );
+  const bind = steps.findIndex(
+    (step) => step.name === 'Bind extracted Phase 3 evidence',
+  );
+  const publish = steps.findIndex(
+    (step) => step.name === 'Publish tested lab release',
+  );
+  assert.ok(qualify < bind && bind < publish);
+  assert.equal(steps[publish].if, undefined);
+  assert.match(steps[publish].run, /--prerelease/);
+  assert.match(steps[publish].run, /phase-3-lab-/);
+  assert.doesNotMatch(steps[publish].run, /--clobber|--latest/);
+});

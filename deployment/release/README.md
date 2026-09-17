@@ -260,3 +260,25 @@ node deployment/release/candidate.mjs \
 
 The image directory requires reference, SPDX, signature-verification, and vulnerability reports for frontend, API, and worker images.
 Independent signature verification, extracted installer execution, all fifteen profile reports, and operator acceptance remain separate release gates.
+
+The Phase 3 reusable workflow runs through the registered Phase 2 dispatcher:
+
+```sh
+gh workflow run phase-2-candidate.yml \
+  --ref codex/cc-57-phase3-delivery -f phase=3 -f mode=lab
+```
+
+The workflow rejects full mode. It publishes a laboratory prerelease only after packaged authorization and extracted installer and restore checks pass.
+The extracted job independently verifies image, archive, and manifest signatures before it executes the delivered installer.
+Its report binds source, images, manifest, report hashes, environment, command, and scoped durations.
+The report leaves upgrade and fault checks unexecuted. The candidate manifest retains all fifteen release gates as `not-run`.
+
+The hosted installer and guided setup trust this fixed signing identity:
+
+```text
+https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery
+```
+
+The issuer remains `https://token.actions.githubusercontent.com`.
+[Fulcio uses the called workflow identity](https://github.com/sigstore/fulcio/blob/main/pkg/identity/github/principal.go) for reusable workflows.
+Laboratory assets use `phase-3-candidate` filenames under immutable `phase-3-lab-<revision12>` tags.

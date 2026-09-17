@@ -41,3 +41,25 @@ It does not reexecute the application or publish a candidate.
 
 Applicable UI rules remain UI-01, UI-08, UI-09, UI-10, and FORM-01.
 This packaging increment changes no product controls. Its automated fixture tests do not provide new product UI evidence.
+
+## Signed laboratory workflow
+
+The registered Phase 2 dispatcher calls the Phase 3 workflow when `phase=3` and `mode=lab`.
+Full mode stops before image publication. The default dispatcher behavior remains Phase 2.
+
+```sh
+gh workflow run phase-2-candidate.yml \
+  --ref codex/cc-57-phase3-delivery -f phase=3 -f mode=lab
+```
+
+The workflow scans and signs immutable images before packaged authorization tests.
+It assembles and signs the candidate only after those tests pass.
+A separate job verifies image, archive, and manifest signatures before extraction.
+It then runs the extracted installer for installation, repeated resume, lifecycle checks, and isolated restore.
+The restore uses the extracted operator CLI and verifies preserved Phase 3 state and rejected copied admissions.
+The qualification report binds both reports to the source revision, image digests, and extracted manifest hash.
+It records command, environment, duration scopes, and report hashes. Upgrade and fault qualification remain `not-run`.
+
+Only successful extracted qualification permits the immutable `phase-3-lab-<revision12>` prerelease.
+The hosted installer trusts the fixed Phase 3 workflow identity and verifies both blobs and all three images.
+Workflow implementation and local rejection tests do not establish a successful hosted run.

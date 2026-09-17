@@ -479,7 +479,7 @@ HELP
   case "$cc_profile" in ''|all-docker|hybrid|kubernetes) ;; *) cc_fail 'Select all-docker, hybrid, or kubernetes.' ;; esac
   case "$cc_command" in ''|install|resume|status|update|uninstall) ;; *) cc_fail 'Select install, resume, status, update, or uninstall.' ;; esac
   if [ -n "$cc_release" ]; then
-    printf '%s\n' "$cc_release" | LC_ALL=C grep -Eq '^phase-([12]-candidate|2-qualified|2-lab)-[a-f0-9]{12}$' || cc_fail 'Use a complete immutable release tag.'
+    printf '%s\n' "$cc_release" | LC_ALL=C grep -Eq '^phase-([123]-candidate|2-qualified|[23]-lab)-[a-f0-9]{12}$' || cc_fail 'Use a complete immutable release tag.'
   fi
   for cc_path in "$cc_cache" "$cc_root" "$cc_answers"; do
     case "$cc_path" in '') continue ;; /*) ;; *) cc_fail 'Use absolute paths for cache, installation, and answers.' ;; esac
@@ -600,7 +600,7 @@ HELP
       profile=JSON.parse(fs.readFileSync(o.configurationPath)).profile;
     }else profile=data.plan?.config?.profile;
     if(!["all-docker","hybrid","kubernetes"].includes(profile))throw Error("Invalid existing profile");
-    const releaseKind=manifest.phase===2&&manifest.validationScope==="lab"?"lab":manifest.phase===2&&manifest.qualification==="profile-qualified"?"qualified":"candidate";
+    const releaseKind=[2,3].includes(manifest.phase)&&manifest.validationScope==="lab"?"lab":manifest.phase===2&&manifest.qualification==="profile-qualified"?"qualified":"candidate";
     fs.writeFileSync(out,JSON.stringify({downloads:path.dirname(o.releaseRoot),tag:"phase-"+(manifest.phase??1)+"-"+releaseKind+"-"+manifest.sourceRevision.slice(0,12),profile,phase:manifest.phase??1,updating,lifecycleOperator,project:o.kubernetes?.namespace||o.project}));
   ' "$cc_existing_root" "$cc_stage/existing.json" || cc_fail 'Inspect the existing installation before resuming.'
   cc_saved_downloads=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).downloads||""' "$cc_stage/existing.json")
@@ -635,13 +635,17 @@ HELP
     cc_release=$(node -e '
       const fs=require("node:fs"); const releases=JSON.parse(fs.readFileSync(process.argv[1]));
       if(!Array.isArray(releases))throw Error("Invalid release list");
-      const release=releases.filter(r=>!r.draft&&/^phase-([12]-candidate|2-qualified|2-lab)-[a-f0-9]{12}$/.test(r.tag_name)&&(!process.argv[2]||r.tag_name.startsWith("phase-"+process.argv[2]+"-")))
+      const release=releases.filter(r=>!r.draft&&/^phase-([123]-candidate|2-qualified|[23]-lab)-[a-f0-9]{12}$/.test(r.tag_name)&&(!process.argv[2]||r.tag_name.startsWith("phase-"+process.argv[2]+"-")))
         .sort((a,b)=>Date.parse(b.published_at)-Date.parse(a.published_at))[0];
       if(!release)throw Error("No supported published release exists");
       process.stdout.write(release.tag_name);
     ' "$cc_stage/releases.json" "${cc_installed_phase:-}") || cc_fail 'Could not select a published release. Retry or provide --release.'
   fi
   case "$cc_release" in
+    phase-3-candidate-*|phase-3-lab-*)
+      cc_candidate=phase-3-candidate
+      cc_identity=https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery
+      ;;
     phase-2-candidate-*|phase-2-lab-*)
       cc_candidate=phase-2-candidate
       cc_identity=https://github.com/CampusCommander/campus-commander/.github/workflows/phase-2-candidate.yml@refs/heads/implementation/phase-2-cc-22
@@ -683,8 +687,8 @@ HELP
     const root=process.argv[1],tag=process.argv[2],manifestBytes=fs.readFileSync(root+"/release-manifest.json");
     if(!manifestBytes.equals(fs.readFileSync(root+"/bundle/release-manifest.json")))throw Error("Archive and external manifests differ");
     const manifest=JSON.parse(manifestBytes);
-    const releaseKind=manifest.phase===2&&manifest.validationScope==="lab"?"lab":manifest.phase===2&&manifest.qualification==="profile-qualified"?"qualified":"candidate";
-    if(manifest.schemaVersion!==1||!/^[a-f0-9]{40}$/.test(manifest.sourceRevision)||![1,2].includes(manifest.phase??1)||tag!=="phase-"+(manifest.phase??1)+"-"+releaseKind+"-"+manifest.sourceRevision.slice(0,12))throw Error("Release identity differs");
+    const releaseKind=[2,3].includes(manifest.phase)&&manifest.validationScope==="lab"?"lab":manifest.phase===2&&manifest.qualification==="profile-qualified"?"qualified":"candidate";
+    if(manifest.schemaVersion!==1||!/^[a-f0-9]{40}$/.test(manifest.sourceRevision)||![1,2,3].includes(manifest.phase??1)||tag!=="phase-"+(manifest.phase??1)+"-"+releaseKind+"-"+manifest.sourceRevision.slice(0,12))throw Error("Release identity differs");
     if(JSON.stringify(manifest.architectures)!==JSON.stringify(["linux/amd64"]))throw Error("Unsupported release architecture");
     if(!Array.isArray(manifest.files)||!manifest.files.length||manifest.files.length>10000)throw Error("Invalid file inventory");
     const seen=new Set();
