@@ -341,4 +341,6 @@ Those checks did not reproduce the hosted failure. The cause remains unresolved.
 
 Failure diagnostics now include numeric context and page identities, resource categories, and closing or closed states.
 They exclude URLs, response contents, and underlying error messages. Observation failures still reject evidence.
-The diagnostic regression and existing scanner checks pass locally. Hosted qualification remains pending.
+The diagnostic regression and existing scanner checks pass locally.
+[Source run 35189602731](https://github.com/CampusCommander/campus-commander/actions/runs/35189602731) passed at `898e447` with the new diagnostics.
+That run did not reproduce the failure. It does not establish a correction for the unresolved packaged-browser failure.
