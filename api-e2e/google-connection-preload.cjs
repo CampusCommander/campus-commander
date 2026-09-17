@@ -24,8 +24,9 @@ prototype.request = async function (options) {
       Buffer.from(assertion.split('.')[1], 'base64url').toString('utf8'),
     ).scope;
     if (
-      fault === 'domain-delegation-denied' &&
-      scope.includes('domain.readonly')
+      (fault === 'domain-delegation-denied' &&
+        scope.includes('domain.readonly')) ||
+      (fault === 'ou-delegation-denied' && scope.includes('orgunit.readonly'))
     )
       throw {
         response: { status: 400, data: { error: 'unauthorized_client' } },
@@ -35,7 +36,9 @@ prototype.request = async function (options) {
         ? 'synthetic-connection-token'
         : scope.endsWith('customer.readonly')
           ? 'synthetic-customer-token'
-          : 'synthetic-domain-token',
+          : scope.endsWith('orgunit.readonly')
+            ? 'synthetic-ou-token'
+            : 'synthetic-domain-token',
       expires_in: 3600,
       token_type: 'Bearer',
     };
@@ -48,7 +51,9 @@ prototype.request = async function (options) {
           ? 'https://www.googleapis.com/auth/admin.directory.customer.readonly'
           : authorization === 'Bearer synthetic-domain-token'
             ? 'https://www.googleapis.com/auth/admin.directory.domain.readonly'
-            : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
+            : authorization === 'Bearer synthetic-ou-token'
+              ? 'https://www.googleapis.com/auth/admin.directory.orgunit.readonly'
+              : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
       expires_in: 3500,
     };
   } else if (url.pathname.endsWith('/my_customer'))
@@ -99,6 +104,36 @@ prototype.request = async function (options) {
           domainName: 'secondary.fixture.invalid',
           isPrimary: false,
           verified: true,
+        },
+      ],
+    };
+  } else if (
+    url.pathname === '/admin/directory/v1/customer/C0123456/orgunits'
+  ) {
+    if (fault === 'ou-privilege-denied')
+      throw {
+        response: {
+          config: options,
+          status: 403,
+          data: { error: { errors: [{ reason: 'forbidden' }] } },
+        },
+      };
+    if (fault === 'ou-delay')
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    data = {
+      organizationUnits: [
+        { orgUnitId: 'root', name: 'Root', orgUnitPath: '/' },
+        {
+          orgUnitId: 'school-a',
+          name: 'School A',
+          orgUnitPath: '/School A',
+          parentOrgUnitId: 'root',
+        },
+        {
+          orgUnitId: 'school-b',
+          name: 'School B',
+          orgUnitPath: '/School B',
+          parentOrgUnitId: fault === 'ou-invalid' ? 'missing' : 'root',
         },
       ],
     };

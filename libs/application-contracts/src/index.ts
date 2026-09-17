@@ -16,3 +16,5 @@ export {
   googleKeyRotationSchema,
   googleCredentialManagementSchema,
 } from './lib/google-connection';
+
+export * from './lib/school-scopes';

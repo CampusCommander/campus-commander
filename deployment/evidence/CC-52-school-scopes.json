@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "issue": "CC-52",
+  "status": "partial-qualification",
+  "source": {
+    "revision": "581b194ea9712c40eac3dc244290411862ca13c2",
+    "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35172998611",
+    "status": "passed",
+    "references": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-synthetic-google-transport",
+      "checks": [
+        "current manager read excludes private credential material",
+        "CSRF, strict input, customer binding, and refresh rate enforcement",
+        "isolated OU scope produces a complete validated hierarchy",
+        "DWD, privilege, and invalid hierarchy failures preserve prior references without freshness",
+        "concurrent refresh rejection and successful recovery",
+        "authority change during provider read denies publication and response"
+      ],
+      "limits": [
+        "School definitions, grant assignment, and the selector remain outside this increment."
+      ]
+    },
+    "definitions": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-synthetic-school-grants",
+      "checks": [
+        "strict preview input, CSRF, explicit confirmation, and durable receipt recovery",
+        "scoped lists, totals, details, and audit deny another school",
+        "scoped operator cannot manage references, previews, or receipts",
+        "failed reference health preserves saved definitions without effective resource access",
+        "definition confirmation invalidates an affected operator session"
+      ],
+      "limits": [
+        "School grants are seeded by the fixture. Production grant assignment and browser forms remain pending."
+      ]
+    }
+  },
+  "postgres": {
+    "revision": "5fc2b47",
+    "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35172788270",
+    "job": "foundation-integration (postgres-integration)",
+    "status": "passed",
+    "scope": "Reference publication and reviewed school definitions, including invitation revocation."
+  },
+  "grantIntegration": {
+    "revision": "cea7c9f",
+    "edgeCorrection": "d750e86",
+    "status": "source-and-packaged-passed",
+    "sourceRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35173515623",
+    "sourceReport": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-school-grants-synthetic-google",
+      "checks": [
+        "strict preview input, CSRF, explicit confirmation, and durable receipt recovery",
+        "scoped lists, totals, details, and audit deny another school",
+        "scoped operator cannot manage references, previews, or receipts",
+        "failed reference health preserves saved definitions without effective resource access",
+        "definition confirmation invalidates an affected operator session"
+      ],
+      "limits": ["Browser school forms remain pending."]
+    },
+    "fullRevision": "e29f96e98c7d8445ffcad63e0cb0a5b856d4f5d4",
+    "fullRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35173907683",
+    "fullJobs": "All seven jobs passed, including PostgreSQL and packaged application integration.",
+    "packagedReport": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-school-grants-synthetic-google",
+      "checks": [
+        "strict preview input, CSRF, explicit confirmation, and durable receipt recovery",
+        "scoped lists, totals, details, and audit deny another school",
+        "scoped operator cannot manage references, previews, or receipts",
+        "failed reference health preserves saved definitions without effective resource access",
+        "definition confirmation invalidates an affected operator session"
+      ],
+      "limits": ["Browser school forms remain pending."]
+    }
+  },
+  "reviews": {
+    "standards": "No remaining findings through cea7c9f.",
+    "specification": "No remaining findings after d750e86."
+  },
+  "remaining": [
+    "Human accessibility and acceptance.",
+    "Combined deployment and release qualification.",
+    "Retained intermittent browser sign-in and credential staging failures in CC-54."
+  ],
+  "packagedDefinitions": {
+    "revision": "4c30d49",
+    "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35173253662",
+    "status": "passed",
+    "scope": "All seven full-run jobs passed, including packaged school reference and definition APIs."
+  },
+  "picker": {
+    "revision": "0c66171",
+    "status": "component-checks-passed-page-integration-pending",
+    "checks": [
+      "Arrow, Home, End, Enter, and Space keyboard behavior",
+      "Focus and selection remain separate",
+      "Stable focus after rename and reparenting beneath a collapsed ancestor",
+      "Disabled selection retains reference inspection",
+      "Frontend tests, lint, and production build"
+    ],
+    "limits": [
+      "Browser integration, both themes, zoom, and human screen-reader qualification remain pending."
+    ]
+  },
+  "schoolBrowser": {
+    "implementationRevision": "192dc26",
+    "reviewCorrections": "f2fd25b",
+    "qualificationRevision": "b1abfc4",
+    "status": "source-and-packaged-passed",
+    "local": {
+      "chromiumCases": 7,
+      "frontendUnitTests": 33,
+      "checks": [
+        "Lost confirmation response and receipt recovery across reload",
+        "New-school reference conflict preserves draft and school ID",
+        "Stale references and access changes prevent confirmation",
+        "Scoped viewer controls and Phase 2 exclusion",
+        "Keyboard navigation, focus restoration, and associated name errors",
+        "Automated accessibility in both themes, 200 percent CSS zoom, and 320-pixel reflow",
+        "Contract tests, frontend lint and build, and exact public-edge route checks"
+      ]
+    },
+    "fullRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35176001526",
+    "reviews": {
+      "standards": "No remaining findings after f2fd25b.",
+      "specification": "No remaining findings after f2fd25b."
+    },
+    "limits": [
+      "Mocked browser checks do not establish real API integration.",
+      "Human screen-reader and usability acceptance remain unperformed."
+    ],
+    "visualChecks": {
+      "status": "passed",
+      "scope": "Light draft and dark review inspected. Both themes pass the focused browser accessibility and reflow case.",
+      "screenshots": "frontend-e2e schools fixture retains school-draft-{light,dark}.png and school-review-{light,dark}.png in its test output."
+    },
+    "fullStatus": "failed-before-school-checks",
+    "failure": {
+      "step": "Packaged access revocation invitation navigation",
+      "symptom": "Recipient label did not appear before the 30-second timeout.",
+      "cause": "unresolved",
+      "otherJobs": "Six jobs passed.",
+      "diagnosticRevision": "ba39a67"
+    },
+    "sourceRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35177978798",
+    "sourceRevision": "e036c9e8e46224b92fb9732b43215a2cca54d30b",
+    "packagedRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35178237363",
+    "packagedRevision": "0a89f67"
+  },
+  "scopedGrantBrowser": {
+    "implementationRevision": "e6d0ed6",
+    "status": "source-and-packaged-passed",
+    "local": {
+      "chromiumCases": 5,
+      "checks": [
+        "District and school presets preserve unrelated explicit grants.",
+        "Exact school revisions pass from review to confirmation.",
+        "Stale references prevent additions and permit removal with restored focus.",
+        "School revision conflicts require another review.",
+        "Scoped edits invalidate previews.",
+        "Delegation limits prevent unauthorized presets and actions.",
+        "Automated accessibility passes in both themes and 320-pixel reflow.",
+        "Frontend tests, lint, and production build pass.",
+        "At the 256-grant limit, unchecked actions remain disabled and exact replacement follows removal."
+      ]
+    },
+    "realApiFixture": "Assigns district viewer and school administrator grants through browser review and confirmation. Qualification pending.",
+    "limits": ["Human screen-reader and owner acceptance remain pending."],
+    "reviewCorrection": "5561f88",
+    "reviews": {
+      "standards": "No remaining findings after 5561f88.",
+      "specification": "No actionable findings at e6d0ed6."
+    },
+    "statusRegionCorrection": "3e64ce5",
+    "failedFullRun": {
+      "revision": "9052ba1",
+      "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35177342544",
+      "cause": "The old platform-access fixture matched both status regions.",
+      "correction": "3e64ce5 names the access status and scopes its assertions. Five browser cases and local checks pass.",
+      "otherJobs": "Six jobs passed."
+    },
+    "fullRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35178237363",
+    "fullRevision": "0a89f67",
+    "fullStatus": "passed",
+    "sourceRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35177978798",
+    "sourceRevision": "e036c9e8e46224b92fb9732b43215a2cca54d30b",
+    "sourceReport": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-school-grants-synthetic-google",
+      "checks": [
+        "strict preview input, CSRF, explicit confirmation, and durable receipt recovery",
+        "scoped lists, totals, details, and audit deny another school",
+        "scoped operator cannot manage references, previews, or receipts",
+        "failed reference health preserves saved definitions without effective resource access",
+        "definition confirmation invalidates an affected operator session",
+        "browser inclusion and exclusion preview, lost confirmation response, reload, and durable receipt recovery",
+        "school viewer browser list, audit, stale definition, and access interruption",
+        "school draft and review accessibility in both themes",
+        "district viewer and school administrator assignment through browser presets and exact reviewed revisions"
+      ],
+      "limits": [
+        "Human screen-reader qualification and acceptance remain pending."
+      ]
+    },
+    "previousFullFailure": {
+      "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35177847162",
+      "revision": "3e64ce5",
+      "cause": "Credential lifecycle navigation did not expose Replace or Reconnect Google credentials within 30 seconds. Cause unresolved. Six other jobs passed."
+    },
+    "packagedReport": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-school-grants-synthetic-google",
+      "checks": [
+        "strict preview input, CSRF, explicit confirmation, and durable receipt recovery",
+        "scoped lists, totals, details, and audit deny another school",
+        "scoped operator cannot manage references, previews, or receipts",
+        "failed reference health preserves saved definitions without effective resource access",
+        "definition confirmation invalidates an affected operator session",
+        "browser inclusion and exclusion preview, lost confirmation response, reload, and durable receipt recovery",
+        "school viewer browser list, audit, stale definition, and access interruption",
+        "school draft and review accessibility in both themes",
+        "district viewer and school administrator assignment through browser presets and exact reviewed revisions"
+      ],
+      "limits": [
+        "Human screen-reader qualification and acceptance remain pending."
+      ]
+    }
+  }
+}

@@ -2,6 +2,10 @@ import { expect } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { changeApplicationAccess } from '../deployment/bootstrap/application-access.mjs';
+import {
+  qualificationBrowserStep,
+  qualificationSignIn,
+} from './qualification-sign-in.mjs';
 
 export async function qualifyAccessRevocationBrowser({
   browser,
@@ -19,10 +23,12 @@ export async function qualifyAccessRevocationBrowser({
   try {
     setSubject('administrator');
     const invitations = await context.newPage();
-    await invitations.goto(`${publicOrigin}/api/auth/login`);
-    await expect(
-      invitations.getByRole('heading', { name: 'Your account', exact: true }),
-    ).toBeVisible({ timeout: 15000 });
+    await qualificationSignIn(
+      invitations,
+      publicOrigin,
+      evidenceDirectory,
+      'access-revocation',
+    );
     const session = await (
       await context.request.get(`${publicOrigin}/api/auth/session`)
     ).json();
@@ -32,12 +38,20 @@ export async function qualifyAccessRevocationBrowser({
       ).json()
     ).items.find((item) => item.id !== session.identity.id && item.enabled);
     expect(target).toBeTruthy();
-    await invitations.goto(`${publicOrigin}/invitations`);
     const label = invitations.getByRole('textbox', {
       name: 'Recipient label',
       exact: true,
     });
-    await label.fill('Recoverable unsent invitation');
+    await qualificationBrowserStep(
+      invitations,
+      publicOrigin,
+      evidenceDirectory,
+      'access-revocation-invitation',
+      async () => {
+        await invitations.goto(`${publicOrigin}/invitations`);
+        await label.fill('Recoverable unsent invitation');
+      },
+    );
     const access = await context.newPage();
     await access.goto(`${publicOrigin}/platform-users`);
     await access

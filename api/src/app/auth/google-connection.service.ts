@@ -20,6 +20,9 @@ import {
   googleHealthCheckSchema,
   googleCapabilityResultSchema,
   googleFailureSchema,
+  schoolReferenceRefreshSchema,
+  schoolReferenceStateSchema,
+  type SchoolReferenceObservation,
   type GoogleHealthCapability,
   type GoogleCapabilityResult,
   type GoogleObservation,
@@ -125,9 +128,12 @@ export class GoogleConnectionService
       if (
         parsed.success &&
         parsed.data.code === 'P0001' &&
-        ['health-check-running', 'health-rate-limited'].includes(
-          parsed.data.detail ?? '',
-        )
+        [
+          'health-check-running',
+          'health-rate-limited',
+          'reference-check-running',
+          'reference-rate-limited',
+        ].includes(parsed.data.detail ?? '')
       ) {
         throw new HttpException({ reason: parsed.data.detail }, 429);
       }
@@ -140,6 +146,7 @@ export class GoogleConnectionService
             'credential-changed',
             'connection-disconnected',
             'health-check-changed',
+            'reference-check-changed',
           ].includes(reason ?? '')
             ? reason
             : 'candidate-changed',
@@ -177,6 +184,78 @@ export class GoogleConnectionService
           this.actor(session),
         ),
       );
+  }
+
+  async schoolReferences(session: SessionResponse) {
+    return schoolReferenceStateSchema
+      .nullable()
+      .parse(
+        await this.query(
+          'SELECT cc.read_school_references($1,$2) AS result',
+          this.actor(session),
+        ),
+      );
+  }
+
+  async refreshSchoolReferences(
+    session: SessionResponse,
+    input: z.infer<typeof schoolReferenceRefreshSchema>,
+    correlationId: string,
+  ) {
+    const claim = z
+      .strictObject({
+        id: z.uuid(),
+        credentialId: z.uuid(),
+        envelope: z.unknown(),
+      })
+      .parse(
+        await this.query(
+          'SELECT cc.claim_school_references($1,$2,$3,$4,$5,$6) AS result',
+          [
+            ...this.actor(session),
+            input.customerId,
+            input.generation,
+            randomUUID(),
+            correlationId,
+          ],
+        ),
+      );
+    let observation: SchoolReferenceObservation | null = null;
+    let failure: z.infer<typeof schoolReferenceStateSchema>['failure'] = null;
+    try {
+      const credential = this.cipher().open(claim.envelope, {
+        recordId: claim.credentialId,
+        customerId: input.customerId,
+        generation: input.generation,
+      });
+      observation = await this.verifier.readSchoolReferences(
+        credential,
+        input.customerId,
+        input.generation,
+        AbortSignal.timeout(30_000),
+      );
+    } catch (error) {
+      failure =
+        error instanceof GoogleConnectionError
+          ? googleFailureSchema.parse(error.code)
+          : error instanceof CredentialError ||
+              error instanceof ServiceUnavailableException
+            ? 'key-unavailable'
+            : 'request-failed';
+    }
+    return schoolReferenceStateSchema.parse(
+      await this.query(
+        'SELECT cc.finish_school_references($1,$2,$3,$4,$5,$6,$7) AS result',
+        [
+          ...this.actor(session),
+          input.customerId,
+          input.generation,
+          claim.id,
+          observation === null ? null : JSON.stringify(observation),
+          failure,
+        ],
+      ),
+    );
   }
 
   private async claimHealth(

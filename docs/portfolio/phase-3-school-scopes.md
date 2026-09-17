@@ -1,0 +1,305 @@
+# Phase 3 school scopes
+
+Owner: [CC-52](https://easton-consulting.atlassian.net/browse/CC-52).
+Status: reference contracts, resolver, provider, persistence, and reference APIs are implemented.
+School definitions, APIs, grant assignment, and browser controls pass source and packaged qualification.
+Complete deployment qualification and human acceptance remain pending.
+This slice follows CC-48 and CC-51 through the CC-49 stack.
+
+## Outcome and language
+
+A platform administrator defines a school scope and assigns an existing platform user as a school administrator or scoped viewer.
+A school scope belongs to the confirmed customer and has its own stable application ID.
+Several explicit OU references can represent one school.
+The school remains distinct from an OU, a domain, and a Google organizational hierarchy.
+The [glossary](../../CONTEXT.md) defines the new terms.
+
+The demonstration creates two school scopes from controlled OU references.
+A school operator can read their school definition and its authorized audit history.
+Direct requests, lists, counts, and audit queries deny the other school.
+A path rename preserves stable OU identity. A hierarchy change cannot expand approved access automatically.
+Synthetic resource checks prove these boundaries without claiming Phase 4 inventory enforcement.
+
+## Reference capability
+
+Use the confirmed customer ID with `orgunits.list` and `type=all_including_parent`.
+The provider returns OU identities, names, paths, and parent references.
+Request only `admin.directory.orgunit.readonly` for this optional capability.
+The [list method](https://developers.google.com/workspace/admin/directory/reference/rest/v1/orgunits/list) documents the response and read-only scope.
+The [OU resource](https://developers.google.com/workspace/admin/directory/reference/rest/v1/orgunits) distinguishes identities, paths, and parent references.
+These method facts were checked on 2026-09-17.
+
+The earlier CC-44 controlled read passed for the approved customer.
+A CC-52 read with `all_including_parent` returned HTTP 200 with the exact read-only OU scope.
+The response contained three OUs, including one root with a stable ID and name.
+The root omitted parent fields. Both non-root OUs included stable parent IDs.
+The [sanitized response-shape evidence](../../deployment/evidence/CC-52-ou-root-proof.json) records counts and field presence only.
+That proof does not qualify the production selector, scope resolver, or least-privilege Google role.
+Keep the selector unavailable until the production transport, reference validation, and capability health tests pass.
+Do not add an OU management page or Google mutations.
+Retain the existing credential-generation checks and separate application sign-in configuration.
+
+A complete reference observation records its customer, credential generation, observation time, and revision.
+Reject duplicate identities, cycles, unresolved parents, malformed paths, and inconsistent parent references.
+Treat the provider root explicitly. Do not infer a root identity from a path or email suffix.
+Bound observation size and network time. Reject oversized or incomplete observations without replacing the last valid observation.
+Retain failed refresh evidence separately from the last successful reference observation.
+
+## Inclusion and hierarchy rules
+
+Each inclusion or exclusion names a stable OU identity and an explicit descendants flag.
+Union all inclusions. Subtract all exclusions. Exclusions take precedence within that school.
+Require at least one inclusion and a nonempty reviewed result.
+Reject duplicate or contradictory references and cross-customer references before preview.
+Overlapping school scopes remain distinct. A grant to one school never grants access to another school's definition or audit history.
+A resource can belong to both schools only when both definitions explicitly include its stable OU identity.
+
+Preview computes a sorted effective OU set from one complete, fresh reference observation.
+Confirmation freezes that set as the approved OU set.
+New descendants and reparented OUs do not join that approved set automatically.
+A later current evaluation intersects the approved set with the current inclusion-minus-exclusion result.
+An operator must preview and confirm any expansion.
+Path-only renames update display context without changing approved identity membership.
+Moved-out or excluded OUs leave the effective set.
+
+A reference observation expires after ten minutes for confirmation and effective resource evaluation.
+Any missing selected reference, invalid hierarchy, failed verification, or stale observation denies effective resource evaluation for the school.
+Preserve its last valid definition and approved set for recovery.
+Do not widen to a parent OU, a district, or the last observed path.
+Fresh reference recovery restores only the intersection with the approved set.
+The UI shows definition state, observation time, stale state, and any required reconfirmation.
+
+## Authority, persistence, and audit
+
+School-definition management requires current `schools:manage` authority for the confirmed customer.
+Existing platform and district grant semantics remain authoritative.
+Scoped school administrators and viewers receive only the existing explicit actions supported by their presets.
+They do not receive grant-management authority or future inventory actions.
+Grant assignment retains platform `platform-users:manage`, delegation ceilings, current permission versions, and last-administrator protection.
+
+A new school grant requires a current verified school definition.
+An existing school grant permits authorized reads of the saved school definition during reference failure.
+This recovery access never authorizes an effective resource evaluation from stale references.
+Lists, authorized totals, details, and audit history use the same school ID and customer authorization predicate.
+Do not expose another school's name or audit count through an unauthorized direct request.
+
+A migration adds reference observations, versioned school definitions, and durable school-change receipts.
+Preview binds actor, permission version, customer, school revision, reference revision, exact rules, and approved OU identities.
+Confirmation checks those values inside the shared authority transaction lock.
+School changes, affected permission-version increments, receipts, and security events commit together.
+Audit failure rolls back all effects. Concurrent or stale confirmation cannot overwrite a newer definition.
+Runtime roles receive narrow operations and no unrestricted school or grant table writes.
+
+## Implementation sequence and evidence
+
+1. Add shared reference and school-definition contracts, a pure resolver, and synthetic boundary tests.
+2. Add optional OU provider reads and qualification without changing mandatory customer and domain checks.
+3. Add the migration, authorized persistence operations, receipts, and transactional permission invalidation.
+4. Add list, detail, reference refresh, preview, and confirmation APIs with current authority and CSRF checks.
+5. Extend verified school grant assignment through the existing platform access review.
+6. Add school forms and a focused OU reference picker using FORM-01, TREE-01, and UI-01 through UI-10.
+7. Qualify browser recovery, scope changes, cross-school denials, audit rollback, and grant effects through the real API and PostgreSQL.
+8. Record hosted source, packaged, deployment-profile, and human acceptance limits separately.
+
+Use Nx contract tests, API and frontend builds and lint, PostgreSQL integration, and Chromium browser qualification.
+The selector needs both themes, keyboard focus, accessible hierarchy navigation, zoom, and narrow-layout evidence.
+Human screen-reader qualification remains a separate gate.
+The shared contract test and lint targets pass through `2ef7717`.
+Six resolver cases cover exclusions, stale and invalid references, hierarchy changes, stable IDs, and approved-set intersection.
+API, frontend, and worker builds passed after the new exports.
+Standards and specification review have no remaining findings in this bounded contract scope.
+The specification correction reuses the existing stable Google customer-ID schema and rejects customer aliases.
+These checks do not qualify school APIs, persistence, grant changes, or browser behavior.
+
+## Optional provider reader
+
+Revision `c227d90` adds `GoogleCustomerVerifier.readSchoolReferences`.
+It requests only the OU read-only scope and verifies the exact issued scope and token lifetime.
+The read uses the fixed customer endpoint and returns a bounded, validated complete hierarchy.
+A shared exact-scope token helper also supports existing targeted health checks.
+The reader does not alter the mandatory customer token profile or enable the school selector.
+
+Seven provider, API, and worker test, lint, and build targets pass.
+Four new provider cases cover isolated scopes, extra-scope rejection, classified authorization failures, and invalid hierarchies.
+Standards and specification reviews report no remaining findings in this increment.
+The [direct provider proof](../../deployment/evidence/CC-52-provider-live-proof.json) passed against the approved customer at `c227d90`.
+It returned three validated OU references, including the root, with the exact read-only scope.
+The reference persistence increment now checks current authority and credential generation before publication.
+
+## Reference persistence and API
+
+Migration 012 stores one complete reference observation and separate refresh failure evidence for the confirmed customer.
+Refresh uses a bounded lease and a shared rate limit across replicas.
+The database validates the complete hierarchy and assigns the publication revision and observation time.
+Failed refresh retains the prior observation but denies freshness.
+Audit failure rolls back publication and preserves the pending lease.
+Retired credential generations and changed actor permission versions cannot publish results.
+
+The PostgreSQL integration job passed at `3d90adc` in [run 35171919312](https://github.com/CampusCommander/campus-commander/actions/runs/35171919312).
+The fixture uses a real credential disconnect for retired-generation checks.
+An earlier fixture incremented the connection generation without a matching credential and failed its foreign-key constraint.
+Revision `8902fc2` corrected that fixture. Both review axes have no remaining persistence findings.
+
+`GET /api/schools/references` requires current school-management authority and returns no credential material.
+`POST /api/schools/references/refresh` also requires the current customer, credential generation, browser origin, and CSRF token.
+Refresh rechecks the session after the Google read.
+The public edge exposes these exact methods only in Phase 3 and limits refresh requests to 4 KiB.
+Reference API review found missing public-edge routes. Revision `304738c` added those routes and regression checks.
+Contract tests, API lint and build, and bootstrap tests pass. Both review axes report no remaining findings.
+The source and packaged API results below qualify the corrected edge revision.
+
+The earlier full run at `84d8d39` also failed during packaged login with `ERR_NETWORK_CHANGED`.
+That browser failure preceded the school checks. Its cause remains unresolved.
+The next runs retain the existing bounded credential-staging diagnostics from CC-49.
+
+## Reviewed school definitions
+
+Migration 013 stores school definitions and durable previews with confirmation receipts.
+Preview freezes the rules, approved IDs, school revision, reference revision, actor version, affected principal versions, and pending invitation IDs.
+Confirmation checks that snapshot inside the shared authority transaction lock.
+The same transaction saves the definition, increments affected permission versions, revokes reviewed invitations, and retains the school audit event.
+Audit failure rolls back all effects. Repeated confirmation returns the existing receipt.
+Existing school operators can read their saved definition during reference failures, but effective resource access remains unavailable.
+
+Seven PostgreSQL cases cover receipts, scoped list/detail/audit denial, approved-set intersection, stale references, transactional rollback, review conflicts, and invitation revocation.
+The PostgreSQL integration job passed at `5fc2b47` in [run 35172788270](https://github.com/CampusCommander/campus-commander/actions/runs/35172788270).
+The first review found missing invitation revocation. Revision `5fc2b47` corrected it and added regression coverage.
+Both review axes now report no remaining definition persistence findings.
+
+Revision `581b194` adds definition list, detail, audit, preview, confirmation, and receipt APIs.
+The public edge restricts exact Phase 3 routes and methods.
+Preview accepts up to 64 KiB for explicit inclusion and exclusion rules. Confirmation retains the 4 KiB limit.
+Local contract tests, API lint and build, and bootstrap checks pass. Both API review axes report no remaining findings.
+[Source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35172998611) passed at `581b194`.
+Downloaded reports confirm reference and definition API checks through the public edge, real PostgreSQL, and Chromium sessions.
+That run seeded school grants directly. The later grant increment replaces those fixture inserts with public access review and confirmation.
+The [qualification record](../../deployment/evidence/CC-52-school-scopes.json) separates those results.
+
+The packaged reference API run at `304738c` reached its authority-change assertion and returned the correct 401 `access-changed` response.
+Revision `1b7a916` corrected the fixture, which expected 403.
+Other source runs failed during browser login before school checks.
+Revision `9e3f7e0` captures sanitized request and application error categories without retrying failed login.
+CC-54 retains those unresolved sign-in failures.
+
+## School grant integration
+
+School previews must retain the exact rules, approved IDs, school revision, reference revision, actor version, and affected principal versions.
+Confirmation must compare that retained state inside the shared authority transaction lock.
+The receipt must permit recovery after an interrupted response without applying the change twice.
+School changes must preserve the approved set until a new preview and confirmation explicitly replace it.
+
+Separate school existence checks from freshness checks for grant changes.
+Require fresh verified scope only for new school grants.
+Permit removal of existing school grants when reference refresh fails or expires.
+Otherwise, a failed Google read would prevent local access revocation.
+
+Platform access review must also retain the revisions of all proposed school grants.
+Confirmation must reject a changed school definition even when the target principal does not yet hold that school grant.
+Existing target permission-version checks alone do not detect that case.
+
+Migration 014 implements these checks at `cea7c9f`.
+Access confirmation requires the exact reviewed school revisions and retains them in the access receipt.
+New or reenabled school grants require fresh effective scope.
+Disabling users and removing grants remain available during reference failure.
+Grant changes also produce school-scoped audit events.
+The existing browser access workflow passes the reviewed revisions to confirmation.
+
+Eight contract, API, and frontend checks pass. PostgreSQL unit checks pass.
+Grant review found a 4 KiB edge limit that rejected valid confirmations for several schools.
+Revision `d750e86` raises both exact access endpoint limits to 96 KiB.
+The edge regression passes a 256-school confirmation and rejects oversized requests.
+Both review axes have no remaining findings after that correction.
+[Grant source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173515623) passed at `cea7c9f`.
+Its fixture assigns school grants through public access review and confirmation.
+[Full definition qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173253662) passed all seven jobs at `4c30d49`.
+[Full grant qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173907683) passed all seven jobs at `e29f96e`.
+Downloaded reports confirm public school grant assignment through the packaged application and real PostgreSQL.
+The scoped grant browser increment follows below.
+
+## Focused OU picker
+
+Revision `09151bb` adds a focused tree picker for the school editor.
+The picker separates keyboard focus from selection and uses stable OU IDs.
+Arrow keys navigate and expand the tree. Enter and Space select an OU.
+Disabled selection still permits reference inspection.
+Revision `0c66171` reveals updated ancestors when a refresh reparents the focused OU.
+It preserves focus without changing selection.
+
+Applicable rules: UI-04, UI-05, UI-09, UI-10, and TREE-01.
+Frontend tests, lint, and production build pass. Both review axes have no remaining picker findings.
+The school editor now integrates the picker. Browser keyboard, both-theme accessibility, and zoom checks pass.
+Human screen-reader qualification remains pending.
+
+## School definition browser workflow
+
+Revision `192dc26` adds the Phase 3 school route, navigation, reference health, scoped browsing, definition editor, and audit view.
+The editor preserves the name, explicit rules, reviewed identities, and unresolved confirmation across reloads.
+Receipt recovery distinguishes an unresolved write from a confirmed save.
+Reference expiry, generation changes, permission changes, and session changes prevent confirmation against obsolete state.
+Optional OU authorization remains separate from the two required connection scopes.
+
+Revision `f2fd25b` corrects four review findings.
+New-school reference conflicts preserve the school identity and permit another preview.
+New reads supersede earlier responses, including reads that began before a save.
+Pending, recovery, and closure transitions restore keyboard focus.
+Invalid names receive associated error text and invalid semantics.
+Both review axes have no remaining findings.
+
+Seven mocked Chromium cases pass, including receipt recovery, conflicts, viewer controls, keyboard navigation, both themes, and narrow layouts.
+Thirty-three frontend unit tests pass. Contract tests, frontend build, lint, and bootstrap route checks pass.
+The browser audit waits for the expected label color after theme changes.
+An earlier audit captured an intermediate label color during the transition.
+PR runs `35173914165` and `35174695520` failed an older school-contract formatting check.
+Revision `f2fd25b` corrects that formatting.
+
+Revision `b1abfc4` adds browser checks through the real public API and PostgreSQL.
+The fixture creates a school, loses the confirmation response, reloads the page, and recovers the durable receipt.
+It also checks scoped browsing, audit, stale definitions, and session invalidation through the viewer page.
+[Full school UI qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35176001526) failed before school checks.
+The packaged invitation page did not expose its Recipient label within 30 seconds. The other six jobs passed.
+The cause remains unresolved. Revision `ba39a67` adds bounded, sanitized navigation diagnostics without retries.
+CC-54 retains this failure separately from school qualification.
+
+UI handoff: rules UI-01 through UI-10, FORM-01, and TREE-01 apply.
+The page uses list/detail browsing and a centered form with an embedded picker.
+Loading, empty, error, stale, partial-region failure, and interrupted-request states retain the applicable context.
+Keyboard, automated accessibility, both themes, 200 percent CSS zoom, and 320-pixel reflow pass in the mocked browser.
+Human screen-reader and usability acceptance remain unperformed.
+Combined deployment qualification and owner acceptance remain pending.
+
+The final picker pass uses the bundled Material Symbols font.
+The focused browser case passes after that correction and retains light and dark draft and review screenshots.
+Visual inspection of the light draft and dark review found no clipping or missing icons.
+
+## Explicit district and school grant controls
+
+Revision `e6d0ed6` adds resource selection, explicit actions, and district and school presets to platform access management.
+Each preset replaces only the selected resource's proposed grants. Other resource grants remain unchanged.
+The browser loads the confirmed district and permitted school definitions through their existing stores.
+The server verifies resource scope during review and confirmation. The review displays exact school revisions.
+Stale school references prevent additions. Existing grant removal remains available within the actor's delegation authority.
+Input and session changes invalidate the preview. The proposal retains explicit grants for another review.
+
+Five Chromium cases pass for presets, delegation limits, stale-scope removal, and school revision conflicts.
+Both themes pass automated accessibility checks. The form fits a 320-pixel viewport.
+Frontend unit tests, lint, and production build pass. Applicable rules are UI-01 through UI-10 and FORM-01.
+The real API fixture now assigns district viewer and school administrator grants through browser review and confirmation.
+The source and packaged results below qualify that fixture. Human screen-reader and owner acceptance remain pending.
+
+Revision `5561f88` prevents unchecked actions from appearing selected after the proposal reaches 256 grants.
+The fifth browser case verifies the displayed state and exact grant replacement after removal.
+Both review axes have no remaining findings.
+
+The full scoped-grant run at `9052ba1` failed because the older platform-access fixture matched two status regions.
+Revision `3e64ce5` gives the access status an accessible name and scopes both result assertions.
+Five scoped-grant browser cases and local unit, lint, and build checks pass after this correction.
+[The next full run](https://github.com/CampusCommander/campus-commander/actions/runs/35177847162) failed before school checks at `3e64ce5`.
+The credential replacement button did not appear after navigation. The cause remains unresolved. Six other jobs passed.
+
+[Source browser qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35177978798) passed at `e036c9e` on the downstream security branch.
+That revision includes the school workflow and status correction. Downloaded reports confirm definition recovery and scoped browser grant assignment.
+Packaged school browser qualification subsequently passed. CC-54 retains the credential navigation failure.
+
+[Full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35178237363) passed all seven jobs at downstream revision `0a89f67`.
+Downloaded packaged reports confirm school creation, receipt recovery, scoped browsing, audit, and district and school browser grant assignment.
+The run includes the exact school UI and status correction. Human accessibility, complete deployment qualification, and owner acceptance remain pending.

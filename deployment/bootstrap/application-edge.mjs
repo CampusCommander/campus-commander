@@ -36,6 +36,7 @@ const phase3Pages = new Set([
   '/platform-users',
   '/google-connection',
   '/customer-settings',
+  '/schools',
 ]);
 const invitationReads = new Set([
   '/api/auth/invitations',
@@ -57,6 +58,14 @@ const connectionWrite =
   /^\/api\/google-connection\/(?:health\/check|check|credentials\/(?:rotate-key|disconnect)|replacements(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/activate)?|candidates(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
 const customerRead =
   /^\/api\/customer(?:\/receipts\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
+const schoolIdPath =
+  '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
+const schoolRead = new RegExp(
+  `^/api/schools(?:/(?:${schoolIdPath}(?:/audit)?|reviews/${schoolIdPath}))?$`,
+);
+const schoolWrite = new RegExp(
+  `^/api/schools/reviews(?:/${schoolIdPath}/confirm)?$`,
+);
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
@@ -91,7 +100,9 @@ export async function proxyApplication(
       (invitationReads.has(pathname) ||
         principalRead.test(pathname) ||
         connectionRead.test(pathname) ||
-        customerRead.test(pathname)));
+        customerRead.test(pathname) ||
+        pathname === '/api/schools/references' ||
+        schoolRead.test(pathname)));
   const writable =
     postRoutes.has(pathname) ||
     (phase === 3 &&
@@ -99,7 +110,9 @@ export async function proxyApplication(
         invitationChange.test(pathname) ||
         principalWrite.test(pathname) ||
         connectionWrite.test(pathname) ||
-        pathname === '/api/customer/settings'));
+        pathname === '/api/customer/settings' ||
+        pathname === '/api/schools/references/refresh' ||
+        schoolWrite.test(pathname)));
   const api = readable || writable;
   const page =
     pages.has(pathname) || (phase === 3 && phase3Pages.has(pathname));
@@ -118,13 +131,16 @@ export async function proxyApplication(
       for await (const chunk of request) {
         size += chunk.length;
         const limit =
-          phase === 3 &&
-          [
-            '/api/google-connection/candidates',
-            '/api/google-connection/replacements',
-          ].includes(pathname)
-            ? 65536
-            : 4096;
+          phase === 3 && principalWrite.test(pathname)
+            ? 98304
+            : phase === 3 &&
+                [
+                  '/api/google-connection/candidates',
+                  '/api/google-connection/replacements',
+                  '/api/schools/reviews',
+                ].includes(pathname)
+              ? 65536
+              : 4096;
         if (size > limit)
           return finish(response, 413, 'The request exceeds the size limit.\n');
         chunks.push(chunk);

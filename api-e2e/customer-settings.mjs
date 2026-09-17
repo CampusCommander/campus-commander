@@ -1,3 +1,4 @@
+import { qualificationSignIn } from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -273,11 +274,12 @@ export async function qualifyCustomerSettings({
     page.getByRole('button', { name: 'Recheck access' }),
   ).toBeVisible();
   const loginPage = await page.context().newPage();
-  await loginPage.goto(`${publicOrigin}/api/auth/login`);
-  await expect(loginPage).toHaveURL(/\/account$/, { timeout: 15000 });
-  await expect(
-    loginPage.getByRole('heading', { name: 'Your account', exact: true }),
-  ).toBeVisible({ timeout: 15000 });
+  await qualificationSignIn(
+    loginPage,
+    publicOrigin,
+    evidenceDirectory,
+    'customer-settings',
+  );
   await loginPage.close();
   await page.getByRole('button', { name: 'Recheck access' }).click();
   await expect(page.getByLabel('Customer display name')).toHaveValue(

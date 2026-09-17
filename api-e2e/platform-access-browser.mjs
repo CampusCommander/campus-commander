@@ -138,7 +138,9 @@ export async function qualifyPlatformAccessBrowser({
   await confirmation.focus();
   await expect(confirmation).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('status')).toContainText(
+  await expect(
+    page.getByRole('status', { name: 'Platform access status' }),
+  ).toContainText(
     'Access changed. Previous sessions require sign-in. Receipt:',
   );
   await page
@@ -147,9 +149,9 @@ export async function qualifyPlatformAccessBrowser({
       exact: true,
     })
     .click();
-  await expect(page.getByRole('status')).toContainText(
-    'Current access loaded.',
-  );
+  await expect(
+    page.getByRole('status', { name: 'Platform access status' }),
+  ).toContainText('Current access loaded.');
   await expect(grant).toBeChecked();
   const receiptHistory = page.getByRole('region', {
     name: 'Access receipt history',

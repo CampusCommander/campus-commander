@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-09-17T01:21:41.248Z",
+  "customerId": "C01zcarnq",
+  "scope": "https://www.googleapis.com/auth/admin.directory.orgunit.readonly",
+  "method": "orgunits.list",
+  "type": "all_including_parent",
+  "httpStatus": 200,
+  "exactScopeVerified": true,
+  "unitCount": 3,
+  "rootCount": 1,
+  "rootShape": [
+    {
+      "hasStableId": true,
+      "hasName": true,
+      "parentIdPresent": false,
+      "parentPathPresent": false
+    }
+  ],
+  "allUnitsHaveStableId": true,
+  "nonRootUnitsHaveParentId": true,
+  "limits": [
+    "Super Admin fixture does not prove a minimum-privilege role",
+    "Response shape proof does not qualify production selector or school authorization",
+    "No Education fixture or provider mutation"
+  ]
+}

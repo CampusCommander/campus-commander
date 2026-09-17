@@ -2,6 +2,7 @@
 export const GOOGLE_CAPABILITIES = Object.freeze([
   {
     id: 'customer-identity',
+    requiredForConnection: true,
     label: 'Customer identity',
     enabled: true,
     qualified: true,
@@ -13,6 +14,7 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
   },
   {
     id: 'domain-observations',
+    requiredForConnection: true,
     label: 'Customer domains',
     enabled: true,
     qualified: true,
@@ -25,22 +27,26 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
   },
   {
     id: 'school-ou-references',
+    requiredForConnection: false,
     label: 'School OU references',
-    enabled: false,
-    qualified: false,
+    enabled: true,
+    qualified: true,
     scope: 'https://www.googleapis.com/auth/admin.directory.orgunit.readonly',
     method: 'orgunits.list',
     source:
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/orgunits/list',
     evidence:
-      'CC-52 production qualification pending. Separate CC-44 controlled read passed.',
+      'CC-52 production provider live read, exact OU scope, and packaged reference API qualification.',
   },
 ] as const);
 
 export const GOOGLE_CUSTOMER_SCOPES = Object.freeze([
   ...new Set(
     GOOGLE_CAPABILITIES.filter(
-      (capability) => capability.enabled && capability.qualified,
+      (capability) =>
+        capability.requiredForConnection &&
+        capability.enabled &&
+        capability.qualified,
     ).map((capability) => capability.scope),
   ),
 ]);
