@@ -66,7 +66,6 @@
   ],
   "remaining": [
     "Execute and retain the different-release guided update.",
-    "Resolve or disposition the recorded intermittent browser-closure failure.",
     "Reconcile CC-54, CC-55, and CC-56 prerequisite acceptance."
   ],
   "limits": [
@@ -75,5 +74,14 @@
     "Synthetic providers do not establish live Google privileges, Education capabilities, or district browser trust.",
     "The Phase 2 baseline pins the accepted implementation revision. The owner did not identify the exact installed revision.",
     "One Docker host does not provide independent physical failure domains."
-  ]
+  ],
+  "browserClosureDisposition": {
+    "status": "corrected-and-rechecked",
+    "sourceRevision": "eb78e16588b96c6d6183d2afaea33ce2341db028",
+    "evidence": "CC-57-update-target-qualification.json",
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35226593765",
+    "limits": [
+      "The corrected candidate has its own identity. Existing profile reports remain bound to their original application."
+    ]
+  }
 }

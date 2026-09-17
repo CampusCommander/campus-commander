@@ -1,0 +1,410 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "phase": 3,
+  "profile": "all-docker",
+  "sourceRevision": "eb78e16588b96c6d6183d2afaea33ce2341db028",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:f84024395dad9b70545f39ac59b85f061e1c474da39a06321226f278e7220ec1",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:691f43ebd5751f68218327084dae6465327f82a8bbb8b2bfc6cba618302be4a8",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:fd15854c0e8c34c494ba084d4164aea40c38f1c4e1e3e5789efb8f5885a0002d"
+  },
+  "bundleManifestSha256": "7ed573b4438c3e8467aa49dba1e73217f10448b51211c9bad0699494207a614a",
+  "checks": {
+    "install": "passed",
+    "resume": "passed",
+    "restore": "passed",
+    "upgrade": "not-run",
+    "faults": "not-run"
+  },
+  "command": "node deployment/release/phase3-bundle-qualification.mjs",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "ci": true
+  },
+  "durationMs": 988,
+  "durationScope": "Evidence validation and bundle inventory verification only.",
+  "qualificationDurations": [
+    {
+      "report": "all-docker-profile.json",
+      "durationMs": 240523,
+      "scope": "Complete installer, lifecycle, browser, and restore fixture."
+    },
+    {
+      "report": "all-docker-restore.json",
+      "durationMs": 57456,
+      "scope": "Isolated restore target before source cleanup and pending-login control."
+    }
+  ],
+  "reports": [
+    {
+      "path": "all-docker-profile.json",
+      "sizeBytes": 22724,
+      "sha256": "4fb873f6149f8c46dcbcfb5a365c9bb677e35916c0707347a7694fb58b53f6dd"
+    },
+    {
+      "path": "all-docker-restore.json",
+      "sizeBytes": 11946,
+      "sha256": "7360dba994da786be78a9e3fea6c00e8e15ff2895ca0cdbd6c8cad5769fbdd07"
+    }
+  ],
+  "limits": [
+    "This laboratory report does not establish full profile or release acceptance.",
+    "Synthetic Google and identity providers do not qualify district privileges or browser trust."
+  ],
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35226593765",
+    "artifact": "phase-3-extracted-qualification",
+    "artifactId": 10499324757,
+    "artifactArchiveSha256": "226ff7ba7cfce88f542e1bb4f313532642ad823d93464b9350b8fd08f6dfdd21",
+    "releaseTag": "phase-3-lab-eb78e16588b9",
+    "originalQualificationReport": {
+      "path": "bundle-qualification.json",
+      "sizeBytes": 2031,
+      "sha256": "26c27119585db537b3e507094c3e7829a0d2bb083a78ded0d1396007ea764963"
+    }
+  },
+  "independentVerification": {
+    "status": "passed",
+    "recordedAt": "2026-09-17T13:46:46.875982+00:00",
+    "command": "DOCKER_CONFIG=<isolated-empty-directory> sh install.sh --release phase-3-lab-eb78e16588b9 --verify-only",
+    "archiveSignature": "passed",
+    "manifestSignature": "passed",
+    "imageSignatures": 3,
+    "inventoriedFiles": 1959,
+    "reportHashes": "passed",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "identity": "https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery",
+    "limits": [
+      "Read-only verification does not establish local installation or guided-update behavior."
+    ]
+  },
+  "applicationEvidence": {
+    "status": "passed",
+    "artifact": "qualification-phase3-auth-integration-1",
+    "artifactId": 10499178421,
+    "artifactArchiveSha256": "1400fa071830d75608be46034329e2e0c40cdef0f19684664afbbb1a5245c45c",
+    "validatedFiles": 79,
+    "screenshots": 24,
+    "files": [
+      {
+        "name": "access-revocation-api.json",
+        "sha256": "c834970bb4a9931788b55d869cfd3b5b4304c52ce64328caf43a0c34afe8d976"
+      },
+      {
+        "name": "access-revocation-browser.json",
+        "sha256": "bb3dcfd4ce6f0dafbdc9716702e7bb7e3c4bb1eebc8bf327721f3beca466e78e"
+      },
+      {
+        "name": "access-revocation-interrupted-accessibility.json",
+        "sha256": "e71c23772a59f9bc18220030a02b7920e4a4ab741d12bfbe2a512581e35561a6"
+      },
+      {
+        "name": "access-revocation-interrupted.png",
+        "sha256": "08f5b62debb1093dbb0fb11ad79694b5b4b46124f3cdef52a48319dfe04cfaa4"
+      },
+      {
+        "name": "account-accessibility.json",
+        "sha256": "84aecde37adb320e60e18406ce9618a252b04ab13324f7a5045881a82461a966"
+      },
+      {
+        "name": "administrator-browser-recovery-accessibility.json",
+        "sha256": "bb19969132bba51314304bd950070c96ec65a6eedf39ce00ddb7ad384ac7c309"
+      },
+      {
+        "name": "administrator-browser-recovery-dark-accessibility.json",
+        "sha256": "e3a1c0e935ac6b2fd17414660e33aad8907c48390fd522778ded66a437895127"
+      },
+      {
+        "name": "administrator-browser-recovery-dark.png",
+        "sha256": "59369b75f475a2d9f38a4094acf4a8ee1e7c4c168b1d4de335d69ec87acc275a"
+      },
+      {
+        "name": "administrator-browser-recovery-light.png",
+        "sha256": "3995836c5b82a822939b65692f726246d6c7df07996b0b4f03d1d91fea90eb8d"
+      },
+      {
+        "name": "administrator-enrollment-accessibility.json",
+        "sha256": "60dc625459b78d6d69ad7d3d4734699b0940aa393c59572ad0aab7eb4e6aeed0"
+      },
+      {
+        "name": "administrator-enrollment-dark-accessibility.json",
+        "sha256": "74ea8486f69e0780dc25459a32411d98faf8c112fd2fe615b622e76ec9194625"
+      },
+      {
+        "name": "customer-settings-conflict-dark-accessibility.json",
+        "sha256": "695fa0ba324167643392df3bfaafb4f33c10065b63cb86ff63d615c0476538d0"
+      },
+      {
+        "name": "customer-settings-conflict-light-accessibility.json",
+        "sha256": "c30fa98b83986b7d22e341fc313cf2b062fd128c6e5c0b69d9d676e8e0289a1f"
+      },
+      {
+        "name": "customer-settings-dark.png",
+        "sha256": "bab708b3a3202e93d65b507e698576eef7443d1553348ed6483fcae4555fdb13"
+      },
+      {
+        "name": "customer-settings-light.png",
+        "sha256": "7f74ee3023f1ef6bba8c232adcfb4681c0e774462f89a845f9d336f451dbbbbc"
+      },
+      {
+        "name": "customer-settings.json",
+        "sha256": "96627c7c8a616e25f3aff026dcedbbafb1e3ff143a13fd8676b90a0472d99ed2"
+      },
+      {
+        "name": "diagnostics-dark-accessibility.json",
+        "sha256": "d7cc46115fa3f817de711d71d7a3cdf4ebf3fbbdeeb7bb39bd32bea3120f6633"
+      },
+      {
+        "name": "diagnostics-dark.png",
+        "sha256": "fe1773fd9699a25ac4be665fae0cb8e8c94d242ead1416031f6305444521de58"
+      },
+      {
+        "name": "diagnostics-light-accessibility.json",
+        "sha256": "1a02f5e038443f4ff86c43690587dfb6a6977e6de3bf9ce61a3141482724a302"
+      },
+      {
+        "name": "diagnostics-light.png",
+        "sha256": "23769de1167b4785d3a487f9adde6aba295fdecfda990bf4585b9c15475e5460"
+      },
+      {
+        "name": "google-capability-health-dark-accessibility.json",
+        "sha256": "233a135db585a1510020f4a78d9dd1e0bc3bff2de54e20d9f959e6bda70d089f"
+      },
+      {
+        "name": "google-capability-health-dark.png",
+        "sha256": "7a94b387b9e5bac4a61aa83b604f08b29a0e6946378a2c4959f88d564b4fbda2"
+      },
+      {
+        "name": "google-capability-health-light-accessibility.json",
+        "sha256": "a2bb09e9ad9089e9c678973a805bed82b286e9f2fb7da882d883a9fe03302d31"
+      },
+      {
+        "name": "google-capability-health-light.png",
+        "sha256": "44eb6fd8f18f2c44504c2d9080876d2bf329103ea38731d31aa3f070e88b7769"
+      },
+      {
+        "name": "google-client-import-accessibility.json",
+        "sha256": "3c36a1b0dcef722be553d60a796b526e964a9d84e726ece615641c3d2665bec4"
+      },
+      {
+        "name": "google-client-pairing-accessibility.json",
+        "sha256": "a9b6d57a7898953d2abe9841ab8567494b332f4381a95764ac206ca5107a156f"
+      },
+      {
+        "name": "google-client-pairing-dark-accessibility.json",
+        "sha256": "6c1d439a07ee73219546fc0cf7345936aff7e5dc0f2935ed9354dcf54b56fced"
+      },
+      {
+        "name": "google-connection-api.json",
+        "sha256": "aff6096269663a87d26ef82ecb306447cf1d7791fa222dbf702a2d24a3765a21"
+      },
+      {
+        "name": "google-connection-browser.json",
+        "sha256": "c76912df6a82bc2fab8f4e79a7aca18168c3a5e03a39f27c7fe6f06acd7c290b"
+      },
+      {
+        "name": "google-connection-confirmed-dark-accessibility.json",
+        "sha256": "f2c874f1699bc9484b6662c087bdad7245a95f1f2df1aa649b6a9de3ab410395"
+      },
+      {
+        "name": "google-connection-confirmed-light-accessibility.json",
+        "sha256": "dff25c0080badbb86cc65cbef6212e25d54533e51f4c376554984d7187ed9785"
+      },
+      {
+        "name": "google-connection-import-dark-accessibility.json",
+        "sha256": "25a8e9ab5cfe016bc7f1fdf96af42f1f798252f2070cb889b8906d016206db45"
+      },
+      {
+        "name": "google-connection-import-dark.png",
+        "sha256": "c21be9e8537b9ec131fe6b3f10265ae6cc5a581942947418bdf83c3897d5dfba"
+      },
+      {
+        "name": "google-connection-import-light-accessibility.json",
+        "sha256": "79fdda5e13b4eb3630d61ecb5b6761a00b0e25293aca5fbb8cd4ee568c7a1501"
+      },
+      {
+        "name": "google-connection-import-light.png",
+        "sha256": "89e04938ee77fe5e61a9c011884232ed7e573050354125b9d7d2419f48b562eb"
+      },
+      {
+        "name": "google-connection-review-dark-accessibility.json",
+        "sha256": "0b738bd08b6d5c9605a2145d805bcba02778c7bc5d383b647447a4bfac7f5daa"
+      },
+      {
+        "name": "google-connection-review-dark.png",
+        "sha256": "2e224175ad81b669b3b83904e0727c93ee56ddd1c60798f203d6777718a25edc"
+      },
+      {
+        "name": "google-connection-review-light-accessibility.json",
+        "sha256": "d1adae5f829770109b4222112cee17a4df7a95f9a232c5c4df240648fa040694"
+      },
+      {
+        "name": "google-connection-review-light.png",
+        "sha256": "7b6577fbb38c9f980471f26a6176274a18d6680e84813d59457a896a6c4e50d5"
+      },
+      {
+        "name": "google-connection-worker.json",
+        "sha256": "ad21d88656035b080dad97403d63e20ca20d471c00e1ddafce377518c515d35d"
+      },
+      {
+        "name": "google-connection-zoom-1280-2.png",
+        "sha256": "390d0032d625f06cef7825d63feb01434a274f635b3c6b367797d086a427a831"
+      },
+      {
+        "name": "google-connection-zoom-320-1.png",
+        "sha256": "3ff70d7b06a06e41e1d5480a1ab80a9d47666c5c702ace486644e7a323996dbd"
+      },
+      {
+        "name": "google-health-api.json",
+        "sha256": "5534040e718d9dcbd01377857e2bde6d3beacb5425d9372e5309f7901fa8d63f"
+      },
+      {
+        "name": "google-lifecycle-api.json",
+        "sha256": "a525b2aa7d1c70440b05480df2c8a3324434a8b90e7b2d08866b5a2b10bb9cb2"
+      },
+      {
+        "name": "google-lifecycle-browser-staging.json",
+        "sha256": "8f1544897b38926939b2cee7262fb7b43d4c715145adcb4470a066c2260936f3"
+      },
+      {
+        "name": "invitation-awaiting-confirmation-dark-accessibility.json",
+        "sha256": "803319c71ee527d64f392e31dd3c7ae1a99cff0521af8eae7437b670c4e8696d"
+      },
+      {
+        "name": "invitation-awaiting-confirmation-light-accessibility.json",
+        "sha256": "8821080db749c852b4b632cdbd4553235991491e751bff48c6e39468b51efe03"
+      },
+      {
+        "name": "invitation-identity-review-dark-accessibility.json",
+        "sha256": "a6f1da0546594267855964204876be61bf0c66abbe0df653a8c7a5e0e2644f60"
+      },
+      {
+        "name": "invitation-identity-review-light-accessibility.json",
+        "sha256": "9a5fa3bea2b9e73dcebb770efc8a9e23d9ba3e58411b3fe8c5d7223d1b0823f0"
+      },
+      {
+        "name": "invitation-revoked-dark-accessibility.json",
+        "sha256": "b9bf44542940460f740a02ba8dcefa489d8a9424b4d9025241e9b7357d079650"
+      },
+      {
+        "name": "invitation-revoked-light-accessibility.json",
+        "sha256": "8907030ce3ec491fb3e0bc2dfbe1302646bb13f1f033014d71265f006bcda15c"
+      },
+      {
+        "name": "invitations-browser.json",
+        "sha256": "a64677280a5745fc96ba38038932b565a383bcb865cc10cfd8e6f4fef1d62951"
+      },
+      {
+        "name": "invitations-dark-accessibility.json",
+        "sha256": "76ab57662a9e31a791b6b30d2bcf5a6e4732969fe03100fa6c3a1d3d1c47a99a"
+      },
+      {
+        "name": "invitations-dark.png",
+        "sha256": "b03ddf35837e4a41bffedbf7f566e6ec11d9fc143b2a87744e90ef6ca40ebbaf"
+      },
+      {
+        "name": "invitations-light-accessibility.json",
+        "sha256": "4086fea9e2f5d6fc8d20a35a0a7a172014697487bfe240b12c4c6efb8b600fc7"
+      },
+      {
+        "name": "invitations-light.png",
+        "sha256": "9be95a8552159eef8e3aeae9a8a29ede9d1d365e409a288c1283e119c2ae6d55"
+      },
+      {
+        "name": "login-accessibility.json",
+        "sha256": "ed777cc865bec1927986070d0d52e58ab9e64698d22fa8e12f4a7a956298c007"
+      },
+      {
+        "name": "packaged-integration.json",
+        "sha256": "23a58f160e4e4a568ec92d7550d1e988409a7ac8f7f9168af45ef41d17859b07"
+      },
+      {
+        "name": "phase3-route-security.json",
+        "sha256": "9ac45de9215802b1bb2f5c4292fb1dbb691e00beeaf69c896cdf6eb480f1bd57"
+      },
+      {
+        "name": "platform-access-api.json",
+        "sha256": "5a1cbec50a4ab8375d391f7f696d8a1f163406dc508b5635301f3075753afd65"
+      },
+      {
+        "name": "platform-access-browser.json",
+        "sha256": "4f5af559bc67308ec16c10eb40331652be43c76c1c22cb657d23ef1818d30033"
+      },
+      {
+        "name": "platform-access-mobile.png",
+        "sha256": "c95a28eceb83746379c406ccd007f329b5301f41c6a6d3166d65d857aa2e51fe"
+      },
+      {
+        "name": "platform-access-review-dark-accessibility.json",
+        "sha256": "05e36650beea03238e8ba254b4cff62b65fdd3d5910533b7d99253d56bd0c527"
+      },
+      {
+        "name": "platform-access-review-dark.png",
+        "sha256": "b08a5b5bfa1fb2612206d8dc853ae310446b04f59cc7fc6c5b74dba921fe17d6"
+      },
+      {
+        "name": "platform-access-review-light-accessibility.json",
+        "sha256": "1e2de234f6835c07990a3f328b3dc505deb7b6b025b861b5821d79a9932d022b"
+      },
+      {
+        "name": "platform-access-review-light.png",
+        "sha256": "5c21a5ed1e24ec70b2b63ff59e168ca90bc31d676afc90a4cbcacf16a41fc147"
+      },
+      {
+        "name": "school-definitions-api.json",
+        "sha256": "e0216bb767956f86e7cfaf0f3680982de315b1c415766eb033b48ba2657c6541"
+      },
+      {
+        "name": "school-draft-dark-accessibility.json",
+        "sha256": "fa860b48074b303497007a95e7c55051518767ee0ead53ff24482674909bc030"
+      },
+      {
+        "name": "school-draft-dark.png",
+        "sha256": "ccb53f758d8f8ed16317ca86a0b93c182d598fd7c98ef8160db30b0a5e9ab271"
+      },
+      {
+        "name": "school-draft-light-accessibility.json",
+        "sha256": "e0ff303f7b4791fe813a1135b7425946ee07166a356d832407c03ef5177e97bd"
+      },
+      {
+        "name": "school-draft-light.png",
+        "sha256": "50fa71c5b2bcb5cb7dea88e109922316e14bdd7ce5f56187635df1dba879e280"
+      },
+      {
+        "name": "school-references-api.json",
+        "sha256": "7fd691407a7e3e14d59ca2dcd7e31671a4c2418338fb7885529d8a082284bba1"
+      },
+      {
+        "name": "school-review-dark-accessibility.json",
+        "sha256": "4e95e61830fd746b4017141331de02ef41b02ed21651742db35819a712848953"
+      },
+      {
+        "name": "school-review-light-accessibility.json",
+        "sha256": "d0280adb8abfbb4e655706004af233db0d2afe92821bf12c1f96766497c148f3"
+      },
+      {
+        "name": "scoped-grants-dark-accessibility.json",
+        "sha256": "b68d80de6a3a0f9a0b248425a64efa9c2aade51f60fcfc6b24699a0044e4aecb"
+      },
+      {
+        "name": "scoped-grants-dark.png",
+        "sha256": "7ae27ff168d1cacdb6f42e4e067b2a1fc1a8bbe20be593e2c1931a99386bb5de"
+      },
+      {
+        "name": "scoped-grants-light-accessibility.json",
+        "sha256": "defa0727c135b4a1a3a2495bcec10164a546f24407fb2b66035d72180ffdb730"
+      },
+      {
+        "name": "scoped-grants-light.png",
+        "sha256": "f39665a91ecfda6301000d0b87f2ac0eface45cc9be2cbbabd8e10f76063dde0"
+      },
+      {
+        "name": "evidence-redaction.json",
+        "sha256": "da9bf06c6ac90d86ad3522af1de252b0e939825f80dc8059e615901a6e304ee7"
+      }
+    ]
+  }
+}

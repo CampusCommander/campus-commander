@@ -397,7 +397,7 @@ The corrected workflow assigns each attempt a unique artifact name and passes th
 A numeric guard rejects missing artifact IDs. Assembly retains its existing report and hash requirements.
 The pinned [download action](https://github.com/actions/download-artifact/blob/d3f86a106a0bac45b974a628896c90dbdf5c8093/src/download-artifact.ts) selects metadata with `latest: true`, including downloads by ID.
 Unique attempt names prevent its duplicate-name filter from discarding the requested artifact.
-This correction preserves the failed artifact for diagnosis. The original browser-closure failure remains unresolved.
+This correction preserves the failed artifact for diagnosis. The browser-closure correction and hosted recheck follow below.
 
 ## All-Docker report inventory
 
@@ -420,7 +420,7 @@ Every fault recovered within its recorded bound. Each source report retains its 
 
 The inventory remains incomplete until guided update execution and prerequisite review finish.
 It does not qualify another application revision or permit full release assembly.
-The intermittent browser-closure failure remains unresolved.
+The corrected browser collector passed the hosted recheck described below.
 
 [Candidate run 35224752965](https://github.com/CampusCommander/campus-commander/actions/runs/35224752965) passed validation and image publication at `5e276ef`.
 Packaged authorization failed before assembly. The collector retained one font request without observed headers when its context closed.
@@ -441,4 +441,10 @@ Response observers remain active. Header-observation failures and timeouts for o
 The deterministic event-order regression failed before the correction and passed afterward.
 API fixture tests and lint pass. Both review axes found no remaining issues after request-count deduplication.
 The real-browser fixture completed 500 three-page iterations after the closure correction.
-Hosted packaged authorization still requires a recheck. This local result does not establish a second candidate or guided-update pass.
+[Candidate recheck 35226593765](https://github.com/CampusCommander/campus-commander/actions/runs/35226593765) passed packaged authorization, assembly, extracted installation, repeated resume, and isolated restore.
+It published `phase-3-lab-eb78e16588b9`. Independent verification passed both blob signatures, three image signatures, and the extracted inventory.
+The [target qualification record](../../deployment/evidence/CC-57-update-target-qualification.json) retains exact source, images, manifest, report hashes, and 79 validated application files.
+The complete installer fixture took 240,523 milliseconds. Its isolated restore segment took 57,456 milliseconds.
+
+[Guided-update run 35228925590](https://github.com/CampusCommander/campus-commander/actions/runs/35228925590) tests the delivered update from `a3601ef` to `eb78e16`.
+Its result remains pending. Existing profile reports retain their original application identity.
