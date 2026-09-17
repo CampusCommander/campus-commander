@@ -211,12 +211,17 @@ export async function qualifyGoogleHealth({
       await page.evaluate((value) => {
         document.documentElement.style.zoom = String(value);
       }, zoom);
-      assert.equal(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth,
-        ),
-        true,
-      );
+      await expect
+        .poll(
+          () =>
+            page.evaluate(
+              () => document.documentElement.scrollWidth <= innerWidth,
+            ),
+          {
+            message: `Google health must fit at width ${width} and zoom ${zoom}.`,
+          },
+        )
+        .toBe(true);
     }
     await page.evaluate(() => {
       document.documentElement.style.zoom = '';

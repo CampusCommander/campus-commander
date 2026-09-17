@@ -23,7 +23,7 @@ const initial = (): GoogleHealth => ({
     }),
   ),
 });
-async function fixture(page: Page, diagnose = true) {
+async function fixture(page: Page, diagnose = true, services = false) {
   let health = initial();
   let mode: 'ok' | 'offline' | 'forbidden' = 'ok';
   let preferences = { theme: 'light', navigationCollapsed: false };
@@ -44,7 +44,10 @@ async function fixture(page: Page, diagnose = true) {
           id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           displayName: 'Fixture admin',
           permissionVersion: 1,
-          permissions: ['identity:read'],
+          permissions: [
+            'identity:read',
+            ...(services ? ['diagnostics:read'] : []),
+          ],
           grants: [
             'connection:read',
             ...(diagnose ? ['connection:diagnose'] : []),
@@ -92,6 +95,17 @@ async function fixture(page: Page, diagnose = true) {
       return route.fulfill({ status: 403, json: { reason: 'forbidden' } });
     return route.fulfill({ json: { health } });
   });
+  await page.route('**/api/diagnostics', (route) =>
+    route.fulfill({
+      json: {
+        status: 'ready',
+        observedAt: new Date().toISOString(),
+        checks: ['PostgreSQL', 'Redis', 'Kestra', 'Artifact storage'].map(
+          (name) => ({ name, status: 'ready' }),
+        ),
+      },
+    }),
+  );
   await page.goto('/diagnostics');
   await expect(
     page.getByRole('heading', { name: 'Google capability health' }),
@@ -268,7 +282,7 @@ for (const theme of ['light', 'dark'])
   test(`Google capability health supports ${theme} accessibility and reflow`, async ({
     page,
   }) => {
-    await fixture(page);
+    await fixture(page, true, true);
     await page.getByRole('button', { name: 'Choose theme' }).click();
     await page
       .getByRole('menuitem', { name: `Use ${theme} theme`, exact: true })
