@@ -2,7 +2,7 @@
 
 [CC-58](https://easton-consulting.atlassian.net/browse/CC-58) requires extracted installation, resume, Phase 2 upgrade, restore, faults, and operator lifecycle evidence.
 The task remains incomplete.
-Installation, resume, Phase 2 upgrade, installed workflows, key projection, distributed credential renewal, and replica permission checks have passed hosted qualification.
+Installation, resume, Phase 2 upgrade, service faults, installed workflows, key projection, distributed renewal, and replica permission checks have passed hosted qualification.
 The checkpoint sections below link their exact application and harness evidence.
 
 ## Installed workflow fixture
@@ -337,3 +337,27 @@ Each delivered command now has a separate failure stage.
 
 Local API tests, hybrid fixtures, lint, formatting, and both reviews pass. Hosted qualification remains pending for this correction.
 The earlier failed reports remain unchanged. CC-58 remains incomplete.
+
+## Passed service fault checkpoint
+
+[Run 35244946498](https://github.com/CampusCommander/campus-commander/actions/runs/35244946498) passed all six service faults at harness `bcc0d60` against signed application `a3601ef`.
+PR CI passed at the same harness. The complete fixture took 400,601 milliseconds. The fault segment took 143,317 milliseconds.
+Each recovery included diagnostics, saved workflow reads, durable checks, and both API replicas.
+
+| Fault                  | Recovery milliseconds |
+| ---------------------- | --------------------: |
+| API interruption       |                 7,360 |
+| Both worker hosts      |                 3,587 |
+| External Redis         |                 4,676 |
+| External PostgreSQL    |                77,545 |
+| Kestra                 |                15,129 |
+| Shared artifact access |                 3,707 |
+
+Every recovery stayed within 180 seconds. Redis rejected the previous session, and fresh sign-in succeeded.
+Each case preserved two principals, 75 original security events, thirteen grants, two access-change records, and two school definitions.
+Credential and settings records, original artifact metadata and bytes, five completed Kestra executions, and the internal storage marker remained intact.
+Distributed credential renewal and worker restart also passed. Fixture cleanup removed its owned resources.
+
+The [retained report](../../deployment/evidence/CC-58-service-faults.json) preserves all original fields and three source-report hashes.
+The archive matches its published SHA-256 digest. Synthetic providers and shared physical infrastructure remain qualification limits.
+Network, certificate, capacity, live Google faults, and complete CC-58 acceptance remain open.
