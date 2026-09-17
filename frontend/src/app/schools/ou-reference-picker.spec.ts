@@ -93,3 +93,27 @@ it('permits reference inspection but prevents selection when disabled', async ()
   item('b').click();
   expect(selected).toEqual([]);
 });
+
+it('reveals the focused identity after reparenting beneath a collapsed ancestor', async () => {
+  const { fixture, host, item } = await setup();
+  const selected: string[] = [];
+  fixture.componentInstance.selected.subscribe((id) => selected.push(id));
+  expect(item('a').getAttribute('aria-expanded')).toBe('false');
+  item('b').focus();
+  fixture.componentRef.setInput(
+    'units',
+    units.map((unit) =>
+      unit.id === 'b'
+        ? { ...unit, parentId: 'a', path: '/School A/School B' }
+        : unit,
+    ),
+  );
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  expect(item('a').getAttribute('aria-expanded')).toBe('true');
+  expect(document.activeElement).toBe(item('b'));
+  expect(item('b').getAttribute('aria-selected')).toBe('true');
+  expect(host.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+  expect(selected).toEqual([]);
+});

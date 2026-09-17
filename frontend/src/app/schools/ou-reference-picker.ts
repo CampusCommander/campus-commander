@@ -71,6 +71,23 @@ export class OuReferencePicker {
 
   constructor() {
     effect(() => {
+      const units = this.units();
+      untracked(() => {
+        const active = this.element.nativeElement.ownerDocument.activeElement;
+        if (!active || !this.element.nativeElement.contains(active)) return;
+        const byId = new Map(units.map((unit) => [unit.id, unit]));
+        const expanded = new Map(this.collapsed());
+        const seen = new Set<string>();
+        let parent = byId.get(this.activeId() ?? '')?.parentId;
+        while (parent && !seen.has(parent) && seen.size < 36) {
+          seen.add(parent);
+          expanded.set(parent, false);
+          parent = byId.get(parent)?.parentId;
+        }
+        this.collapsed.set(expanded);
+      });
+    });
+    effect(() => {
       this.rows();
       untracked(() => {
         const active = this.element.nativeElement.ownerDocument.activeElement;
