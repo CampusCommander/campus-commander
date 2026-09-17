@@ -66,3 +66,9 @@ Keep PRs as drafts until their review state supports promotion. Do not merge wit
 CC-54 and the application tasks drive the immediate UI review. CC-55 retains essential authorization and redaction checks.
 CC-57 supplies the fresh installation. CC-58 and CC-59 retain their evidence with further work deferred.
 CC-60 supplies a clearly identified review build. CC-61 records owner acceptance.
+CC-60 uses `codex/cc-60-review-delivery`, stacked on the client review branch.
+The candidate workflow now requires packaged authorization, fresh installation, and installed application workflows.
+It retains signatures and candidate-only status. Backup, restore, and the cross-phase upgrade matrix do not gate this review build.
+The selected [review build](https://github.com/CampusCommander/campus-commander/releases/tag/phase-3-lab-a043ef187dc6) passed fresh installation and all ten installed application workflow checks.
+Independent signature and file verification passed. The [installation guide](../testing/fresh-install-review.md) names the exact source and release.
+Owner usability and human accessibility acceptance remain open.

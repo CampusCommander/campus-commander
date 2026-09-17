@@ -392,7 +392,7 @@ export async function configure({
     ...(manifest.phase === 3
       ? {
           identity:
-            'https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery',
+            'https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-60-review-delivery',
         }
       : {}),
     ...(manifest.phase === 2

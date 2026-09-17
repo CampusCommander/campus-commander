@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "purpose": "client-review",
+  "phase": 3,
+  "profile": "all-docker",
+  "sourceRevision": "a043ef187dc6efbda7b5db84d7367594f0922cb0",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ebd089d83cb21fedca82fce8c9d1d27ef8af0399f1cb1453077e5a2e509437a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:8f7ce1ba3b83bc2bb7985e5d70b95d007fbe1cff47b25828780ce468f0d9488f",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:7a9f8052b703a752040ebdc2f2cac8aaa87916d199ef6675abe75c339526bcf2"
+  },
+  "bundleManifestSha256": "1764d353fe6158a32d7d029afa980416080d3dda30485fe9c216e9887f74b6a6",
+  "checks": {
+    "install": "passed",
+    "resume": "passed",
+    "applicationWorkflows": "passed",
+    "restore": "not-run",
+    "upgrade": "not-run",
+    "faults": "not-run"
+  },
+  "command": "node deployment/release/phase3-bundle-qualification.mjs",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "ci": true
+  },
+  "durationMs": 530,
+  "durationScope": "Evidence validation and bundle inventory verification only.",
+  "qualificationDurations": [
+    {
+      "report": "all-docker-profile.json",
+      "durationMs": 174277,
+      "scope": "Fresh installation, browser workflows, and basic lifecycle checks."
+    },
+    {
+      "report": "phase3-workflows.json",
+      "durationMs": 11561,
+      "scope": "Application workflows and restart checks."
+    }
+  ],
+  "reports": [
+    {
+      "path": "all-docker-profile.json",
+      "sizeBytes": 10175,
+      "sha256": "61fa2aa5cda9ed93ee5e60e496bb9857ba074e288ca1c8ef2f1c38ad619a258a"
+    },
+    {
+      "path": "phase3-workflows.json",
+      "sizeBytes": 6803,
+      "sha256": "2df1afed694d3cca0ea35f4e4c974cb51c47c48ffe928c03263074245866a662"
+    }
+  ],
+  "limits": [
+    "This laboratory report does not establish full profile or release acceptance.",
+    "Synthetic Google and identity providers do not qualify district privileges or browser trust.",
+    "Migration, backup, restore, and exhaustive deployment qualification are outside this review build."
+  ]
+}

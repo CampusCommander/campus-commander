@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "observedAt": "2026-09-17T20:00:34.344Z",
+  "sourceRevision": "a043ef187dc6efbda7b5db84d7367594f0922cb0",
+  "customerId": "C01zcarnq",
+  "clientId": "113794681976879482895",
+  "delegatedRole": "Super Admin (owner-confirmed)",
+  "command": "node dist/client-review/check-live-google.mjs",
+  "methods": [
+    "GoogleCustomerVerifier.verify",
+    "GoogleCustomerVerifier.readSchoolReferences"
+  ],
+  "checks": {
+    "customerBinding": "passed",
+    "domainRead": "passed",
+    "organizationalUnitRead": "passed",
+    "exactRequestedScopes": "passed"
+  },
+  "counts": {
+    "primaryDomains": 1,
+    "secondaryDomains": 0,
+    "aliasDomains": 0,
+    "organizationalUnits": 3,
+    "rootUnits": 1
+  },
+  "durationMs": 1795,
+  "nodeVersion": "v24.19.0",
+  "limits": [
+    "Read-only live provider check. No Google changes or revocation.",
+    "Direct application provider methods, not browser sign-in or encrypted database credential storage.",
+    "No user inventory, device inventory, Education feature, minimum-role, or alternate-administrator qualification.",
+    "Counts describe this observation and do not require populated entity collections."
+  ],
+  "workingTreeChanges": [
+    "AGENTS.md",
+    "docs/portfolio/phase-3-google-credentials.md",
+    "docs/testing/client-review.md",
+    "docs/testing/fresh-install-review.md"
+  ],
+  "providerSourceSha256": "6a1718f4fe299916a3ab773d806f4734d0c99dc5bb93b896b8bfbb89e499ecb6",
+  "compiledRuntimeSha256": "9c53eff631ca209e562d721ef508091d98a1d0dc31313b92bf9eb29ec6b0d014"
+}

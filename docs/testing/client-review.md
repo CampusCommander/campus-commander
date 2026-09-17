@@ -78,3 +78,8 @@ The recipient received only the approved customer-read grant. Customer settings 
 The administrator could inspect the recipient through Platform access.
 Affected lint and formatting checks passed. Lint retains one existing unused-variable warning in the deferred update fixture.
 These checks do not establish human screen-reader acceptance or live Google authorization.
+
+The running application also passed school creation through reference selection, scope review, explicit confirmation, and saved receipts.
+The administrator assigned a school-viewer grant through Platform access. The access change invalidated the recipient's previous session.
+After sign-in, the recipient saw only the approved school. The second school's API returned HTTP 404, and management controls stayed hidden.
+A focused browser check verified keyboard selection in the organizational-unit picker.

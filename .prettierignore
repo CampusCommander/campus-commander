@@ -5,3 +5,5 @@
 /.nx/workspace-data
 .nx/self-healing
 .angular
+# Preserve original report bytes referenced by signed qualification hashes.
+/deployment/evidence/CC-60-review-a043ef1/all-docker-profile.json
