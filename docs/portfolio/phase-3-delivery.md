@@ -183,3 +183,13 @@ The extracted Phase 2 baseline contained its own project metadata. The installer
 A local duplicate-project fixture reproduced the same failure.
 Nx now excludes `extracted-baseline/`, alongside the existing extracted-candidate exclusion.
 The unchanged local fixture then passed project discovery. This check does not establish upgrade execution.
+
+[Run 35216878990](https://github.com/CampusCommander/campus-commander/actions/runs/35216878990) passed the actual upgrade and all ten post-upgrade workflow checks.
+The fixture installed baseline `1b04fa3` and upgraded to application `a3601ef` with harness `4386077`.
+Both principals, their preferences, the artifact, existing secrets, and both previous migration checksums survived the upgrade.
+The migration ledger advanced from two entries to fifteen. Native backup and verification completed before the upgrade.
+The upgrade segment took 51,313 milliseconds. The complete profile took 220,114 milliseconds.
+
+The [retained upgrade report](../../deployment/evidence/CC-57-phase2-upgrade.json) binds baseline, application, harness, image, manifest, and report identities.
+It also records two-replica session checks, restart persistence, stop, uninstall, repeated resume, and preserved preferences after fresh sign-in.
+PR CI passed at the same harness revision. Complete fault qualification and five distinct profile reports remain open.
