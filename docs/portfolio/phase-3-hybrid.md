@@ -47,3 +47,15 @@ They do not establish independent physical failure domains or district storage q
 Synthetic Google and sign-in providers do not establish district privileges, Education capabilities, or browser trust.
 Applicable UI rules are UI-01, UI-08, UI-09, UI-10, and FORM-01.
 This increment changes no product controls. Automated workflow results do not establish human accessibility acceptance.
+
+## First hosted attempt
+
+[Run 35227673796](https://github.com/CampusCommander/campus-commander/actions/runs/35227673796) failed during preparation at harness `83ed680`, before installation.
+The [retained failure report](../../deployment/evidence/CC-58-installation-attempt1.json) preserves its original fields and report hash.
+PR CI passed at the same harness revision.
+
+The diagnostic increment separates image distribution, external services, provider preparation, and installation configuration stages.
+It records the process UID and GID and only an allowlisted failure category and numeric exit code.
+Tests verify that arbitrary exception data cannot enter the diagnostic report.
+Harness state now checks tracked files. Generated bundle files no longer mark committed source as modified.
+This increment does not claim a corrected installation or a hosted pass.

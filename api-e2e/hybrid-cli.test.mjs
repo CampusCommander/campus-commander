@@ -20,6 +20,7 @@ import {
 } from '../deployment/profiles/all-docker/render.mjs';
 import { redisImage } from '../deployment/redis/runtime.mjs';
 import { createHybridHosts, outerDocker } from './hybrid-hosts-fixture.mjs';
+import { describeHybridFailure } from './hybrid-evidence-fixture.mjs';
 import { createHybridServices } from './hybrid-services-fixture.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
@@ -81,9 +82,13 @@ test(
           harnessRevision: execFileSync('git', ['rev-parse', 'HEAD'], {
             encoding: 'utf8',
           }).trim(),
-          harnessWorkingTree: execFileSync('git', ['status', '--porcelain'], {
-            encoding: 'utf8',
-          }).trim()
+          harnessWorkingTree: execFileSync(
+            'git',
+            ['status', '--porcelain', '--untracked-files=no'],
+            {
+              encoding: 'utf8',
+            },
+          ).trim()
             ? 'uncommitted-candidate'
             : 'clean',
           command:
@@ -92,6 +97,8 @@ test(
             nodeVersion: process.version,
             platform: process.platform,
             architecture: process.arch,
+            uid: process.getuid?.() ?? null,
+            gid: process.getgid?.() ?? null,
           },
         }
       : {};
@@ -102,6 +109,7 @@ test(
     const images = {};
     let sourceRevision;
     const failures = [];
+    let failure;
     try {
       const labels = [];
       for (const [name, variable] of [
@@ -144,6 +152,7 @@ test(
         }
       }
       const initialImages = baseline?.images ?? images;
+      stage = 'host image and daemon preparation';
       hosts = await createHybridHosts({
         root,
         project,
@@ -151,6 +160,7 @@ test(
         publicPort,
         boundedArtifacts: process.env.CC_AUTH_HYBRID_CAPACITY === '1',
       });
+      stage = 'image distribution';
       await hosts.loadImages(
         [
           ...Object.values(images),
@@ -168,10 +178,12 @@ test(
           ],
         },
       );
+      stage = 'external service fixture';
       services = await createHybridServices(hosts, project);
       const controller = hosts.hosts[0];
       const workers = hosts.hosts.slice(1);
       const privateRoot = services.privateRoot;
+      stage = 'provider address resolution';
       const hostGateway = JSON.parse(
         await outerDocker([
           'run',
@@ -188,12 +200,14 @@ test(
         ]),
       );
       await hosts.mapHosts({ 'host.docker.internal': [hostGateway] });
+      stage = 'synthetic provider startup';
       provider = await startProvider({
         certificate: await readFile(join(privateRoot, 'provider-certificate')),
         privateKey: await readFile(join(privateRoot, 'provider-private-key')),
         publicOrigin,
         password: await readFile(join(privateRoot, 'oidc-client'), 'utf8'),
       });
+      stage = 'installation configuration';
       const config = JSON.parse(
         await readFile(
           new URL('../deployment/examples/hybrid.json', import.meta.url),
@@ -873,6 +887,7 @@ process.exit(result.status??1);
         ],
       };
     } catch (error) {
+      failure = describeHybridFailure(error);
       failures.push(error);
       for (const host of hosts?.hosts ?? []) {
         const snapshot = await hosts
@@ -927,6 +942,7 @@ process.exit(result.status??1);
           ...harness,
           ...(bundle ? { bundleManifestSha256: bundle.manifestSha256 } : {}),
           stage,
+          failure,
           sourceRevision,
           images,
           durationMs: Date.now() - started,
