@@ -2111,18 +2111,6 @@ test(
           },
           restartRedis: async () => {
             redis.destroy();
-            if (applicationPhase === 3)
-              await qualifyGoogleLifecycleApi({
-                browser,
-                publicOrigin,
-                migrator,
-                directory,
-                evidenceDirectory,
-                fixture: kestraFixture,
-                setSubject: (value) => {
-                  subject = value;
-                },
-              });
             docker('stop', names[1]);
             docker('start', names[1]);
             const port = Number(
@@ -2181,6 +2169,18 @@ test(
             }
             api = await startApi();
             replica = await startApi(replicaPort);
+          },
+        });
+      if (applicationPhase === 3)
+        await qualifyGoogleLifecycleApi({
+          browser,
+          publicOrigin,
+          migrator,
+          directory,
+          evidenceDirectory,
+          fixture: kestraFixture,
+          setSubject: (value) => {
+            subject = value;
           },
         });
       docker('stop', names[1]);
