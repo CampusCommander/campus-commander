@@ -149,6 +149,16 @@ That control distinguishes restored transaction loss from provider rejection or 
 Invitation tokens, callback URLs, and cookies remain in memory. Reports contain counts, hashes, statuses, and elapsed time.
 Local API fixture lint passes. Hosted qualification of this extension remains pending.
 
+## Resume failure diagnostics
+
+Run 35189111352 failed the Phase 2 Sign in heading check after an installer resume.
+Its empty accessibility snapshot does not identify the cause or the preceding stop command.
+The fixture now records bounded diagnostics around that reload and heading check.
+The artifact name identifies the application phase and the stop or uninstall command.
+The report includes route categories, response statuses, request error codes, and document element counts.
+It excludes URLs, response contents, cookies, and tokens. The original assertion and timeout remain unchanged.
+Hosted execution of these diagnostics remains pending. This instrumentation does not establish a correction for the failure.
+
 ## Remaining recovery work
 
 - Inventory and verify complete customer, settings, school, grant, progress, receipt, credential, and security-event state.

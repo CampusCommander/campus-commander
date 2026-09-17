@@ -16,6 +16,7 @@ import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { startRegistry } from './registry-fixture.mjs';
 import { qualifyApplicationRestore } from './restore-fixture.mjs';
+import { qualificationBrowserStep } from './qualification-sign-in.mjs';
 
 const phase3Restore = process.env.CC_AUTH_PHASE3_RESTORE === '1';
 const applicationPhase = phase3Restore ? 3 : 2;
@@ -34,6 +35,10 @@ test(
   { timeout: phase3Restore ? 900000 : 360000 },
   async () => {
     const startedAt = Date.now();
+    const evidenceDirectory = phase3Restore
+      ? 'dist/phase-3-recovery'
+      : 'dist/phase-2-evidence';
+    await mkdir(evidenceDirectory, { recursive: true });
     const root = await mkdtemp(
       join(tmpdir(), `cc-phase${applicationPhase}-compose-`),
     );
@@ -443,13 +448,21 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
           for (const command of ['stop', 'uninstall']) {
             assert.equal((await cli(command)).dataPreserved, true);
             assert.equal((await cli('resume')).status, 'ready');
-            navigationRecovery.push({
-              phase: `${command}-resume`,
-              ...(await reloadAfterNetworkChange(page)),
-            });
-            await expect(
-              page.getByRole('heading', { name: 'Sign in', exact: true }),
-            ).toBeVisible();
+            await qualificationBrowserStep(
+              page,
+              publicOrigin,
+              evidenceDirectory,
+              `all-docker-phase-${applicationPhase}-${command}-resume`,
+              async () => {
+                navigationRecovery.push({
+                  phase: `${command}-resume`,
+                  ...(await reloadAfterNetworkChange(page)),
+                });
+                await expect(
+                  page.getByRole('heading', { name: 'Sign in', exact: true }),
+                ).toBeVisible();
+              },
+            );
             await page
               .getByRole('link', { name: 'Sign in to Campus Commander' })
               .click();
@@ -509,10 +522,6 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
         JSON.parse(await readFile(releasePath, 'utf8')),
         installationRelease,
       );
-      const evidenceDirectory = phase3Restore
-        ? 'dist/phase-3-recovery'
-        : 'dist/phase-2-evidence';
-      await mkdir(evidenceDirectory, { recursive: true });
       if (browser.screenReader) {
         await writeFile(
           'dist/phase-2-evidence/screen-reader.json',
