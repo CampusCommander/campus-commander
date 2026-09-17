@@ -5,6 +5,9 @@ It never starts services. Successful restore returns `verified-services-disabled
 The operator must prevent service startup while that marker exists.
 Profile startup commands do not enforce this marker automatically.
 
+For Phase 3, also use the [recovery and erasure checklist](PHASE-3.md).
+It covers customer state, access recovery, credential review, interrupted restore, and retained external material.
+
 ## Inventory and consistency
 
 | Component                        | Backup and recovery                                                      |
