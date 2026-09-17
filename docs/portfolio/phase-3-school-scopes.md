@@ -2,7 +2,8 @@
 
 Owner: [CC-52](https://easton-consulting.atlassian.net/browse/CC-52).
 Status: reference contracts, resolver, provider, persistence, and reference APIs are implemented.
-School definition persistence, APIs, and grant assignment are implemented. Browser controls and complete qualification remain pending.
+School definitions, APIs, grant assignment, and browser controls pass source and packaged qualification.
+Complete deployment qualification and human acceptance remain pending.
 This slice follows CC-48 and CC-51 through the CC-49 stack.
 
 ## Outcome and language
@@ -145,7 +146,7 @@ Refresh rechecks the session after the Google read.
 The public edge exposes these exact methods only in Phase 3 and limits refresh requests to 4 KiB.
 Reference API review found missing public-edge routes. Revision `304738c` added those routes and regression checks.
 Contract tests, API lint and build, and bootstrap tests pass. Both review axes report no remaining findings.
-Hosted source and packaged API qualification remain pending for the corrected edge revision.
+The source and packaged API results below qualify the corrected edge revision.
 
 The earlier full run at `84d8d39` also failed during packaged login with `ERR_NETWORK_CHANGED`.
 That browser failure preceded the school checks. Its cause remains unresolved.
@@ -264,7 +265,7 @@ The page uses list/detail browsing and a centered form with an embedded picker.
 Loading, empty, error, stale, partial-region failure, and interrupted-request states retain the applicable context.
 Keyboard, automated accessibility, both themes, 200 percent CSS zoom, and 320-pixel reflow pass in the mocked browser.
 Human screen-reader and usability acceptance remain unperformed.
-Packaged browser qualification, combined deployment qualification, and owner acceptance remain pending.
+Combined deployment qualification and owner acceptance remain pending.
 
 The final picker pass uses the bundled Material Symbols font.
 The focused browser case passes after that correction and retains light and dark draft and review screenshots.
@@ -283,7 +284,7 @@ Five Chromium cases pass for presets, delegation limits, stale-scope removal, an
 Both themes pass automated accessibility checks. The form fits a 320-pixel viewport.
 Frontend unit tests, lint, and production build pass. Applicable rules are UI-01 through UI-10 and FORM-01.
 The real API fixture now assigns district viewer and school administrator grants through browser review and confirmation.
-That fixture still requires source and packaged qualification. Human screen-reader and owner acceptance remain pending.
+The source and packaged results below qualify that fixture. Human screen-reader and owner acceptance remain pending.
 
 Revision `5561f88` prevents unchecked actions from appearing selected after the proposal reaches 256 grants.
 The fifth browser case verifies the displayed state and exact grant replacement after removal.
