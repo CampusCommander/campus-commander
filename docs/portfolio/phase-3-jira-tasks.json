@@ -1101,7 +1101,8 @@
     "installationBaseline": "fresh-installation",
     "immediateDeliverable": "Runnable client review build using the existing all-Docker installation.",
     "supersededRequirements": [
-      "Phase 2 to Phase 3 upgrade qualification as a Phase 3 delivery gate"
+      "Phase 2 to Phase 3 upgrade qualification as a Phase 3 delivery gate",
+      "Compatibility, backup, recovery, and data-preservation work for disposable development environments"
     ],
     "deferredWork": [
       "Further hybrid and Kubernetes qualification",
@@ -1110,11 +1111,11 @@
     "retainedRequirements": [
       "Application authorization",
       "Credential protection",
-      "Data integrity",
-      "Focused recovery checks",
       "Truthful build identity and limitations",
       "Owner acceptance"
     ],
-    "historicalTaskCriteria": "Task criteria and dependency snapshots below retain the original published plan. This scope revision governs active work."
+    "historicalTaskCriteria": "Task criteria and dependency snapshots below retain the original published plan. This scope revision governs active work.",
+    "phaseMeaning": "Internal development milestones, not deployed versions or a user upgrade journey.",
+    "developmentData": "Disposable. Recreate fixtures and development databases when needed. No preservation or recovery requirement."
   }
 }

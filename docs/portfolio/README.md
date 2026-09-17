@@ -21,7 +21,8 @@ The [archive](../archive/README.md) preserves earlier sources as history. Archiv
 
 The repository contains deployment code and implemented Phase 3 Angular pages on draft branches.
 The [current Phase 3 work plan](phase-3-current-plan.md) prioritizes a fresh installation and owner review of the client.
-The owner confirmed that nothing is live. Further Phase 2 upgrade work has stopped.
+The owner confirmed that nothing is live. Phases are internal development milestones, and development test data is disposable.
+Further phase-upgrade and development-data preservation work has stopped.
 The [owner acceptance record](../reviews/2026-09-16-phase-2-acceptance.md) closes Phase 2 with its recorded limitations.
 The [Phase 3 handoff](phase-3-handoff.md) defines the next work and credential proof.
 The [Phase 3 delivery plan](phase-3-plan.md) defines eighteen approved slices with acceptance criteria, dependencies, and Git and Jira procedures.
