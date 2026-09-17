@@ -14,7 +14,7 @@ Run `npm exec -- nx run api-e2e:phase3-auth-integration` for source qualificatio
 The full CI workflow builds images and repeats that target with `CC_AUTH_PACKAGED_IMAGES=true`.
 Run `npm exec -- nx run deployment:postgres-integration` for real database role, concurrency, and audit-failure checks.
 Local static checks use `npm exec -- nx run api-e2e:lint` and `npm exec -- nx format:check --base=9052ba1`.
-Source qualification passed at `ca9023b`. Packaged qualification last passed at `0a89f67`.
+Source qualification passed at `ca9023b`. Packaged qualification passed at `86b91c1`.
 
 ## Shared enforcement
 
@@ -242,7 +242,7 @@ The regression uses a stalled response and a controlled clock. It does not estab
 Source run [35180757221](https://github.com/CampusCommander/campus-commander/actions/runs/35180757221) failed at `5951102`.
 Browser secret registration exceeded its five-second limit before the first enrollment screenshot.
 The retained artifact contains four early accessibility reports. It contains no completed redaction report.
-This P2 fixture defect blocks scanner qualification. It does not demonstrate a product credential disclosure.
+This P2 fixture defect blocked scanner qualification at that revision. It did not demonstrate a product credential disclosure.
 
 Earlier source run `35180101953` was superseded while unfinished. Full run `35180100392` was canceled after its six other jobs passed.
 Neither unfinished application result qualifies the scanner. The PostgreSQL result still qualifies the stricter audit assertions at `63fca05`.
@@ -316,11 +316,17 @@ That closure and two later access-revocation popup closures bypassed the drain u
 A local Chromium reproduction closes a page during its completed session response.
 Direct closure reproduces the `target-closed` scanner failure. Drained closure captures the token and completes without that failure.
 The fixture now drains observations before all three popup closures. A regression verifies both closure outcomes.
-Local API fixture lint and all 12 scanner regressions pass. Packaged validation of this correction remains pending.
+Local API fixture lint and all 12 scanner regressions pass. Packaged validation of this correction passed at `86b91c1`.
 
 ## Current qualification at `86b91c1`
 
 [Full run 35183474975](https://github.com/CampusCommander/campus-commander/actions/runs/35183474975) includes the popup correction and rollback extensions.
-Its real PostgreSQL job passed the invitation and token rollback probes. The packaged application result remains pending.
+All seven jobs passed, including the invitation and token rollback probes, packaged Phase 2 and Phase 3, and all-Docker compatibility.
 A source inventory check matched all 32 protected routes against six Phase 3 controllers.
 The two recipient routes remain outside the session-protected set and retain their separate policy above.
+
+The [retained packaged scanner report](../../deployment/evidence/CC-55-packaged-evidence-redaction.json) covers 78 files, 24 screenshot checks, and 18 secret categories.
+It counts 37 interrupted browser requests outside JSON body coverage. The source report retains its separate count of 34.
+The packaged route fixture passed all 100 requests across 32 routes. The school workflow also passed.
+These results qualify the scanner and listed rollback probes at `86b91c1`. They do not complete CC-55 or Phase 3 release acceptance.
+Failed-run review, release archives, remaining mutation and resource-denial reconciliation, isolated recovery, and owner acceptance remain open.
