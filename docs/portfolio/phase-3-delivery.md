@@ -357,7 +357,8 @@ A different-release guided update and complete profile report aggregation remain
 
 [Candidate run 35222534304](https://github.com/CampusCommander/campus-commander/actions/runs/35222534304) builds source `270fe88` for the guided-update proof.
 Validation and all three image publication jobs passed. The first packaged application attempt failed during browser evidence collection.
-A retry of that failed job is active. Candidate assembly and downstream qualification remain pending.
+The application retry passed. Assembly then selected the earlier failed artifact and rejected its incomplete evidence.
+No candidate bundle was published.
 Existing reports remain bound to application `a3601ef`. They do not qualify the new candidate.
 
 ## Different-release guided update
@@ -376,14 +377,24 @@ The fixture checks the public saved workflows, repeated update, and repeated res
 Reports distinguish installed and target identities. Failure reports survive fixture cleanup.
 The fixture records laboratory setup mode for the installation created through the delivered operator CLI.
 Hosted update execution requires the second published candidate and remains pending.
+Set `target_release` to its published laboratory tag before running the command.
 
 ```sh
 gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
   -f phase3Release=phase-3-lab-a3601eff2a55 \
-  -f phase3UpdateRelease=phase-3-lab-270fe8808aad
+  -f phase3UpdateRelease="$target_release"
 ```
 
 Candidate run `35222534304` passed validation and all three image publication jobs.
 Its first application attempt failed because browser evidence collection retained one unfinished request after page closure.
-The run published no candidate bundle. A diagnostic retry of the failed application job is active at the same source.
-This retry does not establish a correction to browser evidence collection.
+The application retry passed without a collector change. A local test completed 120 popup closures without reproducing the failure.
+The bundle job then selected failed artifact `10498890080` with 62 files instead of successful artifact `10498771741` with 79 files.
+Both artifacts had the same name. The selected artifact omitted the primary report and scanner inventory.
+Local inspection validates every file in the successful artifact against the application identity and scanner hashes.
+The [retained retry record](../../deployment/evidence/CC-57-candidate-retry.json) records both artifact hashes and the validated inventory.
+
+The corrected workflow assigns each attempt a unique artifact name and passes the upload artifact ID to assembly.
+A numeric guard rejects missing artifact IDs. Assembly retains its existing report and hash requirements.
+The pinned [download action](https://github.com/actions/download-artifact/blob/d3f86a106a0bac45b974a628896c90dbdf5c8093/src/download-artifact.ts) selects metadata with `latest: true`, including downloads by ID.
+Unique attempt names prevent its duplicate-name filter from discarding the requested artifact.
+This correction preserves the failed artifact for diagnosis. The original browser-closure failure remains unresolved.

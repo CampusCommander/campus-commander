@@ -656,3 +656,51 @@ test('guided update verifies both target blobs and images before executing the d
       .if.includes("inputs.updateRelease == ''"),
   );
 });
+
+test('Phase 3 assembly downloads the successful application artifact by job output ID', async () => {
+  const candidate = await workflow('phase-3-candidate');
+  const application = candidate.jobs.application;
+  const upload = application.steps.find(
+    (step) => step.id === 'application-evidence',
+  );
+  assert.ok(upload.uses.startsWith('actions/upload-artifact@'));
+  assert.equal(
+    upload.with.name,
+    'qualification-phase3-auth-integration-${{ github.run_attempt }}',
+  );
+  assert.equal(
+    application.outputs['evidence-artifact-id'],
+    '${{ steps.application-evidence.outputs.artifact-id }}',
+  );
+  assert.ok(candidate.jobs.bundle.needs.includes('application'));
+  const download = candidate.jobs.bundle.steps.find(
+    (step) => step.with?.['artifact-ids'],
+  );
+  assert.equal(
+    download.with['artifact-ids'],
+    '${{ needs.application.outputs.evidence-artifact-id }}',
+  );
+  assert.equal(
+    download.with.path,
+    'qualification-evidence/qualification-phase3-auth-integration',
+  );
+  assert.equal(download.with['merge-multiple'], true);
+  const guard = candidate.jobs.bundle.steps.find(
+    (step) => step.name === 'Require the successful application artifact',
+  );
+  for (const id of ['', 'invalid', '1,2', '0'])
+    assert.throws(() =>
+      execFileSync('bash', ['-e', '-c', guard.run], {
+        env: { ...process.env, EVIDENCE_ARTIFACT_ID: id },
+        stdio: 'pipe',
+      }),
+    );
+  assert.doesNotThrow(() =>
+    execFileSync('bash', ['-e', '-c', guard.run], {
+      env: { ...process.env, EVIDENCE_ARTIFACT_ID: '10498771741' },
+      stdio: 'pipe',
+    }),
+  );
+  assert.equal(download.with.pattern, undefined);
+  assert.equal(download.with.name, undefined);
+});
