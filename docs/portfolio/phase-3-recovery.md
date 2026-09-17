@@ -95,8 +95,17 @@ A live database connection must prevent revalidation. An injected audit failure 
 Success must create a private receipt, record one audit event, and permit a new renewal lease.
 A repeated command must retain the original verification time and add no event, even if the provider fixture now reports another customer.
 These checks qualify the repeated receipt semantics. They do not claim a new live Google check.
+The fixture also makes the receipt destination a directory after verification succeeds, then rejects the next receipt write.
+The database retains its verified state and original audit event. The service-disable marker remains present.
+After correcting the destination, another command reconstructs the private receipt from the original verification.
 
-Local lint, operations contracts, and release tests pass. Hosted CLI qualification remains pending.
+Local lint, operations contracts, and release tests pass.
+[Run 35187690542](https://github.com/CampusCommander/campus-commander/actions/runs/35187690542) passed the operator CLI restore job at `5b741c8`.
+The [retained CLI report](../../deployment/evidence/CC-56-operator-cli-restore.json) records seven rejected revalidation cases, successful revalidation, and the repeated receipt.
+It records PostgreSQL 18.6 tools inside the pinned operator container without an injected database runner.
+The backup took 367 ms. Restore took 340 ms. The complete fixture took 31,943 ms.
+Both review axes found no actionable issues in `60857a5...5b741c8`.
+Full application qualification remains active. The added receipt-write failure check requires another hosted run.
 The retained `06685a9` report predates this CLI increment and remains library-level evidence.
 
 ## Remaining recovery work

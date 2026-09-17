@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /** Exercise the production CLI after actual restore with controlled Google transport responses. */
@@ -134,10 +134,30 @@ export async function qualifyGoogleRevalidationCli({
       );
     });
     const verified = await snapshot();
+    await rm(receiptPath);
+    await mkdir(receiptPath, { mode: 0o700 });
+    try {
+      await assert.rejects(
+        operatorCli.run('revalidate-google', input),
+        (error) => {
+          assert.equal(error.code, 1);
+          assert.equal(error.stdout, '');
+          assert.ok(error.stderr.includes('Reason: UNCLASSIFIED_FAILURE.'));
+          assert.ok(!error.stderr.includes(targetDirectory));
+          return true;
+        },
+      );
+      assert.equal(await snapshot(), verified);
+      assert.equal(await readFile(markerPath, 'utf8'), marker);
+    } finally {
+      await rm(receiptPath, { recursive: true });
+    }
     await setProviderFault('wrong-customer');
     const repeated = (await operatorCli.run('revalidate-google', input)).result;
     assert.deepEqual(repeated, { ...result, status: 'already-revalidated' });
     assert.equal(await snapshot(), verified);
+    assert.deepEqual(JSON.parse(await readFile(receiptPath, 'utf8')), repeated);
+    assert.equal((await stat(receiptPath)).mode & 0o077, 0);
     assert.equal(await readFile(markerPath, 'utf8'), marker);
     return {
       exactRecoveredKeyVerified: true,
@@ -146,6 +166,7 @@ export async function qualifyGoogleRevalidationCli({
       missingKeyRejected: true,
       revalidation: result,
       repeatedReceiptPreserved: true,
+      receiptWriteFailureRecovered: true,
       serviceDisableMarkerPreserved: true,
       failures,
       provider:

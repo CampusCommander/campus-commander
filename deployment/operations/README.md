@@ -129,9 +129,12 @@ Keep the target configuration unchanged. Recover the recorded key into its confi
 Use only `role` and `passwordSecretRef` in `applicationCredentials` for this command.
 Keep application services and Kestra stopped. The command checks both databases for other connections.
 The command verifies the recorded key, credential identity, and current Google customer with the shared Google verifier.
-A failure leaves the database gate closed. Resolve the reported prerequisite and repeat the command.
+A key, provider, or audit failure leaves the database gate closed. Resolve the reported prerequisite and repeat the command.
 Success writes `google-revalidation.json` with the restore identity, generation, and verification time. It retains `RESTORE_DISABLED`.
 A repeated command returns the original receipt as `already-revalidated`. It does not perform a new Google check.
+If receipt writing fails after verification commits, the database retains the verified gate and audit event.
+Keep services stopped and preserve `RESTORE_DISABLED`. Correct the target directory problem and repeat the same command.
+The command reconstructs the receipt from the committed verification. Do not change the saved target configuration to bypass a failure.
 After release, refresh school references before using effective school scope. Restore preserves old references only as historical observations.
 A `not-required` restore report needs no Google revalidation command. Disconnected Google connections remain disconnected.
 
@@ -181,17 +184,25 @@ A failed command exits with status 1 and prints a fixed `Reason: <CODE>.` classi
 The classification never prints the underlying exception message, SQL, connection material, or private paths.
 Unknown failures use `UNCLASSIFIED_FAILURE`.
 
-| Reason                                                     | Operator action                                                                         |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `QUIESCENCE_REQUIRED`                                      | Stop writers and provide a recent operator record.                                      |
-| `DATABASE_CONNECTIONS_ACTIVE`                              | Stop other database clients before another backup attempt.                              |
-| `ARTIFACT_ATTEMPTS_ACTIVE`                                 | Resolve active artifact attempts before backup.                                         |
-| `STORAGE_CHANGED` or `DATABASE_CHANGED`                    | Identify the remaining writer and repeat the cold backup procedure.                     |
-| `POSTGRES_VERSION_MISMATCH` or `POSTGRES_TOOL_UNAVAILABLE` | Install the required PostgreSQL tools and verify their path.                            |
-| `POSTGRES_TOOL_FAILED`                                     | Inspect the protected operator environment and database prerequisites.                  |
-| `FILESYSTEM_FULL` or `FILESYSTEM_ACCESS_DENIED`            | Correct storage capacity or operator permissions.                                       |
-| `BACKUP_INCOMPLETE` or `BACKUP_AUTHENTICATION_FAILED`      | Verify the selected backup and its independently recovered key.                         |
-| `RESTORE_DATABASE_NOT_EMPTY`                               | Provision another empty restore target.                                                 |
-| `UNCLASSIFIED_FAILURE`                                     | Retain protected inputs and investigate the failed command in the operator environment. |
+| Reason                                                     | Operator action                                                                                 |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `QUIESCENCE_REQUIRED`                                      | Stop writers and provide a recent operator record.                                              |
+| `DATABASE_CONNECTIONS_ACTIVE`                              | Stop other database clients before another backup attempt.                                      |
+| `ARTIFACT_ATTEMPTS_ACTIVE`                                 | Resolve active artifact attempts before backup.                                                 |
+| `STORAGE_CHANGED` or `DATABASE_CHANGED`                    | Identify the remaining writer and repeat the cold backup procedure.                             |
+| `POSTGRES_VERSION_MISMATCH` or `POSTGRES_TOOL_UNAVAILABLE` | Install the required PostgreSQL tools and verify their path.                                    |
+| `POSTGRES_TOOL_FAILED`                                     | Inspect the protected operator environment and database prerequisites.                          |
+| `FILESYSTEM_FULL` or `FILESYSTEM_ACCESS_DENIED`            | Correct storage capacity or operator permissions.                                               |
+| `BACKUP_INCOMPLETE` or `BACKUP_AUTHENTICATION_FAILED`      | Verify the selected backup and its independently recovered key.                                 |
+| `RESTORE_DATABASE_NOT_EMPTY`                               | Provision another empty restore target.                                                         |
+| `RESTORE_EVIDENCE_INVALID` or `RESTORE_TARGET_CHANGED`     | Use the saved isolated target configuration and migration credentials.                          |
+| `RESTORE_GOOGLE_KEY_MISSING`                               | Recover the recorded credential key at its configured secret mount.                             |
+| `RESTORE_GOOGLE_KEY_INVALID`                               | Verify the recovered credential key. Do not substitute the backup encryption key.               |
+| `RESTORE_GOOGLE_STATE_CHANGED`                             | Keep the target disabled and investigate the changed credential generation.                     |
+| `RESTORE_GOOGLE_CUSTOMER_MISMATCH`                         | Keep the target disabled and verify the credential against the confirmed customer.              |
+| `GOOGLE_DELEGATION_DENIED` or `GOOGLE_PERMISSION_DENIED`   | Correct delegation or subject privileges before another verification attempt.                   |
+| `GOOGLE_CREDENTIAL_REJECTED` or `GOOGLE_SCOPE_MISMATCH`    | Review the credential and approved capability scopes through the credential recovery procedure. |
+| `GOOGLE_NETWORK_FAILURE` or `GOOGLE_UNAVAILABLE`           | Restore provider connectivity before another verification attempt.                              |
+| `UNCLASSIFIED_FAILURE`                                     | Retain protected inputs and investigate the failed command in the operator environment.         |
 
 A failure code identifies a category. It does not authorize startup or reuse of a partial restore target.
