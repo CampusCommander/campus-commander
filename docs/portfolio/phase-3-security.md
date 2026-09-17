@@ -203,21 +203,21 @@ The following fixtures inject audit failures into effective mutations. Their ass
 Full run `35180100392` passed its PostgreSQL job at `63fca05`. Its application job remained unfinished. The operator canceled the outdated run after the bounded scanner exposed an observation timeout.
 Revision `63fca05` requires exact injected errors for settings, health publication, replacement, rotation, and disconnect.
 
-| Mutation                                                                    | Fixture under `deployment/postgres`  | Retained state assertion                                                                        |
-| --------------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| Candidate staging, verification success, verification failure, expiry       | `google-connection.integration.mjs`  | Complete candidate row hashes remain equal.                                                     |
-| Customer confirmation                                                       | `google-connection.integration.mjs`  | Customer, active credential, and candidate consumption roll back.                               |
-| Settings update                                                             | `customer-settings.integration.mjs`  | Customer settings projection remains equal.                                                     |
-| Invitation creation, claim, identity verification, confirmation, revocation | `invitations.integration.mjs`        | Invitation count or status remains unchanged. Failed confirmation creates no principal.         |
-| Platform grant change                                                       | `platform-access.integration.mjs`    | Principal projection remains equal. No change receipt exists.                                   |
-| School definition confirmation                                              | `school-definitions.integration.mjs` | Definition revision, invitation state, and review application state remain unchanged.           |
-| School reference publication                                                | `school-references.integration.mjs`  | Existing observation and failure remain. The lease remains active.                              |
-| Capability health publication                                               | `google-health.integration.mjs`      | Capability state remains equal. The lease remains unfinished.                                   |
-| Access token renewal                                                        | `google-token.integration.mjs`       | The renewal lease remains pending. A later successful renewal supplies the encrypted token.     |
-| Credential replacement, encryption-key rotation, disconnect                 | `google-lifecycle.integration.mjs`   | Credential management projection remains equal. Failed replacement retains the ready candidate. |
+| Mutation                                                                            | Fixture under `deployment/postgres`  | Retained state assertion                                                                        |
+| ----------------------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Candidate staging, verification success, verification failure, expiry               | `google-connection.integration.mjs`  | Complete candidate row hashes remain equal.                                                     |
+| Customer confirmation                                                               | `google-connection.integration.mjs`  | Customer, active credential, and candidate consumption roll back.                               |
+| Settings update                                                                     | `customer-settings.integration.mjs`  | Customer settings projection remains equal.                                                     |
+| Invitation creation, claim, identity verification, confirmation, revocation, expiry | `invitations.integration.mjs`        | Complete invitation, principal, grant, and security-event state remains equal.                  |
+| Platform grant change                                                               | `platform-access.integration.mjs`    | Principal projection remains equal. No change receipt exists.                                   |
+| School definition confirmation                                                      | `school-definitions.integration.mjs` | Definition revision, invitation state, and review application state remain unchanged.           |
+| School reference publication                                                        | `school-references.integration.mjs`  | Existing observation and failure remain. The lease remains active.                              |
+| Capability health publication                                                       | `google-health.integration.mjs`      | Capability state remains equal. The lease remains unfinished.                                   |
+| Access token renewal                                                                | `google-token.integration.mjs`       | The renewal lease remains pending. A later successful renewal supplies the encrypted token.     |
+| Credential replacement, encryption-key rotation, disconnect                         | `google-lifecycle.integration.mjs`   | Credential management projection remains equal. Failed replacement retains the ready candidate. |
 
 This inventory does not establish every branch of each mutation.
-Remaining reconciliation includes admission leases, failed publication branches, invitation expiry, and secondary grant or revocation audit events.
+Remaining reconciliation includes admission leases, failed publication branches, and secondary grant or revocation audit events outside invitation confirmation.
 Review complete state boundaries and error causes before treating any single projection assertion as complete rollback proof.
 The source school fixture separately verifies permitted totals, another school, guessed identities, details, and school audit boundaries.
 Its successful report does not replace the remaining cross-resource authorization inventory.
@@ -287,3 +287,12 @@ These cover customer confirmation, token renewal, school confirmation, and schoo
 Local deployment lint and PostgreSQL contract tests pass. Real database qualification remains pending for these four corrections.
 [Full run 35182784565](https://github.com/CampusCommander/campus-commander/actions/runs/35182784565) targets the same revision.
 Its packaged scanner and database results remain pending. The earlier failed and canceled runs retain their recorded outcomes.
+
+## Invitation rollback extension
+
+The invitation fixture compares complete row hashes across invitations, principals, grants, and security events after each injected audit failure.
+Exact SQLSTATE and constraint checks exclude unrelated rejection causes. Fault cleanup runs even when an assertion fails.
+Confirmation now rejects each audit event separately: `invitation-confirmed` and `access-granted`.
+Expiry covers issued, redeeming, and pending invitations in one sweep. Failed expiry preserves every row and event.
+The successful retry checks each invitation version and exactly one expiry event per invitation.
+Local deployment lint and PostgreSQL contract tests pass. Real PostgreSQL execution of this extension remains pending.

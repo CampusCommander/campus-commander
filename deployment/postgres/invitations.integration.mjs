@@ -77,11 +77,38 @@ export async function qualifyInvitations({
       )
     ).rows[0].revoked;
   const rollback = async (event, action) => {
+    assert.ok(
+      [
+        'invitation-created',
+        'invitation-redeemed',
+        'invitation-confirmed',
+        'access-granted',
+        'invitation-revoked',
+        'invitation-expired',
+      ].includes(event),
+    );
+    const state = async () =>
+      (
+        await migrator.query(`
+          SELECT 'invitation' AS relation, md5(row_to_json(item)::text) AS state FROM cc.application_invitations item
+          UNION ALL SELECT 'principal', md5(row_to_json(item)::text) FROM cc.application_principals item
+          UNION ALL SELECT 'grant', md5(row_to_json(item)::text) FROM cc.application_grants item
+          UNION ALL SELECT 'event', md5(row_to_json(item)::text) FROM cc.security_events item
+          ORDER BY relation, state
+        `)
+      ).rows;
+    const before = await state();
     await migrator.query(
       `ALTER TABLE cc.security_events ADD CONSTRAINT reject_invitation_audit CHECK(event <> '${event}') NOT VALID`,
     );
     try {
-      await assert.rejects(action(), /reject_invitation_audit/);
+      await assert.rejects(
+        action(),
+        (error) =>
+          error.code === '23514' &&
+          error.constraint === 'reject_invitation_audit',
+      );
+      assert.deepEqual(await state(), before);
     } finally {
       await migrator.query(
         'ALTER TABLE cc.security_events DROP CONSTRAINT reject_invitation_audit',
@@ -211,9 +238,9 @@ export async function qualifyInvitations({
     `INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,'customer:read','{"kind":"platform"}')`,
     [principalId],
   );
-  await rollback('access-granted', () =>
-    confirm(invitation.id, 'controlled-subject'),
-  );
+  for (const event of ['invitation-confirmed', 'access-granted']) {
+    await rollback(event, () => confirm(invitation.id, 'controlled-subject'));
+  }
   assert.equal((await snapshot(invitation.id)).status, 'pending');
   assert.equal(
     (
@@ -258,13 +285,35 @@ export async function qualifyInvitations({
   assert.equal((await snapshot(revoked.id)).status, 'issued');
   assert.equal(await revoke(revoked.id, 1), true);
   assert.equal((await claim(revoked)).id, null);
-  const expired = await create();
-  await migrator.query(
-    "UPDATE cc.application_invitations SET created_at=now()-interval '2 hours',expires_at=now()-interval '1 hour' WHERE id=$1",
-    [expired.id],
-  );
-  assert.equal((await claim(expired)).id, null);
-  assert.equal((await snapshot(expired.id)).status, 'expired');
+  const expired = [await create(), await create(), await create()];
+  await claim(expired[1]);
+  const pendingExpiry = await claim(expired[2]);
+  assert.equal(await verify(pendingExpiry, 'expiry-subject'), true);
+  const expiryVersions = [];
+  for (const item of expired) {
+    await migrator.query(
+      "UPDATE cc.application_invitations SET created_at=now()-interval '2 hours',expires_at=now()-interval '1 hour' WHERE id=$1",
+      [item.id],
+    );
+    expiryVersions.push((await snapshot(item.id)).version);
+  }
+  await rollback('invitation-expired', () => claim(expired[0]));
+  assert.equal((await claim(expired[0])).id, null);
+  for (const [index, item] of expired.entries()) {
+    const result = await snapshot(item.id);
+    assert.equal(result.status, 'expired');
+    assert.equal(result.token_hash, null);
+    assert.equal(result.version, expiryVersions[index] + 1);
+    assert.equal(
+      (
+        await migrator.query(
+          "SELECT count(*)::int AS count FROM cc.security_events WHERE target_id=$1 AND event='invitation-expired'",
+          [item.id],
+        )
+      ).rows[0].count,
+      1,
+    );
+  }
   const listed = (
     await runtime.query('SELECT cc.list_invitations($1,$2,$3) AS items', [
       principalId,
@@ -299,7 +348,8 @@ export async function qualifyInvitations({
     'invitation claim race, token replay, wrong identity, wrong issuer, and browser substitution denied: pass',
     'unknown identity receives no principal or grants before explicit inviter confirmation: pass',
     'revoked inviter, reduced grant ceiling, stale invitation, and audit failure preserve pending state: pass',
-    'invitation create, claim, verification, confirmation, and revocation roll back when audit fails: pass',
-    'invitation expiry and revocation deny redemption; summaries and events exclude tokens: pass',
+    'invitation audit failures preserve complete invitation, principal, grant, and event state: pass',
+    'both confirmation audit events and issued, redeeming, and pending expiry roll back when audit fails: pass',
+    'invitation expiry and revocation deny redemption and exclude tokens from summaries and events: pass',
   ];
 }
