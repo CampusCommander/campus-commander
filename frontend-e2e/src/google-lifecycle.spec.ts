@@ -32,6 +32,9 @@ async function fixture(page: Page, manage = true) {
     | 'ok'
     | 'offline'
     | 'wrong'
+    | 'lost-before-stage'
+    | 'lost-disconnect'
+    | 'rejected-stage'
     | 'lost-stage'
     | 'lost-activation'
     | 'key-unavailable' = 'ok';
@@ -119,6 +122,9 @@ async function fixture(page: Page, manage = true) {
   );
   await page.route('**/api/google-connection/replacements', async (route) => {
     writes++;
+    if (mode === 'lost-before-stage') return route.abort();
+    if (mode === 'rejected-stage')
+      return route.fulfill({ status: 400, json: { reason: 'invalid-input' } });
     const input = route.request().postDataJSON();
     expect(input.customerId).toBe(customerId);
     expect(input.generation).toBe(current.generation);
@@ -139,7 +145,12 @@ async function fixture(page: Page, manage = true) {
     return route.fulfill({ status: 201, json: candidate });
   });
   await page.route('**/api/google-connection/candidates/*', (route) =>
-    route.fulfill({ json: candidate }),
+    candidate
+      ? route.fulfill({ json: candidate })
+      : route.fulfill({
+          status: 403,
+          json: { reason: 'candidate-unavailable' },
+        }),
   );
   await page.route(
     '**/api/google-connection/replacements/*/activate',
@@ -205,6 +216,7 @@ async function fixture(page: Page, manage = true) {
         credentialId: randomUUID(),
         active: false,
       };
+      if (mode === 'lost-disconnect') return route.abort();
       return route.fulfill({ status: 201, json: current });
     },
   );
@@ -496,6 +508,95 @@ test('key rotation handles missing keys and disconnect requires a separate destr
       exact: true,
     }),
   ).toBeEnabled();
+});
+
+test('a staging request lost before acceptance can recover without reloading', async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.setMode('lost-before-stage');
+  await stage(page);
+  await expect(
+    page.getByText('The replacement result is unknown.', { exact: false }),
+  ).toBeVisible();
+  state.setMode('ok');
+  await page
+    .getByRole('button', { name: 'Refresh credential status', exact: true })
+    .click();
+  await expect(
+    page.getByText('This replacement review is unavailable.', { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: 'Replace Google credentials',
+      exact: true,
+    }),
+  ).toBeEnabled();
+  expect(state.writes()).toBe(1);
+  await stage(page);
+  await expect(confirm(page)).toBeVisible();
+});
+
+test('a lost disconnect response refreshes into reconnection without obsolete confirmation', async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  await page
+    .getByRole('button', { name: 'Disconnect background access', exact: true })
+    .click();
+  await confirm(page).check();
+  state.setMode('lost-disconnect');
+  await page
+    .getByRole('button', { name: 'Confirm local disconnect', exact: true })
+    .click();
+  await expect(
+    page.getByText('The credential change result is unknown.', {
+      exact: false,
+    }),
+  ).toBeVisible();
+  state.setMode('ok');
+  await page
+    .getByRole('button', { name: 'Refresh credential status', exact: true })
+    .click();
+  await expect(
+    page.getByRole('button', {
+      name: 'Reconnect Google credentials',
+      exact: true,
+    }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole('button', { name: 'Confirm local disconnect', exact: true }),
+  ).toHaveCount(0);
+  expect(state.writes()).toBe(1);
+});
+
+test('staging progress and definite rejection retain focus', async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  let release: () => void = () => {
+    throw new Error('Request not started');
+  };
+  await page.route('**/api/google-connection/replacements', async (route) => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await route.fallback();
+  });
+  state.setMode('rejected-stage');
+  await stage(page);
+  await expect(
+    page.getByRole('heading', {
+      name: 'Review credential replacement',
+      exact: true,
+    }),
+  ).toBeFocused();
+  release();
+  const failure = page
+    .getByRole('status')
+    .filter({ hasText: 'The replacement was not staged.' });
+  await expect(failure).toBeVisible();
+  await expect(failure).toBeFocused();
 });
 
 test('read-only operators cannot manage credentials', async ({ page }) => {

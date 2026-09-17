@@ -79,8 +79,8 @@ p {
     (
       outlined-label-text-color: var(--cc-status-error-text),
       outlined-outline-color: var(--cc-status-error-text),
-      filled-container-color: var(--cc-status-error-text),
-      filled-label-text-color: var(--mat-sys-on-error),
+      filled-container-color: var(--cc-status-error),
+      filled-label-text-color: var(--cc-text-on-accent),
     )
   );
 }

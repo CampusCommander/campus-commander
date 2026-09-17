@@ -237,11 +237,33 @@ export class CredentialManagement implements OnInit, OnDestroy {
           'Credential status changed. Review the current state before another action.',
         );
       }
+      if (
+        !result.credential?.active &&
+        ['rotate', 'disconnect'].includes(this.mode())
+      ) {
+        this.mode.set('overview');
+        this.message.set(
+          'Background access is disconnected locally. Start a verified replacement to reconnect.',
+        );
+      }
       const id = this.candidateId();
       if (id) {
         const response = await this.auth.request(
           `/api/google-connection/candidates/${id}`,
         );
+        if (!this.accepts(sequence, authority)) return;
+        if (response.status === 403) {
+          this.candidate.set(null);
+          this.candidateId.set('');
+          this.remember('');
+          this.mode.set('overview');
+          this.uncertain.set(false);
+          this.message.set(
+            'This replacement review is unavailable. Review current credential status before starting a new replacement.',
+          );
+          this.focus(sequence, authority);
+          return;
+        }
         if (!response.ok) throw new Error();
         const candidate = googleCandidateSchema.parse(await response.json());
         if (!this.accepts(sequence, authority) || id !== this.candidateId())
@@ -367,6 +389,7 @@ export class CredentialManagement implements OnInit, OnDestroy {
       this.clearFile();
       submitted = true;
       this.mode.set('review');
+      this.focus(sequence, authority, true);
       const response = await this.auth.request(
         '/api/google-connection/replacements',
         input,
@@ -392,6 +415,7 @@ export class CredentialManagement implements OnInit, OnDestroy {
               : 'The replacement was not staged. Refresh status, verify the key configuration, and select a valid file.',
           );
           this.stale.set(true);
+          this.focus(sequence, authority);
           return;
         }
         throw new Error();
