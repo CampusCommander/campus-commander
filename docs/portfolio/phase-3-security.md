@@ -14,7 +14,7 @@ Run `npm exec -- nx run api-e2e:phase3-auth-integration` for source qualificatio
 The full CI workflow builds images and repeats that target with `CC_AUTH_PACKAGED_IMAGES=true`.
 Run `npm exec -- nx run deployment:postgres-integration` for real database role, concurrency, and audit-failure checks.
 Local static checks use `npm exec -- nx run api-e2e:lint` and `npm exec -- nx format:check --base=9052ba1`.
-Source qualification passed at `e036c9e`. Packaged qualification passed at `0a89f67`.
+Source qualification passed at `ca9023b`. Packaged qualification last passed at `0a89f67`.
 
 ## Shared enforcement
 
@@ -271,3 +271,19 @@ Browser JSON observation now covers successful session reads, invitation creatio
 Cookie observation still covers every browser response. The synthetic provider registers authorization state, nonce, and PKCE challenge values independently.
 This policy avoids reading discarded navigation response bodies. It does not suppress a failed read from a token-producing route.
 The fixture regressions verify that navigation cookies remain protected when their response body is unavailable.
+
+## Current scanner qualification
+
+[Source run 35182521120](https://github.com/CampusCommander/campus-commander/actions/runs/35182521120) passed at `ca9023b`.
+The [retained scanner report](../../deployment/evidence/CC-55-source-evidence-redaction.json) covers 78 files and 24 screenshot checks.
+It checks API, worker, Kestra, audit, and support evidence against 18 registered secret categories.
+It includes authorization state, nonce, PKCE challenge, transient cookies, and the separate Redis operator password.
+The report counts 34 interrupted browser requests. Their incomplete bodies remain outside JSON token coverage.
+The same run passed 100 browser-boundary requests across 32 routes.
+Both review axes report no actionable findings in `f31949e...ca9023b`. All 11 scanner regressions pass locally.
+
+Revision `ca9023b` also strengthens four existing database audit probes with exact error codes and injected failure identifiers.
+These cover customer confirmation, token renewal, school confirmation, and school reference publication.
+Local deployment lint and PostgreSQL contract tests pass. Real database qualification remains pending for these four corrections.
+[Full run 35182784565](https://github.com/CampusCommander/campus-commander/actions/runs/35182784565) targets the same revision.
+Its packaged scanner and database results remain pending. The earlier failed and canceled runs retain their recorded outcomes.
