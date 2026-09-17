@@ -15,6 +15,10 @@ on:
         description: Immutable Phase 3 lab tag for extracted installation workflows
         type: string
         default: ''
+      phase3UpdateRelease:
+        description: Different signed Phase 3 lab tag for guided update
+        type: string
+        default: ''
       phase3Upgrade:
         description: Upgrade the pinned Phase 2 release before Phase 3 workflow checks
         type: boolean
@@ -55,6 +59,7 @@ jobs:
       faults: ${{ inputs.phase3Faults == true }}
       faultKind: ${{ inputs.phase3FaultKind || 'services' }}
       lifecycle: ${{ inputs.phase3Lifecycle == true }}
+      updateRelease: ${{ inputs.phase3UpdateRelease || '' }}
     permissions:
       contents: read
       packages: read

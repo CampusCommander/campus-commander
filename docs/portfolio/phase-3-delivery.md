@@ -356,5 +356,34 @@ A different-release guided update and complete profile report aggregation remain
 ## Next laboratory candidate
 
 [Candidate run 35222534304](https://github.com/CampusCommander/campus-commander/actions/runs/35222534304) builds source `270fe88` for the guided-update proof.
-The build remains active. Its validation job passed. Image publication and downstream qualification remain pending.
+Validation and all three image publication jobs passed. The first packaged application attempt failed during browser evidence collection.
+A retry of that failed job is active. Candidate assembly and downstream qualification remain pending.
 Existing reports remain bound to application `a3601ef`. They do not qualify the new candidate.
+
+## Different-release guided update
+
+The `api-e2e:phase3-update-integration` target starts with the selected signed Phase 3 release.
+The workflow verifies a separate target archive, manifest, inventory, and all three image signatures.
+It rejects targets with the same source revision, a different phase, mutable image tags, or changed inventory bytes.
+
+The fixture creates and verifies a native cold backup through the delivered operator CLI.
+It checks cancellation before the confirmed update and compares the existing configuration, operator record, and installer state.
+The confirmed update runs the target bundle's guided setup command through the same runtime wrapper.
+It checks target images, preserved credentials, settings, grants, schools, security events, artifacts, and Kestra state.
+Existing migration checksums must remain unchanged. The update permits appended migrations.
+The fixture checks the public saved workflows, repeated update, and repeated resume after the update.
+
+Reports distinguish installed and target identities. Failure reports survive fixture cleanup.
+The fixture records laboratory setup mode for the installation created through the delivered operator CLI.
+Hosted update execution requires the second published candidate and remains pending.
+
+```sh
+gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
+  -f phase3Release=phase-3-lab-a3601eff2a55 \
+  -f phase3UpdateRelease=phase-3-lab-270fe8808aad
+```
+
+Candidate run `35222534304` passed validation and all three image publication jobs.
+Its first application attempt failed because browser evidence collection retained one unfinished request after page closure.
+The run published no candidate bundle. A diagnostic retry of the failed application job is active at the same source.
+This retry does not establish a correction to browser evidence collection.

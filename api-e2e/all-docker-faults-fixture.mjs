@@ -24,6 +24,7 @@ export async function createAllDockerDurableProbe({
   compose,
   id,
   allowObservationRefresh = false,
+  allowAppendedMigrations = false,
 }) {
   const phase3 = config.phase === 3;
   assert.match(
@@ -184,7 +185,11 @@ console.log(JSON.stringify({principals,events,migrations,artifactId:artifact.art
     const after = durable();
     if (phase3) assert.deepEqual(policy(), baselinePolicy);
     assert.deepEqual(after.principals, baseline.principals);
-    assert.deepEqual(after.migrations, baseline.migrations);
+    if (allowAppendedMigrations) {
+      const migrations = new Map(after.migrations.map((row) => [row.id, row]));
+      for (const row of baseline.migrations)
+        assert.deepEqual(migrations.get(row.id), row);
+    } else assert.deepEqual(after.migrations, baseline.migrations);
     assert.equal(after.artifactId, baseline.artifactId);
     assert.equal(after.artifactSha256, baseline.artifactSha256);
     const events = new Map(after.events.map((event) => [event.id, event]));

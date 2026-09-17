@@ -5,6 +5,9 @@ on:
       release:
         type: string
         required: true
+      updateRelease:
+        type: string
+        default: ''
       upgrade:
         type: boolean
         default: false
@@ -32,10 +35,16 @@ jobs:
           FAULTS: ${{ inputs.faults }}
           FAULT_KIND: ${{ inputs.faultKind }}
           LIFECYCLE: ${{ inputs.lifecycle }}
+          UPDATE_RELEASE: ${{ inputs.updateRelease }}
         run: |
           [ "$UPGRADE" != true ] || [ "$FAULTS" != true ]
           if [ "${LIFECYCLE:-false}" = true ]; then
             if [ "$UPGRADE" = true ] || [ "$FAULTS" = true ]; then
+              exit 1
+            fi
+          fi
+          if [ -n "${UPDATE_RELEASE:-}" ]; then
+            if [ "$UPGRADE" = true ] || [ "$FAULTS" = true ] || [ "${LIFECYCLE:-false}" = true ]; then
               exit 1
             fi
           fi
@@ -106,6 +115,50 @@ jobs:
             done
             printf 'CC_AUTH_%s_IMAGE=%s\n' "${service^^}" "$reference" >> "$GITHUB_ENV"
           done
+      - name: Download and verify the guided update bundle
+        if: inputs.updateRelease != ''
+        env:
+          RELEASE_TAG: ${{ inputs.updateRelease }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |-
+          [[ "$RELEASE_TAG" =~ ^phase-3-lab-[a-f0-9]{12}$ ]] || { echo 'Select an immutable Phase 3 laboratory release.' >&2; exit 1; }
+          mkdir published-update update-image-evidence extracted-update
+          gh release download "$RELEASE_TAG" --dir published-update --pattern 'phase-3-candidate*' --pattern 'release-manifest*'
+          cosign verify-blob --bundle published-update/phase-3-candidate.sigstore.json --certificate-identity="$CC_SIGNING_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com published-update/phase-3-candidate.tar.gz
+          cosign verify-blob --bundle published-update/release-manifest.sigstore.json --certificate-identity="$CC_SIGNING_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com published-update/release-manifest.json
+          tar --extract --gzip --file published-update/phase-3-candidate.tar.gz --directory extracted-update --no-same-owner --no-same-permissions
+          cmp published-update/release-manifest.json extracted-update/release-manifest.json
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFile,writeFile,appendFile} from 'node:fs/promises';
+          import {loadQualificationBundle} from './deployment/release/qualification.mjs';
+          const manifest=JSON.parse(await readFile('published-update/release-manifest.json'));
+          assert.equal(manifest.phase,3);
+          assert.equal(manifest.validationScope,'lab');
+          assert.equal(manifest.qualification,'candidate-only');
+          assert.match(manifest.sourceRevision,/^[a-f0-9]{40}$/);
+          assert.equal(process.env.RELEASE_TAG,'phase-3-lab-'+manifest.sourceRevision.slice(0,12));
+          await loadQualificationBundle('extracted-update',manifest);
+          assert.notEqual(manifest.sourceRevision,JSON.parse(await readFile('published-bundle/release-manifest.json')).sourceRevision);
+          for(const [service,key] of [['api','api'],['frontend','frontend'],['worker','workers']]){
+            const reference=manifest.images[key];
+            assert.match(reference,new RegExp('^ghcr\\.io/campuscommander/campus-commander-'+service+'@sha256:[a-f0-9]{64}$'));
+            await writeFile('update-image-evidence/'+service+'.reference',reference+'\n');
+          }
+          await appendFile(process.env.GITHUB_ENV,'CC_AUTH_UPDATE_INSTALLER_ROOT='+process.cwd()+'/extracted-update\n');
+          NODE
+      - name: Prepare guided update image references
+        if: inputs.updateRelease != ''
+        run: |
+          for service in api frontend worker; do
+            reference="$(cat "update-image-evidence/${service}.reference")"
+            cosign verify "$reference" --certificate-identity="$CC_SIGNING_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+            for attempt in 1 2 3; do
+              if docker pull "$reference"; then break; fi
+              if [ "$attempt" -eq 3 ]; then exit 1; fi
+              sleep "$((attempt * 2))"
+            done
+          done
       - name: Verify the pinned Phase 2 upgrade bundle
         if: inputs.upgrade
         env:
@@ -139,7 +192,7 @@ jobs:
             docker pull "$reference"
           done < published-baseline/images.txt
       - name: Qualify installed Phase 3 workflows
-        if: inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true
+        if: inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''
         run: npm exec nx run api-e2e:phase3-install-integration
         env:
           NX_NO_CLOUD: 'true'
@@ -168,6 +221,11 @@ jobs:
         run: npm exec nx run api-e2e:phase3-capacity-fault-integration
         env:
           NX_NO_CLOUD: 'true'
+      - name: Qualify Phase 3 guided update
+        if: inputs.updateRelease != ''
+        run: npm exec nx run api-e2e:phase3-update-integration
+        env:
+          NX_NO_CLOUD: 'true'
       - name: Qualify Phase 3 installer lifecycle
         if: inputs.lifecycle
         run: npm exec nx run api-e2e:phase3-lifecycle-integration
@@ -176,6 +234,6 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: ${{ inputs.lifecycle && 'phase-3-installer-lifecycle' || inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-capacity-faults' || inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-certificate-faults' || inputs.faults && inputs.faultKind == 'provider' && 'phase-3-provider-faults' || inputs.faults && 'phase-3-service-faults' || inputs.upgrade && 'phase-3-upgrade-workflows' || 'phase-3-installed-workflows' }}
-          path: ${{ inputs.lifecycle && 'dist/phase-3-lifecycle/' || inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-capacity-faults/' || inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-certificate-faults/' || inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-provider-faults/' || inputs.faults && 'dist/phase-3-faults/' || inputs.upgrade && 'dist/phase-3-upgrade/' || 'dist/phase-3-installation/' }}
+          name: ${{ inputs.updateRelease != '' && 'phase-3-guided-update' || inputs.lifecycle && 'phase-3-installer-lifecycle' || inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-capacity-faults' || inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-certificate-faults' || inputs.faults && inputs.faultKind == 'provider' && 'phase-3-provider-faults' || inputs.faults && 'phase-3-service-faults' || inputs.upgrade && 'phase-3-upgrade-workflows' || 'phase-3-installed-workflows' }}
+          path: ${{ inputs.updateRelease != '' && 'dist/phase-3-update/' || inputs.lifecycle && 'dist/phase-3-lifecycle/' || inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-capacity-faults/' || inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-certificate-faults/' || inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-provider-faults/' || inputs.faults && 'dist/phase-3-faults/' || inputs.upgrade && 'dist/phase-3-upgrade/' || 'dist/phase-3-installation/' }}
           if-no-files-found: warn

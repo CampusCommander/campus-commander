@@ -26,10 +26,12 @@ import {
 
 import { faultAllDocker } from './all-docker-faults-fixture.mjs';
 import { qualifyAllDockerCertificates } from './all-docker-certificates-fixture.mjs';
+import { qualifyInstalledUpdate } from './phase3-update-fixture.mjs';
 import { createInstalledLifecycleProof } from './phase3-lifecycle-fixture.mjs';
 import { qualifyInstalledCapacity } from './phase3-capacity-faults.mjs';
 import { qualifyInstalledProviderFaults } from './phase3-provider-faults.mjs';
 
+const phase3Update = process.env.CC_AUTH_PHASE3_UPDATE === '1';
 const phase3Lifecycle = process.env.CC_AUTH_PHASE3_LIFECYCLE === '1';
 const phase3CapacityFaults = process.env.CC_AUTH_PHASE3_CAPACITY_FAULTS === '1';
 const phase3CertificateFaults =
@@ -62,15 +64,17 @@ const phase3Workflows =
   process.env.CC_AUTH_PHASE3_WORKFLOWS === '1' ||
   phase3Upgrade ||
   phase3Faults ||
-  phase3Lifecycle;
+  phase3Lifecycle ||
+  phase3Update;
 assert.ok(
   !(phase3Restore && phase3Workflows) &&
-    [phase3Upgrade, phase3Faults, phase3Lifecycle].filter(Boolean).length <= 1,
+    [phase3Upgrade, phase3Faults, phase3Lifecycle, phase3Update].filter(Boolean)
+      .length <= 1,
   'Select one Phase 3 profile qualification mode.',
 );
 const applicationPhase = phase3Restore || phase3Workflows ? 3 : 2;
 assert.ok(
-  !(phase3Upgrade || phase3Faults || phase3Lifecycle) ||
+  !(phase3Upgrade || phase3Faults || phase3Lifecycle || phase3Update) ||
     process.env.CC_AUTH_INSTALLER_ROOT,
   'Upgrade, fault, and lifecycle qualification require the verified Phase 3 installer directory.',
 );
@@ -101,23 +105,25 @@ test(
     ).trim()
       ? 'uncommitted-candidate'
       : 'clean';
-    const evidenceDirectory = phase3Lifecycle
-      ? 'dist/phase-3-lifecycle'
-      : phase3Faults
-        ? phase3CapacityFaults
-          ? 'dist/phase-3-capacity-faults'
-          : phase3CertificateFaults
-            ? 'dist/phase-3-certificate-faults'
-            : phase3ProviderFaults
-              ? 'dist/phase-3-provider-faults'
-              : 'dist/phase-3-faults'
-        : phase3Restore
-          ? 'dist/phase-3-recovery'
-          : phase3Upgrade
-            ? 'dist/phase-3-upgrade'
-            : phase3Workflows
-              ? 'dist/phase-3-installation'
-              : 'dist/phase-2-evidence';
+    const evidenceDirectory = phase3Update
+      ? 'dist/phase-3-update'
+      : phase3Lifecycle
+        ? 'dist/phase-3-lifecycle'
+        : phase3Faults
+          ? phase3CapacityFaults
+            ? 'dist/phase-3-capacity-faults'
+            : phase3CertificateFaults
+              ? 'dist/phase-3-certificate-faults'
+              : phase3ProviderFaults
+                ? 'dist/phase-3-provider-faults'
+                : 'dist/phase-3-faults'
+          : phase3Restore
+            ? 'dist/phase-3-recovery'
+            : phase3Upgrade
+              ? 'dist/phase-3-upgrade'
+              : phase3Workflows
+                ? 'dist/phase-3-installation'
+                : 'dist/phase-2-evidence';
     await mkdir(evidenceDirectory, { recursive: true });
     const root = await mkdtemp(
       join(tmpdir(), `cc-phase${applicationPhase}-compose-`),
@@ -458,6 +464,13 @@ process.exit(result.status??1);
       await writeFile(
         join(root, 'setup-record.json'),
         JSON.stringify({
+          ...(phase3Update
+            ? {
+                schemaVersion: 1,
+                qualification: true,
+                candidateAcknowledgement: 'candidate-lab',
+              }
+            : {}),
           selfSignedCertificate: true,
         }),
         { mode: 0o600 },
@@ -586,6 +599,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
       const initialAddresses = addresses();
       let installedWorkflows;
       let lifecycleProof;
+      let guidedUpdate;
       const browser = await applicationBrowser(
         publicOrigin,
         async ({ page, context, checks }) => {
@@ -708,6 +722,58 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             await verifyReplicas(context, `${command}-resume-session`);
             await lifecycleProof?.verify(`${command}-resume`);
           }
+          if (phase3Update)
+            guidedUpdate = await qualifyInstalledUpdate({
+              root,
+              project,
+              config,
+              release: installationRelease,
+              compose,
+              id: (service) => compose('ps', '-q', service).split('\n')[0],
+              bin,
+              cli,
+              activateTarget: (targetRoot) => {
+                activeInstallerRoot = targetRoot;
+              },
+              evidencePath: `${evidenceDirectory}/all-docker-update.json`,
+              evidenceIdentity: {
+                harnessRevision,
+                harnessWorkingTree,
+                bundleManifestSha256,
+                command: 'npm exec -- nx run api-e2e:phase3-update-integration',
+                environment: {
+                  nodeVersion: process.version,
+                  platform: process.platform,
+                  architecture: process.arch,
+                  browser: page.context().browser().version(),
+                },
+              },
+              verifyAfterUpdate: async () => {
+                await reloadAfterNetworkChange(page);
+                if (
+                  await page
+                    .getByRole('link', { name: 'Sign in to Campus Commander' })
+                    .isVisible()
+                ) {
+                  await page
+                    .getByRole('link', { name: 'Sign in to Campus Commander' })
+                    .click();
+                  await expect(
+                    page.getByRole('heading', {
+                      name: 'Your account',
+                      exact: true,
+                    }),
+                  ).toBeVisible({ timeout: 15000 });
+                }
+                await expect(page.locator('html')).toHaveAttribute(
+                  'data-theme',
+                  'dark',
+                );
+                await installedWorkflows.verifyAfterRestart();
+                await checks({ recoverySeconds: 60 });
+                await verifyReplicas(context, 'guided-update-session');
+              },
+            });
           let restoration;
           if (phase3Restore) {
             await writeFile(join(privateRoot, 'backup-key'), randomBytes(32), {
@@ -751,7 +817,8 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
       );
       await verifyReplicas(undefined, 'signed-out-session', 401);
       await lifecycleProof?.erase();
-      assert.equal(await readFile(composePath, 'utf8'), originalRender);
+      if (!phase3Update)
+        assert.equal(await readFile(composePath, 'utf8'), originalRender);
       assert.deepEqual(
         JSON.parse(await readFile(releasePath, 'utf8')),
         installationRelease,
@@ -780,13 +847,15 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                   : 'workspace',
                 bundleManifestSha256,
               },
-              command: phase3Lifecycle
-                ? 'npm exec -- nx run api-e2e:phase3-lifecycle-integration'
-                : phase3Faults
-                  ? `npm exec -- nx run api-e2e:${faultTarget}`
-                  : phase3Upgrade
-                    ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
-                    : 'npm exec -- nx run api-e2e:phase3-install-integration',
+              command: phase3Update
+                ? 'npm exec -- nx run api-e2e:phase3-update-integration'
+                : phase3Lifecycle
+                  ? 'npm exec -- nx run api-e2e:phase3-lifecycle-integration'
+                  : phase3Faults
+                    ? `npm exec -- nx run api-e2e:${faultTarget}`
+                    : phase3Upgrade
+                      ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
+                      : 'npm exec -- nx run api-e2e:phase3-install-integration',
               environment: {
                 nodeVersion: process.version,
                 platform: process.platform,
@@ -859,17 +928,19 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             status: 'passed',
             profile: 'all-docker',
             phase: applicationPhase,
-            command: phase3Lifecycle
-              ? 'npm exec -- nx run api-e2e:phase3-lifecycle-integration'
-              : phase3Faults
-                ? `npm exec -- nx run api-e2e:${faultTarget}`
-                : phase3Restore
-                  ? 'npm exec -- nx run api-e2e:phase3-restore-integration'
-                  : phase3Upgrade
-                    ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
-                    : phase3Workflows
-                      ? 'npm exec -- nx run api-e2e:phase3-install-integration'
-                      : 'npm exec -- nx run api-e2e:all-docker-integration',
+            command: phase3Update
+              ? 'npm exec -- nx run api-e2e:phase3-update-integration'
+              : phase3Lifecycle
+                ? 'npm exec -- nx run api-e2e:phase3-lifecycle-integration'
+                : phase3Faults
+                  ? `npm exec -- nx run api-e2e:${faultTarget}`
+                  : phase3Restore
+                    ? 'npm exec -- nx run api-e2e:phase3-restore-integration'
+                    : phase3Upgrade
+                      ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
+                      : phase3Workflows
+                        ? 'npm exec -- nx run api-e2e:phase3-install-integration'
+                        : 'npm exec -- nx run api-e2e:all-docker-integration',
             environment: {
               nodeVersion: process.version,
               platform: process.platform,
@@ -900,7 +971,8 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
               repeatedResume: true,
               redisSessionsDiscarded: true,
               freshSignInPreservesPreferences: true,
-              originalRenderPreserved: true,
+              originalRenderPreserved: !phase3Update,
+              ...(guidedUpdate ? { guidedUpdate } : {}),
               bundleManifestSha256,
               source: process.env.CC_AUTH_INSTALLER_ROOT
                 ? 'extracted-published-bundle'

@@ -368,7 +368,7 @@ test('upgrade dispatch verifies the pinned baseline before running the delivered
   assert.equal(
     steps.find((step) => step.name === 'Qualify installed Phase 3 workflows')
       .if,
-    'inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true',
+    "inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''",
   );
   assert.equal(
     baseline.env.BASELINE_IDENTITY,
@@ -579,7 +579,7 @@ test('service fault dispatch rejects upgrade mode before starting containers', a
   );
 });
 
-test('lifecycle dispatch excludes simultaneous upgrade and fault modes', async () => {
+test('lifecycle and guided update dispatch exclude simultaneous qualification modes', async () => {
   const ci = await workflow('ci');
   const profile = await workflow('phase-3-profile-check');
   assert.equal(ci.on.workflow_dispatch.inputs.phase3Lifecycle.default, false);
@@ -598,20 +598,61 @@ test('lifecycle dispatch excludes simultaneous upgrade and fault modes', async (
   );
   for (const upgrade of [false, true])
     for (const faults of [false, true])
-      for (const lifecycle of [false, true]) {
-        const run = () =>
-          execFileSync('bash', ['-e', '-c', steps[0].run], {
-            env: {
-              ...process.env,
-              UPGRADE: String(upgrade),
-              FAULTS: String(faults),
-              LIFECYCLE: String(lifecycle),
-              FAULT_KIND: 'services',
-            },
-            stdio: 'pipe',
-          });
-        if ([upgrade, faults, lifecycle].filter(Boolean).length <= 1)
-          assert.doesNotThrow(run);
-        else assert.throws(run);
-      }
+      for (const lifecycle of [false, true])
+        for (const update of [false, true]) {
+          const run = () =>
+            execFileSync('bash', ['-e', '-c', steps[0].run], {
+              env: {
+                ...process.env,
+                UPGRADE: String(upgrade),
+                FAULTS: String(faults),
+                LIFECYCLE: String(lifecycle),
+                UPDATE_RELEASE: update ? 'phase-3-lab-' + 'a'.repeat(12) : '',
+                FAULT_KIND: 'services',
+              },
+              stdio: 'pipe',
+            });
+          if ([upgrade, faults, lifecycle, update].filter(Boolean).length <= 1)
+            assert.doesNotThrow(run);
+          else assert.throws(run);
+        }
+});
+
+test('guided update verifies both target blobs and images before executing the delivered update', async () => {
+  const ci = await workflow('ci');
+  const profile = await workflow('phase-3-profile-check');
+  assert.equal(
+    ci.jobs['phase3-profile'].with.updateRelease,
+    "${{ inputs.phase3UpdateRelease || '' }}",
+  );
+  const steps = profile.jobs.installation.steps;
+  const download = steps.find(
+    (s) => s.name === 'Download and verify the guided update bundle',
+  );
+  const images = steps.find(
+    (s) => s.name === 'Prepare guided update image references',
+  );
+  const execute = steps.find((s) => s.name === 'Qualify Phase 3 guided update');
+  for (const step of [download, images, execute])
+    assert.equal(step.if, "inputs.updateRelease != ''");
+  assert.equal((download.run.match(/cosign verify-blob/g) || []).length, 2);
+  assert.ok(
+    download.run.lastIndexOf('cosign verify-blob') <
+      download.run.indexOf('tar --extract'),
+  );
+  assert.ok(download.run.includes('assert.notEqual(manifest.sourceRevision'));
+  assert.ok(download.run.includes('CC_AUTH_UPDATE_INSTALLER_ROOT='));
+  assert.ok(images.run.includes('cosign verify "$reference"'));
+  assert.ok(!images.run.includes('GITHUB_ENV'));
+  assert.ok(steps.indexOf(download) < steps.indexOf(images));
+  assert.ok(steps.indexOf(images) < steps.indexOf(execute));
+  assert.equal(
+    execute.run,
+    'npm exec nx run api-e2e:phase3-update-integration',
+  );
+  assert.ok(
+    steps
+      .find((s) => s.name === 'Qualify installed Phase 3 workflows')
+      .if.includes("inputs.updateRelease == ''"),
+  );
 });
