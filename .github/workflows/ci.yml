@@ -28,6 +28,10 @@ on:
         description: Upgrade the pinned Phase 2 release before Phase 3 workflow checks
         type: boolean
         default: false
+      phase3Restore:
+        description: Restore the signed Phase 3 hybrid release into isolated services
+        type: boolean
+        default: false
       phase3Faults:
         description: Test service interruption and durable Phase 3 state
         type: boolean
@@ -62,6 +66,7 @@ jobs:
       release: ${{ inputs.phase3Release }}
       profile: ${{ inputs.phase3Profile || 'all-docker' }}
       upgrade: ${{ inputs.phase3Upgrade == true }}
+      restore: ${{ inputs.phase3Restore == true }}
       faults: ${{ inputs.phase3Faults == true }}
       faultKind: ${{ inputs.phase3FaultKind || 'services' }}
       lifecycle: ${{ inputs.phase3Lifecycle == true }}

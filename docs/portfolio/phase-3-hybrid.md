@@ -30,7 +30,7 @@ gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
   -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Profile=hybrid
 ```
 
-Hybrid dispatch supports installation and Phase 2 upgrade modes.
+Hybrid dispatch supports installation, Phase 2 upgrade, and isolated restore modes.
 Fault, lifecycle, and guided-update modes require their own Phase 3 fixtures before dispatch can accept them.
 The existing Phase 2 targets retain their previous modes.
 
@@ -217,3 +217,43 @@ PR CI passed at the same harness revision.
 
 The baseline identifies the accepted Phase 2 implementation. It does not establish the owner's exact previously installed revision.
 Isolated restore, complete fault recovery, operator lifecycle coverage, and prerequisite acceptance remain open.
+
+## Isolated restore fixture
+
+The `api-e2e:phase3-hybrid-restore-integration` target uses the extracted Phase 3 installer and native operator commands.
+It creates separate target Compose projects, storage trees, PostgreSQL, and Redis.
+The source and target reuse three Docker daemons, one physical host, and the synthetic district network.
+
+The fixture stops source application services before seeding durable Phase 3 state and creating the encrypted backup.
+It stops source PostgreSQL and pauses source Redis before target restoration.
+Pausing Redis preserves the pending authorization control while preventing Redis from serving requests.
+Source container checks must confirm these states during target verification.
+
+State checks compare principals, preferences, artifact metadata and bytes, audit events, migration checksums, and Kestra records and files.
+The delivered recovery verifier checks customer settings, grants, receipts, credential state, health history, and approved school scope.
+Restoration must invalidate pending invitations, browser bindings, authorization callbacks, credential candidates, school reviews, and bootstrap access.
+Both target API replicas must reject the source session.
+
+The delivered revalidation command must verify the restored Google credential while preserving `RESTORE_DISABLED`.
+The delivered installer must reject preparation until the fixture operator accepts the verified state and removes that marker.
+Target preparation, installation, worker fragment transfer, and resume then use the delivered installer.
+Fresh browser checks require restored settings, school definitions, preferences, and all four diagnostics.
+The source callback control must still succeed after source restart within its original five-minute lifetime.
+
+Run the hosted restore with these CI inputs:
+
+```sh
+gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
+  -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Profile=hybrid \
+  -f phase3Restore=true
+```
+
+The workflow rejects mixed restore modes and retains separate restore evidence.
+This implementation requires hosted execution before it establishes a restore pass.
+Synthetic Google verification does not establish live district privileges or Education capabilities.
+
+[Runner recheck 35237124613](https://github.com/CampusCommander/campus-commander/actions/runs/35237124613) passed at `f88ceba`.
+The [retained report](../../deployment/evidence/CC-58-native-operator-upgrade.json) preserves every original field and both source-report hashes.
+The archive matches its published SHA-256 digest.
+The complete upgrade fixture took 341,020 milliseconds.
+PR CI also passed at `f88ceba`.

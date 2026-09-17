@@ -28,6 +28,7 @@ export async function createHybridHosts({
   publicPort,
   boundedArtifacts = false,
   baselineRoot,
+  nativeOperations = false,
 }) {
   assert.match(project, /^cc-phase[23]-hybrid-[a-f0-9]{12}$/);
   assert.ok(root.startsWith(`/tmp/${project}-`));
@@ -227,6 +228,10 @@ export async function createHybridHosts({
                 ? [
                     '--mount',
                     `type=bind,source=${resolve(baselineRoot)},target=/baseline,readonly`,
+                  ]
+                : []),
+              ...(baselineRoot || nativeOperations
+                ? [
                     '--mount',
                     `type=bind,source=${process.execPath},target=/qualification-node,readonly`,
                   ]

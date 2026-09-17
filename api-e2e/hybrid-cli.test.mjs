@@ -34,6 +34,7 @@ import { applicationBrowser } from './profile-browser.mjs';
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
 import { qualifyHybridWorkerCredentials } from './phase3-hybrid-worker-fixture.mjs';
 import { loadPhase2UpgradeBaseline } from './phase3-upgrade-fixture.mjs';
+import { qualifyHybridRestore } from './phase3-hybrid-restore-fixture.mjs';
 import { qualifyHybridPhase2Upgrade } from './phase3-hybrid-upgrade-fixture.mjs';
 import { upgradeDistributedHybrid } from './hybrid-cli-upgrade-fixture.mjs';
 import { faultDistributedHybrid } from './hybrid-cli-faults-fixture.mjs';
@@ -42,13 +43,18 @@ import { qualifyHybridCertificates } from './hybrid-certificates-fixture.mjs';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 
 const phase3Upgrade = process.env.CC_AUTH_PHASE3_HYBRID_UPGRADE === '1';
-const phase3 = process.env.CC_AUTH_PHASE3_HYBRID === '1' || phase3Upgrade;
+const phase3Restore = process.env.CC_AUTH_PHASE3_HYBRID_RESTORE === '1';
+assert.ok(!(phase3Upgrade && phase3Restore));
+const phase3 =
+  process.env.CC_AUTH_PHASE3_HYBRID === '1' || phase3Upgrade || phase3Restore;
 const phase = phase3 ? 3 : 2;
-const evidenceDirectory = phase3Upgrade
-  ? 'dist/phase-3-hybrid-upgrade'
-  : phase3
-    ? 'dist/phase-3-hybrid-installation'
-    : 'dist/phase-2-evidence';
+const evidenceDirectory = phase3Restore
+  ? 'dist/phase-3-hybrid-restore'
+  : phase3Upgrade
+    ? 'dist/phase-3-hybrid-upgrade'
+    : phase3
+      ? 'dist/phase-3-hybrid-installation'
+      : 'dist/phase-2-evidence';
 if (phase3) {
   assert.ok(
     process.env.CC_AUTH_INSTALLER_ROOT,
@@ -90,6 +96,7 @@ test(
     let certificates;
     let installedWorkflows;
     let workerCredentials;
+    let restoration;
     let bundle;
     const harness = phase3
       ? {
@@ -105,9 +112,11 @@ test(
           ).trim()
             ? 'uncommitted-candidate'
             : 'clean',
-          command: phase3Upgrade
-            ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
-            : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
+          command: phase3Restore
+            ? 'npm exec -- nx run api-e2e:phase3-hybrid-restore-integration'
+            : phase3Upgrade
+              ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
+              : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
           environment: {
             nodeVersion: process.version,
             platform: process.platform,
@@ -181,6 +190,7 @@ test(
         images,
         publicPort,
         baselineRoot: phase2Baseline?.root,
+        nativeOperations: phase3Restore,
         boundedArtifacts: process.env.CC_AUTH_HYBRID_CAPACITY === '1',
       });
       stage = 'image distribution';
@@ -841,7 +851,7 @@ process.exit(result.status??1);
         publicOrigin,
         async ({ page, context, checks }) => {
           await verifyReplicas(context);
-          if (phase3) {
+          if (phase3 && !phase3Restore) {
             installedWorkflows = await qualifyInstalledPhase3({
               page,
               publicOrigin,
@@ -942,6 +952,28 @@ process.exit(result.status??1);
               context,
             });
           }
+          if (phase3Restore) {
+            stage = 'isolated hybrid restore';
+            restoration = await qualifyHybridRestore({
+              hosts,
+              controller,
+              workers,
+              config,
+              operator,
+              services,
+              databaseOperator,
+              release: targetRelease,
+              page,
+              context,
+              provider,
+              principalId: enrollment.principalId,
+              setStage: (value) => {
+                stage = value;
+              },
+              compose,
+              cli,
+            });
+          }
           if (phase3) await verifyReplicas(context);
         },
         phase3
@@ -951,7 +983,7 @@ process.exit(result.status??1);
             }
           : {},
       );
-      if (phase3) {
+      if (phase3 && !phase3Restore) {
         stage = 'distributed credential renewal';
         workerCredentials = await qualifyHybridWorkerCredentials({
           hosts,
@@ -974,16 +1006,21 @@ process.exit(result.status??1);
                 ...harness.environment,
                 browser: application.browser,
               },
-              installedWorkflows: installedWorkflows.report,
+              ...(installedWorkflows
+                ? { installedWorkflows: installedWorkflows.report }
+                : {}),
               workerCredentials,
               recipientAccessChecks,
               credentialKeyProjection,
-              durationScope: phase3Upgrade
-                ? 'Extracted Phase 2 hybrid installation, Phase 3 upgrade, public workflows, lifecycle, and fixture cleanup.'
-                : 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
+              durationScope: phase3Restore
+                ? 'Extracted hybrid installation, lifecycle, isolated restore, and fixture cleanup.'
+                : phase3Upgrade
+                  ? 'Extracted Phase 2 hybrid installation, Phase 3 upgrade, public workflows, lifecycle, and fixture cleanup.'
+                  : 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
             }
           : {}),
         ...(upgrade ? { upgrade } : {}),
+        ...(restoration ? { restoration } : {}),
         ...(faults ? { faults } : {}),
         ...(capacity ? { capacity } : {}),
         ...(certificates ? { certificates } : {}),
@@ -1024,7 +1061,10 @@ process.exit(result.status??1);
           'A separate Compose overlay trusts the synthetic identity provider through the existing district CA mount.',
           'Final release qualification requires matching installer, test, and application source revisions.',
           ...(upgrade ? [] : ['Upgrade requires separate evidence.']),
-          'Isolated restore, complete fault acceptance, and district infrastructure require separate evidence.',
+          ...(restoration
+            ? restoration.limits
+            : ['Isolated restore requires separate evidence.']),
+          'Complete fault acceptance and district infrastructure require separate evidence.',
         ],
       };
     } catch (error) {
@@ -1109,7 +1149,12 @@ process.exit(result.status??1);
         join(evidenceDirectory, 'hybrid-upgrade.json'),
         JSON.stringify(result, null, 2),
       );
-    if (phase3 && !phase3Upgrade) {
+    if (phase3Restore)
+      await writeFile(
+        join(evidenceDirectory, 'hybrid-restore.json'),
+        JSON.stringify(result, null, 2),
+      );
+    if (phase3 && !phase3Upgrade && !phase3Restore) {
       for (const [kind, commands] of [
         [
           'installation',

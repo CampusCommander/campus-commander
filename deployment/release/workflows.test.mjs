@@ -723,7 +723,7 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
   );
   assert.equal(
     hybrid.if,
-    "inputs.profile == 'hybrid' && inputs.upgrade != true",
+    "inputs.profile == 'hybrid' && inputs.upgrade != true && inputs.restore != true",
   );
   const hybridUpgrade = steps.find(
     (s) => s.name === 'Qualify Phase 2-to-3 hybrid upgrade',
@@ -776,12 +776,12 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
   );
   assert.ok(
     upload.with.name.startsWith(
-      "${{ inputs.profile == 'hybrid' && inputs.upgrade && 'phase-3-hybrid-upgrade'",
+      "${{ inputs.profile == 'hybrid' && inputs.restore && 'phase-3-hybrid-restore'",
     ),
   );
   assert.ok(
     upload.with.path.startsWith(
-      "${{ inputs.profile == 'hybrid' && inputs.upgrade && 'dist/phase-3-hybrid-upgrade/'",
+      "${{ inputs.profile == 'hybrid' && inputs.restore && 'dist/phase-3-hybrid-restore/'",
     ),
   );
   for (const selectedProfile of ['hybrid', 'invalid'])
@@ -805,6 +805,52 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
             if (
               selectedProfile === 'hybrid' &&
               ![faults, lifecycle, update].some(Boolean)
+            )
+              assert.doesNotThrow(run);
+            else assert.throws(run);
+          }
+});
+
+test('Hybrid restore dispatch rejects mixed modes and selects its own evidence', async () => {
+  const ci = await workflow('ci');
+  const profile = await workflow('phase-3-profile-check');
+  assert.equal(ci.on.workflow_dispatch.inputs.phase3Restore.default, false);
+  assert.equal(
+    ci.jobs['phase3-profile'].with.restore,
+    '${{ inputs.phase3Restore == true }}',
+  );
+  assert.equal(profile.on.workflow_call.inputs.restore.default, false);
+  const steps = profile.jobs.installation.steps;
+  const restore = steps.find(
+    (step) => step.name === 'Qualify isolated Phase 3 hybrid restore',
+  );
+  assert.equal(restore.if, "inputs.profile == 'hybrid' && inputs.restore");
+  assert.match(restore.run, /api-e2e:phase3-hybrid-restore-integration/);
+  assert.match(restore.run, /sudo -H -u '#1000' -g '#1000'/);
+  assert.match(restore.run, /CC_AUTH_INSTALLER_ROOT/);
+  assert.equal(restore.env.NX_DAEMON, 'false');
+  for (const selectedProfile of ['hybrid', 'all-docker', 'invalid'])
+    for (const upgrade of [false, true])
+      for (const faults of [false, true])
+        for (const lifecycle of [false, true])
+          for (const update of [false, true]) {
+            const run = () =>
+              execFileSync('bash', ['-e', '-c', steps[0].run], {
+                env: {
+                  ...process.env,
+                  PROFILE: selectedProfile,
+                  RESTORE: 'true',
+                  UPGRADE: String(upgrade),
+                  FAULTS: String(faults),
+                  LIFECYCLE: String(lifecycle),
+                  UPDATE_RELEASE: update ? 'phase-3-lab-' + 'a'.repeat(12) : '',
+                  FAULT_KIND: 'services',
+                },
+                stdio: 'pipe',
+              });
+            if (
+              selectedProfile === 'hybrid' &&
+              ![upgrade, faults, lifecycle, update].some(Boolean)
             )
               assert.doesNotThrow(run);
             else assert.throws(run);

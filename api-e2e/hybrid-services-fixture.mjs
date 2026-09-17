@@ -13,7 +13,14 @@ import { outerDocker } from './hybrid-hosts-fixture.mjs';
 const execute = promisify(execFile);
 
 /** Prepare synthetic district certificates and externally managed services. */
-export async function createHybridServices(fixture, project) {
+export async function createHybridServices(
+  fixture,
+  project,
+  {
+    databaseHostname = 'district-postgres.fixture.test',
+    redisHostname = 'district-redis.fixture.test',
+  } = {},
+) {
   const root = fixture.hosts[0].root;
   const privateRoot = join(root, 'private');
   await mkdir(privateRoot, { mode: 0o700 });
@@ -43,8 +50,8 @@ export async function createHybridServices(fixture, project) {
     ['workers', 'workers.fixture.test'],
     ['kestra', 'kestra'],
     ['edge', 'campus.example.org'],
-    ['district-postgres', 'district-postgres.fixture.test'],
-    ['district-redis', 'district-redis.fixture.test'],
+    ['district-postgres', databaseHostname],
+    ['district-redis', redisHostname],
     ['provider', 'host.docker.internal'],
   ]) {
     const path = (suffix) => join(privateRoot, `${name}-${suffix}`);
@@ -204,8 +211,8 @@ export async function createHybridServices(fixture, project) {
       JSON.parse(await outerDocker(['inspect', name]))[0].NetworkSettings
         .Networks[fixture.network].IPAddress;
     await fixture.mapHosts({
-      'district-postgres.fixture.test': [await address(database)],
-      'district-redis.fixture.test': [await address(redis)],
+      [databaseHostname]: [await address(database)],
+      [redisHostname]: [await address(redis)],
     });
     return { root, privateRoot, database, redis, close };
   } catch (error) {
