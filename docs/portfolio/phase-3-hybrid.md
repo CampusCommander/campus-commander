@@ -2,7 +2,7 @@
 
 [CC-58](https://easton-consulting.atlassian.net/browse/CC-58) requires extracted installation, resume, Phase 2 upgrade, restore, faults, and operator lifecycle evidence.
 The task remains incomplete.
-Installation, resume, installed workflows, key projection, distributed credential renewal, and replica permission checks have passed hosted qualification.
+Installation, resume, Phase 2 upgrade, installed workflows, key projection, distributed credential renewal, and replica permission checks have passed hosted qualification.
 The checkpoint sections below link their exact application and harness evidence.
 
 ## Installed workflow fixture
@@ -36,7 +36,6 @@ The existing Phase 2 targets retain their previous modes.
 
 ## Remaining evidence
 
-- Pinned Phase 2 upgrade with preserved state and migration checksums.
 - Isolated restore with backup identity, recovered credentials, and rejected source admissions.
 - Service, network, certificate, and credential faults with bounded recovery and preserved state.
 - Guided update, retained external resources, and explicit erasure contracts.
@@ -198,4 +197,23 @@ gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
 Workflow regressions verify routing and unsupported mode rejection.
 Preservation regressions reject lost principals, preferences, artifacts, audit values, or migration checksums.
 The audit regression reproduced the added-column comparison failure before correction.
-Hosted execution remains required. This fixture does not yet establish a passed hybrid upgrade.
+The passed upgrade checkpoint below records hosted execution of this fixture.
+
+## Passed Phase 2 upgrade checkpoint
+
+[Run 35235896138](https://github.com/CampusCommander/campus-commander/actions/runs/35235896138) passed with harness `4484640` against signed application `a3601ef`.
+The [upgrade report](../../deployment/evidence/CC-58-phase2-upgrade.json) preserves all original fields and both source-report hashes.
+The downloaded artifact archive matches its published SHA-256 digest.
+
+The fixture installed pinned Phase 2 bundle `1b04fa3` through `/baseline` and upgraded through `/release`.
+Both principals, their preferences, the artifact, all 13 original audit events, and existing secret bytes survived.
+The migration ledger advanced from two entries to fifteen. Both original checksums remained unchanged.
+All ten preservation checks passed. The native operator CLI generated a key, completed backup, and verified the backup before upgrade.
+
+All ten installed workflows and 16 API replica observations passed after upgrade.
+Distributed credential renewal and worker restart also passed.
+The upgrade segment took 66,264 milliseconds. The complete fixture took 318,113 milliseconds.
+PR CI passed at the same harness revision.
+
+The baseline identifies the accepted Phase 2 implementation. It does not establish the owner's exact previously installed revision.
+Isolated restore, complete fault recovery, operator lifecycle coverage, and prerequisite acceptance remain open.
