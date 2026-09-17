@@ -69,7 +69,12 @@ const run = async (file, args, input, options = {}) => {
     ...options,
   });
   if (input !== undefined) operation.child.stdin.end(input);
-  return (await operation).stdout.trim();
+  try {
+    return (await operation).stdout.trim();
+  } catch (error) {
+    if (!phase3) throw error;
+    throw new Error('Kubernetes fixture command failed.', { cause: error });
+  }
 };
 const docker = (...args) => run('docker', args);
 
@@ -331,6 +336,7 @@ test(
         undefined,
         capacityVolume ? { env: capacityVolume.environment } : {},
       );
+      stage = 'discover host gateway';
       const hostGateway = await docker(
         'run',
         '--rm',
@@ -368,6 +374,7 @@ test(
         'Load the exact runtime image digests into all nodes.\n',
       );
       const archive = join(root, 'images.tar');
+      stage = 'pull runtime images';
       for (const image of imageSet) {
         try {
           await docker('image', 'inspect', image);
@@ -375,10 +382,12 @@ test(
           await docker('pull', image);
         }
       }
+      stage = 'archive runtime images';
       await docker('save', '--output', archive, ...imageSet);
       const nodes = (
         await run(kind, ['get', 'nodes', '--name', project])
       ).split('\n');
+      stage = 'import runtime images into nodes';
       for (const node of nodes) {
         const child = spawn(
           'docker',

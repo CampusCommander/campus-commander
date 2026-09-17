@@ -126,3 +126,15 @@ The next attempt records narrower fixture stages and bounded source locations fr
 Reports still omit raw error messages, assertion values, URLs, and command output.
 The diagnostic regression checks private-marker exclusion and rejects unrelated source paths.
 This increment changes evidence collection only.
+
+## Runtime image preparation attempt
+
+[Run 35257141763](https://github.com/CampusCommander/campus-commander/actions/runs/35257141763) failed before the earlier workflow failure.
+The job reached runtime image preparation, but the report retained the preceding cluster stage.
+The command rejection contained no fixture source locations.
+`CC-59-installation-failure-2.json` preserves the original report and verified archive provenance.
+Its duration was 60,630 milliseconds before cleanup.
+
+The next attempt separates image retrieval, archive creation, and node import stages.
+A fixed command error preserves asynchronous fixture call sites without printing the original command failure.
+The first workflow failure remains unresolved.
