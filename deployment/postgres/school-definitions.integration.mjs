@@ -141,9 +141,24 @@ export async function qualifySchoolDefinitions({
     [JSON.stringify(units), customer],
   );
   assert.deepEqual((await read(operator, 1, a)).effectiveIds, ['school-a']);
+  await migrator.query(
+    'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
+    [operator, 'platform-users:invite', JSON.stringify({ kind: 'platform' })],
+  );
+  const invitation = await query(
+    'SELECT cc.create_invitation($1,1,$2,NULL,$3,$4,24,$5) AS result',
+    [
+      operator,
+      'School operator invitation',
+      randomUUID().replaceAll('-', '').repeat(2),
+      '[]',
+      randomUUID(),
+    ],
+  );
   const expanded = await preview(a, 1, 'Expanded school');
   assert.deepEqual(expanded.approvedIds, ['new-child', 'school-a']);
   assert.equal(expanded.affectedPrincipalCount, 1);
+  assert.deepEqual(expanded.invitationIds, [invitation]);
   await migrator.query(
     "UPDATE cc.school_reference_state SET failure='permission-denied' WHERE customer_id=$1",
     [customer],
@@ -170,6 +185,15 @@ export async function qualifySchoolDefinitions({
     assert.equal((await read(operator, 1, a)).revision, 1);
     assert.equal(
       (
+        await migrator.query(
+          'SELECT status FROM cc.application_invitations WHERE id=$1',
+          [invitation],
+        )
+      ).rows[0].status,
+      'issued',
+    );
+    assert.equal(
+      (
         await query('SELECT cc.read_school_review($1,1,$2) AS result', [
           actor,
           expanded.id,
@@ -182,7 +206,33 @@ export async function qualifySchoolDefinitions({
       'DROP TRIGGER reject_school_change_test_event ON cc.security_events; DROP FUNCTION cc.reject_school_change_test_event()',
     );
   }
-  assert.equal((await confirm(expanded.id)).revision, 2);
+  const applied = await confirm(expanded.id);
+  assert.equal(applied.revision, 2);
+  assert.deepEqual(applied.invitationIds, [invitation]);
+  assert.equal(
+    (
+      await migrator.query(
+        'SELECT status FROM cc.application_invitations WHERE id=$1',
+        [invitation],
+      )
+    ).rows[0].status,
+    'revoked',
+  );
+  const invitationChanged = await preview(a, 2, 'Invitation changed');
+  await query(
+    'SELECT cc.create_invitation($1,2,$2,NULL,$3,$4,24,$5) AS result',
+    [
+      operator,
+      'Later invitation',
+      randomUUID().replaceAll('-', '').repeat(2),
+      '[]',
+      randomUUID(),
+    ],
+  );
+  await assert.rejects(
+    confirm(invitationChanged.id),
+    (error) => error.detail === 'school-access-changed',
+  );
   await assert.rejects(read(operator, 1, a), denied);
   assert.deepEqual((await read(operator, 2, a)).effectiveIds, [
     'new-child',
@@ -213,5 +263,6 @@ export async function qualifySchoolDefinitions({
     'reference failure preserves definitions while denying effective scope: pass',
     'school change and affected permission versions roll back with audit failure: pass',
     'concurrent definitions and changed affected principals invalidate reviews: pass',
+    'school changes revoke reviewed invitations atomically and reject changed invitation sets: pass',
   ];
 }

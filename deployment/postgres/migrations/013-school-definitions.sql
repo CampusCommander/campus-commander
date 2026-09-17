@@ -114,7 +114,9 @@ END;
 $$;
 CREATE FUNCTION cc.school_affected_principals(p_school uuid,p_customer text) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-  SELECT COALESCE(jsonb_agg(jsonb_build_object('id',p.id,'version',p.permission_version) ORDER BY p.id),'[]'::jsonb)
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('id',p.id,'version',p.permission_version,
+    'invitationIds',COALESCE((SELECT jsonb_agg(i.id ORDER BY i.id) FROM cc.application_invitations i
+      WHERE i.created_by=p.id AND i.status IN ('issued','redeeming','pending')),'[]'::jsonb)) ORDER BY p.id),'[]'::jsonb)
     FROM cc.application_principals p WHERE EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p.id
       AND g.scope=jsonb_build_object('kind','school','customerId',p_customer,'schoolId',p_school));
 $$;
@@ -122,7 +124,10 @@ CREATE FUNCTION cc.school_review_result(p_review uuid) RETURNS jsonb
 LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT jsonb_build_object('id',id,'schoolId',school_id,'customerId',customer_id,'expectedRevision',expected_revision,
     'referenceRevision',reference_revision,'name',name,'rules',rules,'approvedIds',approved_ids,
-    'affectedPrincipalCount',jsonb_array_length(affected_principals),'expiresAt',expires_at,'appliedAt',applied_at,
+    'affectedPrincipalCount',jsonb_array_length(affected_principals),
+    'invitationIds',COALESCE((SELECT jsonb_agg(invitation ORDER BY invitation) FROM jsonb_array_elements(affected_principals) p
+      CROSS JOIN LATERAL jsonb_array_elements(p->'invitationIds') invitation),'[]'::jsonb),
+    'expiresAt',expires_at,'appliedAt',applied_at,
     'revision',CASE WHEN applied_at IS NULL THEN NULL ELSE expected_revision+1 END)
     FROM cc.school_reviews WHERE id=p_review;
 $$;
@@ -181,6 +186,7 @@ BEGIN
     ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,revision=EXCLUDED.revision,rules=EXCLUDED.rules,
       approved_ids=EXCLUDED.approved_ids,reference_revision=EXCLUDED.reference_revision,updated_at=EXCLUDED.updated_at;
   FOR changed_id IN SELECT (p->>'id')::uuid FROM jsonb_array_elements(affected) p LOOP
+    PERFORM cc.revoke_principal_invitations(changed_id,p_actor,review.correlation_id);
     UPDATE cc.application_principals SET permission_version=permission_version+1 WHERE id=changed_id;
   END LOOP;
   UPDATE cc.school_reviews SET applied_at=observed WHERE id=p_review;
