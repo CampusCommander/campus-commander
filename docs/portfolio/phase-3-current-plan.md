@@ -44,6 +44,10 @@ Existing full-profile evidence and dependency links describe later deployment qu
 Angular pages cover Google connection and health, credential management, customer settings, invitations, platform access, and school scopes.
 The application also includes sign-in, account preferences, Diagnostics, and the shared shell.
 These pages exist on Phase 3 draft branches. They are not a live deployment.
+The aggregate client review branch is `codex/cc-54-client-review`, tracked by draft PR 20 and CC-54.
+Run `npm exec -- nx run api-e2e:client-review` for the current application with disposable services and simulated Google responses.
+The review environment supports separate administrator and recipient identities for invitation and permission review.
+The [client review guide](../testing/client-review.md) describes startup, supported workflows, and actual validation.
 Browser qualification has exercised the installed workflows.
 Human accessibility checks and owner usability acceptance remain open.
 

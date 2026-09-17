@@ -59,6 +59,10 @@ import { startKestraFixture } from './kestra-fixture.mjs';
 import { chromium, expect } from '@playwright/test';
 import { auditAccessibility as auditPageAccessibility } from './accessibility.mjs';
 import { qualifyInvitationBrowser } from './invitations-browser.mjs';
+import {
+  reviewIdentities,
+  reviewIdentityPage,
+} from './client-review-identity.mjs';
 
 const docker = (...args) =>
   execFileSync('docker', args, {
@@ -66,8 +70,10 @@ const docker = (...args) =>
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 const packaged = process.env.CC_AUTH_PACKAGED_IMAGES === 'true';
+const clientReview = process.env.CC_CLIENT_REVIEW === '1';
 const applicationPhase = Number(process.env.CC_AUTH_PHASE ?? 2);
 assert.ok([2, 3].includes(applicationPhase));
+assert.ok(!clientReview || (applicationPhase === 3 && !packaged));
 const evidenceDirectory = `dist/phase-${applicationPhase}-evidence`;
 const auditAccessibility = (page, name) =>
   auditPageAccessibility(page, name, evidenceDirectory);
@@ -130,8 +136,10 @@ function request(url, { ca, cookie, method = 'GET', body, headers = {} } = {}) {
 }
 
 test(
-  'OIDC, Redis sessions, permission checks, CSRF, revocation, and API restart',
-  { timeout: 300000 },
+  clientReview
+    ? 'Interactive client review with synthetic Google services'
+    : 'OIDC, Redis sessions, permission checks, CSRF, revocation, and API restart',
+  { timeout: clientReview ? Infinity : 300000 },
   async () => {
     const startedAt = Date.now();
     const id = randomUUID();
@@ -350,7 +358,9 @@ test(
           if (url.pathname === '/.well-known/openid-configuration')
             return json({
               issuer,
-              authorization_endpoint: `${issuer}/authorize`,
+              authorization_endpoint: clientReview
+                ? `https://127.0.0.1:${issuerPort}/authorize`
+                : `${issuer}/authorize`,
               token_endpoint: `${issuer}/token`,
               jwks_uri: `${issuer}/jwks`,
               response_types_supported: ['code'],
@@ -367,6 +377,22 @@ test(
               `${publicOrigin}/api/auth/callback`,
             );
             assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+            let selectedSubject = subject;
+            if (clientReview) {
+              const selected = url.searchParams.get('review_identity');
+              if (selected === null) {
+                res.writeHead(200, {
+                  'content-type': 'text/html; charset=utf-8',
+                  'cache-control': 'no-store',
+                  'referrer-policy': 'no-referrer',
+                  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${publicOrigin}; frame-ancestors 'none'; base-uri 'none'`,
+                });
+                return res.end(await reviewIdentityPage(url.searchParams));
+              }
+              if (!reviewIdentities.has(selected))
+                return json({ error: 'invalid_review_identity' }, 400);
+              selectedSubject = selected;
+            }
             const code = randomUUID();
             evidenceSecurity.register('authorization-code', code);
             evidenceSecurity.register(
@@ -384,7 +410,7 @@ test(
             codes.set(code, {
               nonce: url.searchParams.get('nonce'),
               challenge: url.searchParams.get('code_challenge'),
-              subject,
+              subject: selectedSubject,
             });
             const callback = new URL(`${publicOrigin}/api/auth/callback`);
             callback.searchParams.set('code', code);
@@ -416,6 +442,9 @@ test(
                 iss: invalidIssuer ? 'https://invalid.example' : issuer,
                 aud: invalidAudience ? 'wrong-client' : 'synthetic-client',
                 sub: grant.subject,
+                ...(clientReview
+                  ? { name: reviewIdentities.get(grant.subject) }
+                  : {}),
                 nonce: invalidNonce ? 'wrong' : grant.nonce,
                 iat: Math.floor(Date.now() / 1000),
                 exp: Math.floor(Date.now() / 1000) + 300,
@@ -599,6 +628,7 @@ test(
             `${secretRoot}:/run/secrets:ro`,
             '-e',
             'NODE_ENV=test',
+            ...(clientReview ? ['-e', 'CC_BUILD_ID=client-review'] : []),
             '-e',
             `PORT=${listenPort}`,
             '-e',
@@ -709,6 +739,79 @@ test(
       await new Promise((resolve) =>
         edgeServer.listen(edgePort, '127.0.0.1', resolve),
       );
+      if (clientReview) {
+        const administrator = await callOperator({
+          action: 'initialize',
+          issuer,
+          subject: 'administrator',
+          displayName: 'Review administrator',
+        });
+        await callOperator({
+          action: 'confirm-platform-administrator',
+          principalId: administrator.principalId,
+          expectedVersion: 1,
+          confirmation: 'grant-platform-administrator',
+        });
+        const key = generateKeyPairSync('rsa', { modulusLength: 2048 });
+        const sampleKeyPath = join(
+          directory,
+          'sample-google-service-account.json',
+        );
+        await writeFile(
+          sampleKeyPath,
+          JSON.stringify(
+            {
+              type: 'service_account',
+              client_id: '123456789',
+              client_email: 'fixture@project.iam.gserviceaccount.com',
+              private_key_id: 'client-review-only',
+              private_key: key.privateKey.export({
+                type: 'pkcs8',
+                format: 'pem',
+              }),
+              token_uri: 'https://oauth2.googleapis.com/token',
+            },
+            null,
+            2,
+          ),
+          { mode: 0o600 },
+        );
+        await mkdir('dist/client-review', { recursive: true });
+        await writeFile(
+          'dist/client-review/runtime.json',
+          JSON.stringify(
+            {
+              url: publicOrigin,
+              sampleKeyPath,
+              delegatedEmail: 'administrator@fixture.invalid',
+              googleServices: 'synthetic',
+              data: 'disposable',
+            },
+            null,
+            2,
+          ),
+          { mode: 0o600 },
+        );
+        process.stdout.write(`\nClient review: ${publicOrigin}\n`);
+        process.stdout.write(
+          'Google sign-in and Workspace responses are synthetic. Do not upload real credentials.\n',
+        );
+        process.stdout.write(`Sample service-account file: ${sampleKeyPath}\n`);
+        process.stdout.write(
+          'Delegated email: administrator@fixture.invalid\nStop this command to remove the disposable review environment.\n',
+        );
+        await new Promise((resolve) => {
+          const stop = () => {
+            process.off('SIGINT', stop);
+            process.off('SIGTERM', stop);
+            resolve();
+          };
+          process.once('SIGINT', stop);
+          process.once('SIGTERM', stop);
+        });
+        await rm('dist/client-review/runtime.json', { force: true });
+        return;
+      }
       assert.equal(
         (await request(`${publicOrigin}/api/bootstrap/verify`, { ca })).status,
         404,

@@ -67,6 +67,12 @@ main {
   min-width: 0;
   padding: var(--cc-page-padding);
 }
+.review-notice {
+  padding: var(--cc-space-md);
+  border-left: 3px solid var(--cc-accent);
+  background: var(--cc-surface-selected);
+  overflow-wrap: anywhere;
+}
 footer {
   grid-column: 1 / -1;
   display: flex;

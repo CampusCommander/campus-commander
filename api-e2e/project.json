@@ -4,6 +4,21 @@
   "implicitDependencies": ["api"],
   "projectType": "application",
   "targets": {
+    "client-review": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "continuous": true,
+      "dependsOn": [
+        "api:build",
+        "frontend:build",
+        "worker:build",
+        "deployment:build"
+      ],
+      "options": {
+        "command": "node api-e2e/auth.test.mjs",
+        "env": { "CC_AUTH_PHASE": "3", "CC_CLIENT_REVIEW": "1" }
+      }
+    },
     "hybrid-integration": {
       "executor": "nx:run-commands",
       "cache": false,
