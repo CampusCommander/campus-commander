@@ -146,7 +146,13 @@
     </div>
   </header>
   <main id="main-content" tabindex="-1">
-    @if (auth.error(); as error) {
+    @if (auth.metadata()?.build === 'client-review') {
+    <p class="review-notice" role="note">
+      <strong>Development review.</strong> Google sign-in and Workspace data are
+      simulated. Use the sample service-account file. Do not upload real
+      credentials.
+    </p>
+    } @if (auth.error(); as error) {
     <p role="alert" class="error">{{ error }}</p>
     } @if (preferenceError(); as error) {
     <p role="alert" class="error">{{ error }}</p>

@@ -1,15 +1,34 @@
 # Campus Commander
 
 Campus Commander is a locally hosted Google Workspace administration tool for K–12 districts.
-It supports entity discovery, inventory insight, and small or district-wide updates with durable audit evidence.
+Current development includes Google customer connection, settings, invitations, platform access, and school scopes.
 
-**Status: Phase 1 candidate testing.** Published candidates are not accepted production releases.
-The [design portfolio](docs/portfolio/README.md) incorporates the contractor review and owner decisions as of 2026-09-05.
-Follow its [ten development phases](docs/portfolio/06-work-breakdown.md#delivery-sequence) and resolve the V0 findings required by each phase.
-Phase 1 supplies all Docker, hybrid Docker with district services, and enterprise Kubernetes installations.
-Each later phase delivers a working version that preserves those deployment modes and earlier capabilities.
+**Status: Greenfield application development. Nothing is live.**
+Phases organize development. They are not a user upgrade path. Development test data is disposable.
+Read [the current work plan](docs/portfolio/phase-3-current-plan.md) for the active scope.
 
-## Try the published installer
+## Run the application for review
+
+Use Linux or WSL with Node 24.19, npm, and a running Docker daemon.
+From the repository root, run:
+
+```sh
+npm ci
+npm exec -- nx run api-e2e:client-review
+```
+
+Open the HTTPS URL printed by the command and select **Sign in to Campus Commander**.
+The command runs the current client, API, worker, PostgreSQL, Redis, and Kestra.
+Google sign-in and Workspace responses use a simulator. No Google account or real service-account key is required.
+The terminal prints a generated sample key file and delegated email for the connection form.
+The client displays a development-review notice. Do not upload real credentials to this review environment.
+
+Keep the command running while reviewing. Stop it to remove its disposable environment.
+See [the client review guide](docs/testing/client-review.md) for certificate prompts and the review steps.
+
+## Published installer reference
+
+Earlier signed candidates remain available for reference. Use the review command above to run current source changes.
 
 Start in a Linux amd64 shell with internet access and root or sudo access.
 Run the installer first:
