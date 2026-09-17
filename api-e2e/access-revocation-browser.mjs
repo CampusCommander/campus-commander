@@ -183,7 +183,7 @@ export async function qualifyAccessRevocationBrowser({
         exact: true,
       }),
     ).toBeDisabled();
-    await popup.close();
+    await evidenceSecurity.close(popup);
     await changeVersion();
     await invitations
       .getByRole('button', { name: 'Refresh invitations', exact: true })
@@ -200,7 +200,7 @@ export async function qualifyAccessRevocationBrowser({
       invitations.getByRole('heading', { name: 'Sign in', exact: true }),
     ).toBeVisible();
     await expect(label).toHaveCount(0);
-    await other.close();
+    await evidenceSecurity.close(other);
     await writeFile(
       `${evidenceDirectory}/access-revocation-browser.json`,
       JSON.stringify(

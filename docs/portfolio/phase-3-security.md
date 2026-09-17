@@ -280,13 +280,14 @@ It checks API, worker, Kestra, audit, and support evidence against 18 registered
 It includes authorization state, nonce, PKCE challenge, transient cookies, and the separate Redis operator password.
 The report counts 34 interrupted browser requests. Their incomplete bodies remain outside JSON token coverage.
 The same run passed 100 browser-boundary requests across 32 routes.
-Both review axes report no actionable findings in `f31949e...ca9023b`. All 11 scanner regressions pass locally.
+Both review axes report no actionable findings in `f31949e...ca9023b`. All 12 scanner regressions pass locally.
 
 Revision `ca9023b` also strengthens four existing database audit probes with exact error codes and injected failure identifiers.
 These cover customer confirmation, token renewal, school confirmation, and school reference publication.
-Local deployment lint and PostgreSQL contract tests pass. Real database qualification remains pending for these four corrections.
+Local deployment lint, PostgreSQL contract tests, and real database qualification pass for these four corrections.
 [Full run 35182784565](https://github.com/CampusCommander/campus-commander/actions/runs/35182784565) targets the same revision.
-Its packaged scanner and database results remain pending. The earlier failed and canceled runs retain their recorded outcomes.
+Its six non-application jobs passed, including real PostgreSQL execution of the four exact audit predicates.
+The packaged Phase 3 scanner failed during popup closure. The earlier failed and canceled runs retain their recorded outcomes.
 
 ## Invitation rollback extension
 
@@ -304,3 +305,15 @@ It covers successful renewal, terminal renewal failure, transient renewal failur
 Each probe requires the exact injected constraint failure. Cleanup removes the constraint after success or failure.
 The existing successful operations run after each fault to verify recovery.
 Local deployment lint and PostgreSQL contract tests pass. Real PostgreSQL execution of this extension remains pending.
+
+## Popup closure finding
+
+Full run `35182784565` failed at `ca9023b` during the access-revocation browser fixture.
+The scanner retained a completed-request observation failure with category `target-closed`.
+The fixture closed two sign-in popups directly. The settings fixture also closed its sign-in popup directly.
+These calls bypassed the drain used for browser and context closure.
+
+A local Chromium reproduction closes a page during its completed session response.
+Direct closure reproduces the `target-closed` scanner failure. Drained closure captures the token and completes without that failure.
+The fixture now drains observations before all three popup closures. A regression verifies both closure outcomes.
+Local API fixture lint and all 12 scanner regressions pass. Packaged validation of this correction remains pending.

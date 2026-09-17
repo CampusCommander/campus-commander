@@ -282,7 +282,7 @@ export async function qualifyCustomerSettings({
     evidenceDirectory,
     'customer-settings',
   );
-  await loginPage.close();
+  await evidenceSecurity.close(loginPage);
   await page.getByRole('button', { name: 'Recheck access' }).click();
   await expect(page.getByLabel('Customer display name')).toHaveValue(
     'Unsaved name through recovery',

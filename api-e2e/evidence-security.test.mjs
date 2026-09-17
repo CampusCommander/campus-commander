@@ -376,3 +376,48 @@ test('navigation response bodies stay outside token observation while their cook
     /protected/,
   );
 });
+
+test('popup closure preserves a completed token response before disposing of its page', async () => {
+  for (const guarded of [false, true]) {
+    const security = new EvidenceSecurity();
+    const context = new EventEmitter();
+    await security.newContext({ newContext: async () => context }, {});
+    let closed = false;
+    const page = {
+      close: async () => {
+        closed = true;
+      },
+    };
+    const responseReady = Promise.withResolvers();
+    context.emit('requestfinished', {
+      response: async () => {
+        await responseReady.promise;
+        if (closed) throw new Error('Target page has been closed');
+        return {
+          url: () => 'https://fixture.invalid/api/auth/session',
+          status: () => 200,
+          headers: () => ({ 'content-type': 'application/json' }),
+          text: async () => JSON.stringify({ csrfToken: 'popup-csrf-secret' }),
+        };
+      },
+    });
+    const closing = guarded ? security.close(page) : page.close();
+    assert.equal(closed, !guarded);
+    responseReady.resolve();
+    await closing;
+    assert.equal(closed, true);
+    if (guarded) {
+      await security.observePendingResponses();
+      assert.throws(
+        () => security.assertSafe('popup-csrf-secret', 'report'),
+        /protected/,
+      );
+    } else {
+      await assert.rejects(
+        security.observePendingResponses(),
+        (error) =>
+          JSON.parse(error.observations).failures[0].reason === 'target-closed',
+      );
+    }
+  }
+});
