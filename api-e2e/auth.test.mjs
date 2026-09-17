@@ -1797,9 +1797,32 @@ test(
         await page.unroute('**/api/auth/login');
         page.off('console', recordSignInProgress);
       }
-      await expect(
-        page.getByRole('heading', { name: 'Your account', exact: true }),
-      ).toBeVisible();
+      try {
+        await expect(
+          page.getByRole('heading', { name: 'Your account', exact: true }),
+        ).toBeVisible({ timeout: 15000 });
+      } catch (error) {
+        await page.screenshot({
+          path: `${evidenceDirectory}/sign-in-startup-failure.png`,
+          fullPage: true,
+        });
+        await writeFile(
+          `${evidenceDirectory}/sign-in-startup-failure.json`,
+          JSON.stringify(
+            {
+              pathname: new URL(page.url()).pathname,
+              browserErrorCodes: browserErrors.map(
+                (message) =>
+                  message.match(/NG[0-9]+|[A-Za-z]+Error/g) ?? ['unclassified'],
+              ),
+              policyErrorCount: policyErrors.length,
+            },
+            null,
+            2,
+          ),
+        );
+        throw error;
+      }
       await expect(page.locator('html')).toHaveAttribute(
         'data-theme',
         preferences.theme,
