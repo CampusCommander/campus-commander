@@ -14,7 +14,7 @@ Run `npm exec -- nx run api-e2e:phase3-auth-integration` for source qualificatio
 The full CI workflow builds images and repeats that target with `CC_AUTH_PACKAGED_IMAGES=true`.
 Run `npm exec -- nx run deployment:postgres-integration` for real database role, concurrency, and audit-failure checks.
 Local static checks use `npm exec -- nx run api-e2e:lint` and `npm exec -- nx format:check --base=9052ba1`.
-Source qualification passed at `e036c9e`. Packaged qualification remains pending.
+Source qualification passed at `e036c9e`. Packaged qualification passed at `0a89f67`.
 
 ## Shared enforcement
 
@@ -135,7 +135,7 @@ The final evidence inventory must bind every result to the selected revision and
 Remaining checks:
 
 - Reconcile all public routes against this inventory after each controller change.
-- Complete packaged route checks and inspect the resulting report.
+- Reconcile future release revisions against the retained source and packaged route reports.
 - Verify audit rollback for each mutation branch, including candidate staging and reference publication.
 - Reconcile cross-customer, cross-school, guessed-identity, count, list, detail, and audit denial evidence.
 - Scan final browser, application, provider, database, and release evidence for seeded secret values and sensitive provider fields.
@@ -157,9 +157,14 @@ Revision `0a89f67` adds candidate audit-failure injection for staging, verificat
 Each probe requires the exact injected constraint error and unchanged candidate state hashes.
 Both review axes report no remaining findings. Five local PostgreSQL contract tests pass.
 The PostgreSQL job passed in [full run 35178237363](https://github.com/CampusCommander/campus-commander/actions/runs/35178237363).
-The packaged application job remains active in that run. The other six jobs passed.
+All seven jobs passed, including the packaged application and the final all-Docker check.
+The downloaded [packaged report](../../deployment/evidence/CC-55-packaged-route-security.json) confirms all 100 route-boundary requests.
+The packaged school report also confirms definition recovery and district and school browser grant assignment.
 
 The earlier CC-52 packaged run `35177847162` failed before school checks during credential lifecycle navigation.
 Its credential replacement button did not appear. The cause remains unresolved in CC-54.
 The diagnostic fixture now captures that navigation without retrying it.
 It records bounded route and error categories, HTTP status, and document state counts without page text or response bodies.
+
+The full run qualifies `0a89f67`. Later revision `60481a2` changes failure diagnostics only and passes fixture lint and PR checks.
+Final evidence redaction review, complete mutation coverage, isolated recovery, deployment-profile qualification, and owner acceptance remain pending.
