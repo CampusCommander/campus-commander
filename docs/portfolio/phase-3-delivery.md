@@ -141,3 +141,9 @@ The fixed error boundary prevented token disclosure but omitted the failing step
 Admission errors now identify a fixed, allowlisted step without retaining the original error or cause.
 Regression tests reject unapproved labels and verify secret omission from failure stacks.
 This diagnostic change does not claim a correction to the admission failure.
+
+Diagnostic run `35214112562` isolated the failure to the school-access boundary assertion.
+The fixture expected HTTP 403 for a school outside the granted scope.
+The established API contract returns HTTP 404 with `school-not-found` for both inaccessible and unknown schools.
+The corrected fixture requires that exact status and identical response bodies for both cases.
+The correction changes qualification expectations. It does not change application authorization.

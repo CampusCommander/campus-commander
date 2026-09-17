@@ -290,11 +290,21 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
         (await request(recipientPage, `/api/schools/${schools[0].id}`)).id,
         schools[0].id,
       );
-      await request(
+      const hiddenSchool = await request(
         recipientPage,
         `/api/schools/${schools[1].id}`,
         undefined,
-        403,
+        404,
+      );
+      assert.deepEqual(hiddenSchool, { reason: 'school-not-found' });
+      assert.deepEqual(
+        await request(
+          recipientPage,
+          `/api/schools/${randomUUID()}`,
+          undefined,
+          404,
+        ),
+        hiddenSchool,
       );
       checkpoint('revoke access');
       const revokeReceipt = await changeAccess(false, grants);
