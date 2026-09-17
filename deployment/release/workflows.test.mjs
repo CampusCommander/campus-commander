@@ -600,7 +600,10 @@ test('lifecycle and guided update dispatch exclude simultaneous qualification mo
   const selected = steps.find(
     (step) => step.name === 'Qualify Phase 3 installer lifecycle',
   );
-  assert.equal(selected.if, 'inputs.lifecycle');
+  assert.equal(
+    selected.if,
+    "inputs.profile == 'all-docker' && inputs.lifecycle",
+  );
   assert.equal(
     selected.run,
     'npm exec nx run api-e2e:phase3-lifecycle-integration',
@@ -732,7 +735,7 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
   );
   assert.equal(
     hybrid.if,
-    "inputs.profile == 'hybrid' && inputs.upgrade != true && inputs.restore != true && inputs.faults != true",
+    "inputs.profile == 'hybrid' && inputs.upgrade != true && inputs.restore != true && inputs.faults != true && inputs.lifecycle != true",
   );
   const hybridUpgrade = steps.find(
     (s) => s.name === 'Qualify Phase 2-to-3 hybrid upgrade',
@@ -813,8 +816,8 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
               });
             if (
               selectedProfile === 'hybrid' &&
-              ![lifecycle, update].some(Boolean) &&
-              !(upgrade && faults)
+              !update &&
+              [upgrade, faults, lifecycle].filter(Boolean).length <= 1
             )
               assert.doesNotThrow(run);
             else assert.throws(run);
@@ -988,4 +991,29 @@ test('Hybrid faults use their own targets and reject unsupported fault kinds', a
       assert.doesNotThrow(run);
     else assert.throws(run);
   }
+});
+
+test('Hybrid lifecycle dispatch selects its own target and evidence', async () => {
+  const profile = await workflow('phase-3-profile-check');
+  const steps = profile.jobs.installation.steps;
+  const lifecycle = steps.find(
+    (step) => step.name === 'Qualify Phase 3 hybrid installer lifecycle',
+  );
+  assert.equal(lifecycle.if, "inputs.profile == 'hybrid' && inputs.lifecycle");
+  assert.match(lifecycle.run, /api-e2e:phase3-hybrid-lifecycle-integration/);
+  assert.match(lifecycle.run, /sudo -H -u '#1000' -g '#1000'/);
+  assert.equal(lifecycle.env.NX_DAEMON, 'false');
+  const upload = steps.find((step) =>
+    step.uses?.startsWith('actions/upload-artifact@'),
+  );
+  assert.ok(
+    upload.with.name.includes(
+      "inputs.profile == 'hybrid' && inputs.lifecycle && 'phase-3-hybrid-lifecycle'",
+    ),
+  );
+  assert.ok(
+    upload.with.path.includes(
+      "inputs.profile == 'hybrid' && inputs.lifecycle && 'dist/phase-3-hybrid-lifecycle/'",
+    ),
+  );
 });

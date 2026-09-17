@@ -42,12 +42,14 @@ import { faultDistributedHybrid } from './hybrid-cli-faults-fixture.mjs';
 import { qualifyHybridCapacity } from './hybrid-capacity-fixture.mjs';
 import { qualifyInstalledProviderFaults } from './phase3-provider-faults.mjs';
 import { createHybridProviderFaultRuntime } from './phase3-hybrid-provider-fixture.mjs';
+import { createHybridLifecycleProof } from './phase3-hybrid-lifecycle-fixture.mjs';
 import { qualifyHybridCertificates } from './hybrid-certificates-fixture.mjs';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 
 const phase3Upgrade = process.env.CC_AUTH_PHASE3_HYBRID_UPGRADE === '1';
 const phase3Restore = process.env.CC_AUTH_PHASE3_HYBRID_RESTORE === '1';
 const phase3Faults = process.env.CC_AUTH_PHASE3_HYBRID_FAULTS === '1';
+const phase3Lifecycle = process.env.CC_AUTH_PHASE3_HYBRID_LIFECYCLE === '1';
 const phase3FaultKind =
   process.env.CC_AUTH_PHASE3_HYBRID_FAULT_KIND ?? 'services';
 const phase3FaultModes = {
@@ -75,23 +77,27 @@ const phase3FaultModes = {
 assert.ok(Object.hasOwn(phase3FaultModes, phase3FaultKind));
 const phase3FaultMode = phase3FaultModes[phase3FaultKind];
 assert.ok(
-  [phase3Upgrade, phase3Restore, phase3Faults].filter(Boolean).length <= 1,
+  [phase3Upgrade, phase3Restore, phase3Faults, phase3Lifecycle].filter(Boolean)
+    .length <= 1,
 );
 const phase3 =
   process.env.CC_AUTH_PHASE3_HYBRID === '1' ||
   phase3Upgrade ||
   phase3Restore ||
-  phase3Faults;
+  phase3Faults ||
+  phase3Lifecycle;
 const phase = phase3 ? 3 : 2;
-const evidenceDirectory = phase3Restore
-  ? 'dist/phase-3-hybrid-restore'
-  : phase3Faults
-    ? phase3FaultMode.directory
-    : phase3Upgrade
-      ? 'dist/phase-3-hybrid-upgrade'
-      : phase3
-        ? 'dist/phase-3-hybrid-installation'
-        : 'dist/phase-2-evidence';
+const evidenceDirectory = phase3Lifecycle
+  ? 'dist/phase-3-hybrid-lifecycle'
+  : phase3Restore
+    ? 'dist/phase-3-hybrid-restore'
+    : phase3Faults
+      ? phase3FaultMode.directory
+      : phase3Upgrade
+        ? 'dist/phase-3-hybrid-upgrade'
+        : phase3
+          ? 'dist/phase-3-hybrid-installation'
+          : 'dist/phase-2-evidence';
 if (phase3) {
   assert.ok(
     process.env.CC_AUTH_INSTALLER_ROOT,
@@ -135,6 +141,8 @@ test(
     let installedWorkflows;
     let workerCredentials;
     let restoration;
+    let lifecycleProof;
+    let lifecycle;
     let bundle;
     const harness = phase3
       ? {
@@ -150,13 +158,15 @@ test(
           ).trim()
             ? 'uncommitted-candidate'
             : 'clean',
-          command: phase3Restore
-            ? 'npm exec -- nx run api-e2e:phase3-hybrid-restore-integration'
-            : phase3Faults
-              ? `npm exec -- nx run api-e2e:${phase3FaultMode.target}`
-              : phase3Upgrade
-                ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
-                : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
+          command: phase3Lifecycle
+            ? 'npm exec -- nx run api-e2e:phase3-hybrid-lifecycle-integration'
+            : phase3Restore
+              ? 'npm exec -- nx run api-e2e:phase3-hybrid-restore-integration'
+              : phase3Faults
+                ? `npm exec -- nx run api-e2e:${phase3FaultMode.target}`
+                : phase3Upgrade
+                  ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
+                  : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
           environment: {
             nodeVersion: process.version,
             platform: process.platform,
@@ -938,6 +948,28 @@ process.exit(result.status??1);
           await page.getByRole('button', { name: 'Choose theme' }).click();
           await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
           assert.equal((await preference).status(), 201);
+          if (phase3Lifecycle) {
+            await mkdir(evidenceDirectory, { recursive: true });
+            lifecycleProof = await createHybridLifecycleProof({
+              hosts,
+              services,
+              config,
+              project,
+              compose,
+              cli,
+              operatorPath,
+              evidencePath: join(
+                evidenceDirectory,
+                'hybrid-lifecycle-progress.json',
+              ),
+              evidenceIdentity: {
+                ...harness,
+                sourceRevision,
+                images,
+                bundleManifestSha256: bundle.manifestSha256,
+              },
+            });
+          }
           stage = 'API restart and session restoration';
           await compose(controller, ['restart', 'api']);
           for (const host of workers)
@@ -950,12 +982,14 @@ process.exit(result.status??1);
           await verifyReplicas(context);
           await installedWorkflows?.verifyAfterRestart();
           await checks({ recoverySeconds: 120 });
+          await lifecycleProof?.verify('restart');
           for (const command of ['stop', 'uninstall']) {
             stage = `${command} and resume`;
             for (const host of workers)
               await compose(host, command === 'stop' ? ['stop'] : ['down']);
             const result = await cli(command);
             assert.equal(result.dataPreserved, true);
+            assert.equal(result.externalResourcesPreserved, true);
             assert.equal(result.remoteWorkerActionRequired, true);
             await transfer();
             for (const host of workers) await compose(host, ['up', '-d']);
@@ -972,6 +1006,7 @@ process.exit(result.status??1);
             await installedWorkflows?.verifyAfterRestart();
             await checks({ recoverySeconds: 120 });
             assert.deepEqual(await readFile(controllerFile), original);
+            await lifecycleProof?.verify(`${command}-resume`);
           }
           if (phase3Faults) await mkdir(evidenceDirectory, { recursive: true });
           const phase3FaultInputs = phase3Faults
@@ -1124,6 +1159,10 @@ process.exit(result.status??1);
           project,
         });
       }
+      if (phase3Lifecycle) {
+        stage = 'hybrid explicit erasure';
+        lifecycle = await lifecycleProof.erase();
+      }
       result = {
         status: 'passed',
         profile: 'hybrid',
@@ -1142,17 +1181,20 @@ process.exit(result.status??1);
               workerCredentials,
               recipientAccessChecks,
               credentialKeyProjection,
-              durationScope: phase3Restore
-                ? 'Extracted hybrid installation, lifecycle, isolated restore, and fixture cleanup.'
-                : phase3Faults
-                  ? 'Extracted hybrid installation, public workflows, selected fault group, recovery, and fixture cleanup.'
-                  : phase3Upgrade
-                    ? 'Extracted Phase 2 hybrid installation, Phase 3 upgrade, public workflows, lifecycle, and fixture cleanup.'
-                    : 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
+              durationScope: phase3Lifecycle
+                ? 'Extracted hybrid installation, public workflows, lifecycle preservation, explicit erasure, and fixture cleanup.'
+                : phase3Restore
+                  ? 'Extracted hybrid installation, lifecycle, isolated restore, and fixture cleanup.'
+                  : phase3Faults
+                    ? 'Extracted hybrid installation, public workflows, selected fault group, recovery, and fixture cleanup.'
+                    : phase3Upgrade
+                      ? 'Extracted Phase 2 hybrid installation, Phase 3 upgrade, public workflows, lifecycle, and fixture cleanup.'
+                      : 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
             }
           : {}),
         ...(upgrade ? { upgrade } : {}),
         ...(restoration ? { restoration } : {}),
+        ...(lifecycle ? { lifecycle } : {}),
         ...(faults ? { faults } : {}),
         ...(capacity ? { capacity } : {}),
         ...(providerFaults ? { providerFaults } : {}),
@@ -1287,12 +1329,23 @@ process.exit(result.status??1);
         join(evidenceDirectory, 'hybrid-restore.json'),
         JSON.stringify(result, null, 2),
       );
+    if (phase3Lifecycle)
+      await writeFile(
+        join(evidenceDirectory, 'hybrid-lifecycle.json'),
+        JSON.stringify(result, null, 2),
+      );
     if (phase3Faults)
       await writeFile(
         join(evidenceDirectory, phase3FaultMode.report),
         JSON.stringify(result, null, 2),
       );
-    if (phase3 && !phase3Upgrade && !phase3Restore && !phase3Faults) {
+    if (
+      phase3 &&
+      !phase3Upgrade &&
+      !phase3Restore &&
+      !phase3Faults &&
+      !phase3Lifecycle
+    ) {
       for (const [kind, commands] of [
         [
           'installation',

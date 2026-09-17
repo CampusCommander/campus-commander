@@ -2,7 +2,7 @@
 
 [CC-58](https://easton-consulting.atlassian.net/browse/CC-58) requires extracted installation, resume, Phase 2 upgrade, restore, faults, and operator lifecycle evidence.
 The task remains incomplete.
-Installation, resume, Phase 2 upgrade, isolated restore, service faults, certificate faults, and capacity faults have passed hosted qualification.
+Installation, resume, Phase 2 upgrade, isolated restore, service faults, certificate faults, capacity faults, and provider faults have passed hosted qualification.
 Installed workflows, key projection, distributed renewal, and replica permission checks also passed.
 The checkpoint sections below link their exact application and harness evidence.
 
@@ -31,13 +31,12 @@ gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
   -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Profile=hybrid
 ```
 
-Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, service faults, certificate faults, capacity faults, and provider faults.
-Lifecycle and guided-update modes require their own Phase 3 fixtures before dispatch can accept them.
+Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, service faults, certificate faults, capacity faults, provider faults, and lifecycle.
+Guided-update mode requires its own Phase 3 fixture before dispatch can accept it.
 The existing Phase 2 targets retain their previous modes.
 
 ## Remaining evidence
 
-- Provider faults with bounded recovery and preserved state.
 - Guided update, retained external resources, and explicit erasure contracts.
 - Five completed profile reports and prerequisite acceptance.
 
@@ -485,3 +484,36 @@ Distributed credential renewal and worker restart passed.
 The [retained report](../../deployment/evidence/CC-58-capacity-faults.json) preserves all original fields and three source-report hashes.
 Its archive matches the published SHA-256 digest.
 This checkpoint does not establish district capacity or persistent storage acceptance. Complete CC-58 acceptance remains open.
+
+## Passed provider fault checkpoint
+
+[Run 35249190946](https://github.com/CampusCommander/campus-commander/actions/runs/35249190946) passed at harness `b783baf` against signed application `a3601ef`.
+PR CI passed. The complete fixture took 266,147 milliseconds. The provider segment took 24,260 milliseconds.
+Network, quota, denied domain privileges, and wrong-customer cases returned the expected capability failure.
+Their recovery times were 2,521, 2,535, 2,517, and 2,516 milliseconds. Each stayed within 45 seconds.
+
+All cases preserved the complete connection during failure and retained the previous successful observation time.
+Local diagnostics passed. A fresh application sign-in also passed during the synthetic Google outage.
+Recovery passed saved workflow reads, both API replicas, and durable checks. Retired credential generation checks passed.
+Each case preserved policy, credentials, two principals, 75 original security events, artifact bytes, and five completed Kestra executions.
+Distributed credential renewal and worker restart also passed.
+
+The [retained report](../../deployment/evidence/CC-58-provider-faults.json) preserves all original fields and three source-report hashes.
+Its archive matches the published SHA-256 digest.
+Live Google privileges, revocation, Education capabilities, and complete CC-58 acceptance remain open.
+
+## Lifecycle and external retention increment
+
+The `api-e2e:phase3-hybrid-lifecycle-integration` target verifies durable state after restart, stop/resume, and uninstall/resume.
+The delivered CLI must reject erasure without the exact project confirmation. That rejection must preserve volumes and durable state.
+The fixture stops writers before measuring external state. It then runs delivered confirmed controller erasure.
+Controller erasure must remove owned volumes and require separate action on each worker host.
+The fixture verifies that worker containers remain before it explicitly removes their owned resources through Compose.
+
+External PostgreSQL and Redis must retain their original container identities and remain available.
+Application records, migration checksums, completed Kestra executions, artifact files, and nonempty internal storage must remain unchanged.
+A protected Redis marker, every private file, and an unrelated control volume must survive both erasure stages.
+The fixture restores the original operator file and removes its labeled control volume before reporting success.
+Separate progress evidence records failed stages without raw errors.
+
+This increment requires hosted qualification. It does not establish different-release guided update or district acceptance.
