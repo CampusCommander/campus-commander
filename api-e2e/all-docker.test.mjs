@@ -24,18 +24,21 @@ import {
   qualifyPhase2Upgrade,
 } from './phase3-upgrade-fixture.mjs';
 
+import { faultAllDocker } from './all-docker-faults-fixture.mjs';
+
+const phase3Faults = process.env.CC_AUTH_PHASE3_FAULTS === '1';
 const phase3Restore = process.env.CC_AUTH_PHASE3_RESTORE === '1';
 const phase3Upgrade = process.env.CC_AUTH_PHASE3_UPGRADE === '1';
 const phase3Workflows =
-  process.env.CC_AUTH_PHASE3_WORKFLOWS === '1' || phase3Upgrade;
+  process.env.CC_AUTH_PHASE3_WORKFLOWS === '1' || phase3Upgrade || phase3Faults;
 assert.ok(
-  !(phase3Restore && phase3Workflows),
+  !(phase3Restore && phase3Workflows) && !(phase3Upgrade && phase3Faults),
   'Select one Phase 3 profile qualification mode.',
 );
 const applicationPhase = phase3Restore || phase3Workflows ? 3 : 2;
 assert.ok(
-  !phase3Upgrade || process.env.CC_AUTH_INSTALLER_ROOT,
-  'Upgrade qualification requires the verified Phase 3 installer directory.',
+  !(phase3Upgrade || phase3Faults) || process.env.CC_AUTH_INSTALLER_ROOT,
+  'Upgrade and fault qualification require the verified Phase 3 installer directory.',
 );
 
 const execute = promisify(execFile);
@@ -64,13 +67,15 @@ test(
     ).trim()
       ? 'uncommitted-candidate'
       : 'clean';
-    const evidenceDirectory = phase3Restore
-      ? 'dist/phase-3-recovery'
-      : phase3Upgrade
-        ? 'dist/phase-3-upgrade'
-        : phase3Workflows
-          ? 'dist/phase-3-installation'
-          : 'dist/phase-2-evidence';
+    const evidenceDirectory = phase3Faults
+      ? 'dist/phase-3-faults'
+      : phase3Restore
+        ? 'dist/phase-3-recovery'
+        : phase3Upgrade
+          ? 'dist/phase-3-upgrade'
+          : phase3Workflows
+            ? 'dist/phase-3-installation'
+            : 'dist/phase-2-evidence';
     await mkdir(evidenceDirectory, { recursive: true });
     const root = await mkdtemp(
       join(tmpdir(), `cc-phase${applicationPhase}-compose-`),
@@ -513,6 +518,27 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             'data-theme',
             'dark',
           );
+          if (phase3Faults) {
+            await faultAllDocker({
+              root,
+              project,
+              config,
+              release: installationRelease,
+              compose,
+              id: (service) => compose('ps', '--quiet', service).split('\n')[0],
+              page,
+              checks,
+              evidencePath: `${evidenceDirectory}/all-docker-faults.json`,
+              evidenceIdentity: {
+                harnessRevision,
+                harnessWorkingTree,
+                bundleManifestSha256,
+                command: 'npm exec -- nx run api-e2e:phase3-fault-integration',
+              },
+            });
+            await installedWorkflows.verifyAfterRestart();
+            await verifyReplicas(context, 'fault-recovery-session');
+          }
           compose('restart', 'api', 'frontend', 'workers');
           compose('up', '-d', '--wait', '--wait-timeout', '120');
           const restartedAddresses = addresses();
@@ -632,9 +658,11 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                   : 'workspace',
                 bundleManifestSha256,
               },
-              command: phase3Upgrade
-                ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
-                : 'npm exec -- nx run api-e2e:phase3-install-integration',
+              command: phase3Faults
+                ? 'npm exec -- nx run api-e2e:phase3-fault-integration'
+                : phase3Upgrade
+                  ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
+                  : 'npm exec -- nx run api-e2e:phase3-install-integration',
               environment: {
                 nodeVersion: process.version,
                 platform: process.platform,
@@ -707,13 +735,15 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             status: 'passed',
             profile: 'all-docker',
             phase: applicationPhase,
-            command: phase3Restore
-              ? 'npm exec -- nx run api-e2e:phase3-restore-integration'
-              : phase3Upgrade
-                ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
-                : phase3Workflows
-                  ? 'npm exec -- nx run api-e2e:phase3-install-integration'
-                  : 'npm exec -- nx run api-e2e:all-docker-integration',
+            command: phase3Faults
+              ? 'npm exec -- nx run api-e2e:phase3-fault-integration'
+              : phase3Restore
+                ? 'npm exec -- nx run api-e2e:phase3-restore-integration'
+                : phase3Upgrade
+                  ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
+                  : phase3Workflows
+                    ? 'npm exec -- nx run api-e2e:phase3-install-integration'
+                    : 'npm exec -- nx run api-e2e:all-docker-integration',
             environment: {
               nodeVersion: process.version,
               platform: process.platform,

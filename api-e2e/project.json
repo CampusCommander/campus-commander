@@ -74,7 +74,7 @@
     "e2e": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test api-e2e/api.test.mjs api-e2e/evidence-security.test.mjs api-e2e/provider-fixture.test.mjs"
+        "command": "node --test api-e2e/api.test.mjs api-e2e/evidence-security.test.mjs api-e2e/provider-fixture.test.mjs api-e2e/all-docker-faults-fixture.test.mjs"
       },
       "dependsOn": ["api:build"]
     },
@@ -348,6 +348,17 @@
         }
       },
       "cache": false
+    },
+    "phase3-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_FAULTS": "1"
+        }
+      }
     }
   }
 }

@@ -19,6 +19,10 @@ on:
         description: Upgrade the pinned Phase 2 release before Phase 3 workflow checks
         type: boolean
         default: false
+      phase3Faults:
+        description: Test service interruption and durable Phase 3 state
+        type: boolean
+        default: false
       phase3Only:
         description: Run only the Phase 3 source API and browser qualification
         type: boolean
@@ -39,6 +43,7 @@ jobs:
     with:
       release: ${{ inputs.phase3Release }}
       upgrade: ${{ inputs.phase3Upgrade == true }}
+      faults: ${{ inputs.phase3Faults == true }}
     permissions:
       contents: read
       packages: read

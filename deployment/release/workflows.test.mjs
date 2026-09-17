@@ -368,7 +368,7 @@ test('upgrade dispatch verifies the pinned baseline before running the delivered
   assert.equal(
     steps.find((step) => step.name === 'Qualify installed Phase 3 workflows')
       .if,
-    'inputs.upgrade != true',
+    'inputs.upgrade != true && inputs.faults != true',
   );
   assert.equal(
     baseline.env.BASELINE_IDENTITY,
@@ -464,4 +464,41 @@ test('upgrade dispatch verifies the pinned baseline before running the delivered
   await writeFile(pinPath, JSON.stringify(pinned));
   await writeFile(join(root, 'bundle/cli.mjs'), 'changed');
   assert.throws(runBundle);
+});
+
+test('service fault dispatch rejects upgrade mode before starting containers', async () => {
+  const ci = await workflow('ci');
+  const profile = await workflow('phase-3-profile-check');
+  assert.equal(ci.on.workflow_dispatch.inputs.phase3Faults.default, false);
+  assert.equal(
+    ci.jobs['phase3-profile'].with.faults,
+    '${{ inputs.phase3Faults == true }}',
+  );
+  const steps = profile.jobs.installation.steps;
+  const guard = steps[0];
+  for (const [upgrade, faults, success] of [
+    ['false', 'false', true],
+    ['true', 'false', true],
+    ['false', 'true', true],
+    ['true', 'true', false],
+  ]) {
+    const run = () =>
+      execFileSync('bash', ['-e', '-c', guard.run], {
+        env: { ...process.env, UPGRADE: upgrade, FAULTS: faults },
+        stdio: 'pipe',
+      });
+    if (success) assert.doesNotThrow(run);
+    else assert.throws(run);
+  }
+  const fault = steps.find(
+    (step) => step.name === 'Qualify Phase 3 service interruptions',
+  );
+  assert.equal(fault.if, 'inputs.faults');
+  assert.equal(fault.run, 'npm exec nx run api-e2e:phase3-fault-integration');
+  assert.ok(
+    steps.indexOf(fault) >
+      steps.findIndex(
+        (step) => step.name === 'Prepare published image references',
+      ),
+  );
 });
