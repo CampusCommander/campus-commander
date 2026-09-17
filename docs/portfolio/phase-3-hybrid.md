@@ -37,7 +37,7 @@ The existing Phase 2 targets retain their previous modes.
 ## Remaining evidence
 
 - Guided update qualification.
-- Five completed profile reports and prerequisite acceptance.
+- Prerequisite acceptance and complete hybrid acceptance.
 
 Three Docker daemons share one physical Docker host and synthetic shared storage.
 They do not establish independent physical failure domains or district storage qualification.
@@ -556,3 +556,22 @@ The Redis marker, private files, and unrelated volume survived. Cleanup restored
 The [retained report](../../deployment/evidence/CC-58-lifecycle.json) preserves all original fields and three source-report hashes.
 Its archive matches the published SHA-256 digest.
 Different-release guided update, district acceptance, five completed profile reports, and prerequisite acceptance remain open.
+
+## Hybrid report inventory
+
+The [profile inventory](../../deployment/evidence/CC-58-profile-evidence.json) binds five distinct report categories to signed application `a3601ef` and its manifest.
+Each entry records the retained file size and SHA-256 hash.
+Supplemental reports cover installed workflows, distributed credential renewal, replica permissions, and lifecycle.
+
+| Report       | Evidence                                                                                                             |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Installation | [Delivered installation](../../deployment/evidence/CC-58-installation.json)                                          |
+| Resume       | [Delivered repeated resume](../../deployment/evidence/CC-58-resume.json)                                             |
+| Upgrade      | [Pinned Phase 2 upgrade with native operator commands](../../deployment/evidence/CC-58-native-operator-upgrade.json) |
+| Restore      | [Isolated restore with nonempty storage](../../deployment/evidence/CC-58-nonempty-storage-restore.json)              |
+| Faults       | [Service, provider, certificate, and capacity groups](../../deployment/evidence/CC-58-faults.json)                   |
+
+The fault aggregate references four independent runs against the same application. All thirteen fault cases passed their recorded recovery bounds.
+Every source report retains its preservation checks, provenance, and measured limits.
+The inventory remains incomplete until guided update qualification and prerequisite acceptance finish.
+It does not transfer source results to the guided-update target or permit full release assembly.

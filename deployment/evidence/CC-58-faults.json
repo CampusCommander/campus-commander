@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "hybrid",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "status": "passed",
+  "scope": "Aggregation of the four executed fault groups only.",
+  "recordedAt": "2026-09-17T17:12:41.073586+00:00",
+  "groups": [
+    {
+      "kind": "service-faults",
+      "report": {
+        "path": "CC-58-service-faults.json",
+        "sizeBytes": 62629,
+        "sha256": "a17a3bbc3b118484b373eb4b75b11606f5566817338dd6aae7c1342e31ecd803",
+        "status": "passed"
+      },
+      "harnessRevision": "bcc0d601e2f88428598b30086c361c913c20a50b",
+      "command": "npm exec -- nx run api-e2e:phase3-hybrid-fault-integration",
+      "environment": {
+        "nodeVersion": "v24.19.0",
+        "platform": "linux",
+        "architecture": "x64",
+        "uid": 1000,
+        "gid": 1000
+      },
+      "durationMs": 143317,
+      "durationScope": "Service fault baselines, interruption, recovery, and state verification.",
+      "recoveryBoundSeconds": 180,
+      "cases": [
+        {
+          "name": "api-interruption",
+          "status": "passed",
+          "recoveryMs": 7360
+        },
+        {
+          "name": "worker-host-interruption",
+          "status": "passed",
+          "recoveryMs": 3587
+        },
+        {
+          "name": "external-redis-interruption",
+          "status": "passed",
+          "recoveryMs": 4676
+        },
+        {
+          "name": "external-postgresql-interruption",
+          "status": "passed",
+          "recoveryMs": 77545
+        },
+        {
+          "name": "kestra-interruption",
+          "status": "passed",
+          "recoveryMs": 15129
+        },
+        {
+          "name": "shared-artifact-access-loss",
+          "status": "passed",
+          "recoveryMs": 3707
+        }
+      ],
+      "provenance": {
+        "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35244946498",
+        "artifact": "phase-3-hybrid-service-faults",
+        "artifactId": 10507332075,
+        "artifactArchiveSha256": "17175af6fdb6bde3311a6f454133c36b280809204eb02e2efd90a3715f451059",
+        "releaseTag": "phase-3-lab-a3601eff2a55",
+        "reports": [
+          {
+            "path": "hybrid-cli.json",
+            "sizeBytes": 61787,
+            "sha256": "c42da548e85746ae09d7469eafb4574b22a1cda2f7edf72cbc7b94756e3d88bc"
+          },
+          {
+            "path": "hybrid-fault-progress.json",
+            "sizeBytes": 11702,
+            "sha256": "e29dbd53a7aa4414ce54842d7b8f6459d72d51352bc4d1ce93d52e96e10594b8"
+          },
+          {
+            "path": "hybrid-faults.json",
+            "sizeBytes": 61787,
+            "sha256": "c42da548e85746ae09d7469eafb4574b22a1cda2f7edf72cbc7b94756e3d88bc"
+          }
+        ]
+      },
+      "limits": [
+        "Process and shared-artifact access faults only. Capacity and certificate faults require separate evidence."
+      ]
+    },
+    {
+      "kind": "provider-faults",
+      "report": {
+        "path": "CC-58-provider-faults.json",
+        "sizeBytes": 46385,
+        "sha256": "cc540da5c833fc5c914bfb550a16bc23e4f15dded3b6f1ac2cd125b93a3404bb",
+        "status": "passed"
+      },
+      "harnessRevision": "b783baf865d2e9f0ce400ff488548c90f61afa82",
+      "command": "npm exec -- nx run api-e2e:phase3-hybrid-provider-fault-integration",
+      "environment": {
+        "nodeVersion": "v24.19.0",
+        "platform": "linux",
+        "architecture": "x64",
+        "browser": "149.0.7827.55"
+      },
+      "durationMs": 24260,
+      "durationScope": "Provider fault setup, public checks, local sign-in, recovery, and preservation probes.",
+      "recoveryBoundSeconds": 45,
+      "cases": [
+        {
+          "name": "network",
+          "status": "passed",
+          "recoveryMs": 2521
+        },
+        {
+          "name": "quota",
+          "status": "passed",
+          "recoveryMs": 2535
+        },
+        {
+          "name": "domain-privilege-denied",
+          "status": "passed",
+          "recoveryMs": 2517
+        },
+        {
+          "name": "wrong-customer",
+          "status": "passed",
+          "recoveryMs": 2516
+        }
+      ],
+      "provenance": {
+        "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35249190946",
+        "artifact": "phase-3-hybrid-provider-faults",
+        "artifactId": 10508562484,
+        "artifactArchiveSha256": "12aaa081afdc3c4fca97b29854621f20d47a647e480cf0dcedf67d13eea3b8f8",
+        "releaseTag": "phase-3-lab-a3601eff2a55",
+        "reports": [
+          {
+            "path": "hybrid-cli.json",
+            "sizeBytes": 45534,
+            "sha256": "b8cf652c255d9deb3c0cce74f5cd7663d64c36601bcb2fe38901c0e805100ab6"
+          },
+          {
+            "path": "hybrid-fault-progress.json",
+            "sizeBytes": 8526,
+            "sha256": "2fa3fd1dce662619e5445b72c160c93c4324364d4d178025b730653eb08f1cde"
+          },
+          {
+            "path": "hybrid-provider-faults.json",
+            "sizeBytes": 45534,
+            "sha256": "b8cf652c255d9deb3c0cce74f5cd7663d64c36601bcb2fe38901c0e805100ab6"
+          }
+        ]
+      },
+      "limits": [
+        "Google responses and application sign-in use independent synthetic providers.",
+        "The fixture advances the health-check retry timestamp in its owned database.",
+        "Policy hashes exclude connection observation fields that successful health checks refresh. Each failed check separately preserves the full connection.",
+        "These checks do not establish live Google privileges, revocation, or Education behavior.",
+        "Capacity, certificates, and complete profile acceptance require separate evidence."
+      ]
+    },
+    {
+      "kind": "certificate-faults",
+      "report": {
+        "path": "CC-58-certificate-faults.json",
+        "sizeBytes": 43602,
+        "sha256": "89c7ed948bc07c5f5659dc2f8ca75ec9d62b7165cae6dfc2bb07d852bb9d0e34",
+        "status": "passed"
+      },
+      "harnessRevision": "53d10955e6d538377980c8223e0ff2be88a220df",
+      "command": "npm exec -- nx run api-e2e:phase3-hybrid-certificate-fault-integration",
+      "environment": {
+        "nodeVersion": "v24.19.0",
+        "platform": "linux",
+        "architecture": "x64",
+        "uid": 1000,
+        "gid": 1000
+      },
+      "durationMs": 29595,
+      "durationScope": "Certificate preparation, invalid certificate rejection, authenticated recovery, and original secret restoration.",
+      "recoveryBoundSeconds": 180,
+      "cases": [
+        {
+          "name": "expired",
+          "status": "passed",
+          "recoveryMs": 5280
+        },
+        {
+          "name": "wrong-host",
+          "status": "passed",
+          "recoveryMs": 5383
+        }
+      ],
+      "provenance": {
+        "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35246760613",
+        "artifact": "phase-3-hybrid-certificate-faults",
+        "artifactId": 10508032695,
+        "artifactArchiveSha256": "a65776ce9203a992336cdf09e8acdcaa2d863874a2d139314fdec92b3358a939",
+        "releaseTag": "phase-3-lab-a3601eff2a55",
+        "reports": [
+          {
+            "path": "hybrid-certificates.json",
+            "sizeBytes": 42751,
+            "sha256": "f85da6b5bfb8d041b4a73534f9cf6b6e4434dc34a2aeda6e417a20d4788a7c49"
+          },
+          {
+            "path": "hybrid-cli.json",
+            "sizeBytes": 42751,
+            "sha256": "f85da6b5bfb8d041b4a73534f9cf6b6e4434dc34a2aeda6e417a20d4788a7c49"
+          },
+          {
+            "path": "hybrid-fault-progress.json",
+            "sizeBytes": 4743,
+            "sha256": "1965f43de7fbd86cf66808e8e5ac6b47d55a71800c57a9905eb43314f884b3cb"
+          }
+        ]
+      },
+      "limits": [
+        "The fixture replaces only edge certificates in an owned distributed hybrid installation.",
+        "Three Docker daemons share one physical host and synthetic district services. District certificate lifecycle requires separate qualification."
+      ]
+    },
+    {
+      "kind": "capacity-faults",
+      "report": {
+        "path": "CC-58-capacity-faults.json",
+        "sizeBytes": 38694,
+        "sha256": "f3b81b6e5de38dbe4d2159a24dd561de8c3712f255fbdf718f2416db8748e143",
+        "status": "passed"
+      },
+      "harnessRevision": "80ac14d65cb32ceb058588b544ea7f2855b2af09",
+      "command": "npm exec -- nx run api-e2e:phase3-hybrid-capacity-fault-integration",
+      "environment": {
+        "nodeVersion": "v24.19.0",
+        "platform": "linux",
+        "architecture": "x64",
+        "uid": 1000,
+        "gid": 1000
+      },
+      "durationMs": 13587,
+      "durationScope": "Bounded storage exhaustion, failed publication, authenticated recovery, and preserved state.",
+      "recoveryBoundSeconds": 180,
+      "cases": [
+        {
+          "name": "bounded-artifact-capacity",
+          "status": "passed",
+          "recoveryMs": 4526
+        }
+      ],
+      "provenance": {
+        "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35248551259",
+        "artifact": "phase-3-hybrid-capacity-faults",
+        "artifactId": 10509076124,
+        "artifactArchiveSha256": "4ac527a134af88b5195c11f9080618fa19192c76da2d278e9ffb77c8e65c8dfc",
+        "releaseTag": "phase-3-lab-a3601eff2a55",
+        "reports": [
+          {
+            "path": "hybrid-capacity.json",
+            "sizeBytes": 37850,
+            "sha256": "3bda9ba9d851777090e6ca38587e9759c2592c3c5e9fa8c99f1a7fea131cc506"
+          },
+          {
+            "path": "hybrid-cli.json",
+            "sizeBytes": 37850,
+            "sha256": "3bda9ba9d851777090e6ca38587e9759c2592c3c5e9fa8c99f1a7fea131cc506"
+          },
+          {
+            "path": "hybrid-fault-progress.json",
+            "sizeBytes": 5734,
+            "sha256": "6b0c26448fe1a6ef2618a0a6999de0baa19ab965c26a1f8779a648f91256a199"
+          }
+        ]
+      },
+      "limits": [
+        "The three Docker daemons share one physical host and a capped synthetic tmpfs artifact volume.",
+        "The capacity fixture does not establish persistent storage, district capacity, or district infrastructure acceptance."
+      ]
+    }
+  ],
+  "limits": [
+    "Each group ran independently against the same signed laboratory release.",
+    "Group reports retain original measurements, preservation checks, and fixture limits.",
+    "Lifecycle, distributed credential checks, and different-release update evidence remain separate.",
+    "Three Docker daemons share one physical host and synthetic district services.",
+    "This aggregate does not establish complete profile or release acceptance."
+  ]
+}
