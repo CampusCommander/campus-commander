@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "recordedAt": "2026-09-17T10:36:29.382Z",
+  "phase": 3,
+  "sourceRevision": "7ddf1418352d9ebfc20b19ce9a229c8ab742dcee",
+  "publisherRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35210688406",
+  "command": "cosign verify --certificate-identity <fixed publisher> --certificate-oidc-issuer https://token.actions.githubusercontent.com <image digest>",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cosign": "v3.1.3",
+    "registryCredentials": "isolated-empty-Docker-configuration"
+  },
+  "signingIdentity": "https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery",
+  "oidcIssuer": "https://token.actions.githubusercontent.com",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a9f7b5d9bea543b720806a4dcf1f59ed5f2cbb78c31d616c4a2d78eeedfa3cc5",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:752be8acd63de290096c97b4d9e24eac54f49166f625245db5f1c7b8c911e332",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:b90ad495c00aae7e2904aee2502c9b828beb029acc9e79acf6ef1e05f4b756bd"
+  },
+  "reports": [
+    {
+      "service": "frontend",
+      "reference": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a9f7b5d9bea543b720806a4dcf1f59ed5f2cbb78c31d616c4a2d78eeedfa3cc5",
+      "status": "passed",
+      "durationMs": 1321,
+      "signatureCount": 1,
+      "verificationSha256": "333bf2b1fc5ce73996765d5b3418492f35540903cd7acaeedcb1ed22df2c4d0e"
+    },
+    {
+      "service": "api",
+      "reference": "ghcr.io/campuscommander/campus-commander-api@sha256:752be8acd63de290096c97b4d9e24eac54f49166f625245db5f1c7b8c911e332",
+      "status": "passed",
+      "durationMs": 1323,
+      "signatureCount": 1,
+      "verificationSha256": "f010defde5115821801ebf1592744c0305ce1cfc11ec9e019978f9b00b3be1dc"
+    },
+    {
+      "service": "worker",
+      "reference": "ghcr.io/campuscommander/campus-commander-worker@sha256:b90ad495c00aae7e2904aee2502c9b828beb029acc9e79acf6ef1e05f4b756bd",
+      "status": "passed",
+      "durationMs": 1342,
+      "signatureCount": 1,
+      "verificationSha256": "a586c2b6a5b64cdde43cc2b35e111575836210f1f45f7b08efa0fcc32cd6ce22"
+    }
+  ],
+  "durationMs": 3986,
+  "durationScope": "Sum of the three independent signature verification commands. Excludes downloads.",
+  "limits": [
+    "This record verifies image signatures only. It does not establish archive publication, extracted installer execution, or release acceptance.",
+    "The source revision is the publishing workflow revision. Packaged authorization separately checks runtime image labels.",
+    "Later upgrade-policy changes do not inherit this source revision evidence."
+  ]
+}

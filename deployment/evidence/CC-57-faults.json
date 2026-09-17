@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "all-docker",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "status": "passed",
+  "scope": "Aggregation of the four executed fault groups only.",
+  "recordedAt": "2026-09-17T13:11:44.674173+00:00",
+  "groups": [
+    {
+      "kind": "service-faults",
+      "report": {
+        "path": "CC-57-service-faults.json",
+        "sizeBytes": 17333,
+        "sha256": "cdf7e4637c949462335461b5be8c199b4572f521f595085911f65846951c427d",
+        "status": "passed"
+      },
+      "harnessRevision": "6cb04af732ebc2b4033cdccc5d6e2e339de9f503",
+      "command": "npm exec -- nx run api-e2e:phase3-fault-integration",
+      "environment": {
+        "nodeVersion": "v24.19.0",
+        "platform": "linux",
+        "architecture": "x64",
+        "browser": "149.0.7827.55"
+      },
+      "durationMs": 186002,
+      "durationScope": "Durable-state setup, service interruptions, recovery checks, and preservation probes.",
+      "recoveryBoundSeconds": 180,
+      "cases": [
+        {
+          "name": "api-interruption",
+          "status": "passed",
+          "recoveryMs": 3947
+        },
+        {
+          "name": "worker-interruption",
+          "status": "passed",
+          "recoveryMs": 8859
+        },
+        {
+          "name": "redis-interruption",
+          "status": "passed",
+          "recoveryMs": 1755
+        },
+        {
+          "name": "application-postgresql-interruption",
+          "status": "passed",
+          "recoveryMs": 1048
+        },
+        {
+          "name": "kestra-postgresql-interruption",
+          "status": "passed",
+          "recoveryMs": 73823
+        },
+        {
+          "name": "kestra-interruption",
+          "status": "passed",
+          "recoveryMs": 10535
+        },
+        {
+          "name": "artifact-access-loss",
+          "status": "passed",
+          "recoveryMs": 1031
+        }
+      ],
+      "provenance": {
+        "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35218528299",
+        "artifact": "phase-3-service-faults",
+        "reports": [
+          {
+            "path": "all-docker-faults.json",
+            "sizeBytes": 13233,
+            "sha256": "0bd0106f2b8835a18fa7b6fd7bee457b50230b59195f6bcb9cfd23575afc365b"
+          },
+          {
+            "path": "all-docker-profile.json",
+            "sizeBytes": 22864,
+            "sha256": "9aeaa740740a7abb59d109ca16cfa68d84511338d6bcfd1e06030c8cf276a2dd"
+          },
+          {
+            "path": "phase3-workflows.json",
+            "sizeBytes": 7512,
+            "sha256": "cb4af2eace322de70efedd679bed767888a4cf6ac3ecb9952b3308bb55b3486b"
+          }
+        ]
+      },
+      "limits": [
+        "One Docker host retains host and volume failure points.",
+        "Capacity and certificate faults require separate evidence.",
+        "Provider faults, stale credentials, and full profile acceptance require separate evidence."
+      ]
+    },
+    {
+      "kind": "provider-faults",
+      "report": {
+        "path": "CC-57-provider-faults.json",
+        "sizeBytes": 12610,
+        "sha256": "763e4eca9459df7090ef8e0f727e41f5e0d0271d986616e5cdd75d55a2be2d22",
+        "status": "passed"
+      },
+      "harnessRevision": "476acd977955a84cd15f9fac9998adac324c6908",
+      "command": "npm exec -- nx run api-e2e:phase3-provider-fault-integration",
+      "environment": {
+        "nodeVersion": "v24.19.0",
+        "platform": "linux",
+        "architecture": "x64",
+        "browser": "149.0.7827.55"
+      },
+      "durationMs": 34776,
+      "durationScope": "Provider fault setup, public checks, local sign-in, recovery, and preservation probes.",
+      "recoveryBoundSeconds": 45,
+      "cases": [
+        {
+          "name": "network",
+          "status": "passed",
+          "recoveryMs": 273
+        },
+        {
+          "name": "quota",
+          "status": "passed",
+          "recoveryMs": 287
+        },
+        {
+          "name": "domain-privilege-denied",
+          "status": "passed",
+          "recoveryMs": 253
+        },
+        {
+          "name": "wrong-customer",
+          "status": "passed",
+          "recoveryMs": 248
+        }
+      ],
+      "provenance": {
+        "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35219808031",
+        "artifact": "phase-3-provider-faults",
+        "reports": [
+          {
+            "path": "all-docker-faults.json",
+            "sizeBytes": 8511,
+            "sha256": "6dfdf4a0085454acf1d432b936e400c33fa9e3cf16f24035b7c64b403253a288"
+          },
+          {
+            "path": "all-docker-profile.json",
+            "sizeBytes": 12360,
+            "sha256": "4104ae025f9dfe722e1c8767a493b2cd29e1199b8d0b8ab98dbdcf28a3b30a12"
+          },
+          {
+            "path": "phase3-workflows.json",
+            "sizeBytes": 7520,
+            "sha256": "09a941cd914f7eecdc973e2b94449a6e1d76d0fc0c8b6c8d46d50f5522fcb099"
+          }
+        ]
+      },
+      "limits": [
+        "Google responses and application sign-in use independent synthetic providers.",
+        "The fixture advances the health-check retry timestamp in its owned database.",
+        "Policy hashes exclude connection observation fields that successful health checks refresh. Each failed check separately preserves the full connection.",
+        "These checks do not establish live Google privileges, revocation, or Education behavior.",
+        "Capacity, certificates, and complete profile acceptance require separate evidence."
+      ]
+    },
+    {
+      "kind": "certificate-faults",
+      "report": {
+        "path": "CC-57-certificate-faults.json",
+        "sizeBytes": 10456,
+        "sha256": "ffc0379684932404681f61522be33be2aaa5087adf4a28da574d1c796b772be1",
+        "status": "passed"
+      },
+      "harnessRevision": "876ed0721cd40af82ce06ce16f94ff5b305fa503",
+      "command": "npm exec -- nx run api-e2e:phase3-certificate-fault-integration",
+      "environment": {
+        "nodeVersion": "v24.19.0",
+        "platform": "linux",
+        "architecture": "x64",
+        "browser": "149.0.7827.55"
+      },
+      "durationMs": 73735,
+      "durationScope": "Certificate setup, rejection checks, recovery, durable-state probes, and original secret restoration.",
+      "recoveryBoundSeconds": 180,
+      "cases": [
+        {
+          "name": "expired",
+          "status": "passed",
+          "recoveryMs": 9152
+        },
+        {
+          "name": "wrong-host",
+          "status": "passed",
+          "recoveryMs": 9944
+        },
+        {
+          "name": "untrusted",
+          "status": "passed",
+          "recoveryMs": 9080
+        }
+      ],
+      "provenance": {
+        "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35220374649",
+        "artifact": "phase-3-certificate-faults",
+        "reports": [
+          {
+            "path": "all-docker-faults.json",
+            "sizeBytes": 6354,
+            "sha256": "8f95a6880ec3f5fe4787dbb1cd9dd7b4e04fc8615cad7af5c3b35df6cc697cd7"
+          },
+          {
+            "path": "all-docker-profile.json",
+            "sizeBytes": 13895,
+            "sha256": "90b5128e7f632820209f137853ae3d24c0e42e5f70a85df3eb06e78a3089fd17"
+          },
+          {
+            "path": "phase3-workflows.json",
+            "sizeBytes": 7523,
+            "sha256": "78b6be0ad35b948bd955a8e1c904ac201b272c980ae1c04c83b164412c365d66"
+          }
+        ]
+      },
+      "limits": [
+        "One Docker host retains host and local-volume failure points.",
+        "The fixture uses synthetic certificates and an independent synthetic identity provider.",
+        "TLS rejection uses a strict Node HTTPS client. Browser checks omit synthetic certificate trust prompts.",
+        "Capacity and complete profile acceptance require separate evidence."
+      ]
+    },
+    {
+      "kind": "capacity-faults",
+      "report": {
+        "path": "CC-57-capacity-faults.json",
+        "sizeBytes": 7282,
+        "sha256": "e246fe5795287d889ea38fe006701d370c3a78f417f2f6cda9883cc4d3fa17ce",
+        "status": "passed"
+      },
+      "harnessRevision": "a239e01d763123842fe37104032b0f7b9b4a9e09",
+      "command": "npm exec -- nx run api-e2e:phase3-capacity-fault-integration",
+      "environment": {
+        "nodeVersion": "v24.19.0",
+        "platform": "linux",
+        "architecture": "x64",
+        "browser": "149.0.7827.55"
+      },
+      "durationMs": 10805,
+      "durationScope": "Capacity setup, bounded ENOSPC, authenticated artifact failure, recovery, and preservation probes.",
+      "recoveryBoundSeconds": 60,
+      "cases": [
+        {
+          "name": "artifact-filesystem-full",
+          "status": "passed",
+          "recoveryMs": 1228
+        }
+      ],
+      "provenance": {
+        "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35221699210",
+        "artifact": "phase-3-capacity-faults",
+        "reports": [
+          {
+            "path": "all-docker-faults.json",
+            "sizeBytes": 3183,
+            "sha256": "308591cd1c1a255600fe5641bc09aa338c5c12cbed2650bd7fdf9a4bcc1bbd71"
+          },
+          {
+            "path": "all-docker-profile.json",
+            "sizeBytes": 11208,
+            "sha256": "86459e2bbd001f8014a3ffdc2c47196687c724018115c34b1f133253ce211b6a"
+          },
+          {
+            "path": "phase3-workflows.json",
+            "sizeBytes": 7520,
+            "sha256": "8e23dfd5813e100a599a6f8f81ae994a7b9d3213fb467ba37e3ff0d11292c3ee"
+          }
+        ]
+      },
+      "limits": [
+        "The fixture uses a disposable 16 MiB tmpfs artifact volume.",
+        "This test models ENOSPC. It does not establish physical disk or power-loss durability.",
+        "Preservation probes cover the capacity fault and recovery before subsequent installer lifecycle checks.",
+        "Complete profile acceptance requires the other distinct lifecycle reports."
+      ]
+    }
+  ],
+  "limits": [
+    "Each group ran independently against the same signed laboratory release.",
+    "Group reports retain their original measurements, preservation checks, and fixture limits.",
+    "Lifecycle and different-release update evidence remain separate.",
+    "This aggregate does not establish full profile or release acceptance."
+  ]
+}

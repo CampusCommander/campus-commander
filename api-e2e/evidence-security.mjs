@@ -46,12 +46,18 @@ export class EvidenceSecurity {
   #pageIds = new WeakMap();
   #closing = new WeakSet();
   #requests = new Map();
+  #retiredRequests = new WeakSet();
 
   async newContext(browser, options) {
     const context = await browser.newContext(options);
     const contextId = ++this.#contextSequence;
     context.on('page', (page) => {
       this.#pageIds.set(page, ++this.#pageSequence);
+      page.on('close', () => {
+        // Chromium omits completion events for requests that race page closure.
+        for (const [request, active] of this.#requests)
+          if (active.page === page) this.#retireRequest(request);
+      });
     });
     let contextClosed = false;
     context.on('close', () => {
@@ -65,6 +71,10 @@ export class EvidenceSecurity {
         page = request.frame().page();
       } catch {
         // Worker requests belong to the context.
+      }
+      if (page?.isClosed()) {
+        this.#retireRequest(request);
+        return;
       }
       const finished = Promise.withResolvers();
       const active = {
@@ -211,7 +221,7 @@ export class EvidenceSecurity {
     });
     context.on('requestfailed', (request) => {
       this.#finishRequest(request);
-      this.#incompleteResponses++;
+      if (!this.#retiredRequests.has(request)) this.#incompleteResponses++;
     });
     return context;
   }
@@ -239,6 +249,14 @@ export class EvidenceSecurity {
     const active = this.#requests.get(request);
     this.#requests.delete(request);
     active?.finished.resolve();
+  }
+
+  #retireRequest(request) {
+    if (!this.#retiredRequests.has(request)) {
+      this.#retiredRequests.add(request);
+      this.#incompleteResponses++;
+    }
+    this.#finishRequest(request);
   }
 
   async #finishResourceRequests(resource) {

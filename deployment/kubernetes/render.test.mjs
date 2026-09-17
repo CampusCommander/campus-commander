@@ -215,3 +215,35 @@ test('TLS probes preserve certificate verification and edge egress reaches only 
     ['frontend', 'api'],
   );
 });
+
+test('database wait containers receive only configuration and their database credentials', () => {
+  const list = render();
+  for (const name of ['api', 'workers', 'kestra']) {
+    const pod = workload(list, name).spec.template.spec;
+    const wait = pod.initContainers.find(
+      (container) => container.name === 'wait-database',
+    );
+    const database =
+      profile.services[
+        name === 'kestra' ? 'kestraDatabase' : 'applicationDatabase'
+      ];
+    const expected = [
+      database.passwordSecretRef,
+      database.endpoint.tls.caSecretRef,
+    ]
+      .map((ref) => `${ref.name}/${ref.key}`)
+      .sort();
+    assert.ok(wait.volumeMounts.some((mount) => mount.name === 'config'));
+    const projected = wait.volumeMounts
+      .filter((mount) => mount.name !== 'config')
+      .flatMap((mount) => {
+        assert.equal(mount.readOnly, true);
+        const volume = pod.volumes.find((item) => item.name === mount.name);
+        return volume.secret.items.map(
+          (item) => `${volume.secret.secretName}/${item.key}`,
+        );
+      })
+      .sort();
+    assert.deepEqual(projected, expected);
+  }
+});

@@ -17,9 +17,67 @@ import { applicationBrowser } from './profile-browser.mjs';
 import { startRegistry } from './registry-fixture.mjs';
 import { qualifyApplicationRestore } from './restore-fixture.mjs';
 import { qualificationBrowserStep } from './qualification-sign-in.mjs';
+import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
+import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
+import {
+  loadPhase2UpgradeBaseline,
+  qualifyPhase2Upgrade,
+} from './phase3-upgrade-fixture.mjs';
 
+import { faultAllDocker } from './all-docker-faults-fixture.mjs';
+import { qualifyAllDockerCertificates } from './all-docker-certificates-fixture.mjs';
+import { qualifyInstalledUpdate } from './phase3-update-fixture.mjs';
+import { createInstalledLifecycleProof } from './phase3-lifecycle-fixture.mjs';
+import { qualifyInstalledCapacity } from './phase3-capacity-faults.mjs';
+import { qualifyInstalledProviderFaults } from './phase3-provider-faults.mjs';
+
+const phase3Update = process.env.CC_AUTH_PHASE3_UPDATE === '1';
+const phase3Lifecycle = process.env.CC_AUTH_PHASE3_LIFECYCLE === '1';
+const phase3CapacityFaults = process.env.CC_AUTH_PHASE3_CAPACITY_FAULTS === '1';
+const phase3CertificateFaults =
+  process.env.CC_AUTH_PHASE3_CERTIFICATE_FAULTS === '1';
+const phase3ProviderFaults = process.env.CC_AUTH_PHASE3_PROVIDER_FAULTS === '1';
+const phase3Faults =
+  process.env.CC_AUTH_PHASE3_FAULTS === '1' ||
+  phase3ProviderFaults ||
+  phase3CertificateFaults ||
+  phase3CapacityFaults;
+assert.ok(
+  [
+    process.env.CC_AUTH_PHASE3_FAULTS === '1',
+    phase3ProviderFaults,
+    phase3CertificateFaults,
+    phase3CapacityFaults,
+  ].filter(Boolean).length <= 1,
+  'Select one Phase 3 fault group.',
+);
+const faultTarget = phase3CapacityFaults
+  ? 'phase3-capacity-fault-integration'
+  : phase3CertificateFaults
+    ? 'phase3-certificate-fault-integration'
+    : phase3ProviderFaults
+      ? 'phase3-provider-fault-integration'
+      : 'phase3-fault-integration';
 const phase3Restore = process.env.CC_AUTH_PHASE3_RESTORE === '1';
-const applicationPhase = phase3Restore ? 3 : 2;
+const phase3Upgrade = process.env.CC_AUTH_PHASE3_UPGRADE === '1';
+const phase3Workflows =
+  process.env.CC_AUTH_PHASE3_WORKFLOWS === '1' ||
+  phase3Upgrade ||
+  phase3Faults ||
+  phase3Lifecycle ||
+  phase3Update;
+assert.ok(
+  !(phase3Restore && phase3Workflows) &&
+    [phase3Upgrade, phase3Faults, phase3Lifecycle, phase3Update].filter(Boolean)
+      .length <= 1,
+  'Select one Phase 3 profile qualification mode.',
+);
+const applicationPhase = phase3Restore || phase3Workflows ? 3 : 2;
+assert.ok(
+  !(phase3Upgrade || phase3Faults || phase3Lifecycle || phase3Update) ||
+    process.env.CC_AUTH_INSTALLER_ROOT,
+  'Upgrade, fault, and lifecycle qualification require the verified Phase 3 installer directory.',
+);
 
 const execute = promisify(execFile);
 const docker = (...args) =>
@@ -32,12 +90,40 @@ const docker = (...args) =>
 
 test(
   `the all-Docker installer installs Phase ${applicationPhase} and restores application access through resume and restart`,
-  { timeout: phase3Restore ? 900000 : 360000 },
+  { timeout: applicationPhase === 3 ? 900000 : 360000 },
   async () => {
     const startedAt = Date.now();
-    const evidenceDirectory = phase3Restore
-      ? 'dist/phase-3-recovery'
-      : 'dist/phase-2-evidence';
+    const harnessRevision = execFileSync('git', ['rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+    }).trim();
+    const harnessWorkingTree = execFileSync(
+      'git',
+      ['status', '--porcelain', '--untracked-files=no'],
+      {
+        encoding: 'utf8',
+      },
+    ).trim()
+      ? 'uncommitted-candidate'
+      : 'clean';
+    const evidenceDirectory = phase3Update
+      ? 'dist/phase-3-update'
+      : phase3Lifecycle
+        ? 'dist/phase-3-lifecycle'
+        : phase3Faults
+          ? phase3CapacityFaults
+            ? 'dist/phase-3-capacity-faults'
+            : phase3CertificateFaults
+              ? 'dist/phase-3-certificate-faults'
+              : phase3ProviderFaults
+                ? 'dist/phase-3-provider-faults'
+                : 'dist/phase-3-faults'
+          : phase3Restore
+            ? 'dist/phase-3-recovery'
+            : phase3Upgrade
+              ? 'dist/phase-3-upgrade'
+              : phase3Workflows
+                ? 'dist/phase-3-installation'
+                : 'dist/phase-2-evidence';
     await mkdir(evidenceDirectory, { recursive: true });
     const root = await mkdtemp(
       join(tmpdir(), `cc-phase${applicationPhase}-compose-`),
@@ -59,18 +145,50 @@ test(
       ).trim();
     const operatorPath = join(root, 'operator.json');
     const installerRoot = resolve(process.env.CC_AUTH_INSTALLER_ROOT ?? '.');
-    const { applicationAccess, operatorEnrollmentRequest } = await import(
+    const baseline = phase3Upgrade
+      ? await loadPhase2UpgradeBaseline(
+          process.env.CC_AUTH_BASELINE_INSTALLER_ROOT,
+        )
+      : undefined;
+    let activeInstallerRoot = baseline?.root ?? installerRoot;
+    const {
+      applicationAccess: deliveredApplicationAccess,
+      operatorEnrollmentRequest,
+    } = await import(
       pathToFileURL(
         join(installerRoot, 'deployment/installer/application-enrollment.mjs'),
       ).href
     );
-    const cli = async (command) =>
-      JSON.parse(
+    const applicationAccess = (operator, input) =>
+      deliveredApplicationAccess(
+        operator,
+        input,
+        async (file, args, { input: payload } = {}) => {
+          const invocation = execute(file, args, {
+            env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+            timeout: 300000,
+            maxBuffer: 4 * 1024 * 1024,
+          });
+          invocation.child.stdin.on('error', () => undefined);
+          invocation.child.stdin.end(payload);
+          try {
+            return (await invocation).stdout.trim();
+          } catch {
+            throw new Error(
+              'Installed application enrollment failed through the qualification runtime.',
+            );
+          }
+        },
+      );
+    const installerInvocations = [];
+    const cli = async (command) => {
+      const startedAt = Date.now();
+      const result = JSON.parse(
         (
           await execute(
             process.execPath,
             [
-              join(installerRoot, 'deployment/installer/cli.mjs'),
+              join(activeInstallerRoot, 'deployment/installer/cli.mjs'),
               command,
               operatorPath,
               '--qualification',
@@ -83,6 +201,13 @@ test(
           )
         ).stdout,
       );
+      installerInvocations.push({
+        command,
+        status: result.status,
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    };
     let provider;
     let registry;
     let rendered;
@@ -132,7 +257,7 @@ test(
         await readFile('deployment/examples/all-docker.json', 'utf8'),
       );
       config.phase = applicationPhase;
-      if (phase3Restore) {
+      if (applicationPhase === 3) {
         config.googleConnection = {
           keyId: 'isolated-google-recovery-key',
           encryptionKeySecretRef: {
@@ -153,6 +278,10 @@ test(
           { mode: 0o644 },
         );
       }
+      if (phase3ProviderFaults)
+        await writeFile(join(root, 'google-health-fault.json'), '{}', {
+          mode: 0o644,
+        });
       config.services.api.placement.replicas = 2;
       config.services.edge.access = 'application';
       config.services.edge.endpoint.url = publicOrigin;
@@ -213,35 +342,49 @@ test(
       let installationRelease = registry
         ? await registry.mirror(release, `phase${applicationPhase}`)
         : release;
+      let bundleManifestSha256;
       if (process.env.CC_AUTH_INSTALLER_ROOT) {
         assert.equal(
           registry,
           undefined,
           'A published installer bundle requires published image references.',
         );
-        installationRelease = JSON.parse(
-          await readFile(join(installerRoot, 'release-manifest.json'), 'utf8'),
-        );
-        assert.deepEqual(installationRelease.images, images);
-        assert.equal(installationRelease.sourceRevision, sourceRevision);
-        assert.equal(installationRelease.phase, applicationPhase);
+        const bundle = await loadQualificationBundle(installerRoot, {
+          phase: applicationPhase,
+          sourceRevision,
+          images,
+        });
+        installationRelease = bundle.manifest;
+        bundleManifestSha256 = bundle.manifestSha256;
       }
       config.images = installationRelease.images;
       const configPath = join(root, 'deployment.json');
-      await writeFile(configPath, JSON.stringify(config), { mode: 0o600 });
-      const releasePath = join(root, 'release.json');
-      await writeFile(releasePath, JSON.stringify(installationRelease), {
+      const initialConfig = baseline
+        ? { ...config, phase: 2, images: baseline.manifest.images }
+        : config;
+      if (baseline) delete initialConfig.googleConnection;
+      await writeFile(configPath, JSON.stringify(initialConfig), {
         mode: 0o600,
       });
+      const releasePath = join(root, 'release.json');
+      await writeFile(
+        releasePath,
+        JSON.stringify(baseline?.manifest ?? installationRelease),
+        {
+          mode: 0o600,
+        },
+      );
       await writeFile(
         operatorPath,
         JSON.stringify({
           installationRoot: root,
           configurationPath: configPath,
           releasePath,
-          releaseRoot: process.env.CC_AUTH_INSTALLER_ROOT
-            ? installerRoot
-            : root,
+          releaseRoot: baseline
+            ? baseline.root
+            : process.env.CC_AUTH_INSTALLER_ROOT
+              ? installerRoot
+              : root,
           project,
           connectAddress: '127.0.0.1',
           bindAddress: '127.0.0.1',
@@ -282,9 +425,15 @@ if(args[0]==='compose' && args[index]===${JSON.stringify(composePath)} && fs.exi
   doc.services.api.environment.NODE_EXTRA_CA_CERTS='/run/qualification/ca.pem';
   doc.services.api.extra_hosts=['host.docker.internal:host-gateway'];
   doc.services.api.volumes.push({type:'bind',source:${JSON.stringify(certPath)},target:'/run/qualification/ca.pem',read_only:true});
-  if(${phase3Restore})for(const service of ['api','workers']){
+  if(JSON.parse(fs.readFileSync(${JSON.stringify(join(root, 'runtime/profile.json'))})).phase===3)for(const service of ['api','workers']){
     doc.services[service].environment.NODE_OPTIONS='--require=/run/qualification/google-connection-preload.cjs';
     doc.services[service].volumes.push({type:'bind',source:${JSON.stringify(join(root, 'google-connection-preload.cjs'))},target:'/run/qualification/google-connection-preload.cjs',read_only:true});
+  }
+  if(${phase3ProviderFaults})for(const service of ['api','workers']) doc.services[service].volumes.push({type:'bind',source:${JSON.stringify(join(root, 'google-health-fault.json'))},target:'/run/qualification/google-health-fault.json',read_only:true});
+  if(${phase3CapacityFaults}) {
+    const volume=doc.volumes?.artifacts;
+    if(!volume || volume.external || volume.name)throw Error('Capacity qualification requires its rendered artifact volume.');
+    doc.volumes.artifacts={...volume,driver:'local',driver_opts:{type:'tmpfs',device:'tmpfs',o:'size=16m,uid=1000,gid=1000,mode=0700'}};
   }
   fs.writeFileSync(${JSON.stringify(runtimePath)},JSON.stringify(doc),{mode:0o600});
   args[index]=${JSON.stringify(runtimePath)};
@@ -301,7 +450,7 @@ process.exit(result.status??1);
       rendered = JSON.parse(await readFile(composePath, 'utf8'));
       assert.equal((await cli('resume')).status, 'ready');
       assert.equal((await cli('resume')).status, 'ready');
-      const originalRender = await readFile(composePath, 'utf8');
+      let originalRender = await readFile(composePath, 'utf8');
       const bootstrapFile = join(privateRoot, 'bootstrap');
       const readiness = await httpsStartup({
         url: publicOrigin,
@@ -315,6 +464,13 @@ process.exit(result.status??1);
       await writeFile(
         join(root, 'setup-record.json'),
         JSON.stringify({
+          ...(phase3Update
+            ? {
+                schemaVersion: 1,
+                qualification: true,
+                candidateAcknowledgement: 'candidate-lab',
+              }
+            : {}),
           selfSignedCertificate: true,
         }),
         { mode: 0o600 },
@@ -337,13 +493,35 @@ process.exit(result.status??1);
         },
       );
       assert.ok(enrolled.principalId);
-      if (phase3Restore)
-        await applicationAccess(setupOperator, {
-          action: 'confirm-platform-administrator',
-          principalId: enrolled.principalId,
-          expectedVersion: 1,
-          confirmation: 'grant-platform-administrator',
-        });
+      const upgrade = baseline
+        ? await qualifyPhase2Upgrade({
+            root,
+            config,
+            release: installationRelease,
+            baseline,
+            compose,
+            cli,
+            activateTarget: () => {
+              activeInstallerRoot = installerRoot;
+            },
+            operatorPath,
+            configPath,
+            releasePath,
+            installerRoot,
+            publicOrigin,
+          })
+        : undefined;
+      if (upgrade) originalRender = await readFile(composePath, 'utf8');
+      if (applicationPhase === 3)
+        await applicationAccess(
+          JSON.parse(await readFile(operatorPath, 'utf8')),
+          {
+            action: 'confirm-platform-administrator',
+            principalId: enrolled.principalId,
+            expectedVersion: 1,
+            confirmation: 'grant-platform-administrator',
+          },
+        );
       const replicaObservations = [];
       const navigationRecovery = [];
       let sessionCookie;
@@ -419,20 +597,87 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
           ]),
         );
       const initialAddresses = addresses();
+      let installedWorkflows;
+      let lifecycleProof;
+      let guidedUpdate;
       const browser = await applicationBrowser(
         publicOrigin,
         async ({ page, context, checks }) => {
           await verifyReplicas(context, 'initial-session');
+          if (phase3Workflows) {
+            installedWorkflows = await qualifyInstalledPhase3({
+              page,
+              publicOrigin,
+              provider,
+            });
+            await checks();
+          }
           await page.getByRole('button', { name: 'Choose theme' }).click();
           await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
           await expect(page.locator('html')).toHaveAttribute(
             'data-theme',
             'dark',
           );
+          if (phase3Lifecycle)
+            lifecycleProof = await createInstalledLifecycleProof({
+              root,
+              project,
+              config,
+              release: installationRelease,
+              compose,
+              id: (service) => compose('ps', '--quiet', service).split('\n')[0],
+              cli,
+              operatorPath,
+              evidenceDirectory,
+              installerInvocations,
+              evidenceIdentity: {
+                harnessRevision,
+                harnessWorkingTree,
+                bundleManifestSha256,
+                command:
+                  'npm exec -- nx run api-e2e:phase3-lifecycle-integration',
+                environment: {
+                  nodeVersion: process.version,
+                  platform: process.platform,
+                  architecture: process.arch,
+                  browser: page.context().browser().version(),
+                },
+              },
+            });
+          if (phase3Faults) {
+            const qualifyFaults = phase3CapacityFaults
+              ? qualifyInstalledCapacity
+              : phase3CertificateFaults
+                ? qualifyAllDockerCertificates
+                : phase3ProviderFaults
+                  ? qualifyInstalledProviderFaults
+                  : faultAllDocker;
+            await qualifyFaults({
+              root,
+              project,
+              config,
+              release: installationRelease,
+              compose,
+              id: (service) => compose('ps', '--quiet', service).split('\n')[0],
+              page,
+              checks,
+              evidencePath: `${evidenceDirectory}/all-docker-faults.json`,
+              evidenceIdentity: {
+                harnessRevision,
+                harnessWorkingTree,
+                bundleManifestSha256,
+                command: `npm exec -- nx run api-e2e:${faultTarget}`,
+              },
+            });
+            await installedWorkflows.verifyAfterRestart();
+            await verifyReplicas(context, 'fault-recovery-session');
+          }
           compose('restart', 'api', 'frontend', 'workers');
           compose('up', '-d', '--wait', '--wait-timeout', '120');
           const restartedAddresses = addresses();
           await verifyReplicas(context, 'restart-session');
+          await installedWorkflows?.verifyAfterRestart();
+          await lifecycleProof?.verify('restart');
           navigationRecovery.push({
             phase: 'restart',
             ...(await reloadAfterNetworkChange(page)),
@@ -475,7 +720,60 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             );
             await checks({ recoverySeconds: 60 });
             await verifyReplicas(context, `${command}-resume-session`);
+            await lifecycleProof?.verify(`${command}-resume`);
           }
+          if (phase3Update)
+            guidedUpdate = await qualifyInstalledUpdate({
+              root,
+              project,
+              config,
+              release: installationRelease,
+              compose,
+              id: (service) => compose('ps', '-q', service).split('\n')[0],
+              bin,
+              cli,
+              activateTarget: (targetRoot) => {
+                activeInstallerRoot = targetRoot;
+              },
+              evidencePath: `${evidenceDirectory}/all-docker-update.json`,
+              evidenceIdentity: {
+                harnessRevision,
+                harnessWorkingTree,
+                bundleManifestSha256,
+                command: 'npm exec -- nx run api-e2e:phase3-update-integration',
+                environment: {
+                  nodeVersion: process.version,
+                  platform: process.platform,
+                  architecture: process.arch,
+                  browser: page.context().browser().version(),
+                },
+              },
+              verifyAfterUpdate: async () => {
+                await reloadAfterNetworkChange(page);
+                if (
+                  await page
+                    .getByRole('link', { name: 'Sign in to Campus Commander' })
+                    .isVisible()
+                ) {
+                  await page
+                    .getByRole('link', { name: 'Sign in to Campus Commander' })
+                    .click();
+                  await expect(
+                    page.getByRole('heading', {
+                      name: 'Your account',
+                      exact: true,
+                    }),
+                  ).toBeVisible({ timeout: 15000 });
+                }
+                await expect(page.locator('html')).toHaveAttribute(
+                  'data-theme',
+                  'dark',
+                );
+                await installedWorkflows.verifyAfterRestart();
+                await checks({ recoverySeconds: 60 });
+                await verifyReplicas(context, 'guided-update-session');
+              },
+            });
           let restoration;
           if (phase3Restore) {
             await writeFile(join(privateRoot, 'backup-key'), randomBytes(32), {
@@ -518,11 +816,93 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
         },
       );
       await verifyReplicas(undefined, 'signed-out-session', 401);
-      assert.equal(await readFile(composePath, 'utf8'), originalRender);
+      await lifecycleProof?.erase();
+      if (!phase3Update)
+        assert.equal(await readFile(composePath, 'utf8'), originalRender);
       assert.deepEqual(
         JSON.parse(await readFile(releasePath, 'utf8')),
         installationRelease,
       );
+      if (installedWorkflows) {
+        assert.ok(
+          Object.values(installedWorkflows.report.checks).every(
+            (value) => value === true,
+          ),
+        );
+        await writeFile(
+          `${evidenceDirectory}/phase3-workflows.json`,
+          JSON.stringify(
+            {
+              schemaVersion: 1,
+              recordedAt: new Date().toISOString(),
+              phase: 3,
+              profile: 'all-docker',
+              sourceRevision,
+              harnessRevision,
+              harnessWorkingTree,
+              images,
+              installer: {
+                source: process.env.CC_AUTH_INSTALLER_ROOT
+                  ? 'extracted-published-bundle'
+                  : 'workspace',
+                bundleManifestSha256,
+              },
+              command: phase3Update
+                ? 'npm exec -- nx run api-e2e:phase3-update-integration'
+                : phase3Lifecycle
+                  ? 'npm exec -- nx run api-e2e:phase3-lifecycle-integration'
+                  : phase3Faults
+                    ? `npm exec -- nx run api-e2e:${faultTarget}`
+                    : phase3Upgrade
+                      ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
+                      : 'npm exec -- nx run api-e2e:phase3-install-integration',
+              environment: {
+                nodeVersion: process.version,
+                platform: process.platform,
+                architecture: process.arch,
+                browser: browser.browser,
+              },
+              ...installedWorkflows.report,
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+      }
+      if (upgrade) {
+        assert.ok(
+          Object.values(installedWorkflows.report.checks).every(
+            (value) => value === true,
+          ),
+        );
+        await writeFile(
+          `${evidenceDirectory}/all-docker-upgrade.json`,
+          JSON.stringify(
+            {
+              schemaVersion: 1,
+              phase: 3,
+              profile: 'all-docker',
+              sourceRevision,
+              harnessRevision,
+              harnessWorkingTree,
+              images,
+              bundleManifestSha256,
+              command: 'npm exec -- nx run api-e2e:phase3-upgrade-integration',
+              environment: {
+                nodeVersion: process.version,
+                platform: process.platform,
+                architecture: process.arch,
+                browser: browser.browser,
+              },
+              recordedAt: new Date().toISOString(),
+              ...upgrade,
+              postUpgradeWorkflows: installedWorkflows.report,
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+      }
       if (browser.screenReader) {
         await writeFile(
           'dist/phase-2-evidence/screen-reader.json',
@@ -548,10 +928,31 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             status: 'passed',
             profile: 'all-docker',
             phase: applicationPhase,
+            command: phase3Update
+              ? 'npm exec -- nx run api-e2e:phase3-update-integration'
+              : phase3Lifecycle
+                ? 'npm exec -- nx run api-e2e:phase3-lifecycle-integration'
+                : phase3Faults
+                  ? `npm exec -- nx run api-e2e:${faultTarget}`
+                  : phase3Restore
+                    ? 'npm exec -- nx run api-e2e:phase3-restore-integration'
+                    : phase3Upgrade
+                      ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
+                      : phase3Workflows
+                        ? 'npm exec -- nx run api-e2e:phase3-install-integration'
+                        : 'npm exec -- nx run api-e2e:all-docker-integration',
+            environment: {
+              nodeVersion: process.version,
+              platform: process.platform,
+              architecture: process.arch,
+              ci: process.env.CI === 'true',
+            },
             recordedAt: new Date().toISOString(),
             durationMs: Date.now() - startedAt,
             images,
             sourceRevision,
+            harnessRevision,
+            harnessWorkingTree,
             imageBuildId,
             workingTree,
             imageMirrors: registry?.copies ?? [],
@@ -566,10 +967,13 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                 'uninstall',
                 'resume',
               ],
+              ...(upgrade ? { upgradeCommands: ['upgrade', 'resume'] } : {}),
               repeatedResume: true,
               redisSessionsDiscarded: true,
               freshSignInPreservesPreferences: true,
-              originalRenderPreserved: true,
+              originalRenderPreserved: !phase3Update,
+              ...(guidedUpdate ? { guidedUpdate } : {}),
+              bundleManifestSha256,
               source: process.env.CC_AUTH_INSTALLER_ROOT
                 ? 'extracted-published-bundle'
                 : 'workspace',
@@ -587,7 +991,13 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                 ? [
                     'This report covers installation, resume, and restart. The separate restore report covers the isolated target. Upgrade requires separate evidence.',
                   ]
-                : ['Upgrade and isolated restore require separate evidence.']),
+                : upgrade
+                  ? [
+                      'Isolated restore and complete fault qualification require separate evidence.',
+                    ]
+                  : [
+                      'Upgrade and isolated restore require separate evidence.',
+                    ]),
             ],
           },
           null,

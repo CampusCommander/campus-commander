@@ -23,13 +23,22 @@ export async function createAllDockerDurableProbe({
   release,
   compose,
   id,
+  allowObservationRefresh = false,
+  allowAppendedMigrations = false,
 }) {
-  assert.match(project, /^cc-installer-[a-z0-9-]+$/);
-  assert.match(basename(root), /^cc-installer-/);
+  const phase3 = config.phase === 3;
+  assert.match(
+    project,
+    phase3 ? /^cc-phase3-[a-f0-9-]{12}$/ : /^cc-installer-[a-z0-9-]+$/,
+  );
+  assert.match(
+    basename(root),
+    phase3 ? /^cc-phase3-compose-/ : /^cc-installer-/,
+  );
   const topology = JSON.parse(compose('config', '--format', 'json'));
   assert.equal(topology.name, project);
   assert.equal(config.profile, 'all-docker');
-  assert.equal(config.phase, 2);
+  assert.ok([2, 3].includes(config.phase));
   const inspect = (service) => JSON.parse(docker(['inspect', id(service)]))[0];
   for (const service of [
     'api',
@@ -53,7 +62,7 @@ export async function createAllDockerDurableProbe({
     assert.equal(mount?.Type, 'volume');
     assert.ok(mount.Name.startsWith(project + '_'));
   }
-  const internalMarker = 'Phase 2 process recovery: École 学校';
+  const internalMarker = `Phase ${config.phase} process recovery: École 学校`;
   const internal = (write = false) =>
     docker([
       'run',
@@ -70,7 +79,7 @@ export async function createAllDockerDurableProbe({
       '--input-type=module',
       '-e',
       `import fs from 'node:fs/promises';import crypto from 'node:crypto';
-const path='/storage/.phase2-process-fixture';
+const path='/storage/.phase${config.phase}-process-fixture';
 ${write ? `await fs.writeFile(path,${JSON.stringify(internalMarker)},{flag:'wx',mode:0o600});` : ''}
 console.log(crypto.createHash('sha256').update(await fs.readFile(path)).digest('hex'));`,
     ]);
@@ -79,6 +88,59 @@ console.log(crypto.createHash('sha256').update(await fs.readFile(path)).digest('
     internalSha256,
     createHash('sha256').update(internalMarker).digest('hex'),
   );
+  if (phase3)
+    docker(
+      ['exec', '-i', id('api'), 'node', '--input-type=module'],
+      `
+import fs from 'node:fs/promises';import crypto from 'node:crypto';import pg from 'pg';
+import {connectionOptions} from '/app/deployment/postgres/index.mjs';
+import {createArtifactStore} from '/app/deployment/storage/index.mjs';
+import {secretPath} from '/app/deployment/redis/runtime.mjs';
+const c=JSON.parse(await fs.readFile(process.env.CC_CONFIG_FILE));
+const pool=new pg.Pool(await connectionOptions(c.services.applicationDatabase,r=>fs.readFile(secretPath(r))));
+const store=await createArtifactStore({pool,root:c.artifacts.location});
+const bytes=Buffer.from('CC57 service recovery: École 学校');
+const artifact=await store.stage({schemaVersion:1,expectedSizeBytes:bytes.length,expectedSha256:crypto.createHash('sha256').update(bytes).digest('hex')},[bytes]);
+await store.publish(artifact);
+await fs.writeFile(c.artifacts.location+'/.cc16-fixture.json',JSON.stringify(artifact),{flag:'wx',mode:0o600});
+await store.close();await pool.end();`,
+    );
+  // Hash protected policy rows inside the owned database. Export no credential envelopes.
+  const policy = () =>
+    Object.fromEntries(
+      [
+        'google_connection',
+        'google_credentials',
+        'customer_settings_revisions',
+        'school_definitions',
+        'application_grants',
+        'application_access_changes',
+      ].map((table) => [
+        table,
+        JSON.parse(
+          docker([
+            'exec',
+            id('application-postgres'),
+            'psql',
+            '-U',
+            'postgres',
+            '-d',
+            config.services.applicationDatabase.database,
+            '-At',
+            '-c',
+            `SELECT json_build_object('count',count(*),'sha256',encode(sha256(convert_to(coalesce(json_agg(value ORDER BY value::text)::text,'[]'),'UTF8')),'hex')) FROM (SELECT ${allowObservationRefresh && table === 'google_connection' ? "row_to_json(t)::jsonb - 'observation' - 'observed_at'" : 'row_to_json(t)'} AS value FROM cc.${table} t) rows;`,
+          ]),
+        ),
+      ]),
+    );
+  const baselinePolicy = phase3 ? policy() : undefined;
+  if (phase3) {
+    for (const entry of Object.values(baselinePolicy))
+      assert.ok(entry.count > 0);
+    assert.equal(baselinePolicy.google_connection.count, 1);
+    assert.equal(baselinePolicy.school_definitions.count, 2);
+    assert.ok(baselinePolicy.application_access_changes.count >= 2);
+  }
   const durable = () =>
     JSON.parse(
       docker(
@@ -116,13 +178,18 @@ console.log(JSON.stringify({principals,events,migrations,artifactId:artifact.art
     );
   const baseline = durable();
   const baselineExecutions = executions();
-  assert.equal(baseline.principals.length, 1);
+  assert.equal(baseline.principals.length, phase3 ? 2 : 1);
   assert.ok(baseline.events.length > 0);
   assert.ok(baselineExecutions.length > 0);
   const verifyDurable = () => {
     const after = durable();
+    if (phase3) assert.deepEqual(policy(), baselinePolicy);
     assert.deepEqual(after.principals, baseline.principals);
-    assert.deepEqual(after.migrations, baseline.migrations);
+    if (allowAppendedMigrations) {
+      const migrations = new Map(after.migrations.map((row) => [row.id, row]));
+      for (const row of baseline.migrations)
+        assert.deepEqual(migrations.get(row.id), row);
+    } else assert.deepEqual(after.migrations, baseline.migrations);
     assert.equal(after.artifactId, baseline.artifactId);
     assert.equal(after.artifactSha256, baseline.artifactSha256);
     const events = new Map(after.events.map((event) => [event.id, event]));
@@ -135,6 +202,7 @@ console.log(JSON.stringify({principals,events,migrations,artifactId:artifact.art
       assert.equal(current.get(execution.key), execution.sha256);
     assert.equal(internal(), internalSha256);
     return {
+      ...(phase3 ? { preservedPolicy: baselinePolicy } : {}),
       principalCount: after.principals.length,
       preservedSecurityEvents: baseline.events.length,
       artifactSha256: after.artifactSha256,
@@ -156,15 +224,10 @@ export async function faultAllDocker({
   id,
   page,
   checks,
+  evidencePath = join(root, 'application-fault-progress.json'),
+  evidenceIdentity = {},
 }) {
-  const verifyDurable = await createAllDockerDurableProbe({
-    root,
-    project,
-    config,
-    release,
-    compose,
-    id,
-  });
+  const startedAt = Date.now();
   const request = (operation) =>
     page.evaluate(
       async ({ operation }) => {
@@ -222,8 +285,20 @@ export async function faultAllDocker({
     { name: 'artifact-access-loss', operation: 'artifacts' },
   ];
   const report = {
+    ...evidenceIdentity,
+    schemaVersion: 1,
+    recordedAt: new Date().toISOString(),
+    environment: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      architecture: process.arch,
+      browser: page.context().browser().version(),
+    },
+    durationScope:
+      'Durable-state setup, service interruptions, recovery checks, and preservation probes.',
     status: 'in-progress',
     profile: 'all-docker',
+    phase: config.phase,
     sourceRevision: release.sourceRevision,
     images: release.images,
     recoveryBoundSeconds: faultRecoveryTimeoutSeconds,
@@ -231,15 +306,29 @@ export async function faultAllDocker({
     limits: [
       'One Docker host retains host and volume failure points.',
       'Capacity and certificate faults require separate evidence.',
+      ...(config.phase === 3
+        ? [
+            'Provider faults, stale credentials, and full profile acceptance require separate evidence.',
+          ]
+        : []),
     ],
   };
-  const save = () =>
-    writeFile(
-      join(root, 'application-fault-progress.json'),
-      JSON.stringify(report, null, 2),
-      { mode: 0o600 },
-    );
+  const save = () => {
+    report.durationMs = Date.now() - startedAt;
+    return writeFile(evidencePath, JSON.stringify(report, null, 2), {
+      mode: 0o600,
+    });
+  };
   try {
+    await save();
+    const verifyDurable = await createAllDockerDurableProbe({
+      root,
+      project,
+      config,
+      release,
+      compose,
+      id,
+    });
     for (const fault of cases) {
       console.log('All-Docker application fault:', fault.name);
       await checks({ recoverySeconds: faultRecoveryTimeoutSeconds });
@@ -299,6 +388,8 @@ export async function faultAllDocker({
     return report;
   } catch (error) {
     report.status = 'failed';
+    const current = report.cases.at(-1);
+    if (current?.status === 'in-progress') current.status = 'failed';
     await save();
     throw error;
   }

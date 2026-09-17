@@ -44,6 +44,17 @@
         "deployment:build"
       ]
     },
+    "phase3-install-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_WORKFLOWS": "1"
+        }
+      }
+    },
     "phase3-auth-integration": {
       "executor": "nx:run-commands",
       "cache": false,
@@ -63,7 +74,7 @@
     "e2e": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test api-e2e/api.test.mjs api-e2e/evidence-security.test.mjs"
+        "command": "node --test api-e2e/api.test.mjs api-e2e/evidence-security.test.mjs api-e2e/provider-fixture.test.mjs api-e2e/all-docker-faults-fixture.test.mjs"
       },
       "dependsOn": ["api:build"]
     },
@@ -103,7 +114,9 @@
       "dependsOn": ["deployment:build"],
       "options": {
         "command": "node --test api-e2e/all-docker.test.mjs",
-        "env": { "CC_AUTH_PHASE3_RESTORE": "1" }
+        "env": {
+          "CC_AUTH_PHASE3_RESTORE": "1"
+        }
       }
     },
     "restore-integration": {
@@ -322,6 +335,83 @@
         "env": {
           "CC_INSTALLER_FAULTS": "1",
           "CC_AUTH_ALL_DOCKER_CERTIFICATES": "1"
+        }
+      }
+    },
+    "phase3-upgrade-integration": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_UPGRADE": "1"
+        }
+      },
+      "cache": false
+    },
+    "phase3-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_FAULTS": "1"
+        }
+      }
+    },
+    "phase3-provider-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_PROVIDER_FAULTS": "1"
+        }
+      }
+    },
+    "phase3-certificate-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_CERTIFICATE_FAULTS": "1"
+        }
+      }
+    },
+    "phase3-capacity-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_CAPACITY_FAULTS": "1"
+        }
+      }
+    },
+    "phase3-lifecycle-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_LIFECYCLE": "1"
+        }
+      }
+    },
+    "phase3-update-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_UPDATE": "1"
         }
       }
     }

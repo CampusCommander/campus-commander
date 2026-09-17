@@ -425,18 +425,38 @@ export function renderKubernetes(input, operatorInput) {
     });
     return { name: volume, mountPath: path, subPath };
   };
-  const waitContainer = (spec, serviceName) => ({
-    name: 'wait-database',
-    image: config.images.api,
-    securityContext: security,
-    resources: {
-      requests: { cpu: '50m', memory: '64Mi' },
-      limits: { cpu: '250m', memory: '128Mi' },
-    },
-    command: ['node', '/config/wait.mjs'],
-    env: env({ CC_WAIT_DATABASE: serviceName }),
-    volumeMounts: spec._mounts,
-  });
+  const waitContainer = (spec, serviceName) => {
+    const database =
+      config.services[
+        serviceName === 'kestra' ? 'kestraDatabase' : 'applicationDatabase'
+      ];
+    const required = mountsFor(
+      collectRefs({
+        endpoint: database.endpoint,
+        passwordSecretRef: database.passwordSecretRef,
+      }),
+    );
+    for (const { volume, mount } of required) {
+      volume.name = `wait-${serviceName}-${volume.name}`;
+      mount.name = volume.name;
+      spec.volumes.push(volume);
+    }
+    return {
+      name: 'wait-database',
+      image: config.images.api,
+      securityContext: security,
+      resources: {
+        requests: { cpu: '50m', memory: '64Mi' },
+        limits: { cpu: '250m', memory: '128Mi' },
+      },
+      command: ['node', '/config/wait.mjs'],
+      env: env({ CC_WAIT_DATABASE: serviceName }),
+      volumeMounts: [
+        ...spec._mounts.filter((mount) => mount.name === 'config'),
+        ...required.map(({ mount }) => mount),
+      ],
+    };
+  };
   for (const [key, service] of Object.entries(config.services)) {
     if (service.placement.kind !== 'local') continue;
     let refs = collectRefs(service);

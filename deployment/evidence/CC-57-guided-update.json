@@ -1,0 +1,245 @@
+{
+  "harnessRevision": "eb78e16588b96c6d6183d2afaea33ce2341db028",
+  "harnessWorkingTree": "clean",
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "command": "npm exec -- nx run api-e2e:phase3-update-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "browser": "149.0.7827.55"
+  },
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "all-docker",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "recordedAt": "2026-09-17T13:48:14.301Z",
+  "status": "passed",
+  "durationScope": "Target admission, durable-state setup, native cold backup, cancelled update, guided update, repeated update, and state checks.",
+  "limits": [
+    "The installation uses synthetic Google and application sign-in providers.",
+    "The fixture records laboratory setup mode for an installation created through the delivered operator CLI.",
+    "Source and target identities remain distinct. This report does not transfer other release evidence to the target."
+  ],
+  "durationMs": 90317,
+  "target": {
+    "sourceRevision": "eb78e16588b96c6d6183d2afaea33ce2341db028",
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:f84024395dad9b70545f39ac59b85f061e1c474da39a06321226f278e7220ec1",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:691f43ebd5751f68218327084dae6465327f82a8bbb8b2bfc6cba618302be4a8",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:fd15854c0e8c34c494ba084d4164aea40c38f1c4e1e3e5789efb8f5885a0002d"
+    },
+    "bundleManifestSha256": "7ed573b4438c3e8467aa49dba1e73217f10448b51211c9bad0699494207a614a"
+  },
+  "operations": {
+    "commands": [
+      {
+        "command": "backup",
+        "status": "passed"
+      },
+      {
+        "command": "verify",
+        "status": "passed"
+      }
+    ],
+    "execution": {
+      "runner": "operator-container-native",
+      "postgresImage": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+      "nodeVersion": "v24.19.0",
+      "secretMount": "/run/secrets",
+      "injectedDatabaseTool": false,
+      "source": "extracted-published-bundle",
+      "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f"
+    }
+  },
+  "commands": [
+    {
+      "command": "setup update",
+      "status": "cancelled",
+      "durationMs": 319
+    },
+    {
+      "command": "setup update",
+      "status": "ready",
+      "durationMs": 28146
+    },
+    {
+      "command": "setup update",
+      "status": "already-current",
+      "durationMs": 305
+    }
+  ],
+  "cancelledUpdatePreserved": true,
+  "durableState": {
+    "preservedPolicy": {
+      "google_connection": {
+        "count": 1,
+        "sha256": "db33a0b3c910359aff057a629d693b396b012735fbcf46783be07a43c8a2bdba"
+      },
+      "google_credentials": {
+        "count": 1,
+        "sha256": "75ce873d5ea81783c997545ae92928d0363d8322c0828bdd037671ad48420fe4"
+      },
+      "customer_settings_revisions": {
+        "count": 1,
+        "sha256": "ea25059a6a473eb32820e73f4e10a47a37bd3ea5ba89518ded5c4757df41adf8"
+      },
+      "school_definitions": {
+        "count": 2,
+        "sha256": "902433ce33709bb331466c7d0f05dbe0be8608788ad08ed5c01356d4f47b48de"
+      },
+      "application_grants": {
+        "count": 13,
+        "sha256": "2657625b51e241ba31432b4fac335f3a3c7a3555a594f0faf7596c628a521dd5"
+      },
+      "application_access_changes": {
+        "count": 2,
+        "sha256": "5fce8af0c65a12018df89f238b8f1ed4e48fe9bbf723acff777a869509d4d265"
+      }
+    },
+    "principalCount": 2,
+    "preservedSecurityEvents": 91,
+    "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+    "preservedKestraExecutions": 5,
+    "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+    "preservedInternalFiles": 1
+  },
+  "checks": {
+    "backupVerified": true,
+    "configurationPreserved": true,
+    "existingSecretsPreserved": true,
+    "migrationChecksumsPreserved": true,
+    "targetImagesRunning": true,
+    "updateJournalRemoved": true,
+    "preservedWorkflowsReadable": true,
+    "repeatedUpdate": true,
+    "repeatedResume": true
+  },
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35228925590",
+    "artifact": "phase-3-guided-update",
+    "artifactId": 10500617015,
+    "artifactArchiveSha256": "b428c96486f98071c6510f0c20434e7a8f0195491e6c6e4ca77692189ffe9625",
+    "installedReleaseTag": "phase-3-lab-a3601eff2a55",
+    "targetReleaseTag": "phase-3-lab-eb78e16588b9",
+    "reports": [
+      {
+        "path": "all-docker-profile.json",
+        "sizeBytes": 17609,
+        "sha256": "3877fed82e803a2996979970a92ac55069bc6d170255b995c41911c36d45fe16"
+      },
+      {
+        "path": "all-docker-update.json",
+        "sizeBytes": 4699,
+        "sha256": "8aeafe406648b3d99e2ceba0d9c677a098922ee4b72917ea84f7ce6e779dbea5"
+      },
+      {
+        "path": "phase3-workflows.json",
+        "sizeBytes": 8223,
+        "sha256": "4a9478af22774292ac964277ebcaeaf4de0c82b8e9fbf43e20b577fbb9dd7c36"
+      }
+    ]
+  },
+  "completeProfileDurationMs": 253850,
+  "installedWorkflowChecks": {
+    "customerConfirmation": true,
+    "settingsConfirmation": true,
+    "schoolScopeConfirmation": true,
+    "invitationRedemption": true,
+    "explicitIdentityConfirmation": true,
+    "scopedGrantAssignment": true,
+    "crossSchoolDenial": true,
+    "revocation": true,
+    "credentialReplacement": true,
+    "restartPersistence": true
+  },
+  "replicaObservations": [
+    {
+      "phase": "initial-session",
+      "container": "dd3cdc96842118f2ad0532abbf0995ef8d6bda00c338766ad67afcf17d63090e",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "initial-session",
+      "container": "e1c1604ffdc1184633d3bad2b319dcbe728dda6d4b941d0886114363881312c5",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "restart-session",
+      "container": "dd3cdc96842118f2ad0532abbf0995ef8d6bda00c338766ad67afcf17d63090e",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "restart-session",
+      "container": "e1c1604ffdc1184633d3bad2b319dcbe728dda6d4b941d0886114363881312c5",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "stop-resume-session",
+      "container": "dd3cdc96842118f2ad0532abbf0995ef8d6bda00c338766ad67afcf17d63090e",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "stop-resume-session",
+      "container": "e1c1604ffdc1184633d3bad2b319dcbe728dda6d4b941d0886114363881312c5",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "uninstall-resume-session",
+      "container": "065a00f300f1242dba4912e7575c40150fc351fea9539e677d609315ad670f6e",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "uninstall-resume-session",
+      "container": "fa9b27c37abf507ec673eec8258a8e58523784382fce28b5831d1947daa7021a",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "guided-update-session",
+      "container": "4a0015d30ab4178baf56cf830de6d44eeb019d01e1532281c0a671ca7e5217a0",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "guided-update-session",
+      "container": "858781035f4da8ac94e16417a2a0b3a3280170fc6d6e7eb842032e68cff01dd1",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "guided-update-session",
+      "container": "4a0015d30ab4178baf56cf830de6d44eeb019d01e1532281c0a671ca7e5217a0",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "guided-update-session",
+      "container": "858781035f4da8ac94e16417a2a0b3a3280170fc6d6e7eb842032e68cff01dd1",
+      "status": 200,
+      "principalId": "18d92a5b-66fe-41e6-aac8-a4addf251036"
+    },
+    {
+      "phase": "signed-out-session",
+      "container": "4a0015d30ab4178baf56cf830de6d44eeb019d01e1532281c0a671ca7e5217a0",
+      "status": 401
+    },
+    {
+      "phase": "signed-out-session",
+      "container": "858781035f4da8ac94e16417a2a0b3a3280170fc6d6e7eb842032e68cff01dd1",
+      "status": 401
+    }
+  ]
+}

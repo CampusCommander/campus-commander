@@ -11,13 +11,38 @@ on:
         description: Run browser and infrastructure integration checks
         type: boolean
         default: false
+      phase3Release:
+        description: Immutable Phase 3 lab tag for extracted installation workflows
+        type: string
+        default: ''
+      phase3UpdateRelease:
+        description: Different signed Phase 3 lab tag for guided update
+        type: string
+        default: ''
+      phase3Upgrade:
+        description: Upgrade the pinned Phase 2 release before Phase 3 workflow checks
+        type: boolean
+        default: false
+      phase3Faults:
+        description: Test service interruption and durable Phase 3 state
+        type: boolean
+        default: false
+      phase3FaultKind:
+        description: Fault group for the installed Phase 3 release
+        type: choice
+        options: [services, provider, certificates, capacity]
+        default: services
+      phase3Lifecycle:
+        description: Test installed restart, resume, stop, uninstall, and explicit erasure
+        type: boolean
+        default: false
       phase3Only:
         description: Run only the Phase 3 source API and browser qualification
         type: boolean
         default: false
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ inputs.phase3Only && 'phase3' || 'full' }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ inputs.phase3Release && 'phase3-profile' || inputs.phase3Only && 'phase3' || 'full' }}
   cancel-in-progress: true
 
 permissions:
@@ -25,8 +50,23 @@ permissions:
   contents: read
 
 jobs:
+  phase3-profile:
+    if: inputs.phase3Release != ''
+    uses: ./.github/workflows/phase-3-profile-check.yml
+    with:
+      release: ${{ inputs.phase3Release }}
+      upgrade: ${{ inputs.phase3Upgrade == true }}
+      faults: ${{ inputs.phase3Faults == true }}
+      faultKind: ${{ inputs.phase3FaultKind || 'services' }}
+      lifecycle: ${{ inputs.phase3Lifecycle == true }}
+      updateRelease: ${{ inputs.phase3UpdateRelease || '' }}
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+
   main:
-    if: inputs.phase3Only != true
+    if: inputs.phase3Only != true && inputs.phase3Release == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -59,7 +99,7 @@ jobs:
       - run: npm exec nx affected -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test,google-proof-test --base="$NX_BASE" --head=HEAD
 
   foundation-integration:
-    if: inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
+    if: inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -90,7 +130,7 @@ jobs:
           if-no-files-found: error
 
   browser:
-    if: inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
+    if: inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -105,7 +145,7 @@ jobs:
           NX_NO_CLOUD: 'true'
 
   application-integration:
-    if: inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
+    if: inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -163,7 +203,7 @@ jobs:
           if-no-files-found: warn
 
   phase3-authorization:
-    if: inputs.phase3Only == true
+    if: inputs.phase3Release == '' && inputs.phase3Only == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

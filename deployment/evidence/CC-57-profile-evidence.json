@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "all-docker",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "status": "incomplete",
+  "recordedAt": "2026-09-17T13:12:40.888182+00:00",
+  "reports": [
+    {
+      "kind": "installation",
+      "path": "CC-57-installation.json",
+      "sizeBytes": 2761,
+      "sha256": "d071b11abafa262ce9399dc0d16118bcc7090d4962dd4a8c8375f09eaef5adc5",
+      "status": "passed"
+    },
+    {
+      "kind": "resume",
+      "path": "CC-57-resume.json",
+      "sizeBytes": 3020,
+      "sha256": "d8ff59b7ba99c87825782c1aec8942835dda83aada3507cca265ff7adc4a13ca",
+      "status": "passed"
+    },
+    {
+      "kind": "upgrade",
+      "path": "CC-57-phase2-upgrade.json",
+      "sizeBytes": 15386,
+      "sha256": "464735d7b53f38bd3637d689c4dcea0e271ae40357b16e19cab8b3ba3fac436f",
+      "status": "passed"
+    },
+    {
+      "kind": "restore",
+      "path": "CC-57-restore.json",
+      "sizeBytes": 12743,
+      "sha256": "38bf598c2958a68022bb9cf3be538cae180e4ece807b3decbffae003ef6d666d",
+      "status": "passed"
+    },
+    {
+      "kind": "faults",
+      "path": "CC-57-faults.json",
+      "sizeBytes": 10780,
+      "sha256": "b8e6c93c0645fc2ddaca03016438b54e46742018321915c1eae1e160577eb222",
+      "status": "passed"
+    }
+  ],
+  "supplementalReports": [
+    {
+      "kind": "installed-workflows",
+      "path": "CC-57-installed-workflows.json",
+      "sizeBytes": 10724,
+      "sha256": "ae029e1f51990cae1aec50c95711eb3f74e979fb254aa24ead14b8b0bc6ea5b6",
+      "status": "passed"
+    },
+    {
+      "kind": "lifecycle",
+      "path": "CC-57-lifecycle.json",
+      "sizeBytes": 11465,
+      "sha256": "4d2b26349b11ee0f7683c7bf841c42579dd094cbc3eb133a9dc5d2acca5c4347",
+      "status": "passed"
+    },
+    {
+      "kind": "guided-update",
+      "path": "CC-57-guided-update.json",
+      "sizeBytes": 9015,
+      "sha256": "96b111b7b93707634aabedcd3df11cb450532182bbc2970119ea48e315c75b87",
+      "status": "passed"
+    }
+  ],
+  "remaining": ["Reconcile CC-54, CC-55, and CC-56 prerequisite acceptance."],
+  "limits": [
+    "All listed profile reports bind application a3601eff2a55373074958c6bc93e9134adbea741. They do not qualify another application revision.",
+    "This inventory records five distinct report categories. It does not close CC-57 or permit full release assembly.",
+    "Synthetic providers do not establish live Google privileges, Education capabilities, or district browser trust.",
+    "The Phase 2 baseline pins the accepted implementation revision. The owner did not identify the exact installed revision.",
+    "One Docker host does not provide independent physical failure domains."
+  ],
+  "browserClosureDisposition": {
+    "status": "corrected-and-rechecked",
+    "sourceRevision": "eb78e16588b96c6d6183d2afaea33ce2341db028",
+    "evidence": "CC-57-update-target-qualification.json",
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35226593765",
+    "limits": [
+      "The corrected candidate has its own identity. Existing profile reports remain bound to their original application."
+    ]
+  }
+}

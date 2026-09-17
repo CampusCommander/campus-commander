@@ -5,12 +5,13 @@ import {
   readFile,
   writeFile,
   lstat,
-  copyFile,
+  chmod,
   readdir,
 } from 'node:fs/promises';
 import { dirname, resolve, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { sha256 } from './integrity.mjs';
+import { inspectPhase3Evidence } from './phase3-evidence.mjs';
 import {
   applicationReports,
   assertApplicationEvidence,
@@ -30,9 +31,14 @@ export async function assembleCandidate({
   qualificationArtifacts,
   mode = 'full',
 }) {
-  if (![1, 2].includes(phase)) throw new Error('Select release phase 1 or 2.');
-  if (!['full', 'lab'].includes(mode) || (mode === 'lab' && phase !== 2))
-    throw new Error('Select full qualification or a Phase 2 lab build.');
+  if (![1, 2, 3].includes(phase))
+    throw new Error('Select release phase 1, 2, or 3.');
+  if (!['full', 'lab'].includes(mode) || (mode === 'lab' && phase === 1))
+    throw new Error('Select full qualification or an application lab build.');
+  if (phase === 3 && mode !== 'lab')
+    throw new Error(
+      'Phase 3 profile qualification must precede full candidate assembly.',
+    );
   if (!/^[a-f0-9]{40}$/.test(sourceRevision))
     throw new Error('Candidate requires a source revision.');
   const head = (
@@ -64,11 +70,13 @@ export async function assembleCandidate({
       );
   }
   const files = [];
-  const add = async (source, path) => {
+  const add = async (source, path, expectedSha256) => {
     const stat = await lstat(source);
     if (!stat.isFile() || stat.isSymbolicLink())
       throw new Error('Candidate contains an unsupported file.');
     const bytes = await readFile(source);
+    if (expectedSha256 !== undefined && sha256(bytes) !== expectedSha256)
+      throw new Error('Candidate evidence changed after verification.');
     if (
       /-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/.test(
         bytes.toString('utf8'),
@@ -77,7 +85,11 @@ export async function assembleCandidate({
       throw new Error('Candidate contains private key material.');
     const destination = resolve(output, path);
     await mkdir(dirname(destination), { recursive: true });
-    await copyFile(source, destination);
+    await writeFile(destination, bytes, {
+      flag: 'wx',
+      mode: stat.mode & 0o777,
+    });
+    await chmod(destination, stat.mode & 0o777);
     files.push({ path, sizeBytes: bytes.length, sha256: sha256(bytes) });
   };
   for (const path of paths) await add(resolve(root, path), path);
@@ -134,7 +146,7 @@ export async function assembleCandidate({
       'reference',
       'spdx.json',
       'verification.json',
-      ...(phase === 2 ? ['vulnerabilities.json'] : []),
+      ...(phase >= 2 ? ['vulnerabilities.json'] : []),
     ])
       await add(
         resolve(artifacts, `${service}.${suffix}`),
@@ -142,6 +154,27 @@ export async function assembleCandidate({
       );
   }
   const applicationEvidence = {};
+  if (phase === 3) {
+    if (!qualificationArtifacts)
+      throw new Error('Phase 3 requires packaged application evidence.');
+    const target = 'phase3-auth-integration';
+    const directory = resolve(
+      qualificationArtifacts,
+      `qualification-${target}`,
+    );
+    const reports = await inspectPhase3Evidence(directory, {
+      sourceRevision,
+      images,
+    });
+    for (const report of reports) {
+      const reportPath = `qualification/${target}/${report.name}`;
+      await add(resolve(directory, report.name), reportPath, report.sha256);
+      applicationEvidence[report.name] = {
+        reportPath,
+        reportSha256: report.sha256,
+      };
+    }
+  }
   if (phase === 2) {
     if (!qualificationArtifacts)
       throw new Error('Phase 2 requires application qualification artifacts.');
@@ -193,7 +226,7 @@ export async function assembleCandidate({
     images,
     qualification: 'candidate-only',
     ...(mode === 'lab' ? { validationScope: 'lab' } : {}),
-    ...(phase === 2 ? { applicationEvidence } : {}),
+    ...(phase >= 2 ? { applicationEvidence } : {}),
     evidence: Object.fromEntries(
       ['all-docker', 'hybrid', 'kubernetes'].map((profile) => [
         profile,

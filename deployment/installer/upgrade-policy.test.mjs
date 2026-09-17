@@ -32,6 +32,26 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
     assert.equal(supportedUpgrade(after, phase3), true);
     assert.equal(supportedUpgrade(phase3, after), false);
     assert.equal(supportedUpgrade(before, phase3), false);
+    phase3.googleConnection = {
+      keyId: 'initial-google-key',
+      encryptionKeySecretRef:
+        profile === 'kubernetes'
+          ? {
+              provider: 'kubernetes',
+              name: 'campus-google',
+              key: 'encryption-key',
+            }
+          : { provider: 'file', path: '/run/secrets/google-encryption-key' },
+    };
+    assert.equal(
+      supportedUpgrade(after, phase3),
+      true,
+      'A Phase 2 upgrade must accept the initial Phase 3 encryption key.',
+    );
+    const replacement = structuredClone(phase3);
+    replacement.googleConnection.keyId = 'replacement-key';
+    assert.equal(supportedUpgrade(phase3, replacement), false);
+    assert.equal(supportedUpgrade(phase3, after), false);
     assert.equal(
       supportedUpgrade(after, {
         ...phase3,
@@ -56,6 +76,9 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
       const invalid = structuredClone(after);
       mutate(invalid);
       assert.equal(supportedUpgrade(before, invalid), false);
+      const invalidPhase3 = structuredClone(phase3);
+      mutate(invalidPhase3);
+      assert.equal(supportedUpgrade(after, invalidPhase3), false);
     }
   });
 }

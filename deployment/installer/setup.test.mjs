@@ -699,3 +699,29 @@ test('CLI rejects public and symbolic answers files before setup', async (t) => 
   await symlink(source, symbolic);
   await rejectsBeforeSetup(symbolic);
 });
+
+test('guided Phase 3 setup retains the independently trusted publisher', async () => {
+  const questions = async (key, _label, fallback) =>
+    key === 'labCertificate' ? 'yes' : (fallback ?? '/protected/credential');
+  const plan = await configure({
+    releaseRoot,
+    root: '/opt/cc-phase3-lab',
+    profile: 'all-docker',
+    qualification: true,
+    questions,
+    manifest: { ...manifest, phase: 3 },
+    importGoogle: async () => ({
+      clientId: '123-test.apps.googleusercontent.com',
+      secretPath: '/protected/google-client-secret',
+    }),
+  });
+  assert.equal(plan.config.phase, 3);
+  assert.equal(
+    plan.operator.trust.identity,
+    'https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery',
+  );
+  assert.equal(
+    plan.operator.trust.bundlePath,
+    join(releaseRoot, 'release-manifest.sigstore.json'),
+  );
+});

@@ -2,41 +2,8 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 
-// Keep this inventory aligned with the route matrix in phase-3-security.md.
-export const phase3ProtectedRoutes = [
-  ['GET', '/api/customer'],
-  ['GET', '/api/customer/receipts/:id'],
-  ['POST', '/api/customer/settings'],
-  ['GET', '/api/platform-users'],
-  ['GET', '/api/platform-users/:id'],
-  ['GET', '/api/platform-users/:id/receipts'],
-  ['POST', '/api/platform-users/:id/review'],
-  ['POST', '/api/platform-users/:id/access'],
-  ['GET', '/api/auth/invitations'],
-  ['POST', '/api/auth/invitations'],
-  ['POST', '/api/auth/invitations/:id/confirm'],
-  ['POST', '/api/auth/invitations/:id/revoke'],
-  ['GET', '/api/google-connection'],
-  ['GET', '/api/google-connection/health'],
-  ['GET', '/api/google-connection/candidates/:id'],
-  ['GET', '/api/google-connection/credentials'],
-  ['POST', '/api/google-connection/check'],
-  ['POST', '/api/google-connection/health/check'],
-  ['POST', '/api/google-connection/candidates'],
-  ['POST', '/api/google-connection/candidates/:id/confirm'],
-  ['POST', '/api/google-connection/replacements'],
-  ['POST', '/api/google-connection/replacements/:id/activate'],
-  ['POST', '/api/google-connection/credentials/rotate-key'],
-  ['POST', '/api/google-connection/credentials/disconnect'],
-  ['GET', '/api/schools'],
-  ['GET', '/api/schools/:id'],
-  ['GET', '/api/schools/:id/audit'],
-  ['GET', '/api/schools/reviews/:id'],
-  ['POST', '/api/schools/reviews'],
-  ['POST', '/api/schools/reviews/:id/confirm'],
-  ['GET', '/api/schools/references'],
-  ['POST', '/api/schools/references/refresh'],
-];
+import { phase3ProtectedRoutes } from '../deployment/qualification/phase3-routes.mjs';
+export { phase3ProtectedRoutes } from '../deployment/qualification/phase3-routes.mjs';
 
 export async function qualifyPhase3RouteSecurity({
   request,
