@@ -32,7 +32,7 @@
       [attr.aria-label]="(expanded(row.unit) ? 'Collapse ' : 'Expand ') + row.unit.name"
       (click)="toggle($event, row.unit)"
     >
-      <mat-icon aria-hidden="true"
+      <mat-icon aria-hidden="true" fontSet="material-symbols-outlined"
         >{{ expanded(row.unit) ? 'expand_more' : 'chevron_right' }}</mat-icon
       >
     </button>

@@ -355,6 +355,10 @@ test('qualifies the school draft and review in both themes, keyboard navigation,
       theme === 'dark' ? 'rgb(154, 160, 166)' : 'rgb(95, 99, 104)',
     );
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      path: test.info().outputPath(`school-draft-${theme}.png`),
+      fullPage: true,
+    });
   }
   await page
     .getByRole('button', { name: 'Review school scope', exact: true })
@@ -366,6 +370,10 @@ test('qualifies the school draft and review in both themes, keyboard navigation,
     );
 
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      path: test.info().outputPath(`school-review-${theme}.png`),
+      fullPage: true,
+    });
   }
   for (const width of [1280, 320]) {
     await page.setViewportSize({ width, height: 900 });
