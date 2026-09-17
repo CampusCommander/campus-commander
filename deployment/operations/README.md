@@ -171,9 +171,9 @@ It also checks missing source storage, busy databases, nonempty targets, and fai
 It does not establish actual Kestra engine recovery, district shared-storage recovery, or a complete profile restart.
 
 The Phase 3 target also compares restored customer, credential, settings, school, grant, principal, and reference-history hashes.
-It checks the database gate and independent credential key with synthetic Google verification.
+It checks the database gate and independent credential key through the operator CLI with synthetic Google transport responses.
 It saves a sanitized report in `dist/phase-3-recovery/operations.json`.
-This target does not qualify the revalidation CLI, browser sessions, separate networks, fresh Redis, or live Google privileges.
+This target does not qualify browser sessions, separate networks, fresh Redis, or live Google privileges.
 
 ## Failure reasons
 

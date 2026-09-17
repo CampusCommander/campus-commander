@@ -80,7 +80,24 @@ Both review axes found no remaining issues.
 The [retained report](../../deployment/evidence/CC-56-phase3-state-restore.json) records one customer, credential, settings revision, school, principal, and reference observation, plus 12 grants.
 The synthetic backup took 328 ms. Restore took 304 ms. Backup age at the final check was 532 ms.
 These measurements describe this small fixture. They do not establish district recovery objectives.
-Full application qualification at that revision remains active.
+That run passed all eight jobs, including packaged applications and all-Docker compatibility.
+
+## Operator CLI qualification
+
+The Phase 3 target now runs backup, verification, restore, and Google revalidation through the production operator CLI.
+The operator container uses the pinned PostgreSQL tools. The report records their actual versions.
+A test preload supplies synthetic Google transport responses to the production SDK and verifier.
+The production CLI has no test-provider setting.
+
+The fixture checks a missing credential key, the backup key in place of the credential key, denied delegation, denied privileges, and a different customer.
+Each failure must retain the exact gate, connection, encrypted credential, audit state, and service-disable marker.
+A live database connection must prevent revalidation. An injected audit failure must preserve the closed gate without a success receipt.
+Success must create a private receipt, record one audit event, and permit a new renewal lease.
+A repeated command must retain the original verification time and add no event, even if the provider fixture now reports another customer.
+These checks qualify the repeated receipt semantics. They do not claim a new live Google check.
+
+Local lint, operations contracts, and release tests pass. Hosted CLI qualification remains pending.
+The retained `06685a9` report predates this CLI increment and remains library-level evidence.
 
 ## Remaining recovery work
 

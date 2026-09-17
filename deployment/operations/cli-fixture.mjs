@@ -24,6 +24,8 @@ export async function createOperationsCliFixture(
     container = false,
     mountedSecrets = false,
     mountDirectories = [directory],
+    googlePreload,
+    beforeInvoke,
   } = {},
 ) {
   const sourceRoot = resolve(process.env.CC_AUTH_INSTALLER_ROOT ?? workspace);
@@ -60,6 +62,8 @@ export async function createOperationsCliFixture(
     return result;
   };
   const invoke = async (command, path) => {
+    await beforeInvoke?.({ command, secretDirectory });
+    const nodeArguments = googlePreload ? ['--require', googlePreload] : [];
     const containerName = `cc-operator-cli-${randomUUID()}`;
     try {
       const { stdout } = await execute(
@@ -92,12 +96,13 @@ export async function createOperationsCliFixture(
               '--entrypoint',
               '/fixture-node',
               postgresImage,
+              ...nodeArguments,
               cliPath,
               command,
               path,
             ]
           : mountedSecrets
-            ? [cliPath, command, path]
+            ? [...nodeArguments, cliPath, command, path]
             : [
                 '--user',
                 '--map-root-user',
@@ -115,6 +120,7 @@ export async function createOperationsCliFixture(
                 'phase-2-operator-cli',
                 secretDirectory,
                 process.execPath,
+                ...nodeArguments,
                 cliPath,
                 command,
                 path,
@@ -151,6 +157,7 @@ export async function createOperationsCliFixture(
       nodeVersion: process.version,
       secretMount: '/run/secrets',
       injectedDatabaseTool: false,
+      ...(googlePreload ? { googleTransport: 'synthetic-gaxios-preload' } : {}),
       source: bundle ? 'extracted-published-bundle' : 'workspace',
       ...(bundle ? { bundleManifestSha256: bundle.manifestSha256 } : {}),
     },

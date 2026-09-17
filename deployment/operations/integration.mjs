@@ -1,3 +1,4 @@
+import { qualifyGoogleRevalidationCli } from './google-cli-fixture.mjs';
 import { seedPhase3State, verifyPhase3State } from './phase3-state-fixture.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
@@ -37,17 +38,13 @@ const startedAt = Date.now();
 const name = `cc-restore-${randomUUID()}`,
   root = await mkdtemp(join(tmpdir(), 'cc-restore-'));
 const phase3 = process.env.CC_OPERATIONS_PHASE === '3';
-let sourcePhase3, phase3Recovery;
+let sourcePhase3,
+  phase3Recovery,
+  googleKeyOverride,
+  omitGoogleKey = false;
 const cli = process.env.CC_OPERATIONS_CLI === '1';
+const cliContainer = cli && process.env.CC_OPERATIONS_CLI_CONTAINER === '1';
 const native = cli || process.env.CC_OPERATIONS_NATIVE === '1';
-const toolVersions = native
-  ? Object.fromEntries(
-      ['pg_dump', 'pg_restore'].map((tool) => [
-        tool,
-        execFileSync(tool, ['--version'], { encoding: 'utf8' }).trim(),
-      ]),
-    )
-  : undefined;
 const password = randomUUID();
 let encryptionKey = randomBytes(32);
 const docker = (...args) =>
@@ -61,6 +58,16 @@ const pin = JSON.parse(
     'utf8',
   ),
 );
+const toolVersions = native
+  ? Object.fromEntries(
+      ['pg_dump', 'pg_restore'].map((tool) => [
+        tool,
+        cliContainer
+          ? docker('run', '--rm', '--entrypoint', tool, pin.image, '--version')
+          : execFileSync(tool, ['--version'], { encoding: 'utf8' }).trim(),
+      ]),
+    )
+  : undefined;
 const keyRecovery = {
   id: 'synthetic-backup-key',
   version: 1,
@@ -70,20 +77,33 @@ const resolveSecret = async (reference) =>
   reference.path === '/run/secrets/backup-key'
     ? encryptionKey
     : reference.path === '/run/secrets/google-recovery-key'
-      ? sourcePhase3.key
+      ? (googleKeyOverride ?? sourcePhase3.key)
       : Buffer.from(`${password}\r\n`);
 let admin, pool, store, operatorCli;
 const clients = [];
 try {
   if (cli) {
+    const googlePreload = phase3
+      ? join(root, 'operator-cli', 'google-connection-preload.cjs')
+      : undefined;
     operatorCli = await createOperationsCliFixture(
       join(root, 'operator-cli'),
       resolveSecret,
       {
-        container: process.env.CC_OPERATIONS_CLI_CONTAINER === '1',
+        container: cliContainer,
+        googlePreload,
+        async beforeInvoke({ command, secretDirectory }) {
+          if (command === 'revalidate-google' && omitGoogleKey)
+            await rm(join(secretDirectory, 'google-recovery-key'));
+        },
         mountDirectories: [root],
       },
     );
+    if (googlePreload)
+      await cp(
+        new URL('../../api-e2e/google-connection-preload.cjs', import.meta.url),
+        googlePreload,
+      );
     encryptionKey.fill(0);
     encryptionKey = await operatorCli.generateKey();
     assert.equal(encryptionKey.length, 32);
@@ -669,6 +689,7 @@ try {
         sourcePhase3,
         report.accessRecovery,
         encryptionKey,
+        { deferRevalidation: cli },
       );
   } finally {
     await restoredAccess.end();
@@ -685,6 +706,30 @@ try {
   store = undefined;
   await pool.end();
   pool = undefined;
+  if (phase3 && cli) {
+    const cliProof = await qualifyGoogleRevalidationCli({
+      operatorCli,
+      directory: join(root, 'operator-cli'),
+      targetDirectory,
+      targetConfig,
+      applicationCredentials: targetCredentials,
+      recovery: report.accessRecovery.googleConnection,
+      async connect() {
+        const client = new pg.Client({
+          ...connection,
+          user: 'migrator-target',
+          database: 'app-target',
+        });
+        await client.connect();
+        return client;
+      },
+      setKeyFault(mode) {
+        omitGoogleKey = mode === 'missing';
+        googleKeyOverride = mode === 'backup-key' ? encryptionKey : undefined;
+      },
+    });
+    phase3Recovery = { ...phase3Recovery, ...cliProof, status: 'passed' };
+  }
   await assert.rejects(
     restoreFoundation({
       backupDirectory,
@@ -756,13 +801,17 @@ try {
         {
           ...qualification,
           status: 'passed',
-          command: 'npm exec nx run deployment:operations-phase3-integration',
+          command: cli
+            ? 'npm exec nx run deployment:operations-phase3-integration'
+            : 'CC_OPERATIONS_PHASE=3 node deployment/operations/integration.mjs',
           images: { postgres: pin.image },
           durationMilliseconds: Date.now() - startedAt,
           limits: [
-            'Synthetic Google verifier and migration-role library revalidation.',
+            cli
+              ? 'Synthetic Google transport with the production operator CLI and verifier.'
+              : 'Synthetic Google verifier and migration-role library revalidation.',
             'Distinct databases and storage trees share one PostgreSQL container and Docker host.',
-            'Separate networks, fresh Redis, browser sessions, and revalidation CLI remain unqualified.',
+            'Separate networks, fresh Redis, browser sessions, and live Google privileges remain unqualified.',
           ],
           sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], {
             encoding: 'utf8',

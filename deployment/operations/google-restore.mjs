@@ -119,7 +119,9 @@ export async function revalidateGoogleRestore({
           generation: state.generation,
         },
       );
-    } catch {
+    } catch (error) {
+      if (error?.code === 'ENOENT')
+        throw new Error('Restored Google encryption key is unavailable.');
       throw new Error('Restored Google encryption key verification failed.');
     } finally {
       material?.fill(0);

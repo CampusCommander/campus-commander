@@ -45,7 +45,7 @@ async function inventory(client) {
 
 /** Seed durable customer state through the same database commands used by the application. */
 export async function seedPhase3State(client, actor, permissionVersion) {
-  const customerId = 'Crestore01',
+  const customerId = 'C0123456',
     candidateId = randomUUID();
   const key = randomBytes(32),
     keyId = 'independent-google-recovery-key';
@@ -270,6 +270,7 @@ export async function verifyPhase3State(
   source,
   accessRecovery,
   backupKey,
+  { deferRevalidation = false } = {},
 ) {
   const current = await inventory(client);
   assert.deepEqual(current, source.initial);
@@ -335,6 +336,16 @@ export async function verifyPhase3State(
     ]),
     (error) => error.detail === 'school-changed',
   );
+  const stateProof = {
+    preserved: current,
+    oldSettingsReceiptPreserved: true,
+    approvedSchoolScopePreserved: true,
+    oldSchoolReferencesEffective: false,
+    pendingCandidatesExpired: 1,
+    pendingReviewsExpired: 1,
+  };
+  if (deferRevalidation)
+    return { ...stateProof, status: 'preserved-awaiting-revalidation' };
   const options = {
     client,
     recoveryId: google.recoveryId,
@@ -391,12 +402,7 @@ export async function verifyPhase3State(
   );
   return {
     status: 'passed',
-    preserved: current,
-    oldSettingsReceiptPreserved: true,
-    approvedSchoolScopePreserved: true,
-    oldSchoolReferencesEffective: false,
-    pendingCandidatesExpired: 1,
-    pendingReviewsExpired: 1,
+    ...stateProof,
     exactRecoveredKeyVerified: true,
     backupKeyCannotDecryptGoogleCredential: true,
     wrongCustomerRejected: true,

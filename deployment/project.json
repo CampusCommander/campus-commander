@@ -369,7 +369,7 @@
       "cache": false,
       "dependsOn": ["build"],
       "options": {
-        "command": "CC_OPERATIONS_PHASE=3 node deployment/operations/integration.mjs"
+        "command": "CC_OPERATIONS_PHASE=3 CC_OPERATIONS_CLI=1 CC_OPERATIONS_CLI_CONTAINER=1 node deployment/operations/integration.mjs"
       }
     }
   }
