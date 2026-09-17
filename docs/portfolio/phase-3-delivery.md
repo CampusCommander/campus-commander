@@ -275,4 +275,8 @@ gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
 ```
 
 The synthetic fixture does not establish district browser trust or certificate renewal operations.
-Hosted certificate qualification remains pending.
+[Run 35220374649](https://github.com/CampusCommander/campus-commander/actions/runs/35220374649) passed at harness `876ed07` against application `a3601ef`.
+All three certificate failures preserved Phase 3 state. Recovery took 9,080 to 9,944 milliseconds.
+The fixture restored every original secret file. The certificate segment took 73,735 milliseconds.
+The [retained certificate report](../../deployment/evidence/CC-57-certificate-faults.json) includes three original report hashes and complete fixture limits.
+All ten installed workflows passed. PR CI passed at the same harness revision.
