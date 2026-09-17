@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "1b04fa38c1a4ba8c49e293143351c6ad9f5b6432",
+  "architectures": ["linux/amd64"],
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:44a987f5687a1e4f1420c2c859ac150b3c68825dac3ce87628c9b87e812f016d",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:5d8639f533f76eadf76401610dbc453e1ccb9baca5af0ab085eff0e9355d2d30",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:cb95230e3ced7b6036b72c9e0940b9f72de40768e64696fe7fe0486fca52e7e3"
+  },
+  "phase": 2,
+  "qualification": "candidate-only",
+  "validationScope": "lab",
+  "sourceTag": "phase-2-lab-1b04fa38c1a4",
+  "sourceManifestSha256": "14b4407879eba3a704f47531023431f6cfb0659c3cdf969a4a8a4fcbf91b08d3",
+  "sourceArchiveSha256": "df396d5837db6e03b95a2edf48e218f83d86f7dd7990e4bf45bd567f2e355f02",
+  "sourceUrl": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-lab-1b04fa38c1a4",
+  "acceptanceRecord": "docs/reviews/2026-09-16-phase-2-acceptance.md",
+  "acceptanceScope": "Owner accepted Phase 2 work at this implementation revision. The owner did not identify the exact installed revision."
+}

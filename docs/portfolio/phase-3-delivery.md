@@ -63,3 +63,14 @@ It records command, environment, duration scopes, and report hashes. Upgrade and
 Only successful extracted qualification permits the immutable `phase-3-lab-<revision12>` prerelease.
 The hosted installer trusts the fixed Phase 3 workflow identity and verifies both blobs and all three images.
 Workflow implementation and local rejection tests do not establish a successful hosted run.
+
+## Pinned Phase 2 upgrade source
+
+The upgrade fixture uses `phase-2-lab-1b04fa38c1a4`, the implementation revision referenced by the Phase 2 acceptance record.
+The owner did not identify the exact installed revision. This selection does not add that missing observation.
+The baseline inventory pins three image digests, the source revision, archive hash, and manifest hash.
+Independent hosted-installer verification passed both blob signatures, all three image signatures, and 1,363 inventoried files.
+The verification used an isolated empty Docker configuration because the host configuration references an unavailable Windows credential helper.
+This read-only verification does not establish Phase 2-to-Phase 3 upgrade behavior.
+
+Baseline manifest: `deployment/qualification/phase-2-upgrade-baseline.json`.
