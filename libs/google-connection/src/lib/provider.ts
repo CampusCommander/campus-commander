@@ -1,4 +1,5 @@
 import { JWT, OAuth2Client } from 'google-auth-library';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   GOOGLE_CUSTOMER_SCOPES,
@@ -11,6 +12,9 @@ import {
   googleObservationSchema,
   type GoogleFailure,
   type GoogleObservation,
+  schoolReferenceObservationSchema,
+  resolveSchoolScope,
+  type SchoolReferenceObservation,
 } from '@campus/application-contracts';
 import {
   accessTokenSchema,
@@ -187,7 +191,7 @@ function boundClient(client: OAuth2Client, signal: AbortSignal) {
         ['/token', '/tokeninfo'].includes(url.pathname)) ||
       (url.origin === 'https://admin.googleapis.com' &&
         (url.pathname === '/admin/directory/v1/customers/my_customer' ||
-          /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/domains$/.test(
+          /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/(?:domains|orgunits)$/.test(
             url.pathname,
           )));
     if (!allowed) throw new GoogleConnectionError('request-failed');
@@ -202,6 +206,45 @@ function boundClient(client: OAuth2Client, signal: AbortSignal) {
       size: responseLimit,
     });
   };
+}
+
+/** Obtain one exact-scope token without changing the shared customer token profile. */
+async function scopedClient(
+  credential: DelegatedCredential,
+  scope: string,
+  signal: AbortSignal,
+): Promise<OAuth2Client> {
+  try {
+    const issuer = new JWT({
+      email: credential.serviceAccount.client_email,
+      key: credential.serviceAccount.private_key,
+      keyId: credential.serviceAccount.private_key_id,
+      subject: credential.subject,
+      scopes: [scope],
+    });
+    boundClient(issuer, signal);
+    const { token } = await issuer.getAccessToken();
+    if (!token) throw new GoogleConnectionError('credential-rejected');
+    const info = await issuer.getTokenInfo(token);
+    if (info.scopes.length !== 1 || info.scopes[0] !== scope)
+      throw new GoogleConnectionError('scope-mismatch');
+    if (
+      !Number.isFinite(info.expiry_date) ||
+      info.expiry_date <= Date.now() + 60_000 ||
+      info.expiry_date > Date.now() + 3_605_000
+    )
+      throw new GoogleConnectionError('invalid-response');
+    const client = new OAuth2Client();
+    client.eagerRefreshThresholdMillis = 0;
+    client.setCredentials({
+      access_token: token,
+      expiry_date: info.expiry_date,
+    });
+    boundClient(client, signal);
+    return client;
+  } catch (error) {
+    throw failure(error, 'token');
+  }
 }
 
 /** Share fixed customer reads between staging, API checks, and workers. */
@@ -275,34 +318,9 @@ export class GoogleCustomerVerifier {
         let scopeVerified = false;
         let stage: 'token' | 'read' = 'token';
         try {
-          const issuer = new JWT({
-            email: credential.serviceAccount.client_email,
-            key: credential.serviceAccount.private_key,
-            keyId: credential.serviceAccount.private_key_id,
-            subject: credential.subject,
-            scopes: [record.scope],
-          });
-          boundClient(issuer, signal);
-          const { token } = await issuer.getAccessToken();
-          if (!token) throw new GoogleConnectionError('credential-rejected');
-          const info = await issuer.getTokenInfo(token);
-          if (info.scopes.length !== 1 || info.scopes[0] !== record.scope)
-            throw new GoogleConnectionError('scope-mismatch');
-          if (
-            !Number.isFinite(info.expiry_date) ||
-            info.expiry_date <= Date.now() + 60_000 ||
-            info.expiry_date > Date.now() + 3_605_000
-          )
-            throw new GoogleConnectionError('invalid-response');
+          const client = await scopedClient(credential, record.scope, signal);
           scopeVerified = true;
           stage = 'read';
-          const client = new OAuth2Client();
-          client.eagerRefreshThresholdMillis = 0;
-          client.setCredentials({
-            access_token: token,
-            expiry_date: info.expiry_date,
-          });
-          boundClient(client, signal);
           if (capability === 'customer-identity') {
             const result = customerResponse.parse(
               (
@@ -360,6 +378,81 @@ export class GoogleCustomerVerifier {
       }
     }
     return { results, observation };
+  }
+
+  /** Refresh optional permission references. Callers must fence credential generations before publication. */
+  async readSchoolReferences(
+    credential: DelegatedCredential,
+    expectedCustomer: string,
+    generation: number,
+    signal: AbortSignal,
+  ): Promise<SchoolReferenceObservation> {
+    googleCustomerIdSchema.parse(expectedCustomer);
+    z.number().int().positive().parse(generation);
+    signal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+    try {
+      const client = await scopedClient(
+        credential,
+        GOOGLE_CAPABILITIES.find(
+          (capability) => capability.id === 'school-ou-references',
+        )!.scope,
+        signal,
+      );
+      const response = await client.request({
+        url: `${directory}/customer/${expectedCustomer}/orgunits`,
+        method: 'GET',
+        params: {
+          type: 'all_including_parent',
+          fields:
+            'organizationUnits(orgUnitId,name,orgUnitPath,parentOrgUnitId)',
+        },
+      });
+      const data = z
+        .object({
+          organizationUnits: z
+            .array(
+              z.object({
+                orgUnitId: z.string(),
+                name: z.string(),
+                orgUnitPath: z.string(),
+                parentOrgUnitId: z.string().optional(),
+              }),
+            )
+            .min(1)
+            .max(10000),
+        })
+        .parse(response.data);
+      const observedAt = new Date().toISOString();
+      const observation = schoolReferenceObservationSchema.parse({
+        customerId: expectedCustomer,
+        generation,
+        revision: randomUUID(),
+        observedAt,
+        verified: true,
+        complete: true,
+        units: data.organizationUnits.map((unit) => ({
+          id: unit.orgUnitId,
+          name: unit.name,
+          path: unit.orgUnitPath,
+          parentId: unit.parentOrgUnitId ?? null,
+        })),
+      });
+      const root = observation.units.find((unit) => unit.parentId === null);
+      if (
+        !root ||
+        !resolveSchoolScope({
+          observation,
+          customerId: expectedCustomer,
+          generation,
+          now: Date.parse(observedAt),
+          rules: { include: [{ id: root.id, descendants: true }], exclude: [] },
+        }).valid
+      )
+        throw new GoogleConnectionError('invalid-response');
+      return observation;
+    } catch (error) {
+      throw failure(error);
+    }
   }
 
   async observe(
