@@ -395,4 +395,7 @@ The correction releases non-token requests after successful cookie-header regist
 Required token-body routes still wait for request completion. Closure still drains observers and rejects observation failures.
 A regression verifies that unfinished non-token bodies permit closure while unfinished token bodies reject closure.
 Both cases retain protection for the response cookie. A native Chromium stress check passed 100 unfinished-body closures.
-The local API and scanner suite passed all 20 checks. Lint passed. Hosted qualification remains pending.
+The local API and scanner suite passed all 20 checks. Lint passed.
+[Source run 35207540591](https://github.com/CampusCommander/campus-commander/actions/runs/35207540591) passed at `037c8c4`.
+The [retained scanner report](../../deployment/evidence/CC-55-observed-header-source.json) covers 78 files, 24 screenshots, and 18 secret categories.
+It records 35 incomplete requests outside JSON token-body coverage. Packaged authorization and complete profile qualification remain pending.
