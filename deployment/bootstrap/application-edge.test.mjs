@@ -58,6 +58,8 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       413,
     );
     const routes = [
+      ['GET', '/api/schools/references', 'api'],
+      ['POST', '/api/schools/references/refresh', 'api'],
       ['GET', '/api/customer', 'api'],
       ['GET', `/api/customer/receipts/${id}`, 'api'],
       ['POST', '/api/customer/settings', 'api'],
@@ -97,6 +99,9 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       assert.equal(response.headers.get('cache-control'), 'no-store');
     }
     for (const [method, path, status] of [
+      ['POST', '/api/schools/references', 405],
+      ['GET', '/api/schools/references/refresh', 405],
+      ['GET', '/api/schools/references/private', 404],
       ['POST', '/api/google-connection/health', 405],
       ['GET', '/api/google-connection/health/check', 405],
       ['GET', '/api/google-connection/health/private', 404],
@@ -121,6 +126,15 @@ test('application routes require Phase 3 and exact methods and paths', async () 
         path,
       );
     }
+    assert.equal(
+      (
+        await fetch(`${origin(edge)}/api/schools/references/refresh`, {
+          method: 'POST',
+          body: 'x'.repeat(4097),
+        })
+      ).status,
+      413,
+    );
     phase = 2;
     for (const [method, path] of routes) {
       assert.equal(

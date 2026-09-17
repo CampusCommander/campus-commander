@@ -91,7 +91,8 @@ export async function proxyApplication(
       (invitationReads.has(pathname) ||
         principalRead.test(pathname) ||
         connectionRead.test(pathname) ||
-        customerRead.test(pathname)));
+        customerRead.test(pathname) ||
+        pathname === '/api/schools/references'));
   const writable =
     postRoutes.has(pathname) ||
     (phase === 3 &&
@@ -99,7 +100,8 @@ export async function proxyApplication(
         invitationChange.test(pathname) ||
         principalWrite.test(pathname) ||
         connectionWrite.test(pathname) ||
-        pathname === '/api/customer/settings'));
+        pathname === '/api/customer/settings' ||
+        pathname === '/api/schools/references/refresh'));
   const api = readable || writable;
   const page =
     pages.has(pathname) || (phase === 3 && phase3Pages.has(pathname));
