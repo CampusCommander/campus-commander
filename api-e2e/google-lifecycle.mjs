@@ -242,13 +242,52 @@ export async function qualifyGoogleLifecycleApi({
       await page
         .getByLabel('Replacement delegated administrator email')
         .fill(input.subject);
+      const stagedResponse = page.waitForResponse(
+        (response) =>
+          response.url() === `${root}/replacements` &&
+          response.request().method() === 'POST',
+        { timeout: 50000 },
+      );
       await page
         .getByRole('button', {
           name: 'Check replacement credentials',
           exact: true,
         })
         .click();
-      await expect(confirm).toBeVisible({ timeout: 60000 });
+      const response = await stagedResponse;
+      const staged = await response.json().catch(() => null);
+      const safeReason = [
+        'connection-store-unavailable',
+        'connection-key-unavailable',
+        'connection-not-configured',
+        'forbidden',
+        'busy',
+        'candidate-changed',
+        'credential-changed',
+      ].includes(staged?.reason)
+        ? staged.reason
+        : null;
+      const stagingEvidence = {
+        httpStatus: response.status(),
+        reason: safeReason,
+        candidateState: [
+          'verifying',
+          'ready',
+          'failed',
+          'expired',
+          'consumed',
+        ].includes(staged?.status)
+          ? staged.status
+          : null,
+        expectedGeneration: current.generation,
+      };
+      await writeFile(
+        join(evidenceDirectory, 'google-lifecycle-browser-staging.json'),
+        JSON.stringify(stagingEvidence, null, 2),
+      );
+      assert.equal(response.status(), 201, JSON.stringify(stagingEvidence));
+      assert.equal(staged?.status, 'ready', JSON.stringify(stagingEvidence));
+      await expect(confirm).toBeVisible({ timeout: 15000 });
       await expect(
         page.getByRole('button', { name: 'Activate replacement', exact: true }),
       ).toBeDisabled();
