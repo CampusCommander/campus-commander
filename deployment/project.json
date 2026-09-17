@@ -363,6 +363,14 @@
       "options": {
         "command": "node deployment/google-proof/cli.mjs"
       }
+    },
+    "operations-phase3-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "CC_OPERATIONS_PHASE=3 node deployment/operations/integration.mjs"
+      }
     }
   }
 }

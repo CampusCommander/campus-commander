@@ -162,12 +162,18 @@ The parent fault harness can compare these inventories with its fixture reads.
 ```sh
 npm exec nx run deployment:operations-test
 npm exec nx run deployment:operations-integration
+npm exec nx run deployment:operations-phase3-integration
 ```
 
 The integration fixture uses the qualified PostgreSQL image and disposable synthetic databases and files.
 It checks encrypted backup, both database restores, artifact reads, Kestra fixture state, and missing or corrupt components.
 It also checks missing source storage, busy databases, nonempty targets, and failure before a restore success report.
 It does not establish actual Kestra engine recovery, district shared-storage recovery, or a complete profile restart.
+
+The Phase 3 target also compares restored customer, credential, settings, school, grant, principal, and reference-history hashes.
+It checks the database gate and independent credential key with synthetic Google verification.
+It saves a sanitized report in `dist/phase-3-recovery/operations.json`.
+This target does not qualify the revalidation CLI, browser sessions, separate networks, fresh Redis, or live Google privileges.
 
 ## Failure reasons
 

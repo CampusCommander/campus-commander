@@ -1,3 +1,4 @@
+import { seedPhase3State, verifyPhase3State } from './phase3-state-fixture.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -34,6 +35,8 @@ import {
 
 const name = `cc-restore-${randomUUID()}`,
   root = await mkdtemp(join(tmpdir(), 'cc-restore-'));
+const phase3 = process.env.CC_OPERATIONS_PHASE === '3';
+let sourcePhase3, phase3Recovery;
 const cli = process.env.CC_OPERATIONS_CLI === '1';
 const native = cli || process.env.CC_OPERATIONS_NATIVE === '1';
 const toolVersions = native
@@ -65,7 +68,9 @@ const keyRecovery = {
 const resolveSecret = async (reference) =>
   reference.path === '/run/secrets/backup-key'
     ? encryptionKey
-    : Buffer.from(`${password}\r\n`);
+    : reference.path === '/run/secrets/google-recovery-key'
+      ? sourcePhase3.key
+      : Buffer.from(`${password}\r\n`);
 let admin, pool, store, operatorCli;
 const clients = [];
 try {
@@ -160,6 +165,7 @@ try {
     'UPDATE cc.application_principals SET preferences=$1 WHERE id=$2',
     [{ theme: 'dark', navigationCollapsed: true }, principalId],
   );
+  if (phase3) sourcePhase3 = await seedPhase3State(migration, principalId);
   const originalPrincipals = (
     await migration.query('SELECT * FROM cc.application_principals ORDER BY id')
   ).rows;
@@ -230,7 +236,15 @@ try {
       database,
       role,
     });
-  config.phase = 2;
+  config.phase = phase3 ? 3 : 2;
+  if (phase3)
+    config.googleConnection = {
+      keyId: sourcePhase3.keyId,
+      encryptionKeySecretRef: {
+        provider: 'file',
+        path: '/run/secrets/google-recovery-key',
+      },
+    };
   config.services.edge.access = 'application';
   config.applicationAuth = {
     issuer: 'https://identity.example.invalid',
@@ -614,7 +628,8 @@ try {
   assert.deepEqual(
     (
       await pool.query(
-        "SELECT * FROM cc.security_events WHERE detail IS DISTINCT FROM 'restore-invalidated' ORDER BY id",
+        'SELECT * FROM cc.security_events WHERE id=ANY($1::uuid[]) ORDER BY id',
+        [originalEvents.map((event) => event.id)],
       )
     ).rows,
     originalEvents,
@@ -627,6 +642,14 @@ try {
   await restoredAccess.connect();
   try {
     await verifyInvitationRecovery(restoredAccess, pool, invitationRecovery);
+    if (phase3)
+      phase3Recovery = await verifyPhase3State(
+        restoredAccess,
+        pool,
+        sourcePhase3,
+        report.accessRecovery,
+        encryptionKey,
+      );
   } finally {
     await restoredAccess.end();
   }
@@ -664,43 +687,69 @@ try {
         applicationCredentials: targetCredentials,
       }),
     );
-  console.log(
-    JSON.stringify(
-      {
-        runner: cli
-          ? 'operator-cli-native'
-          : native
-            ? 'default-native'
-            : 'injected-docker',
-        ...(cli ? { commands: operatorCli.commands } : {}),
-        ...(cli ? { operatorCli: operatorCli.execution } : {}),
-        toolVersions,
-        backupMilliseconds: manifest.durationMilliseconds,
-        restoreMilliseconds: report.durationMilliseconds,
-        encryptedFiles: manifest.files.length,
-        results: [
-          'actual connection quiescence enforced',
-          'delayed connection teardown observed through fresh transaction statistics',
-          'both database dumps restored',
-          'Phase 2 identity, preferences, permission version, and security events restored',
-          'artifact identity and Unicode bytes restored',
-          'Kestra synthetic state and internal files restored',
-          'missing/wrong keys rejected',
-          'corrupt and missing backup files rejected',
-          'backup inside primary volume rejected',
-          'nonempty target rejected',
-          'absent source volume rejected',
-          'failed restore retains disabled marker without success report',
-          'services remain disabled; Redis requires fresh instance',
-        ],
-        hybrid: 'not-run: district shared mount absent',
-        kubernetes: 'not-run: qualified RWX storage absent',
-      },
-      null,
-      2,
-    ),
-  );
+  const qualification = {
+    runner: cli
+      ? 'operator-cli-native'
+      : native
+        ? 'default-native'
+        : 'injected-docker',
+    ...(cli ? { commands: operatorCli.commands } : {}),
+    ...(cli ? { operatorCli: operatorCli.execution } : {}),
+    toolVersions,
+    phase: config.phase,
+    ...(phase3
+      ? {
+          phase3Recovery,
+          backupAgeMilliseconds: Date.now() - Date.parse(manifest.createdAt),
+        }
+      : {}),
+    backupMilliseconds: manifest.durationMilliseconds,
+    restoreMilliseconds: report.durationMilliseconds,
+    encryptedFiles: manifest.files.length,
+    results: [
+      'actual connection quiescence enforced',
+      'delayed connection teardown observed through fresh transaction statistics',
+      'both database dumps restored',
+      'Phase 2 identity, preferences, permission version, and security events restored',
+      'artifact identity and Unicode bytes restored',
+      'Kestra synthetic state and internal files restored',
+      'missing/wrong keys rejected',
+      'corrupt and missing backup files rejected',
+      'backup inside primary volume rejected',
+      'nonempty target rejected',
+      'absent source volume rejected',
+      'failed restore retains disabled marker without success report',
+      'services remain disabled; Redis requires fresh instance',
+    ],
+    hybrid: 'not-run: district shared mount absent',
+    kubernetes: 'not-run: qualified RWX storage absent',
+  };
+  if (phase3) {
+    const evidenceDirectory = new URL(
+      '../../dist/phase-3-recovery/',
+      import.meta.url,
+    );
+    await mkdir(evidenceDirectory, { recursive: true });
+    await writeFile(
+      new URL('operations.json', evidenceDirectory),
+      JSON.stringify(
+        {
+          ...qualification,
+          sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], {
+            encoding: 'utf8',
+          }).trim(),
+          recordedAt: new Date().toISOString(),
+          environment:
+            'Synthetic source and target databases share one PostgreSQL container on one Docker host.',
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+  }
+  console.log(JSON.stringify(qualification, null, 2));
 } finally {
+  sourcePhase3?.key.fill(0);
   await store?.close();
   await pool?.end();
   await admin?.end();

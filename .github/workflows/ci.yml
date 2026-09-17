@@ -70,6 +70,7 @@ jobs:
             postgres-integration,
             storage-integration,
             operations-integration,
+            operations-phase3-integration,
           ]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -81,6 +82,12 @@ jobs:
       - run: npm exec nx run deployment:${{ matrix.target }}
         env:
           NX_NO_CLOUD: 'true'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: matrix.target == 'operations-phase3-integration' && success()
+        with:
+          name: phase-3-recovery-evidence
+          path: dist/phase-3-recovery/
+          if-no-files-found: error
 
   browser:
     if: inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)

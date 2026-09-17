@@ -58,6 +58,22 @@ Its application job failed before runtime tests because the image context exclud
 The image context now includes that script and its entry module. Packaged compatibility requires another full run.
 Both review axes found no actionable issues in `fa1993f...f0837f1`.
 
+## Phase 3 state fixture
+
+The `deployment:operations-phase3-integration` target adds a separate Phase 3 source to the actual database backup and restore fixture.
+It uses the application database commands to confirm a customer, save settings, approve a school, and stage a replacement credential.
+It also seeds a school grant, an unapplied school review, a provider renewal lease, and a health-check lease.
+Before revalidation, the fixture compares complete-row hashes for the customer binding, encrypted credential, settings revisions, schools, grants, and principals.
+It compares historical school-reference fields and reads the original settings receipt through the runtime role.
+Pending credentials and reviews expire. Old school references do not establish effective scope.
+The restored credential rejects the backup encryption key, missing credential keys, and a different customer observation.
+The recovered credential key then opens the restore gate through the revalidation library.
+
+The fixture writes `dist/phase-3-recovery/operations.json`. CI retains that report with counts, hashes, timings, backup age, and source revision.
+Source and target databases share one PostgreSQL container. Separate storage trees share one Docker host.
+Google verification uses a synthetic verifier. The fixture does not establish isolated networks, fresh Redis, browser sessions, or the revalidation CLI.
+Hosted qualification for this state fixture remains pending.
+
 ## Remaining recovery work
 
 - Inventory and verify complete customer, settings, school, grant, progress, receipt, credential, and security-event state.
