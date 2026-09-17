@@ -1,3 +1,4 @@
+import { qualificationSignIn } from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { readFile, writeFile, rm } from 'node:fs/promises';
@@ -18,10 +19,12 @@ export async function qualifyGoogleLifecycleApi({
   try {
     setSubject('administrator');
     const page = await context.newPage();
-    await page.goto(`${publicOrigin}/api/auth/login`);
-    await expect(
-      page.getByRole('heading', { name: 'Your account', exact: true }),
-    ).toBeVisible({ timeout: 15000 });
+    await qualificationSignIn(
+      page,
+      publicOrigin,
+      evidenceDirectory,
+      'google-lifecycle',
+    );
     const api = context.request;
     const session = await (
       await api.get(`${publicOrigin}/api/auth/session`)

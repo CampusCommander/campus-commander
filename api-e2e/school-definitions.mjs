@@ -1,7 +1,7 @@
+import { qualificationSignIn } from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
-import { expect } from '@playwright/test';
 
 export async function qualifySchoolDefinitionsApi({
   api,
@@ -83,10 +83,12 @@ export async function qualifySchoolDefinitionsApi({
   try {
     setSubject(subject);
     const page = await context.newPage();
-    await page.goto(`${publicOrigin}/api/auth/login`);
-    await expect(
-      page.getByRole('heading', { name: 'Your account', exact: true }),
-    ).toBeVisible({ timeout: 15000 });
+    await qualificationSignIn(
+      page,
+      publicOrigin,
+      evidenceDirectory,
+      'school-definitions',
+    );
     const scoped = context.request;
     const session = await (
       await scoped.get(`${publicOrigin}/api/auth/session`)
