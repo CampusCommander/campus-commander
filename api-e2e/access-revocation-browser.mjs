@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import { expect } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -32,6 +33,7 @@ export async function qualifyAccessRevocationBrowser({
     const session = await (
       await context.request.get(`${publicOrigin}/api/auth/session`)
     ).json();
+    evidenceSecurity.register('csrf-token', session.csrfToken);
     const target = (
       await (
         await context.request.get(`${publicOrigin}/api/platform-users`)
@@ -124,7 +126,7 @@ export async function qualifyAccessRevocationBrowser({
       }),
     ).toHaveCount(0);
     await auditAccessibility(access, 'access-revocation-interrupted');
-    await access.screenshot({
+    await evidenceSecurity.screenshot(access, {
       path: `${evidenceDirectory}/access-revocation-interrupted.png`,
       fullPage: true,
     });

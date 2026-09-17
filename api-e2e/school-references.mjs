@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import { qualificationSignIn } from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { writeFile, rm } from 'node:fs/promises';
@@ -31,6 +32,7 @@ export async function qualifySchoolReferencesApi({
     const session = await (
       await api.get(`${publicOrigin}/api/auth/session`)
     ).json();
+    evidenceSecurity.register('csrf-token', session.csrfToken);
     actor = session.identity.id;
     priorVersion = session.identity.permissionVersion;
     const headers = { origin: publicOrigin, 'x-csrf-token': session.csrfToken };

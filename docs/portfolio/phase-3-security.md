@@ -168,3 +168,19 @@ It records bounded route and error categories, HTTP status, and document state c
 
 The full run qualifies `0a89f67`. Later revision `60481a2` changes failure diagnostics only and passes fixture lint and PR checks.
 Final evidence redaction review, complete mutation coverage, isolated recovery, deployment-profile qualification, and owner acceptance remain pending.
+
+## Evidence redaction increment
+
+The qualification registers fixture credentials, provider tokens, private keys, browser secrets, pairing codes, and invitation tokens in memory.
+The scanner rejects complete raw values and their JSON, URI, base64, and hexadecimal forms. It also rejects private key headers.
+Accessibility reports pass this check before the fixture writes them.
+Screenshot checks inspect document content before and after capture. The final scan verifies each screenshot hash.
+These checks do not recognize text inside image pixels or detect partial secret values.
+
+After the final browser workflows, the fixture scans JSON reports, checked PNG files, application logs, worker logs, and Kestra logs.
+It also scans current audit records and a new support bundle. The report lists file hashes and secret category counts.
+The scanner removes rejected artifacts. It does not publish matched values or surrounding text.
+Unknown evidence formats fail the scan. Release archives and live district evidence require separate checks.
+
+Four local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
+Hosted source and packaged qualification of this increment remain pending. Failed runs do not establish a completed final scan.

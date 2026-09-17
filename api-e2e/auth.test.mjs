@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import { qualifyPhase3RouteSecurity } from './phase3-route-security.mjs';
 import { qualifyGoogleLifecycleApi } from './google-lifecycle.mjs';
 import { qualifySchoolReferencesApi } from './school-references.mjs';
@@ -111,13 +112,11 @@ function request(url, { ca, cookie, method = 'GET', body, headers = {} } = {}) {
       (res) => {
         const chunks = [];
         res.on('data', (chunk) => chunks.push(chunk));
-        res.on('end', () =>
-          resolve({
-            status: res.statusCode,
-            headers: res.headers,
-            text: Buffer.concat(chunks).toString('utf8'),
-          }),
-        );
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          evidenceSecurity.observeResponse(res.headers, text);
+          resolve({ status: res.statusCode, headers: res.headers, text });
+        });
         res.on('error', reject);
       },
     );
@@ -147,9 +146,19 @@ test(
       docker('network', 'create', network);
       await mkdir(secretRoot, { recursive: true, mode: 0o700 });
       const secret = async (name, value) => {
+        evidenceSecurity.register('deployment-secret', value);
         await writeFile(join(secretRoot, name), value, { mode: 0o600 });
         return { provider: 'file', path: `/run/secrets/${name}` };
       };
+      for (const token of [
+        'synthetic-access-token',
+        'synthetic-connection-token',
+        'synthetic-customer-token',
+        'synthetic-domain-token',
+        'synthetic-ou-token',
+        'synthetic-upload-secret',
+      ])
+        evidenceSecurity.register('provider-secret', token);
       const password = randomUUID();
       let oidcPassword = password;
       const cert = join(directory, 'tls.crt'),
@@ -177,6 +186,7 @@ test(
       );
       const ca = await readFile(cert);
       const tlsKey = await readFile(privateKey);
+      evidenceSecurity.register('tls-private-key', tlsKey);
       const apiPort = await freePort();
       const edgePort = await freePort();
       const apiOrigin = `https://127.0.0.1:${apiPort}`;
@@ -354,6 +364,7 @@ test(
             );
             assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
             const code = randomUUID();
+            evidenceSecurity.register('authorization-code', code);
             codes.set(code, {
               nonce: url.searchParams.get('nonce'),
               challenge: url.searchParams.get('code_challenge'),
@@ -394,11 +405,13 @@ test(
                 exp: Math.floor(Date.now() / 1000) + 300,
               },
             )}`;
+            const idToken = `${input}.${sign('RSA-SHA256', Buffer.from(input), rsa.privateKey).toString('base64url')}`;
+            evidenceSecurity.register('identity-token', idToken);
             return json({
               access_token: 'synthetic-access-token',
               token_type: 'Bearer',
               expires_in: 300,
-              id_token: `${input}.${sign('RSA-SHA256', Buffer.from(input), rsa.privateKey).toString('base64url')}`,
+              id_token: idToken,
             });
           }
           return json({ error: 'not_found' }, 404);
@@ -502,7 +515,7 @@ test(
         await writeFile(operatorRequestPath, JSON.stringify(payload), {
           mode: 0o600,
         });
-        return JSON.parse(
+        const result = JSON.parse(
           docker(
             'run',
             '--rm',
@@ -525,8 +538,11 @@ test(
             operatorRequestPath,
           ),
         );
+        evidenceSecurity.register('pairing-code', result.code);
+        return result;
       };
       const bootstrapCredential = generateBootstrapCredential();
+      evidenceSecurity.register('operator-credential', bootstrapCredential);
       await initializeBootstrap(migrator, bootstrapCredential);
       let output = '';
       const startApi = async (listenPort = apiPort) => {
@@ -869,6 +885,8 @@ test(
       });
       const enrollmentPage = await enrollmentContext.newPage();
       const uploadServer = await startSetupUpload({ publicOrigin, port: 0 });
+      evidenceSecurity.register('pairing-code', uploadServer.pairingCode);
+      evidenceSecurity.register('pairing-code', pairingCode);
       try {
         await enrollmentPage.goto(uploadServer.origin);
         await auditAccessibility(enrollmentPage, 'google-client-pairing');
@@ -960,7 +978,7 @@ test(
           enrollmentPage,
           'administrator-browser-recovery',
         );
-        await enrollmentPage.screenshot({
+        await evidenceSecurity.screenshot(enrollmentPage, {
           path: `${evidenceDirectory}/administrator-browser-recovery-light.png`,
           fullPage: true,
         });
@@ -973,7 +991,7 @@ test(
           enrollmentPage,
           'administrator-browser-recovery-dark',
         );
-        await enrollmentPage.screenshot({
+        await evidenceSecurity.screenshot(enrollmentPage, {
           path: `${evidenceDirectory}/administrator-browser-recovery-dark.png`,
           fullPage: true,
         });
@@ -1012,6 +1030,7 @@ test(
           await delay(100);
         }
         assert.ok(pairingCode && pairingCode !== usedCode);
+        evidenceSecurity.register('pairing-code', pairingCode);
         assert.equal((await pairAttempt(usedCode)).status, 403);
         await expect(
           enrollmentPage.getByLabel('Installer pairing code'),
@@ -1319,6 +1338,7 @@ test(
       );
       assert.equal(duplicateFlow.status, 422);
       const rotatedDispatch = randomUUID();
+      evidenceSecurity.register('worker-dispatch', rotatedDispatch);
       await kestraFixture.rotateWorker(rotatedDispatch);
       const dispatchBody = {
         executionId: 'rotation-check',
@@ -1732,6 +1752,10 @@ test(
         '../deployment/installer/support.mjs'
       );
       await createSupportBundle({ directory: supportDirectory, config });
+      evidenceSecurity.register(
+        'service-authorization',
+        kestraFixture.authorization,
+      );
       const retainedEvidence = {
         events: JSON.stringify(events.rows),
         api: output,
@@ -1825,7 +1849,7 @@ test(
           page.getByRole('heading', { name: 'Your account', exact: true }),
         ).toBeVisible({ timeout: 15000 });
       } catch (error) {
-        await page.screenshot({
+        await evidenceSecurity.screenshot(page, {
           path: `${evidenceDirectory}/sign-in-startup-failure.png`,
           fullPage: true,
         });
@@ -1915,7 +1939,7 @@ test(
         ),
         true,
       );
-      await page.screenshot({
+      await evidenceSecurity.screenshot(page, {
         path: `${artifactDirectory}/diagnostics-dark.png`,
         fullPage: true,
       });
@@ -1928,7 +1952,7 @@ test(
         'rgb(248, 250, 252)',
       );
       await expect(page.getByRole('menu')).toHaveCount(0);
-      await page.screenshot({
+      await evidenceSecurity.screenshot(page, {
         path: `${artifactDirectory}/diagnostics-light.png`,
         fullPage: true,
       });
@@ -2288,6 +2312,36 @@ test(
           2,
         ),
       );
+      if (applicationPhase === 3) {
+        const finalSupportDirectory = join(directory, 'phase3-support');
+        await createSupportBundle({ directory: finalSupportDirectory, config });
+        const redaction = await evidenceSecurity.scan(evidenceDirectory, {
+          api: output,
+          worker: docker('logs', kestraFixture.workerName),
+          kestra: docker('logs', kestraFixture.kestraName),
+          audit: JSON.stringify(
+            (await migrator.query('SELECT * FROM cc.security_events')).rows,
+          ),
+          support: await readFile(
+            join(finalSupportDirectory, 'support.json'),
+            'utf8',
+          ),
+        });
+        await writeFile(
+          `${evidenceDirectory}/evidence-redaction.json`,
+          JSON.stringify(
+            {
+              ...redaction,
+              sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], {
+                encoding: 'utf8',
+              }).trim(),
+              recordedAt: new Date().toISOString(),
+            },
+            null,
+            2,
+          ),
+        );
+      }
     } finally {
       await browser?.close();
       if (edgeServer) {

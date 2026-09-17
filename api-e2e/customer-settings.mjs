@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import { qualificationSignIn } from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -18,6 +19,7 @@ export async function qualifyCustomerSettings({
   const session = await (
     await admin.get(`${publicOrigin}/api/auth/session`)
   ).json();
+  evidenceSecurity.register('csrf-token', session.csrfToken);
   const headers = { origin: publicOrigin, 'x-csrf-token': session.csrfToken };
   const read = async () => {
     const response = await admin.get(root);
@@ -191,7 +193,7 @@ export async function qualifyCustomerSettings({
         theme === 'dark' ? 'rgb(232, 234, 237)' : 'rgb(32, 33, 36)',
       );
     await auditAccessibility(page, `customer-settings-conflict-${theme}`);
-    await page.screenshot({
+    await evidenceSecurity.screenshot(page, {
       path: `${evidenceDirectory}/customer-settings-${theme}.png`,
       fullPage: true,
     });

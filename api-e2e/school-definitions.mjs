@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import { qualificationSignIn } from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -86,7 +87,7 @@ export async function qualifySchoolDefinitionsApi({
       theme === 'dark' ? 'rgb(154, 160, 166)' : 'rgb(95, 99, 104)',
     );
     await auditAccessibility(adminPage, `school-draft-${theme}`);
-    await adminPage.screenshot({
+    await evidenceSecurity.screenshot(adminPage, {
       path: `${evidenceDirectory}/school-draft-${theme}.png`,
       fullPage: true,
     });
@@ -212,7 +213,7 @@ export async function qualifySchoolDefinitionsApi({
       theme,
     );
     await auditAccessibility(adminPage, `scoped-grants-${theme}`);
-    await adminPage.screenshot({
+    await evidenceSecurity.screenshot(adminPage, {
       path: `${evidenceDirectory}/scoped-grants-${theme}.png`,
       fullPage: true,
     });
@@ -235,6 +236,7 @@ export async function qualifySchoolDefinitionsApi({
     const session = await (
       await scoped.get(`${publicOrigin}/api/auth/session`)
     ).json();
+    evidenceSecurity.register('csrf-token', session.csrfToken);
     const scopedHeaders = {
       origin: publicOrigin,
       'x-csrf-token': session.csrfToken,

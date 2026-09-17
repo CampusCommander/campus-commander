@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import {
   qualificationSignIn,
   qualificationBrowserStep,
@@ -32,6 +33,7 @@ export async function qualifyGoogleLifecycleApi({
     const session = await (
       await api.get(`${publicOrigin}/api/auth/session`)
     ).json();
+    evidenceSecurity.register('csrf-token', session.csrfToken);
     const root = `${publicOrigin}/api/google-connection`;
     const headers = { origin: publicOrigin, 'x-csrf-token': session.csrfToken };
     const read = async () => {
@@ -56,6 +58,7 @@ export async function qualifyGoogleLifecycleApi({
       privateKeyEncoding: { format: 'pem', type: 'pkcs8' },
       publicKeyEncoding: { format: 'pem', type: 'spki' },
     });
+    evidenceSecurity.register('service-account-key', privateKey);
     const input = {
       customerId: initial.customerId,
       generation: initial.generation,
