@@ -182,7 +182,7 @@ It also scans current audit records and a new support bundle. The report lists f
 The scanner removes rejected artifacts. It does not publish matched values or surrounding text.
 Unknown evidence formats fail the scan. Release archives and live district evidence require separate checks.
 
-Eight local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
+Nine local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
 Hosted source and packaged qualification of this increment remain pending. Failed runs do not establish a completed final scan.
 
 The first review found three gaps: omitted service stderr, unregistered transient browser cookies, and unchecked artifact paths.
@@ -252,3 +252,9 @@ Source run `35181054132` identified one unfinished body: POST `/api/auth/enrollm
 The fixture returned that response's status without consuming its body before switching browser profiles.
 The fixture now drains the response before switching profiles. Hosted qualification must confirm this correction.
 The scanner also registers the local setup listener's `csrf` field.
+
+Source run `35181360064` passed enrollment and later failed with two unreadable response bodies at the diagnostics screenshot.
+The scanner now observes JSON tokens after `requestfinished`. It still observes response cookies when response headers arrive.
+Interrupted requests retain their observed cookies and increment a separate count. Their incomplete JSON bodies do not establish token coverage.
+A regression verifies this distinction. A completed response with an unreadable body still fails qualification.
+The scanner does not claim unknown or partial secrets in interrupted response bodies.

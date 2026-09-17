@@ -197,30 +197,32 @@ test('process evidence includes stderr and never exposes output on process failu
   );
 });
 
-test('browser response registration preserves transient cookies and JSON secrets without screenshots', async () => {
+test('browser observation captures transient cookies and completed JSON bodies', async () => {
   const security = new EvidenceSecurity();
   const context = new EventEmitter();
   await security.newContext({ newContext: async () => context }, {});
-  context.emit('response', {
+  const response = {
     headersArray: async () => [
       {
         name: 'Set-Cookie',
         value: 'invitation=transient-cookie-secret; Secure',
       },
-      { name: 'Content-Type', value: 'application/json' },
     ],
+    headers: () => ({ 'content-type': 'application/json' }),
     text: async () => JSON.stringify({ token: secret }),
-  });
+  };
+  context.emit('response', response);
+  context.emit('requestfinished', { response: async () => response });
   await security.observePendingResponses();
   for (const value of ['transient-cookie-secret', secret])
     assert.throws(() => security.assertSafe(value, 'logs'), /protected/);
-  context.emit('response', {
-    headersArray: async () => [
-      { name: 'Content-Type', value: 'application/json' },
-    ],
-    text: async () => {
-      throw new Error(secret);
-    },
+  context.emit('requestfinished', {
+    response: async () => ({
+      headers: () => ({ 'content-type': 'application/json' }),
+      text: async () => {
+        throw new Error(secret);
+      },
+    }),
   });
   await assert.rejects(
     security.observePendingResponses(),
@@ -229,6 +231,39 @@ test('browser response registration preserves transient cookies and JSON secrets
         'Browser response secret registration did not complete.' &&
       !error.message.includes(secret),
   );
+});
+
+test('interrupted browser bodies do not block cookie observation or claim completed token capture', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  let bodyReads = 0;
+  context.emit('response', {
+    headersArray: async () => [
+      {
+        name: 'Set-Cookie',
+        value: 'session=interrupted-cookie-secret; Secure',
+      },
+    ],
+    text: async () => {
+      bodyReads++;
+      throw new Error(secret);
+    },
+  });
+  context.emit('requestfailed');
+  await security.observePendingResponses();
+  assert.equal(bodyReads, 0);
+  assert.throws(
+    () => security.assertSafe('interrupted-cookie-secret', 'logs'),
+    /protected/,
+  );
+  const directory = await mkdtemp(join(tmpdir(), 'cc-interrupted-response-'));
+  try {
+    const report = await security.scan(directory);
+    assert.equal(report.incompleteBrowserRequests, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('artifact path secrets never enter reports or failure messages', async () => {
@@ -259,11 +294,11 @@ test('browser response registration fails within its time limit for an unfinishe
   const security = new EvidenceSecurity();
   const context = new EventEmitter();
   await security.newContext({ newContext: async () => context }, {});
-  context.emit('response', {
-    headersArray: async () => [
-      { name: 'Content-Type', value: 'application/json' },
-    ],
-    text: async () => Promise.withResolvers().promise,
+  context.emit('requestfinished', {
+    response: async () => ({
+      headers: () => ({ 'content-type': 'application/json' }),
+      text: async () => Promise.withResolvers().promise,
+    }),
   });
   const pending = assert.rejects(
     security.observePendingResponses(),

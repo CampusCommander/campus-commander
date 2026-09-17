@@ -33,11 +33,12 @@ export class EvidenceSecurity {
   #screenshots = new Map();
   #pending = new Map();
   #responseFailures = 0;
+  #incompleteResponses = 0;
   #failureStages = { headers: 0, body: 0 };
 
   async newContext(browser, options) {
     const context = await browser.newContext(options);
-    context.on('response', (response) => {
+    const stateFor = (response, stage) => {
       const paths = new Set([
         '/pair',
         '/import',
@@ -49,12 +50,22 @@ export class EvidenceSecurity {
       ]);
       const path = new URL(response.url?.() ?? 'http://fixture.invalid/')
         .pathname;
-      const state = {
-        stage: 'headers',
+      return {
+        stage,
         route: paths.has(path) ? path : 'other',
         status: response.status?.() ?? 0,
       };
-      const observation = (async () => {
+    };
+    const observe = (state, operation) => {
+      const observation = operation().catch(() => {
+        this.#responseFailures++;
+        this.#failureStages[state.stage]++;
+      });
+      this.#pending.set(observation, state);
+      void observation.then(() => this.#pending.delete(observation));
+    };
+    context.on('response', (response) => {
+      observe(stateFor(response, 'headers'), async () => {
         const headers = await response.headersArray();
         this.observeResponse(
           {
@@ -64,21 +75,22 @@ export class EvidenceSecurity {
           },
           '',
         );
-        state.stage = 'body';
+      });
+    });
+    context.on('requestfinished', (request) => {
+      const state = { stage: 'body', route: 'other', status: 0 };
+      observe(state, async () => {
+        const response = await request.response();
+        if (response) Object.assign(state, stateFor(response, 'body'));
         if (
-          headers.some(
-            ({ name, value }) =>
-              name.toLowerCase() === 'content-type' &&
-              value.includes('application/json'),
-          )
+          response &&
+          response.headers()['content-type']?.includes('application/json')
         )
           this.observeResponse({}, await response.text());
-      })().catch(() => {
-        this.#responseFailures++;
-        this.#failureStages[state.stage]++;
       });
-      this.#pending.set(observation, state);
-      void observation.then(() => this.#pending.delete(observation));
+    });
+    context.on('requestfailed', () => {
+      this.#incompleteResponses++;
     });
     return context;
   }
@@ -290,9 +302,11 @@ export class EvidenceSecurity {
       scannedSources: Object.keys(sources),
       files,
       screenshotChecks: this.#screenshots.size,
+      incompleteBrowserRequests: this.#incompleteResponses,
       limits: [
         'This report covers registered complete fixture secrets in the listed files and supplied logs. Partial secrets require separate review.',
         'Screenshot checks inspect surrounding document content and bind the result to exact image bytes. They do not perform image recognition.',
+        'JSON token observation covers completed browser requests. Interrupted requests retain their observed response cookies.',
         'Failed runs, release bundles, and live district data require separate review.',
       ],
     };
