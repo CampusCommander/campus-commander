@@ -202,13 +202,18 @@ The operator CLI job passed at `49ebf07` in [run 35207924636](https://github.com
 The [retained report](../../deployment/evidence/CC-56-nonempty-state-restore.json) preserves two principals, thirteen grants, one access-change receipt, and two capability observations.
 Runtime receipt, health-history, and ordinary school-read checks passed. Seven revalidation denial cases and receipt-write recovery also passed.
 The fixture recorded 35,470 ms overall and an 11,608 ms backup age. Synthetic provider and shared-host limits still apply.
-The packaged application job remains pending. This operator result does not establish complete application compatibility.
+The full run passed all eight jobs, including packaged Phase 2 and Phase 3 authorization and Phase 2 all-Docker compatibility.
+The [expanded application restore report](../../deployment/evidence/CC-56-expanded-application-restore.json) preserves the same nonempty inventory and 80 original security events.
+It rejects the old session, issued link, two recipient bindings, and both pending callbacks. The source callback control passes.
+All four restored application diagnostics pass. Target verification records 53,126 ms before final source cleanup and callback control.
+The fixture still uses workspace CLI code, synthetic Google transport, and one Docker host.
+Extracted release delivery, live privilege and revocation checks, and operator acceptance remain unqualified.
 
 ## Remaining recovery work
 
 - Inventory and verify complete customer, settings, school, grant, progress, receipt, credential, and security-event state.
 - Test live revoked-grant and changed-privilege fixtures when available.
-- Qualify the expanded admission fixture with nonempty access-change receipts, an ordinary principal, and capability health history.
+- Repeat the expanded admission fixture through the extracted verified release bundle.
 - Record measured recovery time, backup age, fixture limits, operator recovery, and erasure procedures.
 
 Local deployment lint, PostgreSQL contract tests, and operations contract tests pass.

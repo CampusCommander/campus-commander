@@ -398,4 +398,8 @@ Both cases retain protection for the response cookie. A native Chromium stress c
 The local API and scanner suite passed all 20 checks. Lint passed.
 [Source run 35207540591](https://github.com/CampusCommander/campus-commander/actions/runs/35207540591) passed at `037c8c4`.
 The [retained scanner report](../../deployment/evidence/CC-55-observed-header-source.json) covers 78 files, 24 screenshots, and 18 secret categories.
-It records 35 incomplete requests outside JSON token-body coverage. Packaged authorization and complete profile qualification remain pending.
+It records 35 incomplete requests outside JSON token-body coverage.
+[Full run 35207924636](https://github.com/CampusCommander/campus-commander/actions/runs/35207924636) passed all eight jobs at `49ebf07`.
+The [packaged evidence](../../deployment/evidence/CC-55-observed-header-packaged.json) retains the exact application images and scanner inventory.
+Packaged Phase 2 and Phase 3 authorization, Phase 2 all-Docker compatibility, and expanded Phase 3 restore passed.
+This result qualifies the correction for these fixtures. Complete release evidence reconciliation and operator acceptance remain open.
