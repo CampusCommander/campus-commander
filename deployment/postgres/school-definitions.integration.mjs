@@ -181,7 +181,8 @@ export async function qualifySchoolDefinitions({
   try {
     await assert.rejects(
       confirm(expanded.id),
-      (error) => error.code === 'P0001',
+      (error) =>
+        error.code === 'P0001' && error.message === 'Synthetic audit failure.',
     );
     assert.equal((await read(operator, 1, a)).revision, 1);
     assert.equal(

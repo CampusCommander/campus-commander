@@ -384,7 +384,11 @@ export async function qualifyGoogleConnection({
   await migrator.query(
     "ALTER TABLE cc.security_events ADD CONSTRAINT google_audit_failure CHECK(event<>'customer-confirmed') NOT VALID",
   );
-  await assert.rejects(confirm(candidates[0]));
+  await assert.rejects(
+    confirm(candidates[0]),
+    (error) =>
+      error.code === '23514' && error.constraint === 'google_audit_failure',
+  );
   assert.deepEqual(await current(), []);
   assert.equal((await read(candidates[0])).rows[0].result.status, 'ready');
   assert.equal(

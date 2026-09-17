@@ -82,7 +82,11 @@ export async function qualifyGoogleTokens({
   await migrator.query(
     "ALTER TABLE cc.security_events ADD CONSTRAINT token_audit_failure CHECK(event<>'connection-token-renewed') NOT VALID",
   );
-  await assert.rejects(complete(winner, envelope, token.expiresAt));
+  await assert.rejects(
+    complete(winner, envelope, token.expiresAt),
+    (error) =>
+      error.code === '23514' && error.constraint === 'token_audit_failure',
+  );
   assert.equal((await access(randomUUID())).rows[0].result.status, 'pending');
   await migrator.query(
     'ALTER TABLE cc.security_events DROP CONSTRAINT token_audit_failure',

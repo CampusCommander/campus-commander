@@ -140,7 +140,9 @@ export async function qualifySchoolReferences({
     try {
       await assert.rejects(
         finish(rollback.id),
-        (error) => error.code === 'P0001',
+        (error) =>
+          error.code === 'P0001' &&
+          error.message === 'Synthetic audit failure.',
       );
       const after = await read();
       assert.equal(after.checking, true);
