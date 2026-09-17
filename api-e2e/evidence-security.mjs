@@ -62,7 +62,21 @@ export class EvidenceSecurity {
         // Worker requests belong to the context.
       }
       const finished = Promise.withResolvers();
-      this.#requests.set(request, { context, page, finished });
+      const active = {
+        context,
+        page,
+        finished,
+        headersObserved: false,
+        describe: () => ({
+          ...stateFor(
+            { url: () => request.url?.() ?? 'http://fixture.invalid/' },
+            'request',
+          ),
+          ...lifecycle(request),
+          headersObserved: active.headersObserved,
+        }),
+      };
+      this.#requests.set(request, active);
     });
     const lifecycle = (request) => {
       let page;
@@ -142,6 +156,7 @@ export class EvidenceSecurity {
       void observation.then(() => this.#pending.delete(observation));
     };
     context.on('response', (response) => {
+      const active = this.#requests.get(response.request?.());
       observe(
         stateFor(response, 'headers'),
         async () => {
@@ -154,6 +169,7 @@ export class EvidenceSecurity {
             },
             '',
           );
+          if (active) active.headersObserved = true;
         },
         response.request?.(),
       );
@@ -253,6 +269,10 @@ export class EvidenceSecurity {
     error.observations = JSON.stringify({
       pending: [...this.#pending.values()].slice(0, 32),
       failures: this.#failedResponses,
+      activeRequestCount: this.#requests.size,
+      activeRequests: [...this.#requests.values()]
+        .slice(0, 32)
+        .map(({ describe }) => describe()),
     });
     return error;
   }

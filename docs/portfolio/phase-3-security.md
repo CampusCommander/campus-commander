@@ -374,3 +374,17 @@ A deterministic regression failed before the correction and passes afterward.
 The same Chromium stress test now reports zero failures across 100 closures.
 Timeout, unrelated-page isolation, and browser-child cleanup checks also pass locally.
 Hosted qualification of this correction remains pending. Other browser failures retain their existing evidence and status.
+
+## Active-request timeout evidence
+
+[Run 35193287230](https://github.com/CampusCommander/campus-commander/actions/runs/35193287230) failed packaged Phase 2 authorization at `4225f8d`.
+The new active-request wait reached its five-second limit. Its observer arrays were empty.
+The [retained failure](../../deployment/evidence/CC-55-4225-request-wait-failure.json) does not identify the unfinished request.
+Phase 3 authorization and Phase 2 all-Docker compatibility did not run. Independent Phase 3 admission restore passed again.
+This result does not qualify the active-request closure correction.
+
+The diagnostic extension now records a bounded active-request inventory when observation or closure fails.
+It includes allowlisted route and resource categories, numeric page and context IDs, closure flags, and successful-header observation state.
+It records at most 32 requests and the total count. It excludes raw URLs, bodies, cookies, and underlying error messages.
+The timeout regression verifies exclusion of a sensitive request URL. It preserves the existing timeout and failure behavior.
+Hosted diagnosis of the unfinished request remains pending.

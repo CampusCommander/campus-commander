@@ -551,14 +551,25 @@ test('guarded closure bounds active requests and closes on timeout', async (t) =
     context.emit('close');
   };
   context.emit('request', {
+    url: () => `https://fixture.invalid/${secret}`,
+    resourceType: () => 'fetch',
     frame: () => {
       throw new Error('Worker request');
     },
   });
-  const closing = assert.rejects(
-    security.close(context),
-    /Browser requests did not finish before closure/,
-  );
+  const closing = assert.rejects(security.close(context), (error) => {
+    assert.match(
+      error.message,
+      /Browser requests did not finish before closure/,
+    );
+    assert.equal(error.observations.includes(secret), false);
+    const observations = JSON.parse(error.observations);
+    assert.equal(observations.activeRequestCount, 1);
+    assert.equal(observations.activeRequests[0].route, 'other');
+    assert.equal(observations.activeRequests[0].resourceType, 'fetch');
+    assert.equal(observations.activeRequests[0].headersObserved, false);
+    return true;
+  });
   await Promise.resolve();
   assert.equal(closed, false);
   t.mock.timers.tick(5000);
