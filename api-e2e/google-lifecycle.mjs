@@ -217,6 +217,116 @@ export async function qualifyGoogleLifecycleApi({
     assert.equal(current.active, true);
     assert.equal(current.keyId, 'synthetic-google-key');
     assert.equal((await workerRead(current.generation)).status, 200);
+    await page.goto(`${publicOrigin}/google-connection`);
+    const confirm = page.getByRole('checkbox', {
+      name: 'I reviewed this credential change and its effect on background access',
+      exact: true,
+    });
+    const chooseKey = async (label, keyId) => {
+      await page.getByRole('combobox', { name: label, exact: true }).click();
+      await page.getByRole('option', { name: keyId, exact: true }).click();
+    };
+    const replaceFromBrowser = async () => {
+      await page
+        .getByRole('button', {
+          name: /^(Replace|Reconnect) Google credentials$/,
+        })
+        .click();
+      await page
+        .getByLabel('Replacement service-account JSON key file')
+        .setInputFiles({
+          name: 'synthetic-replacement.json',
+          mimeType: 'application/json',
+          buffer: Buffer.from(JSON.stringify(input.serviceAccount)),
+        });
+      await page
+        .getByLabel('Replacement delegated administrator email')
+        .fill(input.subject);
+      await page
+        .getByRole('button', {
+          name: 'Check replacement credentials',
+          exact: true,
+        })
+        .click();
+      await expect(confirm).toBeVisible({ timeout: 60000 });
+      await expect(
+        page.getByRole('button', { name: 'Activate replacement', exact: true }),
+      ).toBeDisabled();
+      await chooseKey('Replacement encryption key ID', 'synthetic-google-key');
+      await confirm.check();
+      await page
+        .getByRole('button', { name: 'Activate replacement', exact: true })
+        .click();
+      const result = page
+        .getByRole('status')
+        .filter({
+          hasText: 'Replacement activated for the confirmed customer',
+        });
+      await expect(result).toBeVisible();
+      await expect(result).toBeFocused();
+    };
+    const beforeBrowser = current.generation;
+    await replaceFromBrowser();
+    current = (await read()).credential;
+    assert.equal(current.generation, beforeBrowser + 1);
+    await page
+      .getByRole('button', { name: 'Rotate encryption key', exact: true })
+      .click();
+    await chooseKey('New encryption key ID', 'synthetic-google-key-2');
+    await confirm.check();
+    await page
+      .getByRole('button', { name: 'Confirm key rotation', exact: true })
+      .click();
+    await expect(
+      page.getByText('Encryption key rotated.', { exact: false }),
+    ).toBeVisible();
+    current = (await read()).credential;
+    assert.equal(current.generation, beforeBrowser + 2);
+    assert.equal(current.keyId, 'synthetic-google-key-2');
+    assert.equal((await workerRead(current.generation)).status, 200);
+    await page
+      .getByRole('button', {
+        name: 'Disconnect background access',
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByRole('button', {
+        name: 'Confirm local disconnect',
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await confirm.check();
+    await page
+      .getByRole('button', { name: 'Confirm local disconnect', exact: true })
+      .click();
+    await expect(
+      page.getByRole('button', {
+        name: 'Reconnect Google credentials',
+        exact: true,
+      }),
+    ).toBeEnabled();
+    current = (await read()).credential;
+    assert.equal(current.active, false);
+    assert.equal(current.generation, beforeBrowser + 3);
+    assert.equal((await workerRead(current.generation)).status, 503);
+    await replaceFromBrowser();
+    current = (await read()).credential;
+    assert.equal(current.active, true);
+    assert.equal(current.generation, beforeBrowser + 4);
+    assert.equal((await workerRead(current.generation)).status, 200);
+    assert.equal(
+      (await page.locator('body').textContent()).includes(privateKey),
+      false,
+    );
+    assert.equal(
+      (
+        await page.evaluate(() =>
+          JSON.stringify({ ...localStorage, ...sessionStorage }),
+        )
+      ).includes(privateKey),
+      false,
+    );
     const secrets = (
       await migrator.query('SELECT envelope FROM cc.google_credentials')
     ).rows;
@@ -241,6 +351,8 @@ export async function qualifyGoogleLifecycleApi({
             'local disconnect rejects retired and disconnected generation reads',
             'disconnect preserves sign-in and customer settings',
             'same-customer reconnect uses the committed key and restores worker reads',
+            'real browser confirms replacement, rotation, disconnect, and reconnection through the API',
+            'browser lifecycle preserves focus and excludes secrets from DOM and storage',
           ],
         },
         null,

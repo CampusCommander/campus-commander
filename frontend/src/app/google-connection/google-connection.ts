@@ -23,10 +23,12 @@ import {
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from './connection.store';
+import { CredentialManagement } from './credential-management';
 
 @Component({
   selector: 'app-google-connection',
   imports: [
+    CredentialManagement,
     DatePipe,
     RouterLink,
     NgTemplateOutlet,

@@ -74,6 +74,16 @@ p {
 .error {
   color: var(--cc-status-error-text);
 }
+.destructive {
+  @include mat.button-overrides(
+    (
+      outlined-label-text-color: var(--cc-status-error-text),
+      outlined-outline-color: var(--cc-status-error-text),
+      filled-container-color: var(--cc-status-error-text),
+      filled-label-text-color: var(--mat-sys-on-error),
+    )
+  );
+}
 .secondary {
   color: var(--cc-text-secondary);
 }
