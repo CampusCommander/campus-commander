@@ -295,7 +295,13 @@ for (const theme of ['light', 'dark'])
     await page
       .getByText('Configure required Google authorization', { exact: true })
       .click();
-    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(accessibility.violations).toEqual([]);
+    expect(
+      accessibility.incomplete.filter(
+        (result) => result.id === 'aria-prohibited-attr',
+      ),
+    ).toEqual([]);
     await page.setViewportSize({ width: 320, height: 800 });
     expect(
       await page.evaluate(
