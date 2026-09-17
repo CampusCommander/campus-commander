@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import assert from 'node:assert/strict';
 import { expect } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
@@ -105,7 +106,7 @@ export async function stageGoogleConnectionBrowser({
       theme === 'dark' ? 'rgb(154, 160, 166)' : 'rgb(95, 99, 104)',
     );
     await auditAccessibility(page, `google-connection-import-${theme}`);
-    await page.screenshot({
+    await evidenceSecurity.screenshot(page, {
       path: `${evidenceDirectory}/google-connection-import-${theme}.png`,
       fullPage: true,
     });
@@ -174,7 +175,7 @@ export async function stageGoogleConnectionBrowser({
   for (const theme of ['light', 'dark']) {
     await selectTheme(page, theme);
     await auditAccessibility(page, `google-connection-review-${theme}`);
-    await page.screenshot({
+    await evidenceSecurity.screenshot(page, {
       path: `${evidenceDirectory}/google-connection-review-${theme}.png`,
       fullPage: true,
     });
@@ -194,7 +195,7 @@ export async function stageGoogleConnectionBrowser({
         ),
       )
       .toBe(true);
-    await page.screenshot({
+    await evidenceSecurity.screenshot(page, {
       path: `${evidenceDirectory}/google-connection-zoom-${width}-${zoom}.png`,
       fullPage: true,
     });

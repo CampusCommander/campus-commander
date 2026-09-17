@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import { qualificationSignIn } from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { writeFile, rm } from 'node:fs/promises';
@@ -14,7 +15,9 @@ export async function qualifySchoolReferencesApi({
   evidenceDirectory,
   setSubject,
 }) {
-  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const context = await evidenceSecurity.newContext(browser, {
+    ignoreHTTPSErrors: true,
+  });
   const faultPath = join(directory, 'google-health-fault.json');
   let actor;
   let priorVersion;
@@ -31,6 +34,7 @@ export async function qualifySchoolReferencesApi({
     const session = await (
       await api.get(`${publicOrigin}/api/auth/session`)
     ).json();
+    evidenceSecurity.register('csrf-token', session.csrfToken);
     actor = session.identity.id;
     priorVersion = session.identity.permissionVersion;
     const headers = { origin: publicOrigin, 'x-csrf-token': session.csrfToken };
@@ -151,6 +155,6 @@ export async function qualifySchoolReferencesApi({
         'UPDATE cc.application_principals SET permission_version=$1 WHERE id=$2',
         [priorVersion, actor],
       );
-    await context.close();
+    await evidenceSecurity.close(context);
   }
 }

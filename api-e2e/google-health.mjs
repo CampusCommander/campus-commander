@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import assert from 'node:assert/strict';
 import { writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -16,6 +17,7 @@ export async function qualifyGoogleHealth({
   const session = await (
     await admin.get(`${publicOrigin}/api/auth/session`)
   ).json();
+  evidenceSecurity.register('csrf-token', session.csrfToken);
   const headers = { origin: publicOrigin, 'x-csrf-token': session.csrfToken };
   const input = {
     customerId: 'C0123456',
@@ -198,7 +200,7 @@ export async function qualifyGoogleHealth({
       await expect(page.getByRole('menu')).toHaveCount(0);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       await auditAccessibility(page, `google-capability-health-${theme}`);
-      await page.screenshot({
+      await evidenceSecurity.screenshot(page, {
         path: `${evidenceDirectory}/google-capability-health-${theme}.png`,
         fullPage: true,
       });

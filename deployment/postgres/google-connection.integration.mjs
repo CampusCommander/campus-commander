@@ -129,6 +129,39 @@ export async function qualifyGoogleConnection({
   const denied = (error) => error.code === '42501';
   const current = async () =>
     (await migrator.query('SELECT * FROM cc.google_connection')).rows;
+  const candidateSnapshot = async () =>
+    (
+      await migrator.query(
+        'SELECT id,md5(row_to_json(candidate)::text) AS state FROM cc.google_credential_candidates candidate ORDER BY id',
+      )
+    ).rows;
+  const rejectCandidateAudit = async (event, operation) => {
+    assert.ok(
+      [
+        'connection-staged',
+        'connection-checked',
+        'connection-stage-failed',
+        'connection-stage-expired',
+      ].includes(event),
+    );
+    const before = await candidateSnapshot();
+    await migrator.query(
+      `ALTER TABLE cc.security_events ADD CONSTRAINT candidate_audit_failure CHECK(event<>'${event}') NOT VALID`,
+    );
+    try {
+      await assert.rejects(
+        operation(),
+        (error) =>
+          error.code === '23514' &&
+          error.constraint === 'candidate_audit_failure',
+      );
+      assert.deepEqual(await candidateSnapshot(), before);
+    } finally {
+      await migrator.query(
+        'ALTER TABLE cc.security_events DROP CONSTRAINT candidate_audit_failure',
+      );
+    }
+  };
 
   for (const table of [
     'google_credential_candidates',
@@ -166,6 +199,7 @@ export async function qualifyGoogleConnection({
     false,
   );
   await assert.rejects(stage(actors[0], 2), denied);
+  await rejectCandidateAudit('connection-staged', () => stage());
 
   const rejected = await stage();
   await assert.rejects(read({ ...rejected, actor: actors[1] }), denied);
@@ -176,6 +210,10 @@ export async function qualifyGoogleConnection({
   await assert.rejects(confirm(rejected));
   await assert.rejects(
     finish(rejected, { ...observation(), unexpected: 'provider-payload' }),
+  );
+  await rejectCandidateAudit('connection-checked', () => finish(rejected));
+  await rejectCandidateAudit('connection-stage-failed', () =>
+    finish(rejected, null, 'permission-denied'),
   );
   await finish(rejected, null, 'permission-denied');
   const failed = (
@@ -206,6 +244,9 @@ export async function qualifyGoogleConnection({
   await migrator.query(
     `UPDATE cc.google_credential_candidates SET created_at=now()-interval '11 minutes',expires_at=now()-interval '1 minute' WHERE id=$1`,
     [revoked.id],
+  );
+  await rejectCandidateAudit('connection-stage-expired', () =>
+    runtime.query('SELECT cc.expire_google_candidates($1)', [correlation]),
   );
   assert.equal(
     (
@@ -343,7 +384,11 @@ export async function qualifyGoogleConnection({
   await migrator.query(
     "ALTER TABLE cc.security_events ADD CONSTRAINT google_audit_failure CHECK(event<>'customer-confirmed') NOT VALID",
   );
-  await assert.rejects(confirm(candidates[0]));
+  await assert.rejects(
+    confirm(candidates[0]),
+    (error) =>
+      error.code === '23514' && error.constraint === 'google_audit_failure',
+  );
   assert.deepEqual(await current(), []);
   assert.equal((await read(candidates[0])).rows[0].result.status, 'ready');
   assert.equal(
@@ -491,6 +536,7 @@ export async function qualifyGoogleConnection({
     'revoked authority cannot finish verification or read staged credentials: pass',
     'customer confirmation rejects replay, wrong customer, and cross-browser substitution: pass',
     'audit failure rolls back customer, active credential, and candidate consumption: pass',
+    'audit failure rolls back candidate staging, verification success, verification failure, and expiry: pass',
     'concurrent first connections bind exactly one customer and credential generation: pass',
     'encrypted candidate and active credentials recover with independent keys and exact context: pass',
     'district grants require the confirmed customer and reject cross-customer reads: pass',

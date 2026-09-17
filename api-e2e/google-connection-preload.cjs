@@ -29,7 +29,13 @@ prototype.request = async function (options) {
       (fault === 'ou-delegation-denied' && scope.includes('orgunit.readonly'))
     )
       throw {
-        response: { status: 400, data: { error: 'unauthorized_client' } },
+        response: {
+          status: 400,
+          data: {
+            error: 'unauthorized_client',
+            privateDiagnostic: 'synthetic-private-provider-diagnostic',
+          },
+        },
       };
     data = {
       access_token: scope.includes(' ')
@@ -72,7 +78,12 @@ prototype.request = async function (options) {
         response: {
           config: options,
           status: 403,
-          data: { error: { errors: [{ reason: 'forbidden' }] } },
+          data: {
+            error: {
+              errors: [{ reason: 'forbidden' }],
+              privateDiagnostic: 'synthetic-private-provider-diagnostic',
+            },
+          },
         },
       };
     if (fault === 'quota')
@@ -80,7 +91,12 @@ prototype.request = async function (options) {
         response: {
           config: options,
           status: 403,
-          data: { error: { errors: [{ reason: 'quotaExceeded' }] } },
+          data: {
+            error: {
+              errors: [{ reason: 'quotaExceeded' }],
+              privateDiagnostic: 'synthetic-private-provider-diagnostic',
+            },
+          },
         },
       };
     if (fault === 'network') throw { code: 'ECONNRESET' };
@@ -115,7 +131,12 @@ prototype.request = async function (options) {
         response: {
           config: options,
           status: 403,
-          data: { error: { errors: [{ reason: 'forbidden' }] } },
+          data: {
+            error: {
+              errors: [{ reason: 'forbidden' }],
+              privateDiagnostic: 'synthetic-private-provider-diagnostic',
+            },
+          },
         },
       };
     if (fault === 'ou-delay')

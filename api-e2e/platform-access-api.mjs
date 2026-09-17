@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -12,6 +13,7 @@ export async function qualifyPlatformAccessApi({
   const session = await (
     await admin.get(`${publicOrigin}/api/auth/session`)
   ).json();
+  evidenceSecurity.register('csrf-token', session.csrfToken);
   const headers = { origin: publicOrigin, 'x-csrf-token': session.csrfToken };
   const root = `${publicOrigin}/api/platform-users`;
   const target = `${root}/${identity.id}`;
@@ -29,6 +31,7 @@ export async function qualifyPlatformAccessApi({
   const forbiddenSession = await (
     await recipient.get(`${publicOrigin}/api/auth/session`)
   ).json();
+  evidenceSecurity.register('csrf-token', forbiddenSession.csrfToken);
   assert.equal(
     (
       await recipient.post(`${target}/review`, {

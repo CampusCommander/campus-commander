@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
@@ -28,6 +29,10 @@ export async function auditAccessibility(
     })),
     screenReaderWalkthrough: 'not-run',
   };
+  evidenceSecurity.assertSafe(
+    JSON.stringify(report),
+    `${name} accessibility report`,
+  );
   await writeFile(
     `${directory}/${name}-accessibility.json`,
     JSON.stringify(report, null, 2),

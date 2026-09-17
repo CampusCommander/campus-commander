@@ -49,7 +49,9 @@
       "cache": false,
       "options": {
         "command": "node --test api-e2e/auth.test.mjs",
-        "env": { "CC_AUTH_PHASE": "3" }
+        "env": {
+          "CC_AUTH_PHASE": "3"
+        }
       },
       "dependsOn": [
         "api:build",
@@ -61,7 +63,7 @@
     "e2e": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test api-e2e/api.test.mjs"
+        "command": "node --test api-e2e/api.test.mjs api-e2e/evidence-security.test.mjs"
       },
       "dependsOn": ["api:build"]
     },

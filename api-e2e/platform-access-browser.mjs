@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import { expect } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -119,7 +120,7 @@ export async function qualifyPlatformAccessBrowser({
     await page.getByRole('button', { name: 'Choose theme' }).click();
     await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
     await auditAccessibility(page, `platform-access-review-${theme}`);
-    await page.screenshot({
+    await evidenceSecurity.screenshot(page, {
       path: `${evidenceDirectory}/platform-access-review-${theme}.png`,
       fullPage: true,
     });
@@ -224,7 +225,7 @@ export async function qualifyPlatformAccessBrowser({
   await expect(
     page.getByRole('button', { name: 'Review access changes', exact: true }),
   ).toBeFocused();
-  await page.screenshot({
+  await evidenceSecurity.screenshot(page, {
     path: `${evidenceDirectory}/platform-access-mobile.png`,
     fullPage: true,
   });

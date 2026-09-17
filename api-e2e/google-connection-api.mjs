@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import {
   stageGoogleConnectionBrowser,
   confirmGoogleConnectionBrowser,
@@ -17,6 +18,7 @@ export async function qualifyGoogleConnectionApi({
   const session = await (
     await admin.get(`${publicOrigin}/api/auth/session`)
   ).json();
+  evidenceSecurity.register('csrf-token', session.csrfToken);
   const headers = { origin: publicOrigin, 'x-csrf-token': session.csrfToken };
   assert.deepEqual(
     await (await admin.get(`${publicOrigin}/api/customer`)).json(),
@@ -28,6 +30,7 @@ export async function qualifyGoogleConnectionApi({
     privateKeyEncoding: { format: 'pem', type: 'pkcs8' },
     publicKeyEncoding: { format: 'pem', type: 'spki' },
   });
+  evidenceSecurity.register('service-account-key', privateKey);
   const input = {
     id: randomUUID(),
     clientId: '123456789',

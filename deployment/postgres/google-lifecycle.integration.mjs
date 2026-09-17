@@ -180,7 +180,12 @@ export async function qualifyGoogleLifecycle({
     await migrator.query(
       "ALTER TABLE cc.security_events ADD CONSTRAINT lifecycle_audit_failure CHECK(event<>'connection-replaced') NOT VALID",
     );
-    await assert.rejects(activate(id, initial.generation));
+    await assert.rejects(
+      activate(id, initial.generation),
+      (error) =>
+        error.code === '23514' &&
+        error.constraint === 'lifecycle_audit_failure',
+    );
     assert.deepEqual(await management(), baseline);
     assert.equal((await candidate(id)).status, 'ready');
     await migrator.query(
@@ -283,7 +288,11 @@ export async function qualifyGoogleLifecycle({
     await migrator.query(
       "ALTER TABLE cc.security_events ADD CONSTRAINT rotation_audit_failure CHECK(event<>'credential-key-rotated') NOT VALID",
     );
-    await assert.rejects(rotate(current));
+    await assert.rejects(
+      rotate(current),
+      (error) =>
+        error.code === '23514' && error.constraint === 'rotation_audit_failure',
+    );
     assert.deepEqual(await management(), current);
     await migrator.query(
       'ALTER TABLE cc.security_events DROP CONSTRAINT rotation_audit_failure',
@@ -353,7 +362,12 @@ export async function qualifyGoogleLifecycle({
     await migrator.query(
       "ALTER TABLE cc.security_events ADD CONSTRAINT disconnect_audit_failure CHECK(event<>'connection-revoked') NOT VALID",
     );
-    await assert.rejects(disconnect());
+    await assert.rejects(
+      disconnect(),
+      (error) =>
+        error.code === '23514' &&
+        error.constraint === 'disconnect_audit_failure',
+    );
     assert.deepEqual(await management(), beforeDisconnect);
     await migrator.query(
       'ALTER TABLE cc.security_events DROP CONSTRAINT disconnect_audit_failure',

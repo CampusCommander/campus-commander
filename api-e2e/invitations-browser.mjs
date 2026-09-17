@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -33,7 +34,7 @@ export async function qualifyInvitationBrowser({
     await page.getByRole('button', { name: 'Choose theme' }).click();
     await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
     await auditAccessibility(page, `invitations-${theme}`);
-    await page.screenshot({
+    await evidenceSecurity.screenshot(page, {
       path: `${evidenceDirectory}/invitations-${theme}.png`,
       fullPage: true,
     });
@@ -75,6 +76,7 @@ export async function qualifyInvitationBrowser({
     'The invitation uses a fragment link.',
   );
   const marker = new URL(link).hash.slice(1);
+  evidenceSecurity.register('invitation-token', marker);
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await page
     .getByRole('button', { name: 'Copy invitation link', exact: true })
@@ -89,7 +91,7 @@ export async function qualifyInvitationBrowser({
   await expect(page.getByLabel('Invitation link', { exact: true })).toHaveCount(
     0,
   );
-  const recipient = await browser.newContext({
+  const recipient = await evidenceSecurity.newContext(browser, {
     ignoreHTTPSErrors: true,
     viewport: { width: 1280, height: 900 },
     reducedMotion: 'reduce',
@@ -205,6 +207,7 @@ export async function qualifyInvitationBrowser({
     const session = await (
       await recipient.request.get(`${publicOrigin}/api/auth/session`)
     ).json();
+    evidenceSecurity.register('csrf-token', session.csrfToken);
     assert.deepEqual(session.identity.permissions, ['identity:read']);
     assert.deepEqual(session.identity.grants, [
       { action: 'customer:read', scope: { kind: 'platform' } },
@@ -251,6 +254,7 @@ export async function qualifyInvitationBrowser({
     const adminSession = await (
       await page.context().request.get(`${publicOrigin}/api/auth/session`)
     ).json();
+    evidenceSecurity.register('csrf-token', adminSession.csrfToken);
     const client = page.context().request;
     const csrf = {
       'x-csrf-token': adminSession.csrfToken,
@@ -297,6 +301,10 @@ export async function qualifyInvitationBrowser({
     const revokedLink = await page
       .getByLabel('Invitation link', { exact: true })
       .inputValue();
+    evidenceSecurity.register(
+      'invitation-token',
+      new URL(revokedLink).hash.slice(1),
+    );
     await page.reload();
     const revoked = page.getByRole('article', {
       name: 'Invitation for Revoked recipient',
@@ -370,6 +378,6 @@ export async function qualifyInvitationBrowser({
     );
   } finally {
     setSubject('administrator');
-    await recipient.close();
+    await evidenceSecurity.close(recipient);
   }
 }

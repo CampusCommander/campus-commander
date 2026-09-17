@@ -1,4 +1,8 @@
-import { qualificationSignIn } from './qualification-sign-in.mjs';
+import { evidenceSecurity } from './evidence-security.mjs';
+import {
+  qualificationSignIn,
+  qualificationBrowserStep,
+} from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { readFile, writeFile, rm } from 'node:fs/promises';
@@ -14,7 +18,9 @@ export async function qualifyGoogleLifecycleApi({
   fixture,
   setSubject,
 }) {
-  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const context = await evidenceSecurity.newContext(browser, {
+    ignoreHTTPSErrors: true,
+  });
   const faultPath = join(directory, 'google-health-fault.json');
   try {
     setSubject('administrator');
@@ -29,6 +35,7 @@ export async function qualifyGoogleLifecycleApi({
     const session = await (
       await api.get(`${publicOrigin}/api/auth/session`)
     ).json();
+    evidenceSecurity.register('csrf-token', session.csrfToken);
     const root = `${publicOrigin}/api/google-connection`;
     const headers = { origin: publicOrigin, 'x-csrf-token': session.csrfToken };
     const read = async () => {
@@ -53,6 +60,7 @@ export async function qualifyGoogleLifecycleApi({
       privateKeyEncoding: { format: 'pem', type: 'pkcs8' },
       publicKeyEncoding: { format: 'pem', type: 'spki' },
     });
+    evidenceSecurity.register('service-account-key', privateKey);
     const input = {
       customerId: initial.customerId,
       generation: initial.generation,
@@ -220,7 +228,20 @@ export async function qualifyGoogleLifecycleApi({
     assert.equal(current.active, true);
     assert.equal(current.keyId, 'synthetic-google-key');
     assert.equal((await workerRead(current.generation)).status, 200);
-    await page.goto(`${publicOrigin}/google-connection`);
+    await qualificationBrowserStep(
+      page,
+      publicOrigin,
+      evidenceDirectory,
+      'google-lifecycle-navigation',
+      async () => {
+        await page.goto(`${publicOrigin}/google-connection`);
+        await expect(
+          page.getByRole('button', {
+            name: /^(Replace|Reconnect) Google credentials$/,
+          }),
+        ).toBeVisible({ timeout: 30000 });
+      },
+    );
     const confirm = page.getByRole('checkbox', {
       name: 'I reviewed this credential change and its effect on background access',
       exact: true,
@@ -401,6 +422,6 @@ export async function qualifyGoogleLifecycleApi({
     );
   } finally {
     await rm(faultPath, { force: true });
-    await context.close();
+    await evidenceSecurity.close(context);
   }
 }

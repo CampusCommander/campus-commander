@@ -1,0 +1,349 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "secretCategories": {
+    "provider-secret": 7,
+    "tls-private-key": 1,
+    "deployment-secret": 5,
+    "redis-operator-password": 1,
+    "operator-credential": 1,
+    "operator-authorization": 1,
+    "browser-cookie": 60,
+    "authorization-code": 31,
+    "authorization-state": 31,
+    "identity-nonce": 31,
+    "pkce-challenge": 31,
+    "identity-token": 28,
+    "pairing-code": 11,
+    "response-secret": 16,
+    "worker-dispatch": 1,
+    "service-authorization": 1,
+    "invitation-token": 2,
+    "service-account-key": 2
+  },
+  "scannedSources": ["api", "worker", "kestra", "audit", "support"],
+  "files": [
+    {
+      "name": "access-revocation-api.json",
+      "sha256": "62b812aa4cdc9c74240e02566fa9f5ac1280e10251672b5b77f843944649bc07"
+    },
+    {
+      "name": "access-revocation-browser.json",
+      "sha256": "36eee4043f601cabc0cb6d0daf3d246bba509430175a43a091e0e2155c767b80"
+    },
+    {
+      "name": "access-revocation-interrupted-accessibility.json",
+      "sha256": "be703c5090c0615fdce930f2af4d499fd77a0a13667a4ed6a3f24c1497a6f0e6"
+    },
+    {
+      "name": "access-revocation-interrupted.png",
+      "sha256": "9d8c89abc0aaeb35e3d5d99089b014d219214e332ca8f123c09540f6bd7a5980"
+    },
+    {
+      "name": "account-accessibility.json",
+      "sha256": "0a1192c763856ac4049dcafe7bbd2172bf1e966ad44f2ff3546f5e212963759e"
+    },
+    {
+      "name": "administrator-browser-recovery-accessibility.json",
+      "sha256": "75125f34d180d23d0b9b13de6927c0372e453a76fa30b8eeca978abf06b15894"
+    },
+    {
+      "name": "administrator-browser-recovery-dark-accessibility.json",
+      "sha256": "d2965c5f045a3a748cf95e48de2b8dab751f42de692665224595588bde513562"
+    },
+    {
+      "name": "administrator-browser-recovery-dark.png",
+      "sha256": "59369b75f475a2d9f38a4094acf4a8ee1e7c4c168b1d4de335d69ec87acc275a"
+    },
+    {
+      "name": "administrator-browser-recovery-light.png",
+      "sha256": "3995836c5b82a822939b65692f726246d6c7df07996b0b4f03d1d91fea90eb8d"
+    },
+    {
+      "name": "administrator-enrollment-accessibility.json",
+      "sha256": "a03c208c22e94350729d686dd67b5d2f4fab1cf2d387498ce55bbfc7b26b0730"
+    },
+    {
+      "name": "administrator-enrollment-dark-accessibility.json",
+      "sha256": "ff7766cbdd552cd28725b7757096a85aa68f9a12de77a17dd39773ac6569e5c4"
+    },
+    {
+      "name": "customer-settings-conflict-dark-accessibility.json",
+      "sha256": "d21268d00cb6a3f0b082fdb597b10a05fd73fac3369ca10672d602c65923799f"
+    },
+    {
+      "name": "customer-settings-conflict-light-accessibility.json",
+      "sha256": "f9416a845d3bae560eb5365f35207ee60d6ed2a4314606a9b6c689c36738f4cb"
+    },
+    {
+      "name": "customer-settings-dark.png",
+      "sha256": "75367d65fa04599f11ec567131d8167bdbce94ac4da54f667f59d400071bb9dc"
+    },
+    {
+      "name": "customer-settings-light.png",
+      "sha256": "02b751871fca59a1ec99e5822aadc9eb7788de8f30324745326af3fe698a347e"
+    },
+    {
+      "name": "customer-settings.json",
+      "sha256": "96627c7c8a616e25f3aff026dcedbbafb1e3ff143a13fd8676b90a0472d99ed2"
+    },
+    {
+      "name": "diagnostics-dark-accessibility.json",
+      "sha256": "67418f5b17b3ae862669d08d771d1dd2e07eabd60741a49e72c0e84e131d8da1"
+    },
+    {
+      "name": "diagnostics-dark.png",
+      "sha256": "cd3780481c8f7ebe4c6bf41b3c3ef63a1bba11671958f9895d09745cb7f32de6"
+    },
+    {
+      "name": "diagnostics-light-accessibility.json",
+      "sha256": "2304c65390136a19f757933136501eb63f304354517c6159735a30fe0a9fc3d3"
+    },
+    {
+      "name": "diagnostics-light.png",
+      "sha256": "a483bf2a5238d339c7e809f45ddd7662d9d91e488ae65432a2b9f3cdc7e11b14"
+    },
+    {
+      "name": "google-capability-health-dark-accessibility.json",
+      "sha256": "f879857a973204818ab915646a1e9a667f846c2938c84ab5c084af2f0006d559"
+    },
+    {
+      "name": "google-capability-health-dark.png",
+      "sha256": "a12019aaae381c91cb5143ce6967bc1b8f527f1ce79fad43d3ce71ec44245290"
+    },
+    {
+      "name": "google-capability-health-light-accessibility.json",
+      "sha256": "18db7addb2aab8e0f86b76c17a2eed2ae3ae3215cc304519e32eca22e4f69233"
+    },
+    {
+      "name": "google-capability-health-light.png",
+      "sha256": "5dfdf68be5935774b3d2adfe577a74da65f94b68adf01230149a9ac6af3962a8"
+    },
+    {
+      "name": "google-client-import-accessibility.json",
+      "sha256": "25c18e27b819922ac207ff5bd6e5263a2da7686cfc23518e1559b83267abdf40"
+    },
+    {
+      "name": "google-client-pairing-accessibility.json",
+      "sha256": "b941e60cbfc015d08095846c33acbee83dd59cc4fe31e3781feb546f17b3b42b"
+    },
+    {
+      "name": "google-client-pairing-dark-accessibility.json",
+      "sha256": "6334f09e236c879dbcd32fa075f412832227918a825ed43af2573b543f573857"
+    },
+    {
+      "name": "google-connection-api.json",
+      "sha256": "aff6096269663a87d26ef82ecb306447cf1d7791fa222dbf702a2d24a3765a21"
+    },
+    {
+      "name": "google-connection-browser.json",
+      "sha256": "c76912df6a82bc2fab8f4e79a7aca18168c3a5e03a39f27c7fe6f06acd7c290b"
+    },
+    {
+      "name": "google-connection-confirmed-dark-accessibility.json",
+      "sha256": "3e350a986ca542cd6b2ac712dd8e67161ba43893db52ee8146c8a8cd51b5db42"
+    },
+    {
+      "name": "google-connection-confirmed-light-accessibility.json",
+      "sha256": "49d33c531a0b911b82641086eb4ae7686eb39f73b0f6fa4a7167b16a9ae73ad6"
+    },
+    {
+      "name": "google-connection-import-dark-accessibility.json",
+      "sha256": "413ef4c4ed1cd7303f3c24db9df14b2903dd814a6ab6db47db68b5a3954e884d"
+    },
+    {
+      "name": "google-connection-import-dark.png",
+      "sha256": "22e8916a55ddec4ad738d8102116a57794d8d641baa63506e7a3e5637cf29d71"
+    },
+    {
+      "name": "google-connection-import-light-accessibility.json",
+      "sha256": "45586867ad943166f8cd160658719b53ed311f106d73c63b08c47a622dd87fe5"
+    },
+    {
+      "name": "google-connection-import-light.png",
+      "sha256": "aa8f1ae782a92de2d588a2b9ae5f2092ae3a21ab9cb74a6ad3c7b90964f8bbe5"
+    },
+    {
+      "name": "google-connection-review-dark-accessibility.json",
+      "sha256": "9620cf4192ae184526e96bbb3f7cb73f53f3f98a0787b9f2fb2f322a34defa80"
+    },
+    {
+      "name": "google-connection-review-dark.png",
+      "sha256": "a6860f7dbbba1870d521e748964993364629c6d045d8e3f003a82217a32b7235"
+    },
+    {
+      "name": "google-connection-review-light-accessibility.json",
+      "sha256": "9924fa0e8eb727f65dae41e9138baba2839994c23058b3e65871ff4acf23d82a"
+    },
+    {
+      "name": "google-connection-review-light.png",
+      "sha256": "ddddd6b534c18e595f23309fd7b5519de391191c4de70f83ba44771f8f0c34fa"
+    },
+    {
+      "name": "google-connection-worker.json",
+      "sha256": "ad21d88656035b080dad97403d63e20ca20d471c00e1ddafce377518c515d35d"
+    },
+    {
+      "name": "google-connection-zoom-1280-2.png",
+      "sha256": "21ece90958bcd1e5262263fdfd50f4dede7ec4fdb7fb7d229c07aaa0eed09351"
+    },
+    {
+      "name": "google-connection-zoom-320-1.png",
+      "sha256": "02a39e0ea20713c1ce10bcf203a202d838c59e625f9f0dd7690365c4e5887c18"
+    },
+    {
+      "name": "google-health-api.json",
+      "sha256": "5534040e718d9dcbd01377857e2bde6d3beacb5425d9372e5309f7901fa8d63f"
+    },
+    {
+      "name": "google-lifecycle-api.json",
+      "sha256": "a525b2aa7d1c70440b05480df2c8a3324434a8b90e7b2d08866b5a2b10bb9cb2"
+    },
+    {
+      "name": "google-lifecycle-browser-staging.json",
+      "sha256": "8f1544897b38926939b2cee7262fb7b43d4c715145adcb4470a066c2260936f3"
+    },
+    {
+      "name": "invitation-awaiting-confirmation-dark-accessibility.json",
+      "sha256": "a959eb0094839544b9e9b9b957d4490a3193a866fe5845def33322a34302a939"
+    },
+    {
+      "name": "invitation-awaiting-confirmation-light-accessibility.json",
+      "sha256": "cb77162e68382cd65da1768393b7db9854d81d7e44379f650561b9c68cd24a1d"
+    },
+    {
+      "name": "invitation-identity-review-dark-accessibility.json",
+      "sha256": "cede83f58dbf2477a347a79805a491bfb987cf37fcad6d9fa4c994be8137807b"
+    },
+    {
+      "name": "invitation-identity-review-light-accessibility.json",
+      "sha256": "be062f79f31a84a42452a644660ead47c1668934f0c67221164305d4e7b526ad"
+    },
+    {
+      "name": "invitation-revoked-dark-accessibility.json",
+      "sha256": "ee2d0b7cb2372095e81557c69f533a9dc16e5a35320046fd79cc197c37526a4e"
+    },
+    {
+      "name": "invitation-revoked-light-accessibility.json",
+      "sha256": "9d6243d12c792def39de473cdee80e98567175b2e4e92032367e0f5c5297850a"
+    },
+    {
+      "name": "invitations-browser.json",
+      "sha256": "7a55fa404bfe8695581272473e42033f84d12c746661fc9889b7b59b71b31054"
+    },
+    {
+      "name": "invitations-dark-accessibility.json",
+      "sha256": "b15e52ecad8078b2d39f6868c04dd8705a573271e6455cb180b888be46f2fd20"
+    },
+    {
+      "name": "invitations-dark.png",
+      "sha256": "c078aeeab6a33423e0d431a22c979afdd47ea1621de9b0194386602c5f2e3d75"
+    },
+    {
+      "name": "invitations-light-accessibility.json",
+      "sha256": "1b0f19615e274370fb83b94bbc66eef13bf8b4a02cb38f21ec09258605c8dcb0"
+    },
+    {
+      "name": "invitations-light.png",
+      "sha256": "a4e2b3ca2c2e25a7232aa02faaabb3718788484043f43ef24adb1d1186302d15"
+    },
+    {
+      "name": "login-accessibility.json",
+      "sha256": "832fab2d9bf2eab9e64ff723fabf0faee81169882c82e97a3867725dbdad2705"
+    },
+    {
+      "name": "phase3-route-security.json",
+      "sha256": "44437d0cb4c62c6b60c14759221c22275fca1357d69b600309cf7b926b8075f7"
+    },
+    {
+      "name": "platform-access-api.json",
+      "sha256": "40a93244948f3499834d6dc459352ce0a8d58c38482a05b3b2d7741367585d9f"
+    },
+    {
+      "name": "platform-access-browser.json",
+      "sha256": "73b013f1b2bcdd4b115d412042cde71ba12e14c75ce95919cd58f309cf0b12d2"
+    },
+    {
+      "name": "platform-access-mobile.png",
+      "sha256": "075092908c939c173217ea79a11d73d49a9f4488954434987002cf10965ad783"
+    },
+    {
+      "name": "platform-access-review-dark-accessibility.json",
+      "sha256": "c981dd91031507389d73569bba675fd5b3c1704b078afd9f689ca282d1a7d627"
+    },
+    {
+      "name": "platform-access-review-dark.png",
+      "sha256": "aa4734de48a1d8b84096b2ed4271f1e1bc67f7c412b0e77d377328824528de08"
+    },
+    {
+      "name": "platform-access-review-light-accessibility.json",
+      "sha256": "30610c0275ca7c52b0e3e7a31ca129ec8e82235a50d0b72841eecd7bd3d7e568"
+    },
+    {
+      "name": "platform-access-review-light.png",
+      "sha256": "90d8364e4a379a955ffaea29015d1b198c96c2e2806368512f193d0e6804ac6e"
+    },
+    {
+      "name": "school-definitions-api.json",
+      "sha256": "e0216bb767956f86e7cfaf0f3680982de315b1c415766eb033b48ba2657c6541"
+    },
+    {
+      "name": "school-draft-dark-accessibility.json",
+      "sha256": "3f3e2595c22cae050c05544af91b661835bc33b4585fe06b70bf14033cec73c9"
+    },
+    {
+      "name": "school-draft-dark.png",
+      "sha256": "29598d9cf53828cf4d5352ca4dbe3654fc9cbe5e3c9c6b1a28a79514ba7edf84"
+    },
+    {
+      "name": "school-draft-light-accessibility.json",
+      "sha256": "39a9bc5dcef794aa7d368ea25efde94da3acacd494002adad107447339b19cd9"
+    },
+    {
+      "name": "school-draft-light.png",
+      "sha256": "5fd4af36e0f3ad02be0009ee6f23e4e37bbb1068cbac9d4aaba2105acc190584"
+    },
+    {
+      "name": "school-references-api.json",
+      "sha256": "7fd691407a7e3e14d59ca2dcd7e31671a4c2418338fb7885529d8a082284bba1"
+    },
+    {
+      "name": "school-review-dark-accessibility.json",
+      "sha256": "aacd26de8be214ceaea2d6c561e0945248c53d3235d4db7e92b104ee1ab100f7"
+    },
+    {
+      "name": "school-review-light-accessibility.json",
+      "sha256": "b87d8506874807b9197c9eb0c1f4f7d0d4ee678cfb42a25db7f60c6b240a54e0"
+    },
+    {
+      "name": "scoped-grants-dark-accessibility.json",
+      "sha256": "bbf2f3de05eaa2a4b751c5a958d51e4b880d116c7cb75818fefd11b2211ccff5"
+    },
+    {
+      "name": "scoped-grants-dark.png",
+      "sha256": "64199eed425bbf553599c79af8fc2e2050ac49a732d7be89ae467d40efb475b1"
+    },
+    {
+      "name": "scoped-grants-light-accessibility.json",
+      "sha256": "365bbbdfa2908c157cff04b31be915d41c1268e6666bfe4f894bd7c552db1bf1"
+    },
+    {
+      "name": "scoped-grants-light.png",
+      "sha256": "778363bc9dee8f715997e73b752770266b52b623b6ce2b3a4bbea974f19e32da"
+    },
+    {
+      "name": "source-integration.json",
+      "sha256": "b4847590570ba19be37c41a7e84d4f327650206744553808210c26a8f4b4e691"
+    }
+  ],
+  "screenshotChecks": 24,
+  "incompleteBrowserRequests": 34,
+  "limits": [
+    "This report covers registered complete fixture secrets in the listed files and supplied logs. Partial secrets require separate review.",
+    "Screenshot checks inspect surrounding document content and bind the result to exact image bytes. They do not perform image recognition.",
+    "Browser JSON token observation covers successful session, invitation creation, and setup pairing responses. All browser responses retain cookie observation.",
+    "Failed runs, release bundles, and live district data require separate review."
+  ],
+  "sourceRevision": "ca9023b88624803191aa15e28fbde97e186babdc",
+  "recordedAt": "2026-09-17T04:39:39.289Z"
+}

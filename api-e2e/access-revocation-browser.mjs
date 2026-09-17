@@ -1,3 +1,4 @@
+import { evidenceSecurity } from './evidence-security.mjs';
 import { expect } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -15,7 +16,7 @@ export async function qualifyAccessRevocationBrowser({
   auditAccessibility,
   evidenceDirectory,
 }) {
-  const context = await browser.newContext({
+  const context = await evidenceSecurity.newContext(browser, {
     ignoreHTTPSErrors: true,
     viewport: { width: 1280, height: 900 },
     reducedMotion: 'reduce',
@@ -32,6 +33,7 @@ export async function qualifyAccessRevocationBrowser({
     const session = await (
       await context.request.get(`${publicOrigin}/api/auth/session`)
     ).json();
+    evidenceSecurity.register('csrf-token', session.csrfToken);
     const target = (
       await (
         await context.request.get(`${publicOrigin}/api/platform-users`)
@@ -124,7 +126,7 @@ export async function qualifyAccessRevocationBrowser({
       }),
     ).toHaveCount(0);
     await auditAccessibility(access, 'access-revocation-interrupted');
-    await access.screenshot({
+    await evidenceSecurity.screenshot(access, {
       path: `${evidenceDirectory}/access-revocation-interrupted.png`,
       fullPage: true,
     });
@@ -181,7 +183,7 @@ export async function qualifyAccessRevocationBrowser({
         exact: true,
       }),
     ).toBeDisabled();
-    await popup.close();
+    await evidenceSecurity.close(popup);
     await changeVersion();
     await invitations
       .getByRole('button', { name: 'Refresh invitations', exact: true })
@@ -198,7 +200,7 @@ export async function qualifyAccessRevocationBrowser({
       invitations.getByRole('heading', { name: 'Sign in', exact: true }),
     ).toBeVisible();
     await expect(label).toHaveCount(0);
-    await other.close();
+    await evidenceSecurity.close(other);
     await writeFile(
       `${evidenceDirectory}/access-revocation-browser.json`,
       JSON.stringify(
@@ -226,6 +228,6 @@ export async function qualifyAccessRevocationBrowser({
     );
   } finally {
     setSubject('administrator');
-    await context.close();
+    await evidenceSecurity.close(context);
   }
 }
