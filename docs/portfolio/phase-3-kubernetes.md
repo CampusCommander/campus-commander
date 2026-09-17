@@ -112,3 +112,17 @@ Hosted qualification remains pending.
 The previous statement that default Kind networking cannot enforce policies was incorrect for this pinned version.
 Controller initialization can skip policy processing after an error. The controller configuration also enables fail-open behavior.
 Source inspection does not prove runtime enforcement. The fixture must record actual networking images and measure allowed and denied traffic.
+
+## First hosted attempt
+
+[Run 35255775913](https://github.com/CampusCommander/campus-commander/actions/runs/35255775913) failed against signed application `0abf75e` and harness `297edf0`.
+The original report identifies only the installed workflows and lifecycle stage.
+It does not identify the failing assertion.
+`CC-59-installation-failure-1.json` retains every original field and verified archive provenance.
+The failed fixture took 266,651 milliseconds before cleanup.
+No hosted Kubernetes pass is claimed.
+
+The next attempt records narrower fixture stages and bounded source locations from known fixture files.
+Reports still omit raw error messages, assertion values, URLs, and command output.
+The diagnostic regression checks private-marker exclusion and rejects unrelated source paths.
+This increment changes evidence collection only.

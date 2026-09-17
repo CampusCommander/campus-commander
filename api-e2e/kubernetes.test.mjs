@@ -20,7 +20,10 @@ import { expect } from '@playwright/test';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
 import { qualifyKubernetesWorkerCredentials } from './phase3-kubernetes-worker-fixture.mjs';
-import { verifyKubernetesCredentialProjection } from './phase3-kubernetes-fixture.mjs';
+import {
+  kubernetesFailureLocations,
+  verifyKubernetesCredentialProjection,
+} from './phase3-kubernetes-fixture.mjs';
 import { renderKubernetes } from '../deployment/kubernetes/render.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
@@ -129,9 +132,14 @@ test(
       : undefined;
     let releaseIdentity, qualificationFailure;
     const failureStages = [];
+    const failureLocations = [];
 
-    const reportFailure = async (failedStage) => {
+    const reportFailure = async (failedStage, error) => {
       failureStages.push(failedStage);
+      failureLocations.push({
+        stage: failedStage,
+        locations: kubernetesFailureLocations(error),
+      });
       await mkdir(evidenceDirectory, { recursive: true });
       await writeFile(
         join(evidenceDirectory, 'kubernetes-failure.json'),
@@ -142,6 +150,7 @@ test(
             status: 'failed',
             stage: failureStages[0],
             failureStages,
+            failureLocations,
             durationMs: Date.now() - started,
             error: 'Kubernetes Phase 3 qualification failed.',
           },
@@ -644,23 +653,28 @@ test(
           project,
           images,
         });
-      stage = 'installed workflows and lifecycle';
+      stage = 'initial browser diagnostics';
       const application = await applicationBrowser(
         publicOrigin,
         async ({ page, context, checks }) => {
           if (phase3) {
+            stage = 'installed public workflows';
             installedWorkflows = await qualifyInstalledPhase3({
               page,
               publicOrigin,
               provider,
               verifyRecipientAccess: async (input) => {
+                stage = `recipient permissions: ${input.stage}`;
                 recipientAccessChecks.push(
                   ...(await verifyKubernetesRecipientAccess(kube, input)),
                 );
+                stage = 'installed public workflows';
               },
             });
+            stage = 'diagnostics after installed workflows';
             await checks({ recoverySeconds: 120 });
           }
+          stage = 'API replacement';
           const originalPods = await replicas?.verify(
             context,
             'initial-session',
@@ -694,6 +708,7 @@ test(
               1,
             );
           }
+          stage = 'worker rescheduling';
           await kube(['scale', 'deployment/workers', '--replicas=1']);
           await kube([
             'rollout',
@@ -749,6 +764,7 @@ test(
           await checks();
           await replicas?.verify(context, 'worker-reschedule-session');
           if (installer) {
+            stage = 'save preference before lifecycle checks';
             const preference = page.waitForResponse(
               (response) =>
                 new URL(response.url()).pathname === '/api/auth/preferences' &&
@@ -760,6 +776,7 @@ test(
               .click();
             assert.equal((await preference).status(), 201);
             for (const command of ['stop', 'uninstall']) {
+              stage = `delivered ${command} and resume`;
               assert.equal((await installer.cli(command)).dataPreserved, true);
               await installer.resume(startForward);
               await replicas?.verify(
@@ -822,6 +839,7 @@ test(
               checks,
             });
           // Capture source placement before isolated restore stops its writers.
+          stage = 'capture installer evidence';
           installerEvidence = await installer.evidence();
           if (process.env.CC_AUTH_KUBERNETES_RESTORE === '1') {
             const preference = page.waitForResponse(
@@ -901,7 +919,10 @@ test(
         },
         {
           afterSignOut: replicas
-            ? () => replicas.verify(undefined, 'signed-out-session', 401)
+            ? () => {
+                stage = 'signed-out replica sessions';
+                return replicas.verify(undefined, 'signed-out-session', 401);
+              }
             : undefined,
         },
       );
@@ -1060,7 +1081,7 @@ test(
         );
       }
     } catch (error) {
-      if (phase3) await reportFailure(stage);
+      if (phase3) await reportFailure(stage, error);
       if (created && !phase3) {
         try {
           const pods = JSON.parse(await kube(['get', 'pods', '-o', 'json']));
@@ -1138,7 +1159,7 @@ test(
               .includes(project),
           );
       } catch (error) {
-        if (phase3) await reportFailure('remove owned cluster');
+        if (phase3) await reportFailure('remove owned cluster', error);
         qualificationFailure ??= phase3
           ? new Error(
               'Kubernetes Phase 3 qualification failed during owned-cluster removal.',

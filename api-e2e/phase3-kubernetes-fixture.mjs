@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /** Inspect actual key consumers without returning private bytes. */
 export async function verifyKubernetesCredentialProjection({
@@ -109,4 +110,39 @@ const stat=fs.statSync(input.path),config=JSON.parse(fs.readFileSync(process.env
     2,
   );
   return { status: 'passed', observations, unrelatedPodsExcludeKey: true };
+}
+
+/** Retain source locations without assertion values, URLs, or command output. */
+export function kubernetesFailureLocations(error) {
+  const files = [
+    'kubernetes.test.mjs',
+    'profile-browser.mjs',
+    'phase3-installed-workflows.mjs',
+    'kubernetes-replicas-fixture.mjs',
+    'replica-permission-fixture.mjs',
+    'phase3-kubernetes-fixture.mjs',
+    'phase3-kubernetes-worker-fixture.mjs',
+  ];
+  const locations = [];
+  for (const line of String(error?.stack ?? '')
+    .split('\n')
+    .slice(1, 101)) {
+    if (!/^\s+at /.test(line)) continue;
+    for (const file of files) {
+      const prefix = `${pathToFileURL(join(process.cwd(), 'api-e2e', file)).href}:`;
+      const index = line.lastIndexOf(prefix);
+      if (index < 0) continue;
+      const position = /^(\d{1,6}):(\d{1,6})\)?$/.exec(
+        line.slice(index + prefix.length),
+      );
+      if (position)
+        locations.push({
+          file: `api-e2e/${file}`,
+          line: Number(position[1]),
+          column: Number(position[2]),
+        });
+    }
+    if (locations.length === 16) break;
+  }
+  return locations;
 }

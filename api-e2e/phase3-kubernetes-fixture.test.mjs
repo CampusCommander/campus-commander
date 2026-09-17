@@ -9,7 +9,11 @@ import {
   readKubernetesReplica,
   verifyKubernetesRecipientAccess,
 } from './kubernetes-replicas-fixture.mjs';
-import { verifyKubernetesCredentialProjection } from './phase3-kubernetes-fixture.mjs';
+import {
+  kubernetesFailureLocations,
+  verifyKubernetesCredentialProjection,
+} from './phase3-kubernetes-fixture.mjs';
+import { pathToFileURL } from 'node:url';
 
 const pod = (service, index = 0) => ({
   metadata: {
@@ -220,4 +224,20 @@ test('Kubernetes renewal rejects unowned roots before database or pod access', a
       qualifyKubernetesWorkerCredentials({ ...input, kube }),
       { name: 'AssertionError' },
     );
+});
+
+test('failure locations exclude private messages, command output, URLs, and unknown files', () => {
+  const privateMarker = randomBytes(32).toString('hex');
+  const source = pathToFileURL(
+    join(process.cwd(), 'api-e2e/profile-browser.mjs'),
+  ).href;
+  const error = new Error(privateMarker);
+  error.stack = `${privateMarker}\n    at check (${source}:12:34)\n    at ${source}:56:78\n    at https://provider.invalid/${privateMarker}:1:2\n    at file:///private/${privateMarker}.mjs:1:2\nstdout: ${source}:90:10\n    at check (${source}:90:10${privateMarker})`;
+  const locations = kubernetesFailureLocations(error);
+  assert.deepEqual(locations, [
+    { file: 'api-e2e/profile-browser.mjs', line: 12, column: 34 },
+    { file: 'api-e2e/profile-browser.mjs', line: 56, column: 78 },
+  ]);
+  assert.ok(!JSON.stringify(locations).includes(privateMarker));
+  assert.deepEqual(kubernetesFailureLocations(undefined), []);
 });
