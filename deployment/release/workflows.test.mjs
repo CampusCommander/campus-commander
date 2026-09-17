@@ -368,7 +368,7 @@ test('upgrade dispatch verifies the pinned baseline before running the delivered
   assert.equal(
     steps.find((step) => step.name === 'Qualify installed Phase 3 workflows')
       .if,
-    'inputs.upgrade != true && inputs.faults != true',
+    'inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true',
   );
   assert.equal(
     baseline.env.BASELINE_IDENTITY,
@@ -577,4 +577,41 @@ test('service fault dispatch rejects upgrade mode before starting containers', a
         (step) => step.name === 'Prepare published image references',
       ),
   );
+});
+
+test('lifecycle dispatch excludes simultaneous upgrade and fault modes', async () => {
+  const ci = await workflow('ci');
+  const profile = await workflow('phase-3-profile-check');
+  assert.equal(ci.on.workflow_dispatch.inputs.phase3Lifecycle.default, false);
+  assert.equal(
+    ci.jobs['phase3-profile'].with.lifecycle,
+    '${{ inputs.phase3Lifecycle == true }}',
+  );
+  const steps = profile.jobs.installation.steps;
+  const selected = steps.find(
+    (step) => step.name === 'Qualify Phase 3 installer lifecycle',
+  );
+  assert.equal(selected.if, 'inputs.lifecycle');
+  assert.equal(
+    selected.run,
+    'npm exec nx run api-e2e:phase3-lifecycle-integration',
+  );
+  for (const upgrade of [false, true])
+    for (const faults of [false, true])
+      for (const lifecycle of [false, true]) {
+        const run = () =>
+          execFileSync('bash', ['-e', '-c', steps[0].run], {
+            env: {
+              ...process.env,
+              UPGRADE: String(upgrade),
+              FAULTS: String(faults),
+              LIFECYCLE: String(lifecycle),
+              FAULT_KIND: 'services',
+            },
+            stdio: 'pipe',
+          });
+        if ([upgrade, faults, lifecycle].filter(Boolean).length <= 1)
+          assert.doesNotThrow(run);
+        else assert.throws(run);
+      }
 });

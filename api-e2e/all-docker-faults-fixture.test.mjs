@@ -151,3 +151,36 @@ test('capacity faults reject unowned and unbounded volumes before writing', asyn
     assert.throws(() => assertCapacityVolume(changed, project));
   assert.throws(() => assertCapacityVolume(owned, 'production'));
 });
+
+test('lifecycle qualification rejects an unowned project before erasure commands', async (t) => {
+  const { createInstalledLifecycleProof } = await import(
+    './phase3-lifecycle-fixture.mjs'
+  );
+  const directory = await mkdtemp(join(tmpdir(), 'cc-lifecycle-report-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  let commands = 0;
+  await assert.rejects(
+    createInstalledLifecycleProof({
+      root: '/unowned',
+      project: 'production',
+      config: { phase: 3 },
+      release: { sourceRevision: 'a'.repeat(40), images: {} },
+      compose: () => {
+        commands++;
+      },
+      cli: () => {
+        commands++;
+      },
+      evidenceDirectory: directory,
+      evidenceIdentity: { harnessRevision: 'b'.repeat(40) },
+      installerInvocations: [],
+    }),
+    { code: 'ERR_ASSERTION' },
+  );
+  assert.equal(commands, 0);
+  const report = JSON.parse(
+    await readFile(join(directory, 'all-docker-lifecycle.json')),
+  );
+  assert.equal(report.status, 'failed');
+  assert.deepEqual(report.stages, []);
+});

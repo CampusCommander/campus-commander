@@ -28,6 +28,10 @@ on:
         type: choice
         options: [services, provider, certificates, capacity]
         default: services
+      phase3Lifecycle:
+        description: Test installed restart, resume, stop, uninstall, and explicit erasure
+        type: boolean
+        default: false
       phase3Only:
         description: Run only the Phase 3 source API and browser qualification
         type: boolean
@@ -50,6 +54,7 @@ jobs:
       upgrade: ${{ inputs.phase3Upgrade == true }}
       faults: ${{ inputs.phase3Faults == true }}
       faultKind: ${{ inputs.phase3FaultKind || 'services' }}
+      lifecycle: ${{ inputs.phase3Lifecycle == true }}
     permissions:
       contents: read
       packages: read

@@ -303,4 +303,39 @@ gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
 
 The tmpfs test models `ENOSPC`. It does not establish physical-disk or power-loss durability.
 Its artifact preservation checks cover the capacity fault and recovery before subsequent installer lifecycle checks.
-Hosted capacity qualification remains pending.
+[Run 35221699210](https://github.com/CampusCommander/campus-commander/actions/runs/35221699210) passed at harness `a239e01` against application `a3601ef`.
+The volume reached zero available bytes. The Artifact storage diagnostic failed and recovered within 1,228 milliseconds.
+All ten installed workflows passed. The capacity segment took 10,805 milliseconds.
+The [retained capacity report](../../deployment/evidence/CC-57-capacity-faults.json) includes three original report hashes and fixture limits.
+
+Capacity run `35221037020` failed during administrator enrollment, before fault injection or evidence creation.
+Enrollment used the original Compose configuration. Installer commands used the bounded runtime configuration.
+Revision `a239e01` routes delivered enrollment commands through the same runtime wrapper and preserves their input.
+The passing hosted recheck confirms that enrollment and the capacity fault complete with this correction.
+
+## Installed lifecycle and explicit erasure
+
+The `api-e2e:phase3-lifecycle-integration` target installs the signed release and completes the installed workflows.
+It captures Phase 3 policy, artifact, security-event, and Kestra state before service restart.
+It compares that state after restart, stop/resume, and uninstall/resume.
+Both API replicas must accept the new sessions and reject the final signed-out session.
+
+Erasure without the exact project confirmation must fail and preserve the owned volumes.
+Confirmed erasure must remove the owned volumes and record the erased installer state.
+A separate fixture-owned control volume must retain its marker through erasure.
+The fixture then removes that control volume after it verifies ownership.
+Operator files remain under the existing erasure contract.
+
+The fixture records distinct installation, resume, and lifecycle reports.
+Installation and resume durations come from actual delivered CLI calls.
+Their duration scopes distinguish command execution from later browser and state checks.
+
+Select lifecycle qualification with these CI inputs:
+
+```sh
+gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
+  -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Lifecycle=true
+```
+
+The workflow rejects combined lifecycle, upgrade, and fault modes.
+Hosted lifecycle execution and a different-release guided update remain pending.
