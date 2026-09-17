@@ -1,7 +1,7 @@
 # Phase 3 school scopes
 
 Owner: [CC-52](https://easton-consulting.atlassian.net/browse/CC-52).
-Status: contract design and implementation preparation. Runtime implementation and qualification remain pending.
+Status: shared contracts and scope resolver implemented. Provider integration, persistence, API, browser, and complete qualification remain pending.
 This slice follows CC-48 and CC-51 through the CC-49 stack.
 
 ## Outcome and language
@@ -28,6 +28,10 @@ The [OU resource](https://developers.google.com/workspace/admin/directory/refere
 These method facts were checked on 2026-09-17.
 
 The earlier CC-44 controlled read passed for the approved customer.
+A CC-52 read with `all_including_parent` returned HTTP 200 with the exact read-only OU scope.
+The response contained three OUs, including one root with a stable ID and name.
+The root omitted parent fields. Both non-root OUs included stable parent IDs.
+The [sanitized response-shape evidence](../../deployment/evidence/CC-52-ou-root-proof.json) records counts and field presence only.
 That proof does not qualify the production selector, scope resolver, or least-privilege Google role.
 Keep the selector unavailable until the production transport, reference validation, and capability health tests pass.
 Do not add an OU management page or Google mutations.
@@ -98,4 +102,9 @@ Runtime roles receive narrow operations and no unrestricted school or grant tabl
 Use Nx contract tests, API and frontend builds and lint, PostgreSQL integration, and Chromium browser qualification.
 The selector needs both themes, keyboard focus, accessible hierarchy navigation, zoom, and narrow-layout evidence.
 Human screen-reader qualification remains a separate gate.
-No implementation test has run for this design-only commit.
+The shared contract test and lint targets pass through `2ef7717`.
+Six resolver cases cover exclusions, stale and invalid references, hierarchy changes, stable IDs, and approved-set intersection.
+API, frontend, and worker builds passed after the new exports.
+Standards and specification review have no remaining findings in this bounded contract scope.
+The specification correction reuses the existing stable Google customer-ID schema and rejects customer aliases.
+These checks do not qualify school APIs, persistence, grant changes, or browser behavior.
