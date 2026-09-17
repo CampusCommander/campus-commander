@@ -196,3 +196,40 @@ These credentials do not pass through the deployment secret writer. The fixture 
 The inventory also covers rotated OIDC and worker credentials, encryption keys, service-account keys, and synthetic provider tokens.
 Browser response observation covers transient login, enrollment, invitation, session cookies, and JSON tokens.
 The source and packaged reports must contain the Redis operator category before this correction qualifies.
+
+## Audit rollback evidence inventory
+
+The following fixtures inject audit failures into effective mutations. Their assertions cover the listed state boundaries.
+Full run `35180100392` passed its PostgreSQL job at `63fca05`. Its application jobs remain pending.
+Revision `63fca05` requires exact injected errors for settings, health publication, replacement, rotation, and disconnect.
+
+| Mutation                                                                    | Fixture under `deployment/postgres`  | Retained state assertion                                                                        |
+| --------------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Candidate staging, verification success, verification failure, expiry       | `google-connection.integration.mjs`  | Complete candidate row hashes remain equal.                                                     |
+| Customer confirmation                                                       | `google-connection.integration.mjs`  | Customer, active credential, and candidate consumption roll back.                               |
+| Settings update                                                             | `customer-settings.integration.mjs`  | Customer settings projection remains equal.                                                     |
+| Invitation creation, claim, identity verification, confirmation, revocation | `invitations.integration.mjs`        | Invitation count or status remains unchanged. Failed confirmation creates no principal.         |
+| Platform grant change                                                       | `platform-access.integration.mjs`    | Principal projection remains equal. No change receipt exists.                                   |
+| School definition confirmation                                              | `school-definitions.integration.mjs` | Definition revision, invitation state, and review application state remain unchanged.           |
+| School reference publication                                                | `school-references.integration.mjs`  | Existing observation and failure remain. The lease remains active.                              |
+| Capability health publication                                               | `google-health.integration.mjs`      | Capability state remains equal. The lease remains unfinished.                                   |
+| Access token renewal                                                        | `google-token.integration.mjs`       | The renewal lease remains pending. A later successful renewal supplies the encrypted token.     |
+| Credential replacement, encryption-key rotation, disconnect                 | `google-lifecycle.integration.mjs`   | Credential management projection remains equal. Failed replacement retains the ready candidate. |
+
+This inventory does not establish every branch of each mutation.
+Remaining reconciliation includes admission leases, failed publication branches, invitation expiry, and secondary grant or revocation audit events.
+Review complete state boundaries and error causes before treating any single projection assertion as complete rollback proof.
+The source school fixture separately verifies permitted totals, another school, guessed identities, details, and school audit boundaries.
+Its successful report does not replace the remaining cross-resource authorization inventory.
+
+## Open qualification findings
+
+| Finding                                                                                            | Severity          | Release impact                                                                                  |
+| -------------------------------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------- |
+| Complete mutation and resource-denial reconciliation remains unfinished.                           | Qualification gap | Blocks CC-55 acceptance.                                                                        |
+| The final scanner does not qualify failed runs or release archives.                                | Qualification gap | Requires separate retained-evidence review before release acceptance.                           |
+| Earlier intermittent browser failures retain unresolved causes in CC-54.                           | P2                | Blocks declaring the affected workflows qualified solely from a later passing run.              |
+| Live proof uses a Super Admin without an approved replacement administrator or Education customer. | Qualification gap | Does not establish minimum privileges, identity replacement, revocation, or Education behavior. |
+
+The scanner review findings concern qualification coverage. They do not demonstrate a production secret disclosure.
+Their fixes require passing source and packaged evidence before closure.
