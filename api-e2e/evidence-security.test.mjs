@@ -241,3 +241,22 @@ test('artifact path secrets never enter reports or failure messages', async () =
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('browser response registration fails within its time limit for an unfinished response', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  context.emit('response', {
+    headersArray: async () => [
+      { name: 'Content-Type', value: 'application/json' },
+    ],
+    text: async () => Promise.withResolvers().promise,
+  });
+  const pending = assert.rejects(
+    security.observePendingResponses(),
+    /exceeded its time limit/,
+  );
+  t.mock.timers.tick(5000);
+  await pending;
+});

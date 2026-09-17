@@ -182,7 +182,7 @@ It also scans current audit records and a new support bundle. The report lists f
 The scanner removes rejected artifacts. It does not publish matched values or surrounding text.
 Unknown evidence formats fail the scan. Release archives and live district evidence require separate checks.
 
-Seven local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
+Eight local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
 Hosted source and packaged qualification of this increment remain pending. Failed runs do not establish a completed final scan.
 
 The first review found three gaps: omitted service stderr, unregistered transient browser cookies, and unchecked artifact paths.
@@ -233,3 +233,6 @@ Its successful report does not replace the remaining cross-resource authorizatio
 
 The scanner review findings concern qualification coverage. They do not demonstrate a production secret disclosure.
 Their fixes require passing source and packaged evidence before closure.
+
+Browser response registration has a five-second limit. An unfinished response fails qualification with a fixed diagnostic.
+The regression uses a stalled response and a controlled clock. It does not establish the cause of an active hosted run.

@@ -64,7 +64,27 @@ export class EvidenceSecurity {
   }
 
   async observePendingResponses() {
-    while (this.#pending.size) await Promise.all(this.#pending);
+    let timer;
+    try {
+      await Promise.race([
+        (async () => {
+          while (this.#pending.size) await Promise.all(this.#pending);
+        })(),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  'Browser response secret registration exceeded its time limit.',
+                ),
+              ),
+            5000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
     if (this.#responseFailures)
       throw new Error('Browser response secret registration did not complete.');
   }
