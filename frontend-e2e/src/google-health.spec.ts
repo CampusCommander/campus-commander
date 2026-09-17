@@ -345,3 +345,39 @@ test('health links focus details across routes and during repeated same-route na
     .click();
   await expect(heading).toBeFocused();
 });
+
+test('local disconnect preserves historical checks without claiming a Google rejection', async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  const historical = state.health();
+  state.setHealth({
+    ...historical,
+    connectionState: 'disconnected',
+    generation: 2,
+  });
+  await page.getByRole('button', { name: 'Refresh Google status' }).click();
+  await expect(
+    page.getByText('Google background access disconnected', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      'Background Google access is disconnected locally. These observations describe earlier checks.',
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Check enabled Google capabilities' }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole('button', {
+      name: 'Recheck Customer identity',
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText('Credential rejected', { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('link', { name: 'Manage Google credentials', exact: true }),
+  ).toBeVisible();
+});

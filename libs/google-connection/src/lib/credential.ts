@@ -303,3 +303,38 @@ export class CredentialCipher {
     }
   }
 }
+
+/** Load private key material once and clear the reader's buffers after copying. */
+export function loadCredentialCipher<Reference>(
+  config: {
+    keyId: string;
+    encryptionKeySecretRef: Reference;
+    additionalKeys?: readonly {
+      keyId: string;
+      encryptionKeySecretRef: Reference;
+    }[];
+  },
+  read: (reference: Reference) => Buffer,
+): CredentialCipher {
+  const buffers: Buffer[] = [];
+  try {
+    const primary = read(config.encryptionKeySecretRef);
+    buffers.push(primary);
+    const additionalKeys: { keyId: string; key: Buffer }[] = [];
+    for (const entry of config.additionalKeys ?? []) {
+      try {
+        const material = read(entry.encryptionKeySecretRef);
+        buffers.push(material);
+        if (material.length === 32)
+          additionalKeys.push({ keyId: entry.keyId, key: material });
+      } catch {
+        /* Selecting an unavailable additional key fails without fallback. */
+      }
+    }
+    return new CredentialCipher(config.keyId, primary, additionalKeys);
+  } catch {
+    throw new CredentialError('key-unavailable');
+  } finally {
+    for (const buffer of buffers) buffer.fill(0);
+  }
+}

@@ -14,6 +14,7 @@ import {
   googleCredentialManagementSchema,
   googleCredentialReplacementSchema,
   googleCredentialActivationSchema,
+  googleReplacementActivationSchema,
   googleKeyRotationSchema,
   googleHealthSchema,
   googleHealthCheckSchema,
@@ -27,7 +28,7 @@ import {
   type SessionResponse,
 } from '@campus/application-contracts';
 import {
-  CredentialCipher,
+  loadCredentialCipher,
   CredentialError,
   GoogleConnectionError,
   GoogleCustomerVerifier,
@@ -83,33 +84,14 @@ export class GoogleConnectionService
       throw new ServiceUnavailableException({
         reason: 'connection-not-configured',
       });
-    let key: Buffer | undefined;
     try {
-      key = this.configuration.secret(config.encryptionKeySecretRef);
-      const additionalKeys: { keyId: string; key: Buffer }[] = [];
-      try {
-        for (const entry of config.additionalKeys ?? []) {
-          try {
-            const material = this.configuration.secret(
-              entry.encryptionKeySecretRef,
-            );
-            if (material.length === 32)
-              additionalKeys.push({ keyId: entry.keyId, key: material });
-            else material.fill(0);
-          } catch {
-            /* An unavailable additional key cannot decrypt or become active. */
-          }
-        }
-        return new CredentialCipher(config.keyId, key, additionalKeys);
-      } finally {
-        for (const entry of additionalKeys) entry.key.fill(0);
-      }
+      return loadCredentialCipher(config, (reference) =>
+        this.configuration.secret(reference),
+      );
     } catch {
       throw new ServiceUnavailableException({
         reason: 'connection-key-unavailable',
       });
-    } finally {
-      key?.fill(0);
     }
   }
 
@@ -548,7 +530,7 @@ export class GoogleConnectionService
   async activateReplacement(
     session: SessionResponse,
     id: string,
-    input: z.infer<typeof googleCredentialActivationSchema>,
+    input: z.infer<typeof googleReplacementActivationSchema>,
     correlation: string,
   ) {
     const actor = this.candidateActor(session, id);
@@ -579,7 +561,7 @@ export class GoogleConnectionService
         customerId: null,
         generation: 0,
       });
-      const envelope = cipher.forKey(current.keyId).seal(credential, {
+      const envelope = cipher.forKey(input.keyId).seal(credential, {
         recordId: id,
         customerId: input.customerId,
         generation: input.generation + 1,

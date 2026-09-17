@@ -1,5 +1,6 @@
 export {
   CredentialCipher,
+  loadCredentialCipher,
   CredentialError,
   validateServiceAccount,
 } from './lib/credential';

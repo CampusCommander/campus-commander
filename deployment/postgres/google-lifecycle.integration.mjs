@@ -384,9 +384,10 @@ export async function qualifyGoogleLifecycle({
         actor,
       ])
     ).rows[0].result;
+    assert.equal(health.connectionState, 'disconnected');
     assert.ok(
       health.capabilities.every(
-        (value) => value.failure === 'credential-rejected',
+        (value) => value.failure !== 'credential-rejected',
       ),
     );
     assert.equal(

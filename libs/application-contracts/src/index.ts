@@ -12,6 +12,7 @@ export {
   googleCredentialTargetSchema,
   googleCredentialReplacementSchema,
   googleCredentialActivationSchema,
+  googleReplacementActivationSchema,
   googleKeyRotationSchema,
   googleCredentialManagementSchema,
 } from './lib/google-connection';

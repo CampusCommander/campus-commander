@@ -143,7 +143,15 @@
     Last checks describe observed access. They do not guarantee continued Google
     authorization.
   </p>
-  @if (google.pending() || google.running()) {
+  @if (health.connectionState === 'disconnected') {
+  <p role="status">
+    Background Google access is disconnected locally. These observations
+    describe earlier checks.
+  </p>
+  <a mat-stroked-button routerLink="/google-connection"
+    >Manage Google credentials</a
+  >
+  } @if (google.pending() || google.running()) {
   <p role="status">
     A Google check is running. Refresh Google status to retrieve its saved
     result.
@@ -155,7 +163,7 @@
   </p>
   } @if (google.retrySeconds() > 0) {
   <p>Another check is available in {{ google.retrySeconds() }} seconds.</p>
-  } @if (!google.canCheck()) {
+  } @if (!google.canCheck() && health.connectionState !== 'disconnected') {
   <p>
     Your account can inspect Google status. A current connection diagnostic
     grant is required to run checks.

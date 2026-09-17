@@ -56,7 +56,12 @@ prototype.request = async function (options) {
       id: fault === 'wrong-customer' ? 'C9999999' : 'C0123456',
       customerDomain: 'fixture.invalid',
     };
-  else if (url.pathname === '/admin/directory/v1/customer/C0123456/domains') {
+  else if (
+    [
+      '/admin/directory/v1/customer/C0123456/domains',
+      '/admin/directory/v1/customer/C9999999/domains',
+    ].includes(url.pathname)
+  ) {
     if (fault === 'domain-privilege-denied')
       throw {
         response: {

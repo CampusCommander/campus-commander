@@ -11,6 +11,7 @@ import {
   googleCredentialImportSchema,
   googleCredentialReplacementSchema,
   googleCredentialActivationSchema,
+  googleReplacementActivationSchema,
   googleKeyRotationSchema,
   googleHealthCheckSchema,
   googleCustomerIdSchema,
@@ -184,7 +185,7 @@ export class GoogleConnectionController {
     return this.connection.activateReplacement(
       request.session,
       z.uuid().parse(id),
-      googleCredentialActivationSchema.parse(body),
+      googleReplacementActivationSchema.parse(body),
       request.correlationId,
     );
   }

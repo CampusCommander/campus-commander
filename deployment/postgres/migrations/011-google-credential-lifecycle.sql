@@ -193,10 +193,10 @@ BEGIN
       VALUES(gen_random_uuid(),p_actor,'connection-stage-expired',p_correlation,candidate_id,
         jsonb_build_object('kind','district','customerId',p_customer));
   END LOOP;
-  IF NOT p_active THEN
+  IF p_event IN ('credential-key-rotated','connection-revoked') THEN
     INSERT INTO cc.google_capability_health(customer_id,generation,capability,scope_verified,failure,checked_at,last_succeeded_at,correlation_id)
-      SELECT p_customer,next_generation,capability,false,'credential-rejected',clock_timestamp(),p_observed_at,p_correlation
-        FROM unnest(ARRAY['customer-identity','domain-observations']) AS v(capability);
+      SELECT customer_id,next_generation,capability,scope_verified,failure,checked_at,last_succeeded_at,correlation_id
+        FROM cc.google_capability_health WHERE customer_id=p_customer AND generation=p_generation;
   END IF;
   INSERT INTO cc.security_events(id,actor_id,event,correlation_id,target_id,resource_scope,detail)
     VALUES(gen_random_uuid(),p_actor,p_event,p_correlation,p_id,
@@ -214,12 +214,12 @@ BEGIN
   connection:=cc.google_bound_generation(p_customer,p_generation);
   IF candidate.status<>'ready' OR candidate.expected_customer IS DISTINCT FROM p_customer OR
     candidate.expected_generation IS DISTINCT FROM p_generation OR candidate.observation->>'customerId' IS DISTINCT FROM p_customer OR
-    p_envelope IS NULL OR p_envelope->>'keyId' IS DISTINCT FROM connection.encryption_key_id THEN
+    p_envelope IS NULL OR NOT cc.google_envelope_valid(p_envelope) THEN
     RAISE EXCEPTION 'The replacement review changed.' USING DETAIL='candidate-changed';
   END IF;
   UPDATE cc.google_credential_candidates SET status='consumed',envelope=NULL WHERE id=p_id;
   RETURN cc.advance_google_credential(p_actor,p_customer,p_generation,p_id,p_envelope,candidate.client_id,
-    candidate.delegated_subject,candidate.observation,candidate.observed_at,connection.encryption_key_id,true,'connection-replaced',p_correlation);
+    candidate.delegated_subject,candidate.observation,candidate.observed_at,p_envelope->>'keyId',true,'connection-replaced',p_correlation);
 END;
 $$;
 
@@ -241,10 +241,6 @@ BEGIN
     INSERT INTO cc.google_access_tokens(singleton,credential_id,generation,customer_id,failure,retry_at)
       VALUES(true,p_id,p_generation+1,p_customer,prior_token.failure,prior_token.retry_at);
   END IF;
-  -- Rotation does not requalify Google permissions. Preserve the original capability evidence.
-  INSERT INTO cc.google_capability_health(customer_id,generation,capability,scope_verified,failure,checked_at,last_succeeded_at,correlation_id)
-    SELECT customer_id,p_generation+1,capability,scope_verified,failure,checked_at,last_succeeded_at,correlation_id
-      FROM cc.google_capability_health WHERE customer_id=p_customer AND generation=p_generation;
   RETURN result;
 END;
 $$;
@@ -295,4 +291,21 @@ BEGIN
     VALUES(gen_random_uuid(),CASE WHEN p_failure IS NULL THEN 'connection-token-renewed' ELSE 'connection-token-failed' END,
       p_correlation,connection.credential_id,jsonb_build_object('kind','district','customerId',p_customer),COALESCE(p_failure,'token-renewed'));
 END;
+$$;
+
+CREATE OR REPLACE FUNCTION cc.google_health_state() RETURNS jsonb
+LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+  SELECT jsonb_build_object('customerId',c.customer_id,'generation',c.generation,'observedAt',clock_timestamp(),
+    'connectionState',CASE WHEN c.active THEN 'active' ELSE 'disconnected' END,'backgroundFailure',t.failure,
+    'check',CASE WHEN h.id IS NULL THEN NULL ELSE jsonb_build_object('id',h.id,'capabilities',h.capabilities,
+      'expiresAt',h.expires_at,'finishedAt',h.finished_at,'retryAt',h.retry_at) END,
+    'capabilities',(SELECT jsonb_agg(jsonb_build_object('capability',v.capability,
+      'scopeVerified',COALESCE(r.scope_verified,true),'failure',r.failure,
+      'checkedAt',COALESCE(r.checked_at,c.observed_at),'lastSucceededAt',COALESCE(r.last_succeeded_at,c.observed_at),
+      'correlationId',r.correlation_id) ORDER BY v.capability)
+      FROM unnest(ARRAY['customer-identity','domain-observations']) AS v(capability)
+      LEFT JOIN cc.google_capability_health r ON r.customer_id=c.customer_id AND r.generation=c.generation AND r.capability=v.capability))
+    FROM cc.google_connection c
+    LEFT JOIN cc.google_health_checks h ON h.customer_id=c.customer_id AND h.generation=c.generation
+    LEFT JOIN cc.google_access_tokens t ON t.customer_id=c.customer_id AND t.generation=c.generation;
 $$;

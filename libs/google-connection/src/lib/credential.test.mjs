@@ -3,6 +3,7 @@ import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import {
   CredentialCipher,
+  loadCredentialCipher,
   CredentialError,
   validateServiceAccount,
 } from './credential.ts';
@@ -288,4 +289,36 @@ test('deployed key versions decrypt explicitly and preserve envelope authenticat
   assert.deepEqual(JSON.parse(JSON.stringify(ring)), { keyId: 'key-1' });
   nextKey.fill(0);
   assert.deepEqual(ring.open(next, nextContext), credential);
+});
+
+test('key loading clears source buffers and isolates unavailable additional keys', () => {
+  const source = Buffer.from(key);
+  const invalid = Buffer.from('invalid');
+  const config = {
+    keyId: 'key-1',
+    encryptionKeySecretRef: 'primary',
+    additionalKeys: [
+      { keyId: 'key-2', encryptionKeySecretRef: 'missing' },
+      { keyId: 'key-3', encryptionKeySecretRef: 'invalid' },
+    ],
+  };
+  const loaded = loadCredentialCipher(config, (reference) => {
+    if (reference === 'primary') return source;
+    if (reference === 'invalid') return invalid;
+    throw new Error('private provider detail');
+  });
+  assert.ok(source.every((byte) => byte === 0));
+  assert.ok(invalid.every((byte) => byte === 0));
+  assert.deepEqual(
+    loaded.open(cipher.seal(credential, context), context),
+    credential,
+  );
+  assert.throws(() => loaded.forKey('key-2'), { code: 'key-unavailable' });
+  assert.throws(
+    () =>
+      loadCredentialCipher(config, () => {
+        throw new Error('private provider detail');
+      }),
+    { code: 'key-unavailable', message: 'key-unavailable' },
+  );
 });

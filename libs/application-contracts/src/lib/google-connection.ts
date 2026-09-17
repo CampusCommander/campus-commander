@@ -113,6 +113,10 @@ export const googleCredentialActivationSchema =
   googleCredentialTargetSchema.extend({
     confirmed: z.literal(true),
   });
+export const googleReplacementActivationSchema =
+  googleCredentialActivationSchema.extend({
+    keyId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
+  });
 export const googleKeyRotationSchema = googleCredentialActivationSchema.extend({
   keyId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
 });
