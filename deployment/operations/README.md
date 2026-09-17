@@ -5,6 +5,9 @@ It never starts services. Successful restore returns `verified-services-disabled
 The operator must prevent service startup while that marker exists.
 Profile startup commands do not enforce this marker automatically.
 
+For Phase 3, also use the [recovery and erasure checklist](PHASE-3.md).
+It covers customer state, access recovery, credential review, interrupted restore, and retained external material.
+
 ## Inventory and consistency
 
 | Component                        | Backup and recovery                                                      |
@@ -109,9 +112,34 @@ Create another empty target for retry. Preserve failed targets until the operato
 
 Successful restore verifies table inventories and every ready artifact checksum.
 It restores application grants and revokes restored bootstrap credentials.
+It revokes pending invitations and removes their source token hashes and browser bindings.
+Bootstrap revocation, invitation revocation, and invitation audit events commit together. An audit failure leaves the target disabled.
+Accepted and other terminal invitations retain their state. The report records revocation counts without invitation secrets.
 It writes `restore-report.json` and `target-configuration.json`. It removes temporary plaintext database dumps after success.
 A failed restore can retain plaintext dumps inside the private, disabled target directory.
 Protect and explicitly erase that failed target through district procedures after investigation.
+
+For Phase 3, restore also expires pending Google candidates and school reviews and discards provider token caches and leases.
+An active Google connection receives a database gate that blocks background reads until operator revalidation succeeds.
+Preserve its committed encryption key through independent recovery. The encrypted backup key does not decrypt Google credentials.
+If `accessRecovery.googleConnection.status` is `revalidation-required`, use the same target operator input:
+
+```sh
+node deployment/operations/cli.mjs revalidate-google /protected/restore-operator.json
+```
+
+Keep the target configuration unchanged. Recover the recorded key into its configured primary or additional secret mount.
+Use only `role` and `passwordSecretRef` in `applicationCredentials` for this command.
+Keep application services and Kestra stopped. The command checks both databases for other connections.
+The command verifies the recorded key, credential identity, and current Google customer with the shared Google verifier.
+A key, provider, or audit failure leaves the database gate closed. Resolve the reported prerequisite and repeat the command.
+Success writes `google-revalidation.json` with the restore identity, generation, and verification time. It retains `RESTORE_DISABLED`.
+A repeated command returns the original receipt as `already-revalidated`. It does not perform a new Google check.
+If receipt writing fails after verification commits, the database retains the verified gate and audit event.
+Keep services stopped and preserve `RESTORE_DISABLED`. Correct the target directory problem and repeat the same command.
+The command reconstructs the receipt from the committed verification. Do not change the saved target configuration to bypass a failure.
+After release, refresh school references before using effective school scope. Restore preserves old references only as historical observations.
+A `not-required` restore report needs no Google revalidation command. Disconnected Google connections remain disconnected.
 
 Before release, inspect the report and verify expected application and Kestra fixture values.
 Read restored artifacts through the storage adapter and verify Kestra internal execution files.
@@ -140,6 +168,7 @@ The parent fault harness can compare these inventories with its fixture reads.
 ```sh
 npm exec nx run deployment:operations-test
 npm exec nx run deployment:operations-integration
+npm exec nx run deployment:operations-phase3-integration
 ```
 
 The integration fixture uses the qualified PostgreSQL image and disposable synthetic databases and files.
@@ -147,23 +176,36 @@ It checks encrypted backup, both database restores, artifact reads, Kestra fixtu
 It also checks missing source storage, busy databases, nonempty targets, and failure before a restore success report.
 It does not establish actual Kestra engine recovery, district shared-storage recovery, or a complete profile restart.
 
+The Phase 3 target also compares restored customer, credential, settings, school, grant, principal, and reference-history hashes.
+It checks the database gate and independent credential key through the operator CLI with synthetic Google transport responses.
+It saves a sanitized report in `dist/phase-3-recovery/operations.json`.
+This target does not qualify browser sessions, separate networks, fresh Redis, or live Google privileges.
+
 ## Failure reasons
 
 A failed command exits with status 1 and prints a fixed `Reason: <CODE>.` classification.
 The classification never prints the underlying exception message, SQL, connection material, or private paths.
 Unknown failures use `UNCLASSIFIED_FAILURE`.
 
-| Reason                                                     | Operator action                                                                         |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `QUIESCENCE_REQUIRED`                                      | Stop writers and provide a recent operator record.                                      |
-| `DATABASE_CONNECTIONS_ACTIVE`                              | Stop other database clients before another backup attempt.                              |
-| `ARTIFACT_ATTEMPTS_ACTIVE`                                 | Resolve active artifact attempts before backup.                                         |
-| `STORAGE_CHANGED` or `DATABASE_CHANGED`                    | Identify the remaining writer and repeat the cold backup procedure.                     |
-| `POSTGRES_VERSION_MISMATCH` or `POSTGRES_TOOL_UNAVAILABLE` | Install the required PostgreSQL tools and verify their path.                            |
-| `POSTGRES_TOOL_FAILED`                                     | Inspect the protected operator environment and database prerequisites.                  |
-| `FILESYSTEM_FULL` or `FILESYSTEM_ACCESS_DENIED`            | Correct storage capacity or operator permissions.                                       |
-| `BACKUP_INCOMPLETE` or `BACKUP_AUTHENTICATION_FAILED`      | Verify the selected backup and its independently recovered key.                         |
-| `RESTORE_DATABASE_NOT_EMPTY`                               | Provision another empty restore target.                                                 |
-| `UNCLASSIFIED_FAILURE`                                     | Retain protected inputs and investigate the failed command in the operator environment. |
+| Reason                                                     | Operator action                                                                                 |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `QUIESCENCE_REQUIRED`                                      | Stop writers and provide a recent operator record.                                              |
+| `DATABASE_CONNECTIONS_ACTIVE`                              | Stop other database clients before another backup attempt.                                      |
+| `ARTIFACT_ATTEMPTS_ACTIVE`                                 | Resolve active artifact attempts before backup.                                                 |
+| `STORAGE_CHANGED` or `DATABASE_CHANGED`                    | Identify the remaining writer and repeat the cold backup procedure.                             |
+| `POSTGRES_VERSION_MISMATCH` or `POSTGRES_TOOL_UNAVAILABLE` | Install the required PostgreSQL tools and verify their path.                                    |
+| `POSTGRES_TOOL_FAILED`                                     | Inspect the protected operator environment and database prerequisites.                          |
+| `FILESYSTEM_FULL` or `FILESYSTEM_ACCESS_DENIED`            | Correct storage capacity or operator permissions.                                               |
+| `BACKUP_INCOMPLETE` or `BACKUP_AUTHENTICATION_FAILED`      | Verify the selected backup and its independently recovered key.                                 |
+| `RESTORE_DATABASE_NOT_EMPTY`                               | Provision another empty restore target.                                                         |
+| `RESTORE_EVIDENCE_INVALID` or `RESTORE_TARGET_CHANGED`     | Use the saved isolated target configuration and migration credentials.                          |
+| `RESTORE_GOOGLE_KEY_MISSING`                               | Recover the recorded credential key at its configured secret mount.                             |
+| `RESTORE_GOOGLE_KEY_INVALID`                               | Verify the recovered credential key. Do not substitute the backup encryption key.               |
+| `RESTORE_GOOGLE_STATE_CHANGED`                             | Keep the target disabled and investigate the changed credential generation.                     |
+| `RESTORE_GOOGLE_CUSTOMER_MISMATCH`                         | Keep the target disabled and verify the credential against the confirmed customer.              |
+| `GOOGLE_DELEGATION_DENIED` or `GOOGLE_PERMISSION_DENIED`   | Correct delegation or subject privileges before another verification attempt.                   |
+| `GOOGLE_CREDENTIAL_REJECTED` or `GOOGLE_SCOPE_MISMATCH`    | Review the credential and approved capability scopes through the credential recovery procedure. |
+| `GOOGLE_NETWORK_FAILURE` or `GOOGLE_UNAVAILABLE`           | Restore provider connectivity before another verification attempt.                              |
+| `UNCLASSIFIED_FAILURE`                                     | Retain protected inputs and investigate the failed command in the operator environment.         |
 
 A failure code identifies a category. It does not authorize startup or reuse of a partial restore target.

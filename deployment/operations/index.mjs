@@ -30,6 +30,7 @@ import { connectDatabase, migrate } from '../postgres/index.mjs';
 import { normalizePostgresSecret } from '../postgres/secrets.mjs';
 import { secretPath } from '../redis/runtime.mjs';
 import { noOtherConnections } from './quiescence.mjs';
+import { invalidateRestoredAccess } from './restore-access.mjs';
 
 const databaseIdentity = (service) => {
   const url = new URL(service.endpoint.url);
@@ -731,9 +732,7 @@ export async function restoreFoundation({
       'artifacts',
     );
     await verifyArtifacts(application, restoredArtifacts.files);
-    await application.query(
-      'UPDATE cc.bootstrap_access SET revoked_at=clock_timestamp()',
-    );
+    const accessRecovery = await invalidateRestoredAccess(application);
     await writeFile(
       join(targetDirectory, 'target-configuration.json'),
       JSON.stringify(targetConfig, null, 2) + '\n',
@@ -748,6 +747,7 @@ export async function restoreFoundation({
         policy: 'discard-cache',
         releaseRequiresFreshRedis: true,
       },
+      accessRecovery,
       backupCreatedAt: manifest.createdAt,
       applicationTables: manifest.applicationTables,
       kestraTables: manifest.kestraTables,

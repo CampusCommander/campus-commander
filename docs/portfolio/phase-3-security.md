@@ -330,3 +330,76 @@ It counts 37 interrupted browser requests outside JSON body coverage. The source
 The packaged route fixture passed all 100 requests across 32 routes. The school workflow also passed.
 These results qualify the scanner and listed rollback probes at `86b91c1`. They do not complete CC-55 or Phase 3 release acceptance.
 Failed-run review, release archives, remaining mutation and resource-denial reconciliation, isolated recovery, and owner acceptance remain open.
+
+## Browser observation recurrence
+
+[Run 35188533234](https://github.com/CampusCommander/campus-commander/actions/runs/35188533234) failed the packaged Phase 3 browser check at `c7932e2`.
+The [retained failure](../../deployment/evidence/CC-55-c793-browser-observation-failure.json) records one header failure and one body failure with category `target-closed`.
+The first rejected screenshot precedes the access-revocation popup steps. This result does not establish which page caused the failures.
+Two local Chromium stress checks each passed 100 repetitions of guarded page or context closure during responses.
+Those checks did not reproduce the hosted failure. The cause remains unresolved.
+
+Failure diagnostics now include numeric context and page identities, resource categories, and closing or closed states.
+They exclude URLs, response contents, and underlying error messages. Observation failures still reject evidence.
+The diagnostic regression and existing scanner checks pass locally.
+[Source run 35189602731](https://github.com/CampusCommander/campus-commander/actions/runs/35189602731) passed at `898e447` with the new diagnostics.
+That run did not reproduce the failure. It does not establish a correction for the unresolved packaged-browser failure.
+
+## Completed asset response correction
+
+[Run 35190962752](https://github.com/CampusCommander/campus-commander/actions/runs/35190962752) failed packaged authorization at `2978b08`.
+The [retained diagnostics](../../deployment/evidence/CC-55-2978-browser-observation-failure.json) identify a font response after its page closed.
+The page had entered guarded closure. Header observation passed, but the later body stage queried the disposed page.
+The scanner never needed that font body. It now filters token-bearing route paths before retrieving a response object.
+It still observes every response header for cookies. Required token-body reads and their failure checks remain unchanged.
+
+A regression reproduced the exact closed-page font failure before this correction.
+After the correction, all 15 API and scanner tests pass. The regression also verifies that the font response cookie remains protected.
+Local lint passes. Hosted qualification remains pending.
+This correction does not establish a fix for earlier header-observation failures or other browser failures.
+
+## Active request closure correction
+
+[Run 35192138281](https://github.com/CampusCommander/campus-commander/actions/runs/35192138281) failed packaged authorization at `9a5b046`.
+The [retained diagnostics](../../deployment/evidence/CC-55-9a5-browser-observation-failure.json) identify a fetch response header after guarded page closure.
+The previous guard drained registered observations but did not wait for requests whose responses had not arrived.
+A local Chromium stress test reproduced header failures in four of 100 font-request closures.
+
+The guard now blocks new requests, waits for active requests belonging to the closing resource, and then drains observations.
+The active-request wait has a five-second limit. A timeout still closes the resource and rejects qualification.
+Browser closure drains each child context before browser disposal. It waits for every child cleanup even when one fails.
+The scanner still rejects header and required token-body observation failures.
+
+A deterministic regression failed before the correction and passes afterward.
+The same Chromium stress test now reports zero failures across 100 closures.
+Timeout, unrelated-page isolation, and browser-child cleanup checks also pass locally.
+Hosted qualification of this correction remains pending. Other browser failures retain their existing evidence and status.
+
+## Active-request timeout evidence
+
+[Run 35193287230](https://github.com/CampusCommander/campus-commander/actions/runs/35193287230) failed packaged Phase 2 authorization at `4225f8d`.
+The new active-request wait reached its five-second limit. Its observer arrays were empty.
+The [retained failure](../../deployment/evidence/CC-55-4225-request-wait-failure.json) does not identify the unfinished request.
+Phase 3 authorization and Phase 2 all-Docker compatibility did not run. Independent Phase 3 admission restore passed again.
+This result does not qualify the active-request closure correction.
+
+The diagnostic extension now records a bounded active-request inventory when observation or closure fails.
+It includes allowlisted route and resource categories, numeric page and context IDs, closure flags, and successful-header observation state.
+It records at most 32 requests and the total count. It excludes raw URLs, bodies, cookies, and underlying error messages.
+The timeout regression verifies exclusion of a sensitive request URL. It preserves the existing timeout and failure behavior.
+[Run 35194294259](https://github.com/CampusCommander/campus-commander/actions/runs/35194294259) reproduced the timeout at `c71b38a`.
+The [retained diagnostics](../../deployment/evidence/CC-55-c71-request-wait-failure.json) identify two unfinished fetch requests with successful header observations.
+Neither request used a required token-body route. The observer arrays remained empty.
+
+The correction releases non-token requests after successful cookie-header registration.
+Required token-body routes still wait for request completion. Closure still drains observers and rejects observation failures.
+A regression verifies that unfinished non-token bodies permit closure while unfinished token bodies reject closure.
+Both cases retain protection for the response cookie. A native Chromium stress check passed 100 unfinished-body closures.
+The local API and scanner suite passed all 20 checks. Lint passed.
+[Source run 35207540591](https://github.com/CampusCommander/campus-commander/actions/runs/35207540591) passed at `037c8c4`.
+The [retained scanner report](../../deployment/evidence/CC-55-observed-header-source.json) covers 78 files, 24 screenshots, and 18 secret categories.
+It records 35 incomplete requests outside JSON token-body coverage.
+[Full run 35207924636](https://github.com/CampusCommander/campus-commander/actions/runs/35207924636) passed all eight jobs at `49ebf07`.
+The [packaged evidence](../../deployment/evidence/CC-55-observed-header-packaged.json) retains the exact application images and scanner inventory.
+Packaged Phase 2 and Phase 3 authorization, Phase 2 all-Docker compatibility, and expanded Phase 3 restore passed.
+This result qualifies the correction for these fixtures. Complete release evidence reconciliation and operator acceptance remain open.

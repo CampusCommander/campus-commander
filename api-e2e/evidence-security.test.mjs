@@ -216,11 +216,15 @@ test('browser observation captures transient cookies and completed JSON bodies',
     text: async () => JSON.stringify({ token: secret }),
   };
   context.emit('response', response);
-  context.emit('requestfinished', { response: async () => response });
+  context.emit('requestfinished', {
+    url: response.url,
+    response: async () => response,
+  });
   await security.observePendingResponses();
   for (const value of ['transient-cookie-secret', secret])
     assert.throws(() => security.assertSafe(value, 'logs'), /protected/);
   context.emit('requestfinished', {
+    url: () => 'https://fixture.invalid/api/auth/session',
     response: async () => ({
       url: () => 'https://fixture.invalid/api/auth/session',
       status: () => 200,
@@ -301,6 +305,7 @@ test('browser response registration fails within its time limit for an unfinishe
   const context = new EventEmitter();
   await security.newContext({ newContext: async () => context }, {});
   context.emit('requestfinished', {
+    url: () => 'https://fixture.invalid/api/auth/session',
     response: async () => ({
       url: () => 'https://fixture.invalid/api/auth/session',
       status: () => 200,
@@ -368,7 +373,10 @@ test('navigation response bodies stay outside token observation while their cook
     },
   };
   context.emit('response', response);
-  context.emit('requestfinished', { response: async () => response });
+  context.emit('requestfinished', {
+    url: response.url,
+    response: async () => response,
+  });
   await security.observePendingResponses();
   assert.equal(bodyReads, 0);
   assert.throws(
@@ -390,6 +398,7 @@ test('popup closure preserves a completed token response before disposing of its
     };
     const responseReady = Promise.withResolvers();
     context.emit('requestfinished', {
+      url: () => 'https://fixture.invalid/api/auth/session',
       response: async () => {
         await responseReady.promise;
         if (closed) throw new Error('Target page has been closed');
@@ -419,5 +428,245 @@ test('popup closure preserves a completed token response before disposing of its
           JSON.parse(error.observations).failures[0].reason === 'target-closed',
       );
     }
+  }
+});
+
+test('failed response diagnostics record bounded browser lifecycle fields without response details', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  const page = { isClosed: () => true, close: async () => undefined };
+  await security.close(page);
+  const response = {
+    url: () => `https://fixture.invalid/${secret}`,
+    status: () => 200,
+    request: () => ({
+      frame: () => ({ page: () => page }),
+      resourceType: () => 'font',
+    }),
+    headersArray: async () => {
+      throw new Error(`Target closed: ${secret}`);
+    },
+  };
+  context.emit('response', response);
+  await assert.rejects(security.observePendingResponses(), (error) => {
+    assert.equal(error.observations.includes(secret), false);
+    assert.deepEqual(JSON.parse(error.observations).failures[0], {
+      stage: 'headers',
+      route: 'other',
+      status: 200,
+      contextId: 1,
+      pageId: 1,
+      resourceType: 'font',
+      pageClosing: true,
+      pageClosed: true,
+      contextClosing: false,
+      contextClosed: false,
+      reason: 'target-closed',
+    });
+    return true;
+  });
+});
+
+test('completed assets retain cookies without querying a disposed page for unused response bodies', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  const page = { isClosed: () => true, close: async () => undefined };
+  const request = {
+    url: () => 'https://fixture.invalid/font.woff2',
+    frame: () => ({ page: () => page }),
+    resourceType: () => 'font',
+    response: async () => {
+      throw new Error('Target page has been closed');
+    },
+  };
+  context.emit('response', {
+    url: request.url,
+    status: () => 200,
+    request: () => request,
+    headersArray: async () => [
+      { name: 'Set-Cookie', value: 'asset=asset-transient-cookie; Secure' },
+    ],
+  });
+  await security.close(page);
+  context.emit('requestfinished', request);
+  await security.observePendingResponses();
+  assert.throws(
+    () => security.assertSafe('asset-transient-cookie', 'report'),
+    /protected/,
+  );
+});
+
+test('guarded closure waits for an active asset response before disposing of the page', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  let closed = false;
+  const page = {
+    isClosed: () => closed,
+    close: async () => {
+      closed = true;
+    },
+  };
+  const request = {
+    url: () => 'https://fixture.invalid/font.woff2',
+    frame: () => ({ page: () => page }),
+    resourceType: () => 'font',
+  };
+  context.emit('request', request);
+  const closing = security.close(page);
+  await new Promise((done) => setImmediate(done));
+  const closedBeforeResponse = closed;
+  context.emit('response', {
+    url: request.url,
+    status: () => 200,
+    request: () => request,
+    headersArray: async () => {
+      if (closed) throw new Error('Target page has been closed');
+      return [
+        { name: 'Set-Cookie', value: 'asset=pending-font-cookie; Secure' },
+      ];
+    },
+  });
+  context.emit('requestfinished', request);
+  await closing;
+  assert.equal(closedBeforeResponse, false);
+  assert.equal(closed, true);
+  await security.observePendingResponses();
+  assert.throws(
+    () => security.assertSafe('pending-font-cookie', 'report'),
+    /protected/,
+  );
+});
+
+test('guarded closure bounds active requests and closes on timeout', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  let closed = false;
+  context.close = async () => {
+    closed = true;
+    context.emit('close');
+  };
+  context.emit('request', {
+    url: () => `https://fixture.invalid/${secret}`,
+    resourceType: () => 'fetch',
+    frame: () => {
+      throw new Error('Worker request');
+    },
+  });
+  const closing = assert.rejects(security.close(context), (error) => {
+    assert.match(
+      error.message,
+      /Browser requests did not finish before closure/,
+    );
+    assert.equal(error.observations.includes(secret), false);
+    const observations = JSON.parse(error.observations);
+    assert.equal(observations.activeRequestCount, 1);
+    assert.equal(observations.activeRequests[0].route, 'other');
+    assert.equal(observations.activeRequests[0].resourceType, 'fetch');
+    assert.equal(observations.activeRequests[0].headersObserved, false);
+    return true;
+  });
+  await Promise.resolve();
+  assert.equal(closed, false);
+  t.mock.timers.tick(5000);
+  await closing;
+  assert.equal(closed, true);
+});
+
+test('page closure blocks new requests without waiting for another page', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  const otherPage = {};
+  const request = { frame: () => ({ page: () => otherPage }) };
+  context.emit('request', request);
+  let blocked = false,
+    closed = false;
+  await security.close({
+    route: async (pattern, handler) => {
+      assert.equal(pattern, '**/*');
+      await handler({
+        abort: async () => {
+          blocked = true;
+        },
+      });
+    },
+    close: async () => {
+      closed = true;
+    },
+  });
+  assert.equal(blocked, true);
+  assert.equal(closed, true);
+  context.emit('requestfailed', request);
+});
+
+test('browser closure drains child contexts before browser disposal', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  let contextClosed = false,
+    browserClosed = false;
+  context.close = async () => {
+    contextClosed = true;
+    context.emit('close');
+  };
+  const request = { frame: () => ({ page: () => ({}) }) };
+  context.emit('request', request);
+  const closing = security.close({
+    contexts: () => [context],
+    close: async () => {
+      browserClosed = true;
+    },
+  });
+  await new Promise((done) => setImmediate(done));
+  assert.equal(contextClosed, false);
+  assert.equal(browserClosed, false);
+  context.emit('requestfailed', request);
+  await closing;
+  assert.equal(contextClosed, true);
+  assert.equal(browserClosed, true);
+});
+
+test('closure waits for token bodies but not unfinished non-token bodies after cookie registration', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const tokenBody of [false, true]) {
+    const security = new EvidenceSecurity();
+    const context = new EventEmitter();
+    await security.newContext({ newContext: async () => context }, {});
+    context.close = async () => context.emit('close');
+    const request = {
+      url: () =>
+        `https://fixture.invalid/${tokenBody ? 'api/auth/session' : 'stream'}`,
+      frame: () => {
+        throw new Error('Worker request');
+      },
+    };
+    context.emit('request', request);
+    context.emit('response', {
+      url: request.url,
+      status: () => 200,
+      request: () => request,
+      headersArray: async () => [
+        { name: 'Set-Cookie', value: 'stream=stream-response-cookie; Secure' },
+      ],
+    });
+    const closing = security.close(context);
+    const result = tokenBody
+      ? assert.rejects(
+          closing,
+          /Browser requests did not finish before closure/,
+        )
+      : assert.doesNotReject(closing);
+    await new Promise((done) => setImmediate(done));
+    t.mock.timers.tick(5000);
+    await result;
+    assert.throws(
+      () => security.assertSafe('stream-response-cookie', 'report'),
+      /protected/,
+    );
   }
 });

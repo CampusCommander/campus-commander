@@ -15,6 +15,11 @@ const secretFields = new Set([
   'refresh_token',
   'id_token',
 ]);
+const tokenBodyPaths = new Set([
+  '/api/auth/session',
+  '/pair',
+  '/api/auth/invitations',
+]);
 
 export function captureEvidenceOutput(command, args) {
   const result = spawnSync(command, args, {
@@ -36,9 +41,82 @@ export class EvidenceSecurity {
   #incompleteResponses = 0;
   #failureStages = { headers: 0, body: 0 };
   #failedResponses = [];
+  #contextSequence = 0;
+  #pageSequence = 0;
+  #pageIds = new WeakMap();
+  #closing = new WeakSet();
+  #requests = new Map();
 
   async newContext(browser, options) {
     const context = await browser.newContext(options);
+    const contextId = ++this.#contextSequence;
+    context.on('page', (page) => {
+      this.#pageIds.set(page, ++this.#pageSequence);
+    });
+    let contextClosed = false;
+    context.on('close', () => {
+      contextClosed = true;
+      for (const [request, active] of this.#requests)
+        if (active.context === context) this.#finishRequest(request);
+    });
+    context.on('request', (request) => {
+      let page;
+      try {
+        page = request.frame().page();
+      } catch {
+        // Worker requests belong to the context.
+      }
+      const finished = Promise.withResolvers();
+      const active = {
+        context,
+        page,
+        finished,
+        headersObserved: false,
+        describe: () => ({
+          ...stateFor(
+            { url: () => request.url?.() ?? 'http://fixture.invalid/' },
+            'request',
+          ),
+          ...lifecycle(request),
+          headersObserved: active.headersObserved,
+        }),
+      };
+      this.#requests.set(request, active);
+    });
+    const lifecycle = (request) => {
+      let page;
+      try {
+        page = request?.frame?.().page();
+      } catch {
+        // Worker requests do not have a page.
+      }
+      if (page && !this.#pageIds.has(page))
+        this.#pageIds.set(page, ++this.#pageSequence);
+      const type = request?.resourceType?.();
+      return {
+        contextId,
+        pageId: page ? this.#pageIds.get(page) : null,
+        resourceType: [
+          'document',
+          'stylesheet',
+          'image',
+          'media',
+          'font',
+          'script',
+          'xhr',
+          'fetch',
+          'eventsource',
+          'websocket',
+          'manifest',
+        ].includes(type)
+          ? type
+          : 'other',
+        pageClosing: page ? this.#closing.has(page) : false,
+        pageClosed: page?.isClosed() ?? null,
+        contextClosing: this.#closing.has(context),
+        contextClosed,
+      };
+    };
     const stateFor = (response, stage) => {
       const paths = new Set([
         '/pair',
@@ -60,13 +138,14 @@ export class EvidenceSecurity {
         status: response.status?.() ?? 0,
       };
     };
-    const observe = (state, operation) => {
+    const observe = (state, operation, request) => {
       const observation = operation().catch((error) => {
         this.#responseFailures++;
         this.#failureStages[state.stage]++;
         if (this.#failedResponses.length < 32)
           this.#failedResponses.push({
             ...state,
+            ...lifecycle(request),
             reason: /closed/i.test(error.message)
               ? 'target-closed'
               : /redirect/i.test(error.message)
@@ -82,47 +161,113 @@ export class EvidenceSecurity {
       void observation.then(() => this.#pending.delete(observation));
     };
     context.on('response', (response) => {
-      observe(stateFor(response, 'headers'), async () => {
-        const headers = await response.headersArray();
-        this.observeResponse(
-          {
-            'set-cookie': headers
-              .filter(({ name }) => name.toLowerCase() === 'set-cookie')
-              .map(({ value }) => value),
-          },
-          '',
-        );
-      });
+      const request = response.request?.();
+      const active = this.#requests.get(request);
+      const state = stateFor(response, 'headers');
+      observe(
+        state,
+        async () => {
+          const headers = await response.headersArray();
+          this.observeResponse(
+            {
+              'set-cookie': headers
+                .filter(({ name }) => name.toLowerCase() === 'set-cookie')
+                .map(({ value }) => value),
+            },
+            '',
+          );
+          if (active) {
+            active.headersObserved = true;
+            if (!tokenBodyPaths.has(state.route)) this.#finishRequest(request);
+          }
+        },
+        response.request?.(),
+      );
     });
     context.on('requestfinished', (request) => {
+      this.#finishRequest(request);
+      const path = new URL(request.url()).pathname;
+      if (!tokenBodyPaths.has(path)) return;
       const state = { stage: 'body', route: 'other', status: 0 };
-      observe(state, async () => {
-        const response = await request.response();
-        if (response) Object.assign(state, stateFor(response, 'body'));
-        const tokenResponse =
-          (state.route === '/api/auth/session' && state.status === 200) ||
-          (state.route === '/pair' && state.status === 200) ||
-          (state.route === '/api/auth/invitations' &&
-            state.status === 201 &&
-            request.method() === 'POST');
-        if (
-          tokenResponse &&
-          response.headers()['content-type']?.includes('application/json')
-        )
-          this.observeResponse({}, await response.text());
-      });
+      observe(
+        state,
+        async () => {
+          const response = await request.response();
+          if (response) Object.assign(state, stateFor(response, 'body'));
+          const tokenResponse =
+            (state.route === '/api/auth/session' && state.status === 200) ||
+            (state.route === '/pair' && state.status === 200) ||
+            (state.route === '/api/auth/invitations' &&
+              state.status === 201 &&
+              request.method() === 'POST');
+          if (
+            tokenResponse &&
+            response.headers()['content-type']?.includes('application/json')
+          )
+            this.observeResponse({}, await response.text());
+        },
+        request,
+      );
     });
-    context.on('requestfailed', () => {
+    context.on('requestfailed', (request) => {
+      this.#finishRequest(request);
       this.#incompleteResponses++;
     });
     return context;
   }
 
   async close(resource) {
+    this.#closing.add(resource);
     try {
+      if (typeof resource.contexts === 'function') {
+        const results = await Promise.allSettled(
+          resource.contexts().map((context) => this.close(context)),
+        );
+        const failure = results.find(({ status }) => status === 'rejected');
+        if (failure) throw failure.reason;
+      } else {
+        await resource.route?.('**/*', (route) => route.abort());
+        await this.#finishResourceRequests(resource);
+      }
       await this.observePendingResponses();
     } finally {
       await resource.close();
+    }
+  }
+
+  #finishRequest(request) {
+    const active = this.#requests.get(request);
+    this.#requests.delete(request);
+    active?.finished.resolve();
+  }
+
+  async #finishResourceRequests(resource) {
+    let timer;
+    try {
+      await Promise.race([
+        (async () => {
+          for (;;) {
+            const active = [...this.#requests.values()].filter(
+              ({ page, context }) => page === resource || context === resource,
+            );
+            if (!active.length) return;
+            await Promise.all(active.map(({ finished }) => finished.promise));
+          }
+        })(),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                this.#observationError(
+                  'Browser requests did not finish before closure.',
+                ),
+              ),
+            5000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -131,6 +276,10 @@ export class EvidenceSecurity {
     error.observations = JSON.stringify({
       pending: [...this.#pending.values()].slice(0, 32),
       failures: this.#failedResponses,
+      activeRequestCount: this.#requests.size,
+      activeRequests: [...this.#requests.values()]
+        .slice(0, 32)
+        .map(({ describe }) => describe()),
     });
     return error;
   }

@@ -1,4 +1,22 @@
 const messages = new Map([
+  ['Restored target evidence is invalid.', 'RESTORE_EVIDENCE_INVALID'],
+  [
+    'Restore migration credentials must not change the target database.',
+    'RESTORE_TARGET_CHANGED',
+  ],
+  ['Restored Google credential state changed.', 'RESTORE_GOOGLE_STATE_CHANGED'],
+  [
+    'Restored Google encryption key is unavailable.',
+    'RESTORE_GOOGLE_KEY_MISSING',
+  ],
+  [
+    'Restored Google encryption key verification failed.',
+    'RESTORE_GOOGLE_KEY_INVALID',
+  ],
+  [
+    'Restored Google customer verification failed.',
+    'RESTORE_GOOGLE_CUSTOMER_MISMATCH',
+  ],
   ['Invalid backup command.', 'INVALID_COMMAND'],
   [
     'Provide a recent operator record that stops API, workers, and Kestra.',
@@ -29,6 +47,13 @@ const messages = new Map([
   ['Restored database inventory differs.', 'RESTORE_INVENTORY_MISMATCH'],
 ]);
 const codes = new Map([
+  ['delegation-not-authorized', 'GOOGLE_DELEGATION_DENIED'],
+  ['permission-denied', 'GOOGLE_PERMISSION_DENIED'],
+  ['credential-rejected', 'GOOGLE_CREDENTIAL_REJECTED'],
+  ['scope-mismatch', 'GOOGLE_SCOPE_MISMATCH'],
+  ['api-not-enabled', 'GOOGLE_API_DISABLED'],
+  ['network-failure', 'GOOGLE_NETWORK_FAILURE'],
+  ['provider-unavailable', 'GOOGLE_UNAVAILABLE'],
   ['ENOENT', 'FILESYSTEM_PATH_MISSING'],
   ['EACCES', 'FILESYSTEM_ACCESS_DENIED'],
   ['ENOSPC', 'FILESYSTEM_FULL'],

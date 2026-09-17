@@ -8,6 +8,8 @@
 !libs/application-contracts/**
 !libs/google-connection/**
 !deployment/project.json
+!deployment/google-runtime.build.mjs
+!deployment/operations/google-runtime.entry.mjs
 !deployment/tsconfig.json
 !deployment/tsconfig.lib.json
 !deployment/src/**

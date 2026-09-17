@@ -1,3 +1,4 @@
+import { qualifyGoogleRestore } from './google-restore.integration.mjs';
 import { qualifyGoogleTokens } from './google-token.integration.mjs';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
@@ -527,7 +528,18 @@ export async function qualifyGoogleConnection({
     actor: actors[0],
     observation,
   });
+  const restoreChecks = await qualifyGoogleRestore({
+    runtime,
+    migrator,
+    key,
+    cipher,
+    credential,
+    customerId,
+    actor: actors[0],
+    observation,
+  });
   return [
+    ...restoreChecks,
     ...tokenChecks,
     'candidate staging binds actor version and browser without runtime table access: pass',
     'failed and expired candidates erase ciphertext with security events and retain authorized recovery metadata: pass',

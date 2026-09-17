@@ -2,12 +2,12 @@ import { pathToFileURL } from 'node:url';
 import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import { expect } from '@playwright/test';
@@ -15,6 +15,11 @@ import { httpsStartup } from '../deployment/qualification/faults.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { startRegistry } from './registry-fixture.mjs';
+import { qualifyApplicationRestore } from './restore-fixture.mjs';
+import { qualificationBrowserStep } from './qualification-sign-in.mjs';
+
+const phase3Restore = process.env.CC_AUTH_PHASE3_RESTORE === '1';
+const applicationPhase = phase3Restore ? 3 : 2;
 
 const execute = promisify(execFile);
 const docker = (...args) =>
@@ -26,12 +31,18 @@ const docker = (...args) =>
   }).trim();
 
 test(
-  'the all-Docker installer installs Phase 2 and restores application access through resume and restart',
-  { timeout: 360000 },
+  `the all-Docker installer installs Phase ${applicationPhase} and restores application access through resume and restart`,
+  { timeout: phase3Restore ? 900000 : 360000 },
   async () => {
     const startedAt = Date.now();
-    const root = await mkdtemp(join(tmpdir(), 'cc-phase2-compose-'));
-    const project = `cc-phase2-${randomUUID().slice(0, 12)}`;
+    const evidenceDirectory = phase3Restore
+      ? 'dist/phase-3-recovery'
+      : 'dist/phase-2-evidence';
+    await mkdir(evidenceDirectory, { recursive: true });
+    const root = await mkdtemp(
+      join(tmpdir(), `cc-phase${applicationPhase}-compose-`),
+    );
+    const project = `cc-phase${applicationPhase}-${randomUUID().slice(0, 12)}`;
     const composePath = join(root, 'docker-compose.json');
     const bin = join(root, 'qualification-bin');
     const runtimePath = join(root, 'qualification-runtime.json');
@@ -120,7 +131,28 @@ test(
       const config = JSON.parse(
         await readFile('deployment/examples/all-docker.json', 'utf8'),
       );
-      config.phase = 2;
+      config.phase = applicationPhase;
+      if (phase3Restore) {
+        config.googleConnection = {
+          keyId: 'isolated-google-recovery-key',
+          encryptionKeySecretRef: {
+            provider: 'file',
+            path: '/run/secrets/google-recovery-key',
+          },
+        };
+        await writeFile(
+          join(privateRoot, 'google-recovery-key'),
+          randomBytes(32),
+          {
+            mode: 0o600,
+          },
+        );
+        await writeFile(
+          join(root, 'google-connection-preload.cjs'),
+          await readFile('api-e2e/google-connection-preload.cjs'),
+          { mode: 0o644 },
+        );
+      }
       config.services.api.placement.replicas = 2;
       config.services.edge.access = 'application';
       config.services.edge.endpoint.url = publicOrigin;
@@ -166,7 +198,7 @@ test(
       const release = {
         schemaVersion: 1,
         sourceRevision,
-        phase: 2,
+        phase: applicationPhase,
         qualification: 'candidate-only',
         workingTree,
         sourceRevisionMeaning:
@@ -179,7 +211,7 @@ test(
       if (!published)
         registry = await startRegistry({ relayImage: images.api });
       let installationRelease = registry
-        ? await registry.mirror(release, 'phase2')
+        ? await registry.mirror(release, `phase${applicationPhase}`)
         : release;
       if (process.env.CC_AUTH_INSTALLER_ROOT) {
         assert.equal(
@@ -192,7 +224,7 @@ test(
         );
         assert.deepEqual(installationRelease.images, images);
         assert.equal(installationRelease.sourceRevision, sourceRevision);
-        assert.equal(installationRelease.phase, 2);
+        assert.equal(installationRelease.phase, applicationPhase);
       }
       config.images = installationRelease.images;
       const configPath = join(root, 'deployment.json');
@@ -250,6 +282,10 @@ if(args[0]==='compose' && args[index]===${JSON.stringify(composePath)} && fs.exi
   doc.services.api.environment.NODE_EXTRA_CA_CERTS='/run/qualification/ca.pem';
   doc.services.api.extra_hosts=['host.docker.internal:host-gateway'];
   doc.services.api.volumes.push({type:'bind',source:${JSON.stringify(certPath)},target:'/run/qualification/ca.pem',read_only:true});
+  if(${phase3Restore})for(const service of ['api','workers']){
+    doc.services[service].environment.NODE_OPTIONS='--require=/run/qualification/google-connection-preload.cjs';
+    doc.services[service].volumes.push({type:'bind',source:${JSON.stringify(join(root, 'google-connection-preload.cjs'))},target:'/run/qualification/google-connection-preload.cjs',read_only:true});
+  }
   fs.writeFileSync(${JSON.stringify(runtimePath)},JSON.stringify(doc),{mode:0o600});
   args[index]=${JSON.stringify(runtimePath)};
 }
@@ -301,6 +337,13 @@ process.exit(result.status??1);
         },
       );
       assert.ok(enrolled.principalId);
+      if (phase3Restore)
+        await applicationAccess(setupOperator, {
+          action: 'confirm-platform-administrator',
+          principalId: enrolled.principalId,
+          expectedVersion: 1,
+          confirmation: 'grant-platform-administrator',
+        });
       const replicaObservations = [];
       const navigationRecovery = [];
       let sessionCookie;
@@ -405,13 +448,21 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
           for (const command of ['stop', 'uninstall']) {
             assert.equal((await cli(command)).dataPreserved, true);
             assert.equal((await cli('resume')).status, 'ready');
-            navigationRecovery.push({
-              phase: `${command}-resume`,
-              ...(await reloadAfterNetworkChange(page)),
-            });
-            await expect(
-              page.getByRole('heading', { name: 'Sign in', exact: true }),
-            ).toBeVisible();
+            await qualificationBrowserStep(
+              page,
+              publicOrigin,
+              evidenceDirectory,
+              `all-docker-phase-${applicationPhase}-${command}-resume`,
+              async () => {
+                navigationRecovery.push({
+                  phase: `${command}-resume`,
+                  ...(await reloadAfterNetworkChange(page)),
+                });
+                await expect(
+                  page.getByRole('heading', { name: 'Sign in', exact: true }),
+                ).toBeVisible();
+              },
+            );
             await page
               .getByRole('link', { name: 'Sign in to Campus Commander' })
               .click();
@@ -425,7 +476,39 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             await checks({ recoverySeconds: 60 });
             await verifyReplicas(context, `${command}-resume-session`);
           }
+          let restoration;
+          if (phase3Restore) {
+            await writeFile(join(privateRoot, 'backup-key'), randomBytes(32), {
+              mode: 0o600,
+            });
+            restoration = await qualifyApplicationRestore({
+              root,
+              config,
+              release: installationRelease,
+              compose,
+              resolveSecret: (ref) =>
+                readFile(join(privateRoot, basename(ref.path))),
+              keyRecovery: {
+                id: 'isolated-phase3-backup',
+                version: 1,
+                reference: {
+                  provider: 'file',
+                  path: '/run/secrets/backup-key',
+                },
+              },
+              caFile: certPath,
+              page,
+              context,
+              provider,
+            });
+            await mkdir('dist/phase-3-recovery', { recursive: true });
+            await writeFile(
+              'dist/phase-3-recovery/all-docker-restore.json',
+              JSON.stringify(restoration, null, 2),
+            );
+          }
           return {
+            ...(restoration ? { restoration } : {}),
             restartRecoveryBoundSeconds: 60,
             networkAddresses: {
               before: initialAddresses,
@@ -440,7 +523,6 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
         JSON.parse(await readFile(releasePath, 'utf8')),
         installationRelease,
       );
-      await mkdir('dist/phase-2-evidence', { recursive: true });
       if (browser.screenReader) {
         await writeFile(
           'dist/phase-2-evidence/screen-reader.json',
@@ -460,11 +542,12 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
         );
       }
       await writeFile(
-        'dist/phase-2-evidence/all-docker-profile.json',
+        `${evidenceDirectory}/all-docker-profile.json`,
         JSON.stringify(
           {
             status: 'passed',
             profile: 'all-docker',
+            phase: applicationPhase,
             recordedAt: new Date().toISOString(),
             durationMs: Date.now() - startedAt,
             images,
@@ -500,7 +583,11 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             logoutRejectedAcrossReplicas: true,
             limits: [
               'Synthetic provider CA and loopback port replace district ingress.',
-              'Upgrade and isolated restore require separate evidence.',
+              ...(phase3Restore
+                ? [
+                    'This report covers installation, resume, and restart. The separate restore report covers the isolated target. Upgrade requires separate evidence.',
+                  ]
+                : ['Upgrade and isolated restore require separate evidence.']),
             ],
           },
           null,

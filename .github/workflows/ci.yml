@@ -70,6 +70,7 @@ jobs:
             postgres-integration,
             storage-integration,
             operations-integration,
+            operations-phase3-integration,
           ]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -81,6 +82,12 @@ jobs:
       - run: npm exec nx run deployment:${{ matrix.target }}
         env:
           NX_NO_CLOUD: 'true'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: matrix.target == 'operations-phase3-integration' && success()
+        with:
+          name: phase-3-recovery-evidence
+          path: dist/phase-3-recovery/
+          if-no-files-found: error
 
   browser:
     if: inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
@@ -118,6 +125,7 @@ jobs:
       - run: npm audit --omit=dev
       - run: npm exec -- playwright install --with-deps chromium
       - run: npm exec nx run-many -- -t image -p api,frontend,worker --parallel=2
+        id: application-images
         env:
           NX_NO_CLOUD: 'true'
           CC_IMAGE_VERSION: phase-2-ci
@@ -131,6 +139,16 @@ jobs:
       - run: npm exec nx run api-e2e:all-docker-integration
         env:
           NX_NO_CLOUD: 'true'
+      - run: npm exec nx run api-e2e:phase3-restore-integration
+        if: ${{ !cancelled() && steps.application-images.outcome == 'success' }}
+        env:
+          NX_NO_CLOUD: 'true'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-3-application-restore-evidence
+          path: dist/phase-3-recovery/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

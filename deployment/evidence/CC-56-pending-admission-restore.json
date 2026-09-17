@@ -1,0 +1,411 @@
+{
+  "status": "passed",
+  "profile": "all-docker",
+  "phase": 3,
+  "command": "npm exec -- nx run api-e2e:phase3-restore-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "ci": true
+  },
+  "images": {
+    "frontend": "127.0.0.1:32779/phase3/frontend@sha256:6aaeef7a2b97cc702a273b5a8bbe18ca077a15cf48ea52ea52f6f640e90ed483",
+    "api": "127.0.0.1:32779/phase3/api@sha256:91e7551f821f0a11463015db486f23827cb07ba9df11a26c8769ba3a23ead7ff",
+    "workers": "127.0.0.1:32779/phase3/workers@sha256:7d3593f184bab3d5dfc8fdd78cff640feb9f2d058e0d0c4eb5b9c4585d52cb71"
+  },
+  "recordedAt": "2026-09-17T07:06:17.680Z",
+  "durationMs": 49641,
+  "sourceRevision": "9a5b046e46c45eb47c87a5440f85361de1864960",
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "1c2c7e43-56cb-4d5a-9bdb-b6d50384a023",
+        "observedAt": "2026-09-17T07:06:15.979Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "8764c485-d036-4140-b613-413c865403c4",
+        "observedAt": "2026-09-17T07:06:16.087Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "bc20f0d4-7a18-45b2-ae3a-cf9a842408b9",
+        "observedAt": "2026-09-17T07:06:17.057Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "dfb90815-210d-4668-b5df-72e1c4a661bc",
+        "observedAt": "2026-09-17T07:06:17.167Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "lifecycle": {
+      "customerSettingsRead": true,
+      "schoolDefinitionRead": true,
+      "oldReferencesEffective": false
+    },
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "restoration": {
+    "schemaVersion": 1,
+    "status": "verified-services-disabled",
+    "profile": "all-docker",
+    "durationMilliseconds": 483,
+    "redisRecovery": {
+      "policy": "discard-cache",
+      "releaseRequiresFreshRedis": true
+    },
+    "accessRecovery": {
+      "bootstrapCredentialsRevoked": 1,
+      "pendingInvitationsRevoked": 3,
+      "credentialCandidatesExpired": 1,
+      "schoolReviewsExpired": 1,
+      "googleConnection": {
+        "status": "revalidation-required",
+        "recoveryId": "a9721a17-de31-4825-867f-a7a75ec54ecf",
+        "customerId": "C0123456",
+        "generation": 1
+      }
+    },
+    "backupCreatedAt": "2026-09-17T07:05:36.474Z",
+    "applicationTables": [
+      {
+        "schema": "cc",
+        "name": "application_access_changes",
+        "count": "0"
+      },
+      {
+        "schema": "cc",
+        "name": "application_actions",
+        "count": "11"
+      },
+      {
+        "schema": "cc",
+        "name": "application_grants",
+        "count": "12"
+      },
+      {
+        "schema": "cc",
+        "name": "application_invitations",
+        "count": "3"
+      },
+      {
+        "schema": "cc",
+        "name": "application_principals",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "artifacts",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "bootstrap_access",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "customer_settings_revisions",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "google_access_tokens",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "google_capability_health",
+        "count": "0"
+      },
+      {
+        "schema": "cc",
+        "name": "google_connection",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "google_credential_candidates",
+        "count": "2"
+      },
+      {
+        "schema": "cc",
+        "name": "google_credentials",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "google_health_checks",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "google_restore_gate",
+        "count": "0"
+      },
+      {
+        "schema": "cc",
+        "name": "schema_migrations",
+        "count": "15"
+      },
+      {
+        "schema": "cc",
+        "name": "school_definitions",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "school_reference_state",
+        "count": "1"
+      },
+      {
+        "schema": "cc",
+        "name": "school_reviews",
+        "count": "2"
+      },
+      {
+        "schema": "cc",
+        "name": "security_events",
+        "count": "76"
+      }
+    ],
+    "kestraTables": [
+      {
+        "schema": "public",
+        "name": "concurrency_limit",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "dashboards",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "execution_queued",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "executions",
+        "count": "12"
+      },
+      {
+        "schema": "public",
+        "name": "executordelayed",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "executorstate",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "flow_topologies",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "flows",
+        "count": "1"
+      },
+      {
+        "schema": "public",
+        "name": "flyway_schema_history",
+        "count": "53"
+      },
+      {
+        "schema": "public",
+        "name": "kv_metadata",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "logs",
+        "count": "28"
+      },
+      {
+        "schema": "public",
+        "name": "metrics",
+        "count": "20"
+      },
+      {
+        "schema": "public",
+        "name": "multipleconditions",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "namespace_file_metadata",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "queues",
+        "count": "61"
+      },
+      {
+        "schema": "public",
+        "name": "service_instance",
+        "count": "15"
+      },
+      {
+        "schema": "public",
+        "name": "settings",
+        "count": "4"
+      },
+      {
+        "schema": "public",
+        "name": "sla_monitor",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "templates",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "triggers",
+        "count": "0"
+      },
+      {
+        "schema": "public",
+        "name": "worker_job_running",
+        "count": "0"
+      }
+    ],
+    "artifactFiles": [
+      {
+        "path": "artifacts/.cc16-fixture.json",
+        "sha256": "dec8593e8d6fbfefdaf53b83b501a4a9528e4d9413f70bc9e5e55fbdd838b9d0",
+        "sizeBytes": 213
+      },
+      {
+        "path": "artifacts/f242e17b-e271-42a6-85fc-66c2b88cb612.90a9814b-a850-44cc-b11a-9b8dbd66ad45",
+        "sha256": "1b939c40a47fda152148f90668bffa58b956d39e99c215445256a2a09c0941a8",
+        "sizeBytes": 28
+      }
+    ]
+  },
+  "phase3State": {
+    "preserved": {
+      "google_connection": {
+        "count": 1,
+        "sha256": "4f6c6fb6f88fa19ee5e199aa55eaac597eb37598b2d81a49506b572db9401884"
+      },
+      "google_credentials": {
+        "count": 1,
+        "sha256": "8c8e4d219d450375f0ed913396d6dce34a765ee0516db99eba7205359de1fa90"
+      },
+      "customer_settings_revisions": {
+        "count": 1,
+        "sha256": "9f5d70cfab901682582f493fd3dbfbe2b660f5e6b89201dfe0cd09018e7545de"
+      },
+      "school_definitions": {
+        "count": 1,
+        "sha256": "e97b0475f334336f4dea370d4ce01c11cd0744f0fc55117555cbb947bb62ad59"
+      },
+      "application_grants": {
+        "count": 12,
+        "sha256": "e8ef5f27f1e4c3d8399eea0632159182a305edf618183da48ec87aab36a66180"
+      },
+      "application_principals": {
+        "count": 1,
+        "sha256": "93f16d8846087107deb7be0894d96954985552c78d9679d040015ca19f351f76"
+      },
+      "school_reference_history": {
+        "count": 1,
+        "sha256": "a10d98530eb159856aa08efcbe5cda4d2cf0109a9db9b69ef20f861dfce19372"
+      }
+    },
+    "oldSettingsReceiptPreserved": true,
+    "approvedSchoolScopePreserved": true,
+    "oldSchoolReferencesEffective": false,
+    "pendingCandidatesExpired": 1,
+    "pendingReviewsExpired": 1,
+    "status": "passed",
+    "invitations": {
+      "sourceStatuses": ["issued", "redeeming", "pending"],
+      "revoked": 3,
+      "sourceSha256": "95051477d25587c8735744d1ce55a1a1577e816f970ad83c5af001e951272083",
+      "restoredSha256": "794d4652edf87f9e7c0496416a4ecf7abd46dc84381f1e9d27cf46217c977c24",
+      "recoveryAuditEvents": 3
+    },
+    "revalidation": {
+      "status": "revalidated",
+      "recoveryId": "a9721a17-de31-4825-867f-a7a75ec54ecf",
+      "customerId": "C0123456",
+      "generation": 1,
+      "verifiedAt": "2026-09-17T07:05:47.368Z"
+    },
+    "markerPreserved": true,
+    "provider": "synthetic-gaxios-preload"
+  },
+  "admissionRecovery": {
+    "status": "passed",
+    "issuedInvitationRejected": true,
+    "recipientBindingsRejected": 2,
+    "pendingLoginRejected": true,
+    "pendingInvitationCallbackRejected": true,
+    "transactionAgeMilliseconds": 45531,
+    "sourcePendingLoginStillValid": true
+  },
+  "operatorCli": {
+    "runner": "operator-container-native",
+    "postgresImage": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "nodeVersion": "v24.19.0",
+    "secretMount": "/run/secrets",
+    "injectedDatabaseTool": false,
+    "googleTransport": "synthetic-gaxios-preload",
+    "source": "workspace",
+    "commands": [
+      {
+        "command": "backup",
+        "status": "passed"
+      },
+      {
+        "command": "verify",
+        "status": "passed"
+      },
+      {
+        "command": "restore",
+        "status": "passed"
+      },
+      {
+        "command": "revalidate-google",
+        "status": "passed"
+      }
+    ]
+  },
+  "preserved": {
+    "principals": 1,
+    "securityEvents": 76,
+    "identityStateSha256": "4573a7a4fbe527f4145a505300d6d1736ea5889bf8cfc05b25dada8e050d1f27",
+    "artifactId": "f242e17b-e271-42a6-85fc-66c2b88cb612",
+    "artifactSha256": "1b939c40a47fda152148f90668bffa58b956d39e99c215445256a2a09c0941a8",
+    "preference": "dark"
+  },
+  "oldSessionRejected": true,
+  "limits": [
+    "Separate Compose networks, databases, and volumes share one Docker host.",
+    "The stopped source and restored target reuse one loopback HTTPS origin.",
+    "Synthetic credentials remain unchanged for this restore and require district review before deployment.",
+    "The fixture adds a synthetic provider CA and host mapping.",
+    "The fixture seeds customer state through database commands after source shutdown. It does not qualify source onboarding through the browser.",
+    "Google transport responses are synthetic. Live Google privileges and Education capabilities require separate evidence.",
+    "Pending admission fixtures use the synthetic administrator identity. They do not qualify district identity-provider configuration."
+  ]
+}
