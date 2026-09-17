@@ -146,6 +146,11 @@ export class EvidenceSecurity {
       );
     });
     context.on('requestfinished', (request) => {
+      const path = new URL(request.url()).pathname;
+      if (
+        !['/api/auth/session', '/pair', '/api/auth/invitations'].includes(path)
+      )
+        return;
       const state = { stage: 'body', route: 'other', status: 0 };
       observe(
         state,

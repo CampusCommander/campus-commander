@@ -344,3 +344,16 @@ They exclude URLs, response contents, and underlying error messages. Observation
 The diagnostic regression and existing scanner checks pass locally.
 [Source run 35189602731](https://github.com/CampusCommander/campus-commander/actions/runs/35189602731) passed at `898e447` with the new diagnostics.
 That run did not reproduce the failure. It does not establish a correction for the unresolved packaged-browser failure.
+
+## Completed asset response correction
+
+[Run 35190962752](https://github.com/CampusCommander/campus-commander/actions/runs/35190962752) failed packaged authorization at `2978b08`.
+The [retained diagnostics](../../deployment/evidence/CC-55-2978-browser-observation-failure.json) identify a font response after its page closed.
+The page had entered guarded closure. Header observation passed, but the later body stage queried the disposed page.
+The scanner never needed that font body. It now filters token-bearing route paths before retrieving a response object.
+It still observes every response header for cookies. Required token-body reads and their failure checks remain unchanged.
+
+A regression reproduced the exact closed-page font failure before this correction.
+After the correction, all 15 API and scanner tests pass. The regression also verifies that the font response cookie remains protected.
+Local lint passes. Hosted qualification remains pending.
+This correction does not establish a fix for earlier header-observation failures or other browser failures.

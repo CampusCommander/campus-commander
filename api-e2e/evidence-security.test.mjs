@@ -216,11 +216,15 @@ test('browser observation captures transient cookies and completed JSON bodies',
     text: async () => JSON.stringify({ token: secret }),
   };
   context.emit('response', response);
-  context.emit('requestfinished', { response: async () => response });
+  context.emit('requestfinished', {
+    url: response.url,
+    response: async () => response,
+  });
   await security.observePendingResponses();
   for (const value of ['transient-cookie-secret', secret])
     assert.throws(() => security.assertSafe(value, 'logs'), /protected/);
   context.emit('requestfinished', {
+    url: () => 'https://fixture.invalid/api/auth/session',
     response: async () => ({
       url: () => 'https://fixture.invalid/api/auth/session',
       status: () => 200,
@@ -301,6 +305,7 @@ test('browser response registration fails within its time limit for an unfinishe
   const context = new EventEmitter();
   await security.newContext({ newContext: async () => context }, {});
   context.emit('requestfinished', {
+    url: () => 'https://fixture.invalid/api/auth/session',
     response: async () => ({
       url: () => 'https://fixture.invalid/api/auth/session',
       status: () => 200,
@@ -368,7 +373,10 @@ test('navigation response bodies stay outside token observation while their cook
     },
   };
   context.emit('response', response);
-  context.emit('requestfinished', { response: async () => response });
+  context.emit('requestfinished', {
+    url: response.url,
+    response: async () => response,
+  });
   await security.observePendingResponses();
   assert.equal(bodyReads, 0);
   assert.throws(
@@ -390,6 +398,7 @@ test('popup closure preserves a completed token response before disposing of its
     };
     const responseReady = Promise.withResolvers();
     context.emit('requestfinished', {
+      url: () => 'https://fixture.invalid/api/auth/session',
       response: async () => {
         await responseReady.promise;
         if (closed) throw new Error('Target page has been closed');
@@ -457,4 +466,34 @@ test('failed response diagnostics record bounded browser lifecycle fields withou
     });
     return true;
   });
+});
+
+test('completed assets retain cookies without querying a disposed page for unused response bodies', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  const page = { isClosed: () => true, close: async () => undefined };
+  const request = {
+    url: () => 'https://fixture.invalid/font.woff2',
+    frame: () => ({ page: () => page }),
+    resourceType: () => 'font',
+    response: async () => {
+      throw new Error('Target page has been closed');
+    },
+  };
+  context.emit('response', {
+    url: request.url,
+    status: () => 200,
+    request: () => request,
+    headersArray: async () => [
+      { name: 'Set-Cookie', value: 'asset=asset-transient-cookie; Secure' },
+    ],
+  });
+  await security.close(page);
+  context.emit('requestfinished', request);
+  await security.observePendingResponses();
+  assert.throws(
+    () => security.assertSafe('asset-transient-cookie', 'report'),
+    /protected/,
+  );
 });
