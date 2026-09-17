@@ -426,3 +426,19 @@ The intermittent browser-closure failure remains unresolved.
 Packaged authorization failed before assembly. The collector retained one font request without observed headers when its context closed.
 The failed application artifact remains available as `qualification-phase3-auth-integration-1`, ID `10497898683`.
 No second candidate or guided-update result followed this run. PR CI passed at the same source revision.
+
+## Browser closure correction
+
+A local Chromium fixture reproduced the unfinished-request failure with three pages and delayed font responses.
+The trace shows a request arriving after the drain check and before its page closes.
+Chromium supplied no completion event for that request. The later context drain then timed out.
+Enabling request routing before navigation did not prevent the failure.
+
+The collector now retires requests when their page closes and counts them as incomplete.
+It also handles request events that arrive after page closure. A delayed failure event cannot count the same request twice.
+Response observers remain active. Header-observation failures and timeouts for open pages still reject qualification.
+
+The deterministic event-order regression failed before the correction and passed afterward.
+API fixture tests and lint pass. Both review axes found no remaining issues after request-count deduplication.
+The real-browser fixture completed 500 three-page iterations after the closure correction.
+Hosted packaged authorization still requires a recheck. This local result does not establish a second candidate or guided-update pass.

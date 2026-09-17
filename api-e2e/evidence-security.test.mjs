@@ -581,7 +581,7 @@ test('page closure blocks new requests without waiting for another page', async 
   const security = new EvidenceSecurity();
   const context = new EventEmitter();
   await security.newContext({ newContext: async () => context }, {});
-  const otherPage = {};
+  const otherPage = { isClosed: () => false };
   const request = { frame: () => ({ page: () => otherPage }) };
   context.emit('request', request);
   let blocked = false,
@@ -614,7 +614,9 @@ test('browser closure drains child contexts before browser disposal', async () =
     contextClosed = true;
     context.emit('close');
   };
-  const request = { frame: () => ({ page: () => ({}) }) };
+  const request = {
+    frame: () => ({ page: () => ({ isClosed: () => false }) }),
+  };
   context.emit('request', request);
   const closing = security.close({
     contexts: () => [context],
@@ -629,6 +631,53 @@ test('browser closure drains child contexts before browser disposal', async () =
   await closing;
   assert.equal(contextClosed, true);
   assert.equal(browserClosed, true);
+});
+
+test('page closure retires late requests that Chromium does not finish', async () => {
+  for (const requestAfterClose of [false, true]) {
+    const security = new EvidenceSecurity();
+    const context = new EventEmitter();
+    await security.newContext({ newContext: async () => context }, {});
+    context.close = async () => context.emit('close');
+    const page = new EventEmitter();
+    let closed = false;
+    page.isClosed = () => closed;
+    const request = {
+      frame: () => ({ page: () => page }),
+      url: () => 'https://fixture.invalid/font.woff2',
+      resourceType: () => 'font',
+    };
+    page.close = async () => {
+      if (!requestAfterClose) context.emit('request', request);
+      closed = true;
+      page.emit('close');
+      if (requestAfterClose) context.emit('request', request);
+    };
+    context.emit('page', page);
+    await security.close(page);
+    await security.close(context);
+    context.emit('requestfailed', request);
+    const directory = await mkdtemp(join(tmpdir(), 'cc-retired-request-'));
+    try {
+      assert.equal(
+        (await security.scan(directory)).incompleteBrowserRequests,
+        1,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+    context.emit('response', {
+      url: request.url,
+      request: () => request,
+      headersArray: async () => {
+        throw new Error('Target page has been closed');
+      },
+    });
+    await assert.rejects(
+      security.observePendingResponses(),
+      /Browser response secret registration did not complete/,
+    );
+  }
 });
 
 test('closure waits for token bodies but not unfinished non-token bodies after cookie registration', async (t) => {
