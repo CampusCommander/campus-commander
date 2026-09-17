@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "issue": "CC-52",
+  "status": "partial-qualification",
+  "source": {
+    "revision": "581b194ea9712c40eac3dc244290411862ca13c2",
+    "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35172998611",
+    "status": "passed",
+    "references": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-synthetic-google-transport",
+      "checks": [
+        "current manager read excludes private credential material",
+        "CSRF, strict input, customer binding, and refresh rate enforcement",
+        "isolated OU scope produces a complete validated hierarchy",
+        "DWD, privilege, and invalid hierarchy failures preserve prior references without freshness",
+        "concurrent refresh rejection and successful recovery",
+        "authority change during provider read denies publication and response"
+      ],
+      "limits": [
+        "School definitions, grant assignment, and the selector remain outside this increment."
+      ]
+    },
+    "definitions": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-synthetic-school-grants",
+      "checks": [
+        "strict preview input, CSRF, explicit confirmation, and durable receipt recovery",
+        "scoped lists, totals, details, and audit deny another school",
+        "scoped operator cannot manage references, previews, or receipts",
+        "failed reference health preserves saved definitions without effective resource access",
+        "definition confirmation invalidates an affected operator session"
+      ],
+      "limits": [
+        "School grants are seeded by the fixture. Production grant assignment and browser forms remain pending."
+      ]
+    }
+  },
+  "postgres": {
+    "revision": "5fc2b47",
+    "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35172788270",
+    "job": "foundation-integration (postgres-integration)",
+    "status": "passed",
+    "scope": "Reference publication and reviewed school definitions, including invitation revocation."
+  },
+  "grantIntegration": {
+    "revision": "cea7c9f",
+    "edgeCorrection": "d750e86",
+    "status": "local-checks-passed-hosted-pending",
+    "sourceRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35173515623"
+  },
+  "reviews": {
+    "standards": "No remaining findings through cea7c9f.",
+    "specification": "No remaining findings after d750e86."
+  },
+  "remaining": [
+    "Hosted grant integration and packaged qualification.",
+    "School browser forms and OU selector.",
+    "Human accessibility and acceptance.",
+    "Combined deployment and release qualification.",
+    "Retained intermittent browser sign-in and credential staging failures in CC-54."
+  ]
+}

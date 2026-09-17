@@ -2,7 +2,7 @@
 
 Owner: [CC-52](https://easton-consulting.atlassian.net/browse/CC-52).
 Status: reference contracts, resolver, provider, persistence, and reference APIs are implemented.
-School definition persistence and APIs are implemented. Grant assignment, browser controls, and complete qualification remain pending.
+School definition persistence, APIs, and grant assignment are implemented. Browser controls and complete qualification remain pending.
 This slice follows CC-48 and CC-51 through the CC-49 stack.
 
 ## Outcome and language
@@ -169,7 +169,10 @@ Revision `581b194` adds definition list, detail, audit, preview, confirmation, a
 The public edge restricts exact Phase 3 routes and methods.
 Preview accepts up to 64 KiB for explicit inclusion and exclusion rules. Confirmation retains the 4 KiB limit.
 Local contract tests, API lint and build, and bootstrap checks pass. Both API review axes report no remaining findings.
-Hosted definition API qualification remains pending.
+[Source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35172998611) passed at `581b194`.
+Downloaded reports confirm reference and definition API checks through the public edge, real PostgreSQL, and Chromium sessions.
+That run seeded school grants directly. The later grant increment replaces those fixture inserts with public access review and confirmation.
+The [qualification record](../../deployment/evidence/CC-52-school-scopes.json) separates those results.
 
 The packaged reference API run at `304738c` reached its authority-change assertion and returned the correct 401 `access-changed` response.
 Revision `1b7a916` corrected the fixture, which expected 403.
@@ -177,7 +180,7 @@ Other source runs failed during browser login before school checks.
 Revision `9e3f7e0` captures sanitized request and application error categories without retrying failed login.
 CC-54 retains those unresolved sign-in failures.
 
-## Remaining grant integration
+## School grant integration
 
 School previews must retain the exact rules, approved IDs, school revision, reference revision, actor version, and affected principal versions.
 Confirmation must compare that retained state inside the shared authority transaction lock.
@@ -192,3 +195,17 @@ Otherwise, a failed Google read would prevent local access revocation.
 Platform access review must also retain the revisions of all proposed school grants.
 Confirmation must reject a changed school definition even when the target principal does not yet hold that school grant.
 Existing target permission-version checks alone do not detect that case.
+
+Migration 014 implements these checks at `cea7c9f`.
+Access confirmation requires the exact reviewed school revisions and retains them in the access receipt.
+New or reenabled school grants require fresh effective scope.
+Disabling users and removing grants remain available during reference failure.
+Grant changes also produce school-scoped audit events.
+The existing browser access workflow passes the reviewed revisions to confirmation.
+
+Eight contract, API, and frontend checks pass. PostgreSQL unit checks pass.
+Grant review found a 4 KiB edge limit that rejected valid confirmations for several schools.
+Revision `d750e86` raises both exact access endpoint limits to 96 KiB.
+The edge regression passes a 256-school confirmation and rejects oversized requests.
+Both review axes have no remaining findings after that correction.
+Hosted grant integration and browser school controls remain pending.
