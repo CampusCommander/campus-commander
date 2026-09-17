@@ -25,8 +25,14 @@ import {
 } from './phase3-upgrade-fixture.mjs';
 
 import { faultAllDocker } from './all-docker-faults-fixture.mjs';
+import { qualifyInstalledProviderFaults } from './phase3-provider-faults.mjs';
 
-const phase3Faults = process.env.CC_AUTH_PHASE3_FAULTS === '1';
+const phase3ProviderFaults = process.env.CC_AUTH_PHASE3_PROVIDER_FAULTS === '1';
+const phase3Faults =
+  process.env.CC_AUTH_PHASE3_FAULTS === '1' || phase3ProviderFaults;
+const faultTarget = phase3ProviderFaults
+  ? 'phase3-provider-fault-integration'
+  : 'phase3-fault-integration';
 const phase3Restore = process.env.CC_AUTH_PHASE3_RESTORE === '1';
 const phase3Upgrade = process.env.CC_AUTH_PHASE3_UPGRADE === '1';
 const phase3Workflows =
@@ -68,7 +74,9 @@ test(
       ? 'uncommitted-candidate'
       : 'clean';
     const evidenceDirectory = phase3Faults
-      ? 'dist/phase-3-faults'
+      ? phase3ProviderFaults
+        ? 'dist/phase-3-provider-faults'
+        : 'dist/phase-3-faults'
       : phase3Restore
         ? 'dist/phase-3-recovery'
         : phase3Upgrade
@@ -197,6 +205,10 @@ test(
           { mode: 0o644 },
         );
       }
+      if (phase3ProviderFaults)
+        await writeFile(join(root, 'google-health-fault.json'), '{}', {
+          mode: 0o644,
+        });
       config.services.api.placement.replicas = 2;
       config.services.edge.access = 'application';
       config.services.edge.endpoint.url = publicOrigin;
@@ -344,6 +356,7 @@ if(args[0]==='compose' && args[index]===${JSON.stringify(composePath)} && fs.exi
     doc.services[service].environment.NODE_OPTIONS='--require=/run/qualification/google-connection-preload.cjs';
     doc.services[service].volumes.push({type:'bind',source:${JSON.stringify(join(root, 'google-connection-preload.cjs'))},target:'/run/qualification/google-connection-preload.cjs',read_only:true});
   }
+  if(${phase3ProviderFaults})for(const service of ['api','workers']) doc.services[service].volumes.push({type:'bind',source:${JSON.stringify(join(root, 'google-health-fault.json'))},target:'/run/qualification/google-health-fault.json',read_only:true});
   fs.writeFileSync(${JSON.stringify(runtimePath)},JSON.stringify(doc),{mode:0o600});
   args[index]=${JSON.stringify(runtimePath)};
 }
@@ -519,7 +532,10 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             'dark',
           );
           if (phase3Faults) {
-            await faultAllDocker({
+            const qualifyFaults = phase3ProviderFaults
+              ? qualifyInstalledProviderFaults
+              : faultAllDocker;
+            await qualifyFaults({
               root,
               project,
               config,
@@ -533,7 +549,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                 harnessRevision,
                 harnessWorkingTree,
                 bundleManifestSha256,
-                command: 'npm exec -- nx run api-e2e:phase3-fault-integration',
+                command: `npm exec -- nx run api-e2e:${faultTarget}`,
               },
             });
             await installedWorkflows.verifyAfterRestart();
@@ -659,7 +675,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                 bundleManifestSha256,
               },
               command: phase3Faults
-                ? 'npm exec -- nx run api-e2e:phase3-fault-integration'
+                ? `npm exec -- nx run api-e2e:${faultTarget}`
                 : phase3Upgrade
                   ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
                   : 'npm exec -- nx run api-e2e:phase3-install-integration',
@@ -736,7 +752,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             profile: 'all-docker',
             phase: applicationPhase,
             command: phase3Faults
-              ? 'npm exec -- nx run api-e2e:phase3-fault-integration'
+              ? `npm exec -- nx run api-e2e:${faultTarget}`
               : phase3Restore
                 ? 'npm exec -- nx run api-e2e:phase3-restore-integration'
                 : phase3Upgrade

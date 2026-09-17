@@ -23,6 +23,7 @@ export async function createAllDockerDurableProbe({
   release,
   compose,
   id,
+  allowObservationRefresh = false,
 }) {
   const phase3 = config.phase === 3;
   assert.match(
@@ -126,7 +127,7 @@ await store.close();await pool.end();`,
             config.services.applicationDatabase.database,
             '-At',
             '-c',
-            `SELECT json_build_object('count',count(*),'sha256',encode(sha256(convert_to(coalesce(json_agg(row_to_json(t) ORDER BY row_to_json(t)::text)::text,'[]'),'UTF8')),'hex')) FROM cc.${table} t;`,
+            `SELECT json_build_object('count',count(*),'sha256',encode(sha256(convert_to(coalesce(json_agg(value ORDER BY value::text)::text,'[]'),'UTF8')),'hex')) FROM (SELECT ${allowObservationRefresh && table === 'google_connection' ? "row_to_json(t)::jsonb - 'observation' - 'observed_at'" : 'row_to_json(t)'} AS value FROM cc.${table} t) rows;`,
           ]),
         ),
       ]),

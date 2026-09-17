@@ -23,6 +23,11 @@ on:
         description: Test service interruption and durable Phase 3 state
         type: boolean
         default: false
+      phase3FaultKind:
+        description: Fault group for the installed Phase 3 release
+        type: choice
+        options: [services, provider]
+        default: services
       phase3Only:
         description: Run only the Phase 3 source API and browser qualification
         type: boolean
@@ -44,6 +49,7 @@ jobs:
       release: ${{ inputs.phase3Release }}
       upgrade: ${{ inputs.phase3Upgrade == true }}
       faults: ${{ inputs.phase3Faults == true }}
+      faultKind: ${{ inputs.phase3FaultKind || 'services' }}
     permissions:
       contents: read
       packages: read

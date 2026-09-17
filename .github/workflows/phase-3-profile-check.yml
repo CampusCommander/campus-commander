@@ -11,6 +11,9 @@ on:
       faults:
         type: boolean
         default: false
+      faultKind:
+        type: string
+        default: services
 permissions:
   contents: read
   packages: read
@@ -24,7 +27,10 @@ jobs:
         env:
           UPGRADE: ${{ inputs.upgrade }}
           FAULTS: ${{ inputs.faults }}
-        run: '[ "$UPGRADE" != true ] || [ "$FAULTS" != true ]'
+          FAULT_KIND: ${{ inputs.faultKind }}
+        run: |
+          [ "$UPGRADE" != true ] || [ "$FAULTS" != true ]
+          [ "$FAULT_KIND" = services ] || [ "$FAULT_KIND" = provider ]
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1
         with:
@@ -134,13 +140,18 @@ jobs:
         env:
           NX_NO_CLOUD: 'true'
       - name: Qualify Phase 3 service interruptions
-        if: inputs.faults
+        if: inputs.faults && inputs.faultKind == 'services'
         run: npm exec nx run api-e2e:phase3-fault-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - name: Qualify Phase 3 provider failures
+        if: inputs.faults && inputs.faultKind == 'provider'
+        run: npm exec nx run api-e2e:phase3-provider-fault-integration
         env:
           NX_NO_CLOUD: 'true'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: ${{ inputs.faults && 'phase-3-service-faults' || inputs.upgrade && 'phase-3-upgrade-workflows' || 'phase-3-installed-workflows' }}
-          path: ${{ inputs.faults && 'dist/phase-3-faults/' || inputs.upgrade && 'dist/phase-3-upgrade/' || 'dist/phase-3-installation/' }}
+          name: ${{ inputs.faults && inputs.faultKind == 'provider' && 'phase-3-provider-faults' || inputs.faults && 'phase-3-service-faults' || inputs.upgrade && 'phase-3-upgrade-workflows' || 'phase-3-installed-workflows' }}
+          path: ${{ inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-provider-faults/' || inputs.faults && 'dist/phase-3-faults/' || inputs.upgrade && 'dist/phase-3-upgrade/' || 'dist/phase-3-installation/' }}
           if-no-files-found: warn

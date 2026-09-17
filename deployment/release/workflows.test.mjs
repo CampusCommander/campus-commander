@@ -484,16 +484,51 @@ test('service fault dispatch rejects upgrade mode before starting containers', a
   ]) {
     const run = () =>
       execFileSync('bash', ['-e', '-c', guard.run], {
-        env: { ...process.env, UPGRADE: upgrade, FAULTS: faults },
+        env: {
+          ...process.env,
+          UPGRADE: upgrade,
+          FAULTS: faults,
+          FAULT_KIND: 'services',
+        },
         stdio: 'pipe',
       });
     if (success) assert.doesNotThrow(run);
     else assert.throws(run);
   }
+  assert.throws(() =>
+    execFileSync('bash', ['-e', '-c', guard.run], {
+      env: {
+        ...process.env,
+        UPGRADE: 'false',
+        FAULTS: 'true',
+        FAULT_KIND: 'unknown',
+      },
+      stdio: 'pipe',
+    }),
+  );
+  assert.doesNotThrow(() =>
+    execFileSync('bash', ['-e', '-c', guard.run], {
+      env: {
+        ...process.env,
+        UPGRADE: 'false',
+        FAULTS: 'true',
+        FAULT_KIND: 'provider',
+      },
+      stdio: 'pipe',
+    }),
+  );
+  const provider = steps.find(
+    (step) => step.name === 'Qualify Phase 3 provider failures',
+  );
+  assert.equal(provider.if, "inputs.faults && inputs.faultKind == 'provider'");
+  assert.equal(
+    provider.run,
+    'npm exec nx run api-e2e:phase3-provider-fault-integration',
+  );
   const fault = steps.find(
     (step) => step.name === 'Qualify Phase 3 service interruptions',
   );
-  assert.equal(fault.if, 'inputs.faults');
+  assert.equal(fault.if, "inputs.faults && inputs.faultKind == 'services'");
   assert.equal(fault.run, 'npm exec nx run api-e2e:phase3-fault-integration');
   assert.ok(
     steps.indexOf(fault) >

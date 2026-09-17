@@ -226,3 +226,28 @@ Redis recovery rejected the previous session. All ten installed workflow checks 
 
 The [retained service fault report](../../deployment/evidence/CC-57-service-faults.json) includes exact release identity and three original report hashes.
 PR CI passed at the implementation and documentation revisions. Complete fault and profile acceptance remain open.
+
+## Installed provider failures
+
+The `api-e2e:phase3-provider-fault-integration` target uses the same verified installer and installed workflows.
+It simulates network failure, quota, denied privileges, and a different Google customer.
+Each failed check must preserve the last successful observation and the complete customer and connection response.
+Local Diagnostics must pass during each failure. Fresh application sign-in must pass during the network failure.
+A retired credential generation must return `409` with `credential-changed`.
+
+Each provider recovery must complete within 45 seconds.
+Durable policy hashes exclude connection observations because successful health checks update them.
+Each failed check separately compares complete observations against its preceding snapshot.
+The fixture advances only the owned database's health-check retry timestamp to avoid production retry delays.
+It retains failure reports and resets the simulator after execution.
+
+Select provider faults with these CI inputs:
+
+```sh
+gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
+  -f phase3Release=phase-3-lab-a3601eff2a55 \
+  -f phase3Faults=true -f phase3FaultKind=provider
+```
+
+This fixture does not establish live privileges, revocation, or Education behavior.
+Hosted provider qualification remains pending.
