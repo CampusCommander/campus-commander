@@ -45,6 +45,7 @@ export class EvidenceSecurity {
         '/import',
         '/api/auth/session',
         '/api/auth/preferences',
+        '/api/auth/invitations',
         '/api/application',
         '/api/auth/login',
         '/api/auth/callback',
@@ -98,8 +99,14 @@ export class EvidenceSecurity {
       observe(state, async () => {
         const response = await request.response();
         if (response) Object.assign(state, stateFor(response, 'body'));
+        const tokenResponse =
+          (state.route === '/api/auth/session' && state.status === 200) ||
+          (state.route === '/pair' && state.status === 200) ||
+          (state.route === '/api/auth/invitations' &&
+            state.status === 201 &&
+            request.method() === 'POST');
         if (
-          response &&
+          tokenResponse &&
           response.headers()['content-type']?.includes('application/json')
         )
           this.observeResponse({}, await response.text());
@@ -345,7 +352,7 @@ export class EvidenceSecurity {
       limits: [
         'This report covers registered complete fixture secrets in the listed files and supplied logs. Partial secrets require separate review.',
         'Screenshot checks inspect surrounding document content and bind the result to exact image bytes. They do not perform image recognition.',
-        'JSON token observation covers completed browser requests. Interrupted requests retain their observed response cookies.',
+        'Browser JSON token observation covers successful session, invitation creation, and setup pairing responses. All browser responses retain cookie observation.',
         'Failed runs, release bundles, and live district data require separate review.',
       ],
     };

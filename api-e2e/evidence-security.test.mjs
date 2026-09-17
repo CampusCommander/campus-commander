@@ -210,6 +210,8 @@ test('browser observation captures transient cookies and completed JSON bodies',
         value: 'invitation=transient-cookie-secret; Secure',
       },
     ],
+    url: () => 'https://fixture.invalid/api/auth/session',
+    status: () => 200,
     headers: () => ({ 'content-type': 'application/json' }),
     text: async () => JSON.stringify({ token: secret }),
   };
@@ -220,6 +222,8 @@ test('browser observation captures transient cookies and completed JSON bodies',
     assert.throws(() => security.assertSafe(value, 'logs'), /protected/);
   context.emit('requestfinished', {
     response: async () => ({
+      url: () => 'https://fixture.invalid/api/auth/session',
+      status: () => 200,
       headers: () => ({ 'content-type': 'application/json' }),
       text: async () => {
         throw new Error(secret);
@@ -298,6 +302,8 @@ test('browser response registration fails within its time limit for an unfinishe
   await security.newContext({ newContext: async () => context }, {});
   context.emit('requestfinished', {
     response: async () => ({
+      url: () => 'https://fixture.invalid/api/auth/session',
+      status: () => 200,
       headers: () => ({ 'content-type': 'application/json' }),
       text: async () => Promise.withResolvers().promise,
     }),
@@ -342,4 +348,31 @@ test('browser closure drains observations and still closes after an observation 
     /registration did not complete/,
   );
   assert.equal(closed, true);
+});
+
+test('navigation response bodies stay outside token observation while their cookies remain protected', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  let bodyReads = 0;
+  const response = {
+    url: () => 'https://fixture.invalid/api/auth/enrollment/start',
+    status: () => 201,
+    headersArray: async () => [
+      { name: 'Set-Cookie', value: 'fixture=navigation-cookie-secret; Secure' },
+    ],
+    headers: () => ({ 'content-type': 'application/json' }),
+    text: async () => {
+      bodyReads++;
+      throw new Error('No resource with given identifier found');
+    },
+  };
+  context.emit('response', response);
+  context.emit('requestfinished', { response: async () => response });
+  await security.observePendingResponses();
+  assert.equal(bodyReads, 0);
+  assert.throws(
+    () => security.assertSafe('navigation-cookie-secret', 'log'),
+    /protected/,
+  );
 });

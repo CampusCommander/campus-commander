@@ -182,7 +182,7 @@ It also scans current audit records and a new support bundle. The report lists f
 The scanner removes rejected artifacts. It does not publish matched values or surrounding text.
 Unknown evidence formats fail the scan. Release archives and live district evidence require separate checks.
 
-Ten local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
+Eleven local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
 Hosted source and packaged qualification of this increment remain pending. Failed runs do not establish a completed final scan.
 
 The first review found three gaps: omitted service stderr, unregistered transient browser cookies, and unchecked artifact paths.
@@ -264,3 +264,10 @@ Context closure now drains pending observations before disposing of browser reso
 Failure diagnostics also retain bounded route and error categories. They exclude the underlying error message.
 The scanner removes rejected symlinks before artifact publication. Its regression verifies that the link target remains available.
 Hosted qualification must verify these changes. The earlier failed runs remain failed evidence.
+
+Run `35182252598` identified the remaining failure as an unavailable enrollment response body after navigation.
+The response sets cookies and returns the sign-in URL. It does not return a JSON token field.
+Browser JSON observation now covers successful session reads, invitation creation, and local installer pairing.
+Cookie observation still covers every browser response. The synthetic provider registers authorization state, nonce, and PKCE challenge values independently.
+This policy avoids reading discarded navigation response bodies. It does not suppress a failed read from a token-producing route.
+The fixture regressions verify that navigation cookies remain protected when their response body is unavailable.

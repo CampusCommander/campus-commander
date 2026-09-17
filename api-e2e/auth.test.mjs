@@ -369,6 +369,18 @@ test(
             assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
             const code = randomUUID();
             evidenceSecurity.register('authorization-code', code);
+            evidenceSecurity.register(
+              'authorization-state',
+              url.searchParams.get('state'),
+            );
+            evidenceSecurity.register(
+              'identity-nonce',
+              url.searchParams.get('nonce'),
+            );
+            evidenceSecurity.register(
+              'pkce-challenge',
+              url.searchParams.get('code_challenge'),
+            );
             codes.set(code, {
               nonce: url.searchParams.get('nonce'),
               challenge: url.searchParams.get('code_challenge'),
