@@ -1,7 +1,7 @@
 # Phase 3 school scopes
 
 Owner: [CC-52](https://easton-consulting.atlassian.net/browse/CC-52).
-Status: shared contracts and scope resolver implemented. Provider integration, persistence, API, browser, and complete qualification remain pending.
+Status: shared contracts and scope resolver implemented. The optional provider reader is implemented. Persistence, API, browser, and complete qualification remain pending.
 This slice follows CC-48 and CC-51 through the CC-49 stack.
 
 ## Outcome and language
@@ -108,3 +108,18 @@ API, frontend, and worker builds passed after the new exports.
 Standards and specification review have no remaining findings in this bounded contract scope.
 The specification correction reuses the existing stable Google customer-ID schema and rejects customer aliases.
 These checks do not qualify school APIs, persistence, grant changes, or browser behavior.
+
+## Optional provider reader
+
+Revision `c227d90` adds `GoogleCustomerVerifier.readSchoolReferences`.
+It requests only the OU read-only scope and verifies the exact issued scope and token lifetime.
+The read uses the fixed customer endpoint and returns a bounded, validated complete hierarchy.
+A shared exact-scope token helper also supports existing targeted health checks.
+The reader does not alter the mandatory customer token profile or enable the school selector.
+
+Seven provider, API, and worker test, lint, and build targets pass.
+Four new provider cases cover isolated scopes, extra-scope rejection, classified authorization failures, and invalid hierarchies.
+Standards and specification reviews report no remaining findings in this increment.
+The [direct provider proof](../../deployment/evidence/CC-52-provider-live-proof.json) passed against the approved customer at `c227d90`.
+It returned three validated OU references, including the root, with the exact read-only scope.
+Database credential-generation checks before publication remain pending.
