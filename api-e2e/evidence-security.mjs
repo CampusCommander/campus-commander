@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readdir, readFile, rm } from 'node:fs/promises';
 import { basename, extname, join, resolve } from 'node:path';
@@ -14,10 +15,59 @@ const secretFields = new Set([
   'id_token',
 ]);
 
+export function captureEvidenceOutput(command, args) {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0)
+    throw new Error('Evidence process did not complete successfully.');
+  return `${result.stdout}\n${result.stderr}`;
+}
+
 export class EvidenceSecurity {
   #markers = new Map();
   #counts = new Map();
   #screenshots = new Map();
+  #pending = new Set();
+  #responseFailures = 0;
+
+  async newContext(browser, options) {
+    const context = await browser.newContext(options);
+    context.on('response', (response) => {
+      const observation = (async () => {
+        const headers = await response.headersArray();
+        this.observeResponse(
+          {
+            'set-cookie': headers
+              .filter(({ name }) => name.toLowerCase() === 'set-cookie')
+              .map(({ value }) => value),
+          },
+          '',
+        );
+        if (
+          headers.some(
+            ({ name, value }) =>
+              name.toLowerCase() === 'content-type' &&
+              value.includes('application/json'),
+          )
+        )
+          this.observeResponse({}, await response.text());
+      })().catch(() => {
+        this.#responseFailures++;
+      });
+      this.#pending.add(observation);
+      void observation.then(() => this.#pending.delete(observation));
+    });
+    return context;
+  }
+
+  async observePendingResponses() {
+    while (this.#pending.size) await Promise.all(this.#pending);
+    if (this.#responseFailures)
+      throw new Error('Browser response secret registration did not complete.');
+  }
 
   register(category, value) {
     if (typeof value !== 'string' && !Buffer.isBuffer(value)) return;
@@ -81,6 +131,7 @@ export class EvidenceSecurity {
   }
 
   async assertPageSafe(page, label) {
+    await this.observePendingResponses();
     for (const cookie of await page.context().cookies())
       this.register('browser-cookie', cookie.value);
     const content = await page.evaluate(() =>
@@ -100,6 +151,7 @@ export class EvidenceSecurity {
 
   async screenshot(page, options) {
     const path = resolve(options.path);
+    this.assertSafe(path, 'screenshot path');
     try {
       await this.assertPageSafe(page, basename(path));
       const bytes = await page.screenshot(options);
@@ -113,6 +165,7 @@ export class EvidenceSecurity {
   }
 
   async scan(directory, sources = {}) {
+    await this.observePendingResponses();
     const files = [];
     const findings = [];
     for (const [label, value] of Object.entries(sources)) {
@@ -125,6 +178,16 @@ export class EvidenceSecurity {
     const walk = async (path) => {
       for (const entry of await readdir(path, { withFileTypes: true })) {
         const file = join(path, entry.name);
+        try {
+          this.assertSafe(
+            file.slice(resolve(directory).length + 1),
+            'artifact path',
+          );
+        } catch {
+          findings.push('An artifact path contains a protected value.');
+          await rm(file, { recursive: true, force: true });
+          continue;
+        }
         if (entry.isDirectory()) {
           await walk(file);
           continue;

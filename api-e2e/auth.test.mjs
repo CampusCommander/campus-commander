@@ -1,4 +1,7 @@
-import { evidenceSecurity } from './evidence-security.mjs';
+import {
+  evidenceSecurity,
+  captureEvidenceOutput,
+} from './evidence-security.mjs';
 import { qualifyPhase3RouteSecurity } from './phase3-route-security.mjs';
 import { qualifyGoogleLifecycleApi } from './google-lifecycle.mjs';
 import { qualifySchoolReferencesApi } from './school-references.mjs';
@@ -157,6 +160,7 @@ test(
         'synthetic-domain-token',
         'synthetic-ou-token',
         'synthetic-upload-secret',
+        'synthetic-private-provider-diagnostic',
       ])
         evidenceSecurity.register('provider-secret', token);
       const password = randomUUID();
@@ -880,7 +884,7 @@ test(
       browser = await chromium.launch({
         args: ['--host-resolver-rules=MAP host.docker.internal 127.0.0.1'],
       });
-      const enrollmentContext = await browser.newContext({
+      const enrollmentContext = await evidenceSecurity.newContext(browser, {
         ignoreHTTPSErrors: true,
       });
       const enrollmentPage = await enrollmentContext.newPage();
@@ -938,7 +942,7 @@ test(
         await uploadServer.close();
       }
       // The first browser starts pairing, then the operator switches profiles.
-      const firstBrowser = await browser.newContext({
+      const firstBrowser = await evidenceSecurity.newContext(browser, {
         ignoreHTTPSErrors: true,
       });
       try {
@@ -1759,8 +1763,14 @@ test(
       const retainedEvidence = {
         events: JSON.stringify(events.rows),
         api: output,
-        worker: docker('logs', kestraFixture.workerName),
-        kestra: docker('logs', kestraFixture.kestraName),
+        worker: captureEvidenceOutput('docker', [
+          'logs',
+          kestraFixture.workerName,
+        ]),
+        kestra: captureEvidenceOutput('docker', [
+          'logs',
+          kestraFixture.kestraName,
+        ]),
         executions: JSON.stringify(executions),
         flow: await fetch(
           `${kestraFixture.origin}/api/v1/main/flows/campus.application/phase2_connection`,
@@ -1791,7 +1801,7 @@ test(
       browser = await chromium.launch({
         args: ['--host-resolver-rules=MAP host.docker.internal 127.0.0.1'],
       });
-      const context = await browser.newContext({
+      const context = await evidenceSecurity.newContext(browser, {
         ignoreHTTPSErrors: true,
         reducedMotion: 'reduce',
         viewport: { width: 1280, height: 900 },
@@ -2317,8 +2327,14 @@ test(
         await createSupportBundle({ directory: finalSupportDirectory, config });
         const redaction = await evidenceSecurity.scan(evidenceDirectory, {
           api: output,
-          worker: docker('logs', kestraFixture.workerName),
-          kestra: docker('logs', kestraFixture.kestraName),
+          worker: captureEvidenceOutput('docker', [
+            'logs',
+            kestraFixture.workerName,
+          ]),
+          kestra: captureEvidenceOutput('docker', [
+            'logs',
+            kestraFixture.kestraName,
+          ]),
           audit: JSON.stringify(
             (await migrator.query('SELECT * FROM cc.security_events')).rows,
           ),

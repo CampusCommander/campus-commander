@@ -11,7 +11,11 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { EvidenceSecurity } from './evidence-security.mjs';
+import { EventEmitter } from 'node:events';
+import {
+  EvidenceSecurity,
+  captureEvidenceOutput,
+} from './evidence-security.mjs';
 
 const secret = 'fixture-private-value:alpha\nbeta';
 
@@ -149,6 +153,90 @@ test('screenshot checks reject content changes and bind passing checks to exact 
     await assert.rejects(security.scan(directory), /matching screenshot/);
     await symlink('/tmp', join(directory, 'outside'));
     await assert.rejects(security.scan(directory), /regular files/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('process evidence includes stderr and never exposes output on process failure', () => {
+  const security = new EvidenceSecurity();
+  security.register('fixture-secret', secret);
+  const script =
+    'process.stdout.write("safe"); process.stderr.write(process.argv[1]);';
+  const output = captureEvidenceOutput(process.execPath, [
+    '-e',
+    script,
+    secret,
+  ]);
+  assert.throws(
+    () => security.assertSafe(output, 'service logs'),
+    /protected fixture-secret/,
+  );
+  assert.throws(
+    () =>
+      captureEvidenceOutput(process.execPath, [
+        '-e',
+        `${script} process.exitCode=1;`,
+        secret,
+      ]),
+    (error) =>
+      error.message === 'Evidence process did not complete successfully.' &&
+      !error.message.includes(secret),
+  );
+});
+
+test('browser response registration preserves transient cookies and JSON secrets without screenshots', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  context.emit('response', {
+    headersArray: async () => [
+      {
+        name: 'Set-Cookie',
+        value: 'invitation=transient-cookie-secret; Secure',
+      },
+      { name: 'Content-Type', value: 'application/json' },
+    ],
+    text: async () => JSON.stringify({ token: secret }),
+  });
+  await security.observePendingResponses();
+  for (const value of ['transient-cookie-secret', secret])
+    assert.throws(() => security.assertSafe(value, 'logs'), /protected/);
+  context.emit('response', {
+    headersArray: async () => [
+      { name: 'Content-Type', value: 'application/json' },
+    ],
+    text: async () => {
+      throw new Error(secret);
+    },
+  });
+  await assert.rejects(
+    security.observePendingResponses(),
+    (error) =>
+      error.message ===
+        'Browser response secret registration did not complete.' &&
+      !error.message.includes(secret),
+  );
+});
+
+test('artifact path secrets never enter reports or failure messages', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cc-path-security-'));
+  const marker = 'private-filename-token';
+  const security = new EvidenceSecurity();
+  security.register('fixture-secret', marker);
+  try {
+    await writeFile(join(directory, `${marker}.json`), '{}');
+    await mkdir(join(directory, marker));
+    await writeFile(join(directory, marker, 'safe.json'), '{}');
+    await assert.rejects(
+      security.scan(directory),
+      (error) =>
+        error.message.includes('artifact path contains a protected value') &&
+        !error.message.includes(marker),
+    );
+    const report = await security.scan(directory);
+    assert.deepEqual(report.files, []);
+    assert.equal(JSON.stringify(report).includes(marker), false);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

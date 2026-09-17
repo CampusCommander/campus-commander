@@ -16,7 +16,7 @@ export async function qualifyAccessRevocationBrowser({
   auditAccessibility,
   evidenceDirectory,
 }) {
-  const context = await browser.newContext({
+  const context = await evidenceSecurity.newContext(browser, {
     ignoreHTTPSErrors: true,
     viewport: { width: 1280, height: 900 },
     reducedMotion: 'reduce',

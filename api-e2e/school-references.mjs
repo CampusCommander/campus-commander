@@ -15,7 +15,9 @@ export async function qualifySchoolReferencesApi({
   evidenceDirectory,
   setSubject,
 }) {
-  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const context = await evidenceSecurity.newContext(browser, {
+    ignoreHTTPSErrors: true,
+  });
   const faultPath = join(directory, 'google-health-fault.json');
   let actor;
   let priorVersion;

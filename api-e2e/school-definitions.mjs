@@ -222,7 +222,9 @@ export async function qualifySchoolDefinitionsApi({
   const assigned = await api.get(grantRoot);
   assert.equal(assigned.status(), 200, await assigned.text());
   assert.deepEqual((await assigned.json()).grants, grants);
-  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const context = await evidenceSecurity.newContext(browser, {
+    ignoreHTTPSErrors: true,
+  });
   try {
     setSubject(subject);
     const page = await context.newPage();

@@ -91,7 +91,7 @@ export async function qualifyInvitationBrowser({
   await expect(page.getByLabel('Invitation link', { exact: true })).toHaveCount(
     0,
   );
-  const recipient = await browser.newContext({
+  const recipient = await evidenceSecurity.newContext(browser, {
     ignoreHTTPSErrors: true,
     viewport: { width: 1280, height: 900 },
     reducedMotion: 'reduce',

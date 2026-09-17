@@ -182,5 +182,11 @@ It also scans current audit records and a new support bundle. The report lists f
 The scanner removes rejected artifacts. It does not publish matched values or surrounding text.
 Unknown evidence formats fail the scan. Release archives and live district evidence require separate checks.
 
-Four local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
+Seven local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
 Hosted source and packaged qualification of this increment remain pending. Failed runs do not establish a completed final scan.
+
+The first review found three gaps: omitted service stderr, unregistered transient browser cookies, and unchecked artifact paths.
+The corrected fixture captures both service log streams and registers browser response secrets from context creation.
+It also rejects secret-bearing paths without reporting their contents. Regression tests cover each gap.
+Synthetic provider failures now include a private diagnostic marker. The final scan rejects that marker from public evidence.
+Hosted qualification must verify these corrections before this increment qualifies.
