@@ -46,18 +46,36 @@
   "grantIntegration": {
     "revision": "cea7c9f",
     "edgeCorrection": "d750e86",
-    "status": "local-checks-passed-hosted-pending",
-    "sourceRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35173515623"
+    "status": "source-passed-full-pending",
+    "sourceRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35173515623",
+    "sourceReport": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-school-grants-synthetic-google",
+      "checks": [
+        "strict preview input, CSRF, explicit confirmation, and durable receipt recovery",
+        "scoped lists, totals, details, and audit deny another school",
+        "scoped operator cannot manage references, previews, or receipts",
+        "failed reference health preserves saved definitions without effective resource access",
+        "definition confirmation invalidates an affected operator session"
+      ],
+      "limits": ["Browser school forms remain pending."]
+    }
   },
   "reviews": {
     "standards": "No remaining findings through cea7c9f.",
     "specification": "No remaining findings after d750e86."
   },
   "remaining": [
-    "Hosted grant integration and packaged qualification.",
+    "Full grant integration qualification.",
     "School browser forms and OU selector.",
     "Human accessibility and acceptance.",
     "Combined deployment and release qualification.",
     "Retained intermittent browser sign-in and credential staging failures in CC-54."
-  ]
+  ],
+  "packagedDefinitions": {
+    "revision": "4c30d49",
+    "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35173253662",
+    "status": "passed",
+    "scope": "All seven full-run jobs passed, including packaged school reference and definition APIs."
+  }
 }

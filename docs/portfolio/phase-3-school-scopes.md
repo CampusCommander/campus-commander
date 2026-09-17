@@ -208,4 +208,7 @@ Grant review found a 4 KiB edge limit that rejected valid confirmations for seve
 Revision `d750e86` raises both exact access endpoint limits to 96 KiB.
 The edge regression passes a 256-school confirmation and rejects oversized requests.
 Both review axes have no remaining findings after that correction.
-Hosted grant integration and browser school controls remain pending.
+[Grant source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173515623) passed at `cea7c9f`.
+Its fixture assigns school grants through public access review and confirmation.
+[Full definition qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173253662) passed all seven jobs at `4c30d49`.
+Full grant integration and browser school controls remain pending.
