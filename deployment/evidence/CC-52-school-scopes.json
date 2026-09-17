@@ -81,7 +81,8 @@
     "specification": "No remaining findings after d750e86."
   },
   "remaining": [
-    "School browser forms and OU selector.",
+    "Packaged school browser qualification.",
+    "Scoped grant browser controls.",
     "Human accessibility and acceptance.",
     "Combined deployment and release qualification.",
     "Retained intermittent browser sign-in and credential staging failures in CC-54."
@@ -105,5 +106,38 @@
     "limits": [
       "Browser integration, both themes, zoom, and human screen-reader qualification remain pending."
     ]
+  },
+  "schoolBrowser": {
+    "implementationRevision": "192dc26",
+    "reviewCorrections": "f2fd25b",
+    "qualificationRevision": "b1abfc4",
+    "status": "local-passed-packaged-pending",
+    "local": {
+      "chromiumCases": 7,
+      "frontendUnitTests": 33,
+      "checks": [
+        "Lost confirmation response and receipt recovery across reload",
+        "New-school reference conflict preserves draft and school ID",
+        "Stale references and access changes prevent confirmation",
+        "Scoped viewer controls and Phase 2 exclusion",
+        "Keyboard navigation, focus restoration, and associated name errors",
+        "Automated accessibility in both themes, 200 percent CSS zoom, and 320-pixel reflow",
+        "Contract tests, frontend lint and build, and exact public-edge route checks"
+      ]
+    },
+    "fullRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35176001526",
+    "reviews": {
+      "standards": "No remaining findings after f2fd25b.",
+      "specification": "No remaining findings after f2fd25b."
+    },
+    "limits": [
+      "Mocked browser checks do not establish real API integration.",
+      "Human screen-reader and usability acceptance remain unperformed."
+    ],
+    "visualChecks": {
+      "status": "passed",
+      "scope": "Light draft and dark review inspected. Both themes pass the focused browser accessibility and reflow case.",
+      "screenshots": "frontend-e2e schools fixture retains school-draft-{light,dark}.png and school-review-{light,dark}.png in its test output."
+    }
   }
 }

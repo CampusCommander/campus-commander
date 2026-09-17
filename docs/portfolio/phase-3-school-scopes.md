@@ -213,7 +213,7 @@ Its fixture assigns school grants through public access review and confirmation.
 [Full definition qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173253662) passed all seven jobs at `4c30d49`.
 [Full grant qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173907683) passed all seven jobs at `e29f96e`.
 Downloaded reports confirm public school grant assignment through the packaged application and real PostgreSQL.
-Browser school controls remain pending.
+School grant controls remain pending. The school definition browser implementation follows below.
 
 ## Focused OU picker
 
@@ -226,5 +226,43 @@ It preserves focus without changing selection.
 
 Applicable rules: UI-04, UI-05, UI-09, UI-10, and TREE-01.
 Frontend tests, lint, and production build pass. Both review axes have no remaining picker findings.
-Browser integration, both themes, zoom, and human screen-reader qualification remain pending.
-The picker has no application route until the school editor integrates its reference and confirmation states.
+The school editor now integrates the picker. Browser keyboard, both-theme accessibility, and zoom checks pass.
+Human screen-reader qualification remains pending.
+
+## School definition browser workflow
+
+Revision `192dc26` adds the Phase 3 school route, navigation, reference health, scoped browsing, definition editor, and audit view.
+The editor preserves the name, explicit rules, reviewed identities, and unresolved confirmation across reloads.
+Receipt recovery distinguishes an unresolved write from a confirmed save.
+Reference expiry, generation changes, permission changes, and session changes prevent confirmation against obsolete state.
+Optional OU authorization remains separate from the two required connection scopes.
+
+Revision `f2fd25b` corrects four review findings.
+New-school reference conflicts preserve the school identity and permit another preview.
+New reads supersede earlier responses, including reads that began before a save.
+Pending, recovery, and closure transitions restore keyboard focus.
+Invalid names receive associated error text and invalid semantics.
+Both review axes have no remaining findings.
+
+Seven mocked Chromium cases pass, including receipt recovery, conflicts, viewer controls, keyboard navigation, both themes, and narrow layouts.
+Thirty-three frontend unit tests pass. Contract tests, frontend build, lint, and bootstrap route checks pass.
+The browser audit waits for the expected label color after theme changes.
+An earlier audit captured an intermediate label color during the transition.
+PR runs `35173914165` and `35174695520` failed an older school-contract formatting check.
+Revision `f2fd25b` corrects that formatting.
+
+Revision `b1abfc4` adds browser checks through the real public API and PostgreSQL.
+The fixture creates a school, loses the confirmation response, reloads the page, and recovers the durable receipt.
+It also checks scoped browsing, audit, stale definitions, and session invalidation through the viewer page.
+[Full school UI qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35176001526) is active at that revision.
+
+UI handoff: rules UI-01 through UI-10, FORM-01, and TREE-01 apply.
+The page uses list/detail browsing and a centered form with an embedded picker.
+Loading, empty, error, stale, partial-region failure, and interrupted-request states retain the applicable context.
+Keyboard, automated accessibility, both themes, 200 percent CSS zoom, and 320-pixel reflow pass in the mocked browser.
+Human screen-reader and usability acceptance remain unperformed.
+School grant controls, combined deployment qualification, and owner acceptance remain pending.
+
+The final picker pass uses the bundled Material Symbols font.
+The focused browser case passes after that correction and retains light and dark draft and review screenshots.
+Visual inspection of the light draft and dark review found no clipping or missing icons.
