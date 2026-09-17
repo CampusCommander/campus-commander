@@ -280,3 +280,27 @@ All three certificate failures preserved Phase 3 state. Recovery took 9,080 to 9
 The fixture restored every original secret file. The certificate segment took 73,735 milliseconds.
 The [retained certificate report](../../deployment/evidence/CC-57-certificate-faults.json) includes three original report hashes and complete fixture limits.
 All ten installed workflows passed. PR CI passed at the same harness revision.
+
+## Installed capacity failure
+
+The `api-e2e:phase3-capacity-fault-integration` target installs the signed release with a disposable 16 MiB artifact filesystem.
+The runtime fixture preserves product mount paths and replaces only the artifact volume driver options.
+Before filling the volume, the test verifies Compose ownership, mount identity, exact tmpfs options, filesystem type, and capacity.
+The bounded writer must observe `ENOSPC` and zero available filesystem bytes.
+
+The authenticated Artifact storage diagnostic must fail while the filesystem is full.
+The test removes its filler and requires recovery within 60 seconds.
+It verifies artifact bytes, artifact metadata, staging cleanup, Phase 3 policy state, security events, and Kestra state.
+The report retains failure progress and exact release identity.
+
+Select capacity failure with these CI inputs:
+
+```sh
+gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
+  -f phase3Release=phase-3-lab-a3601eff2a55 \
+  -f phase3Faults=true -f phase3FaultKind=capacity
+```
+
+The tmpfs test models `ENOSPC`. It does not establish physical-disk or power-loss durability.
+Its artifact preservation checks cover the capacity fault and recovery before subsequent installer lifecycle checks.
+Hosted capacity qualification remains pending.

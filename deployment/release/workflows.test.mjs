@@ -528,6 +528,25 @@ test('service fault dispatch rejects upgrade mode before starting containers', a
       stdio: 'pipe',
     }),
   );
+  assert.doesNotThrow(() =>
+    execFileSync('bash', ['-e', '-c', guard.run], {
+      env: {
+        ...process.env,
+        UPGRADE: 'false',
+        FAULTS: 'true',
+        FAULT_KIND: 'capacity',
+      },
+      stdio: 'pipe',
+    }),
+  );
+  const capacity = steps.find(
+    (step) => step.name === 'Qualify Phase 3 capacity failure',
+  );
+  assert.equal(capacity.if, "inputs.faults && inputs.faultKind == 'capacity'");
+  assert.equal(
+    capacity.run,
+    'npm exec nx run api-e2e:phase3-capacity-fault-integration',
+  );
   const certificates = steps.find(
     (step) => step.name === 'Qualify Phase 3 certificate failures',
   );

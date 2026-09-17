@@ -118,3 +118,36 @@ test('certificate fault evidence retains ownership rejection before reading priv
   assert.equal(report.harnessRevision, 'b'.repeat(40));
   assert.ok(Number.isFinite(report.durationMs));
 });
+
+test('capacity faults reject unowned and unbounded volumes before writing', async () => {
+  const { assertCapacityVolume } = await import('./phase3-capacity-faults.mjs');
+  const project = 'cc-phase3-12345678-abc';
+  const owned = {
+    Name: `${project}_artifacts`,
+    Driver: 'local',
+    Labels: {
+      'com.docker.compose.project': project,
+      'com.docker.compose.volume': 'artifacts',
+    },
+    Options: {
+      type: 'tmpfs',
+      device: 'tmpfs',
+      o: 'size=16m,uid=1000,gid=1000,mode=0700',
+    },
+  };
+  assert.doesNotThrow(() => assertCapacityVolume(owned, project));
+  for (const changed of [
+    { ...owned, Name: 'shared-artifacts' },
+    { ...owned, Driver: 'nfs' },
+    { ...owned, Labels: {} },
+    {
+      ...owned,
+      Labels: { ...owned.Labels, 'com.docker.compose.project': 'production' },
+    },
+    { ...owned, Options: null },
+    { ...owned, Options: { ...owned.Options, type: 'ext4' } },
+    { ...owned, Options: { ...owned.Options, o: 'size=1g' } },
+  ])
+    assert.throws(() => assertCapacityVolume(changed, project));
+  assert.throws(() => assertCapacityVolume(owned, 'production'));
+});

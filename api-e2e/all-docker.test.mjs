@@ -26,28 +26,34 @@ import {
 
 import { faultAllDocker } from './all-docker-faults-fixture.mjs';
 import { qualifyAllDockerCertificates } from './all-docker-certificates-fixture.mjs';
+import { qualifyInstalledCapacity } from './phase3-capacity-faults.mjs';
 import { qualifyInstalledProviderFaults } from './phase3-provider-faults.mjs';
 
+const phase3CapacityFaults = process.env.CC_AUTH_PHASE3_CAPACITY_FAULTS === '1';
 const phase3CertificateFaults =
   process.env.CC_AUTH_PHASE3_CERTIFICATE_FAULTS === '1';
 const phase3ProviderFaults = process.env.CC_AUTH_PHASE3_PROVIDER_FAULTS === '1';
 const phase3Faults =
   process.env.CC_AUTH_PHASE3_FAULTS === '1' ||
   phase3ProviderFaults ||
-  phase3CertificateFaults;
+  phase3CertificateFaults ||
+  phase3CapacityFaults;
 assert.ok(
   [
     process.env.CC_AUTH_PHASE3_FAULTS === '1',
     phase3ProviderFaults,
     phase3CertificateFaults,
+    phase3CapacityFaults,
   ].filter(Boolean).length <= 1,
   'Select one Phase 3 fault group.',
 );
-const faultTarget = phase3CertificateFaults
-  ? 'phase3-certificate-fault-integration'
-  : phase3ProviderFaults
-    ? 'phase3-provider-fault-integration'
-    : 'phase3-fault-integration';
+const faultTarget = phase3CapacityFaults
+  ? 'phase3-capacity-fault-integration'
+  : phase3CertificateFaults
+    ? 'phase3-certificate-fault-integration'
+    : phase3ProviderFaults
+      ? 'phase3-provider-fault-integration'
+      : 'phase3-fault-integration';
 const phase3Restore = process.env.CC_AUTH_PHASE3_RESTORE === '1';
 const phase3Upgrade = process.env.CC_AUTH_PHASE3_UPGRADE === '1';
 const phase3Workflows =
@@ -89,11 +95,13 @@ test(
       ? 'uncommitted-candidate'
       : 'clean';
     const evidenceDirectory = phase3Faults
-      ? phase3CertificateFaults
-        ? 'dist/phase-3-certificate-faults'
-        : phase3ProviderFaults
-          ? 'dist/phase-3-provider-faults'
-          : 'dist/phase-3-faults'
+      ? phase3CapacityFaults
+        ? 'dist/phase-3-capacity-faults'
+        : phase3CertificateFaults
+          ? 'dist/phase-3-certificate-faults'
+          : phase3ProviderFaults
+            ? 'dist/phase-3-provider-faults'
+            : 'dist/phase-3-faults'
       : phase3Restore
         ? 'dist/phase-3-recovery'
         : phase3Upgrade
@@ -374,6 +382,11 @@ if(args[0]==='compose' && args[index]===${JSON.stringify(composePath)} && fs.exi
     doc.services[service].volumes.push({type:'bind',source:${JSON.stringify(join(root, 'google-connection-preload.cjs'))},target:'/run/qualification/google-connection-preload.cjs',read_only:true});
   }
   if(${phase3ProviderFaults})for(const service of ['api','workers']) doc.services[service].volumes.push({type:'bind',source:${JSON.stringify(join(root, 'google-health-fault.json'))},target:'/run/qualification/google-health-fault.json',read_only:true});
+  if(${phase3CapacityFaults}) {
+    const volume=doc.volumes?.artifacts;
+    if(!volume || volume.external || volume.name)throw Error('Capacity qualification requires its rendered artifact volume.');
+    doc.volumes.artifacts={...volume,driver:'local',driver_opts:{type:'tmpfs',device:'tmpfs',o:'size=16m,uid=1000,gid=1000,mode=0700'}};
+  }
   fs.writeFileSync(${JSON.stringify(runtimePath)},JSON.stringify(doc),{mode:0o600});
   args[index]=${JSON.stringify(runtimePath)};
 }
@@ -549,11 +562,13 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             'dark',
           );
           if (phase3Faults) {
-            const qualifyFaults = phase3CertificateFaults
-              ? qualifyAllDockerCertificates
-              : phase3ProviderFaults
-                ? qualifyInstalledProviderFaults
-                : faultAllDocker;
+            const qualifyFaults = phase3CapacityFaults
+              ? qualifyInstalledCapacity
+              : phase3CertificateFaults
+                ? qualifyAllDockerCertificates
+                : phase3ProviderFaults
+                  ? qualifyInstalledProviderFaults
+                  : faultAllDocker;
             await qualifyFaults({
               root,
               project,
