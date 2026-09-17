@@ -164,3 +164,20 @@ test('reparented references leave the effective set and stale failures preserve 
   );
   assert.deepEqual({ rules, approvedIds }, original);
 });
+
+test('aliases and malformed customer labels cannot replace a stable customer identity', () => {
+  for (const customerId of [
+    'my_customer',
+    'school-district',
+    'C',
+    'east.example',
+  ])
+    assert.deepEqual(
+      resolveSchoolScope({
+        ...input,
+        customerId,
+        observation: { ...observation, customerId },
+      }),
+      { valid: false, reason: 'invalid-reference' },
+    );
+});

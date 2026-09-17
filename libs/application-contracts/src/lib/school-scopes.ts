@@ -1,6 +1,5 @@
 import { z } from 'zod';
-
-const customerId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+import { googleCustomerIdSchema } from './google-connection';
 const ouId = z
   .string()
   .min(1)
@@ -14,7 +13,7 @@ export const ouReferenceSchema = z.strictObject({
   parentId: ouId.nullable(),
 });
 export const schoolReferenceObservationSchema = z.strictObject({
-  customerId,
+  customerId: googleCustomerIdSchema,
   generation: z.number().int().positive(),
   revision: z.uuid(),
   observedAt: z.iso.datetime(),
