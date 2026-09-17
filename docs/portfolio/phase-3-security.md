@@ -296,7 +296,7 @@ Exact SQLSTATE and constraint checks exclude unrelated rejection causes. Fault c
 Confirmation now rejects each audit event separately: `invitation-confirmed` and `access-granted`.
 Expiry covers issued, redeeming, and pending invitations in one sweep. Failed expiry preserves every row and event.
 The successful retry checks each invitation version and exactly one expiry event per invitation.
-Local deployment lint and PostgreSQL contract tests pass. Real PostgreSQL execution of this extension remains pending.
+Local deployment lint and PostgreSQL contract tests pass. Real PostgreSQL execution passed at `86b91c1` in run `35183474975`.
 
 ## Token and observation rollback extension
 
@@ -304,16 +304,23 @@ The token fixture compares complete token, connection, credential, and security-
 It covers successful renewal, terminal renewal failure, transient renewal failure, token rejection, observation publication, and authorized retry.
 Each probe requires the exact injected constraint failure. Cleanup removes the constraint after success or failure.
 The existing successful operations run after each fault to verify recovery.
-Local deployment lint and PostgreSQL contract tests pass. Real PostgreSQL execution of this extension remains pending.
+Local deployment lint and PostgreSQL contract tests pass. Real PostgreSQL execution passed at `86b91c1` in run `35183474975`.
 
 ## Popup closure finding
 
 Full run `35182784565` failed at `ca9023b` during the access-revocation browser fixture.
 The scanner retained a completed-request observation failure with category `target-closed`.
-The fixture closed two sign-in popups directly. The settings fixture also closed its sign-in popup directly.
-These calls bypassed the drain used for browser and context closure.
+The first failing screenshot precedes the access-revocation popup steps. The settings fixture closed its sign-in page earlier.
+That closure and two later access-revocation popup closures bypassed the drain used for browser and context closure.
 
 A local Chromium reproduction closes a page during its completed session response.
 Direct closure reproduces the `target-closed` scanner failure. Drained closure captures the token and completes without that failure.
 The fixture now drains observations before all three popup closures. A regression verifies both closure outcomes.
 Local API fixture lint and all 12 scanner regressions pass. Packaged validation of this correction remains pending.
+
+## Current qualification at `86b91c1`
+
+[Full run 35183474975](https://github.com/CampusCommander/campus-commander/actions/runs/35183474975) includes the popup correction and rollback extensions.
+Its real PostgreSQL job passed the invitation and token rollback probes. The packaged application result remains pending.
+A source inventory check matched all 32 protected routes against six Phase 3 controllers.
+The two recipient routes remain outside the session-protected set and retain their separate policy above.
