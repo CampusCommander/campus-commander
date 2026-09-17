@@ -2,7 +2,8 @@
 
 [CC-58](https://easton-consulting.atlassian.net/browse/CC-58) requires extracted installation, resume, Phase 2 upgrade, restore, faults, and operator lifecycle evidence.
 The task remains incomplete.
-Installation, resume, Phase 2 upgrade, service faults, installed workflows, key projection, distributed renewal, and replica permission checks have passed hosted qualification.
+Installation, resume, Phase 2 upgrade, isolated restore, service faults, and certificate faults have passed hosted qualification.
+Installed workflows, key projection, distributed renewal, and replica permission checks also passed.
 The checkpoint sections below link their exact application and harness evidence.
 
 ## Installed workflow fixture
@@ -30,14 +31,13 @@ gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
   -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Profile=hybrid
 ```
 
-Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, service faults, certificate faults, and capacity faults.
-Other fault kinds, lifecycle, and guided-update modes require their own Phase 3 fixtures before dispatch can accept them.
+Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, service faults, certificate faults, capacity faults, and provider faults.
+Lifecycle and guided-update modes require their own Phase 3 fixtures before dispatch can accept them.
 The existing Phase 2 targets retain their previous modes.
 
 ## Remaining evidence
 
-- Isolated restore with backup identity, recovered credentials, and rejected source admissions.
-- Service, network, certificate, and credential faults with bounded recovery and preserved state.
+- Remaining provider and capacity faults with bounded recovery and preserved state.
 - Guided update, retained external resources, and explicit erasure contracts.
 - Five completed profile reports and prerequisite acceptance.
 
@@ -435,3 +435,36 @@ The fixture restored every original secret byte. Distributed credential renewal 
 The [retained report](../../deployment/evidence/CC-58-certificate-faults.json) preserves all original fields and three source-report hashes.
 Its archive matches the published SHA-256 digest.
 District certificate lifecycle, remaining fault groups, and complete CC-58 acceptance remain open.
+
+## Passed nonempty storage restore checkpoint
+
+[Run 35247457432](https://github.com/CampusCommander/campus-commander/actions/runs/35247457432) passed at harness `1bd9a89` against signed application `a3601ef`.
+The complete fixture took 399,362 milliseconds. The restore segment took 119,285 milliseconds.
+The backup contained six encrypted files. The restored Kestra tree included the exact `.phase3-restore-marker` path and byte hash.
+The complete source and target file trees matched before target startup.
+
+The target preserved application records, original audit events, artifact bytes, migration checksums, and four Kestra execution rows.
+Controlled bootstrap replacement advanced generation 1 to generation 2. The source bootstrap credential remained invalid.
+Both API replicas rejected source sessions. The target rejected all held source admissions within 70,492 milliseconds.
+The source callback control passed after source restart. Fresh target browser checks and all four diagnostics passed.
+
+The [retained report](../../deployment/evidence/CC-58-nonempty-storage-restore.json) preserves all original fields and both source-report hashes.
+Its archive matches the published SHA-256 digest. The initial restore report and all failed attempts remain unchanged.
+This checkpoint closes the empty storage sample gap. Synthetic providers and shared physical infrastructure remain qualification limits.
+Complete CC-58 acceptance remains open.
+
+## Provider fault increment
+
+The `api-e2e:phase3-hybrid-provider-fault-integration` target uses the shared public provider checks across the owned hybrid fixture.
+Synthetic cases cover Google network failure, quota exhaustion, denied domain privileges, and a mismatched customer.
+Retired credential generations must fail. Failed health checks must preserve the complete connection, customer identity, and previous successful observation time.
+Local diagnostics must continue. A fresh application sign-in must succeed during the synthetic Google outage.
+
+Every recovery must restore capability checks, saved workflow reads, both API replicas, and durable state within 45 seconds.
+The durable probe excludes connection observation fields that successful health checks refresh. It still compares all other connection fields.
+Policy, credentials, grants, receipts, principals, preferences, audits, artifacts, and Kestra state must remain intact.
+Fault controls update only the three owned hosts. Symbolic links and foreign fixture paths cannot redirect those writes.
+Failed reports retain public case results and clear the synthetic fault without exporting raw errors.
+
+This increment requires hosted qualification. It does not establish live Google privileges, revocation, or Education capabilities.
+Complete CC-58 acceptance remains open.

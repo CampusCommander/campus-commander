@@ -40,6 +40,8 @@ import { upgradeDistributedHybrid } from './hybrid-cli-upgrade-fixture.mjs';
 import { createHybridFaultStateProbe } from './phase3-hybrid-fault-state.mjs';
 import { faultDistributedHybrid } from './hybrid-cli-faults-fixture.mjs';
 import { qualifyHybridCapacity } from './hybrid-capacity-fixture.mjs';
+import { qualifyInstalledProviderFaults } from './phase3-provider-faults.mjs';
+import { createHybridProviderFaultRuntime } from './phase3-hybrid-provider-fixture.mjs';
 import { qualifyHybridCertificates } from './hybrid-certificates-fixture.mjs';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 
@@ -49,6 +51,11 @@ const phase3Faults = process.env.CC_AUTH_PHASE3_HYBRID_FAULTS === '1';
 const phase3FaultKind =
   process.env.CC_AUTH_PHASE3_HYBRID_FAULT_KIND ?? 'services';
 const phase3FaultModes = {
+  provider: {
+    directory: 'dist/phase-3-hybrid-provider-faults',
+    target: 'phase3-hybrid-provider-fault-integration',
+    report: 'hybrid-provider-faults.json',
+  },
   services: {
     directory: 'dist/phase-3-hybrid-faults',
     target: 'phase3-hybrid-fault-integration',
@@ -123,6 +130,7 @@ test(
     let upgrade;
     let faults;
     let capacity;
+    let providerFaults;
     let certificates;
     let installedWorkflows;
     let workerCredentials;
@@ -301,6 +309,13 @@ test(
             'api-e2e/google-connection-preload.cjs',
             join(host.root, 'google-connection-preload.cjs'),
           );
+        if (phase3Faults && phase3FaultKind === 'provider')
+          for (const host of hosts.hosts)
+            await writeFile(
+              join(host.root, 'google-health-fault.json'),
+              JSON.stringify({ mode: '' }),
+              { mode: 0o600 },
+            );
         for (const host of workers) {
           await mkdir(join(host.root, 'qualification-observation'), {
             mode: 0o700,
@@ -451,6 +466,20 @@ test(
                 ...(active
                   ? {
                       volumes: [
+                        ...(phase3Faults && phase3FaultKind === 'provider'
+                          ? [
+                              {
+                                type: 'bind',
+                                source: join(
+                                  host.root,
+                                  'google-health-fault.json',
+                                ),
+                                target:
+                                  '/run/qualification/google-health-fault.json',
+                                read_only: true,
+                              },
+                            ]
+                          : []),
                         {
                           type: 'bind',
                           source: join(
@@ -947,13 +976,17 @@ process.exit(result.status??1);
           if (phase3Faults) await mkdir(evidenceDirectory, { recursive: true });
           const phase3FaultInputs = phase3Faults
             ? {
-                verifyDurableState: await createHybridFaultStateProbe({
-                  hosts,
-                  services,
-                  config,
-                  project,
-                  compose,
-                }),
+                ...(phase3FaultKind === 'provider'
+                  ? {}
+                  : {
+                      verifyDurableState: await createHybridFaultStateProbe({
+                        hosts,
+                        services,
+                        config,
+                        project,
+                        compose,
+                      }),
+                    }),
                 verifyWorkflows: () => installedWorkflows.verifyAfterRestart(),
                 evidencePath: join(
                   evidenceDirectory,
@@ -1025,6 +1058,28 @@ process.exit(result.status??1);
               checks,
               verifyReplicas,
               context,
+            });
+          }
+          if (phase3Faults && phase3FaultKind === 'provider') {
+            stage = 'synthetic Google provider faults';
+            providerFaults = await qualifyInstalledProviderFaults({
+              ...phase3FaultInputs,
+              root: controller.root,
+              project,
+              config,
+              release: targetRelease,
+              page,
+              checks,
+              runtime: createHybridProviderFaultRuntime({
+                hosts,
+                services,
+                config,
+                project,
+                compose,
+                verifyWorkflows: phase3FaultInputs.verifyWorkflows,
+                verifyReplicas,
+                context,
+              }),
             });
           }
           if (phase3Restore) {
@@ -1100,6 +1155,7 @@ process.exit(result.status??1);
         ...(restoration ? { restoration } : {}),
         ...(faults ? { faults } : {}),
         ...(capacity ? { capacity } : {}),
+        ...(providerFaults ? { providerFaults } : {}),
         ...(certificates ? { certificates } : {}),
         sourceRevision,
         images,

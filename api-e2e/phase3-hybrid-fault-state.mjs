@@ -71,7 +71,13 @@ export function assertHybridFaultState(before, after) {
 /** Seed one artifact and verify durable state through actual fixture services. */
 export async function createHybridFaultStateProbe(input) {
   assertHybridFaultOwnership(input);
-  const { hosts, services, config, compose } = input;
+  const {
+    hosts,
+    services,
+    config,
+    compose,
+    allowObservationRefresh = false,
+  } = input;
   const controller = hosts.hosts[0];
   for (const path of [
     config.artifacts.location,
@@ -135,7 +141,7 @@ await store.publish(artifact);console.log(JSON.stringify(artifact));
     for (const table of policyTables)
       policy[table] = await sql(
         config.services.applicationDatabase.database,
-        `SELECT json_build_object('count',count(*),'sha256',encode(sha256(convert_to(coalesce(json_agg(value ORDER BY value::text)::text,'[]'),'UTF8')),'hex')) FROM (SELECT row_to_json(t) AS value FROM cc.${table} t) rows;`,
+        `SELECT json_build_object('count',count(*),'sha256',encode(sha256(convert_to(coalesce(json_agg(value ORDER BY value::text)::text,'[]'),'UTF8')),'hex')) FROM (SELECT ${allowObservationRefresh && table === 'google_connection' ? "row_to_json(t)::jsonb - 'observation' - 'observed_at'" : 'row_to_json(t)'} AS value FROM cc.${table} t) rows;`,
       );
     const durable = await api(
       common +

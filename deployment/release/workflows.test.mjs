@@ -940,6 +940,29 @@ test('Hybrid faults use their own targets and reject unsupported fault kinds', a
       "inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-hybrid-capacity-faults/'",
     ),
   );
+  const provider = steps.find(
+    (step) => step.name === 'Qualify Phase 3 hybrid provider failures',
+  );
+  assert.equal(
+    provider.if,
+    "inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'provider'",
+  );
+  assert.match(
+    provider.run,
+    /api-e2e:phase3-hybrid-provider-fault-integration/,
+  );
+  assert.match(provider.run, /sudo -H -u '#1000' -g '#1000'/);
+  assert.equal(provider.env.NX_DAEMON, 'false');
+  assert.ok(
+    upload.with.name.includes(
+      "inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'provider' && 'phase-3-hybrid-provider-faults'",
+    ),
+  );
+  assert.ok(
+    upload.with.path.includes(
+      "inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-hybrid-provider-faults/'",
+    ),
+  );
   for (const kind of [
     'services',
     'provider',
@@ -961,7 +984,7 @@ test('Hybrid faults use their own targets and reject unsupported fault kinds', a
         },
         stdio: 'pipe',
       });
-    if (['services', 'certificates', 'capacity'].includes(kind))
+    if (['services', 'certificates', 'capacity', 'provider'].includes(kind))
       assert.doesNotThrow(run);
     else assert.throws(run);
   }
