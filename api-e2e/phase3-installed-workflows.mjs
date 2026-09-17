@@ -4,10 +4,33 @@ import { expect } from '@playwright/test';
 
 /** Keep invitation fragments and authorization codes out of fixture errors. */
 export async function withInstalledAdmission(action) {
+  let stage;
+  const stages = new Set([
+    'open invitation',
+    'redeem invitation',
+    'read pending identity',
+    'confirm identity',
+    'check confirmed invitation',
+    'sign in recipient',
+    'check initial access',
+    'assign scoped grant',
+    'renew recipient session',
+    'check school boundaries',
+    'revoke access',
+    'check revoked access',
+    'check access receipts',
+  ]);
   try {
-    return await action();
+    return await action((value) => {
+      if (!stages.has(value)) throw new Error();
+      stage = value;
+    });
   } catch {
-    throw new Error('Installed invitation and access qualification failed.');
+    throw new Error(
+      stage
+        ? `Installed invitation and access qualification failed at ${stage}.`
+        : 'Installed invitation and access qualification failed.',
+    );
   }
 }
 
@@ -160,7 +183,8 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
   let receiptIds;
   let principalId;
   try {
-    await withInstalledAdmission(async () => {
+    await withInstalledAdmission(async (checkpoint) => {
+      checkpoint('open invitation');
       const recipientPage = await recipient.newPage();
       provider.setSubject(subject);
       await recipientPage.goto(invitation.url);
@@ -170,6 +194,7 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
           exact: true,
         }),
       ).toBeVisible();
+      checkpoint('redeem invitation');
       await recipientPage
         .getByRole('button', {
           name: 'Sign in to accept invitation',
@@ -182,16 +207,19 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
           { exact: true },
         ),
       ).toBeVisible();
+      checkpoint('read pending identity');
       await request(recipientPage, '/api/auth/session', undefined, 401);
       const pending = (await read('/api/auth/invitations')).find(
         (item) => item.id === invitation.id,
       );
       assert.equal(pending.status, 'pending');
       assert.equal(pending.candidateSubject, subject);
+      checkpoint('confirm identity');
       await post(`/api/auth/invitations/${pending.id}/confirm`, {
         version: pending.version,
         subject,
       });
+      checkpoint('check confirmed invitation');
       await recipientPage
         .getByRole('button', { name: 'Check invitation status', exact: true })
         .click();
@@ -201,6 +229,7 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
           { exact: true },
         ),
       ).toBeVisible();
+      checkpoint('sign in recipient');
       await recipientPage
         .getByRole('link', { name: 'Sign in to Campus Commander', exact: true })
         .click();
@@ -210,6 +239,7 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
           exact: true,
         }),
       ).toBeVisible({ timeout: 15000 });
+      checkpoint('check initial access');
       let identity = (await request(recipientPage, '/api/auth/session'))
         .identity;
       principalId = identity.id;
@@ -244,8 +274,10 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
           scope: { kind: 'school', customerId, schoolId: schools[0].id },
         },
       ];
+      checkpoint('assign scoped grant');
       const grantReceipt = await changeAccess(true, grants);
       await request(recipientPage, '/api/auth/session', undefined, 401);
+      checkpoint('renew recipient session');
       await recipientPage.goto(`${publicOrigin}/api/auth/login`);
       await expect(
         recipientPage.getByRole('heading', {
@@ -253,6 +285,7 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
           exact: true,
         }),
       ).toBeVisible({ timeout: 15000 });
+      checkpoint('check school boundaries');
       assert.equal(
         (await request(recipientPage, `/api/schools/${schools[0].id}`)).id,
         schools[0].id,
@@ -263,7 +296,9 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
         undefined,
         403,
       );
+      checkpoint('revoke access');
       const revokeReceipt = await changeAccess(false, grants);
+      checkpoint('check revoked access');
       await request(recipientPage, '/api/auth/session', undefined, 401);
       await request(
         recipientPage,
@@ -271,6 +306,7 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
         undefined,
         401,
       );
+      checkpoint('check access receipts');
       receiptIds = [grantReceipt, revokeReceipt];
       const receipts = await read(
         `/api/platform-users/${principalId}/receipts`,

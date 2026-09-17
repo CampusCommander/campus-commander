@@ -153,3 +153,32 @@ test('installed admission errors omit invitation fragments and authorization cod
   );
   assert.equal(await withInstalledAdmission(async () => 'passed'), 'passed');
 });
+
+test('installed admission reports only allowlisted qualification stages', async () => {
+  await assert.rejects(
+    withInstalledAdmission(async (checkpoint) => {
+      checkpoint('confirm identity');
+      throw new Error('synthetic-token');
+    }),
+    (error) => {
+      assert.equal(
+        error.message,
+        'Installed invitation and access qualification failed at confirm identity.',
+      );
+      assert.doesNotMatch(error.stack, /synthetic-token/);
+      assert.equal(error.cause, undefined);
+      return true;
+    },
+  );
+  await assert.rejects(
+    withInstalledAdmission(async (checkpoint) => checkpoint('synthetic-token')),
+    (error) => {
+      assert.equal(
+        error.message,
+        'Installed invitation and access qualification failed.',
+      );
+      assert.doesNotMatch(error.stack, /synthetic-token/);
+      return true;
+    },
+  );
+});

@@ -135,3 +135,9 @@ It validates the immutable tag, source revision, image digests, and extracted in
 The reports separate the delivered application revision from the qualification harness revision.
 This permits new checks against unchanged published bytes without asserting that later product changes inherited earlier evidence.
 The workflow produces `phase-3-installed-workflows` artifacts. Successful hosted execution remains required.
+
+The first hosted workflow run, `35213575951`, verified the release and completed installation before failing during invitation admission.
+The fixed error boundary prevented token disclosure but omitted the failing step.
+Admission errors now identify a fixed, allowlisted step without retaining the original error or cause.
+Regression tests reject unapproved labels and verify secret omission from failure stacks.
+This diagnostic change does not claim a correction to the admission failure.
