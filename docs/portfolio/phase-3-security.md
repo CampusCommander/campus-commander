@@ -190,3 +190,9 @@ The corrected fixture captures both service log streams and registers browser re
 It also rejects secret-bearing paths without reporting their contents. Regression tests cover each gap.
 Synthetic provider failures now include a private diagnostic marker. The final scan rejects that marker from public evidence.
 Hosted qualification must verify these corrections before this increment qualifies.
+
+The credential inventory includes the separate Redis qualification operator password and encoded installation operator authorization.
+These credentials do not pass through the deployment secret writer. The fixture registers them at creation.
+The inventory also covers rotated OIDC and worker credentials, encryption keys, service-account keys, and synthetic provider tokens.
+Browser response observation covers transient login, enrollment, invitation, session cookies, and JSON tokens.
+The source and packaged reports must contain the Redis operator category before this correction qualifies.

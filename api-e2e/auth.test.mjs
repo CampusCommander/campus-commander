@@ -432,6 +432,10 @@ test(
       };
       const redisConfig = join(directory, 'redis.conf');
       const redisOperatorPassword = randomUUID();
+      evidenceSecurity.register(
+        'redis-operator-password',
+        redisOperatorPassword,
+      );
       await writeFile(
         redisConfig,
         renderRedis(config, Buffer.from(password)).replace(
@@ -547,6 +551,10 @@ test(
       };
       const bootstrapCredential = generateBootstrapCredential();
       evidenceSecurity.register('operator-credential', bootstrapCredential);
+      evidenceSecurity.register(
+        'operator-authorization',
+        `operator:${bootstrapCredential}`,
+      );
       await initializeBootstrap(migrator, bootstrapCredential);
       let output = '';
       const startApi = async (listenPort = apiPort) => {
