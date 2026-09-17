@@ -66,19 +66,33 @@ export async function qualifySchoolDefinitionsApi({
     'INSERT INTO cc.application_principals(id,issuer,subject,display_name) VALUES($1,$2,$3,$3)',
     [operator, issuer, subject],
   );
-  for (const action of ['schools:read', 'security-events:read'])
-    await migrator.query(
-      'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
-      [
-        operator,
-        action,
-        JSON.stringify({
-          kind: 'school',
-          customerId: references.customerId,
-          schoolId: a,
-        }),
-      ],
-    );
+  const grants = ['schools:read', 'security-events:read'].map((action) => ({
+    action,
+    scope: { kind: 'school', customerId: references.customerId, schoolId: a },
+  }));
+  const grantRoot = `${publicOrigin}/api/platform-users/${operator}`;
+  const accessReview = await api.post(`${grantRoot}/review`, {
+    headers,
+    data: { expectedVersion: 1, enabled: true, grants },
+  });
+  assert.equal(accessReview.status(), 201, await accessReview.text());
+  const access = await accessReview.json();
+  assert.deepEqual(access.schoolRevisions, [
+    { schoolId: a, customerId: references.customerId, revision: 1 },
+  ]);
+  const assigned = await api.post(`${grantRoot}/access`, {
+    headers,
+    data: {
+      expectedVersion: 1,
+      enabled: true,
+      grants,
+      actorVersion: access.actorVersion,
+      schoolRevisions: access.schoolRevisions,
+      invitationIds: [],
+      confirmation: 'change-platform-access',
+    },
+  });
+  assert.equal(assigned.status(), 201, await assigned.text());
   const context = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
     setSubject(subject);
@@ -113,7 +127,12 @@ export async function qualifySchoolDefinitionsApi({
       (await read(scoped, `/${b}/audit`, 404)).reason,
       'school-not-found',
     );
-    assert.equal((await read(scoped, `/${a}/audit`)).total, 1);
+    const history = await read(scoped, `/${a}/audit`);
+    assert.equal(history.total, 2);
+    assert.deepEqual(history.items.map((item) => item.event).sort(), [
+      'grants-changed',
+      'school-scope-changed',
+    ]);
     assert.equal((await scoped.get(`${root}/references`)).status(), 403);
     assert.equal(
       (
@@ -155,7 +174,7 @@ export async function qualifySchoolDefinitionsApi({
     JSON.stringify(
       {
         schemaVersion: 1,
-        fixture: 'real-api-postgres-synthetic-school-grants',
+        fixture: 'real-api-postgres-school-grants-synthetic-google',
         checks: [
           'strict preview input, CSRF, explicit confirmation, and durable receipt recovery',
           'scoped lists, totals, details, and audit deny another school',
@@ -163,9 +182,7 @@ export async function qualifySchoolDefinitionsApi({
           'failed reference health preserves saved definitions without effective resource access',
           'definition confirmation invalidates an affected operator session',
         ],
-        limits: [
-          'School grants are seeded by the fixture. Production grant assignment and browser forms remain pending.',
-        ],
+        limits: ['Browser school forms remain pending.'],
       },
       null,
       2,

@@ -1,5 +1,17 @@
 import * as z from 'zod';
 import { grantsSchema } from './authorization';
+import { googleCustomerIdSchema } from './google-connection';
+
+export const schoolGrantRevisionsSchema = z
+  .array(
+    z.strictObject({
+      schoolId: z.uuid(),
+      customerId: googleCustomerIdSchema,
+      revision: z.number().int().positive(),
+    }),
+  )
+  .max(256)
+  .default([]);
 
 export const platformPrincipalSchema = z.strictObject({
   id: z.uuid(),
@@ -31,6 +43,7 @@ export const platformAccessReviewSchema = z.strictObject({
   proposed: z.strictObject({ enabled: z.boolean(), grants: grantsSchema }),
   actorVersion: z.number().int().positive(),
   targetVersion: z.number().int().positive(),
+  schoolRevisions: schoolGrantRevisionsSchema,
   invitationsToRevoke: z
     .array(z.strictObject({ id: z.uuid(), label: z.string() }))
     .max(50),
@@ -46,6 +59,8 @@ export const platformAccessRejectionSchema = z.strictObject({
   reason: z.enum([
     'unchanged',
     'invitations-changed',
+    'school-changed',
+    'school-unavailable',
     'conflict',
     'delegation',
     'last-administrator',
@@ -59,6 +74,7 @@ export const platformAccessReceiptSchema = z.strictObject({
   correlationId: z.uuid(),
   createdAt: z.string(),
   revokedInvitationIds: z.array(z.uuid()).max(50),
+  schoolRevisions: schoolGrantRevisionsSchema,
   previousVersion: z.number().int().positive(),
   permissionVersion: z.number().int().positive(),
   previous: z.strictObject({ enabled: z.boolean(), grants: grantsSchema }),

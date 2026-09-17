@@ -253,6 +253,10 @@ export class PlatformAccess implements OnInit {
     return {
       'invitations-changed':
         'Pending invitations changed. Review access again before confirmation.',
+      'school-changed':
+        'The school definition changed. Review access again before confirmation.',
+      'school-unavailable':
+        'Refresh and verify the school scope before granting access.',
       unchanged:
         'No access changes selected. Change the enabled state or grants before review.',
       conflict:
@@ -276,6 +280,7 @@ export class PlatformAccess implements OnInit {
         {
           expectedVersion: preview.targetVersion,
           actorVersion: preview.actorVersion,
+          schoolRevisions: preview.schoolRevisions,
           invitationIds: preview.invitationsToRevoke.map(
             (invitation) => invitation.id,
           ),

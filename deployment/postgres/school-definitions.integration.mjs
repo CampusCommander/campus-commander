@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { qualifySchoolGrants } from './school-grants.integration.mjs';
 
 export async function qualifySchoolDefinitions({
   runtime,
@@ -257,6 +258,14 @@ export async function qualifySchoolDefinitions({
   );
   assert.deepEqual((await read(operator, 3, a)).effectiveIds, ['school-a']);
   return [
+    ...(await qualifySchoolGrants({
+      runtime,
+      migrator,
+      actor,
+      issuer,
+      customer,
+      school: a,
+    })),
     'school confirmation retains a recoverable receipt and rejects replay effects: pass',
     'school lists, totals, direct reads, and audit deny other school identities: pass',
     'new descendants cannot expand access without explicit confirmation: pass',

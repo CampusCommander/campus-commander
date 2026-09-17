@@ -8,7 +8,10 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { platformAccessChangeSchema } from '@campus/application-contracts';
+import {
+  platformAccessChangeSchema,
+  schoolGrantRevisionsSchema,
+} from '@campus/application-contracts';
 import { z } from 'zod';
 import { AuthGuard, type AuthenticatedRequest } from './auth.guard';
 import { AuthService } from './auth.service';
@@ -22,6 +25,7 @@ const confirmationSchema = platformAccessChangeSchema.extend({
   actorVersion: z.number().int().positive(),
   confirmation: z.literal('change-platform-access'),
   invitationIds: z.array(z.uuid()).max(50),
+  schoolRevisions: schoolGrantRevisionsSchema,
 });
 
 @Controller('api/platform-users')
@@ -113,6 +117,7 @@ export class PlatformAccessController {
       input,
       input.actorVersion,
       input.invitationIds,
+      input.schoolRevisions,
       request.correlationId,
     );
   }

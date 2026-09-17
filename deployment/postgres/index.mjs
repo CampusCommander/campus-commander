@@ -110,6 +110,7 @@ export async function loadMigrations() {
       '011-google-credential-lifecycle',
       '012-school-references',
       '013-school-definitions',
+      '014-school-grants',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -196,7 +197,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.read_platform_principal(uuid,integer,uuid),
         cc.list_platform_access_receipts(uuid,integer,uuid,integer),
         cc.review_platform_access(uuid,integer,uuid,integer,boolean,jsonb),
-        cc.change_platform_access(uuid,integer,uuid,integer,boolean,jsonb,uuid${migrations.some(({ id }) => id === '006-access-revocation') ? ',jsonb' : ''}) TO ${role}`);
+        cc.change_platform_access(uuid,integer,uuid,integer,boolean,jsonb,uuid${migrations.some(({ id }) => id === '006-access-revocation') ? ',jsonb' : ''}${migrations.some(({ id }) => id === '014-school-grants') ? ',jsonb' : ''}) TO ${role}`);
     }
     if (migrations.some(({ id }) => id === '008-google-token-coordination')) {
       await client.query(`GRANT EXECUTE ON FUNCTION cc.acquire_google_access(text,integer,uuid),

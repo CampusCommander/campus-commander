@@ -12,6 +12,7 @@ import {
   platformPrincipalPageSchema,
   platformPrincipalSchema,
   type PlatformAccessChange,
+  type PlatformAccessReview,
   type SessionResponse,
 } from '@campus/application-contracts';
 import { ConfigurationService } from '../configuration/configuration.service';
@@ -111,13 +112,14 @@ export class PlatformAccessService {
     change: PlatformAccessChange,
     actorVersion: number,
     invitationIds: string[],
+    schoolRevisions: PlatformAccessReview['schoolRevisions'],
     correlation: string,
   ) {
     if (actorVersion !== session.identity.permissionVersion)
       throw new ConflictException({ reason: 'conflict' });
     return platformAccessResultSchema.parse(
       await this.query(
-        'SELECT cc.change_platform_access($1,$2,$3,$4,$5,$6,$7,$8) AS result',
+        'SELECT cc.change_platform_access($1,$2,$3,$4,$5,$6,$7,$8,$9) AS result',
         [
           session.identity.id,
           actorVersion,
@@ -127,6 +129,7 @@ export class PlatformAccessService {
           JSON.stringify(change.grants),
           correlation,
           JSON.stringify(invitationIds),
+          JSON.stringify(schoolRevisions),
         ],
       ),
     );

@@ -110,6 +110,7 @@ test('the release identifies its SQL migration by content checksum', async () =>
       '011-google-credential-lifecycle',
       '012-school-references',
       '013-school-definitions',
+      '014-school-grants',
     ],
   );
   for (const migration of migrations)
