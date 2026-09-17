@@ -11,8 +11,8 @@ Installer commands must record their source root, result, and duration.
 The fixture must reject Phase 2 mode flags during Phase 3 qualification.
 
 A dedicated three-node Kind cluster provides one controller node and two worker nodes.
-The current Kind fixture uses default networking. It does not enforce NetworkPolicy.
-Initial installation results must retain this limitation. Network-policy acceptance requires an enforcing CNI and measured allowed and denied traffic.
+The current Kind fixture uses default networking. This fixture has not measured NetworkPolicy enforcement.
+Initial installation results must retain this limitation. Network-policy acceptance requires measured allowed and denied traffic.
 Synthetic shared host storage does not establish independent physical failure domains or district storage acceptance.
 Synthetic TLS does not establish district browser trust.
 
@@ -105,3 +105,10 @@ Reports retain pod identities, node placement, dispatch results, renewal counts,
 Private credentials and token values remain absent from reports.
 Worker-only instrumentation uses an ephemeral observation volume. It does not change database lease results.
 Hosted qualification remains pending.
+
+## Network-policy evidence correction
+
+[Kind v0.33.0 source](https://github.com/kubernetes-sigs/kind/blob/v0.33.0/images/kindnetd/cmd/kindnetd/main.go) includes a NetworkPolicy controller.
+The previous statement that default Kind networking cannot enforce policies was incorrect for this pinned version.
+Controller initialization can skip policy processing after an error. The controller configuration also enables fail-open behavior.
+Source inspection does not prove runtime enforcement. The fixture must record actual networking images and measure allowed and denied traffic.

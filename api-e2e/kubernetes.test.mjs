@@ -1009,7 +1009,7 @@ test(
           replicaObservations: replicas.observations,
           limits: [
             'Three Kind nodes share one Docker host and synthetic shared storage.',
-            'Kind default networking does not enforce NetworkPolicy.',
+            'This run does not measure NetworkPolicy enforcement.',
             'Synthetic providers do not establish live Google privileges, Education capabilities, or district browser trust.',
             'Upgrade, isolated restore, faults, and complete lifecycle acceptance require separate evidence.',
             'Final release qualification requires matching installer, test, and application source revisions.',
@@ -1045,7 +1045,7 @@ test(
               installer: installerEvidence,
               limits: [
                 'Three Kind nodes share one Docker host and synthetic storage.',
-                'Kind default networking does not enforce NetworkPolicy.',
+                'This run does not measure NetworkPolicy enforcement.',
                 'District DNS, identity provider, CNI enforcement, and storage remain separate qualification requirements.',
                 ...(upgrade
                   ? ['Isolated restore requires separate evidence.']
