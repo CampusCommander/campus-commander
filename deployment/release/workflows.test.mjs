@@ -867,7 +867,7 @@ test('Hybrid restore dispatch rejects mixed modes and selects its own evidence',
           }
 });
 
-test('Hybrid service faults use their own target and reject unsupported fault kinds', async () => {
+test('Hybrid faults use their own targets and reject unsupported fault kinds', async () => {
   const profile = await workflow('phase-3-profile-check');
   const steps = profile.jobs.installation.steps;
   const fault = steps.find(
@@ -881,6 +881,19 @@ test('Hybrid service faults use their own target and reject unsupported fault ki
   assert.match(fault.run, /sudo -H -u '#1000' -g '#1000'/);
   assert.match(fault.run, /CC_AUTH_INSTALLER_ROOT/);
   assert.equal(fault.env.NX_DAEMON, 'false');
+  const certificate = steps.find(
+    (step) => step.name === 'Qualify Phase 3 hybrid certificate failures',
+  );
+  assert.equal(
+    certificate.if,
+    "inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'certificates'",
+  );
+  assert.match(
+    certificate.run,
+    /api-e2e:phase3-hybrid-certificate-fault-integration/,
+  );
+  assert.match(certificate.run, /sudo -H -u '#1000' -g '#1000'/);
+  assert.equal(certificate.env.NX_DAEMON, 'false');
   const upload = steps.find((step) =>
     step.uses?.startsWith('actions/upload-artifact@'),
   );
@@ -892,6 +905,16 @@ test('Hybrid service faults use their own target and reject unsupported fault ki
   assert.ok(
     upload.with.path.includes(
       "inputs.profile == 'hybrid' && inputs.faults && 'dist/phase-3-hybrid-faults/'",
+    ),
+  );
+  assert.ok(
+    upload.with.name.includes(
+      "inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-hybrid-certificate-faults'",
+    ),
+  );
+  assert.ok(
+    upload.with.path.includes(
+      "inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-hybrid-certificate-faults/'",
     ),
   );
   for (const kind of [
@@ -915,7 +938,7 @@ test('Hybrid service faults use their own target and reject unsupported fault ki
         },
         stdio: 'pipe',
       });
-    if (kind === 'services') assert.doesNotThrow(run);
+    if (['services', 'certificates'].includes(kind)) assert.doesNotThrow(run);
     else assert.throws(run);
   }
 });

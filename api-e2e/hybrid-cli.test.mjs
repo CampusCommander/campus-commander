@@ -46,6 +46,9 @@ import { loadQualificationBundle } from '../deployment/release/qualification.mjs
 const phase3Upgrade = process.env.CC_AUTH_PHASE3_HYBRID_UPGRADE === '1';
 const phase3Restore = process.env.CC_AUTH_PHASE3_HYBRID_RESTORE === '1';
 const phase3Faults = process.env.CC_AUTH_PHASE3_HYBRID_FAULTS === '1';
+const phase3FaultKind =
+  process.env.CC_AUTH_PHASE3_HYBRID_FAULT_KIND ?? 'services';
+assert.ok(['services', 'certificates'].includes(phase3FaultKind));
 assert.ok(
   [phase3Upgrade, phase3Restore, phase3Faults].filter(Boolean).length <= 1,
 );
@@ -58,7 +61,9 @@ const phase = phase3 ? 3 : 2;
 const evidenceDirectory = phase3Restore
   ? 'dist/phase-3-hybrid-restore'
   : phase3Faults
-    ? 'dist/phase-3-hybrid-faults'
+    ? phase3FaultKind === 'certificates'
+      ? 'dist/phase-3-hybrid-certificate-faults'
+      : 'dist/phase-3-hybrid-faults'
     : phase3Upgrade
       ? 'dist/phase-3-hybrid-upgrade'
       : phase3
@@ -124,7 +129,9 @@ test(
           command: phase3Restore
             ? 'npm exec -- nx run api-e2e:phase3-hybrid-restore-integration'
             : phase3Faults
-              ? 'npm exec -- nx run api-e2e:phase3-hybrid-fault-integration'
+              ? phase3FaultKind === 'certificates'
+                ? 'npm exec -- nx run api-e2e:phase3-hybrid-certificate-fault-integration'
+                : 'npm exec -- nx run api-e2e:phase3-hybrid-fault-integration'
               : phase3Upgrade
                 ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
                 : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
@@ -921,10 +928,40 @@ process.exit(result.status??1);
             await checks({ recoverySeconds: 120 });
             assert.deepEqual(await readFile(controllerFile), original);
           }
-          if (phase3Faults || process.env.CC_AUTH_HYBRID_CLI_FAULTS === '1') {
+          if (phase3Faults) await mkdir(evidenceDirectory, { recursive: true });
+          const phase3FaultInputs = phase3Faults
+            ? {
+                verifyDurableState: await createHybridFaultStateProbe({
+                  hosts,
+                  services,
+                  config,
+                  project,
+                  compose,
+                }),
+                verifyWorkflows: () => installedWorkflows.verifyAfterRestart(),
+                evidencePath: join(
+                  evidenceDirectory,
+                  'hybrid-fault-progress.json',
+                ),
+                evidenceIdentity: {
+                  ...harness,
+                  schemaVersion: 1,
+                  phase,
+                  profile: 'hybrid',
+                  sourceRevision,
+                  images,
+                  bundleManifestSha256: bundle.manifestSha256,
+                },
+                setStage: (fault) => {
+                  stage = `distributed hybrid ${phase3FaultKind} fault: ${fault}`;
+                },
+              }
+            : {};
+          if (
+            (phase3Faults && phase3FaultKind === 'services') ||
+            process.env.CC_AUTH_HYBRID_CLI_FAULTS === '1'
+          ) {
             stage = 'distributed process and shared-storage faults';
-            if (phase3Faults)
-              await mkdir(evidenceDirectory, { recursive: true });
             faults = await faultDistributedHybrid({
               hosts,
               services,
@@ -935,40 +972,16 @@ process.exit(result.status??1);
               checks,
               verifyReplicas,
               context,
-              ...(phase3Faults
-                ? {
-                    verifyDurableState: await createHybridFaultStateProbe({
-                      hosts,
-                      services,
-                      config,
-                      project,
-                      compose,
-                    }),
-                    verifyWorkflows: () =>
-                      installedWorkflows.verifyAfterRestart(),
-                    evidencePath: join(
-                      evidenceDirectory,
-                      'hybrid-fault-progress.json',
-                    ),
-                    evidenceIdentity: {
-                      ...harness,
-                      schemaVersion: 1,
-                      phase,
-                      profile: 'hybrid',
-                      sourceRevision,
-                      images,
-                      bundleManifestSha256: bundle.manifestSha256,
-                    },
-                    setStage: (fault) => {
-                      stage = `distributed hybrid service fault: ${fault}`;
-                    },
-                  }
-                : {}),
+              ...phase3FaultInputs,
             });
           }
-          if (process.env.CC_AUTH_HYBRID_CERTIFICATES === '1') {
+          if (
+            (phase3Faults && phase3FaultKind === 'certificates') ||
+            process.env.CC_AUTH_HYBRID_CERTIFICATES === '1'
+          ) {
             stage = 'authenticated edge certificate faults';
             certificates = await qualifyHybridCertificates({
+              ...phase3FaultInputs,
               hosts,
               services,
               compose,
@@ -1057,7 +1070,7 @@ process.exit(result.status??1);
               durationScope: phase3Restore
                 ? 'Extracted hybrid installation, lifecycle, isolated restore, and fixture cleanup.'
                 : phase3Faults
-                  ? 'Extracted hybrid installation, public workflows, service interruptions, recovery, and fixture cleanup.'
+                  ? 'Extracted hybrid installation, public workflows, selected fault group, recovery, and fixture cleanup.'
                   : phase3Upgrade
                     ? 'Extracted Phase 2 hybrid installation, Phase 3 upgrade, public workflows, lifecycle, and fixture cleanup.'
                     : 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
@@ -1200,7 +1213,12 @@ process.exit(result.status??1);
       );
     if (phase3Faults)
       await writeFile(
-        join(evidenceDirectory, 'hybrid-faults.json'),
+        join(
+          evidenceDirectory,
+          phase3FaultKind === 'certificates'
+            ? 'hybrid-certificates.json'
+            : 'hybrid-faults.json',
+        ),
         JSON.stringify(result, null, 2),
       );
     if (phase3 && !phase3Upgrade && !phase3Restore && !phase3Faults) {

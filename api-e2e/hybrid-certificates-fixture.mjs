@@ -12,6 +12,7 @@ import {
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect } from '@playwright/test';
+import { assertHybridFaultOwnership } from './phase3-hybrid-fault-state.mjs';
 import { outerDocker } from './hybrid-hosts-fixture.mjs';
 import { faultRecoveryTimeoutSeconds } from '../deployment/qualification/faults.mjs';
 const execute = promisify(execFile);
@@ -41,13 +42,35 @@ export async function qualifyHybridCertificates({
   checks,
   verifyReplicas,
   context,
+  verifyDurableState,
+  verifyWorkflows,
+  evidencePath,
+  evidenceIdentity = {},
+  setStage,
 }) {
+  const startedAt = Date.now();
   const controller = hosts.hosts[0];
-  assert.match(controller.name, /^cc-phase2-hybrid-[a-f0-9]{12}-controller$/);
+  assert.match(
+    controller.name,
+    config.phase === 3
+      ? /^cc-phase3-hybrid-[a-f0-9]{12}-controller$/
+      : /^cc-phase2-hybrid-[a-f0-9]{12}-controller$/,
+  );
   assert.equal(new Set(hosts.hosts.map((host) => host.daemonId)).size, 3);
-  assert.equal(upgrade.status, 'passed');
   assert.equal(config.profile, 'hybrid');
-  assert.equal(config.phase, 2);
+  if (config.phase === 3) {
+    assertHybridFaultOwnership({
+      hosts,
+      services,
+      config,
+      project: controller.name.replace(/-controller$/, ''),
+    });
+    assert.equal(typeof verifyDurableState, 'function');
+    assert.equal(typeof verifyWorkflows, 'function');
+  } else {
+    assert.equal(config.phase, 2);
+    assert.equal(upgrade.status, 'passed');
+  }
   const hostname = new URL(config.applicationAuth.publicOrigin).hostname;
   assert.equal(hostname, 'campus.example.org');
   const privateRoot = services.privateRoot;
@@ -153,14 +176,19 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
         "SELECT coalesce(json_agg(json_build_object('key',key,'sha256',encode(sha256(convert_to(value::text,'UTF8')),'hex')) ORDER BY key),'[]'::json) FROM public.executions WHERE state_current='SUCCESS';",
       ]),
     );
-  const baseline = await durable();
-  const baselineExecutions = await executions();
-  assert.equal(baseline.principals.length, 1);
-  assert.ok(baseline.events.length > 0);
-  assert.ok(baselineExecutions.length > 0);
-  assert.ok(upgrade.internalStorageFiles.length > 0);
-  assert.equal(baseline.artifactSha256, upgrade.artifact.sha256);
+  const baseline = verifyDurableState ? undefined : await durable();
+  const baselineExecutions = verifyDurableState
+    ? undefined
+    : await executions();
+  if (baseline) {
+    assert.equal(baseline.principals.length, 1);
+    assert.ok(baseline.events.length > 0);
+    assert.ok(baselineExecutions.length > 0);
+    assert.ok(upgrade.internalStorageFiles.length > 0);
+    assert.equal(baseline.artifactSha256, upgrade.artifact.sha256);
+  }
   const verifyDurable = async () => {
+    if (verifyDurableState) return verifyDurableState();
     const after = await durable();
     assert.deepEqual(after.principals, baseline.principals);
     assert.deepEqual(after.migrations, baseline.migrations);
@@ -204,10 +232,14 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
       recoveryDeadline: deadline,
     });
     await verifyReplicas(context);
+    await verifyWorkflows?.();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     return verifyDurable();
   };
   const report = {
+    ...evidenceIdentity,
+    durationScope:
+      'Certificate preparation, invalid certificate rejection, authenticated recovery, and original secret restoration.',
     status: 'in-progress',
     recoveryBoundSeconds: faultRecoveryTimeoutSeconds,
     cases: [],
@@ -217,12 +249,16 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
       'Three Docker daemons share one physical host and synthetic district services. District certificate lifecycle requires separate qualification.',
     ],
   };
-  const save = () =>
-    writeFile(
-      join(controller.root, 'certificate-progress.json'),
+  const save = () => {
+    report.durationMs = Date.now() - startedAt;
+    report.recordedAt = new Date().toISOString();
+    return writeFile(
+      evidencePath ?? join(controller.root, 'certificate-progress.json'),
       JSON.stringify(report, null, 2),
       { mode: 0o600 },
     );
+  };
+  await save();
   let failure;
   try {
     await checks();
@@ -294,16 +330,20 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
       ['wrong-host', 'ERR_TLS_CERT_ALTNAME_INVALID'],
     ]) {
       console.log('Distributed hybrid certificate fault:', name);
+      setStage?.(name);
       const record = {
         name,
         status: 'in-progress',
         startedAt: new Date().toISOString(),
+        stage: 'certificate-replacement',
       };
       report.cases.push(record);
       await save();
       await replace(await readFile(join(directory, `${name}.pem`)), key);
       await expect.poll(tlsResult, { timeout: 30000 }).toBe(expected);
       record.tlsError = expected;
+      record.stage = 'recovery';
+      await save();
       const recoveryStarted = Date.now();
       await replace(valid, key);
       await expect.poll(tlsResult, { timeout: 30000 }).toBe('TLS_ACCEPTED');
@@ -313,10 +353,17 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
       record.recoveryMs = Date.now() - recoveryStarted;
       assert.ok(record.recoveryMs <= faultRecoveryTimeoutSeconds * 1000);
       record.status = 'passed';
+      record.stage = 'complete';
       await save();
     }
   } catch (error) {
     failure = error;
+    const current = report.cases.at(-1);
+    if (current?.status === 'in-progress') {
+      current.status = 'failed';
+      current.elapsedMs = Date.now() - Date.parse(current.startedAt);
+    }
+    report.status = 'failed';
   }
   try {
     await replace(original.get(certificateName), original.get(keyName));
@@ -327,7 +374,10 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
       [...original.keys()].sort(),
     );
     for (const [name, bytes] of original)
-      assert.deepEqual(await readFile(join(privateRoot, name)), bytes);
+      assert.ok(
+        bytes.equals(await readFile(join(privateRoot, name))),
+        'Certificate recovery must preserve every original secret.',
+      );
     report.originalSecretBytesRestored = true;
   } catch (error) {
     failure = failure

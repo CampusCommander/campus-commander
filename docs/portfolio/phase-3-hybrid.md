@@ -30,7 +30,7 @@ gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
   -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Profile=hybrid
 ```
 
-Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, and service fault modes.
+Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, service faults, and certificate faults.
 Other fault kinds, lifecycle, and guided-update modes require their own Phase 3 fixtures before dispatch can accept them.
 The existing Phase 2 targets retain their previous modes.
 
@@ -361,3 +361,17 @@ Distributed credential renewal and worker restart also passed. Fixture cleanup r
 The [retained report](../../deployment/evidence/CC-58-service-faults.json) preserves all original fields and three source-report hashes.
 The archive matches its published SHA-256 digest. Synthetic providers and shared physical infrastructure remain qualification limits.
 Network, certificate, capacity, live Google faults, and complete CC-58 acceptance remain open.
+
+## Certificate fault increment
+
+The `api-e2e:phase3-hybrid-certificate-fault-integration` target runs the extracted Phase 3 installation and public workflows.
+It uses the service fault probe to preserve customer policy, credentials, grants, receipts, principals, preferences, audits, artifacts, and Kestra state.
+The fixture replaces only certificates in the owned edge runtime volume.
+A verified TLS client must reject an expired certificate and a certificate for another hostname with their exact TLS error codes.
+A valid replacement must restore authenticated diagnostics, saved workflow reads, both API replicas, and durable state within 180 seconds.
+The fixture then restores every original secret byte and repeats application checks.
+
+Separate certificate reports retain application and harness identities, case results, recovery times, and duration scope.
+A failed case remains in the uploaded progress report. Raw errors and secret bytes remain excluded.
+The three Docker daemons still share one physical host and synthetic district services.
+This increment requires hosted qualification. It does not establish district certificate lifecycle or complete fault acceptance.
