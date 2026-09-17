@@ -171,9 +171,11 @@ The full run passed all seven jobs, including PostgreSQL lifecycle integration.
 Those tests cover replacement failure, customer mismatch, competing activation, audit rollback, renewal races, rotation, disconnect, and reconnection.
 
 Browser implementation revision `ec58777` adds a real browser lifecycle sequence to that integration fixture.
-[Source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35169293265) and [full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35169294797) are running.
-The full run's formatting check rejected fixture formatting. The browser and database jobs passed.
-The review corrections and formatting correction require final hosted qualification.
+[Source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35169293265) passed twelve lifecycle checks.
+The [full run](https://github.com/CampusCommander/campus-commander/actions/runs/35169294797) passed packaged lifecycle, browser, database, and all-Docker integration.
+Its formatting job failed. Revision `1aec3e1` corrects fixture formatting and includes the browser review corrections.
+[Final source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35169607125) passed at `1aec3e1`.
+[Final full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35170015934) is running at that revision.
 Standards and specification reviews report no remaining findings after `29a09d7`.
 
 All three complete Phase 3 deployment profiles remain separate evidence.
