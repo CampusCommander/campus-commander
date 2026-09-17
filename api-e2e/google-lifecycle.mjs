@@ -257,11 +257,9 @@ export async function qualifyGoogleLifecycleApi({
       await page
         .getByRole('button', { name: 'Activate replacement', exact: true })
         .click();
-      const result = page
-        .getByRole('status')
-        .filter({
-          hasText: 'Replacement activated for the confirmed customer',
-        });
+      const result = page.getByRole('status').filter({
+        hasText: 'Replacement activated for the confirmed customer',
+      });
       await expect(result).toBeVisible();
       await expect(result).toBeFocused();
     };

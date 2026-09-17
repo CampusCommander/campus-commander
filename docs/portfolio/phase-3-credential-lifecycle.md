@@ -2,7 +2,7 @@
 
 [CC-49](https://easton-consulting.atlassian.net/browse/CC-49) owns replacement, encryption-key rotation, and local disconnect.
 [Draft PR 13](https://github.com/CampusCommander/campus-commander/pull/13) contains the implementation.
-Backend operations are implemented. Browser management controls and complete qualification remain pending.
+Backend operations and browser management controls are implemented. Final hosted and live qualification remain pending.
 
 ## Customer and generation contract
 
@@ -139,25 +139,43 @@ It does not erase database backups, transaction logs, downloaded source key file
 Apply the installation's retention and erasure procedures to those materials separately.
 Retain required backup keys through an approved recovery process outside the database.
 
+## Browser management
+
+The Google connection page provides replacement, rotation, disconnect, and reconnection reviews.
+Each review shows the customer, credential generation, consequences, and selected encryption key when applicable.
+The operator must confirm before the page submits a change.
+Fresh status and current platform credential-management authority gate each write.
+
+The page stores only the replacement transaction identifier in browser session storage.
+It clears the selected private file after submission, access interruption, or navigation.
+An interrupted response requires status recovery before another write.
+Expired, inaccessible, or superseded reviews require a new verified replacement.
+A refreshed disconnection closes obsolete rotation and disconnect reviews.
+
 ## Qualification status
 
 Local builds, lint, unit tests, type checks, bootstrap tests, and nine health browser cases pass.
-The browser cases include local disconnection, historical observations, disabled checks, both themes, accessibility, zoom, and reflow.
+Eleven credential-management Chromium cases pass at `29a09d7`.
+They cover replacement, rotation, disconnect, reconnection, expiry, unavailable keys, stale generations, and lost-response recovery.
+The browser cases also cover both themes, automated accessibility scans, keyboard focus, zoom, and narrow layouts.
+Visual inspection confirmed the replacement and disconnect compositions.
+Four delayed-response unit cases reject stale permission, session, interrupted, and destroyed-component results.
+The frontend unit suite passes all 24 cases.
 Applicable UI rules: UI-01 through UI-10 and FORM-01.
-Full browser management, keyboard flow, and human screen-reader qualification remain pending.
+Human screen-reader qualification and owner acceptance remain pending.
 
-[Initial full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35167506732) passed all seven jobs at `c8ed1aa`.
-The downloaded report confirms packaged Phase 3 execution at that revision.
-The PostgreSQL lifecycle tests passed in that run.
+[Corrected source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35168181689) and [full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35168183456) passed at `8372b3c`.
+Downloaded reports confirm source and packaged Phase 3 execution.
+Both reports contain ten passing API/worker lifecycle checks, including recovery with the old active key file absent.
+The full run passed all seven jobs, including PostgreSQL lifecycle integration.
 Those tests cover replacement failure, customer mismatch, competing activation, audit rollback, renewal races, rotation, disconnect, and reconnection.
-Subsequent review corrections require final hosted qualification.
 
-The [source run at 2ba997c](https://github.com/CampusCommander/campus-commander/actions/runs/35167887959) passed all ten new API/worker lifecycle checks.
-Its downloaded lifecycle report confirms recovery while the active key file was absent.
-The complete suite failed afterward because an earlier worker fixture still expected generation one.
-Revision `8372b3c` places lifecycle qualification after that worker fixture.
+Browser implementation revision `ec58777` adds a real browser lifecycle sequence to that integration fixture.
+[Source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35169293265) and [full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35169294797) are running.
+The full run's formatting check rejected fixture formatting. The browser and database jobs passed.
+The review corrections and formatting correction require final hosted qualification.
+Standards and specification reviews report no remaining findings after `29a09d7`.
 
-[Corrected source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35168181689) and [full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35168183456) are running.
-The final packaged revision and all Phase 3 deployment profiles remain separate evidence.
+All three complete Phase 3 deployment profiles remain separate evidence.
 Live replacement requires a second approved administrator or a separately approved replacement credential.
-No Education test customer is available.
+The approved administrator has the Super Admin role. No Education test customer is available.
