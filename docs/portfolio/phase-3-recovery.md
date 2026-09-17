@@ -184,11 +184,26 @@ It records the missing-key limitation and external material outside installer er
 Local links, instruction lengths, and formatting pass. Both review axes passed after correcting the inventory timing and directory instructions.
 These procedures still require operator qualification and acceptance.
 
+## Nonempty receipt and health inventory
+
+The restore fixture now creates a second principal with a school-read grant and a distinct saved preference.
+The application database review and change commands create the grant and its access-change receipt.
+The health commands record one successful capability and one denied capability before a new pending health check.
+The fixture expires the synthetic cooldown before creating that pending check.
+
+Complete-row hashes now include access-change receipts and capability health history.
+Runtime reads must return the original receipt and capability observations after restore.
+The ordinary principal must retain its school read while historical references remain ineffective.
+Restore must remove the pending health check without changing its recorded observations.
+
+Both application and operator CLI restore fixtures use this inventory.
+Local lint and all nine operations contract tests pass. Hosted qualification remains pending.
+
 ## Remaining recovery work
 
 - Inventory and verify complete customer, settings, school, grant, progress, receipt, credential, and security-event state.
 - Test live revoked-grant and changed-privilege fixtures when available.
-- Extend the passing admission fixture to the complete durable state inventory, including nonempty access-change receipts and health history.
+- Qualify the expanded admission fixture with nonempty access-change receipts, an ordinary principal, and capability health history.
 - Record measured recovery time, backup age, fixture limits, operator recovery, and erasure procedures.
 
 Local deployment lint, PostgreSQL contract tests, and operations contract tests pass.

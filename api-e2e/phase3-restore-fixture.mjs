@@ -66,6 +66,15 @@ export async function seedApplicationPhase3({
             .rows,
         ),
       );
+      before.principals = JSON.parse(
+        JSON.stringify(
+          (
+            await client.query(
+              'SELECT * FROM cc.application_principals ORDER BY id',
+            )
+          ).rows,
+        ),
+      );
       source.invitations = await readInvitations(client, admissionIds);
       assert.equal(source.invitations.length, 3);
       assert.deepEqual(source.invitations.map(({ status }) => status).sort(), [

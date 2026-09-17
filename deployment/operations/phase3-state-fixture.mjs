@@ -15,6 +15,8 @@ const preservedTables = [
   'school_definitions',
   'application_grants',
   'application_principals',
+  'application_access_changes',
+  'google_capability_health',
 ];
 async function inventory(client) {
   const records = {};
@@ -213,6 +215,48 @@ export async function seedPhase3State(
       JSON.stringify({ kind: 'school', customerId, schoolId }),
     ],
   );
+  const ordinaryPrincipal = randomUUID();
+  await client.query(
+    'INSERT INTO cc.application_principals(id,issuer,subject,display_name,preferences) SELECT $1::uuid,issuer,$1::text,$2,$3 FROM cc.application_principals WHERE id=$4',
+    [ordinaryPrincipal, 'Restore school reader', '{"theme":"light"}', actor],
+  );
+  const schoolGrants = [
+    {
+      action: 'schools:read',
+      scope: { kind: 'school', customerId, schoolId },
+    },
+  ];
+  const accessReview = (
+    await client.query(
+      'SELECT cc.review_platform_access($1,$2,$3,1,true,$4) AS result',
+      [
+        actor,
+        permissionVersion,
+        ordinaryPrincipal,
+        JSON.stringify(schoolGrants),
+      ],
+    )
+  ).rows[0].result;
+  await client.query(
+    'SELECT cc.change_platform_access($1,$2,$3,1,true,$4,$5,$6,$7)',
+    [
+      actor,
+      permissionVersion,
+      ordinaryPrincipal,
+      JSON.stringify(schoolGrants),
+      randomUUID(),
+      JSON.stringify(accessReview.invitationsToRevoke.map(({ id }) => id)),
+      JSON.stringify(accessReview.schoolRevisions),
+    ],
+  );
+  const accessReceipts = (
+    await client.query(
+      'SELECT cc.list_platform_access_receipts($1,$2,$3,0) AS result',
+      [actor, permissionVersion, ordinaryPrincipal],
+    )
+  ).rows[0].result;
+  assert.equal(accessReceipts.total, 1);
+  assert.equal(accessReceipts.items[0].permissionVersion, 2);
   const pendingId = randomUUID();
   await client.query(
     'SELECT cc.stage_google_replacement($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
@@ -239,15 +283,54 @@ export async function seedPhase3State(
     customerId,
     randomUUID(),
   ]);
+  const healthLease = randomUUID();
+  await client.query('SELECT cc.claim_google_health($1,$2,$3,1,$4,$5,$6)', [
+    actor,
+    permissionVersion,
+    customerId,
+    healthLease,
+    '["customer-identity","domain-observations"]',
+    correlation,
+  ]);
+  const health = (
+    await client.query(
+      'SELECT cc.finish_google_health($1,$2,$3,1,$4,$5,NULL) AS result',
+      [
+        actor,
+        permissionVersion,
+        customerId,
+        healthLease,
+        JSON.stringify([
+          {
+            capability: 'customer-identity',
+            scopeVerified: true,
+            failure: null,
+          },
+          {
+            capability: 'domain-observations',
+            scopeVerified: false,
+            failure: 'delegation-not-authorized',
+          },
+        ]),
+      ],
+    )
+  ).rows[0].result;
+  assert.equal(health.capabilities.length, 2);
+  // Expire the synthetic cooldown before creating a pending lease for restore.
+  await client.query(
+    "UPDATE cc.google_health_checks SET retry_at=clock_timestamp()-interval '1 second'",
+  );
   await client.query('SELECT cc.claim_google_health($1,$2,$3,1,$4,$5,$6)', [
     actor,
     permissionVersion,
     customerId,
     randomUUID(),
     '["customer-identity","domain-observations"]',
-    correlation,
+    randomUUID(),
   ]);
   const initial = await inventory(client);
+  assert.ok(initial.application_access_changes.count > 0);
+  assert.equal(initial.google_capability_health.count, 2);
   const source = {
     actor,
     permissionVersion,
@@ -258,6 +341,9 @@ export async function seedPhase3State(
     schoolId,
     request,
     settingsReceipt,
+    ordinaryPrincipal,
+    accessReceipts,
+    healthCapabilities: health.capabilities,
     pendingId,
     pendingReview: pendingReview.id,
     observation,
@@ -310,6 +396,31 @@ export async function verifyPhase3State(
     ).rows[0].result,
     source.settingsReceipt,
   );
+  assert.deepEqual(
+    (
+      await runtime.query(
+        'SELECT cc.list_platform_access_receipts($1,$2,$3,0) AS result',
+        [source.actor, source.permissionVersion, source.ordinaryPrincipal],
+      )
+    ).rows[0].result,
+    source.accessReceipts,
+  );
+  const health = (
+    await runtime.query('SELECT cc.read_google_health($1,$2) AS result', [
+      source.actor,
+      source.permissionVersion,
+    ])
+  ).rows[0].result;
+  assert.deepEqual(health.capabilities, source.healthCapabilities);
+  assert.equal(health.check, null);
+  const ordinarySchool = (
+    await runtime.query('SELECT cc.read_school_definition($1,2,$2) AS result', [
+      source.ordinaryPrincipal,
+      source.schoolId,
+    ])
+  ).rows[0].result;
+  assert.deepEqual(ordinarySchool.approvedIds, ['school']);
+  assert.equal(ordinarySchool.effectiveIds, null);
   const school = (
     await runtime.query(
       'SELECT cc.read_school_definition($1,$2,$3) AS result',
@@ -342,6 +453,9 @@ export async function verifyPhase3State(
   const stateProof = {
     preserved: current,
     oldSettingsReceiptPreserved: true,
+    accessChangeReceiptsPreserved: true,
+    healthHistoryPreserved: true,
+    ordinaryPrincipalSchoolReadPreserved: true,
     approvedSchoolScopePreserved: true,
     oldSchoolReferencesEffective: false,
     pendingCandidatesExpired: 1,
