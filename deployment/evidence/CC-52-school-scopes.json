@@ -170,6 +170,17 @@
     "reviews": {
       "standards": "No remaining findings after 5561f88.",
       "specification": "No actionable findings at e6d0ed6."
-    }
+    },
+    "statusRegionCorrection": "3e64ce5",
+    "failedFullRun": {
+      "revision": "9052ba1",
+      "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35177342544",
+      "cause": "The old platform-access fixture matched both status regions.",
+      "correction": "3e64ce5 names the access status and scopes its assertions. Five browser cases and local checks pass.",
+      "otherJobs": "Six jobs passed."
+    },
+    "fullRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35177847162",
+    "fullRevision": "3e64ce5",
+    "fullStatus": "in-progress"
   }
 }

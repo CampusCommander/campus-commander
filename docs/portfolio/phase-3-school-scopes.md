@@ -288,3 +288,8 @@ That fixture still requires source and packaged qualification. Human screen-read
 Revision `5561f88` prevents unchecked actions from appearing selected after the proposal reaches 256 grants.
 The fifth browser case verifies the displayed state and exact grant replacement after removal.
 Both review axes have no remaining findings.
+
+The full scoped-grant run at `9052ba1` failed because the older platform-access fixture matched two status regions.
+Revision `3e64ce5` gives the access status an accessible name and scopes both result assertions.
+Five scoped-grant browser cases and local unit, lint, and build checks pass after this correction.
+[The next full run](https://github.com/CampusCommander/campus-commander/actions/runs/35177847162) is active at `3e64ce5`.
