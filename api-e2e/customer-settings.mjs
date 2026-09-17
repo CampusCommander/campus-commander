@@ -114,19 +114,26 @@ export async function qualifyCustomerSettings({
   await page
     .getByLabel('Customer display name')
     .fill('Confirmed fixture district');
-  await page
-    .getByRole('button', { name: 'Save customer settings', exact: true })
-    .focus();
+  const saveButton = page.getByRole('button', {
+    name: 'Save customer settings',
+    exact: true,
+  });
+  await expect(saveButton).toBeEnabled();
+  await saveButton.focus();
+  await expect(saveButton).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('alert')).toContainText('save result is unknown');
+  await expect.poll(() => !!submitted).toBe(true);
+  await expect(page.getByRole('alert')).toContainText(
+    'We have not received a save confirmation',
+  );
   await page.unroute('**/api/customer/settings', lostResponse);
   await page.reload();
   await expect(page.getByLabel('Customer display name')).toHaveValue(
     'Confirmed fixture district',
   );
-  await page.getByRole('button', { name: 'Check save receipt' }).click();
+  await page.getByRole('button', { name: 'Check save status' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Confirmed save receipt' }),
+    page.getByRole('heading', { name: 'Save confirmed' }),
   ).toBeVisible();
   assert.equal(receipt.revision, 1);
   const retried = await admin.post(`${root}/settings`, {
@@ -198,14 +205,12 @@ export async function qualifyCustomerSettings({
       fullPage: true,
     });
   }
-  await page
-    .getByRole('button', { name: 'Keep my name and use latest revision' })
-    .click();
+  await page.getByRole('button', { name: 'Keep my edited name' }).click();
   await page
     .getByRole('button', { name: 'Save customer settings', exact: true })
     .click();
   await expect(
-    page.getByRole('heading', { name: 'Confirmed save receipt' }),
+    page.getByRole('heading', { name: 'Save confirmed' }),
   ).toBeVisible();
   assert.equal((await read()).revision, 3);
   assert.equal(await auditCount(), 3);
@@ -310,7 +315,7 @@ export async function qualifyCustomerSettings({
     'My preserved district',
   );
   await expect(
-    page.getByRole('heading', { name: 'Confirmed setup progress' }),
+    page.getByRole('heading', { name: 'Setup progress' }),
   ).toBeVisible();
   await writeFile(
     `${evidenceDirectory}/customer-settings.json`,

@@ -3,12 +3,12 @@
     Proposed district and school access
   </h3>
   <p>
-    Each grant names one district or school. A school grant does not grant
-    access to another school.
+    Choose the district or school this person can access. Access to one school
+    does not include other schools.
   </p>
   <p>
-    Removing grants remains available when Google references are stale. The
-    server verifies new grants during review and confirmation.
+    You can remove access even when Google data is out of date. Adding access
+    requires current district or school details.
   </p>
   <p role="status">{{ message() }}</p>
   @if (error()) {
@@ -25,11 +25,11 @@
         [disabled]="!canRemove(grant)"
         [attr.aria-label]="'Remove ' + labels[grant.action] + ' for ' + scopeLabel(grant.scope)"
       >
-        Remove grant
+        Remove permission
       </button>
     </li>
     } @empty {
-    <li>No district or school grants selected.</li>
+    <li>No district or school permissions selected.</li>
     }
   </ul>
   <button
@@ -38,7 +38,7 @@
     (click)="load()"
     [disabled]="disabled() || customer.loading() || schools.loading().list"
   >
-    Load permitted scopes
+    Choose district or school
   </button>
   @if (loaded()) {
   <h4>District</h4>
@@ -57,7 +57,7 @@
     }}
   </button>
   } @else if (!customer.loading()) {
-  <p>No confirmed district is available within your current access.</p>
+  <p>No connected district is available to your account.</p>
   }
   <h4>Schools</h4>
   @if (schools.loading().list) {
@@ -66,7 +66,7 @@
   <p class="error" role="status">{{ schools.errors().list }}</p>
   } @if (schools.page(); as page) {
   <p>
-    {{ page.total }} permitted school definitions. Read {{
+    Schools available to you: {{ page.total }}. Updated {{
     schools.observedAt().list | date:'medium' }}.
   </p>
   <ul>
@@ -82,7 +82,7 @@
       </button>
     </li>
     } @empty {
-    <li>No school definitions are available within your access.</li>
+    <li>No schools are available to your account.</li>
     }
   </ul>
   <div class="actions">
@@ -103,7 +103,7 @@
     </button>
   </div>
   } @else if (!schools.loading().list && !schools.readable()) {
-  <p>Your access does not permit browsing school definitions.</p>
+  <p>You do not have permission to view schools.</p>
   } } @if (selected(); as scope) {
   <h4>{{ scopeLabel(scope) }}</h4>
   @if (scope.kind === 'school') { @if (schools.loading().detail) {
@@ -117,8 +117,8 @@
   </p>
   } } @if (!canAdd()) {
   <p>
-    Current resource verification is unavailable. Load permitted scopes and
-    select the resource again before adding grants.
+    Reload the district and school list, then select one before adding
+    permissions.
   </p>
   }
   <div class="actions">
@@ -141,14 +141,15 @@
     </button>
   </div>
   <p>
-    Each preset replaces the proposed grants for this resource only. Review the
-    explicit grants before confirmation.
+    The preset changes permissions for this district or school only. Check the
+    selections before saving.
   </p>
   <fieldset [disabled]="disabled()">
     <legend>Actions for this resource</legend>
     @if (value().length >= capacity()) {
     <p>
-      The proposal contains 256 grants. Remove a grant before adding another.
+      You have reached the limit of 256 permissions. Remove one before adding
+      another.
     </p>
     } @for (action of selectedActions(); track action) {
     <mat-checkbox

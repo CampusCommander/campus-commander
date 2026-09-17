@@ -148,15 +148,13 @@ test('preserves the draft during a conflict and requires explicit revision revie
   await expect(
     page.getByText('Another administrator', { exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole('button', { name: 'Keep my name and use latest revision' })
-    .click();
+  await page.getByRole('button', { name: 'Keep my edited name' }).click();
   await expect(page.getByLabel('Customer display name')).toBeFocused();
   await page
     .getByRole('button', { name: 'Save customer settings', exact: true })
     .click();
   await expect(
-    page.getByRole('heading', { name: 'Confirmed save receipt' }),
+    page.getByRole('heading', { name: 'Save confirmed' }),
   ).toBeVisible();
   expect(writes).toHaveLength(2);
   await expect(page.getByRole('navigation')).toContainText(
@@ -193,7 +191,9 @@ test('reloads a lost response and retries the exact request when no receipt exis
   await page
     .getByRole('button', { name: 'Save customer settings', exact: true })
     .click();
-  await expect(page.getByRole('alert')).toContainText('save result is unknown');
+  await expect(page.getByRole('alert')).toContainText(
+    'We have not received a save confirmation',
+  );
   await page.reload();
   await expect(page.getByLabel('Customer display name')).toHaveValue(
     'Recover my name',
@@ -202,13 +202,13 @@ test('reloads a lost response and retries the exact request when no receipt exis
     'readonly',
     'true',
   );
-  await page.getByRole('button', { name: 'Check save receipt' }).click();
+  await page.getByRole('button', { name: 'Check save status' }).click();
   await expect(page.getByRole('status')).toContainText(
-    'No receipt is available yet',
+    'The save is not confirmed yet',
   );
-  await page.getByRole('button', { name: 'Retry same save' }).click();
+  await page.getByRole('button', { name: 'Retry save' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Confirmed save receipt' }),
+    page.getByRole('heading', { name: 'Save confirmed' }),
   ).toBeVisible();
   expect(
     await page.evaluate(() =>
@@ -245,21 +245,23 @@ test('recovers a committed receipt without another save', async ({ page }) => {
   await page
     .getByRole('button', { name: 'Save customer settings', exact: true })
     .click();
-  await expect(page.getByRole('alert')).toContainText('save result is unknown');
+  await expect(page.getByRole('alert')).toContainText(
+    'We have not received a save confirmation',
+  );
   await page.reload();
-  await page.getByRole('button', { name: 'Check save receipt' }).click();
+  await page.getByRole('button', { name: 'Check save status' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Confirmed save receipt' }),
+    page.getByRole('heading', { name: 'Save confirmed' }),
   ).toBeVisible();
   expect(saves).toBe(1);
   await expect(
-    page.getByRole('heading', { name: 'Confirmed save receipt' }),
+    page.getByRole('heading', { name: 'Save confirmed' }),
   ).toBeFocused();
   await page.reload();
   await page.getByLabel('Customer display name').fill('Draft after reload');
-  await page.getByRole('button', { name: 'View latest save receipt' }).click();
+  await page.getByRole('button', { name: 'View last save' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Confirmed save receipt' }),
+    page.getByRole('heading', { name: 'Save confirmed' }),
   ).toBeFocused();
   await expect(page.getByLabel('Customer display name')).toHaveValue(
     'Draft after reload',
@@ -376,7 +378,7 @@ test('explains revoked read access after session recovery', async ({
   state.resume();
   await page.getByRole('button', { name: 'Recheck access' }).click();
   await expect(page.getByRole('alert')).toContainText(
-    'Your current access does not permit customer settings',
+    'You do not have permission to view these settings',
   );
   await expect(
     page.getByRole('link', { name: 'Return to your account' }),

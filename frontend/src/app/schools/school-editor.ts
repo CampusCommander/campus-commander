@@ -166,7 +166,7 @@ export class SchoolEditor implements OnDestroy {
         if (saved.receipt?.appliedAt) this.review.set(saved.receipt);
         this.message.set(
           saved.pending
-            ? 'A school review needs recovery. Check its receipt before another change.'
+            ? 'A school change is still waiting for confirmation. Check its save status before editing.'
             : 'Restored your school draft. Refresh saved data before review.',
         );
         this.conflict.set(!saved.pending && saved.draft.expectedRevision > 0);
@@ -318,7 +318,7 @@ export class SchoolEditor implements OnDestroy {
     this.conflict.set(false);
     this.persist();
     this.message.set(
-      'Your draft now uses the latest saved revision. Review the scope before saving.',
+      'Your edits now use the latest saved school. Review the organizational units before saving.',
     );
     this.focus('#school-name');
   }
@@ -386,7 +386,7 @@ export class SchoolEditor implements OnDestroy {
     if (review.appliedAt) {
       this.pending.set(null);
       this.message.set(
-        'The server confirmed the school definition. The receipt records the saved scope.',
+        'School saved. The confirmation shows its organizational units.',
       );
       this.persist();
       this.saved.emit(review.schoolId);
@@ -398,8 +398,8 @@ export class SchoolEditor implements OnDestroy {
       this.persist();
       this.message.set(
         pending.stage === 'confirm'
-          ? 'The receipt does not yet confirm a save. Retry this same confirmation to resolve the result.'
-          : 'Review the exact scope and access consequences before confirmation.',
+          ? 'The save is not confirmed yet. Retry the confirmation to check again.'
+          : 'Check the organizational units and access changes before saving.',
       );
     }
   }
@@ -418,7 +418,7 @@ export class SchoolEditor implements OnDestroy {
     this.error.set('');
     this.message.set(
       kind === 'recover'
-        ? 'Reading the school review receipt.'
+        ? 'Checking the school save status.'
         : 'Waiting for the school review result.',
     );
     this.focus();
@@ -442,7 +442,7 @@ export class SchoolEditor implements OnDestroy {
         if (kind === 'preview') {
           // A prior preview can survive an interrupted response. Recover its identity before replacing it.
           this.message.set(
-            'The preview conflicts with saved state. Check its receipt, or return to the draft and refresh saved data.',
+            'The saved school and this review no longer match. Check the save status, or refresh your draft and review again.',
           );
         } else {
           this.pending.set(null);
@@ -456,8 +456,8 @@ export class SchoolEditor implements OnDestroy {
         );
         this.error.set(
           this.conflict()
-            ? 'The saved school changed. Use the latest saved revision, then review the retained draft again.'
-            : 'References or affected access changed. Refresh references, then review the retained draft again.',
+            ? 'Someone changed this school. Use the latest saved school, then review your edits again.'
+            : 'Google units or school access changed. Refresh Google units, then review your edits again.',
         );
         await this.store.readReferences();
       } else if (
@@ -473,13 +473,13 @@ export class SchoolEditor implements OnDestroy {
         );
       } else if (kind === 'recover' && response.status === 404) {
         this.message.set(
-          'No school review receipt is available. Return to the draft only if confirmation has not started.',
+          'No save confirmation is available. Return to your draft only if you have not submitted the save.',
         );
       } else throw new Error();
     } catch {
       if (current())
         this.error.set(
-          'The school result is unknown. Check the review receipt before another change. Your draft remains in this tab.',
+          'We have not received a save confirmation. Check the school save status before editing. Your draft is still here.',
         );
     } finally {
       if (current()) {

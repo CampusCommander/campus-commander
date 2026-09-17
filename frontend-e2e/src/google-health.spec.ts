@@ -108,10 +108,10 @@ async function fixture(page: Page, diagnose = true, services = false) {
   );
   await page.goto('/diagnostics');
   await expect(
-    page.getByRole('heading', { name: 'Google capability health' }),
+    page.getByRole('heading', { name: 'Google access' }),
   ).toBeVisible();
   await expect(
-    page.getByRole('button', { name: 'Check enabled Google capabilities' }),
+    page.getByRole('button', { name: 'Check Google access' }),
   ).toBeVisible();
   return {
     health: () => health,
@@ -175,7 +175,7 @@ test('preserves partial access, uses only the selected scope, and shares the foo
     page.getByLabel('Required Google capability scopes'),
   ).toContainText('domain.readonly');
   await expect(
-    page.getByText('2 required scopes from enabled, qualified capabilities.'),
+    page.getByText('Add these 2 scopes to allow the checks on this page.'),
   ).toBeVisible();
 });
 
@@ -187,9 +187,9 @@ test('retains historical observations offline and clears them after read denial'
   await page.getByRole('button', { name: 'Refresh Google status' }).click();
   await expect(
     page.getByRole('article', { name: 'Customer identity', exact: true }),
-  ).toContainText('Stale observation');
+  ).toContainText('Out of date');
   await expect(
-    page.getByRole('button', { name: 'Check enabled Google capabilities' }),
+    page.getByRole('button', { name: 'Check Google access' }),
   ).toBeDisabled();
   await expect(page.locator('footer')).toContainText(
     'Google status unavailable',
@@ -197,7 +197,7 @@ test('retains historical observations offline and clears them after read denial'
   state.mode('ok');
   await page.getByRole('button', { name: 'Refresh Google status' }).click();
   await expect(
-    page.getByRole('button', { name: 'Check enabled Google capabilities' }),
+    page.getByRole('button', { name: 'Check Google access' }),
   ).toBeEnabled();
   state.mode('forbidden');
   await page.getByRole('button', { name: 'Refresh Google status' }).click();
@@ -230,26 +230,26 @@ test('shows stale success and expires a saved pending check without inventing a 
   state.setHealth(old);
   await page.getByRole('button', { name: 'Refresh Google status' }).click();
   await expect(
-    page.getByRole('button', { name: 'Check enabled Google capabilities' }),
+    page.getByRole('button', { name: 'Check Google access' }),
   ).toBeDisabled();
   await expect(page.locator('footer')).toContainText('Google check running');
   await page.clock.fastForward(4000);
   await expect(page.locator('footer')).toContainText('Google check expired');
   await expect(
-    page.getByRole('button', { name: 'Check enabled Google capabilities' }),
+    page.getByRole('button', { name: 'Check Google access' }),
   ).toBeEnabled();
   await expect(
     page.getByRole('article', { name: 'Customer identity', exact: true }),
-  ).toContainText('Stale observation');
+  ).toContainText('Out of date');
 });
 
 test('supports read-only capability inspection', async ({ page }) => {
   await fixture(page, false);
   await expect(
-    page.getByRole('button', { name: 'Check enabled Google capabilities' }),
+    page.getByRole('button', { name: 'Check Google access' }),
   ).toBeDisabled();
   await expect(
-    page.getByText('Your account can inspect Google status.', { exact: false }),
+    page.getByText('You can view these results.', { exact: false }),
   ).toBeVisible();
 });
 
@@ -262,24 +262,24 @@ test('recovers an uncertain request without submitting a second check', async ({
     checks += 1;
     return route.abort();
   });
-  await page
-    .getByRole('button', { name: 'Check enabled Google capabilities' })
-    .click();
+  await page.getByRole('button', { name: 'Check Google access' }).click();
   await expect(
-    page.getByRole('button', { name: 'Check enabled Google capabilities' }),
+    page.getByRole('button', { name: 'Check Google access' }),
   ).toBeDisabled();
   await expect(
-    page.getByText('The Google check result is unknown.', { exact: false }),
+    page.getByText('We have not received a Google check result.', {
+      exact: false,
+    }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Refresh Google status' }).click();
   await expect(
-    page.getByRole('button', { name: 'Check enabled Google capabilities' }),
+    page.getByRole('button', { name: 'Check Google access' }),
   ).toBeEnabled();
   expect(checks).toBe(1);
 });
 
 for (const theme of ['light', 'dark'])
-  test(`Google capability health supports ${theme} accessibility and reflow`, async ({
+  test(`Google access supports ${theme} accessibility and reflow`, async ({
     page,
   }) => {
     await fixture(page, true, true);
@@ -288,7 +288,7 @@ for (const theme of ['light', 'dark'])
       .getByRole('menuitem', { name: `Use ${theme} theme`, exact: true })
       .click();
     await page
-      .getByText('Customer identity authorization and evidence', {
+      .getByText('Customer identity setup details', {
         exact: true,
       })
       .click();
@@ -331,18 +331,16 @@ test('health links focus details across routes and during repeated same-route na
   await fixture(page);
   const footerLink = page.locator('footer a', { hasText: 'Google:' });
   const heading = page.getByRole('heading', {
-    name: 'Google capability health',
+    name: 'Google access',
   });
   await footerLink.click();
   await expect(heading).toBeFocused();
   await footerLink.click();
   await expect(heading).toBeFocused();
   await page
-    .getByRole('link', { name: 'Google customer connection', exact: true })
+    .getByRole('link', { name: 'Google connection', exact: true })
     .click();
-  await page
-    .getByRole('link', { name: 'Inspect Google capability health' })
-    .click();
+  await page.getByRole('link', { name: 'Check Google access' }).click();
   await expect(heading).toBeFocused();
 });
 
@@ -362,11 +360,11 @@ test('local disconnect preserves historical checks without claiming a Google rej
   ).toBeVisible();
   await expect(
     page.getByText(
-      'Background Google access is disconnected locally. These observations describe earlier checks.',
+      'Campus Commander is disconnected from Google. The results below are from earlier checks.',
     ),
   ).toBeVisible();
   await expect(
-    page.getByRole('button', { name: 'Check enabled Google capabilities' }),
+    page.getByRole('button', { name: 'Check Google access' }),
   ).toBeDisabled();
   await expect(
     page.getByRole('button', {

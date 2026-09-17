@@ -106,7 +106,7 @@ export class GoogleHealthStore implements OnDestroy {
     if (failed)
       return `Google: ${failed} of ${health.capabilities.length} capabilities need attention`;
     if (health.capabilities.some((item) => this.stale(item.checkedAt)))
-      return 'Google observations are stale';
+      return 'Google results are out of date';
     return `Google: ${health.capabilities.length} last checks passed`;
   });
 
@@ -184,7 +184,7 @@ export class GoogleHealthStore implements OnDestroy {
       if (!this.current(request, session)) return;
       this.unavailable.set(true);
       this.error.set(
-        'Google status is unavailable. Previous observations are stale. Check application access and connectivity, then refresh Google status.',
+        'Google status is unavailable. Check your connection and account access, then refresh. The results below are out of date.',
       );
     } finally {
       if (this.current(request, session)) this.loading.set(false);
@@ -201,7 +201,7 @@ export class GoogleHealthStore implements OnDestroy {
     const request = ++this.request;
     this.running.set(true);
     this.error.set('');
-    this.message.set('Checking selected Google capabilities.');
+    this.message.set('Checking Google access.');
     try {
       const response = await this.auth.request(
         '/api/google-connection/health/check',
@@ -226,14 +226,14 @@ export class GoogleHealthStore implements OnDestroy {
       const result = googleHealthResponseSchema.parse(await response.json());
       if (!this.current(request, session)) return;
       this.accept(result.health);
-      this.message.set('Google check finished. Review each capability result.');
+      this.message.set('Google check finished. See the results below.');
       return true;
     } catch {
       if (!this.current(request, session)) return;
       this.unavailable.set(true);
       this.message.set('');
       this.error.set(
-        'The Google check result is unknown. Refresh Google status after connectivity returns. Previous observations remain historical.',
+        'We have not received a Google check result. When your connection returns, refresh Google status.',
       );
       return true;
     } finally {

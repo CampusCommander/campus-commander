@@ -524,8 +524,8 @@ export class CredentialManagement implements OnInit, OnDestroy {
         mode === 'disconnect'
           ? 'Background Google access disconnected locally. Customer settings and application sign-in remain available.'
           : mode === 'rotate'
-            ? 'Encryption key rotated. Check Google capability health and verify worker access.'
-            : 'Replacement activated for the confirmed customer. Check Google capability health.',
+            ? 'Encryption key rotated. Check Google access and verify worker access.'
+            : 'Replacement activated for the confirmed customer. Check Google access.',
       );
       await this.connection.refresh();
       if (!this.accepts(sequence, authority)) return;

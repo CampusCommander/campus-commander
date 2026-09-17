@@ -286,7 +286,8 @@
         "status": "live-read-proof-passed-additional-fixtures-pending",
         "evidence": "../../deployment/evidence/CC-44-dwd-credential-proof.json",
         "validatedRevision": "c5e9d9cd22359270dda8168ba31df84706a13b11"
-      }
+      },
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T02",
@@ -330,7 +331,8 @@
         "localValidation": "Build, lint, unit, installer, release, and type checks passed.",
         "integrationValidation": "Hosted CI run 35124116097 passed all seven jobs at 52a14cb1abf3626e90d817dfd389acb9ecf21e6d. Review and merge remain pending.",
         "pullRequest": "https://github.com/CampusCommander/campus-commander/pull/5"
-      }
+      },
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T03",
@@ -394,7 +396,8 @@
           "onboarding UI",
           "CC-44 live qualification"
         ]
-      }
+      },
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T04",
@@ -441,8 +444,9 @@
       "stableLabel": "p3-t04",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn administrator saves customer settings and resumes observed onboarding progress after browser closure, dependency failure, or service restart.\n\nStories: S03, S04. Packages: P3.2, P6.1.\n\n## Acceptance criteria\n\n- [ ] Define and validate the Phase 3 customer settings allowlist. Keep per-user theme preferences separate from customer settings.\n- [ ] Persist confirmed steps and settings revisions in PostgreSQL. Keep short-lived credential staging transactions separate.\n- [ ] Restore progress after reload and API restart without repeating completed credential verification or discarding unsaved form input on errors.\n- [ ] Handle Redis loss by restarting only the expired authorization transaction while retaining durable business progress.\n- [ ] Reject stale concurrent writes with a recoverable conflict response and unchanged confirmed state.\n- [ ] Display Google approval and capability verification separately from local setup. Do not simulate inventory progress.\n- [ ] Require scoped read/write authority and atomic security evidence for settings changes.\n- [ ] Preserve keyboard navigation, focus, field labels, both themes, and clear error recovery throughout the workflow.\n\n## Blocked by\n\n- [CC-46](https://easton-consulting.atlassian.net/browse/CC-46) (P3-T03).\n\n## Evidence\n\n- Interrupted onboarding and concurrent settings browser tests.\n- PostgreSQL persistence and audit transaction results.\n- Applicable UI rule evidence.\n\n## Demonstration\n\nSave settings, interrupt onboarding, restart the API, and resume at the last confirmed step.\n\n## Ownership and UI\n\nProposed owner role: Application experience lead. Relative size: M.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-46"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Review",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T05",
@@ -489,8 +493,9 @@
       "stableLabel": "p3-t05",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn authorized operator sees which Phase 3 capabilities are enabled, granted, qualified, and available, then runs a bounded diagnostic or reconnects.\n\nStories: S02, S04. Packages: P3.1, P3.3.\n\n## Acceptance criteria\n\n- [ ] Generate DWD authorization instructions and scope counts from enabled, qualified capability records with checked sources and test evidence.\n- [ ] Keep customer and domain reads separate from optional read-only OU references. Exclude later inventory and mutation capabilities.\n- [ ] Handle partial DWD authorization without marking unavailable capabilities healthy or repeatedly requesting unrelated scopes.\n- [ ] Classify credential, scope, privilege, policy, license, quota, and network failures with explicit recovery actions.\n- [ ] Show observation age and preserve last-known results during transient failures without presenting them as current success.\n- [ ] Use the same health contract in the shell and Diagnostics. Google failure must not block local sign-in or installer readiness.\n- [ ] Bound diagnostic requests, retries, and concurrency. Require current permission and retain sanitized correlation evidence.\n- [ ] Verify reconnect and capability recheck after revocation or changed privileges without requiring a full installation reset.\n\n## Blocked by\n\n- [CC-47](https://easton-consulting.atlassian.net/browse/CC-47) (P3-T04).\n\n## Evidence\n\n- Capability registry and generated-scope tests.\n- Simulator fault classifications and controlled-account privilege results.\n- Browser health, retry, and stale-state evidence.\n\n## Demonstration\n\nRemove a required grant, observe a named capability failure, restore authority, and recheck successfully.\n\n## Ownership and UI\n\nProposed owner role: Connection lead. Relative size: M.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-47"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T06",
@@ -537,8 +542,9 @@
       "stableLabel": "p3-t06",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn authorized administrator replaces the background Google identity or encryption key while preserving customer ownership and recoverable access.\n\nStories: S01, S08. Packages: P3.1, P9.1, P9.3.\n\n## Acceptance criteria\n\n- [ ] Stage and verify replacements against the existing stable customer ID before atomic activation.\n- [ ] Preserve a working credential when replacement verification fails. Reject a different customer without changing ownership.\n- [ ] Coordinate replacement and renewal across replicas with credential generations and bounded transition behavior.\n- [ ] Prove old generations cannot resume reads or overwrite new material after activation.\n- [ ] Rotate encryption keys with versioned ciphertext and an explicit interrupted-rotation recovery procedure.\n- [ ] Expose revoked, expired, missing-key, and invalid-client states with actionable recovery while preserving local application access.\n- [ ] Document provider revocation scope and prevent background disconnect from silently invalidating application-login configuration.\n- [ ] Require current authority and retained security events for replacement, disconnect, key changes, and recovery.\n\n## Blocked by\n\n- [CC-48](https://easton-consulting.atlassian.net/browse/CC-48) (P3-T05).\n\n## Evidence\n\n- Replacement, renewal-race, and retired-generation integration results.\n- Interrupted key-rotation and missing-key reports.\n- Operator credential replacement and erasure procedure.\n\n## Demonstration\n\nReplace the connection identity within the same customer, rotate its key, restart consumers, and deny the retired credential.\n\n## Ownership and UI\n\nProposed owner role: Connection security lead. Relative size: L.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-48"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T07",
@@ -596,7 +602,8 @@
         "qualifiedRevision": "55b53fe3d4164eac5c127a9026c25000cc60bcb8",
         "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35131956143",
         "evidence": "deployment/evidence/CC-50-platform-invitations.json"
-      }
+      },
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T08",
@@ -658,7 +665,8 @@
         "evidence": "deployment/evidence/CC-51-platform-access.json",
         "compatibilityCiRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35136924107",
         "compatibilityStatus": "passed"
-      }
+      },
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T09",
@@ -706,8 +714,9 @@
       "stableLabel": "p3-t09",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nA platform administrator defines a school scope using stable references and assigns a school operator or scoped viewer.\n\nStories: S06. Packages: P9.1, P3.1, P6.1.\n\n## Acceptance criteria\n\n- [ ] Represent a school as a district-defined scope with multiple explicit resource references when required.\n- [ ] Qualify optional read-only OU reference methods and scopes before exposing the selector. Do not build an OU management page.\n- [ ] Use stable OU identities and derived paths. Define overlap, inclusion, exclusion, and hierarchy-change semantics.\n- [ ] Deny expansion from missing, stale, unverified, or cross-customer references and preserve the last valid scope definition.\n- [ ] Preview effective scope and confirmation consequences before persisting definitions or grants.\n- [ ] Apply the same policy to permitted school-definition lists, counts, details, audit views, and direct requests.\n- [ ] Demonstrate cross-school denial using controlled references and synthetic resources without claiming Phase 4 inventory enforcement.\n- [ ] Invalidate affected permission versions and record scope changes and grant effects transactionally.\n\n## Blocked by\n\n- [CC-48](https://easton-consulting.atlassian.net/browse/CC-48) (P3-T05).\n- [CC-51](https://easton-consulting.atlassian.net/browse/CC-51) (P3-T08).\n\n## Evidence\n\n- Approved scope semantics and stable-reference capability report.\n- Synthetic cross-school, overlap, stale-reference, and path-change tests.\n- School-definition and grant browser evidence.\n\n## Demonstration\n\nAssign one school scope, deny access to another school, and preserve identity when an OU path changes.\n\n## Ownership and UI\n\nProposed owner role: Scoped access lead. Relative size: L.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01, TREE-01. Record actual validation results.",
       "blockers": ["CC-48", "CC-51"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T10",
@@ -770,7 +779,8 @@
         "evidence": "deployment/evidence/CC-53-access-revocation.json",
         "compatibilityRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35141611500",
         "compatibilityStatus": "passed"
-      }
+      },
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T11",
@@ -817,8 +827,9 @@
       "stableLabel": "p3-t11",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn operator completes the combined connection, settings, invitation, scope, revocation, and recovery workflows through the shipped browser application.\n\nStories: S03, S04, S05, S06, S07, S08, S09. Packages: P6.1, P9.1, Track 12.\n\n## Acceptance criteria\n\n- [ ] Exercise successful workflows and permission, provider, database, Redis, and network failures through real browser requests.\n- [ ] Verify resumed onboarding, cross-browser invitations, grant changes, customer context, and consistent Diagnostics results.\n- [ ] Record keyboard navigation, focus restoration, screen-reader announcements, contrast, target size, zoom, overflow, and both themes.\n- [ ] Verify unavailable inventory, Google entity mutation, and later-phase controls do not appear as working features.\n- [ ] Record actual UI rule IDs, component reuse, relevant states, and screenshot or reader evidence.\n- [ ] Preserve Phase 2 installer enrollment, login, account, Diagnostics, theme, and logout behavior.\n- [ ] Keep automatic accessibility results separate from human usability observations and unresolved defects.\n\n## Blocked by\n\n- [CC-49](https://easton-consulting.atlassian.net/browse/CC-49) (P3-T06).\n- [CC-53](https://easton-consulting.atlassian.net/browse/CC-53) (P3-T10).\n\n## Evidence\n\n- Packaged browser integration and accessibility reports.\n- Reader utterances, theme screenshots, and manual observations.\n- Defect list with exact reproduction steps and affected release.\n\n## Demonstration\n\nComplete onboarding and delegate scoped access using keyboard controls, then demonstrate announced failure and recovery.\n\n## Ownership and UI\n\nProposed owner role: Application quality lead. Relative size: M.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01, TREE-01. Record actual validation results.",
       "blockers": ["CC-49", "CC-53"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T12",
@@ -852,8 +863,9 @@
       "stableLabel": "p3-t12",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nA security reviewer verifies every Phase 3 data and write surface against the grant matrix, failure behavior, and retained audit evidence.\n\nStories: S01, S05, S06, S07, S08. Packages: P9.1, P9.3.\n\n## Acceptance criteria\n\n- [ ] Map every implemented endpoint and data surface to its required action, resource scope, and permission-version check.\n- [ ] Test cross-customer, cross-school, guessed-identifier, count, list, detail, Diagnostics, and audit-view denial.\n- [ ] Prove settings, invitation, grant, scope, and credential mutations commit with their security events or fail together.\n- [ ] Inject audit and database failure and prove no successful state change lacks durable evidence.\n- [ ] Test restricted database roles, CSRF, origin checks, content types, callback replay, token redaction, and bounded abuse controls.\n- [ ] Verify keys, tokens, authorization codes, client secrets, invitation secrets, and sensitive provider responses stay outside public evidence.\n- [ ] Record unresolved findings with severity and explicit release impact instead of hiding them behind a passing aggregate.\n\n## Blocked by\n\n- [CC-49](https://easton-consulting.atlassian.net/browse/CC-49) (P3-T06).\n- [CC-53](https://easton-consulting.atlassian.net/browse/CC-53) (P3-T10).\n\n## Evidence\n\n- Complete route-to-policy coverage matrix.\n- Real database fault and database-role tests.\n- Redaction report and resolved or accepted security findings.\n\n## Demonstration\n\nAttempt unauthorized direct requests and an audit-write failure, then show unchanged state and the expected denial evidence.\n\n## Ownership and UI\n\nProposed owner role: Application security lead. Relative size: L.\nNo new product UI. Verify applicable authorization and operational behavior.",
       "blockers": ["CC-49", "CC-53"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T13",
@@ -888,8 +900,9 @@
       "stableLabel": "p3-t13",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn installation operator restores Phase 3 customer state and access into an isolated target, recovers keys, and resumes authorized reads.\n\nStories: S08. Packages: P9.3.\n\n## Acceptance criteria\n\n- [ ] Inventory customer binding, settings, progress, grants, schools, encrypted credentials, security events, and independent key recovery material.\n- [ ] Use the actual backup and restore commands with a stopped or otherwise safely isolated source.\n- [ ] Restore into distinct databases, networks, and storage. Verify exact identity, permission, preference, and evidence preservation.\n- [ ] Invalidate source sessions, pending authorization transactions, and pending invitations before reopening target access.\n- [ ] Require restored-key verification and connection revalidation before background Google reads resume.\n- [ ] Demonstrate missing keys, revoked grants, changed Google privileges, and wrong-customer credentials without silent fallback.\n- [ ] Measure recovery time and record backup age and environment limits. Do not claim an untested district RPO or RTO.\n- [ ] Document interrupted restore, operator access recovery, credential review, and erasure procedures.\n\n## Blocked by\n\n- [CC-49](https://easton-consulting.atlassian.net/browse/CC-49) (P3-T06).\n- [CC-53](https://easton-consulting.atlassian.net/browse/CC-53) (P3-T10).\n\n## Evidence\n\n- Isolated operator-CLI restore report with preserved state counts and hashes.\n- Old-session, old-invitation, missing-key, and wrong-customer denial results.\n- Updated backup, key custody, restore, and erasure procedures.\n\n## Demonstration\n\nRestore the installation into an isolated target, reject the source session, recover keys, and sign in with preserved grants.\n\n## Ownership and UI\n\nProposed owner role: Operations lead. Relative size: L.\nNo new product UI. Verify applicable authorization and operational behavior.",
       "blockers": ["CC-49", "CC-53"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T14",
@@ -923,8 +936,9 @@
       "stableLabel": "p3-t14",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn operator installs, resumes, upgrades, restores, and recovers the complete Phase 3 all-Docker release through the delivered installer.\n\nStories: S10. Packages: P9.2, P9.3.\n\n## Acceptance criteria\n\n- [ ] Extend typed configuration, secret mounts, migration execution, version metadata, and image preparation for Phase 3.\n- [ ] Run clean installation and repeated resume from an extracted verified candidate bundle.\n- [ ] Upgrade from the pinned accepted Phase 2 artifact and preserve principals, preferences, artifacts, installer state, and migration checksums.\n- [ ] Execute connection, settings, invitation, grant, school-scope, and revocation workflows after installation and upgrade.\n- [ ] Run isolated restore with Phase 3 credentials, keys, grants, and security events and reject old sessions.\n- [ ] Verify service restart, low disk, provider outage, stale credentials, stop, update, uninstall, and explicit erasure behavior.\n- [ ] Retain five distinct installation, resume, upgrade, restore, and fault reports bound to exact source and image identity.\n\n## Blocked by\n\n- [CC-54](https://easton-consulting.atlassian.net/browse/CC-54) (P3-T11).\n- [CC-55](https://easton-consulting.atlassian.net/browse/CC-55) (P3-T12).\n- [CC-56](https://easton-consulting.atlassian.net/browse/CC-56) (P3-T13).\n\n## Evidence\n\n- Five all-Docker profile acceptance reports.\n- Actual extracted installer commands and image verification results.\n- Measured fixture limits and defect disposition.\n\n## Demonstration\n\nInstall the bundle, upgrade an accepted Phase 2 fixture, restore it separately, and complete the Phase 3 workflow.\n\n## Ownership and UI\n\nProposed owner role: Deployment lead. Relative size: L.\nApplicable UI rules: UI-01, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-54", "CC-55", "CC-56"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T15",
@@ -960,8 +974,9 @@
       "stableLabel": "p3-t15",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nA hybrid operator installs and upgrades Phase 3 with external PostgreSQL and Redis, distributed workers, and shared credential and artifact contracts.\n\nStories: S10. Packages: P9.2, P9.3, P9.4.\n\n## Acceptance criteria\n\n- [ ] Run the actual extracted installer for clean installation, repeated resume, Phase 2 upgrade, and isolated restore.\n- [ ] Verify external TLS trust, least-privilege database and Redis access, key projection, and restricted service reachability.\n- [ ] Record distinct worker-host placement and shared storage behavior. Distinguish logical nodes from independent physical failure domains.\n- [ ] Prove shared sessions, permission revocation, credential generation checks, and renewal behavior across replicas and workers.\n- [ ] Inject service, network, certificate, and credential failures and demonstrate bounded recovery without lost settings or audit evidence.\n- [ ] Verify operator update, stop, uninstall, retained external resources, and explicit erasure contracts.\n- [ ] Retain five profile reports with exact source, images, backup identity, host placement, and measured limits.\n\n## Blocked by\n\n- [CC-54](https://easton-consulting.atlassian.net/browse/CC-54) (P3-T11).\n- [CC-55](https://easton-consulting.atlassian.net/browse/CC-55) (P3-T12).\n- [CC-56](https://easton-consulting.atlassian.net/browse/CC-56) (P3-T13).\n- External prerequisite: Declared hybrid worker hosts, TLS service fixtures, and qualified shared storage.\n\n## Evidence\n\n- Five hybrid profile acceptance reports.\n- External TLS, distributed renewal, revocation, and shared-storage results.\n- District-service responsibilities and recovery limits.\n\n## Demonstration\n\nUpgrade the distributed fixture, revoke access across replicas, restore it separately, and repeat customer reads.\n\n## Ownership and UI\n\nProposed owner role: Deployment lead. Relative size: L.\nApplicable UI rules: UI-01, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-54", "CC-55", "CC-56"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T16",
@@ -997,8 +1012,9 @@
       "stableLabel": "p3-t16",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nA Kubernetes operator installs and upgrades Phase 3, replaces pods, and restores customer and authorization state into an isolated target.\n\nStories: S10. Packages: P9.2, P9.3, P9.4.\n\n## Acceptance criteria\n\n- [ ] Run the actual extracted installer for installation, repeated resume, Phase 2 upgrade, and isolated restore.\n- [ ] Apply installer-owned migrations before new application behavior and preserve verified previous state.\n- [ ] Project versioned credential keys and provider configuration only into authorized consumers.\n- [ ] Verify restricted Google discovery and API egress, browser-trusted TLS, and actual network-policy enforcement where claimed.\n- [ ] Prove shared sessions, permission revocation, renewal coordination, pod replacement, worker rescheduling, and retired credential rejection.\n- [ ] Use distinct restore namespaces and persistent volumes with source isolation and old-session rejection.\n- [ ] Retain five profile reports and explicit storage, CNI, node, physical-host, capacity, and recovery limits.\n\n## Blocked by\n\n- [CC-54](https://easton-consulting.atlassian.net/browse/CC-54) (P3-T11).\n- [CC-55](https://easton-consulting.atlassian.net/browse/CC-55) (P3-T12).\n- [CC-56](https://easton-consulting.atlassian.net/browse/CC-56) (P3-T13).\n- External prerequisite: Declared Kubernetes storage, network-policy enforcement, TLS endpoints, and replica placement.\n\n## Evidence\n\n- Five Kubernetes profile acceptance reports.\n- Replica, rescheduling, provider-egress, and key-projection checks.\n- Verified storage isolation and environment limitations.\n\n## Demonstration\n\nUpgrade the cluster, replace an API pod and worker, revoke a user, and verify an isolated restored installation.\n\n## Ownership and UI\n\nProposed owner role: Deployment lead. Relative size: L.\nApplicable UI rules: UI-01, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-54", "CC-55", "CC-56"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T17",
@@ -1032,8 +1048,9 @@
       "stableLabel": "p3-t17",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nAn operator downloads one signed Phase 3 release whose manifest binds the delivered installer, images, and completed qualification evidence.\n\nStories: S10. Packages: P9.2, P9.3.\n\n## Acceptance criteria\n\n- [ ] Select a clean committed source revision and rerun applicable checks for any change since candidate qualification.\n- [ ] Publish immutable images, signatures, checksums, SBOMs, dependency scans, and a versioned release manifest.\n- [ ] Bind all fifteen profile reports and application reports to exact source, image digests, file inventory, and report hashes.\n- [ ] Reject missing, failed, stale, or mismatched evidence and distinguish laboratory, profile-qualified, and accepted release states.\n- [ ] Independently download and verify signatures, inventory, and installer selection from published artifacts.\n- [ ] Publish supported workflows, credential setup, migration, backup, key recovery, rotation, erasure, and known limits.\n- [ ] Record exact commands, environments, defects, and applicable UI evidence without converting missing district tests into passed results.\n\n## Blocked by\n\n- [CC-57](https://easton-consulting.atlassian.net/browse/CC-57) (P3-T14).\n- [CC-58](https://easton-consulting.atlassian.net/browse/CC-58) (P3-T15).\n- [CC-59](https://easton-consulting.atlassian.net/browse/CC-59) (P3-T16).\n\n## Evidence\n\n- Release URL, signed manifest, SBOMs, scans, and qualification inventory.\n- Independent download and installer verification.\n- Versioned operator procedures and known-limit record.\n\n## Demonstration\n\nDownload the published bundle independently, verify its identity, and locate the evidence for every supported profile.\n\n## Ownership and UI\n\nProposed owner role: Release lead. Relative size: L.\nApplicable UI rules: UI-10. Record actual validation results.",
       "blockers": ["CC-57", "CC-58", "CC-59"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     },
     {
       "id": "P3-T18",
@@ -1081,8 +1098,9 @@
       "stableLabel": "p3-t18",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nThe owner reviews the delivered Phase 3 workflows and records an acceptance decision against one exact release.\n\nStories: S01, S02, S03, S04, S05, S06, S07, S08, S09, S10. Packages: P3.1, P3.2, P3.3, P9.1, P9.2, P9.3.\n\n## Acceptance criteria\n\n- [ ] Audit every Phase 3 source item, shared release criterion, task criterion, and native dependency against retained evidence.\n- [ ] Run the prescribed operator workflows and record release identity, environment, results, support interventions, and defects.\n- [ ] Record any explicit owner exception with its affected criterion, retained limitation, and support boundary.\n- [ ] Link every task to its implementation PR, merged commit, tests, operational procedure, and relevant UI evidence.\n- [ ] Reconcile native epic parents and Blocks links with the committed manifest and remove duplicate or stale planning references.\n- [ ] Close tasks only after evidence or an explicit acceptance exception resolves their criteria.\n- [ ] Complete the epic only after the owner accepts the phase and all child dispositions match that decision.\n- [ ] Update portfolio status and provide the Phase 4 handoff without starting entity implementation inside this task.\n\n## Blocked by\n\n- [CC-60](https://easton-consulting.atlassian.net/browse/CC-60) (P3-T17).\n- External prerequisite: Owner or designated operator participation for final workflow acceptance.\n\n## Evidence\n\n- Criterion-by-criterion acceptance matrix and operator record.\n- Verified Jira parent, dependency, and status export.\n- Owner decision, release identity, and Phase 4 handoff.\n\n## Demonstration\n\nReview the release acceptance matrix and trace each user workflow to its implementation, test evidence, and owner disposition.\n\n## Ownership and UI\n\nProposed owner role: Product owner and release lead. Relative size: M.\nApplicable UI rules: UI-10. Record actual validation results.",
       "blockers": ["CC-60"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Progress",
+      "jiraParent": "CC-42",
+      "jiraStatusObservedAt": "2026-09-17 20:17:29 UTC"
     }
   ],
   "approvedAt": "2026-09-16",
@@ -1116,6 +1134,8 @@
     ],
     "historicalTaskCriteria": "Task criteria and dependency snapshots below retain the original published plan. This scope revision governs active work.",
     "phaseMeaning": "Internal development milestones, not deployed versions or a user upgrade journey.",
-    "developmentData": "Disposable. Recreate fixtures and development databases when needed. No preservation or recovery requirement."
+    "developmentData": "Disposable. Recreate fixtures and development databases when needed. No preservation or recovery requirement.",
+    "reviewReadiness": "docs/reviews/2026-09-17-phase-3-review.md",
+    "nativeDependencies": "Verified original Blocks links remain in Jira. Deferred recovery and deployment profiles do not block the current review build."
   }
 }

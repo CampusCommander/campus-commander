@@ -391,7 +391,7 @@ test('wrong-customer and expired reviews cannot activate replacements', async ({
     .getByRole('button', { name: 'Refresh credential status', exact: true })
     .click();
   await expect(
-    page.getByText('This replacement review expired', { exact: false }),
+    page.getByText('This review is no longer current', { exact: false }),
   ).toBeVisible();
   await expect(confirm(page)).toHaveCount(0);
 });
@@ -434,7 +434,9 @@ test('stale generation and offline reads require a fresh review while preserving
     .getByRole('button', { name: 'Refresh credential status', exact: true })
     .click();
   await expect(
-    page.getByText('The reviewed generation differs', { exact: false }),
+    page.getByText('The credentials changed after this review started', {
+      exact: false,
+    }),
   ).toBeVisible();
   await expect(confirm(page)).toHaveCount(0);
 });

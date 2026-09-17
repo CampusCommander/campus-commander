@@ -149,7 +149,9 @@ it.each([201, 400])(
     finish();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(element.textContent).toContain('The save result is unknown');
+    expect(element.textContent).toContain(
+      'We have not received a save confirmation',
+    );
     expect(element.textContent).not.toContain('The settings are invalid');
     expect(element.querySelector('#receipt-title')).toBeNull();
     expect(name.value).toBe('Preserved draft');

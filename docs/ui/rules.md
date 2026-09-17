@@ -57,6 +57,11 @@ Rule IDs provide references for implementation plans, review findings, and accep
 
 ## UI-05 — Controls and copy
 
+- Write for the person using the page. Explain what happened and what they can do next.
+- Use everyday words in labels and messages. For example, use "person," "permissions," and "save status."
+- Keep engineering terms such as "principal," "receipt," and "revision" in technical details when users need them.
+- Remove repeated cautions and implementation commentary from ordinary task instructions.
+- Describe the actual consequence when confirmation is required. Avoid generic phrases such as "access consequences."
 - Provide one primary continuation for the active task. Style other actions as secondary.
 - Use outlined destructive actions before confirmation. Use a filled destructive action for final destructive confirmation.
 - Give buttons a verb and object. Include the affected count when it clarifies scope.

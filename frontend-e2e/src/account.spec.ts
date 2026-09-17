@@ -113,7 +113,5 @@ test('account limits guidance to assigned school access and hides unavailable di
   ).toHaveCount(0);
   await signIn(page, []);
   await expect(page.getByRole('region', { name: 'Start here' })).toHaveCount(0);
-  await expect(
-    page.getByRole('heading', { name: 'Application help' }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Help' })).toBeVisible();
 });

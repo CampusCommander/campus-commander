@@ -1,8 +1,8 @@
 <div class="schools-content">
   <h1>Schools</h1>
   <p>
-    Define school scopes and inspect the schools permitted by your application
-    access.
+    Group Google organizational units into schools and choose which units each
+    school can access.
   </p>
   @if (!store.readable()) {
   <p role="status">
@@ -10,13 +10,13 @@
   </p>
   } @if (store.manager()) {
   <section class="card" aria-labelledby="school-references-title">
-    <h2 id="school-references-title">Organizational unit references</h2>
+    <h2 id="school-references-title">Google organizational units</h2>
     <p>
-      School scopes use an optional read-only Google permission. This permission
-      does not change the required customer connection scopes.
+      To create schools, first allow Campus Commander to read your Google
+      organizational units.
     </p>
     <details>
-      <summary>Optional Google authorization</summary>
+      <summary>Allow access to organizational units</summary>
       <p>
         Add this scope to the service account client in your Google domain-wide
         delegation configuration.
@@ -35,8 +35,8 @@
       </div>
       <p role="status">{{ copied() }}</p>
       <p>
-        The delegated administrator also needs permission to read organizational
-        units. Refresh references after Google authorizes access.
+        The Google administrator account also needs permission to read
+        organizational units. Refresh Google units after updating Google access.
       </p>
     </details>
     @if (store.loading().references) {
@@ -50,8 +50,8 @@
       <p class="error">{{ store.errors().references }}</p>
       } @if (store.references(); as references) {
       <p>
-        {{ store.fresh() ? 'References verified' : 'References unavailable or
-        stale' }}. Customer
+        {{ store.fresh() ? 'Google units ready' : 'Google units unavailable or
+        out of date' }}. Customer
         <span class="identifier">{{ references.customerId }}</span>.
       </p>
       @if (references.observation; as observation) {
@@ -63,8 +63,8 @@
       <p class="error">{{ failureCopy() }}</p>
       } @if (references.checking) {
       <p>
-        A reference refresh is active. Recheck reference status after it
-        finishes.
+        Google units are being refreshed. Select Check refresh status to see the
+        result.
       </p>
       } @if (references.retryAt) {
       <p>
@@ -72,10 +72,7 @@
         }}.
       </p>
       } } @else if (store.observedAt().references) {
-      <p>
-        Confirm an active Google customer connection before defining school
-        scopes.
-      </p>
+      <p>Connect Google Workspace before creating schools.</p>
       }
     </div>
     <div class="actions">
@@ -85,7 +82,7 @@
         (click)="store.readReferences()"
         [disabled]="store.loading().references"
       >
-        Recheck reference status
+        Check refresh status
       </button>
       <button
         mat-stroked-button
@@ -93,14 +90,14 @@
         (click)="store.readReferences(true)"
         [disabled]="store.loading().references || !store.references() || !!store.references()?.checking || (!!store.references()?.retryAt && store.now() < referenceRetryTime())"
       >
-        Refresh references
+        Refresh Google units
       </button>
       <a routerLink="/google-connection">Google connection</a>
     </div>
   </section>
   }
   <section class="card" aria-labelledby="school-list-title">
-    <h2 id="school-list-title" tabindex="-1">Saved school definitions</h2>
+    <h2 id="school-list-title" tabindex="-1">Your schools</h2>
     <div class="actions">
       <button
         mat-stroked-button
@@ -132,7 +129,7 @@
     </p>
     } @if (store.page(); as page) {
     <p>
-      {{ page.total }} permitted school definitions. Read {{
+      Schools available to you: {{ page.total }}. Updated {{
       store.observedAt().list | date:'medium' }}.
     </p>
     <ul class="school-list">
@@ -149,7 +146,7 @@
         — revision {{ school.revision }}
       </li>
       } @empty {
-      <li>No school definitions are available within your access.</li>
+      <li>No schools are available to your account.</li>
       }
     </ul>
     <div class="actions">
@@ -193,17 +190,14 @@
       <dd>{{ school.updatedAt | date:'medium' }}</dd>
       <dt>Approved organizational units</dt>
       <dd>{{ school.approvedIds.length }}</dd>
-      <dt>Server-reported effective scope</dt>
+      <dt>Organizational units currently in this school</dt>
       <dd>
         {{ school.effectiveIds === null ? 'Unavailable. The saved definition
         remains intact.' : school.effectiveIds.length + ' organizational units'
         }}
       </dd>
     </dl>
-    <p>
-      Scope reported {{ store.observedAt().detail | date:'medium' }}. The server
-      rechecks access for every request.
-    </p>
+    <p>Last updated: {{ store.observedAt().detail | date:'medium' }}.</p>
     <details>
       <summary>Saved inclusion and exclusion rules</summary>
       <h3>Include</h3>
@@ -211,7 +205,7 @@
         @for (rule of school.rules.include; track rule.id) {
         <li>
           <span class="identifier">{{ rule.id }}</span> — {{ rule.descendants ?
-          'with descendants' : 'this unit only' }}
+          'including units below it' : 'this unit only' }}
         </li>
         }
       </ul>
@@ -220,7 +214,7 @@
         @for (rule of school.rules.exclude; track rule.id) {
         <li>
           <span class="identifier">{{ rule.id }}</span> — {{ rule.descendants ?
-          'with descendants' : 'this unit only' }}
+          'including units below it' : 'this unit only' }}
         </li>
         } @empty {
         <li>No exclusions.</li>
@@ -242,7 +236,7 @@
         (click)="inspect(school.id)"
         [disabled]="store.loading().detail"
       >
-        Refresh definition
+        Refresh school
       </button>
       @if (store.manager()) {
       <button

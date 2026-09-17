@@ -1,6 +1,6 @@
 <div class="settings-content">
   <h1>Customer settings</h1>
-  <p>Set the customer name shown in this installation.</p>
+  <p>Choose the name people see for your organization in Campus Commander.</p>
   @if (error()) {
   <p class="error" role="alert">{{ error() }}</p>
   } @if (store.error()) {
@@ -11,8 +11,8 @@
   <p id="settings-status" tabindex="-1" role="status">{{ message() }}</p>
   @if (!store.readable() && !auth.interrupted()) {
   <p role="alert">
-    Your current access does not permit customer settings. Contact a platform
-    administrator to restore access.
+    You do not have permission to view these settings. Contact your
+    administrator for access.
   </p>
   <a routerLink="/account">Return to your account</a>
   }
@@ -24,7 +24,7 @@
     Refresh saved settings
   </button>
   @if (store.stale() && store.loaded()) {
-  <p>Saved settings are stale. Refresh before saving.</p>
+  <p>These settings are out of date. Refresh them before saving.</p>
   } @if (store.loading() && !store.loaded()) {
   <section aria-label="Loading customer settings" aria-busy="true">
     <p role="status">Loading saved customer settings.</p>
@@ -42,7 +42,7 @@
     </dl>
   </section>
   <section class="card" aria-labelledby="settings-title">
-    <h2 id="settings-title">Local customer name</h2>
+    <h2 id="settings-title">Display name</h2>
     <p>
       Saved name: <strong>{{ customer.settings.displayName }}</strong>. Revision
       {{ customer.revision }}.
@@ -53,12 +53,12 @@
       (click)="viewReceipt()"
       [disabled]="busy() || auth.interrupted()"
     >
-      View latest save receipt
+      View last save
     </button>
     } @if (!canWrite()) {
     <p>
-      You have read-only access. Editing requires Manage customer settings
-      access for this customer.
+      You can view these settings. Ask your administrator for permission to edit
+      them.
     </p>
     }
     <form (ngSubmit)="save()">
@@ -77,8 +77,8 @@
           [aria-describedby]="dirty() && !valid() ? 'name-help name-error' : 'name-help'"
         />
         <mat-hint id="name-help"
-          >This name changes local display text. It does not change Google
-          data.</mat-hint
+          >This name appears in Campus Commander. Your organization name in
+          Google stays the same.</mat-hint
         >
       </mat-form-field>
       @if (dirty() && !valid()) {
@@ -109,23 +109,23 @@
     <section aria-labelledby="conflict-title">
       <h3 id="conflict-title" tabindex="-1">Review the latest saved name</h3>
       <p>
-        Your edited name remains in the form. The saved name and revision appear
-        above.
+        Someone saved a change since you opened this form. Compare the saved
+        name above with your edits before saving.
       </p>
       <button
         mat-stroked-button
         (click)="useLatest(true)"
         [disabled]="busy() || store.stale() || store.loading() || !canWrite()"
       >
-        Keep my name and use latest revision
+        Keep my edited name
       </button>
     </section>
     } @if (pending(); as pending) {
     <section aria-labelledby="pending-title">
-      <h3 id="pending-title" tabindex="-1">Resolve the pending save</h3>
+      <h3 id="pending-title" tabindex="-1">Check whether your changes saved</h3>
       <p>
-        The save result is unknown. Editing remains locked until this request
-        has a confirmed result.
+        We have not received a save confirmation. Check the save status before
+        making more changes.
       </p>
       <p>Requested name: {{ pending.settings.displayName }}</p>
       <div class="actions">
@@ -134,30 +134,30 @@
           (click)="checkReceipt()"
           [disabled]="busy() || auth.interrupted() || !store.readable()"
         >
-          Check save receipt
+          Check save status
         </button>
         <button
           mat-stroked-button
           (click)="save()"
           [disabled]="busy() || !canWrite() || store.stale() || store.loading()"
         >
-          Retry same save
+          Retry save
         </button>
       </div>
     </section>
     } @if (receipt(); as receipt) {
     <section aria-labelledby="receipt-title">
-      <h3 id="receipt-title" tabindex="-1">Confirmed save receipt</h3>
+      <h3 id="receipt-title" tabindex="-1">Save confirmed</h3>
       <p>
         {{ receipt.settings.displayName }} — revision {{ receipt.revision }},
         saved {{ receipt.savedAt | date:'medium' }}.
       </p>
-      <p>Later saves can change the current name shown above.</p>
+      <p>This records an earlier save. The current name appears above.</p>
     </section>
     }
   </section>
   <section class="card" aria-labelledby="progress-title">
-    <h2 id="progress-title">Confirmed setup progress</h2>
+    <h2 id="progress-title">Setup progress</h2>
     <ol>
       <li>
         Customer confirmed: {{ customer.onboarding.customerConfirmedAt |
@@ -170,22 +170,19 @@
       </li>
     </ol>
     <p>
-      Last successful Google observation: {{
+      Last successful Google check: {{
       customer.onboarding.lastGoogleObservationAt | date:'medium' }}.
     </p>
     <p>
-      Saved setup progress does not verify current Google approval or capability
-      access.
+      To check whether Google access still works, open the Google connection
+      page.
     </p>
     @if (auth.can('connection:read', {kind: 'district', customerId:
     customer.customerId})) {
     <a routerLink="/google-connection">Review Google connection</a> }
   </section>
   } @else if (store.loaded()) {
-  <p>
-    No customer is confirmed. Connect a Google customer before saving customer
-    settings.
-  </p>
+  <p>Connect your Google Workspace account before saving these settings.</p>
   @if (auth.can('connection:read', {kind: 'platform'})) {
   <a routerLink="/google-connection">Connect Google customer</a> } }
 </div>

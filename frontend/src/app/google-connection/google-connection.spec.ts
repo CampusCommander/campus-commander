@@ -164,7 +164,7 @@ it.each([201, 400])(
     finishBody();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(element.textContent).toContain('The result is unknown');
+    expect(element.textContent).toContain('We have not received a result');
     expect(element.textContent).not.toContain(
       'The service-account file is invalid',
     );

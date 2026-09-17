@@ -39,7 +39,7 @@
           <p>{{ principal.subject }}</p>
           <p>
             {{ principal.enabled ? 'Enabled' : 'Disabled' }} · {{
-            principal.grants.length }} grants
+            principal.grants.length }} permissions
           </p>
         </div>
         <button
@@ -74,20 +74,17 @@
   <section class="editor" aria-labelledby="access-editor-title">
     <h2 id="access-editor-title">Access for {{ principal.displayName }}</h2>
     <dl>
-      <dt>Sign-in issuer</dt>
+      <dt>Sign-in provider</dt>
       <dd>{{ principal.issuer }}</dd>
-      <dt>Sign-in subject</dt>
+      <dt>Sign-in ID</dt>
       <dd>{{ principal.subject }}</dd>
     </dl>
     <section
       aria-labelledby="access-receipts-title"
       [attr.aria-busy]="receiptLoading()"
     >
-      <h3 id="access-receipts-title">Access receipt history</h3>
-      <p>
-        Receipts record confirmed changes. Reopen this principal after
-        navigation or sign-in to read its receipts.
-      </p>
+      <h3 id="access-receipts-title">Access change history</h3>
+      <p>This history shows saved access changes for this person.</p>
       @if (receiptError()) {
       <p role="alert" class="error">{{ receiptError() }}</p>
       }
@@ -96,19 +93,20 @@
         (click)="loadReceipts()"
         [disabled]="receiptLoading()"
       >
-        Refresh receipt history
+        Refresh change history
       </button>
       @if (receipts(); as history) {
       <p>
-        {{ history.items.length }} shown of {{ history.total }} access receipts
+        {{ history.items.length }} shown of {{ history.total }} saved access
+        changes
       </p>
       @for (receipt of history.items; track receipt.id) {
       <details>
         <summary>
-          Receipt {{ receipt.id }} · {{ receipt.createdAt | date:'medium' }}
+          Change {{ receipt.id }} · {{ receipt.createdAt | date:'medium' }}
         </summary>
         <p>
-          Principal: {{ receipt.principalId }} · Changed by: {{ receipt.actorId
+          Account ID: {{ receipt.principalId }} · Changed by: {{ receipt.actorId
           }}
         </p>
         <p>
@@ -127,13 +125,13 @@
           }
         </ul>
         }
-        <h4>Previous grants</h4>
+        <h4>Previous permissions</h4>
         <ul>
           @for (grant of receipt.previous.grants; track $index) {
           <li>{{ labels[grant.action] }} · {{ scope(grant) }}</li>
           }
         </ul>
-        <h4>Applied grants</h4>
+        <h4>Saved permissions</h4>
         <ul>
           @for (grant of receipt.applied.grants; track $index) {
           <li>{{ labels[grant.action] }} · {{ scope(grant) }}</li>
@@ -147,14 +145,14 @@
           (click)="loadReceipts(history.offset - 20)"
           [disabled]="receiptLoading() || history.offset === 0"
         >
-          Newer receipts
+          Newer changes
         </button>
         <button
           mat-stroked-button
           (click)="loadReceipts(history.offset + 20)"
           [disabled]="receiptLoading() || history.offset + history.items.length >= history.total"
         >
-          Older receipts
+          Older changes
         </button>
       </div>
       }
@@ -168,8 +166,8 @@
     <p>These installation permissions remain unchanged by this form.</p>
     @if (!canManage()) {
     <p>
-      You can review access. Grant changes require platform access management
-      permission.
+      You can view these permissions. Ask a platform administrator if you need
+      to change them.
     </p>
     }
     <fieldset [disabled]="!canManage() || busy()">
@@ -186,12 +184,12 @@
           Use platform administrator preset
         </button>
         <button mat-stroked-button (click)="preset(false)">
-          Clear platform grants
+          Clear platform permissions
         </button>
       </div>
       <p>
-        Presets select explicit grants. Review every selected grant before
-        confirmation.
+        The preset selects permissions for you. Check the selections before
+        saving.
       </p>
       @for (action of actions; track action) {
       <mat-checkbox
@@ -202,12 +200,12 @@
       >
       }
       <p>
-        Platform grants cover the installation. Select district and school
-        grants below for narrower access.
+        These permissions apply across Campus Commander. Use the section below
+        to limit access to a district or school.
       </p>
       <p>
-        Keep one enabled platform administrator. Your current grants limit which
-        access you can change.
+        At least one platform administrator must keep full access. You can only
+        assign permissions that you hold.
       </p>
     </fieldset>
     <app-scoped-grants
@@ -243,8 +241,8 @@
       @if (review.schoolRevisions.length) {
       <h4>Reviewed school revisions</h4>
       <p>
-        Confirmation requires these exact school revisions. A changed definition
-        requires another access review.
+        If a school changes before you save, you will need to review these
+        permissions again.
       </p>
       <ul>
         @for (school of review.schoolRevisions; track school.schoolId) {
@@ -260,28 +258,25 @@
         Sign-in: {{ review.current.enabled ? 'enabled' : 'disabled' }} → {{
         review.proposed.enabled ? 'enabled' : 'disabled' }}
       </p>
-      <h4>Current grants</h4>
+      <h4>Current permissions</h4>
       <ul>
         @for (grant of review.current.grants; track $index) {
         <li>{{ labels[grant.action] }} · {{ scope(grant) }}</li>
         }
       </ul>
       @if (!review.current.grants.length) {
-      <p>No current grants.</p>
+      <p>No permissions assigned.</p>
       }
-      <h4>Grants after confirmation</h4>
+      <h4>Permissions after this change</h4>
       <ul>
         @for (grant of review.proposed.grants; track $index) {
         <li>{{ labels[grant.action] }} · {{ scope(grant) }}</li>
         }
       </ul>
       @if (!review.proposed.grants.length) {
-      <p>No platform grants after confirmation.</p>
+      <p>No permissions will remain after this change.</p>
       }
-      <p>
-        This change affects one principal. Previous sessions require another
-        sign-in.
-      </p>
+      <p>This person will need to sign in again after you save the change.</p>
       <p>
         {{ review.invitationsToRevoke.length }} unaccepted invitations will be
         revoked.
@@ -293,7 +288,7 @@
         }
       </ul>
       <mat-checkbox [(ngModel)]="confirmed"
-        >I reviewed this identity and its exact access changes.</mat-checkbox
+        >I checked the person and the permissions shown above.</mat-checkbox
       >
       <button
         mat-flat-button

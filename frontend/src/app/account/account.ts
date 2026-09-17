@@ -38,21 +38,22 @@ export class Account {
         visible: schoolsReadable(this.auth),
         path: '/schools',
         label: 'Browse schools',
-        description: 'View the schools and school scopes available to you.',
+        description:
+          'See your schools and the organizational units assigned to each one.',
       },
       {
         visible: platformAccess,
         path: '/platform-users',
         label: 'Review platform access',
         description:
-          'Review who can use Campus Commander and their assigned access.',
+          'Choose who can use Campus Commander and what they can do.',
       },
       {
         visible: platformAccess,
         path: '/invitations',
         label: 'Review platform invitations',
         description:
-          'Review invitations that give people access to Campus Commander.',
+          'Invite someone to Campus Commander or check an existing invitation.',
       },
     ].filter((task) => task.visible);
   });

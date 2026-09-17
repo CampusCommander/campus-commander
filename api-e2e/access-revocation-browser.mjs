@@ -41,7 +41,7 @@ export async function qualifyAccessRevocationBrowser({
     ).items.find((item) => item.id !== session.identity.id && item.enabled);
     expect(target).toBeTruthy();
     const label = invitations.getByRole('textbox', {
-      name: 'Recipient label',
+      name: 'Recipient name',
       exact: true,
     });
     await qualificationBrowserStep(
@@ -61,7 +61,7 @@ export async function qualifyAccessRevocationBrowser({
       .getByRole('button')
       .click();
     const grant = access.getByRole('checkbox', {
-      name: 'Read security events',
+      name: 'View security events',
       exact: true,
     });
     await grant.check();
@@ -70,7 +70,7 @@ export async function qualifyAccessRevocationBrowser({
       .click();
     await access
       .getByRole('checkbox', {
-        name: 'I reviewed this identity and its exact access changes.',
+        name: 'I checked the person and the permissions shown above.',
         exact: true,
       })
       .check();

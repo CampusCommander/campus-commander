@@ -1,5 +1,8 @@
 # Phase 3 handoff
 
+**Current scope:** The [current work plan](phase-3-current-plan.md) supersedes historical upgrade, recovery, and deployment-matrix requirements below.
+The [review-readiness record](../reviews/2026-09-17-phase-3-review.md) identifies the delivered build and remaining review work.
+
 Status: AUTHORIZED on 2026-09-16. Phase 3 implementation is active.
 The owner closed Phase 1 and [accepted Phase 2](../reviews/2026-09-16-phase-2-acceptance.md).
 The [delivery plan](phase-3-plan.md) expands this handoff into eighteen slices with acceptance criteria and dependencies.

@@ -1,12 +1,11 @@
 @if (draft(); as draft) {
 <section class="card" aria-labelledby="school-editor-title">
   <h2 id="school-editor-title">
-    {{ draft.expectedRevision ? 'Edit school definition' : 'Create school
-    definition' }}
+    {{ draft.expectedRevision ? 'Edit school' : 'Create school' }}
   </h2>
   <p>
-    This definition controls application access. It does not change
-    organizational units in Google.
+    Choose the Google organizational units that belong to this school in Campus
+    Commander. This does not move units in Google.
   </p>
   <p>
     Customer: <span class="identifier">{{ draft.customerId }}</span>. Saved
@@ -23,8 +22,7 @@
   </div>
   @if (!writable()) {
   <p>
-    Your current access does not permit school changes. Your draft remains in
-    this tab.
+    You do not have permission to edit schools. Your draft is still in this tab.
   </p>
   }
   <mat-form-field appearance="outline">
@@ -47,10 +45,12 @@
       characters.</mat-error
     >
   </mat-form-field>
-  <h3 id="school-rules-title" tabindex="-1">Scope rules</h3>
+  <h3 id="school-rules-title" tabindex="-1">
+    Organizational units in this school
+  </h3>
   <p>
-    Included units form the scope. Exclusions take precedence. Descendants apply
-    only when you select that option.
+    Choose which units to include or exclude. Excluded units stay outside this
+    school, even when an inclusion rule matches them.
   </p>
   @for (kind of ['include', 'exclude']; track kind) {
   <h4>{{ kind === 'include' ? 'Include' : 'Exclude' }}</h4>
@@ -59,8 +59,8 @@
     draft.rules.exclude; track rule.id) {
     <li>
       <span
-        >{{ unitLabel(rule.id) }} — {{ rule.descendants ? 'with descendants' :
-        'this unit only' }}</span
+        >{{ unitLabel(rule.id) }} — {{ rule.descendants ? 'including units below
+        it' : 'this unit only' }}</span
       >
       <button
         mat-button
@@ -74,8 +74,8 @@
     </li>
     } @empty {
     <li>
-      {{ kind === 'include' ? 'Add at least one inclusion.' : 'No exclusions.'
-      }}
+      {{ kind === 'include' ? 'Include at least one organizational unit.' : 'No
+      exclusions.' }}
     </li>
     }
   </ul>
@@ -97,7 +97,7 @@
         [ngModel]="descendants()"
         (ngModelChange)="descendants.set($event)"
         [disabled]="!editable() || !store.fresh()"
-        >Include descendants in this rule</mat-checkbox
+        >Also include units below this one</mat-checkbox
       >
       <div class="actions">
         <button
@@ -106,7 +106,7 @@
           (click)="addRule('include')"
           [disabled]="!editable() || !store.fresh()"
         >
-          Add inclusion
+          Include unit
         </button>
         <button
           mat-stroked-button
@@ -114,23 +114,24 @@
           (click)="addRule('exclude')"
           [disabled]="!editable() || !store.fresh()"
         >
-          Add exclusion
+          Exclude unit
         </button>
       </div>
       <p>A new rule replaces any existing rule for this unit.</p>
       } @else {
-      <p>Select an organizational unit to add an inclusion or exclusion.</p>
+      <p>Select a unit, then choose Include unit or Exclude unit.</p>
       }
     </section>
   </div>
   } @if (!store.fresh()) {
   <p>
-    Fresh verified references are required before selecting units or reviewing
-    this draft. Refresh references above.
+    Refresh the Google organizational units above before choosing units or
+    reviewing your changes.
   </p>
   } @if (conflict()) {
   <p>
-    The saved revision needs review. Your draft name and rules remain unchanged.
+    This school changed since you opened it. Your edits are still here. Review
+    them against the latest saved school.
   </p>
   <button
     mat-stroked-button
@@ -138,7 +139,7 @@
     (click)="useLatestRevision()"
     [disabled]="!editable() || store.loading().detail"
   >
-    Use latest revision and keep draft
+    Keep edits and use latest school
   </button>
   }
   <div class="actions">
@@ -165,7 +166,7 @@
       (click)="recover()"
       [disabled]="busy() || !writable()"
     >
-      Check school receipt
+      Check school save status
     </button>
     @if (pending.stage === 'confirm') {
     <button
@@ -190,24 +191,23 @@
   } @if (review(); as review) {
   <section aria-labelledby="school-review-title">
     <h3 id="school-review-title" tabindex="-1">
-      {{ review.appliedAt ? 'Confirmed school receipt' : 'Review school scope'
-      }}
+      {{ review.appliedAt ? 'School saved' : 'Review school scope' }}
     </h3>
     <p>
       {{ review.name }} — {{ review.approvedIds.length }} approved
       organizational units.
     </p>
     <p>
-      @if (review.appliedAt) { This save invalidated access for {{
-      review.affectedPrincipalCount }} principals and revoked {{
-      review.invitationIds.length }} pending invitations. } @else { {{
-      review.affectedPrincipalCount }} affected principals must recheck
-      application access. {{ review.invitationIds.length }} pending invitations
-      will be revoked. }
+      @if (review.appliedAt) { School saved. {{ review.affectedPrincipalCount }}
+      people need to check their access again. {{ review.invitationIds.length }}
+      pending invitations were revoked. } @else { {{
+      review.affectedPrincipalCount }} people will need to check their access
+      again. {{ review.invitationIds.length }} pending invitations will be
+      revoked. }
     </p>
     <p>
-      Future hierarchy changes cannot add units outside this approved set. A new
-      review is required to expand access.
+      New Google units will not automatically join this school. Review the
+      school again to add them.
     </p>
     <details>
       <summary>
@@ -235,7 +235,7 @@
       Confirmed {{ review.appliedAt | date:'medium' }}. Saved revision {{
       review.revision }}.
     </p>
-    <p>Receipt: <span class="identifier">{{ review.id }}</span>.</p>
+    <p>Save reference: <span class="identifier">{{ review.id }}</span>.</p>
     <div class="actions">
       <button
         mat-stroked-button
@@ -243,24 +243,26 @@
         (click)="returnToDraft()"
         [disabled]="!writable()"
       >
-        Edit saved definition
+        Edit school
       </button>
-      <button mat-button type="button" (click)="close()">Close receipt</button>
+      <button mat-button type="button" (click)="close()">
+        Close confirmation
+      </button>
     </div>
     } @else if (pending()?.stage === 'review') {
     <p>Review expires {{ review.expiresAt | date:'medium' }}.</p>
     @if (!store.fresh() || review.referenceRevision !==
     store.references()?.observation?.revision || reviewExpired()) {
     <p>
-      The references or review changed or expired. Return to the draft, refresh
-      references, and review again.
+      This review is out of date. Return to your draft, refresh Google units,
+      and review your changes again.
     </p>
     }
     <mat-checkbox
       [ngModel]="confirmed()"
       (ngModelChange)="confirmed.set($event)"
       [disabled]="busy() || !writable()"
-      >I confirm this school scope and its access consequences</mat-checkbox
+      >I reviewed the units and access changes for this school</mat-checkbox
     >
     <div class="actions">
       <button
@@ -269,7 +271,7 @@
         (click)="confirm()"
         [disabled]="!canConfirm()"
       >
-        Confirm school definition
+        Save school
       </button>
     </div>
     }

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "recordedAt": "2026-09-17T21:04:49.363Z",
+  "applicationSource": "f765c6295c2893da6a760bd23a2edbe4e73eac0a",
+  "command": "npm exec -- nx run api-e2e:phase3-auth-integration",
+  "environment": "one Docker host, synthetic HTTPS OIDC provider, two API replicas, real PostgreSQL, Redis, Kestra, worker, artifact storage, and Chromium",
+  "durationMs": 118371,
+  "testCorrections": [
+    {
+      "path": "api-e2e/customer-settings.mjs",
+      "sha256": "cf58add55a4290beda726f487a3b2e4a113a89b55873f373672ab061c1c5d176"
+    },
+    {
+      "path": "api-e2e/school-definitions.mjs",
+      "sha256": "96fb16b098e384597adae08274517903a0fb91176e8124e1325733602c9442dc"
+    }
+  ],
+  "authorization": {
+    "routes": 32,
+    "boundaryChecks": 100
+  },
+  "accessibility": {
+    "reports": 38,
+    "violations": 0,
+    "incompleteRuleResults": 17,
+    "humanReview": "not-run"
+  },
+  "redaction": {
+    "status": "passed",
+    "verifiedFiles": 78
+  },
+  "reportHashes": {
+    "access-revocation-api.json": "d171dc87fefbb2065a20d9d15e74a1ca8f7193f927303a6980aa4773a08f04a9",
+    "access-revocation-browser.json": "4ee9ab8a4e80f17781fee96f64c354339c3046b955a0a3e00e706fbecedd47a4",
+    "customer-settings.json": "96627c7c8a616e25f3aff026dcedbbafb1e3ff143a13fd8676b90a0472d99ed2",
+    "evidence-redaction.json": "6fa1b74e30c4b7ebf4b0cbfb981a2ed1cff158e798310d5b10e0066eac231268",
+    "google-connection-api.json": "aff6096269663a87d26ef82ecb306447cf1d7791fa222dbf702a2d24a3765a21",
+    "google-connection-browser.json": "c76912df6a82bc2fab8f4e79a7aca18168c3a5e03a39f27c7fe6f06acd7c290b",
+    "google-connection-worker.json": "ad21d88656035b080dad97403d63e20ca20d471c00e1ddafce377518c515d35d",
+    "google-health-api.json": "5534040e718d9dcbd01377857e2bde6d3beacb5425d9372e5309f7901fa8d63f",
+    "google-lifecycle-api.json": "a525b2aa7d1c70440b05480df2c8a3324434a8b90e7b2d08866b5a2b10bb9cb2",
+    "google-lifecycle-browser-staging.json": "8f1544897b38926939b2cee7262fb7b43d4c715145adcb4470a066c2260936f3",
+    "invitations-browser.json": "524c92a9f7b1c10f7507d1013a9a3edb640cda253e517f659a5c1aeea3e989c3",
+    "phase3-route-security.json": "5bf974da143dae9f9b7b42e180ef302ae7768293a1eff97038498788af6d913c",
+    "platform-access-api.json": "570ebb8b96d7fd6581e06d83ee3410f99d8cc67c84ab5731daaba0c827794e5c",
+    "platform-access-browser.json": "e97f5e3c1f94dd99582df7f352fc46ce1ebc39cbfa627e442cbb724d9e4aa526",
+    "school-definitions-api.json": "e0216bb767956f86e7cfaf0f3680982de315b1c415766eb033b48ba2657c6541",
+    "school-references-api.json": "7fd691407a7e3e14d59ca2dcd7e31671a4c2418338fb7885529d8a082284bba1",
+    "source-integration.json": "9f8f09ff137683e8de38e181cae0e17ac53c81ec4e82181f358e7aeec6a8e683"
+  },
+  "limits": [
+    "Source application with simulated Google and OIDC. No new live Google claim.",
+    "Test files include the exact selector and keyboard readiness corrections recorded above.",
+    "Incomplete automated contrast results and human accessibility review remain open.",
+    "Published review release remains unchanged."
+  ]
+}

@@ -107,7 +107,7 @@ export const AuthStore = signalStore(
             interrupted: false,
             interruptedPrincipalId: null,
             error:
-              'A different principal signed in. The previous form was closed.',
+              'You signed in with a different account. The previous form has been closed.',
           });
           await router.navigateByUrl('/login');
           return;

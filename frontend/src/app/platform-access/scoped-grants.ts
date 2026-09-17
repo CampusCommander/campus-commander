@@ -103,7 +103,7 @@ export class ScopedGrants {
         this.loaded.set(false);
         this.error.set('');
         this.message.set(
-          'Resource access changed. Load permitted scopes again. Your proposed grants remain in the form.',
+          'Resource access changed. Choose district or school again. Your proposed grants remain in the form.',
         );
       });
     });
@@ -159,7 +159,7 @@ export class ScopedGrants {
       ),
     );
     this.message.set(
-      'Removed the grant from this proposal. Review access changes to apply it.',
+      'Permission removed from your edits. Review and confirm to save this change.',
     );
     if (restoreFocus) {
       const identity = this.schools.sessionKey();
@@ -222,14 +222,14 @@ export class ScopedGrants {
   private publish(grants: Grant[]) {
     if (grants.length > this.capacity()) {
       this.error.set(
-        'The proposal exceeds 256 total grants. Remove a grant before adding another.',
+        'You have reached the limit of 256 permissions. Remove one before adding another.',
       );
       return;
     }
     this.error.set('');
     this.changed.emit(grants);
     this.message.set(
-      'Updated the proposed scoped grants. Review access changes before confirmation.',
+      'Permissions updated in the form. Review and confirm to save your changes.',
     );
   }
 }

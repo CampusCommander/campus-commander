@@ -2,8 +2,7 @@
 <p>Check application services and inspect their results.</p>
 @if (!auth.session()?.identity?.permissions?.includes('diagnostics:read')) {
 <p role="alert">
-  Your account does not have service diagnostic access. Contact the installation
-  operator.
+  You do not have permission to view Diagnostics. Contact your administrator.
 </p>
 } @else { @if (diagnostics.error(); as error) {
 <p role="alert" class="error">{{ error }}</p>
@@ -39,7 +38,7 @@
       [attr.datetime]="health.observedAt"
       [attr.title]="health.observedAt | date:'medium'"
       >Observed {{ diagnostics.ageSeconds() }} seconds ago</time
-    >@if (diagnostics.stale()) { · Stale observation }
+    >@if (diagnostics.stale()) { · Out of date }
   </p>
   } @else { @if (diagnostics.refreshing()) {
   <div class="health-skeleton" aria-hidden="true">
@@ -52,11 +51,11 @@
 </section>
 <section aria-labelledby="checks-title">
   <h2 id="checks-title">Service checks</h2>
-  <p>Checks use temporary synthetic data. Run one check at a time.</p>
+  <p>Checks use temporary test data. Run one check at a time.</p>
   @if (!auth.session()?.identity?.permissions?.includes('diagnostics:run')) {
   <p>
-    Your account can inspect connections. The installation operator controls
-    permission to run checks.
+    You can view connections. Ask your administrator for permission to run
+    checks.
   </p>
   }
   <div class="check-grid">
@@ -100,9 +99,7 @@
   [attr.aria-busy]="google.loading() || google.running()"
 >
   <div class="section-heading">
-    <h2 #googleHeading id="google-health-title" tabindex="-1">
-      Google capability health
-    </h2>
+    <h2 #googleHeading id="google-health-title" tabindex="-1">Google access</h2>
     <button
       mat-stroked-button
       (click)="google.refresh()"
@@ -112,7 +109,8 @@
     </button>
   </div>
   <p>
-    Google checks do not control local sign-in or application service readiness.
+    These checks test Google access. The service checks above test Campus
+    Commander itself.
   </p>
   <div #googleResult tabindex="-1" role="status" aria-atomic="true">
     @if (google.error()) {
@@ -125,28 +123,24 @@
   <div class="health-skeleton" aria-hidden="true">
     <span></span><span></span>
   </div>
-  <p role="status">Loading Google capability observations.</p>
+  <p role="status">Loading Google access status.</p>
   } @else if (!google.health() && !google.unavailable()) {
-  <p>
-    No Google customer is connected. Confirm a customer before checking
-    capabilities.
-  </p>
+  <p>Connect Google Workspace before running these checks.</p>
   <a mat-stroked-button routerLink="/google-connection"
     >Connect Google customer</a
   >
   } @if (google.health(); as health) {
   <p>
     Customer <code>{{ health.customerId }}</code>. {{ google.capabilities.length
-    }} enabled and qualified read capabilities.
+    }} read-only Google checks available.
   </p>
   <p>
-    Last checks describe observed access. They do not guarantee continued Google
-    authorization.
+    These results show the last check. Run another check to confirm access now.
   </p>
   @if (health.connectionState === 'disconnected') {
   <p role="status">
-    Background Google access is disconnected locally. These observations
-    describe earlier checks.
+    Campus Commander is disconnected from Google. The results below are from
+    earlier checks.
   </p>
   <a mat-stroked-button routerLink="/google-connection"
     >Manage Google credentials</a
@@ -158,15 +152,15 @@
   </p>
   } @else if (google.expired()) {
   <p role="status">
-    The Google check expired without a result. Previous observations remain
-    historical. Run another check.
+    The Google check timed out. Run another check. The results below are from
+    earlier checks.
   </p>
   } @if (google.retrySeconds() > 0) {
   <p>Another check is available in {{ google.retrySeconds() }} seconds.</p>
   } @if (!google.canCheck() && health.connectionState !== 'disconnected') {
   <p>
-    Your account can inspect Google status. A current connection diagnostic
-    grant is required to run checks.
+    You can view these results. Ask your administrator for permission to run
+    Google checks.
   </p>
   }
   <button
@@ -174,7 +168,7 @@
     (click)="checkGoogle()"
     [disabled]="google.disabled()"
   >
-    Check enabled Google capabilities
+    Check Google access
   </button>
   @if (health.backgroundFailure; as failure) {
   <div class="background-failure">
@@ -182,8 +176,8 @@
     <p class="error">{{ google.recovery[failure].label }}</p>
     <p>{{ google.recovery[failure].recovery }}</p>
     <p>
-      After recovery, check both enabled capabilities to verify access and
-      resume background reads.
+      After fixing the problem, run both Google checks to resume background
+      reads.
     </p>
   </div>
   } @for (capability of google.capabilities; track capability.id) { @if
@@ -192,7 +186,7 @@
     <h3 [id]="capability.id + '-title'">{{ capability.label }}</h3>
     <p [class.error]="!!result.failure">
       {{ result.failure ? google.recovery[result.failure].label : 'Last check
-      passed' }} @if (google.stale(result.checkedAt)) { · Stale observation }
+      passed' }} @if (google.stale(result.checkedAt)) { · Out of date }
     </p>
     <p class="secondary">
       <time
@@ -202,8 +196,8 @@
       >
     </p>
     <p>
-      Required scope: {{ result.scopeVerified ? 'Verified in the checked token'
-      : 'Not verified in the last check' }}.
+      Required scope: {{ result.scopeVerified ? 'Included in the last access
+      check' : 'Not verified in the last check' }}.
     </p>
     @if (result.failure) {
     <p>{{ google.recovery[result.failure].recovery }}</p>
@@ -223,7 +217,7 @@
       Recheck {{ capability.label }}
     </button>
     <details>
-      <summary>{{ capability.label }} authorization and evidence</summary>
+      <summary>{{ capability.label }} setup details</summary>
       <p>
         Enable domain-wide delegation for this scope. The delegated
         administrator must also have access to this operation.
@@ -238,10 +232,10 @@
         >
       </p>
       <p>Checked at: {{ result.checkedAt | date:'medium' }}.</p>
-      <p>Qualification: {{ capability.evidence }}.</p>
+      <p>Test record: {{ capability.evidence }}.</p>
       <p>
-        The controlled live fixture used a Super Admin. Minimum custom
-        administrator privileges remain unqualified.
+        We tested this connection with a Google Super Admin. We have not yet
+        verified the minimum custom administrator role.
       </p>
       @if (result.correlationId) {
       <p>Support reference: <code>{{ result.correlationId }}</code></p>
@@ -252,8 +246,8 @@
   <details class="authorization">
     <summary>Configure required Google authorization</summary>
     <p>
-      {{ googleScopes.length }} required scopes from enabled, qualified
-      capabilities.
+      Add these {{ googleScopes.length }} scopes to allow the checks on this
+      page.
     </p>
     <ol>
       <li>Enable the Admin SDK API in the service-account project.</li>
@@ -288,14 +282,14 @@
       Copy required Google scopes
     </button>
     <p>
-      Google approval and propagation take time. Recheck the affected capability
-      after the grant takes effect.
+      Google needs time to apply delegation changes. Run the check again after
+      the change takes effect.
     </p>
     <p>
-      Optional school OU references remain disabled and unqualified for this
-      workflow. Their scope is not requested.
+      To check organizational unit access, open Schools. These checks only cover
+      customer and domain access.
     </p>
-    <p>Inventory and mutation capabilities are not enabled.</p>
+    <p>These checks do not list users or devices, or change Google data.</p>
   </details>
   }
 </section>
