@@ -83,3 +83,11 @@ The corrected comparison permits the new Phase 3 key configuration after schema 
 It still rejects changed sign-in settings, storage, topology, downgrades, and same-phase key changes.
 Installer tests and deployment lint pass. Both review axes found no remaining issues.
 These policy tests do not establish complete upgrade execution.
+
+## Signed image checkpoint
+
+[Run 35210688406](https://github.com/CampusCommander/campus-commander/actions/runs/35210688406) passed validation and published all three signed images at `7ddf141`.
+Independent Cosign verification passed for each digest against the fixed Phase 3 workflow identity and GitHub issuer.
+[The verification record](../../deployment/evidence/CC-57-signed-image-verification.json) records digests, command, environment, durations, and limitations.
+This checkpoint does not claim a signed archive, completed extracted qualification, or release acceptance.
+The later initial-key correction requires its own applicable qualification. PR CI passed at `1a673dd`.
