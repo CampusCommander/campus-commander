@@ -5,6 +5,9 @@ on:
       release:
         type: string
         required: true
+      profile:
+        type: string
+        default: all-docker
       updateRelease:
         type: string
         default: ''
@@ -31,12 +34,23 @@ jobs:
     steps:
       - name: Validate qualification mode
         env:
+          PROFILE: ${{ inputs.profile }}
           UPGRADE: ${{ inputs.upgrade }}
           FAULTS: ${{ inputs.faults }}
           FAULT_KIND: ${{ inputs.faultKind }}
           LIFECYCLE: ${{ inputs.lifecycle }}
           UPDATE_RELEASE: ${{ inputs.updateRelease }}
         run: |
+          case "${PROFILE:-all-docker}" in
+            all-docker) ;;
+            hybrid)
+              if [ "$UPGRADE" = true ] || [ "$FAULTS" = true ] || [ "${LIFECYCLE:-false}" = true ] || [ -n "${UPDATE_RELEASE:-}" ]; then
+                echo 'Hybrid qualification currently requires installation mode.' >&2
+                exit 1
+              fi
+              ;;
+            *) exit 1 ;;
+          esac
           [ "$UPGRADE" != true ] || [ "$FAULTS" != true ]
           if [ "${LIFECYCLE:-false}" = true ]; then
             if [ "$UPGRADE" = true ] || [ "$FAULTS" = true ]; then
@@ -192,8 +206,13 @@ jobs:
             docker pull "$reference"
           done < published-baseline/images.txt
       - name: Qualify installed Phase 3 workflows
-        if: inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''
+        if: inputs.profile == 'all-docker' && inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''
         run: npm exec nx run api-e2e:phase3-install-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - name: Qualify installed Phase 3 hybrid workflows
+        if: inputs.profile == 'hybrid'
+        run: npm exec nx run api-e2e:phase3-hybrid-install-integration
         env:
           NX_NO_CLOUD: 'true'
       - name: Qualify Phase 2-to-3 upgrade and workflows
@@ -234,6 +253,6 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: ${{ inputs.updateRelease != '' && 'phase-3-guided-update' || inputs.lifecycle && 'phase-3-installer-lifecycle' || inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-capacity-faults' || inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-certificate-faults' || inputs.faults && inputs.faultKind == 'provider' && 'phase-3-provider-faults' || inputs.faults && 'phase-3-service-faults' || inputs.upgrade && 'phase-3-upgrade-workflows' || 'phase-3-installed-workflows' }}
-          path: ${{ inputs.updateRelease != '' && 'dist/phase-3-update/' || inputs.lifecycle && 'dist/phase-3-lifecycle/' || inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-capacity-faults/' || inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-certificate-faults/' || inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-provider-faults/' || inputs.faults && 'dist/phase-3-faults/' || inputs.upgrade && 'dist/phase-3-upgrade/' || 'dist/phase-3-installation/' }}
+          name: ${{ inputs.profile == 'hybrid' && 'phase-3-hybrid-installation' || inputs.updateRelease != '' && 'phase-3-guided-update' || inputs.lifecycle && 'phase-3-installer-lifecycle' || inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-capacity-faults' || inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-certificate-faults' || inputs.faults && inputs.faultKind == 'provider' && 'phase-3-provider-faults' || inputs.faults && 'phase-3-service-faults' || inputs.upgrade && 'phase-3-upgrade-workflows' || 'phase-3-installed-workflows' }}
+          path: ${{ inputs.profile == 'hybrid' && 'dist/phase-3-hybrid-installation/' || inputs.updateRelease != '' && 'dist/phase-3-update/' || inputs.lifecycle && 'dist/phase-3-lifecycle/' || inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-capacity-faults/' || inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-certificate-faults/' || inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-provider-faults/' || inputs.faults && 'dist/phase-3-faults/' || inputs.upgrade && 'dist/phase-3-upgrade/' || 'dist/phase-3-installation/' }}
           if-no-files-found: warn

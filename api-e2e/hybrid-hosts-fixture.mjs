@@ -28,7 +28,7 @@ export async function createHybridHosts({
   publicPort,
   boundedArtifacts = false,
 }) {
-  assert.match(project, /^cc-phase2-hybrid-[a-f0-9]{12}$/);
+  assert.match(project, /^cc-phase[23]-hybrid-[a-f0-9]{12}$/);
   assert.ok(root.startsWith(`/tmp/${project}-`));
   const network = `${project}-district`;
   const owned = [];

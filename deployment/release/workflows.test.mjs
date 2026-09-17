@@ -368,7 +368,7 @@ test('upgrade dispatch verifies the pinned baseline before running the delivered
   assert.equal(
     steps.find((step) => step.name === 'Qualify installed Phase 3 workflows')
       .if,
-    "inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''",
+    "inputs.profile == 'all-docker' && inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''",
   );
   assert.equal(
     baseline.env.BASELINE_IDENTITY,
@@ -703,4 +703,69 @@ test('Phase 3 assembly downloads the successful application artifact by job outp
   );
   assert.equal(download.with.pattern, undefined);
   assert.equal(download.with.name, undefined);
+});
+
+test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mode combinations', async () => {
+  const ci = await workflow('ci');
+  const profile = await workflow('phase-3-profile-check');
+  assert.deepEqual(ci.on.workflow_dispatch.inputs.phase3Profile.options, [
+    'all-docker',
+    'hybrid',
+  ]);
+  assert.equal(
+    ci.jobs['phase3-profile'].with.profile,
+    "${{ inputs.phase3Profile || 'all-docker' }}",
+  );
+  assert.equal(profile.on.workflow_call.inputs.profile.default, 'all-docker');
+  const steps = profile.jobs.installation.steps;
+  const hybrid = steps.find(
+    (s) => s.name === 'Qualify installed Phase 3 hybrid workflows',
+  );
+  assert.equal(hybrid.if, "inputs.profile == 'hybrid'");
+  assert.equal(
+    hybrid.run,
+    'npm exec nx run api-e2e:phase3-hybrid-install-integration',
+  );
+  assert.ok(
+    steps.indexOf(hybrid) >
+      steps.findIndex((s) => s.name === 'Prepare published image references'),
+  );
+  const upload = steps.find((s) =>
+    s.uses?.startsWith('actions/upload-artifact@'),
+  );
+  assert.ok(
+    upload.with.name.startsWith(
+      "${{ inputs.profile == 'hybrid' && 'phase-3-hybrid-installation'",
+    ),
+  );
+  assert.ok(
+    upload.with.path.startsWith(
+      "${{ inputs.profile == 'hybrid' && 'dist/phase-3-hybrid-installation/'",
+    ),
+  );
+  for (const selectedProfile of ['hybrid', 'invalid'])
+    for (const upgrade of [false, true])
+      for (const faults of [false, true])
+        for (const lifecycle of [false, true])
+          for (const update of [false, true]) {
+            const run = () =>
+              execFileSync('bash', ['-e', '-c', steps[0].run], {
+                env: {
+                  ...process.env,
+                  PROFILE: selectedProfile,
+                  UPGRADE: String(upgrade),
+                  FAULTS: String(faults),
+                  LIFECYCLE: String(lifecycle),
+                  UPDATE_RELEASE: update ? 'phase-3-lab-' + 'a'.repeat(12) : '',
+                  FAULT_KIND: 'services',
+                },
+                stdio: 'pipe',
+              });
+            if (
+              selectedProfile === 'hybrid' &&
+              ![upgrade, faults, lifecycle, update].some(Boolean)
+            )
+              assert.doesNotThrow(run);
+            else assert.throws(run);
+          }
 });

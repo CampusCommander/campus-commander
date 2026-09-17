@@ -414,6 +414,14 @@
           "CC_AUTH_PHASE3_UPDATE": "1"
         }
       }
+    },
+    "phase3-hybrid-install-integration": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["deployment:build"],
+      "cache": false,
+      "options": {
+        "command": "CC_AUTH_PHASE3_HYBRID=1 node --test api-e2e/hybrid-cli.test.mjs"
+      }
     }
   }
 }
