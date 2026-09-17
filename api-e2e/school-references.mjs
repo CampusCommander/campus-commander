@@ -7,6 +7,7 @@ import { qualifySchoolDefinitionsApi } from './school-definitions.mjs';
 
 export async function qualifySchoolReferencesApi({
   browser,
+  auditAccessibility,
   publicOrigin,
   migrator,
   directory,
@@ -95,6 +96,8 @@ export async function qualifySchoolReferencesApi({
     assert.notEqual(recovered.observation.revision, valid.observation.revision);
     await qualifySchoolDefinitionsApi({
       api,
+      adminPage: page,
+      auditAccessibility,
       headers,
       references: recovered,
       browser,

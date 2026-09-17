@@ -2187,6 +2187,7 @@ test(
       if (applicationPhase === 3)
         await qualifySchoolReferencesApi({
           browser,
+          auditAccessibility,
           publicOrigin,
           migrator,
           directory,

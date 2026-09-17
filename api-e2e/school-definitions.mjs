@@ -2,9 +2,12 @@ import { qualificationSignIn } from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
+import { expect } from '@playwright/test';
 
 export async function qualifySchoolDefinitionsApi({
   api,
+  adminPage,
+  auditAccessibility,
   headers,
   references,
   browser,
@@ -54,6 +57,79 @@ export async function qualifySchoolDefinitionsApi({
   assert.deepEqual(await read(api, `/reviews/${review.id}`), saved);
   const other = await post('reviews', body(b, 'school-b'));
   await post(`reviews/${other.id}/confirm`, { confirmed: true });
+  await adminPage.goto(`${publicOrigin}/schools`);
+  await expect(
+    adminPage.getByRole('heading', { name: 'Schools', exact: true }),
+  ).toBeVisible();
+  await adminPage
+    .getByRole('button', { name: 'Create school', exact: true })
+    .click();
+  await adminPage
+    .getByLabel('School name', { exact: true })
+    .fill('Browser school');
+  await adminPage
+    .getByRole('treeitem', { name: 'Root organizational unit' })
+    .click();
+  await adminPage.getByRole('button', { name: 'Add inclusion' }).click();
+  await adminPage
+    .getByRole('treeitem', { name: 'School B', exact: true })
+    .click();
+  await adminPage.getByRole('button', { name: 'Add exclusion' }).click();
+  for (const theme of ['light', 'dark']) {
+    await adminPage.evaluate(
+      (value) => (document.documentElement.dataset['theme'] = value),
+      theme,
+    );
+
+    await expect(adminPage.locator('app-school-editor mat-label')).toHaveCSS(
+      'color',
+      theme === 'dark' ? 'rgb(154, 160, 166)' : 'rgb(95, 99, 104)',
+    );
+    await auditAccessibility(adminPage, `school-draft-${theme}`);
+    await adminPage.screenshot({
+      path: `${evidenceDirectory}/school-draft-${theme}.png`,
+      fullPage: true,
+    });
+  }
+  await adminPage
+    .getByRole('button', { name: 'Review school scope', exact: true })
+    .click();
+  await expect(
+    adminPage.getByText('Browser school — 2 approved organizational units.'),
+  ).toBeVisible();
+  for (const theme of ['light', 'dark']) {
+    await adminPage.evaluate(
+      (value) => (document.documentElement.dataset['theme'] = value),
+      theme,
+    );
+
+    await auditAccessibility(adminPage, `school-review-${theme}`);
+  }
+  let browserReceipt;
+  await adminPage.route('**/api/schools/reviews/*/confirm', async (route) => {
+    const response = await route.fetch();
+    assert.equal(response.status(), 201, await response.text());
+    browserReceipt = await response.json();
+    await route.abort('failed');
+  });
+  await adminPage
+    .getByLabel('I confirm this school scope and its access consequences')
+    .check();
+  await adminPage
+    .getByRole('button', { name: 'Confirm school definition' })
+    .click();
+  await expect(
+    adminPage.getByText('The school result is unknown.', { exact: false }),
+  ).toBeVisible();
+  await adminPage.unroute('**/api/schools/reviews/*/confirm');
+  assert.deepEqual(browserReceipt.approvedIds, ['root', 'school-a']);
+  await adminPage.reload();
+  await adminPage.getByRole('button', { name: 'Check school receipt' }).click();
+  await expect(
+    adminPage.getByRole('heading', { name: 'Confirmed school receipt' }),
+  ).toBeFocused();
+  assert.equal((await read(api, `/${browserReceipt.schoolId}`)).revision, 1);
+  assert.equal((await read(api, `/${browserReceipt.schoolId}/audit`)).total, 1);
   const issuer = (
     await migrator.query(
       'SELECT issuer FROM cc.application_principals WHERE id=$1',
@@ -133,6 +209,24 @@ export async function qualifySchoolDefinitionsApi({
       'grants-changed',
       'school-scope-changed',
     ]);
+    await page.goto(`${publicOrigin}/schools`);
+    await expect(
+      page.getByText('1 permitted school definitions.', { exact: false }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'School B', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'Browser school', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'Create school', exact: true }),
+    ).toHaveCount(0);
+    await page.getByRole('button', { name: 'School A', exact: true }).click();
+    await page.getByRole('button', { name: 'Read school audit' }).click();
+    await expect(
+      page.getByText('2 permitted events.', { exact: false }),
+    ).toBeVisible();
     assert.equal((await scoped.get(`${root}/references`)).status(), 403);
     assert.equal(
       (
@@ -153,6 +247,10 @@ export async function qualifySchoolDefinitionsApi({
     const stale = await read(scoped, `/${a}`);
     assert.equal(stale.effectiveIds, null);
     assert.deepEqual(stale.approvedIds, ['school-a']);
+    await page.getByRole('button', { name: 'Refresh definition' }).click();
+    await expect(
+      page.getByText('Unavailable. The saved definition remains intact.'),
+    ).toBeVisible();
     await post('reviews', body(a, 'school-a', 1), 409);
     await migrator.query('UPDATE cc.school_reference_state SET failure=NULL');
     const change = await post('reviews', {
@@ -164,6 +262,10 @@ export async function qualifySchoolDefinitionsApi({
     const revoked = await scoped.get(`${root}/${a}`);
     assert.equal(revoked.status(), 401, await revoked.text());
     assert.equal((await revoked.json()).code, 'access-changed');
+    await page.getByRole('button', { name: 'Refresh definition' }).click();
+    await expect(
+      page.getByRole('button', { name: 'Recheck access', exact: true }),
+    ).toBeVisible();
   } finally {
     setSubject('administrator');
     await migrator.query('UPDATE cc.school_reference_state SET failure=NULL');
@@ -181,8 +283,13 @@ export async function qualifySchoolDefinitionsApi({
           'scoped operator cannot manage references, previews, or receipts',
           'failed reference health preserves saved definitions without effective resource access',
           'definition confirmation invalidates an affected operator session',
+          'browser inclusion and exclusion preview, lost confirmation response, reload, and durable receipt recovery',
+          'school viewer browser list, audit, stale definition, and access interruption',
+          'school draft and review accessibility in both themes',
         ],
-        limits: ['Browser school forms remain pending.'],
+        limits: [
+          'Scoped grant browser controls, human screen-reader qualification, and acceptance remain pending.',
+        ],
       },
       null,
       2,
