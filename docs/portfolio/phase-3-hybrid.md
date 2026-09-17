@@ -90,3 +90,30 @@ Unauthorized running containers must lack the key file and the authorized secret
 The initializer retains its established temporary provisioning access.
 
 The regression and API fixture lint pass. The correction requires hosted validation before installation qualification can pass.
+
+## Distributed credential checks
+
+The hybrid fixture now checks background Google reads after browser logout and closure.
+Both worker daemons must reject unauthorized dispatch, credential-bearing payloads, and the retired credential generation.
+Current-generation reads must return the bound synthetic customer without plaintext token fields.
+
+The fixture advances only its owned token expiry through the installed migration container.
+Worker-only instrumentation holds the first synthetic renewal until the other worker observes the real pending-lease result.
+The instrumentation preserves the database result and records only fixed markers.
+After release, both reads must succeed with exactly one renewal event and one encrypted token record.
+Both workers then restart. Reads must recover within 30 seconds and reuse that token without another renewal.
+Reports retain worker daemon identities, fixed response metadata, renewal counts, durations, and limits.
+Ownership checks reject foreign fixture roots and shared daemon identities before database access.
+
+This increment requires hosted execution. It does not complete permission revocation, upgrade, restore, fault recovery, or hybrid acceptance.
+
+## Passed installation checkpoint
+
+[Run 35230914506](https://github.com/CampusCommander/campus-commander/actions/runs/35230914506) passed with harness `253221a` against signed application `a3601ef`.
+All ten installed workflows, shared sessions, logout rejection, restart, stop/resume, and uninstall/resume checks passed.
+Both API replicas and both worker daemons received the correct credential key through read-only staged volumes.
+The complete fixture took 212,787 milliseconds. Installation commands took 26,710 milliseconds. Four resume commands took 61,169 milliseconds.
+
+The retained [installation](../../deployment/evidence/CC-58-installation.json), [resume](../../deployment/evidence/CC-58-resume.json), and [workflow](../../deployment/evidence/CC-58-installed-workflows.json) reports preserve original fields and three source-report hashes.
+Their source, images, and manifest identify the delivered application. Their harness revision identifies the executed checks.
+Three Docker daemons share one physical host. This checkpoint does not establish the new distributed-renewal checks or complete hybrid acceptance.

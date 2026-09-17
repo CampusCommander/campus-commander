@@ -28,6 +28,7 @@ import { createHybridServices } from './hybrid-services-fixture.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
+import { qualifyHybridWorkerCredentials } from './phase3-hybrid-worker-fixture.mjs';
 import { upgradeDistributedHybrid } from './hybrid-cli-upgrade-fixture.mjs';
 import { faultDistributedHybrid } from './hybrid-cli-faults-fixture.mjs';
 import { qualifyHybridCapacity } from './hybrid-capacity-fixture.mjs';
@@ -79,6 +80,7 @@ test(
     let capacity;
     let certificates;
     let installedWorkflows;
+    let workerCredentials;
     let bundle;
     const harness = phase3
       ? {
@@ -235,6 +237,15 @@ test(
             'api-e2e/google-connection-preload.cjs',
             join(host.root, 'google-connection-preload.cjs'),
           );
+        for (const host of workers) {
+          await mkdir(join(host.root, 'qualification-observation'), {
+            mode: 0o700,
+          });
+          await copyFile(
+            'api-e2e/phase3-hybrid-renewal-preload.cjs',
+            join(host.root, 'phase3-hybrid-renewal-preload.cjs'),
+          );
+        }
       }
       config.images = initialImages;
       config.services.api.placement.replicas = 2;
@@ -363,7 +374,10 @@ test(
                 ...(phase3
                   ? {
                       NODE_OPTIONS:
-                        '--require=/run/qualification/google-connection-preload.cjs',
+                        '--require=/run/qualification/google-connection-preload.cjs' +
+                        (host === controller
+                          ? ''
+                          : ' --require=/run/qualification/phase3-hybrid-renewal-preload.cjs'),
                     }
                   : {}),
               },
@@ -380,6 +394,28 @@ test(
                           '/run/qualification/google-connection-preload.cjs',
                         read_only: true,
                       },
+                      ...(host === controller
+                        ? []
+                        : [
+                            {
+                              type: 'bind',
+                              source: join(
+                                host.root,
+                                'phase3-hybrid-renewal-preload.cjs',
+                              ),
+                              target:
+                                '/run/qualification/phase3-hybrid-renewal-preload.cjs',
+                              read_only: true,
+                            },
+                            {
+                              type: 'bind',
+                              source: join(
+                                host.root,
+                                'qualification-observation',
+                              ),
+                              target: '/run/qualification-observation',
+                            },
+                          ]),
                     ],
                   }
                 : {}),
@@ -855,6 +891,17 @@ process.exit(result.status??1);
             }
           : {},
       );
+      if (phase3) {
+        stage = 'distributed credential renewal';
+        workerCredentials = await qualifyHybridWorkerCredentials({
+          hosts,
+          controller,
+          workers,
+          compose,
+          controllerFile,
+          project,
+        });
+      }
       result = {
         status: 'passed',
         profile: 'hybrid',
@@ -868,6 +915,7 @@ process.exit(result.status??1);
                 browser: application.browser,
               },
               installedWorkflows: installedWorkflows.report,
+              workerCredentials,
               credentialKeyProjection,
               durationScope:
                 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
