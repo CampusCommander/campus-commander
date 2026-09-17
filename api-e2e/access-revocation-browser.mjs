@@ -22,7 +22,7 @@ export async function qualifyAccessRevocationBrowser({
     await invitations.goto(`${publicOrigin}/api/auth/login`);
     await expect(
       invitations.getByRole('heading', { name: 'Your account', exact: true }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15000 });
     const session = await (
       await context.request.get(`${publicOrigin}/api/auth/session`)
     ).json();

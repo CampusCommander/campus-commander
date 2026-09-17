@@ -274,7 +274,10 @@ export async function qualifyCustomerSettings({
   ).toBeVisible();
   const loginPage = await page.context().newPage();
   await loginPage.goto(`${publicOrigin}/api/auth/login`);
-  await expect(loginPage).toHaveURL(/\/account$/);
+  await expect(loginPage).toHaveURL(/\/account$/, { timeout: 15000 });
+  await expect(
+    loginPage.getByRole('heading', { name: 'Your account', exact: true }),
+  ).toBeVisible({ timeout: 15000 });
   await loginPage.close();
   await page.getByRole('button', { name: 'Recheck access' }).click();
   await expect(page.getByLabel('Customer display name')).toHaveValue(

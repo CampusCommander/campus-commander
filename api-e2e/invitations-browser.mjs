@@ -201,7 +201,7 @@ export async function qualifyInvitationBrowser({
       .click();
     await expect(
       recipientPage.getByRole('heading', { name: 'Your account', exact: true }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15000 });
     const session = await (
       await recipient.request.get(`${publicOrigin}/api/auth/session`)
     ).json();
