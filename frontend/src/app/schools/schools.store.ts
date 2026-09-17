@@ -152,7 +152,7 @@ export class SchoolsStore implements OnDestroy {
     body?: unknown,
   ) {
     const key = this.sessionKey();
-    if (!key || this.loading()[region]) return;
+    if (!key || (body !== undefined && this.loading()[region])) return;
     const request = ++this.requests[region];
     const current = () =>
       !this.destroyed &&

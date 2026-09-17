@@ -55,6 +55,18 @@ export class SchoolsPage implements OnInit {
   referenceRetryTime() {
     return Date.parse(this.store.references()?.retryAt ?? '');
   }
+  focusList() {
+    const key = this.store.sessionKey();
+    afterNextRender(
+      () => {
+        if (key === this.store.sessionKey())
+          this.element.nativeElement
+            .querySelector<HTMLElement>('#school-list-title')
+            ?.focus();
+      },
+      { injector: this.injector },
+    );
+  }
 
   failureCopy() {
     const failure = this.store.references()?.failure;

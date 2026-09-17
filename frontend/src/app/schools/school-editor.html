@@ -33,12 +33,19 @@
       matInput
       id="school-name"
       name="schoolName"
+      #schoolName="ngModel"
+      required
+      [pattern]="namePattern"
       maxlength="256"
       [ngModel]="draft.name"
       (ngModelChange)="editName($event)"
       [disabled]="!editable()"
     />
     <mat-hint>Enter 1–256 characters without control characters.</mat-hint>
+    <mat-error
+      >Enter a name with at least one non-space character and no control
+      characters.</mat-error
+    >
   </mat-form-field>
   <h3 id="school-rules-title" tabindex="-1">Scope rules</h3>
   <p>
@@ -191,9 +198,12 @@
       organizational units.
     </p>
     <p>
-      {{ review.affectedPrincipalCount }} affected principals must recheck
+      @if (review.appliedAt) { This save invalidated access for {{
+      review.affectedPrincipalCount }} principals and revoked {{
+      review.invitationIds.length }} pending invitations. } @else { {{
+      review.affectedPrincipalCount }} affected principals must recheck
       application access. {{ review.invitationIds.length }} pending invitations
-      will be revoked.
+      will be revoked. }
     </p>
     <p>
       Future hierarchy changes cannot add units outside this approved set. A new

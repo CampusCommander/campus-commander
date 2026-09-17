@@ -28,6 +28,7 @@ async function fixture(page: Page, manager = true, phase = 3) {
   let review: SchoolReview | null = null;
   let loseConfirmation = false;
   let referenceFailure = false;
+  let confirmationConflict = false;
   let confirmations = 0;
   let csrf = 'a'.repeat(64);
   let permissionVersion = 1;
@@ -138,6 +139,14 @@ async function fixture(page: Page, manager = true, phase = 3) {
       return route.fulfill({ json: review });
     }
     if (review && path === `/api/schools/reviews/${review.id}/confirm`) {
+      if (confirmationConflict) {
+        confirmationConflict = false;
+        observation.revision = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+        return route.fulfill({
+          status: 409,
+          json: { reason: 'references-changed' },
+        });
+      }
       expect(route.request().postDataJSON()).toEqual({ confirmed: true });
       confirmations += 1;
       review = {
@@ -177,6 +186,9 @@ async function fixture(page: Page, manager = true, phase = 3) {
     },
     failReferences: () => {
       referenceFailure = true;
+    },
+    conflictOnConfirmation: () => {
+      confirmationConflict = true;
     },
     confirmations: () => confirmations,
     review: () => review,
@@ -337,6 +349,11 @@ test('qualifies the school draft and review in both themes, keyboard navigation,
       (theme) => (document.documentElement.dataset['theme'] = theme),
       theme,
     );
+
+    await expect(page.locator('mat-label')).toHaveCSS(
+      'color',
+      theme === 'dark' ? 'rgb(154, 160, 166)' : 'rgb(95, 99, 104)',
+    );
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   }
   await page
@@ -347,6 +364,7 @@ test('qualifies the school draft and review in both themes, keyboard navigation,
       (theme) => (document.documentElement.dataset['theme'] = theme),
       theme,
     );
+
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   }
   for (const width of [1280, 320]) {
@@ -369,4 +387,63 @@ test('keeps schools unavailable in Phase 2', async ({ page }) => {
   await expect(
     page.getByRole('link', { name: 'Schools', exact: true }),
   ).toHaveCount(0);
+});
+
+test('recovers a new school reference conflict without discarding its name or scope', async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  await createDraft(page);
+  await page
+    .getByRole('button', { name: 'Review school scope', exact: true })
+    .click();
+  const original = state.review();
+  state.conflictOnConfirmation();
+  await page
+    .getByLabel('I confirm this school scope and its access consequences')
+    .check();
+  await page.getByRole('button', { name: 'Confirm school definition' }).click();
+  await expect(page.getByLabel('School name', { exact: true })).toHaveValue(
+    'New school',
+  );
+  await expect(
+    page.getByRole('button', { name: 'Review school scope', exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole('button', { name: 'Review school scope', exact: true })
+    .click();
+  expect(state.review()?.schoolId).toBe(original?.schoolId);
+  expect(state.review()?.rules).toEqual(original?.rules);
+  expect(state.review()?.referenceRevision).not.toBe(
+    original?.referenceRevision,
+  );
+  await page
+    .getByLabel('I confirm this school scope and its access consequences')
+    .check();
+  await page.getByRole('button', { name: 'Confirm school definition' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Confirmed school receipt' }),
+  ).toBeVisible();
+});
+
+test('associates invalid-name feedback and restores focus after discarding a draft', async ({
+  page,
+}) => {
+  await fixture(page);
+  await page
+    .getByRole('button', { name: 'Create school', exact: true })
+    .click();
+  const name = page.getByLabel('School name', { exact: true });
+  await name.fill('   ');
+  await name.press('Tab');
+  await expect(name).toHaveAttribute('aria-invalid', 'true');
+  await expect(
+    page.getByText(
+      'Enter a name with at least one non-space character and no control characters.',
+    ),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Discard draft' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Saved school definitions' }),
+  ).toBeFocused();
 });

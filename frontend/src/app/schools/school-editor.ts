@@ -71,6 +71,8 @@ type Pending = z.infer<typeof pendingSchema>;
 export class SchoolEditor implements OnDestroy {
   readonly store = inject(SchoolsStore);
   readonly saved = output<string>();
+  readonly closed = output<void>();
+  readonly namePattern = '(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f]+';
   readonly draft = signal<Draft | null>(null);
   readonly pending = signal<Pending | null>(null);
   readonly review = signal<SchoolReview | null>(null);
@@ -296,6 +298,7 @@ export class SchoolEditor implements OnDestroy {
     this.pending.set(null);
     this.review.set(null);
     this.persist();
+    this.closed.emit();
   }
 
   async useLatestRevision() {
@@ -317,6 +320,7 @@ export class SchoolEditor implements OnDestroy {
     this.message.set(
       'Your draft now uses the latest saved revision. Review the scope before saving.',
     );
+    this.focus('#school-name');
   }
 
   private persist() {
@@ -341,9 +345,15 @@ export class SchoolEditor implements OnDestroy {
   }
 
   private focus(selector = '#school-editor-status') {
+    const operation = this.operation;
+    const session = this.store.sessionKey();
     afterNextRender(
       () => {
-        if (!this.destroyed)
+        if (
+          !this.destroyed &&
+          operation === this.operation &&
+          session === this.store.sessionKey()
+        )
           this.element.nativeElement
             .querySelector<HTMLElement>(selector)
             ?.focus();
@@ -411,6 +421,7 @@ export class SchoolEditor implements OnDestroy {
         ? 'Reading the school review receipt.'
         : 'Waiting for the school review result.',
     );
+    this.focus();
     try {
       const path =
         kind === 'preview'
@@ -438,10 +449,17 @@ export class SchoolEditor implements OnDestroy {
           this.review.set(null);
           this.persist();
         }
-        this.conflict.set(true);
-        this.error.set(
-          'The school, references, or affected access changed. Refresh references and use the latest saved revision before another review.',
+        const reason = z.object({ reason: z.string() }).safeParse(body);
+        this.conflict.set(
+          pending.input.expectedRevision > 0 &&
+            (!reason.success || reason.data.reason === 'school-changed'),
         );
+        this.error.set(
+          this.conflict()
+            ? 'The saved school changed. Use the latest saved revision, then review the retained draft again.'
+            : 'References or affected access changed. Refresh references, then review the retained draft again.',
+        );
+        await this.store.readReferences();
       } else if (
         kind === 'preview' &&
         [400, 403, 429].includes(response.status)

@@ -166,10 +166,9 @@ const schoolName = z
   .string()
   .min(1)
   .max(256)
-  .refine(
-    (name) => name.trim().length > 0 && !/\p{Cc}/u.test(name),
-    { message: 'Enter a school name without control characters.' },
-  );
+  .refine((name) => name.trim().length > 0 && !/\p{Cc}/u.test(name), {
+    message: 'Enter a school name without control characters.',
+  });
 const schoolIds = z.array(ouId).min(1).max(10000);
 export const schoolDefinitionSchema = z.strictObject({
   id: z.uuid(),

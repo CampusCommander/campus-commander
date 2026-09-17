@@ -100,7 +100,7 @@
   </section>
   }
   <section class="card" aria-labelledby="school-list-title">
-    <h2 id="school-list-title">Saved school definitions</h2>
+    <h2 id="school-list-title" tabindex="-1">Saved school definitions</h2>
     <div class="actions">
       <button
         mat-stroked-button
@@ -305,5 +305,5 @@
     }
   </section>
   }
-  <app-school-editor #editor (saved)="saved($event)" />
+  <app-school-editor #editor (saved)="saved($event)" (closed)="focusList()" />
 </div>
