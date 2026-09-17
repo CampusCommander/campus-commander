@@ -152,7 +152,16 @@ Playwright did not invoke the callback route handler for the provider redirect. 
 The provider fixture now holds the next authorization before redirecting and retains its unused code in memory.
 Local browser checks pass for direct authorization, redirected login, and the unchanged normal redirect.
 The fixture returns held pages to the application origin before recipient status checks.
-Local lint and API checks pass. Hosted admission recovery remains pending.
+[Run 35192138281](https://github.com/CampusCommander/campus-commander/actions/runs/35192138281) passed isolated admission recovery at `9a5b046`.
+The [retained report](../../deployment/evidence/CC-56-pending-admission-restore.json) records three revoked invitations and three recovery audit events.
+The target rejected both recipient bindings, both pending callbacks, and the issued invitation link.
+Callback replay occurred 45,531 ms after fixture preparation. The original regular callback still authenticated against the restarted source.
+The restored state preserved 76 original security events and the original settings receipt.
+The fixture took 49,641 ms. Backup age at report creation was approximately 41 seconds.
+These results use synthetic providers. They do not establish live privileges or district recovery objectives.
+
+The full run failed its separate packaged authorization check on a response header after page closure.
+The Phase 2 all-Docker step did not run. Seven other jobs passed. This result does not establish full compatibility.
 
 ## Resume failure diagnostics
 
@@ -177,7 +186,7 @@ These procedures still require operator qualification and acceptance.
 
 - Inventory and verify complete customer, settings, school, grant, progress, receipt, credential, and security-event state.
 - Test live revoked-grant and changed-privilege fixtures when available.
-- Extend the isolated application fixture to pending invitations, pending login transactions, and the complete durable state inventory.
+- Extend the passing admission fixture to the complete durable state inventory, including nonempty access-change receipts and health history.
 - Record measured recovery time, backup age, fixture limits, operator recovery, and erasure procedures.
 
 Local deployment lint, PostgreSQL contract tests, and operations contract tests pass.
