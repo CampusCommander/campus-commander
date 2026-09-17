@@ -1,0 +1,721 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "kubernetes",
+  "sourceRevision": "0abf75ed6f03bb1202fe26fd928a40c09647f1b5",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:254bff587eeb0fd0bff2b3e6dbae342a7724329109b3d0c2d659c31857544f18",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:a119fb30b7b24f3040dbfa84a10a322da1fdf9f92dab16279882b7994663cbdc",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:6b4dd0f5130fac0d055ff6e39e4378d322595ae01bcec1d2a840d6ae54a53316"
+  },
+  "bundleManifestSha256": "d6291da7def3ec31da6e03da1f2f0297810694b5f4688c473bd9eccc552bde9c",
+  "harnessRevision": "310b29e8ac072f87b4a64e4335b62af4595b9a04",
+  "harnessWorkingTree": "clean",
+  "command": "npm exec -- nx run api-e2e:phase3-kubernetes-install-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "uid": 1000,
+    "gid": 1000
+  },
+  "durationScope": "Internal pod policy probes, temporary control policies, and control-policy cleanup.",
+  "status": "passed",
+  "durationMs": 16318,
+  "originalPolicies": [
+    {
+      "name": "api-egress",
+      "uid": "298a408e-0783-4999-9723-f82a7ef50731",
+      "specSha256": "9521311a89b28c4ce3def829fb1da1a9821606504bef2399e3685791e05b42b8"
+    },
+    {
+      "name": "api-ingress",
+      "uid": "f45c5524-e24d-49b9-9595-660faba8785a",
+      "specSha256": "e9fd1ce1ee717026806dbb7d8b69edf31afc2b8b528b81fbe75063d073242c82"
+    },
+    {
+      "name": "application-postgres-ingress",
+      "uid": "cb55ffde-f1a8-4c43-bd4c-f9e856bebadf",
+      "specSha256": "91d84c550664c97a1855fae2e8dd95376561c1185273d1ab7d6ae9141a9f1056"
+    },
+    {
+      "name": "database-prepare-egress",
+      "uid": "b276df75-328b-4bea-aa43-94f6b051d549",
+      "specSha256": "e0ede21a06f80e6aa36fd96f219624d0b995525b6458e196ce948b8e5c56fd3e"
+    },
+    {
+      "name": "default-deny",
+      "uid": "48a1543a-800c-4598-a7bb-801e27de1027",
+      "specSha256": "79558fd7757e83a7e26bf87d1840b7c975e8571d0e2a458ed61e159d9d578d27"
+    },
+    {
+      "name": "dns-egress",
+      "uid": "8c5595db-7643-4d19-b3bb-38cdf3cba5f2",
+      "specSha256": "a731827be9e9d8f0438378a373ca5fdf51a164b79d15c53a7dba295b715e17c0"
+    },
+    {
+      "name": "edge-egress",
+      "uid": "9752dfbc-7f97-4c66-a709-7930b8f71c30",
+      "specSha256": "9824d622d56f57b718cf4ed0244d8fc447a666fb964e4f3c5203c705bf622935"
+    },
+    {
+      "name": "edge-ingress",
+      "uid": "df8d13cd-21b5-46b4-a76d-7e75e4306088",
+      "specSha256": "267fb44a34f7bc268f2ade1284e5dd6b8ac3f00c1877fb46e9a079a1893f07dd"
+    },
+    {
+      "name": "frontend-ingress",
+      "uid": "1de58a20-6fc0-4ee1-94a0-ae312efb5905",
+      "specSha256": "69a8bd7d9ffba82aeaaaba3c5843110fdb3195f7de2feb8afd8bc7642dade51e"
+    },
+    {
+      "name": "kestra-egress",
+      "uid": "ea246998-b0ab-4e79-bef9-319ae41ef0ad",
+      "specSha256": "9f3f81fc961cf6aec6f6146b32c621447dbca8f5f61678431d61ba00ffe0cd31"
+    },
+    {
+      "name": "kestra-ingress",
+      "uid": "61f4d12b-c551-46e0-9ea1-6d34de60959b",
+      "specSha256": "fe2a6c26b8410852cd9bdc8a57e1eb504c11def0c5c3a827a401c0a40e5e043b"
+    },
+    {
+      "name": "kestra-postgres-ingress",
+      "uid": "9ddb90bb-b2b3-4684-80a4-68a9d6e375aa",
+      "specSha256": "3763bbda5918b951f8063f3a4605fe0314c169bc4210587b9db3791a4e5b00a5"
+    },
+    {
+      "name": "redis-ingress",
+      "uid": "e2734042-264f-4f7a-ad57-0767fcdee0a3",
+      "specSha256": "c9dd0c4157343647717fe68c2ca301b4403a364106746f747c1539b80310be78"
+    },
+    {
+      "name": "workers-egress",
+      "uid": "f7037865-f39f-45e2-b343-102f9d57ddac",
+      "specSha256": "0551b847ea8fe57338c59b053ace572654dfa3b85d72a95cca22666fbfd039da"
+    },
+    {
+      "name": "workers-ingress",
+      "uid": "8585f7fc-3966-42ac-8ffb-2d0fd2044e65",
+      "specSha256": "5bf31aca2edd85ca8be751d2cca2ac375f7ee9daabe53986a46b8dcb3c542f55"
+    }
+  ],
+  "controls": [
+    {
+      "name": "qualification-redis-egress-a41d6367b8ec",
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "workers",
+            "app.kubernetes.io/part-of": "campus-commander"
+          }
+        },
+        "policyTypes": ["Egress"],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "cc-capacity-kube-694e97e666c9"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "redis",
+                    "app.kubernetes.io/part-of": "campus-commander"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 6379
+              }
+            ]
+          }
+        ]
+      },
+      "removed": true
+    },
+    {
+      "name": "qualification-redis-ingress-a41d6367b8ec",
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "redis",
+            "app.kubernetes.io/part-of": "campus-commander"
+          }
+        },
+        "policyTypes": ["Ingress"],
+        "ingress": [
+          {
+            "from": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "cc-capacity-kube-694e97e666c9"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "workers",
+                    "app.kubernetes.io/part-of": "campus-commander"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 6379
+              }
+            ]
+          }
+        ]
+      },
+      "removed": true
+    },
+    {
+      "name": "qualification-kestra-egress-0771623f6901",
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "workers",
+            "app.kubernetes.io/part-of": "campus-commander"
+          }
+        },
+        "policyTypes": ["Egress"],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "cc-capacity-kube-694e97e666c9"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "kestra",
+                    "app.kubernetes.io/part-of": "campus-commander"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8080
+              }
+            ]
+          }
+        ]
+      },
+      "removed": true
+    },
+    {
+      "name": "qualification-kestra-ingress-0771623f6901",
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "kestra",
+            "app.kubernetes.io/part-of": "campus-commander"
+          }
+        },
+        "policyTypes": ["Ingress"],
+        "ingress": [
+          {
+            "from": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "cc-capacity-kube-694e97e666c9"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "app.kubernetes.io/name": "workers",
+                    "app.kubernetes.io/part-of": "campus-commander"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8080
+              }
+            ]
+          }
+        ]
+      },
+      "removed": true
+    }
+  ],
+  "observations": [
+    {
+      "stage": "redis:denied-before:control-before",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "connected",
+      "durationMs": 2
+    },
+    {
+      "stage": "redis:denied-before",
+      "source": {
+        "pod": "workers-59f987546b-nmd5g",
+        "uid": "63429641-c021-4585-bcee-e817b36e5971",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "timeout",
+      "durationMs": 2003
+    },
+    {
+      "stage": "redis:denied-before",
+      "source": {
+        "pod": "workers-59f987546b-nlkmt",
+        "uid": "080cdd3f-b92a-4395-b1a4-522b518c590d",
+        "node": "cc-capacity-kube-694e97e666c9-worker2"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "timeout",
+      "durationMs": 2002
+    },
+    {
+      "stage": "redis:denied-before:control-after",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "connected",
+      "durationMs": 56
+    },
+    {
+      "stage": "redis:allowed-control:control-before",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "connected",
+      "durationMs": 1
+    },
+    {
+      "stage": "redis:allowed-control",
+      "source": {
+        "pod": "workers-59f987546b-nlkmt",
+        "uid": "080cdd3f-b92a-4395-b1a4-522b518c590d",
+        "node": "cc-capacity-kube-694e97e666c9-worker2"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "connected",
+      "durationMs": 2
+    },
+    {
+      "stage": "redis:allowed-control",
+      "source": {
+        "pod": "workers-59f987546b-nmd5g",
+        "uid": "63429641-c021-4585-bcee-e817b36e5971",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "connected",
+      "durationMs": 2
+    },
+    {
+      "stage": "redis:allowed-control:control-after",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "connected",
+      "durationMs": 2
+    },
+    {
+      "stage": "redis:denied-after:control-before",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "connected",
+      "durationMs": 2
+    },
+    {
+      "stage": "redis:denied-after",
+      "source": {
+        "pod": "workers-59f987546b-nmd5g",
+        "uid": "63429641-c021-4585-bcee-e817b36e5971",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "timeout",
+      "durationMs": 2003
+    },
+    {
+      "stage": "redis:denied-after",
+      "source": {
+        "pod": "workers-59f987546b-nlkmt",
+        "uid": "080cdd3f-b92a-4395-b1a4-522b518c590d",
+        "node": "cc-capacity-kube-694e97e666c9-worker2"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "timeout",
+      "durationMs": 2003
+    },
+    {
+      "stage": "redis:denied-after:control-after",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "redis-849b99dd59-7qzm4",
+        "uid": "de21d13b-2302-42c6-98ac-0c476f0273b5",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 6379,
+      "outcome": "connected",
+      "durationMs": 3
+    },
+    {
+      "stage": "kestra:denied-before:control-before",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "connected",
+      "durationMs": 1
+    },
+    {
+      "stage": "kestra:denied-before",
+      "source": {
+        "pod": "workers-59f987546b-nmd5g",
+        "uid": "63429641-c021-4585-bcee-e817b36e5971",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "timeout",
+      "durationMs": 2002
+    },
+    {
+      "stage": "kestra:denied-before",
+      "source": {
+        "pod": "workers-59f987546b-nlkmt",
+        "uid": "080cdd3f-b92a-4395-b1a4-522b518c590d",
+        "node": "cc-capacity-kube-694e97e666c9-worker2"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "timeout",
+      "durationMs": 2003
+    },
+    {
+      "stage": "kestra:denied-before:control-after",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "connected",
+      "durationMs": 2
+    },
+    {
+      "stage": "kestra:allowed-control:control-before",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "connected",
+      "durationMs": 2
+    },
+    {
+      "stage": "kestra:allowed-control",
+      "source": {
+        "pod": "workers-59f987546b-nlkmt",
+        "uid": "080cdd3f-b92a-4395-b1a4-522b518c590d",
+        "node": "cc-capacity-kube-694e97e666c9-worker2"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "connected",
+      "durationMs": 2
+    },
+    {
+      "stage": "kestra:allowed-control",
+      "source": {
+        "pod": "workers-59f987546b-nmd5g",
+        "uid": "63429641-c021-4585-bcee-e817b36e5971",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "connected",
+      "durationMs": 2
+    },
+    {
+      "stage": "kestra:allowed-control:control-after",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "connected",
+      "durationMs": 1
+    },
+    {
+      "stage": "kestra:denied-after:control-before",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "connected",
+      "durationMs": 2
+    },
+    {
+      "stage": "kestra:denied-after",
+      "source": {
+        "pod": "workers-59f987546b-nlkmt",
+        "uid": "080cdd3f-b92a-4395-b1a4-522b518c590d",
+        "node": "cc-capacity-kube-694e97e666c9-worker2"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "timeout",
+      "durationMs": 2003
+    },
+    {
+      "stage": "kestra:denied-after",
+      "source": {
+        "pod": "workers-59f987546b-nmd5g",
+        "uid": "63429641-c021-4585-bcee-e817b36e5971",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "timeout",
+      "durationMs": 2002
+    },
+    {
+      "stage": "kestra:denied-after:control-after",
+      "source": {
+        "pod": "api-64cf4dfd7f-455sv",
+        "uid": "90bc7fa2-2191-4ddb-a798-8405266a90e0",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "target": {
+        "pod": "kestra-6dbcdb9b8f-76hmc",
+        "uid": "7c35c0b0-b862-4833-9c6d-8a744c82f430",
+        "node": "cc-capacity-kube-694e97e666c9-worker"
+      },
+      "port": 8080,
+      "outcome": "connected",
+      "durationMs": 2
+    }
+  ],
+  "convergenceBoundMs": 30000,
+  "socketTimeoutMs": 2000,
+  "nodes": [
+    {
+      "name": "cc-capacity-kube-694e97e666c9-control-plane",
+      "kubeletVersion": "v1.35.8",
+      "kernelVersion": "6.17.0-1022-azure",
+      "containerRuntimeVersion": "containerd://2.3.4",
+      "osImage": "Debian GNU/Linux 13 (trixie)",
+      "operatingSystem": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "name": "cc-capacity-kube-694e97e666c9-worker",
+      "kubeletVersion": "v1.35.8",
+      "kernelVersion": "6.17.0-1022-azure",
+      "containerRuntimeVersion": "containerd://2.3.4",
+      "osImage": "Debian GNU/Linux 13 (trixie)",
+      "operatingSystem": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "name": "cc-capacity-kube-694e97e666c9-worker2",
+      "kubeletVersion": "v1.35.8",
+      "kernelVersion": "6.17.0-1022-azure",
+      "containerRuntimeVersion": "containerd://2.3.4",
+      "osImage": "Debian GNU/Linux 13 (trixie)",
+      "operatingSystem": "linux",
+      "architecture": "amd64"
+    }
+  ],
+  "cni": [
+    {
+      "pod": "kindnet-46tl8",
+      "node": "cc-capacity-kube-694e97e666c9-worker",
+      "images": [
+        {
+          "name": "kindnet-cni",
+          "image": "docker.io/kindest/kindnetd:v20260820-69b56db7",
+          "imageID": "sha256:4626fe10df5b930638e6e1662143ee1c7a698de6174fdb61a8ce658e688be2cd"
+        }
+      ]
+    },
+    {
+      "pod": "kindnet-6l57p",
+      "node": "cc-capacity-kube-694e97e666c9-control-plane",
+      "images": [
+        {
+          "name": "kindnet-cni",
+          "image": "docker.io/kindest/kindnetd:v20260820-69b56db7",
+          "imageID": "sha256:4626fe10df5b930638e6e1662143ee1c7a698de6174fdb61a8ce658e688be2cd"
+        }
+      ]
+    },
+    {
+      "pod": "kindnet-82zl9",
+      "node": "cc-capacity-kube-694e97e666c9-worker2",
+      "images": [
+        {
+          "name": "kindnet-cni",
+          "image": "docker.io/kindest/kindnetd:v20260820-69b56db7",
+          "imageID": "sha256:4626fe10df5b930638e6e1662143ee1c7a698de6174fdb61a8ce658e688be2cd"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "This report measures worker-to-Redis and worker-to-Kestra TCP pod paths only.",
+    "Service-address behavior, Google egress, district TLS, and independent physical hosts require separate evidence."
+  ],
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35259178631",
+    "artifactId": 10515021008,
+    "artifactName": "phase-3-kubernetes-installation",
+    "artifactArchiveSha256": "395f7a9f7741b00d2b3ef7afd6a2ad90b5a7aab51234f7ec846a341fc13b1c94",
+    "originalReport": "kubernetes-network-policy.json",
+    "originalReportBytes": 22142,
+    "originalReportSha256": "2ffe17d2cbd3b1c906a0b54d91ccf9907dde2356ddf1d007d197a2212f2e7fac"
+  }
+}

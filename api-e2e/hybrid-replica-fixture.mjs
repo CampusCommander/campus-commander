@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { verifyReplicaRecipientAccess } from './replica-permission-fixture.mjs';
 
 /** Read one installed API replica without retaining browser credentials. */
 export async function readHybridReplica({
@@ -33,52 +33,20 @@ export async function readHybridReplica({
   );
 }
 
-/** Verify permission changes and school boundaries on every API replica. */
+/** Verify permission changes through the controller's two API containers. */
 export async function verifyHybridRecipientAccess(
   { hosts, controller, compose },
-  { cookies, principalId, schoolId, hiddenSchoolId, expectedStatus, stage },
+  input,
 ) {
-  assert.ok(['grants-changed', 'scoped-access', 'revoked'].includes(stage));
-  assert.equal(expectedStatus, stage === 'scoped-access' ? 200 : 401);
   const replicas = (await compose(controller, ['ps', '--quiet', 'api']))
     .split('\n')
     .filter(Boolean);
-  assert.equal(replicas.length, 2);
-  assert.equal(new Set(replicas).size, 2);
-  const cookie = cookies
-    .filter(({ name }) => name.startsWith('__Host-'))
-    .map(({ name, value }) => `${name}=${value}`)
-    .join('; ');
-  assert.ok(
-    cookie,
-    'Permission checks require the previous authenticated recipient cookie.',
+  return verifyReplicaRecipientAccess(
+    {
+      replicas,
+      readReplica: (request) =>
+        readHybridReplica({ hosts, controller, ...request }),
+    },
+    input,
   );
-  const observations = [];
-  for (const replica of replicas) {
-    const read = async (path, kind, status) => {
-      const result = await readHybridReplica({
-        hosts,
-        controller,
-        replica,
-        path,
-        cookie,
-      });
-      assert.equal(result.status, status);
-      if (kind === 'session')
-        assert.equal(
-          result.principalId,
-          status === 200 ? principalId : undefined,
-        );
-      else if (status === 200) assert.equal(result.schoolId, schoolId);
-      if (status === 404) assert.equal(result.hiddenSchoolResponse, true);
-      observations.push({ replica, stage, resource: kind, status });
-    };
-    await read('/api/auth/session', 'session', expectedStatus);
-    await read(`/api/schools/${schoolId}`, 'granted-school', expectedStatus);
-    if (expectedStatus === 200) {
-      await read(`/api/schools/${hiddenSchoolId}`, 'ungranted-school', 404);
-      await read(`/api/schools/${randomUUID()}`, 'unknown-school', 404);
-    }
-  }
-  return observations;
 }

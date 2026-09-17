@@ -176,6 +176,21 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
       for (const item of rendered.items.filter(
         (item) => item.kind === 'Deployment',
       )) {
+        const pod = item.spec.template.spec;
+        const keyVolumes = pod.volumes
+          .filter((volume) =>
+            ['campus-google-key', 'campus-google-key-2'].includes(
+              volume.secret?.secretName,
+            ),
+          )
+          .map((volume) => volume.name);
+        for (const init of pod.initContainers ?? [])
+          assert.ok(
+            !(init.volumeMounts ?? []).some((mount) =>
+              keyVolumes.includes(mount.name),
+            ),
+            `${item.metadata.name}/${init.name} must not receive Google credential keys.`,
+          );
         assert.equal(
           item.spec.template.spec.volumes.some(
             (volume) => volume.secret?.secretName === 'campus-google-key-2',

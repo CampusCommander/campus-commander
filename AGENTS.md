@@ -1,3 +1,26 @@
+# Current development model — owner direction, 2026-09-17
+
+Campus Commander is greenfield work. Nothing is live, and no incremental customer environment requires support.
+Phases organize development. They are not deployed product versions or a path that users must follow.
+The immediate objective is a usable client application with a fresh installation.
+
+The owner stated:
+
+> There is NO migration and data safety we have to adhere to at this point. That will all be done AFTER we have an actual product to use.
+
+Apply this direction to every plan, implementation choice, test, and release requirement:
+
+- Treat development databases, fixtures, and test data as disposable. Recreate them when needed.
+- Do not implement cross-phase migration, legacy compatibility, incremental upgrades, or preservation of development test data.
+- Defer migration, backup, restore, recovery, and data-safety engineering until a usable product exists and that work enters scope.
+- Do not make historical migration or deployment qualification requirements prerequisites for client development or a runnable review build.
+- Prioritize client features, working application flows, fresh installation, and owner review.
+- Keep application authorization and credential protection in place.
+- Retain existing code and evidence without expanding deferred infrastructure work merely because it already exists.
+
+This direction supersedes conflicting historical phase plans, task criteria, and qualification checklists.
+Do not infer a live deployment or a data-preservation obligation from the existence of an earlier phase or test installation.
+
 # General Guidelines for communication and writing
 
 Apply the `ste-writing` skill to all prose output (docs, READMEs, PR descriptions, error messages, release notes, comments). See `.opencode/skills/ste-writing-skill/SKILL.md` for the full ruleset. Key rules:

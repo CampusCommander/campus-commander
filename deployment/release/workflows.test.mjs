@@ -727,6 +727,7 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
   assert.deepEqual(ci.on.workflow_dispatch.inputs.phase3Profile.options, [
     'all-docker',
     'hybrid',
+    'kubernetes',
   ]);
   assert.equal(
     ci.jobs['phase3-profile'].with.profile,
@@ -767,12 +768,18 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
   const browsers = steps.find(
     (s) => s.name === 'Select shared browser storage',
   );
-  assert.equal(account?.if, "inputs.profile == 'hybrid'");
+  assert.equal(
+    account?.if,
+    "inputs.profile == 'hybrid' || inputs.profile == 'kubernetes'",
+  );
   assert.match(account.run, /sudo chown -R 1000:1000/);
   assert.match(account.run, /sudo setfacl -m u:1000:rw/);
   assert.match(account.run, /sudo setfacl -m u:1000:x/);
   assert.match(account.run, /DOCKER_CONFIG/);
-  assert.equal(restore?.if, "always() && inputs.profile == 'hybrid'");
+  assert.equal(
+    restore?.if,
+    "always() && (inputs.profile == 'hybrid' || inputs.profile == 'kubernetes')",
+  );
   assert.match(restore.run, /sudo chown -R "\$\(id -u\):\$\(id -g\)"/);
   assert.match(browsers?.run, /PLAYWRIGHT_BROWSERS_PATH/);
   assert.ok(
@@ -1047,5 +1054,65 @@ test('Hybrid guided update selects its target, preserved environment, and separa
     upload.with.path.includes(
       "inputs.profile == 'hybrid' && inputs.updateRelease != '' && 'dist/phase-3-hybrid-update/'",
     ),
+  );
+});
+
+test('Kubernetes Phase 3 dispatch rejects unsupported modes before resource changes', async () => {
+  const profile = await workflow('phase-3-profile-check');
+  const steps = profile.jobs.installation.steps;
+  for (const selected of [
+    '',
+    'UPGRADE',
+    'RESTORE',
+    'FAULTS',
+    'LIFECYCLE',
+    'UPDATE_RELEASE',
+  ]) {
+    const run = () =>
+      execFileSync('bash', ['-e', '-c', steps[0].run], {
+        env: {
+          ...process.env,
+          PROFILE: 'kubernetes',
+          FAULT_KIND: 'services',
+          ...Object.fromEntries(
+            ['UPGRADE', 'RESTORE', 'FAULTS', 'LIFECYCLE'].map((key) => [
+              key,
+              String(selected === key),
+            ]),
+          ),
+          UPDATE_RELEASE:
+            selected === 'UPDATE_RELEASE'
+              ? 'phase-3-lab-' + 'a'.repeat(12)
+              : '',
+        },
+        stdio: 'pipe',
+      });
+    if (selected) assert.throws(run);
+    else assert.doesNotThrow(run);
+  }
+  const execution = steps.find(
+    (step) => step.name === 'Qualify installed Phase 3 Kubernetes workflows',
+  );
+  assert.equal(execution.if, "inputs.profile == 'kubernetes'");
+  assert.match(execution.run, /CC_AUTH_INSTALLER_ROOT/);
+  assert.match(execution.run, /CC_KIND_BINARY/);
+  assert.match(execution.run, /sudo -H -u '#1000' -g '#1000'/);
+  assert.ok(
+    steps.indexOf(execution) >
+      steps.findIndex(
+        (step) => step.name === 'Prepare published image references',
+      ),
+  );
+  const kind = steps.find(
+    (step) => step.name === 'Install verified Kind binary',
+  );
+  assert.match(kind.run, /sha256sum --check/);
+  assert.ok(steps.indexOf(kind) < steps.indexOf(execution));
+  const upload = steps.find((step) =>
+    step.uses?.startsWith('actions/upload-artifact@'),
+  );
+  assert.match(
+    upload.with.path,
+    /inputs.profile == 'kubernetes' && 'dist\/phase-3-kubernetes-installation\/'/,
   );
 });

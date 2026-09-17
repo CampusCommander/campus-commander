@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "kubernetes",
+  "sourceRevision": "0abf75ed6f03bb1202fe26fd928a40c09647f1b5",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:254bff587eeb0fd0bff2b3e6dbae342a7724329109b3d0c2d659c31857544f18",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:a119fb30b7b24f3040dbfa84a10a322da1fdf9f92dab16279882b7994663cbdc",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:6b4dd0f5130fac0d055ff6e39e4378d322595ae01bcec1d2a840d6ae54a53316"
+  },
+  "bundleManifestSha256": "d6291da7def3ec31da6e03da1f2f0297810694b5f4688c473bd9eccc552bde9c",
+  "harnessRevision": "b845f3725f008db7c0c8c68e66fb93dbf6a6829c",
+  "harnessWorkingTree": "clean",
+  "command": "npm exec -- nx run api-e2e:phase3-kubernetes-install-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "uid": 1000,
+    "gid": 1000
+  },
+  "status": "failed",
+  "stage": "create cluster",
+  "failureStages": ["create cluster"],
+  "failureLocations": [
+    {
+      "stage": "create cluster",
+      "locations": []
+    }
+  ],
+  "durationMs": 60630,
+  "error": "Kubernetes Phase 3 qualification failed.",
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35257141763",
+    "artifactId": 10513297812,
+    "artifactName": "phase-3-kubernetes-installation",
+    "artifactArchiveSha256": "17f853f9aaf86755557d54dc6307905b64118d423d05ccfa5a7fb134f8b46839",
+    "originalReport": "kubernetes-failure.json",
+    "originalReportBytes": 1242,
+    "originalReportSha256": "3b35b1168ae691cd0b4c073a85cd0e898f889ea13d1eab2c40cee3b780ad632e"
+  },
+  "disposition": {
+    "status": "diagnosis-in-progress",
+    "observation": "Job output reached runtime image preparation. The original stage still reads create cluster and contains no source locations. This attempt did not reach the earlier workflow failure.",
+    "nextCheck": "Separate image pull, archive, and node import stages. Preserve asynchronous command call sites in sanitized errors.",
+    "qualificationPassed": false
+  }
+}

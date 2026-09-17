@@ -1,5 +1,9 @@
 # Phase 3 Jira tasks
 
+**Scope revised on 2026-09-17:** [The current work plan](phase-3-current-plan.md) takes precedence.
+The owner confirmed that nothing is live. Phase 3 targets a fresh installation and client review.
+Phase 2 upgrade requirements below are historical. Further deployment-matrix qualification is deferred.
+
 Status: APPROVED by the owner on 2026-09-16. Jira publication and verification are complete. Phase 3 implementation is active.
 
 This backlog implements the [Phase 3 plan](phase-3-plan.md).

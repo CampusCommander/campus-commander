@@ -6,6 +6,10 @@ import { tmpdir } from 'node:os';
 import { renderKubernetes } from './render.mjs';
 import assert from 'node:assert/strict';
 import { qualificationImages } from '../qualification/images.mjs';
+import {
+  configureKubernetesProvider,
+  seedKubernetesGoogleCredentialKey,
+} from './qualification-provider.mjs';
 
 // This adapter targets only the explicitly named disposable Kind cluster.
 const capacity = process.env.CC_KUBERNETES_CAPACITY_FIXTURE
@@ -89,7 +93,17 @@ const application = capacity?.application;
 if (application)
   config.services.edge.endpoint.url = application.auth.publicOrigin;
 if (application && !application.upgradeFromPhase1) {
-  config.phase = 2;
+  config.phase = application.phase ?? 2;
+  assert.ok([2, 3].includes(config.phase));
+  if (config.phase === 3)
+    config.googleConnection = {
+      keyId: 'kubernetes-google-qualification-key',
+      encryptionKeySecretRef: {
+        provider: 'kubernetes',
+        name: 'campus-google-qualification',
+        key: 'encryption-key',
+      },
+    };
   config.applicationAuth = application.auth;
   config.services.edge.access = 'application';
   config.services.edge.endpoint.url = application.auth.publicOrigin;
@@ -106,6 +120,8 @@ operator.storageClasses = {
 operator.edgeIngress.sourceRanges = ['127.0.0.1/32'];
 if (application)
   operator.externalEgress.identityProvider = [`${application.hostGateway}/32`];
+if (config.phase === 3)
+  operator.externalEgress.googleProvider = [`${application.hostGateway}/32`];
 operator.release = {
   schemaVersion: 1,
   sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], {
@@ -185,6 +201,27 @@ if (application) {
   put(
     { name: 'qualification-provider', key: 'ca' },
     await readFile(application.caFile),
+  );
+}
+if (config.phase === 3) {
+  seedKubernetesGoogleCredentialKey(config, put);
+  put(
+    {
+      name: 'qualification-provider',
+      key: 'phase3-hybrid-renewal-preload.cjs',
+    },
+    await readFile(
+      new URL(
+        '../../api-e2e/phase3-hybrid-renewal-preload.cjs',
+        import.meta.url,
+      ),
+    ),
+  );
+  put(
+    { name: 'qualification-provider', key: 'google-connection-preload.cjs' },
+    await readFile(
+      new URL('../../api-e2e/google-connection-preload.cjs', import.meta.url),
+    ),
   );
 }
 const pathFor = async (ref) => {
@@ -314,28 +351,8 @@ for (const [reference, bytes] of secrets) {
   grouped.get(name)[key] = bytes.toString('base64');
 }
 const list = renderKubernetes(config, operator);
-if (application) {
-  const pod = list.items.find(
-    (item) => item.kind === 'Deployment' && item.metadata.name === 'api',
-  ).spec.template.spec;
-  pod.hostAliases = [
-    { ip: application.hostGateway, hostnames: ['host.docker.internal'] },
-  ];
-  pod.volumes.push({
-    name: 'qualification-provider',
-    secret: { secretName: 'qualification-provider' },
-  });
-  const container = pod.containers.find((item) => item.name === 'api');
-  container.env.push({
-    name: 'NODE_EXTRA_CA_CERTS',
-    value: '/run/qualification/ca',
-  });
-  container.volumeMounts.push({
-    name: 'qualification-provider',
-    mountPath: '/run/qualification',
-    readOnly: true,
-  });
-}
+if (application) configureKubernetesProvider(list, application);
+
 await writeFile(join(root, 'config.json'), JSON.stringify(config, null, 2), {
   mode: 0o600,
 });

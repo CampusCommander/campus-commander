@@ -17,6 +17,14 @@ import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import { expect } from '@playwright/test';
+import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
+import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
+import { qualifyKubernetesWorkerCredentials } from './phase3-kubernetes-worker-fixture.mjs';
+import { qualifyKubernetesNetworkPolicies } from './phase3-kubernetes-network-fixture.mjs';
+import {
+  kubernetesFailureLocations,
+  verifyKubernetesCredentialProjection,
+} from './phase3-kubernetes-fixture.mjs';
 import { renderKubernetes } from '../deployment/kubernetes/render.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
@@ -24,10 +32,36 @@ import { qualifyKubernetesUpgrade } from './kubernetes-upgrade-fixture.mjs';
 import { faultKubernetesCertificates } from './kubernetes-certificates-fixture.mjs';
 import { faultKubernetes } from './kubernetes-faults-fixture.mjs';
 import { prepareKubernetesInstaller } from './kubernetes-installer-fixture.mjs';
-import { kubernetesReplicaProbe } from './kubernetes-replicas-fixture.mjs';
+import {
+  kubernetesReplicaProbe,
+  verifyKubernetesRecipientAccess,
+} from './kubernetes-replicas-fixture.mjs';
 import { createKubernetesCapacityVolume } from './kubernetes-capacity-volume.mjs';
 import { qualifyKubernetesCapacity } from './kubernetes-capacity-fixture.mjs';
 
+const phase3 = process.env.CC_AUTH_PHASE3_KUBERNETES === '1';
+const evidenceDirectory = phase3
+  ? 'dist/phase-3-kubernetes-installation'
+  : 'dist/phase-2-evidence';
+if (phase3) {
+  assert.ok(
+    process.env.CC_AUTH_INSTALLER_ROOT,
+    'Phase 3 requires an extracted release.',
+  );
+  for (const key of [
+    'UPGRADE',
+    'RESTORE',
+    'FAULTS',
+    'CERTIFICATES',
+    'CAPACITY',
+  ])
+    assert.notEqual(
+      process.env[`CC_AUTH_KUBERNETES_${key}`],
+      '1',
+      'Phase 3 rejects Phase 2 mode flags.',
+    );
+  assert.notEqual(process.env.CC_PHASE2_KEEP_FIXTURE, 'true');
+}
 const execute = promisify(execFile);
 const run = async (file, args, input, options = {}) => {
   const operation = execute(file, args, {
@@ -36,19 +70,24 @@ const run = async (file, args, input, options = {}) => {
     ...options,
   });
   if (input !== undefined) operation.child.stdin.end(input);
-  return (await operation).stdout.trim();
+  try {
+    return (await operation).stdout.trim();
+  } catch (error) {
+    if (!phase3) throw error;
+    throw new Error('Kubernetes fixture command failed.', { cause: error });
+  }
 };
 const docker = (...args) => run('docker', args);
 
 test(
-  'Kubernetes Phase 2 shares sessions across two API replicas and survives worker rescheduling',
+  `Kubernetes Phase ${phase3 ? 3 : 2} shares sessions across two API replicas and survives worker rescheduling`,
   { timeout: 1200000 },
   async () => {
     const kind = process.env.CC_KIND_BINARY ?? 'kind';
     const project = `cc-capacity-kube-${randomBytes(6).toString('hex')}`;
     const root = await mkdtemp(`/tmp/${project}-`);
     const kubeconfig = join(root, 'kubeconfig');
-    const kube = (args, input) =>
+    const kube = (args, input, options) =>
       run(
         'kubectl',
         [
@@ -61,6 +100,7 @@ test(
           ...args,
         ],
         input,
+        options,
       );
     let provider,
       forward,
@@ -70,6 +110,64 @@ test(
     let certificateEvidence;
     let replicaEvidence;
     let capacityVolume, capacityEvidence;
+    let installedWorkflows,
+      credentialKeyProjection,
+      phase3Evidence,
+      workerCredentials,
+      networkPolicyEvidence;
+    const recipientAccessChecks = [];
+    let stage = 'initialize';
+    const harness = phase3
+      ? {
+          harnessRevision: await run('git', ['rev-parse', 'HEAD']),
+          harnessWorkingTree: (await run('git', [
+            'status',
+            '--porcelain',
+            '--untracked-files=no',
+          ]))
+            ? 'uncommitted-candidate'
+            : 'clean',
+          command:
+            'npm exec -- nx run api-e2e:phase3-kubernetes-install-integration',
+          environment: {
+            nodeVersion: process.version,
+            platform: process.platform,
+            architecture: process.arch,
+            uid: process.getuid(),
+            gid: process.getgid(),
+          },
+        }
+      : undefined;
+    let releaseIdentity, qualificationFailure;
+    const failureStages = [];
+    const failureLocations = [];
+
+    const reportFailure = async (failedStage, error) => {
+      failureStages.push(failedStage);
+      failureLocations.push({
+        stage: failedStage,
+        locations: kubernetesFailureLocations(error),
+      });
+      await mkdir(evidenceDirectory, { recursive: true });
+      await writeFile(
+        join(evidenceDirectory, 'kubernetes-failure.json'),
+        JSON.stringify(
+          {
+            ...releaseIdentity,
+            ...harness,
+            status: 'failed',
+            stage: failureStages[0],
+            failureStages,
+            failureLocations,
+            durationMs: Date.now() - started,
+            error: 'Kubernetes Phase 3 qualification failed.',
+          },
+          null,
+          2,
+        ),
+      );
+    };
+
     try {
       const listener = createServer().listen(0, '127.0.0.1');
       await once(listener, 'listening');
@@ -139,10 +237,29 @@ test(
         assert.equal(workingTree, 'clean');
       const release = {
         schemaVersion: 1,
+        ...(phase3 ? { phase: 3 } : {}),
         sourceRevision,
         architectures: ['linux/amd64'],
         images,
       };
+      let bundle;
+      if (phase3) {
+        stage = 'verify extracted release';
+        assert.equal(workingTree, 'clean');
+        bundle = await loadQualificationBundle(
+          process.env.CC_AUTH_INSTALLER_ROOT,
+          release,
+        );
+        assert.equal(bundle.manifest.phase, 3);
+        releaseIdentity = {
+          schemaVersion: 1,
+          phase: 3,
+          profile: 'kubernetes',
+          sourceRevision,
+          images,
+          bundleManifestSha256: bundle.manifestSha256,
+        };
+      }
       const releaseFile = join(root, 'release.json');
       await writeFile(releaseFile, JSON.stringify(release), { mode: 0o600 });
       const baseline =
@@ -201,6 +318,7 @@ test(
       process.stdout.write(
         'Create the dedicated three-node Kubernetes fixture.\n',
       );
+      stage = 'create cluster';
       created = true;
       await run(
         kind,
@@ -221,6 +339,7 @@ test(
         undefined,
         capacityVolume ? { env: capacityVolume.environment } : {},
       );
+      stage = 'discover host gateway';
       const hostGateway = await docker(
         'run',
         '--rm',
@@ -258,6 +377,7 @@ test(
         'Load the exact runtime image digests into all nodes.\n',
       );
       const archive = join(root, 'images.tar');
+      stage = 'pull runtime images';
       for (const image of imageSet) {
         try {
           await docker('image', 'inspect', image);
@@ -265,10 +385,12 @@ test(
           await docker('pull', image);
         }
       }
+      stage = 'archive runtime images';
       await docker('save', '--output', archive, ...imageSet);
       const nodes = (
         await run(kind, ['get', 'nodes', '--name', project])
       ).split('\n');
+      stage = 'import runtime images into nodes';
       for (const node of nodes) {
         const child = spawn(
           'docker',
@@ -363,6 +485,7 @@ test(
         root,
         project,
         application: {
+          phase: phase3 ? 3 : 2,
           upgradeFromPhase1: Boolean(baseline),
           installerOwnsWorkloads: true,
           auth: {
@@ -467,6 +590,7 @@ test(
           });
         });
       };
+      stage = 'delivered installation and resume';
       const installer = await prepareKubernetesInstaller({
         root,
         project,
@@ -514,6 +638,13 @@ test(
         displayName: 'Synthetic administrator',
       });
       assert.ok(enrolled.principalId);
+      if (phase3)
+        await installer.applicationAccess({
+          action: 'confirm-platform-administrator',
+          principalId: enrolled.principalId,
+          expectedVersion: 1,
+          confirmation: 'grant-platform-administrator',
+        });
       const inspection = await installer.applicationAccess({
         action: 'inspect',
       });
@@ -524,12 +655,38 @@ test(
       let capacityFaults;
       let installerEvidence;
       const replicas =
-        process.env.CC_AUTH_KUBERNETES_REPLICAS === '1'
+        phase3 || process.env.CC_AUTH_KUBERNETES_REPLICAS === '1'
           ? kubernetesReplicaProbe(kube)
           : undefined;
+      if (phase3)
+        credentialKeyProjection = await verifyKubernetesCredentialProjection({
+          kube,
+          root,
+          project,
+          images,
+        });
+      stage = 'initial browser diagnostics';
       const application = await applicationBrowser(
         publicOrigin,
         async ({ page, context, checks }) => {
+          if (phase3) {
+            stage = 'installed public workflows';
+            installedWorkflows = await qualifyInstalledPhase3({
+              page,
+              publicOrigin,
+              provider,
+              verifyRecipientAccess: async (input) => {
+                stage = `recipient permissions: ${input.stage}`;
+                recipientAccessChecks.push(
+                  ...(await verifyKubernetesRecipientAccess(kube, input)),
+                );
+                stage = 'installed public workflows';
+              },
+            });
+            stage = 'diagnostics after installed workflows';
+            await checks({ recoverySeconds: 120 });
+          }
+          stage = 'API replacement';
           const originalPods = await replicas?.verify(
             context,
             'initial-session',
@@ -552,6 +709,7 @@ test(
             page.getByRole('heading', { name: 'Diagnostics', exact: true }),
           ).toBeVisible({ timeout: 15000 });
           await checks();
+          await installedWorkflows?.verifyAfterRestart();
           if (replicas) {
             const replacements = await replicas.verify(
               context,
@@ -562,6 +720,7 @@ test(
               1,
             );
           }
+          stage = 'worker rescheduling';
           await kube(['scale', 'deployment/workers', '--replicas=1']);
           await kube([
             'rollout',
@@ -617,6 +776,7 @@ test(
           await checks();
           await replicas?.verify(context, 'worker-reschedule-session');
           if (installer) {
+            stage = 'save preference before lifecycle checks';
             const preference = page.waitForResponse(
               (response) =>
                 new URL(response.url()).pathname === '/api/auth/preferences' &&
@@ -628,6 +788,7 @@ test(
               .click();
             assert.equal((await preference).status(), 201);
             for (const command of ['stop', 'uninstall']) {
+              stage = `delivered ${command} and resume`;
               assert.equal((await installer.cli(command)).dataPreserved, true);
               await installer.resume(startForward);
               await replicas?.verify(
@@ -653,6 +814,7 @@ test(
                 'dark',
               );
               await checks({ recoverySeconds: 120 });
+              await installedWorkflows?.verifyAfterRestart();
               await replicas?.verify(context, `${command}-resume-session`);
             }
           }
@@ -689,6 +851,7 @@ test(
               checks,
             });
           // Capture source placement before isolated restore stops its writers.
+          stage = 'capture installer evidence';
           installerEvidence = await installer.evidence();
           if (process.env.CC_AUTH_KUBERNETES_RESTORE === '1') {
             const preference = page.waitForResponse(
@@ -768,11 +931,47 @@ test(
         },
         {
           afterSignOut: replicas
-            ? () => replicas.verify(undefined, 'signed-out-session', 401)
+            ? () => {
+                stage = 'signed-out replica sessions';
+                return replicas.verify(undefined, 'signed-out-session', 401);
+              }
             : undefined,
         },
       );
       assert.ok(installerEvidence);
+      if (phase3) {
+        stage = 'distributed worker credentials after browser closure';
+        workerCredentials = await qualifyKubernetesWorkerCredentials({
+          root,
+          project,
+          kube,
+        });
+        stage = 'internal NetworkPolicy enforcement';
+        const retainNetworkEvidence = async (report) => {
+          await mkdir(evidenceDirectory, { recursive: true });
+          await writeFile(
+            join(evidenceDirectory, 'kubernetes-network-policy.json'),
+            JSON.stringify(
+              {
+                ...releaseIdentity,
+                ...harness,
+                durationScope:
+                  'Internal pod policy probes, temporary control policies, and control-policy cleanup.',
+                ...report,
+              },
+              null,
+              2,
+            ),
+          );
+        };
+        networkPolicyEvidence = await qualifyKubernetesNetworkPolicies({
+          kube,
+          project,
+          images,
+          onFailure: retainNetworkEvidence,
+        });
+        await retainNetworkEvidence(networkPolicyEvidence);
+      }
       if (capacityFaults)
         capacityEvidence = {
           status: 'passed',
@@ -785,7 +984,7 @@ test(
           recordedAt: new Date().toISOString(),
           limits: capacityFaults.limits,
         };
-      if (replicas)
+      if (replicas && !phase3)
         replicaEvidence = {
           status: 'passed',
           profile: 'kubernetes',
@@ -803,7 +1002,7 @@ test(
             'Two API replicas run in a dedicated Kind cluster on one physical Docker host.',
           ],
         };
-      await mkdir('dist/phase-2-evidence', { recursive: true });
+      await mkdir(evidenceDirectory, { recursive: true });
       if (applicationFaults) {
         assert.equal(applicationFaults.status, 'passed');
         faultEvidence = {
@@ -838,48 +1037,90 @@ test(
           'dist/phase-2-evidence/kubernetes-restore.json',
           JSON.stringify({ ...restoration, application }, null, 2),
         );
-      await writeFile(
-        `dist/phase-2-evidence/${baseline ? 'kubernetes-upgrade' : 'kubernetes-profile'}.json`,
-        JSON.stringify(
-          {
-            status: 'PASS',
-            checkedAt: new Date().toISOString(),
-            elapsedMilliseconds: Date.now() - started,
-            images,
-            sourceRevision,
-            imageBuildId,
-            workingTree,
-            qualificationSourceRevision: await run('git', [
-              'rev-parse',
-              'HEAD',
-            ]),
-            qualificationWorkingTree: (await run('git', [
-              'status',
-              '--porcelain',
-            ]))
-              ? 'uncommitted-candidate'
-              : 'clean',
-            ...(upgrade ? { upgrade } : {}),
-            application,
-            nodes: nodes.length,
-            apiReplicas: 2,
-            workerRescheduled: true,
-            installer: installerEvidence,
-            limits: [
-              'Three Kind nodes share one Docker host and synthetic storage.',
-              'Kind default networking does not enforce NetworkPolicy.',
-              'District DNS, identity provider, CNI enforcement, and storage remain separate qualification requirements.',
-              ...(upgrade
-                ? ['Isolated restore requires separate evidence.']
-                : ['Upgrade and isolated restore require separate evidence.']),
-            ],
+      if (phase3) {
+        stage = 'verify final credential projection';
+        const finalProjection = await verifyKubernetesCredentialProjection({
+          kube,
+          root,
+          project,
+          images,
+        });
+        phase3Evidence = {
+          ...releaseIdentity,
+          ...harness,
+          status: 'passed',
+          recordedAt: new Date().toISOString(),
+          durationScope:
+            'Extracted installation, repeated resume, public workflows, API replacement, worker rescheduling, stop/resume, uninstall/resume, worker credentials, internal network policies, and owned cluster removal.',
+          application,
+          installedWorkflows: installedWorkflows.report,
+          recipientAccessChecks,
+          workerCredentials,
+          networkPolicyEvidence,
+          credentialKeyProjection: {
+            initial: credentialKeyProjection,
+            final: finalProjection,
           },
-          null,
-          2,
-        ),
-      );
+          nodes: nodes.length,
+          apiReplicas: 2,
+          workerRescheduled: true,
+          installer: installerEvidence,
+          replicaObservations: replicas.observations,
+          limits: [
+            'Three Kind nodes share one Docker host and synthetic shared storage.',
+            'NetworkPolicy evidence covers worker-to-Redis and worker-to-Kestra TCP pod paths only.',
+            'Synthetic providers do not establish live Google privileges, Education capabilities, or district browser trust.',
+            'Upgrade, isolated restore, faults, and complete lifecycle acceptance require separate evidence.',
+            'Final release qualification requires matching installer, test, and application source revisions.',
+          ],
+        };
+      } else {
+        await writeFile(
+          `dist/phase-2-evidence/${baseline ? 'kubernetes-upgrade' : 'kubernetes-profile'}.json`,
+          JSON.stringify(
+            {
+              status: 'PASS',
+              checkedAt: new Date().toISOString(),
+              elapsedMilliseconds: Date.now() - started,
+              images,
+              sourceRevision,
+              imageBuildId,
+              workingTree,
+              qualificationSourceRevision: await run('git', [
+                'rev-parse',
+                'HEAD',
+              ]),
+              qualificationWorkingTree: (await run('git', [
+                'status',
+                '--porcelain',
+              ]))
+                ? 'uncommitted-candidate'
+                : 'clean',
+              ...(upgrade ? { upgrade } : {}),
+              application,
+              nodes: nodes.length,
+              apiReplicas: 2,
+              workerRescheduled: true,
+              installer: installerEvidence,
+              limits: [
+                'Three Kind nodes share one Docker host and synthetic storage.',
+                'This run does not measure NetworkPolicy enforcement.',
+                'District DNS, identity provider, CNI enforcement, and storage remain separate qualification requirements.',
+                ...(upgrade
+                  ? ['Isolated restore requires separate evidence.']
+                  : [
+                      'Upgrade and isolated restore require separate evidence.',
+                    ]),
+              ],
+            },
+            null,
+            2,
+          ),
+        );
+      }
     } catch (error) {
-      if (created) {
+      if (phase3) await reportFailure(stage, error);
+      if (created && !phase3) {
         try {
           const pods = JSON.parse(await kube(['get', 'pods', '-o', 'json']));
           await writeFile(join(root, 'pod-status.json'), JSON.stringify(pods), {
@@ -928,23 +1169,65 @@ test(
       process.stderr.write(
         `Kubernetes qualification failed. Private fixture: ${root}\n`,
       );
-      throw error;
+      qualificationFailure = phase3
+        ? new Error(`Kubernetes Phase 3 qualification failed at ${stage}.`)
+        : error;
     } finally {
-      forward?.kill('SIGTERM');
-      await provider?.close();
-      if (created && process.env.CC_PHASE2_KEEP_FIXTURE !== 'true')
-        await run(kind, [
-          'delete',
-          'cluster',
-          '--name',
-          project,
-          '--kubeconfig',
-          kubeconfig,
-        ]);
-      if (capacityVolume) {
-        assert.notEqual(process.env.CC_PHASE2_KEEP_FIXTURE, 'true');
-        await capacityVolume.close();
+      try {
+        forward?.kill('SIGTERM');
+        await provider?.close();
+        if (created && process.env.CC_PHASE2_KEEP_FIXTURE !== 'true')
+          await run(kind, [
+            'delete',
+            'cluster',
+            '--name',
+            project,
+            '--kubeconfig',
+            kubeconfig,
+          ]);
+        if (capacityVolume) {
+          assert.notEqual(process.env.CC_PHASE2_KEEP_FIXTURE, 'true');
+          await capacityVolume.close();
+        }
+
+        if (phase3)
+          assert.ok(
+            !(await run(kind, ['get', 'clusters']))
+              .split('\n')
+              .includes(project),
+          );
+      } catch (error) {
+        if (phase3) await reportFailure('remove owned cluster', error);
+        qualificationFailure ??= phase3
+          ? new Error(
+              'Kubernetes Phase 3 qualification failed during owned-cluster removal.',
+            )
+          : error;
       }
+    }
+    if (qualificationFailure) throw qualificationFailure;
+    if (phase3Evidence) {
+      phase3Evidence.durationMs = Date.now() - started;
+      phase3Evidence.ownedClusterRemoved = true;
+      await writeFile(
+        join(evidenceDirectory, 'kubernetes-installation.json'),
+        JSON.stringify(phase3Evidence, null, 2),
+      );
+      await writeFile(
+        join(evidenceDirectory, 'kubernetes-resume.json'),
+        JSON.stringify(
+          {
+            ...phase3Evidence,
+            reportKind: 'resume',
+            durationScope: 'Sum of delivered resume commands.',
+            durationMs: phase3Evidence.installer.commands
+              .filter((item) => item.command === 'resume')
+              .reduce((sum, item) => sum + item.durationMs, 0),
+          },
+          null,
+          2,
+        ),
+      );
     }
     if (capacityEvidence) {
       assert.ok(

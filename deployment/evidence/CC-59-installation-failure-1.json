@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "kubernetes",
+  "sourceRevision": "0abf75ed6f03bb1202fe26fd928a40c09647f1b5",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:254bff587eeb0fd0bff2b3e6dbae342a7724329109b3d0c2d659c31857544f18",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:a119fb30b7b24f3040dbfa84a10a322da1fdf9f92dab16279882b7994663cbdc",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:6b4dd0f5130fac0d055ff6e39e4378d322595ae01bcec1d2a840d6ae54a53316"
+  },
+  "bundleManifestSha256": "d6291da7def3ec31da6e03da1f2f0297810694b5f4688c473bd9eccc552bde9c",
+  "harnessRevision": "297edf0f23e5b3342bfb276c0233438f5913e428",
+  "harnessWorkingTree": "clean",
+  "command": "npm exec -- nx run api-e2e:phase3-kubernetes-install-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "uid": 1000,
+    "gid": 1000
+  },
+  "status": "failed",
+  "stage": "installed workflows and lifecycle",
+  "failureStages": ["installed workflows and lifecycle"],
+  "durationMs": 266651,
+  "error": "Kubernetes Phase 3 qualification failed.",
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35255775913",
+    "artifactId": 10512841025,
+    "artifactName": "phase-3-kubernetes-installation",
+    "artifactArchiveSha256": "85c5d5dda022145a34edac888d64db47c8a2711ba58c449f4cff05638ac0bce7",
+    "originalReport": "kubernetes-failure.json",
+    "originalReportBytes": 1185,
+    "originalReportSha256": "402d692fe2ce7f3bbbf4fc450fded194cbcb165880fdd20f5a141e1ae3924f84"
+  },
+  "disposition": {
+    "status": "diagnosis-in-progress",
+    "observation": "The original report identifies only the installed workflows and lifecycle stage. It does not identify the failing assertion.",
+    "nextCheck": "Repeat the same signed release with bounded source locations and narrower fixture stages.",
+    "qualificationPassed": false
+  }
+}
