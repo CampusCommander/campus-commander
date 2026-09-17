@@ -175,7 +175,12 @@ Browser implementation revision `ec58777` adds a real browser lifecycle sequence
 The [full run](https://github.com/CampusCommander/campus-commander/actions/runs/35169294797) passed packaged lifecycle, browser, database, and all-Docker integration.
 Its formatting job failed. Revision `1aec3e1` corrects fixture formatting and includes the browser review corrections.
 [Final source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35169607125) passed at `1aec3e1`.
-[Final full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35170015934) is running at that revision.
+[Final full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35170015934) failed during packaged browser credential staging.
+The page reported an unknown result before confirmation. The other six jobs passed.
+The same runtime revision passed source qualification. The failed run did not retain the staging response status.
+Fixture revision `4e47aed` records sanitized staging status before waiting for browser confirmation.
+[Diagnostic source](https://github.com/CampusCommander/campus-commander/actions/runs/35170681326) and [full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35170679600) are running.
+Do not treat the latest packaged browser result as qualified until diagnosis and final validation complete.
 Standards and specification reviews report no remaining findings after `29a09d7`.
 
 All three complete Phase 3 deployment profiles remain separate evidence.
