@@ -73,6 +73,7 @@ export class GoogleHealthStore implements OnDestroy {
     const health = this.health();
     return (
       !!health &&
+      health.connectionState !== 'disconnected' &&
       this.auth.can('connection:diagnose', {
         kind: 'district',
         customerId: health.customerId,
@@ -93,6 +94,8 @@ export class GoogleHealthStore implements OnDestroy {
     const health = this.health();
     if (this.unavailable()) return 'Google status unavailable';
     if (!health) return 'Google customer not connected';
+    if (health.connectionState === 'disconnected')
+      return 'Google background access disconnected';
     if (this.pending() || this.running()) return 'Google check running';
     if (health.backgroundFailure)
       return 'Google background access needs attention';
@@ -148,7 +151,9 @@ export class GoogleHealthStore implements OnDestroy {
   }
   stale(timestamp: string) {
     return (
-      this.unavailable() || this.age(timestamp) >= GOOGLE_HEALTH_FRESH_SECONDS
+      this.unavailable() ||
+      this.health()?.connectionState === 'disconnected' ||
+      this.age(timestamp) >= GOOGLE_HEALTH_FRESH_SECONDS
     );
   }
   result(id: GoogleHealthCapability) {

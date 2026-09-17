@@ -49,6 +49,7 @@ const claimSchema = z.discriminatedUnion('status', [
 ]);
 export class GoogleStoreError extends Error {
   readonly code:
+    | 'connection-disconnected'
     | 'credential-changed'
     | 'connection-store-unavailable'
     | 'forbidden';
@@ -93,9 +94,15 @@ export class GoogleConnectionProvider {
       if (
         parsed.success &&
         parsed.data.code === 'P0001' &&
-        parsed.data.detail === 'credential-changed'
+        ['credential-changed', 'connection-disconnected'].includes(
+          parsed.data.detail ?? '',
+        )
       )
-        throw new GoogleStoreError('credential-changed');
+        throw new GoogleStoreError(
+          parsed.data.detail === 'connection-disconnected'
+            ? 'connection-disconnected'
+            : 'credential-changed',
+        );
       throw new GoogleStoreError('connection-store-unavailable');
     }
   }
@@ -132,6 +139,7 @@ export class GoogleConnectionProvider {
           throw new GoogleConnectionError('invalid-response');
         return { token, tokenId: claim.tokenId };
       }
+      const writer = this.cipher.forEnvelope(claim.envelope);
       let token;
       try {
         token = await this.verifier.renew(
@@ -157,7 +165,7 @@ export class GoogleConnectionProvider {
         }
         throw error;
       }
-      const envelope = this.cipher.sealAccessToken(token, context);
+      const envelope = writer.sealAccessToken(token, context);
       await this.query(
         'SELECT cc.finish_google_access($1,$2,$3,$4,$5,NULL,$6)',
         [

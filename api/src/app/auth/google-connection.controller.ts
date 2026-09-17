@@ -9,6 +9,10 @@ import {
 } from '@nestjs/common';
 import {
   googleCredentialImportSchema,
+  googleCredentialReplacementSchema,
+  googleCredentialActivationSchema,
+  googleReplacementActivationSchema,
+  googleKeyRotationSchema,
   googleHealthCheckSchema,
   googleCustomerIdSchema,
   googleCustomerConfirmationSchema,
@@ -142,6 +146,69 @@ export class GoogleConnectionController {
       request.session,
       z.uuid().parse(id),
       input.customerId,
+      request.correlationId,
+    );
+  }
+
+  private async manage(request: AuthenticatedRequest) {
+    await this.auth.authorize(
+      request.session,
+      'connection:manage',
+      { kind: 'platform' },
+      request.correlationId,
+    );
+  }
+
+  @Get('credentials')
+  async management(@Req() request: AuthenticatedRequest) {
+    await this.manage(request);
+    return this.connection.management(request.session);
+  }
+
+  @Post('replacements')
+  async replace(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    await this.manage(request);
+    return this.connection.replace(
+      request.session,
+      googleCredentialReplacementSchema.parse(body),
+      request.correlationId,
+    );
+  }
+
+  @Post('replacements/:id/activate')
+  async activateReplacement(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.manage(request);
+    return this.connection.activateReplacement(
+      request.session,
+      z.uuid().parse(id),
+      googleReplacementActivationSchema.parse(body),
+      request.correlationId,
+    );
+  }
+
+  @Post('credentials/rotate-key')
+  async rotateKey(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    await this.manage(request);
+    return this.connection.rotateKey(
+      request.session,
+      googleKeyRotationSchema.parse(body),
+      request.correlationId,
+    );
+  }
+
+  @Post('credentials/disconnect')
+  async disconnect(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: unknown,
+  ) {
+    await this.manage(request);
+    return this.connection.disconnect(
+      request.session,
+      googleCredentialActivationSchema.parse(body),
       request.correlationId,
     );
   }

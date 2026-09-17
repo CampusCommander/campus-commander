@@ -1,3 +1,4 @@
+import { qualifyGoogleLifecycle } from './google-lifecycle.integration.mjs';
 import { qualifyGoogleHealth } from './google-health.integration.mjs';
 import { qualifyGoogleConnection } from './google-connection.integration.mjs';
 import { qualifyCustomerSettings } from './customer-settings.integration.mjs';
@@ -510,6 +511,14 @@ try {
   );
   results.push(
     ...(await qualifyGoogleHealth({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyGoogleLifecycle({
       runtime,
       migrator: migrators[0],
       connect,

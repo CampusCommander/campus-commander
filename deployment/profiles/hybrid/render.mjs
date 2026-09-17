@@ -337,6 +337,9 @@ function renderBase(input, release) {
   compose.services.api.secrets = secretsFor(
     config.applicationAuth?.clientSecretRef,
     config.googleConnection?.encryptionKeySecretRef,
+    (config.googleConnection?.additionalKeys ?? []).map(
+      (entry) => entry.encryptionKeySecretRef,
+    ),
     services.api.serverTls.certificateSecretRef,
     services.api.serverTls.privateKeySecretRef,
     services.applicationDatabase.passwordSecretRef,
@@ -354,6 +357,9 @@ function renderBase(input, release) {
   );
   compose.services.workers.secrets = secretsFor(
     config.googleConnection?.encryptionKeySecretRef,
+    (config.googleConnection?.additionalKeys ?? []).map(
+      (entry) => entry.encryptionKeySecretRef,
+    ),
     services.workers.dispatchSecretRef,
     services.workers.serverTls.certificateSecretRef,
     services.workers.serverTls.privateKeySecretRef,
@@ -548,6 +554,9 @@ export function renderWorkerHost(input, release, { hostIndex, bindAddress }) {
   ];
   worker.secrets = secretsFor(
     config.googleConnection?.encryptionKeySecretRef,
+    (config.googleConnection?.additionalKeys ?? []).map(
+      (entry) => entry.encryptionKeySecretRef,
+    ),
     config.services.workers.dispatchSecretRef,
     config.services.workers.serverTls.certificateSecretRef,
     config.services.workers.serverTls.privateKeySecretRef,

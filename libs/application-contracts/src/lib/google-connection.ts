@@ -67,6 +67,8 @@ export const googleFailureSchema = z.enum([
 export type GoogleFailure = z.infer<typeof googleFailureSchema>;
 export const googleCandidateSchema = z.strictObject({
   id: z.uuid(),
+  expectedCustomerId: googleCustomerIdSchema.nullable().optional(),
+  expectedGeneration: z.number().int().positive().nullable().optional(),
   status: z.enum(['verifying', 'ready', 'failed', 'expired', 'consumed']),
   expiresAt: z.string(),
   clientId: z.string().regex(/^[0-9]{1,32}$/),
@@ -100,3 +102,27 @@ export type GoogleConnection = z.infer<typeof googleConnectionSchema>;
 export const googleConnectionStateSchema = z.strictObject({
   connection: googleConnectionSchema.nullable(),
 });
+
+export const googleCredentialTargetSchema = z.strictObject({
+  customerId: googleCustomerIdSchema,
+  generation: z.number().int().positive().max(2147483646),
+});
+export const googleCredentialReplacementSchema =
+  googleCredentialImportSchema.extend(googleCredentialTargetSchema.shape);
+export const googleCredentialActivationSchema =
+  googleCredentialTargetSchema.extend({
+    confirmed: z.literal(true),
+  });
+export const googleReplacementActivationSchema =
+  googleCredentialActivationSchema.extend({
+    keyId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
+  });
+export const googleKeyRotationSchema = googleCredentialActivationSchema.extend({
+  keyId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
+});
+export const googleCredentialManagementSchema =
+  googleCredentialTargetSchema.extend({
+    credentialId: z.uuid(),
+    active: z.boolean(),
+    keyId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
+  });

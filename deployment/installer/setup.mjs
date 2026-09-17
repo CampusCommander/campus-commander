@@ -1094,6 +1094,10 @@ export async function runSetup(
     const worker = config.services.workers,
       database = config.services.applicationDatabase;
     const references = [
+      config.googleConnection?.encryptionKeySecretRef,
+      ...(config.googleConnection?.additionalKeys ?? []).map(
+        (entry) => entry.encryptionKeySecretRef,
+      ),
       worker.dispatchSecretRef,
       worker.serverTls.certificateSecretRef,
       worker.serverTls.privateKeySecretRef,

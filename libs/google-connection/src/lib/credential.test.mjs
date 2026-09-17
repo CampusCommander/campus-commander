@@ -3,6 +3,7 @@ import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import {
   CredentialCipher,
+  loadCredentialCipher,
   CredentialError,
   validateServiceAccount,
 } from './credential.ts';
@@ -112,10 +113,9 @@ test('binds envelopes to exact records, customers, generations, and key versions
       ),
     unavailable,
   );
-  assert.throws(
-    () => cipher.open({ ...envelope, keyId: 'key-2' }, context),
-    unavailable,
-  );
+  assert.throws(() => cipher.open({ ...envelope, keyId: 'key-2' }, context), {
+    code: 'key-unavailable',
+  });
   const staged = { ...context, customerId: null, generation: 0 };
   assert.deepEqual(
     cipher.open(cipher.seal(credential, staged), staged),
@@ -253,5 +253,72 @@ test('access tokens use a distinct authenticated payload purpose', () => {
         context,
       ),
     unavailable,
+  );
+});
+
+test('deployed key versions decrypt explicitly and preserve envelope authentication', () => {
+  const nextKey = randomBytes(32);
+  const ring = new CredentialCipher('key-1', key, [
+    { keyId: 'key-2', key: nextKey },
+  ]);
+  const old = cipher.seal(credential, context);
+  const nextContext = { ...context, generation: context.generation + 1 };
+  const next = ring.forKey('key-2').seal(ring.open(old, context), nextContext);
+  assert.equal(next.keyId, 'key-2');
+  assert.deepEqual(ring.open(next, nextContext), credential);
+  assert.deepEqual(
+    new CredentialCipher('key-2', nextKey).open(next, nextContext),
+    credential,
+  );
+  assert.throws(() => cipher.open(next, nextContext), {
+    code: 'key-unavailable',
+  });
+  assert.throws(() => ring.open(next, context), unavailable);
+  assert.throws(
+    () => ring.open({ ...next, keyId: 'key-1' }, nextContext),
+    unavailable,
+  );
+  assert.throws(() => ring.forKey('missing'), { code: 'key-unavailable' });
+  assert.throws(
+    () =>
+      new CredentialCipher('key-1', key, [{ keyId: 'key-1', key: nextKey }]),
+    { code: 'key-unavailable' },
+  );
+  assert.equal(ring.keyId, 'key-1');
+  assert.equal(ring.forEnvelope(next).keyId, 'key-2');
+  assert.deepEqual(JSON.parse(JSON.stringify(ring)), { keyId: 'key-1' });
+  nextKey.fill(0);
+  assert.deepEqual(ring.open(next, nextContext), credential);
+});
+
+test('key loading clears source buffers and isolates unavailable additional keys', () => {
+  const source = Buffer.from(key);
+  const invalid = Buffer.from('invalid');
+  const config = {
+    keyId: 'key-1',
+    encryptionKeySecretRef: 'primary',
+    additionalKeys: [
+      { keyId: 'key-2', encryptionKeySecretRef: 'missing' },
+      { keyId: 'key-3', encryptionKeySecretRef: 'invalid' },
+    ],
+  };
+  const loaded = loadCredentialCipher(config, (reference) => {
+    if (reference === 'primary') return source;
+    if (reference === 'invalid') return invalid;
+    throw new Error('private provider detail');
+  });
+  assert.ok(source.every((byte) => byte === 0));
+  assert.ok(invalid.every((byte) => byte === 0));
+  assert.deepEqual(
+    loaded.open(cipher.seal(credential, context), context),
+    credential,
+  );
+  assert.throws(() => loaded.forKey('key-2'), { code: 'key-unavailable' });
+  assert.throws(
+    () =>
+      loadCredentialCipher(config, () => {
+        throw new Error('private provider detail');
+      }),
+    { code: 'key-unavailable', message: 'key-unavailable' },
   );
 });

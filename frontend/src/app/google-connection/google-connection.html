@@ -49,6 +49,7 @@
       >Inspect Google capability health</a
     >
   </section>
+  <app-credential-management />
   } @else if (store.loaded()) {
   <ol class="steps" aria-label="Customer connection progress">
     <li [attr.aria-current]="!candidateId() ? 'step' : null">
@@ -155,6 +156,7 @@
         </ol>
         <pre
           class="scope-text"
+          role="group"
           tabindex="0"
           aria-label="Required Google scopes"
         >

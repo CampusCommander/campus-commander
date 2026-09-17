@@ -1,3 +1,4 @@
+import { qualifyGoogleLifecycleApi } from './google-lifecycle.mjs';
 import { qualifyGoogleHealth } from './google-health.mjs';
 import { qualifyCustomerSettings } from './customer-settings.mjs';
 import { qualifyGoogleWorker } from './google-connection-worker.mjs';
@@ -268,6 +269,15 @@ test(
       config.phase = applicationPhase;
       if (applicationPhase === 3) {
         config.googleConnection = {
+          additionalKeys: [
+            {
+              keyId: 'synthetic-google-key-2',
+              encryptionKeySecretRef: await secret(
+                'google-credential-key-2',
+                randomBytes(32),
+              ),
+            },
+          ],
           keyId: 'synthetic-google-key',
           encryptionKeySecretRef: await secret(
             'google-credential-key',
@@ -2159,6 +2169,18 @@ test(
             }
             api = await startApi();
             replica = await startApi(replicaPort);
+          },
+        });
+      if (applicationPhase === 3)
+        await qualifyGoogleLifecycleApi({
+          browser,
+          publicOrigin,
+          migrator,
+          directory,
+          evidenceDirectory,
+          fixture: kestraFixture,
+          setSubject: (value) => {
+            subject = value;
           },
         });
       docker('stop', names[1]);

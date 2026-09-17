@@ -574,6 +574,64 @@ describe('Phase 2 authentication configuration', () => {
       expect(parseDeploymentConfig(config).googleConnection?.keyId).toBe(
         'google-key-1',
       );
+      const extraKey = {
+        keyId: 'google-key-2',
+        encryptionKeySecretRef:
+          profile === 'kubernetes'
+            ? {
+                provider: 'kubernetes',
+                name: 'google-key-2',
+                key: 'encryption-key',
+              }
+            : { provider: 'file', path: '/run/secrets/google-key-2' },
+      };
+      expect(
+        parseDeploymentConfig({
+          ...config,
+          googleConnection: {
+            ...config.googleConnection,
+            additionalKeys: [extraKey],
+          },
+        }).googleConnection?.additionalKeys,
+      ).toHaveLength(1);
+      expect(() =>
+        parseDeploymentConfig({
+          ...config,
+          googleConnection: {
+            ...config.googleConnection,
+            additionalKeys: [{ ...extraKey, keyId: 'google-key-1' }],
+          },
+        }),
+      ).toThrow('identifiers must be unique');
+      expect(() =>
+        parseDeploymentConfig({
+          ...config,
+          googleConnection: {
+            ...config.googleConnection,
+            additionalKeys: [
+              {
+                ...extraKey,
+                encryptionKeySecretRef:
+                  config.googleConnection?.encryptionKeySecretRef,
+              },
+            ],
+          },
+        }),
+      ).toThrow('distinct secret references');
+      expect(() =>
+        parseDeploymentConfig({
+          ...config,
+          googleConnection: {
+            ...config.googleConnection,
+            additionalKeys: [
+              {
+                ...extraKey,
+                encryptionKeySecretRef: config.applicationAuth?.clientSecretRef,
+              },
+            ],
+          },
+        }),
+      ).toThrow('separate secret reference');
       expect(() => parseDeploymentConfig({ ...config, phase: 2 })).toThrow(
         'Google connections require Phase 3',
       );

@@ -7,3 +7,12 @@ export * from './lib/customer-settings';
 
 export * from './lib/google-capabilities';
 export * from './lib/google-health';
+
+export {
+  googleCredentialTargetSchema,
+  googleCredentialReplacementSchema,
+  googleCredentialActivationSchema,
+  googleReplacementActivationSchema,
+  googleKeyRotationSchema,
+  googleCredentialManagementSchema,
+} from './lib/google-connection';

@@ -7,7 +7,8 @@ import {
   type SecretReference,
 } from 'deployment';
 import {
-  CredentialCipher,
+  type CredentialCipher,
+  loadCredentialCipher,
   GoogleConnectionProvider,
   type GoogleReadRequest,
 } from '@campus/google-connection';
@@ -30,7 +31,6 @@ export class GoogleWorker {
 
   async read(input: GoogleReadRequest, signal: AbortSignal) {
     let cipher: CredentialCipher;
-    let key: Buffer | undefined;
     try {
       const path = process.env['CC_CONFIG_FILE'];
       if (!path) throw new Error();
@@ -39,12 +39,9 @@ export class GoogleWorker {
       );
       const google = this.config.googleConnection;
       if (this.config.phase !== 3 || !google) throw new Error();
-      key = secret(google.encryptionKeySecretRef);
-      cipher = new CredentialCipher(google.keyId, key);
+      cipher = loadCredentialCipher(google, secret);
     } catch {
       throw new Error('connection-key-unavailable');
-    } finally {
-      key?.fill(0);
     }
     if (!this.pool) {
       try {

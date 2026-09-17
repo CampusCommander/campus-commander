@@ -120,7 +120,12 @@ export function renderAllDocker(
     ...Object.values(refs),
     ...(config.applicationAuth ? [config.applicationAuth.clientSecretRef] : []),
     ...(config.googleConnection
-      ? [config.googleConnection.encryptionKeySecretRef]
+      ? [
+          config.googleConnection.encryptionKeySecretRef,
+          ...(config.googleConnection.additionalKeys ?? []).map(
+            (entry) => entry.encryptionKeySecretRef,
+          ),
+        ]
       : []),
     services.edge.serverTls.certificateSecretRef,
     services.edge.serverTls.privateKeySecretRef,
@@ -140,7 +145,12 @@ export function renderAllDocker(
   const apiSecrets = [
     ...(config.applicationAuth ? [config.applicationAuth.clientSecretRef] : []),
     ...(config.googleConnection
-      ? [config.googleConnection.encryptionKeySecretRef]
+      ? [
+          config.googleConnection.encryptionKeySecretRef,
+          ...(config.googleConnection.additionalKeys ?? []).map(
+            (entry) => entry.encryptionKeySecretRef,
+          ),
+        ]
       : []),
     refs.appPassword,
     refs.kestraPassword,
@@ -433,7 +443,12 @@ export function renderAllDocker(
           mountedSecret(refs.dispatch),
           mountedSecret(refs.appPassword),
           ...(config.googleConnection
-            ? [mountedSecret(config.googleConnection.encryptionKeySecretRef)]
+            ? [
+                config.googleConnection.encryptionKeySecretRef,
+                ...(config.googleConnection.additionalKeys ?? []).map(
+                  (entry) => entry.encryptionKeySecretRef,
+                ),
+              ].map(mountedSecret)
             : []),
         ],
         volumes: [

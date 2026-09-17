@@ -43,6 +43,7 @@ export const googleHealthCheckSchema = z.strictObject({
     .refine((items) => new Set(items).size === items.length),
 });
 export const googleHealthSchema = z.strictObject({
+  connectionState: z.enum(['active', 'disconnected']).optional(),
   customerId: googleCustomerIdSchema,
   generation: z.number().int().positive(),
   observedAt: z.iso.datetime({ offset: true }),
