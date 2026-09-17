@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
-import { postgresImage } from '../deployment/profiles/all-docker/render.mjs';
+import { createHybridOperationsCli } from './hybrid-operations-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { verifyHybridImages } from './hybrid-cli-upgrade-fixture.mjs';
 
@@ -53,7 +53,6 @@ export function assertHybridUpgradePreservation(before, after) {
 /** Run the delivered operator CLI with native PostgreSQL tools on the controller. */
 async function backupHybridForUpgrade({ hosts, controller, config, project }) {
   const root = controller.root;
-  const keyPath = join(root, 'private/phase2-upgrade-backup-key');
   const keyRecovery = {
     id: 'phase2-hybrid-upgrade',
     version: 1,
@@ -63,10 +62,14 @@ async function backupHybridForUpgrade({ hosts, controller, config, project }) {
     },
   };
   const backupDirectory = join(root, 'phase2-upgrade-backup');
-  const inputPath = join(root, 'phase2-upgrade-backup-operator.json');
-  await json(inputPath, {
-    configurationPath: join(root, 'deployment.json'),
-    releaseInventoryPath: join(root, 'release.json'),
+  const cli = await createHybridOperationsCli({ hosts, controller, project });
+  assert.equal(
+    (await cli.generateKey('phase2-upgrade-backup-key')).result.status,
+    'created',
+  );
+  const backup = await cli.run('backup', {
+    config,
+    release: JSON.parse(await readFile(join(root, 'release.json'))),
     backupDirectory,
     keyRecovery,
     sourceRoots: {
@@ -86,62 +89,14 @@ async function backupHybridForUpgrade({ hosts, controller, config, project }) {
       },
     },
   });
-  const commands = [];
-  for (const command of ['generate-key', 'backup', 'verify']) {
-    const started = Date.now();
-    const output = await hosts.run(controller, [
-      'docker',
-      'run',
-      '--rm',
-      '--name',
-      `${project}-upgrade-operator`,
-      '--network',
-      'host',
-      '--user',
-      '1000:1000',
-      '--read-only',
-      '--tmpfs',
-      '/tmp:uid=1000,gid=1000,mode=0700',
-      '--mount',
-      'type=bind,source=/qualification-node,target=/fixture-node,readonly',
-      '--mount',
-      'type=bind,source=/release,target=/release,readonly',
-      '--mount',
-      `type=bind,source=${root},target=${root}`,
-      '--mount',
-      `type=bind,source=${hosts.shared},target=${hosts.shared},readonly`,
-      '--mount',
-      `type=bind,source=${join(root, 'private')},target=/run/secrets,readonly`,
-      '--workdir',
-      '/release',
-      '--entrypoint',
-      '/fixture-node',
-      postgresImage,
-      '/release/deployment/operations/cli.mjs',
-      command,
-      command === 'generate-key' ? keyPath : inputPath,
-    ]);
-    const status =
-      command === 'generate-key' ? 'created' : JSON.parse(output).status;
-    assert.equal(
-      status,
-      command === 'generate-key'
-        ? 'created'
-        : command === 'backup'
-          ? 'complete'
-          : 'verified',
-    );
-    commands.push({ command, status, durationMs: Date.now() - started });
-  }
+  assert.equal(backup.result.status, 'complete');
+  assert.equal(
+    (await cli.run('verify', { backupDirectory, keyRecovery })).result.status,
+    'verified',
+  );
   return {
-    commands,
-    execution: {
-      runner: 'operator-container-native',
-      postgresImage,
-      nodeVersion: process.version,
-      source: 'extracted-published-phase3-bundle',
-      injectedDatabaseTool: false,
-    },
+    commands: cli.commands,
+    execution: cli.execution,
     manifestSha256: hash(
       await readFile(join(backupDirectory, 'manifest.json')),
     ),
