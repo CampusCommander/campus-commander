@@ -270,3 +270,18 @@ The builder now uses valid names and validates the target configuration before c
 The hybrid fixture target now declares its deployment-build dependency.
 The original failure category remains intact. Its broad TLS classification does not establish a certificate failure.
 PR CI passed at `ede2db3`. Hosted restoration still requires a successful rerun.
+
+## Restore recovery-material correction
+
+[Run 35240547903](https://github.com/CampusCommander/campus-commander/actions/runs/35240547903) passed target preparation and failed during native restore at `7365415`.
+Source state seeding, encrypted backup, and source and target backup verification completed before that failure.
+The [retained failure](../../deployment/evidence/CC-58-restore-attempt2.json) preserves all original fields and verified report and archive hashes.
+
+The target copied application recovery secrets but omitted the bootstrap credential required by the recovery-material check.
+A regression reproduced the missing bootstrap file through the real recovery-material check before correction.
+Target preparation now calls the existing secret preparer before native restore.
+Tests require complete private recovery material, preserved Google key bytes, and separate target database credentials.
+
+Failure reports now retain an allowlisted operator reason through bounded aggregate errors.
+Tests reject arbitrary provider text, unknown reasons, trailing private data, and cyclic error chains.
+PR CI passed at `7365415`. Hosted restoration still requires a successful rerun.

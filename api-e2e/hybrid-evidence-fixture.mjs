@@ -1,5 +1,51 @@
 import assert from 'node:assert/strict';
 
+const operatorReasons = new Set([
+  'FILESYSTEM_PATH_MISSING',
+  'FILESYSTEM_ACCESS_DENIED',
+  'FILESYSTEM_FULL',
+  'FILESYSTEM_PATH_EXISTS',
+  'RECOVERY_MATERIAL_MISSING',
+  'RECOVERY_KEY_REQUIRED',
+  'RESTORE_DATABASE_NOT_EMPTY',
+  'RESTORE_INVENTORY_MISMATCH',
+  'RESTORE_EVIDENCE_INVALID',
+  'RESTORE_TARGET_CHANGED',
+  'RESTORE_GOOGLE_STATE_CHANGED',
+  'RESTORE_GOOGLE_KEY_MISSING',
+  'RESTORE_GOOGLE_KEY_INVALID',
+  'RESTORE_GOOGLE_CUSTOMER_MISMATCH',
+  'POSTGRES_TOOL_FAILED',
+  'POSTGRES_TOOL_UNAVAILABLE',
+  'POSTGRES_VERSION_MISMATCH',
+  'DATABASE_CONNECTIONS_ACTIVE',
+  'DATABASE_PERMISSION_DENIED',
+  'DATABASE_AUTHENTICATION_FAILED',
+  'BACKUP_AUTHENTICATION_FAILED',
+  'BACKUP_INCOMPLETE',
+  'ARTIFACT_INTEGRITY_FAILED',
+  'INVALID_CONFIGURATION',
+  'UNCLASSIFIED_FAILURE',
+]);
+
+function operatorReason(error, depth = 0) {
+  if (!error || depth >= 4) return undefined;
+  const stderr =
+    typeof error.stderr === 'string' || Buffer.isBuffer(error.stderr)
+      ? String(error.stderr)
+      : '';
+  const reason = /^Reason: ([A-Z_]+)\.$/m.exec(stderr)?.[1];
+  if (operatorReasons.has(reason)) return reason;
+  for (const nested of [
+    error.cause,
+    ...(Array.isArray(error.errors) ? error.errors.slice(0, 8) : []),
+  ]) {
+    const found = operatorReason(nested, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 /** Classify host failures without retaining commands, paths, or secret values. */
 export function describeHybridFailure(error) {
   const detail = [error?.message, error?.stderr]
@@ -17,8 +63,10 @@ export function describeHybridFailure(error) {
             : /timed out|timeout|ETIMEDOUT/i.test(detail)
               ? 'timeout'
               : 'unclassified';
+  const reason = operatorReason(error);
   return {
     category,
+    ...(reason ? { operatorReason: reason } : {}),
     exitCode: Number.isInteger(error?.code) ? error.code : null,
   };
 }

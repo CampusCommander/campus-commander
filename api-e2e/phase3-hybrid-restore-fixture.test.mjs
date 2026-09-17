@@ -1,6 +1,18 @@
-import { readFile } from 'node:fs/promises';
+import {
+  readFile,
+  mkdtemp,
+  mkdir,
+  rm,
+  writeFile,
+  stat,
+} from 'node:fs/promises';
+import { join } from 'node:path';
+import { backupFoundation } from '../deployment/operations/index.mjs';
 import { parseDeploymentConfig } from '../dist/deployment/lib/deployment.js';
-import { createHybridRestoreConfiguration } from './phase3-hybrid-restore-target.mjs';
+import {
+  createHybridRestoreConfiguration,
+  prepareHybridRestoreSecrets,
+} from './phase3-hybrid-restore-target.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -244,4 +256,100 @@ test('Derived restore configuration satisfies the delivered deployment contract'
   );
   assert.deepEqual(target.googleConnection, source.googleConnection);
   assert.deepEqual(target.applicationAuth, source.applicationAuth);
+});
+
+test('Restore target prepares every required recovery secret before native restore', async (t) => {
+  const root = await mkdtemp('/tmp/cc-hybrid-restore-secrets-');
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const sourceRoot = join(root, 'source'),
+    targetRoot = join(root, 'target');
+  await mkdir(sourceRoot, { mode: 0o700 });
+  await mkdir(targetRoot, { mode: 0o700 });
+  const config = JSON.parse(
+    await readFile(
+      new URL('../deployment/examples/hybrid.json', import.meta.url),
+    ),
+  );
+  config.phase = 3;
+  config.services.edge.access = 'application';
+  config.applicationAuth = {
+    issuer: 'https://identity.example.org',
+    clientId: 'qualification',
+    publicOrigin: 'https://campus.example.org',
+    clientSecretRef: { provider: 'file', path: '/run/secrets/oidc-client' },
+  };
+  config.googleConnection = {
+    keyId: 'restore-fixture-key',
+    encryptionKeySecretRef: {
+      provider: 'file',
+      path: '/run/secrets/google-qualification-key',
+    },
+  };
+  const names = new Set();
+  const collect = (value) => {
+    if (value && typeof value === 'object') {
+      if (value.provider === 'file') names.add(value.path.split('/').at(-1));
+      else Object.values(value).forEach(collect);
+    }
+  };
+  collect(config);
+  for (const name of names) {
+    await writeFile(join(sourceRoot, name), Buffer.alloc(32, 1), {
+      mode: 0o600,
+    });
+    if (
+      ![
+        'bootstrap',
+        'oidc-client',
+        'worker-dispatch',
+        'kestra-auth',
+        'google-qualification-key',
+      ].includes(name)
+    )
+      await writeFile(join(targetRoot, name), Buffer.alloc(32, 2), {
+        mode: 0o600,
+      });
+  }
+  await prepareHybridRestoreSecrets(config, sourceRoot, targetRoot);
+  await writeFile(join(targetRoot, 'backup-key'), Buffer.alloc(32, 3), {
+    mode: 0o600,
+  });
+  // The real backup precondition checks all recovery secrets before rejecting this destination.
+  await assert.rejects(
+    backupFoundation({
+      config,
+      release: {
+        schemaVersion: 1,
+        sourceRevision: 'a'.repeat(40),
+        architectures: ['linux/amd64'],
+        images: config.images,
+      },
+      backupDirectory: 'deliberately-relative',
+      keyRecovery: {
+        id: 'fixture',
+        version: 1,
+        reference: { provider: 'file', path: '/run/secrets/backup-key' },
+      },
+      quiesce: {
+        operator: 'fixture',
+        stoppedAt: new Date().toISOString(),
+        stoppedServices: ['api', 'workers', 'kestra'],
+      },
+      resolveSecret: (ref) =>
+        readFile(join(targetRoot, ref.path.split('/').at(-1))),
+    }),
+    { message: 'Backup destination must be absolute.' },
+  );
+  for (const name of names) {
+    assert.ok((await readFile(join(targetRoot, name))).length >= 32);
+    assert.equal((await stat(join(targetRoot, name))).mode & 0o777, 0o600);
+  }
+  assert.deepEqual(
+    await readFile(join(targetRoot, 'campus-database-password')),
+    Buffer.alloc(32, 2),
+  );
+  assert.deepEqual(
+    await readFile(join(targetRoot, 'google-qualification-key')),
+    Buffer.alloc(32, 1),
+  );
 });

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { prepareSecrets } from '../deployment/installer/secrets.mjs';
 import { parseDeploymentConfig } from '../dist/deployment/lib/deployment.js';
 import { createHybridServices } from './hybrid-services-fixture.mjs';
 
@@ -27,6 +28,22 @@ export function createHybridRestoreConfiguration(
   );
   parseDeploymentConfig(targetConfig);
   return targetConfig;
+}
+
+/** Preserve application recovery material in the target private directory. */
+export async function prepareHybridRestoreSecrets(
+  config,
+  sourceRoot,
+  targetRoot,
+) {
+  for (const name of [
+    'oidc-client',
+    'worker-dispatch',
+    'kestra-auth',
+    'google-qualification-key',
+  ])
+    await copyFile(join(sourceRoot, name), join(targetRoot, name));
+  await prepareSecrets(config, targetRoot);
 }
 
 /** Prepare separate target services without starting the restored application. */
@@ -98,16 +115,11 @@ export async function createHybridRestoreTarget({
       throw new AggregateError(errors, 'Hybrid restore target cleanup failed.');
   };
   try {
-    for (const name of [
-      'oidc-client',
-      'worker-dispatch',
-      'kestra-auth',
-      'google-qualification-key',
-    ])
-      await copyFile(
-        join(controller.root, 'private', name),
-        join(services.privateRoot, name),
-      );
+    await prepareHybridRestoreSecrets(
+      targetConfig,
+      join(controller.root, 'private'),
+      services.privateRoot,
+    );
     await mkdir(join(root, 'runtime'), { mode: 0o700 });
     await json(configPath, targetConfig);
     await json(join(root, 'release.json'), release);

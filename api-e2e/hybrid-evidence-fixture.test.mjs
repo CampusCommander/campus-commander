@@ -94,3 +94,20 @@ test('hybrid key inspection accepts the delivered staged volume contract', () =>
     { authorized: false, volumeName: 'fixture_api-secrets' },
   );
 });
+
+test('hybrid evidence exposes only fixed operator reasons through bounded cleanup errors', () => {
+  const privateMarker = 'private-credential-marker';
+  const error = new Error(privateMarker);
+  error.stderr = `Private detail: ${privateMarker}\nReason: FILESYSTEM_PATH_MISSING.\n`;
+  const report = describeHybridFailure(
+    new AggregateError([error], 'Restore failed.'),
+  );
+  assert.equal(report.operatorReason, 'FILESYSTEM_PATH_MISSING');
+  assert.equal(JSON.stringify(report).includes(privateMarker), false);
+  error.stderr = 'Reason: PRIVATE_CREDENTIAL_MARKER.';
+  assert.equal(describeHybridFailure(error).operatorReason, undefined);
+  error.stderr = 'Reason: FILESYSTEM_PATH_MISSING. private-credential-marker';
+  assert.equal(describeHybridFailure(error).operatorReason, undefined);
+  error.cause = error;
+  assert.equal(describeHybridFailure(error).operatorReason, undefined);
+});
