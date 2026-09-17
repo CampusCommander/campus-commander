@@ -7,7 +7,7 @@
   @if (error()) {
   <p role="alert" class="error">{{ error() }}</p>
   }
-  <p role="status">{{ message() }}</p>
+  <p role="status" aria-label="Platform access status">{{ message() }}</p>
   <section aria-labelledby="platform-users-title" [attr.aria-busy]="loading()">
     <div class="actions">
       <h2 id="platform-users-title">Platform users</h2>

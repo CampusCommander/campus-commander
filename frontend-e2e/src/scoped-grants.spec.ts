@@ -240,6 +240,11 @@ test('assigns district and school presets while preserving other scopes and exac
     .click();
   expect(state.confirmations()).toBe(1);
   expect(state.principal().grants).toHaveLength(expected.length);
+  await expect(
+    page.getByRole('status', { name: 'Platform access status' }),
+  ).toContainText(
+    'Access changed. Previous sessions require sign-in. Receipt:',
+  );
 });
 
 test('keeps removal available for an unavailable school and prevents new grants', async ({
