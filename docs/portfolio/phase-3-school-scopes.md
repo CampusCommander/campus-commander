@@ -2,7 +2,7 @@
 
 Owner: [CC-52](https://easton-consulting.atlassian.net/browse/CC-52).
 Status: reference contracts, resolver, provider, persistence, and reference APIs are implemented.
-School definitions, grants, browser controls, and complete qualification remain pending.
+School definition persistence and APIs are implemented. Grant assignment, browser controls, and complete qualification remain pending.
 This slice follows CC-48 and CC-51 through the CC-49 stack.
 
 ## Outcome and language
@@ -151,7 +151,33 @@ The earlier full run at `84d8d39` also failed during packaged login with `ERR_NE
 That browser failure preceded the school checks. Its cause remains unresolved.
 The next runs retain the existing bounded credential-staging diagnostics from CC-49.
 
-## Remaining transaction design
+## Reviewed school definitions
+
+Migration 013 stores school definitions and durable previews with confirmation receipts.
+Preview freezes the rules, approved IDs, school revision, reference revision, actor version, affected principal versions, and pending invitation IDs.
+Confirmation checks that snapshot inside the shared authority transaction lock.
+The same transaction saves the definition, increments affected permission versions, revokes reviewed invitations, and retains the school audit event.
+Audit failure rolls back all effects. Repeated confirmation returns the existing receipt.
+Existing school operators can read their saved definition during reference failures, but effective resource access remains unavailable.
+
+Seven PostgreSQL cases cover receipts, scoped list/detail/audit denial, approved-set intersection, stale references, transactional rollback, review conflicts, and invitation revocation.
+The PostgreSQL integration job passed at `5fc2b47` in [run 35172788270](https://github.com/CampusCommander/campus-commander/actions/runs/35172788270).
+The first review found missing invitation revocation. Revision `5fc2b47` corrected it and added regression coverage.
+Both review axes now report no remaining definition persistence findings.
+
+Revision `581b194` adds definition list, detail, audit, preview, confirmation, and receipt APIs.
+The public edge restricts exact Phase 3 routes and methods.
+Preview accepts up to 64 KiB for explicit inclusion and exclusion rules. Confirmation retains the 4 KiB limit.
+Local contract tests, API lint and build, and bootstrap checks pass. Both API review axes report no remaining findings.
+Hosted definition API qualification remains pending.
+
+The packaged reference API run at `304738c` reached its authority-change assertion and returned the correct 401 `access-changed` response.
+Revision `1b7a916` corrected the fixture, which expected 403.
+Other source runs failed during browser login before school checks.
+Revision `9e3f7e0` captures sanitized request and application error categories without retrying failed login.
+CC-54 retains those unresolved sign-in failures.
+
+## Remaining grant integration
 
 School previews must retain the exact rules, approved IDs, school revision, reference revision, actor version, and affected principal versions.
 Confirmation must compare that retained state inside the shared authority transaction lock.
@@ -162,3 +188,7 @@ Separate school existence checks from freshness checks for grant changes.
 Require fresh verified scope only for new school grants.
 Permit removal of existing school grants when reference refresh fails or expires.
 Otherwise, a failed Google read would prevent local access revocation.
+
+Platform access review must also retain the revisions of all proposed school grants.
+Confirmation must reject a changed school definition even when the target principal does not yet hold that school grant.
+Existing target permission-version checks alone do not detect that case.
