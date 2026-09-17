@@ -72,3 +72,4 @@ It retains signatures and candidate-only status. Backup, restore, and the cross-
 The selected [review build](https://github.com/CampusCommander/campus-commander/releases/tag/phase-3-lab-a043ef187dc6) passed fresh installation and all ten installed application workflow checks.
 Independent signature and file verification passed. The [installation guide](../testing/fresh-install-review.md) names the exact source and release.
 Owner usability and human accessibility acceptance remain open.
+The [review-readiness record](../reviews/2026-09-17-phase-3-review.md) maps all eighteen tasks to current evidence and remaining limits.
