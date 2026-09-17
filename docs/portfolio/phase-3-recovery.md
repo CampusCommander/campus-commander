@@ -128,7 +128,8 @@ The initial fixture does not establish accepted Phase 2 upgrade, extracted relea
 [Run 35189111352](https://github.com/CampusCommander/campus-commander/actions/runs/35189111352) passed this fixture at `c4931fc`.
 The [retained report](../../deployment/evidence/CC-56-isolated-application-restore.json) records preserved state, 51 original security events, restored artifact bytes, and rejected source sessions.
 The restored browser session read the customer settings and school definition. PostgreSQL, Redis, Kestra, and artifact diagnostics passed.
-The isolated restore fixture took 45,959 ms. Database restore took 592 ms. The backup was approximately 41 seconds old at report creation.
+The target verification report records 45,959 ms before source cleanup. Database restore took 592 ms.
+The backup was approximately 41 seconds old at report creation.
 The complete Phase 3 installation and recovery fixture took 194,185 ms. These measurements do not establish district recovery objectives.
 
 The full run failed its separate Phase 2 all-Docker check while awaiting the Sign in heading after resume.
@@ -157,7 +158,8 @@ The [retained report](../../deployment/evidence/CC-56-pending-admission-restore.
 The target rejected both recipient bindings, both pending callbacks, and the issued invitation link.
 Callback replay occurred 45,531 ms after fixture preparation. The original regular callback still authenticated against the restarted source.
 The restored state preserved 76 original security events and the original settings receipt.
-The fixture took 49,641 ms. Backup age at report creation was approximately 41 seconds.
+The target verification report records 49,641 ms before source cleanup and the source callback control.
+Backup age at report creation was approximately 41 seconds. The complete installation and recovery profile took 225,317 ms.
 These results use synthetic providers. They do not establish live privileges or district recovery objectives.
 
 The full run failed its separate packaged authorization check on a response header after page closure.
