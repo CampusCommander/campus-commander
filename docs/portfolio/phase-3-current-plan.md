@@ -66,3 +66,6 @@ Keep PRs as drafts until their review state supports promotion. Do not merge wit
 CC-54 and the application tasks drive the immediate UI review. CC-55 retains essential authorization and redaction checks.
 CC-57 supplies the fresh installation. CC-58 and CC-59 retain their evidence with further work deferred.
 CC-60 supplies a clearly identified review build. CC-61 records owner acceptance.
+CC-60 uses `codex/cc-60-review-delivery`, stacked on the client review branch.
+The candidate workflow now requires packaged authorization, fresh installation, and installed application workflows.
+It retains signatures and candidate-only status. Backup, restore, and the cross-phase upgrade matrix do not gate this review build.

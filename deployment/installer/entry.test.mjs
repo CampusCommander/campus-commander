@@ -602,7 +602,7 @@ for (const lab of [false, true])
     for (const line of verifications)
       assert.match(
         line,
-        /phase-3-candidate\.yml@refs\/heads\/codex\/cc-57-phase3-delivery/,
+        /phase-3-candidate\.yml@refs\/heads\/codex\/cc-60-review-delivery/,
       );
     assert.match(trace, /phase-3-candidate\.tar\.gz/);
     assert.doesNotMatch(trace, /phase-2-candidate/);

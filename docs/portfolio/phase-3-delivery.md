@@ -1,5 +1,33 @@
 # Phase 3 delivery qualification
 
+## Current review delivery — 2026-09-17
+
+The [current work plan](phase-3-current-plan.md) supersedes the historical deployment matrix below.
+Nothing is live. The current delivery target is a fresh all-Docker installation of the usable client.
+Migration, backup, restore, and exhaustive deployment qualification do not block this review build.
+
+The existing candidate workflow now verifies packaged authorization and fresh installation with the customer, invitation, access, and school workflows.
+It binds the installation and application reports to the same source, immutable images, and extracted manifest.
+The report records restore, upgrade, and fault qualification as `not-run`.
+Candidate-only manifest status and the separate full-production release gate remain unchanged.
+
+The trusted delivery branch is `codex/cc-60-review-delivery`.
+The installer pins that branch's workflow identity. The workflow rejects other branches before image publication.
+Run the existing dispatcher with:
+
+```sh
+gh workflow run phase-2-candidate.yml \
+  --ref codex/cc-60-review-delivery -f phase=3 -f mode=lab
+```
+
+The historical dispatcher name is a development detail. Operators install the current bundle without selecting a development phase.
+Use [the fresh installation guide](../testing/fresh-install-review.md) after the candidate publishes.
+Local release, installer, and lint checks pass. Hosted execution remains necessary before claiming a delivered candidate.
+
+## Historical delivery requirements and evidence
+
+The remaining sections preserve the earlier scope and results. They do not override the current review delivery scope above.
+
 [CC-57](https://easton-consulting.atlassian.net/browse/CC-57) requires actual extracted-installer installation, resume, Phase 2 upgrade, restore, and fault qualification.
 [CC-58](https://easton-consulting.atlassian.net/browse/CC-58) and [CC-59](https://easton-consulting.atlassian.net/browse/CC-59) require equivalent hybrid and Kubernetes evidence.
 [CC-60](https://easton-consulting.atlassian.net/browse/CC-60) binds the completed evidence to the signed release.

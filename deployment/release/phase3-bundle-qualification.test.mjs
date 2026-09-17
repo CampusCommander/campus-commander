@@ -40,7 +40,7 @@ async function fixture(t) {
     images,
     status: 'passed',
     profile: 'all-docker',
-    command: 'npm exec -- nx run api-e2e:phase3-restore-integration',
+    command: 'npm exec -- nx run api-e2e:phase3-install-integration',
     environment: {
       nodeVersion: 'v24.19.0',
       platform: 'linux',
@@ -74,41 +74,23 @@ async function fixture(t) {
       commands: ['prepare', 'resume', 'resume', 'stop', 'uninstall'],
     },
   };
-  const restoration = {
+  const workflows = {
     ...common,
-    application: { status: 'passed' },
-    oldSessionRejected: true,
-    operatorCli: {
-      source: 'extracted-published-bundle',
-      bundleManifestSha256,
-      runner: 'operator-container-native',
-      secretMount: '/run/secrets',
-      injectedDatabaseTool: false,
-      commands: ['backup', 'verify', 'restore', 'revalidate-google'].map(
-        (command) => ({ command, status: 'passed' }),
-      ),
-    },
-    phase3State: {
-      status: 'passed',
-      ...Object.fromEntries(
-        [
-          'accessChangeReceiptsPreserved',
-          'healthHistoryPreserved',
-          'ordinaryPrincipalSchoolReadPreserved',
-          'oldSettingsReceiptPreserved',
-          'approvedSchoolScopePreserved',
-          'markerPreserved',
-        ].map((key) => [key, true]),
-      ),
-    },
-    admissionRecovery: {
-      status: 'passed',
-      recipientBindingsRejected: 2,
-      issuedInvitationRejected: true,
-      pendingLoginRejected: true,
-      pendingInvitationCallbackRejected: true,
-      sourcePendingLoginStillValid: true,
-    },
+    installer: { source: 'extracted-published-bundle', bundleManifestSha256 },
+    checks: Object.fromEntries(
+      [
+        'customerConfirmation',
+        'settingsConfirmation',
+        'schoolScopeConfirmation',
+        'invitationRedemption',
+        'explicitIdentityConfirmation',
+        'scopedGrantAssignment',
+        'crossSchoolDenial',
+        'revocation',
+        'credentialReplacement',
+        'restartPersistence',
+      ].map((key) => [key, true]),
+    ),
   };
   const save = async () => {
     await writeFile(
@@ -116,8 +98,8 @@ async function fixture(t) {
       JSON.stringify(profile),
     );
     await writeFile(
-      join(reportRoot, 'all-docker-restore.json'),
-      JSON.stringify(restoration),
+      join(reportRoot, 'phase3-workflows.json'),
+      JSON.stringify(workflows),
     );
   };
   await save();
@@ -127,20 +109,22 @@ async function fixture(t) {
     sourceRevision,
     images,
     profile,
-    restoration,
+    workflows,
     save,
     bundleManifestSha256,
   };
 }
 
-test('Phase 3 extracted qualification binds both reports without claiming upgrade or faults', async (t) => {
+test('Review build binds installation and application reports without claiming restore or production qualification', async (t) => {
   const f = await fixture(t);
   const result = await recordPhase3BundleQualification(f);
   assert.equal(result.bundleManifestSha256, f.bundleManifestSha256);
+  assert.equal(result.purpose, 'client-review');
   assert.deepEqual(result.checks, {
     install: 'passed',
     resume: 'passed',
-    restore: 'passed',
+    applicationWorkflows: 'passed',
+    restore: 'not-run',
     upgrade: 'not-run',
     faults: 'not-run',
   });
@@ -160,7 +144,7 @@ const mutations = {
     delete f.profile.durationMs;
   },
   'wrong command': (f) => {
-    f.restoration.command = 'different';
+    f.workflows.command = 'different';
   },
   'missing environment': (f) => {
     delete f.profile.environment;
@@ -169,7 +153,7 @@ const mutations = {
     f.profile.phase = 2;
   },
   'wrong source': (f) => {
-    f.restoration.sourceRevision = 'c'.repeat(40);
+    f.workflows.sourceRevision = 'c'.repeat(40);
   },
   'wrong images': (f) => {
     f.profile.images = {};
@@ -177,14 +161,14 @@ const mutations = {
   'workspace installer': (f) => {
     f.profile.installer.source = 'workspace';
   },
-  'workspace operator': (f) => {
-    f.restoration.operatorCli.source = 'workspace';
+  'workspace workflow installer': (f) => {
+    f.workflows.installer.source = 'workspace';
   },
   'different installer bundle': (f) => {
     f.profile.installer.bundleManifestSha256 = 'c'.repeat(64);
   },
-  'different operator bundle': (f) => {
-    f.restoration.operatorCli.bundleManifestSha256 = 'c'.repeat(64);
+  'different workflow bundle': (f) => {
+    f.workflows.installer.bundleManifestSha256 = 'c'.repeat(64);
   },
   'single resume': (f) => {
     f.profile.installer.commands.splice(1, 1);
@@ -198,32 +182,17 @@ const mutations = {
   'missing replica': (f) => {
     f.profile.replicaObservations.pop();
   },
-  'injected database tool': (f) => {
-    f.restoration.operatorCli.injectedDatabaseTool = true;
+  'failed application workflows': (f) => {
+    f.workflows.status = 'failed';
   },
-  'missing revalidation': (f) => {
-    f.restoration.operatorCli.commands.pop();
+  'missing application check': (f) => {
+    delete f.workflows.checks.explicitIdentityConfirmation;
   },
-  'failed restore': (f) => {
-    f.restoration.operatorCli.commands[2].status = 'failed';
+  'cross-school access allowed': (f) => {
+    f.workflows.checks.crossSchoolDenial = false;
   },
-  'copied session accepted': (f) => {
-    f.restoration.oldSessionRejected = false;
-  },
-  'lost access receipt': (f) => {
-    f.restoration.phase3State.accessChangeReceiptsPreserved = false;
-  },
-  'lost health history': (f) => {
-    f.restoration.phase3State.healthHistoryPreserved = false;
-  },
-  'pending callback accepted': (f) => {
-    f.restoration.admissionRecovery.pendingLoginRejected = false;
-  },
-  'missing source control': (f) => {
-    f.restoration.admissionRecovery.sourcePendingLoginStillValid = false;
-  },
-  'missing recipient binding': (f) => {
-    f.restoration.admissionRecovery.recipientBindingsRejected = 1;
+  'credential replacement not checked': (f) => {
+    f.workflows.checks.credentialReplacement = false;
   },
   'modified extracted code': async (f) => {
     await writeFile(join(f.bundleRoot, 'cli.mjs'), 'changed');

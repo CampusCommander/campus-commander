@@ -644,7 +644,7 @@ HELP
   case "$cc_release" in
     phase-3-candidate-*|phase-3-lab-*)
       cc_candidate=phase-3-candidate
-      cc_identity=https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery
+      cc_identity=https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-60-review-delivery
       ;;
     phase-2-candidate-*|phase-2-lab-*)
       cc_candidate=phase-2-candidate

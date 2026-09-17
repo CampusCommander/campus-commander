@@ -21,6 +21,8 @@ jobs:
             echo 'Full Phase 3 qualification is not available.' >&2
             exit 1
           fi
+      - name: Require the trusted review delivery branch
+        run: test "$GITHUB_REF" = refs/heads/codex/cc-60-review-delivery
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
@@ -34,9 +36,6 @@ jobs:
         env:
           NX_NO_CLOUD: 'true'
       - run: npm exec nx run-many -- -t bootstrap-test,redis-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test -p deployment
-      - run: npm exec nx run deployment:operations-phase3-integration
-        env:
-          NX_NO_CLOUD: 'true'
   publish:
     needs: validate
     runs-on: ubuntu-latest
@@ -301,8 +300,8 @@ jobs:
           });
           NODE
           printf 'CC_AUTH_INSTALLER_ROOT=%s/extracted-candidate\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
-      - name: Qualify extracted Phase 3 installer and restore
-        run: npm exec nx run api-e2e:phase3-restore-integration
+      - name: Qualify fresh installation and application workflows
+        run: npm exec nx run api-e2e:phase3-install-integration
         env:
           NX_NO_CLOUD: 'true'
       - name: Bind extracted Phase 3 evidence
@@ -311,7 +310,7 @@ jobs:
         if: always()
         with:
           name: phase-3-extracted-qualification
-          path: dist/phase-3-recovery/
+          path: dist/phase-3-installation/
           if-no-files-found: warn
       - name: Publish tested lab release
         env:
@@ -319,8 +318,9 @@ jobs:
         run: |
           lab_tag="phase-3-lab-${GITHUB_SHA:0:12}"
           cat > lab-notes.md <<'NOTES'
-          This lab build passed packaged Phase 3 authorization and extracted All-Docker installation, resume, and isolated restore.
+          This review build passed packaged application authorization, fresh All-Docker installation, and customer, invitation, access, and school workflows.
           Its archive, manifest, and application images retain signature verification and vulnerability scans.
-          Full profile qualification has not run. Use candidate laboratory mode for installation.
+          Google responses in the automated checks were simulated. Live Google privileges and human accessibility acceptance remain separate.
+          Migration, backup, restore, and full profile qualification are outside this review build. Use candidate laboratory mode for installation.
           NOTES
-          gh release create "$lab_tag" --target "$GITHUB_SHA" --prerelease --title "Phase 3 lab ${GITHUB_SHA:0:12}" --notes-file lab-notes.md published-bundle/phase-3-candidate.tar.gz published-bundle/phase-3-candidate.sigstore.json published-bundle/candidate-bundle/release-manifest.json published-bundle/candidate-bundle/release-manifest.sigstore.json
+          gh release create "$lab_tag" --target "$GITHUB_SHA" --prerelease --title "Campus Commander review ${GITHUB_SHA:0:12}" --notes-file lab-notes.md published-bundle/phase-3-candidate.tar.gz published-bundle/phase-3-candidate.sigstore.json published-bundle/candidate-bundle/release-manifest.json published-bundle/candidate-bundle/release-manifest.sigstore.json

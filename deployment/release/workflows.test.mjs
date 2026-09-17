@@ -176,6 +176,22 @@ test('Phase 3 dispatch rejects full mode and gates publication on extracted qual
     }
     assert.equal(accepted, mode === 'lab');
   }
+  const branchGuard = release.jobs.validate.steps.find(
+    (step) => step.name === 'Require the trusted review delivery branch',
+  );
+  execFileSync('bash', ['-e', '-c', branchGuard.run], {
+    env: {
+      ...process.env,
+      GITHUB_REF: 'refs/heads/codex/cc-60-review-delivery',
+    },
+    stdio: 'pipe',
+  });
+  assert.throws(() =>
+    execFileSync('bash', ['-e', '-c', branchGuard.run], {
+      env: { ...process.env, GITHUB_REF: 'refs/heads/untrusted-build' },
+      stdio: 'pipe',
+    }),
+  );
   assert.equal(release.jobs.publish.needs, 'validate');
   assert.equal(release.jobs.application.needs, 'publish');
   assert.deepEqual(release.jobs.bundle.needs, ['publish', 'application']);
@@ -205,7 +221,8 @@ test('Phase 3 dispatch rejects full mode and gates publication on extracted qual
   );
   assert.match(extract.run, /loadQualificationBundle/);
   const qualify = steps.findIndex(
-    (step) => step.name === 'Qualify extracted Phase 3 installer and restore',
+    (step) =>
+      step.name === 'Qualify fresh installation and application workflows',
   );
   const bind = steps.findIndex(
     (step) => step.name === 'Bind extracted Phase 3 evidence',
@@ -213,7 +230,19 @@ test('Phase 3 dispatch rejects full mode and gates publication on extracted qual
   const publish = steps.findIndex(
     (step) => step.name === 'Publish tested lab release',
   );
-  assert.ok(qualify < bind && bind < publish);
+  assert.ok(qualify >= 0 && qualify < bind && bind < publish);
+  assert.match(steps[qualify].run, /api-e2e:phase3-install-integration/);
+  assert.doesNotMatch(steps[qualify].run, /restore|upgrade/);
+  assert.equal(
+    steps.find((step) => step.uses?.startsWith('actions/upload-artifact')).with
+      .path,
+    'dist/phase-3-installation/',
+  );
+  assert.ok(
+    !release.jobs.validate.steps.some((step) =>
+      step.run?.includes('operations-phase3-integration'),
+    ),
+  );
   assert.equal(steps[publish].if, undefined);
   assert.match(steps[publish].run, /--prerelease/);
   assert.match(steps[publish].run, /phase-3-lab-/);

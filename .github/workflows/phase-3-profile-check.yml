@@ -30,7 +30,7 @@ permissions:
   contents: read
   packages: read
 env:
-  CC_SIGNING_IDENTITY: https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery
+  CC_SIGNING_IDENTITY: https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-60-review-delivery
 jobs:
   installation:
     runs-on: ubuntu-latest

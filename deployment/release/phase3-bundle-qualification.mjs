@@ -6,7 +6,7 @@ import { assertApplicationEvidence } from './application-evidence.mjs';
 import { sha256 } from './integrity.mjs';
 import { loadQualificationBundle } from './qualification.mjs';
 
-/** Bind actual Phase 3 installation, resume, and restore to the extracted candidate. */
+/** Bind fresh installation and application workflows to the extracted review build. */
 export async function recordPhase3BundleQualification({
   bundleRoot,
   reportRoot,
@@ -29,11 +29,13 @@ export async function recordPhase3BundleQualification({
     });
     const report = JSON.parse(bytes);
     assert.equal(report.phase, 3);
+    assert.equal(report.status, 'passed');
+    assert.equal(report.profile, 'all-docker');
     assert.equal(report.sourceRevision, sourceRevision);
     assert.deepEqual(report.images, images);
     assert.equal(
       report.command,
-      'npm exec -- nx run api-e2e:phase3-restore-integration',
+      'npm exec -- nx run api-e2e:phase3-install-integration',
     );
     assert.ok(Number.isFinite(report.durationMs) && report.durationMs >= 0);
     for (const key of ['nodeVersion', 'platform', 'architecture'])
@@ -56,46 +58,26 @@ export async function recordPhase3BundleQualification({
   );
   for (const command of ['prepare', 'stop', 'uninstall'])
     assert.ok(profile.installer.commands.includes(command));
-  const restoration = await read('all-docker-restore.json');
-  assertApplicationEvidence('restore-integration', restoration, {
-    sourceRevision,
-    images,
-  });
-  assert.equal(restoration.operatorCli.source, 'extracted-published-bundle');
-  assert.equal(
-    restoration.operatorCli.bundleManifestSha256,
-    bundle.manifestSha256,
-  );
-  assert.equal(restoration.operatorCli.injectedDatabaseTool, false);
-  for (const command of ['backup', 'verify', 'restore', 'revalidate-google'])
-    assert.ok(
-      restoration.operatorCli.commands.some(
-        (item) => item.command === command && item.status === 'passed',
-      ),
-    );
-  assert.equal(restoration.oldSessionRejected, true);
+  const workflows = await read('phase3-workflows.json');
+  assert.equal(workflows.installer.source, 'extracted-published-bundle');
+  assert.equal(workflows.installer.bundleManifestSha256, bundle.manifestSha256);
   for (const key of [
-    'accessChangeReceiptsPreserved',
-    'healthHistoryPreserved',
-    'ordinaryPrincipalSchoolReadPreserved',
-    'oldSettingsReceiptPreserved',
-    'approvedSchoolScopePreserved',
-    'markerPreserved',
+    'customerConfirmation',
+    'settingsConfirmation',
+    'schoolScopeConfirmation',
+    'invitationRedemption',
+    'explicitIdentityConfirmation',
+    'scopedGrantAssignment',
+    'crossSchoolDenial',
+    'revocation',
+    'credentialReplacement',
+    'restartPersistence',
   ])
-    assert.equal(restoration.phase3State[key], true);
-  assert.equal(restoration.phase3State.status, 'passed');
-  for (const key of [
-    'issuedInvitationRejected',
-    'pendingLoginRejected',
-    'pendingInvitationCallbackRejected',
-    'sourcePendingLoginStillValid',
-  ])
-    assert.equal(restoration.admissionRecovery[key], true);
-  assert.equal(restoration.admissionRecovery.recipientBindingsRejected, 2);
-  assert.equal(restoration.admissionRecovery.status, 'passed');
+    assert.equal(workflows.checks[key], true);
   const result = {
     schemaVersion: 1,
     status: 'passed',
+    purpose: 'client-review',
     phase: 3,
     profile: 'all-docker',
     sourceRevision,
@@ -104,7 +86,8 @@ export async function recordPhase3BundleQualification({
     checks: {
       install: 'passed',
       resume: 'passed',
-      restore: 'passed',
+      applicationWorkflows: 'passed',
+      restore: 'not-run',
       upgrade: 'not-run',
       faults: 'not-run',
     },
@@ -122,19 +105,20 @@ export async function recordPhase3BundleQualification({
       {
         report: 'all-docker-profile.json',
         durationMs: profile.durationMs,
-        scope: 'Complete installer, lifecycle, browser, and restore fixture.',
+        scope:
+          'Fresh installation, browser workflows, and basic lifecycle checks.',
       },
       {
-        report: 'all-docker-restore.json',
-        durationMs: restoration.durationMs,
-        scope:
-          'Isolated restore target before source cleanup and pending-login control.',
+        report: 'phase3-workflows.json',
+        durationMs: workflows.durationMs,
+        scope: 'Application workflows and restart checks.',
       },
     ],
     reports: inventory,
     limits: [
       'This laboratory report does not establish full profile or release acceptance.',
       'Synthetic Google and identity providers do not qualify district privileges or browser trust.',
+      'Migration, backup, restore, and exhaustive deployment qualification are outside this review build.',
     ],
   };
   await writeFile(
@@ -150,7 +134,7 @@ if (
 )
   await recordPhase3BundleQualification({
     bundleRoot: process.env.CC_AUTH_INSTALLER_ROOT,
-    reportRoot: 'dist/phase-3-recovery',
+    reportRoot: 'dist/phase-3-installation',
     sourceRevision: process.env.GITHUB_SHA,
     images: {
       frontend: process.env.CC_AUTH_FRONTEND_IMAGE,

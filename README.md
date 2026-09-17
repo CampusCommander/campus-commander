@@ -25,6 +25,7 @@ The client displays a development-review notice. Do not upload real credentials 
 
 Keep the command running while reviewing. Stop it to remove its disposable environment.
 See [the client review guide](docs/testing/client-review.md) for certificate prompts and the review steps.
+For a prebuilt review candidate, follow [the fresh installation guide](docs/testing/fresh-install-review.md).
 
 ## Published installer reference
 
