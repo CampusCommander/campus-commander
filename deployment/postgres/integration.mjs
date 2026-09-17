@@ -1,3 +1,4 @@
+import { qualifySchoolReferences } from './school-references.integration.mjs';
 import { qualifyGoogleLifecycle } from './google-lifecycle.integration.mjs';
 import { qualifyGoogleHealth } from './google-health.integration.mjs';
 import { qualifyGoogleConnection } from './google-connection.integration.mjs';
@@ -519,6 +520,14 @@ try {
   );
   results.push(
     ...(await qualifyGoogleLifecycle({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifySchoolReferences({
       runtime,
       migrator: migrators[0],
       connect,

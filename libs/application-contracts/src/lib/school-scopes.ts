@@ -16,7 +16,7 @@ export const schoolReferenceObservationSchema = z.strictObject({
   customerId: googleCustomerIdSchema,
   generation: z.number().int().positive(),
   revision: z.uuid(),
-  observedAt: z.iso.datetime(),
+  observedAt: z.iso.datetime({ offset: true }),
   verified: z.literal(true),
   complete: z.literal(true),
   units: z.array(ouReferenceSchema).min(1).max(10000),
