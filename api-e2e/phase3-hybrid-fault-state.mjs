@@ -46,7 +46,11 @@ export function assertHybridFaultOwnership({
 }
 
 /** Require original durable records after each service interruption. */
-export function assertHybridFaultState(before, after) {
+export function assertHybridFaultState(
+  before,
+  after,
+  { allowAppendedMigrations = false } = {},
+) {
   assert.equal(before.principals.length, 2);
   assert.ok(before.events.length > 0);
   assert.ok(before.executions.length > 0);
@@ -56,7 +60,14 @@ export function assertHybridFaultState(before, after) {
   assert.equal(before.policy.school_definitions.count, 2);
   assert.deepEqual(after.policy, before.policy);
   assert.deepEqual(after.principals, before.principals);
-  assert.deepEqual(after.migrations, before.migrations);
+  if (allowAppendedMigrations) {
+    assert.ok(after.migrations.length >= before.migrations.length);
+    for (const row of before.migrations)
+      assert.deepEqual(
+        after.migrations.find((item) => item.id === row.id),
+        row,
+      );
+  } else assert.deepEqual(after.migrations, before.migrations);
   const preserve = (original, current, key) => {
     const rows = new Map(current.map((row) => [row[key], row]));
     for (const row of original) assert.deepEqual(rows.get(row[key]), row);
@@ -77,6 +88,7 @@ export async function createHybridFaultStateProbe(input) {
     config,
     compose,
     allowObservationRefresh = false,
+    allowAppendedMigrations = false,
   } = input;
   const controller = hosts.hosts[0];
   for (const path of [
@@ -174,7 +186,7 @@ console.log(JSON.stringify({principals,events,migrations,artifacts,artifactSha25
   assertHybridFaultState(before, before);
   return async () => {
     const after = await snapshot();
-    assertHybridFaultState(before, after);
+    assertHybridFaultState(before, after, { allowAppendedMigrations });
     return {
       preservedPolicy: before.policy,
       principalCount: before.principals.length,

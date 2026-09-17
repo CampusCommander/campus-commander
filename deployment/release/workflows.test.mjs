@@ -645,8 +645,12 @@ test('guided update verifies both target blobs and images before executing the d
     (s) => s.name === 'Prepare guided update image references',
   );
   const execute = steps.find((s) => s.name === 'Qualify Phase 3 guided update');
-  for (const step of [download, images, execute])
+  for (const step of [download, images])
     assert.equal(step.if, "inputs.updateRelease != ''");
+  assert.equal(
+    execute.if,
+    "inputs.profile == 'all-docker' && inputs.updateRelease != ''",
+  );
   assert.equal((download.run.match(/cosign verify-blob/g) || []).length, 2);
   assert.ok(
     download.run.lastIndexOf('cosign verify-blob') <
@@ -735,7 +739,7 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
   );
   assert.equal(
     hybrid.if,
-    "inputs.profile == 'hybrid' && inputs.upgrade != true && inputs.restore != true && inputs.faults != true && inputs.lifecycle != true",
+    "inputs.profile == 'hybrid' && inputs.upgrade != true && inputs.restore != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''",
   );
   const hybridUpgrade = steps.find(
     (s) => s.name === 'Qualify Phase 2-to-3 hybrid upgrade',
@@ -816,8 +820,7 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
               });
             if (
               selectedProfile === 'hybrid' &&
-              !update &&
-              [upgrade, faults, lifecycle].filter(Boolean).length <= 1
+              [upgrade, faults, lifecycle, update].filter(Boolean).length <= 1
             )
               assert.doesNotThrow(run);
             else assert.throws(run);
@@ -1014,6 +1017,35 @@ test('Hybrid lifecycle dispatch selects its own target and evidence', async () =
   assert.ok(
     upload.with.path.includes(
       "inputs.profile == 'hybrid' && inputs.lifecycle && 'dist/phase-3-hybrid-lifecycle/'",
+    ),
+  );
+});
+
+test('Hybrid guided update selects its target, preserved environment, and separate evidence', async () => {
+  const profile = await workflow('phase-3-profile-check');
+  const steps = profile.jobs.installation.steps;
+  const update = steps.find(
+    (step) => step.name === 'Qualify Phase 3 hybrid guided update',
+  );
+  assert.equal(
+    update.if,
+    "inputs.profile == 'hybrid' && inputs.updateRelease != ''",
+  );
+  assert.match(update.run, /api-e2e:phase3-hybrid-update-integration/);
+  assert.match(update.run, /sudo -H -u '#1000' -g '#1000'/);
+  assert.match(update.run, /--preserve-env=[^ ]*CC_AUTH_UPDATE_INSTALLER_ROOT/);
+  assert.equal(update.env.NX_DAEMON, 'false');
+  const upload = steps.find((step) =>
+    step.uses?.startsWith('actions/upload-artifact@'),
+  );
+  assert.ok(
+    upload.with.name.includes(
+      "inputs.profile == 'hybrid' && inputs.updateRelease != '' && 'phase-3-hybrid-update'",
+    ),
+  );
+  assert.ok(
+    upload.with.path.includes(
+      "inputs.profile == 'hybrid' && inputs.updateRelease != '' && 'dist/phase-3-hybrid-update/'",
     ),
   );
 });

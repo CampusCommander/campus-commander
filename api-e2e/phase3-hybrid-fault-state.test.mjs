@@ -254,3 +254,21 @@ for (const failureAt of [1, 4])
       await rm(root, { recursive: true, force: true });
     }
   });
+
+test('Hybrid update allows appended migrations but rejects rewritten or removed original migrations', () => {
+  const before = state();
+  const after = structuredClone(before);
+  after.migrations.push({ id: '002-update', checksum: 'new' });
+  assert.throws(() => assertHybridFaultState(before, after));
+  assert.doesNotThrow(() =>
+    assertHybridFaultState(before, after, { allowAppendedMigrations: true }),
+  );
+  after.migrations[0].checksum = 'rewritten';
+  assert.throws(() =>
+    assertHybridFaultState(before, after, { allowAppendedMigrations: true }),
+  );
+  after.migrations.shift();
+  assert.throws(() =>
+    assertHybridFaultState(before, after, { allowAppendedMigrations: true }),
+  );
+});

@@ -31,13 +31,12 @@ gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
   -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Profile=hybrid
 ```
 
-Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, service faults, certificate faults, capacity faults, provider faults, and lifecycle.
-Guided-update mode requires its own Phase 3 fixture before dispatch can accept it.
+Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, service faults, certificate faults, capacity faults, provider faults, lifecycle, and guided update.
 The existing Phase 2 targets retain their previous modes.
 
 ## Remaining evidence
 
-- Guided update, retained external resources, and explicit erasure contracts.
+- Guided update qualification.
 - Five completed profile reports and prerequisite acceptance.
 
 Three Docker daemons share one physical Docker host and synthetic shared storage.
@@ -517,3 +516,43 @@ The fixture restores the original operator file and removes its labeled control 
 Separate progress evidence records failed stages without raw errors.
 
 This increment requires hosted qualification. It does not establish different-release guided update or district acceptance.
+
+## Guided update increment
+
+The `api-e2e:phase3-hybrid-update-integration` target requires two separately verified Phase 3 laboratory releases.
+It loads target images on the controller and both worker daemons before update.
+The delivered native operator creates and verifies a cold backup after application writers stop.
+The fixture restarts the installed release before testing the delivered target setup command.
+
+A cancelled update must preserve configuration, operator files, installer state, and durable records.
+Confirmed update must report `prepared-workers-pending` when the operator has not completed the worker handoff.
+The original authoritative inputs must remain unchanged while the update journal records the staged target.
+The fixture transfers generated worker fragments and starts target workers on both worker daemons.
+Delivered setup `resume` must then complete the update and remove the journal.
+
+The target must preserve configuration, all original private files across three hosts, and original migration checksums.
+The durable probe permits appended migrations but rejects rewritten or removed original migrations.
+Actual container image identities must match the target release on all three daemons.
+Saved workflows, authenticated diagnostics, dark theme, and both API replicas must pass after update and repeated resume.
+A repeated update must report `already-current`. Distributed background renewal runs after browser closure against the updated workers.
+
+Reports distinguish source and target releases, commands, worker handoff, backup identity, durations, preserved state, and measured limits.
+Failed runs retain the current stage without raw errors. This increment requires hosted qualification.
+
+## Passed lifecycle checkpoint
+
+[Run 35250328648](https://github.com/CampusCommander/campus-commander/actions/runs/35250328648) passed at harness `1261d96` against signed application `a3601ef`.
+PR CI passed. The complete fixture took 249,014 milliseconds. The lifecycle segment took 102,123 milliseconds.
+Restart, stop/resume, and uninstall/resume preserved their original durable records, including 51 security events and two completed Kestra executions.
+The delivered CLI rejected unconfirmed erasure without changing volumes or fresh external state.
+
+Confirmed controller erasure removed ten owned volumes and reported the separate worker action.
+Both worker hosts retained their containers until explicit fixture Compose erasure removed their two owned volumes each.
+External PostgreSQL and Redis retained their container identities and remained available through both erasure stages.
+The quiesced external snapshot preserved two principals, thirteen grants, two access changes, 84 security events, and fifteen migration records.
+Credential, connection, settings, schools, artifact metadata and bytes, five completed Kestra executions, and nonempty internal storage remained intact.
+The Redis marker, private files, and unrelated volume survived. Cleanup restored the original operator file and removed the control volume.
+
+The [retained report](../../deployment/evidence/CC-58-lifecycle.json) preserves all original fields and three source-report hashes.
+Its archive matches the published SHA-256 digest.
+Different-release guided update, district acceptance, five completed profile reports, and prerequisite acceptance remain open.

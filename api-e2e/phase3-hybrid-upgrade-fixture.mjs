@@ -51,20 +51,26 @@ export function assertHybridUpgradePreservation(before, after) {
 }
 
 /** Run the delivered operator CLI with native PostgreSQL tools on the controller. */
-async function backupHybridForUpgrade({ hosts, controller, config, project }) {
+export async function backupHybridForUpgrade({
+  hosts,
+  controller,
+  config,
+  project,
+}) {
   const root = controller.root;
   const keyRecovery = {
-    id: 'phase2-hybrid-upgrade',
+    id: `phase${config.phase}-hybrid-upgrade`,
     version: 1,
     reference: {
       provider: 'file',
-      path: '/run/secrets/phase2-upgrade-backup-key',
+      path: `/run/secrets/phase${config.phase}-upgrade-backup-key`,
     },
   };
-  const backupDirectory = join(root, 'phase2-upgrade-backup');
+  const backupDirectory = join(root, `phase${config.phase}-upgrade-backup`);
   const cli = await createHybridOperationsCli({ hosts, controller, project });
   assert.equal(
-    (await cli.generateKey('phase2-upgrade-backup-key')).result.status,
+    (await cli.generateKey(`phase${config.phase}-upgrade-backup-key`)).result
+      .status,
     'created',
   );
   const backup = await cli.run('backup', {

@@ -43,6 +43,8 @@ import { qualifyHybridCapacity } from './hybrid-capacity-fixture.mjs';
 import { qualifyInstalledProviderFaults } from './phase3-provider-faults.mjs';
 import { createHybridProviderFaultRuntime } from './phase3-hybrid-provider-fixture.mjs';
 import { createHybridLifecycleProof } from './phase3-hybrid-lifecycle-fixture.mjs';
+import { loadPhase3UpdateTarget } from './phase3-update-fixture.mjs';
+import { qualifyHybridUpdate } from './phase3-hybrid-update-fixture.mjs';
 import { qualifyHybridCertificates } from './hybrid-certificates-fixture.mjs';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 
@@ -50,6 +52,7 @@ const phase3Upgrade = process.env.CC_AUTH_PHASE3_HYBRID_UPGRADE === '1';
 const phase3Restore = process.env.CC_AUTH_PHASE3_HYBRID_RESTORE === '1';
 const phase3Faults = process.env.CC_AUTH_PHASE3_HYBRID_FAULTS === '1';
 const phase3Lifecycle = process.env.CC_AUTH_PHASE3_HYBRID_LIFECYCLE === '1';
+const phase3Update = process.env.CC_AUTH_PHASE3_HYBRID_UPDATE === '1';
 const phase3FaultKind =
   process.env.CC_AUTH_PHASE3_HYBRID_FAULT_KIND ?? 'services';
 const phase3FaultModes = {
@@ -77,27 +80,35 @@ const phase3FaultModes = {
 assert.ok(Object.hasOwn(phase3FaultModes, phase3FaultKind));
 const phase3FaultMode = phase3FaultModes[phase3FaultKind];
 assert.ok(
-  [phase3Upgrade, phase3Restore, phase3Faults, phase3Lifecycle].filter(Boolean)
-    .length <= 1,
+  [
+    phase3Upgrade,
+    phase3Restore,
+    phase3Faults,
+    phase3Lifecycle,
+    phase3Update,
+  ].filter(Boolean).length <= 1,
 );
 const phase3 =
   process.env.CC_AUTH_PHASE3_HYBRID === '1' ||
   phase3Upgrade ||
   phase3Restore ||
   phase3Faults ||
-  phase3Lifecycle;
+  phase3Lifecycle ||
+  phase3Update;
 const phase = phase3 ? 3 : 2;
-const evidenceDirectory = phase3Lifecycle
-  ? 'dist/phase-3-hybrid-lifecycle'
-  : phase3Restore
-    ? 'dist/phase-3-hybrid-restore'
-    : phase3Faults
-      ? phase3FaultMode.directory
-      : phase3Upgrade
-        ? 'dist/phase-3-hybrid-upgrade'
-        : phase3
-          ? 'dist/phase-3-hybrid-installation'
-          : 'dist/phase-2-evidence';
+const evidenceDirectory = phase3Update
+  ? 'dist/phase-3-hybrid-update'
+  : phase3Lifecycle
+    ? 'dist/phase-3-hybrid-lifecycle'
+    : phase3Restore
+      ? 'dist/phase-3-hybrid-restore'
+      : phase3Faults
+        ? phase3FaultMode.directory
+        : phase3Upgrade
+          ? 'dist/phase-3-hybrid-upgrade'
+          : phase3
+            ? 'dist/phase-3-hybrid-installation'
+            : 'dist/phase-2-evidence';
 if (phase3) {
   assert.ok(
     process.env.CC_AUTH_INSTALLER_ROOT,
@@ -143,6 +154,7 @@ test(
     let restoration;
     let lifecycleProof;
     let lifecycle;
+    let update;
     let bundle;
     const harness = phase3
       ? {
@@ -158,15 +170,17 @@ test(
           ).trim()
             ? 'uncommitted-candidate'
             : 'clean',
-          command: phase3Lifecycle
-            ? 'npm exec -- nx run api-e2e:phase3-hybrid-lifecycle-integration'
-            : phase3Restore
-              ? 'npm exec -- nx run api-e2e:phase3-hybrid-restore-integration'
-              : phase3Faults
-                ? `npm exec -- nx run api-e2e:${phase3FaultMode.target}`
-                : phase3Upgrade
-                  ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
-                  : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
+          command: phase3Update
+            ? 'npm exec -- nx run api-e2e:phase3-hybrid-update-integration'
+            : phase3Lifecycle
+              ? 'npm exec -- nx run api-e2e:phase3-hybrid-lifecycle-integration'
+              : phase3Restore
+                ? 'npm exec -- nx run api-e2e:phase3-hybrid-restore-integration'
+                : phase3Faults
+                  ? `npm exec -- nx run api-e2e:${phase3FaultMode.target}`
+                  : phase3Upgrade
+                    ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
+                    : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
           environment: {
             nodeVersion: process.version,
             platform: process.platform,
@@ -210,6 +224,20 @@ test(
             sourceRevision,
           })
         : undefined;
+      const updateTarget = phase3Update
+        ? await loadPhase3UpdateTarget(
+            process.env.CC_AUTH_UPDATE_INSTALLER_ROOT,
+            bundle.manifest,
+          )
+        : undefined;
+      for (const reference of Object.values(
+        updateTarget?.manifest.images ?? {},
+      ))
+        assert.equal(
+          JSON.parse(await outerDocker(['image', 'inspect', reference]))[0]
+            .Config.Labels['org.opencontainers.image.revision'],
+          updateTarget.manifest.sourceRevision,
+        );
       const phase2Baseline = phase3Upgrade
         ? await loadPhase2UpgradeBaseline(
             process.env.CC_AUTH_BASELINE_INSTALLER_ROOT,
@@ -240,7 +268,8 @@ test(
         images,
         publicPort,
         baselineRoot: phase2Baseline?.root,
-        nativeOperations: phase3Restore,
+        nativeOperations: phase3Restore || phase3Update,
+        updateRoot: updateTarget?.root,
         boundedArtifacts:
           (phase3Faults && phase3FaultKind === 'capacity') ||
           process.env.CC_AUTH_HYBRID_CAPACITY === '1',
@@ -250,6 +279,7 @@ test(
         [
           ...Object.values(images),
           ...Object.values(baseline?.images ?? {}),
+          ...Object.values(updateTarget?.manifest.images ?? {}),
           kestraImage,
           postgresImage,
           redisImage,
@@ -260,6 +290,12 @@ test(
             images.workers,
             initialImages.api,
             initialImages.workers,
+            ...(updateTarget
+              ? [
+                  updateTarget.manifest.images.api,
+                  updateTarget.manifest.images.workers,
+                ]
+              : []),
           ],
         },
       );
@@ -1117,6 +1153,53 @@ process.exit(result.status??1);
               }),
             });
           }
+          if (phase3Update) {
+            await mkdir(evidenceDirectory, { recursive: true });
+            update = await qualifyHybridUpdate({
+              hosts,
+              services,
+              config,
+              project,
+              compose,
+              cli,
+              transfer,
+              bin,
+              target: updateTarget,
+              activateTarget: () => {
+                cliRoot = '/update';
+                config.images = updateTarget.manifest.images;
+              },
+              verifyAfterUpdate: async () => {
+                await page.reload();
+                await expect(
+                  page.getByRole('heading', {
+                    name: 'Diagnostics',
+                    exact: true,
+                  }),
+                ).toBeVisible({ timeout: 15000 });
+                await expect(page.locator('html')).toHaveAttribute(
+                  'data-theme',
+                  'dark',
+                );
+                await checks({ recoverySeconds: 120 });
+                await installedWorkflows.verifyAfterRestart();
+                await verifyReplicas(context);
+              },
+              evidencePath: join(
+                evidenceDirectory,
+                'hybrid-update-progress.json',
+              ),
+              evidenceIdentity: {
+                ...harness,
+                sourceRevision,
+                images,
+                bundleManifestSha256: bundle.manifestSha256,
+              },
+              setStage: (value) => {
+                stage = `hybrid guided update: ${value}`;
+              },
+            });
+          }
           if (phase3Restore) {
             stage = 'isolated hybrid restore';
             restoration = await qualifyHybridRestore({
@@ -1181,20 +1264,23 @@ process.exit(result.status??1);
               workerCredentials,
               recipientAccessChecks,
               credentialKeyProjection,
-              durationScope: phase3Lifecycle
-                ? 'Extracted hybrid installation, public workflows, lifecycle preservation, explicit erasure, and fixture cleanup.'
-                : phase3Restore
-                  ? 'Extracted hybrid installation, lifecycle, isolated restore, and fixture cleanup.'
-                  : phase3Faults
-                    ? 'Extracted hybrid installation, public workflows, selected fault group, recovery, and fixture cleanup.'
-                    : phase3Upgrade
-                      ? 'Extracted Phase 2 hybrid installation, Phase 3 upgrade, public workflows, lifecycle, and fixture cleanup.'
-                      : 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
+              durationScope: phase3Update
+                ? 'Extracted hybrid installation, public workflows, guided update, worker renewal, and fixture cleanup.'
+                : phase3Lifecycle
+                  ? 'Extracted hybrid installation, public workflows, lifecycle preservation, explicit erasure, and fixture cleanup.'
+                  : phase3Restore
+                    ? 'Extracted hybrid installation, lifecycle, isolated restore, and fixture cleanup.'
+                    : phase3Faults
+                      ? 'Extracted hybrid installation, public workflows, selected fault group, recovery, and fixture cleanup.'
+                      : phase3Upgrade
+                        ? 'Extracted Phase 2 hybrid installation, Phase 3 upgrade, public workflows, lifecycle, and fixture cleanup.'
+                        : 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
             }
           : {}),
         ...(upgrade ? { upgrade } : {}),
         ...(restoration ? { restoration } : {}),
         ...(lifecycle ? { lifecycle } : {}),
+        ...(update ? { update } : {}),
         ...(faults ? { faults } : {}),
         ...(capacity ? { capacity } : {}),
         ...(providerFaults ? { providerFaults } : {}),
@@ -1329,6 +1415,11 @@ process.exit(result.status??1);
         join(evidenceDirectory, 'hybrid-restore.json'),
         JSON.stringify(result, null, 2),
       );
+    if (phase3Update)
+      await writeFile(
+        join(evidenceDirectory, 'hybrid-update.json'),
+        JSON.stringify(result, null, 2),
+      );
     if (phase3Lifecycle)
       await writeFile(
         join(evidenceDirectory, 'hybrid-lifecycle.json'),
@@ -1344,7 +1435,8 @@ process.exit(result.status??1);
       !phase3Upgrade &&
       !phase3Restore &&
       !phase3Faults &&
-      !phase3Lifecycle
+      !phase3Lifecycle &&
+      !phase3Update
     ) {
       for (const [kind, commands] of [
         [
