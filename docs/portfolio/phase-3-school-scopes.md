@@ -213,7 +213,7 @@ Its fixture assigns school grants through public access review and confirmation.
 [Full definition qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173253662) passed all seven jobs at `4c30d49`.
 [Full grant qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173907683) passed all seven jobs at `e29f96e`.
 Downloaded reports confirm public school grant assignment through the packaged application and real PostgreSQL.
-School grant controls remain pending. The school definition browser implementation follows below.
+The scoped grant browser increment follows below.
 
 ## Focused OU picker
 
@@ -254,15 +254,37 @@ Revision `f2fd25b` corrects that formatting.
 Revision `b1abfc4` adds browser checks through the real public API and PostgreSQL.
 The fixture creates a school, loses the confirmation response, reloads the page, and recovers the durable receipt.
 It also checks scoped browsing, audit, stale definitions, and session invalidation through the viewer page.
-[Full school UI qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35176001526) is active at that revision.
+[Full school UI qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35176001526) failed before school checks.
+The packaged invitation page did not expose its Recipient label within 30 seconds. The other six jobs passed.
+The cause remains unresolved. Revision `ba39a67` adds bounded, sanitized navigation diagnostics without retries.
+CC-54 retains this failure separately from school qualification.
 
 UI handoff: rules UI-01 through UI-10, FORM-01, and TREE-01 apply.
 The page uses list/detail browsing and a centered form with an embedded picker.
 Loading, empty, error, stale, partial-region failure, and interrupted-request states retain the applicable context.
 Keyboard, automated accessibility, both themes, 200 percent CSS zoom, and 320-pixel reflow pass in the mocked browser.
 Human screen-reader and usability acceptance remain unperformed.
-School grant controls, combined deployment qualification, and owner acceptance remain pending.
+Packaged browser qualification, combined deployment qualification, and owner acceptance remain pending.
 
 The final picker pass uses the bundled Material Symbols font.
 The focused browser case passes after that correction and retains light and dark draft and review screenshots.
 Visual inspection of the light draft and dark review found no clipping or missing icons.
+
+## Explicit district and school grant controls
+
+Revision `e6d0ed6` adds resource selection, explicit actions, and district and school presets to platform access management.
+Each preset replaces only the selected resource's proposed grants. Other resource grants remain unchanged.
+The browser loads the confirmed district and permitted school definitions through their existing stores.
+The server verifies resource scope during review and confirmation. The review displays exact school revisions.
+Stale school references prevent additions. Existing grant removal remains available within the actor's delegation authority.
+Input and session changes invalidate the preview. The proposal retains explicit grants for another review.
+
+Five Chromium cases pass for presets, delegation limits, stale-scope removal, and school revision conflicts.
+Both themes pass automated accessibility checks. The form fits a 320-pixel viewport.
+Frontend unit tests, lint, and production build pass. Applicable rules are UI-01 through UI-10 and FORM-01.
+The real API fixture now assigns district viewer and school administrator grants through browser review and confirmation.
+That fixture still requires source and packaged qualification. Human screen-reader and owner acceptance remain pending.
+
+Revision `5561f88` prevents unchecked actions from appearing selected after the proposal reaches 256 grants.
+The fifth browser case verifies the displayed state and exact grant replacement after removal.
+Both review axes have no remaining findings.

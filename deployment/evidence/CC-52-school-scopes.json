@@ -82,7 +82,6 @@
   },
   "remaining": [
     "Packaged school browser qualification.",
-    "Scoped grant browser controls.",
     "Human accessibility and acceptance.",
     "Combined deployment and release qualification.",
     "Retained intermittent browser sign-in and credential staging failures in CC-54."
@@ -138,6 +137,39 @@
       "status": "passed",
       "scope": "Light draft and dark review inspected. Both themes pass the focused browser accessibility and reflow case.",
       "screenshots": "frontend-e2e schools fixture retains school-draft-{light,dark}.png and school-review-{light,dark}.png in its test output."
+    },
+    "fullStatus": "failed-before-school-checks",
+    "failure": {
+      "step": "Packaged access revocation invitation navigation",
+      "symptom": "Recipient label did not appear before the 30-second timeout.",
+      "cause": "unresolved",
+      "otherJobs": "Six jobs passed.",
+      "diagnosticRevision": "ba39a67"
+    }
+  },
+  "scopedGrantBrowser": {
+    "implementationRevision": "e6d0ed6",
+    "status": "local-passed-packaged-pending",
+    "local": {
+      "chromiumCases": 5,
+      "checks": [
+        "District and school presets preserve unrelated explicit grants.",
+        "Exact school revisions pass from review to confirmation.",
+        "Stale references prevent additions and permit removal with restored focus.",
+        "School revision conflicts require another review.",
+        "Scoped edits invalidate previews.",
+        "Delegation limits prevent unauthorized presets and actions.",
+        "Automated accessibility passes in both themes and 320-pixel reflow.",
+        "Frontend tests, lint, and production build pass.",
+        "At the 256-grant limit, unchecked actions remain disabled and exact replacement follows removal."
+      ]
+    },
+    "realApiFixture": "Assigns district viewer and school administrator grants through browser review and confirmation. Qualification pending.",
+    "limits": ["Human screen-reader and owner acceptance remain pending."],
+    "reviewCorrection": "5561f88",
+    "reviews": {
+      "standards": "No remaining findings after 5561f88.",
+      "specification": "No actionable findings at e6d0ed6."
     }
   }
 }
