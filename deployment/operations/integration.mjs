@@ -33,6 +33,7 @@ import {
   verifyBackup,
 } from './index.mjs';
 
+const startedAt = Date.now();
 const name = `cc-restore-${randomUUID()}`,
   root = await mkdtemp(join(tmpdir(), 'cc-restore-'));
 const phase3 = process.env.CC_OPERATIONS_PHASE === '3';
@@ -165,7 +166,26 @@ try {
     'UPDATE cc.application_principals SET preferences=$1 WHERE id=$2',
     [{ theme: 'dark', navigationCollapsed: true }, principalId],
   );
-  if (phase3) sourcePhase3 = await seedPhase3State(migration, principalId);
+  if (phase3) {
+    await changeApplicationAccess(
+      migration,
+      {
+        action: 'confirm-platform-administrator',
+        principalId,
+        expectedVersion: 1,
+        confirmation: 'grant-platform-administrator',
+      },
+      'https://identity.example.invalid',
+      3,
+    );
+    const version = (
+      await migration.query(
+        'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+        [principalId],
+      )
+    ).rows[0].permission_version;
+    sourcePhase3 = await seedPhase3State(migration, principalId, version);
+  }
   const originalPrincipals = (
     await migration.query('SELECT * FROM cc.application_principals ORDER BY id')
   ).rows;
@@ -735,6 +755,15 @@ try {
       JSON.stringify(
         {
           ...qualification,
+          status: 'passed',
+          command: 'npm exec nx run deployment:operations-phase3-integration',
+          images: { postgres: pin.image },
+          durationMilliseconds: Date.now() - startedAt,
+          limits: [
+            'Synthetic Google verifier and migration-role library revalidation.',
+            'Distinct databases and storage trees share one PostgreSQL container and Docker host.',
+            'Separate networks, fresh Redis, browser sessions, and revalidation CLI remain unqualified.',
+          ],
           sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], {
             encoding: 'utf8',
           }).trim(),

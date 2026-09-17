@@ -44,7 +44,7 @@ async function inventory(client) {
 }
 
 /** Seed durable customer state through the same database commands used by the application. */
-export async function seedPhase3State(client, actor) {
+export async function seedPhase3State(client, actor, permissionVersion) {
   const customerId = 'Crestore01',
     candidateId = randomUUID();
   const key = randomBytes(32),
@@ -76,9 +76,10 @@ export async function seedPhase3State(client, actor) {
   const correlation = randomUUID(),
     browser = randomBytes(32).toString('hex');
   await client.query(
-    'SELECT cc.stage_google_credential($1,1,$2,$3,$4,$5,$6,$7)',
+    'SELECT cc.stage_google_credential($1,$2,$3,$4,$5,$6,$7,$8)',
     [
       actor,
+      permissionVersion,
       candidateId,
       browser,
       credential.serviceAccount.client_id,
@@ -94,23 +95,34 @@ export async function seedPhase3State(client, actor) {
     ],
   );
   await client.query(
-    'SELECT cc.finish_google_candidate($1,1,$2,$3,$4,NULL,$5)',
-    [actor, candidateId, browser, JSON.stringify(observation), correlation],
+    'SELECT cc.finish_google_candidate($1,$2,$3,$4,$5,NULL,$6)',
+    [
+      actor,
+      permissionVersion,
+      candidateId,
+      browser,
+      JSON.stringify(observation),
+      correlation,
+    ],
   );
-  await client.query('SELECT cc.confirm_google_customer($1,1,$2,$3,$4,$5,$6)', [
-    actor,
-    candidateId,
-    browser,
-    customerId,
-    JSON.stringify(
-      cipher.seal(credential, {
-        recordId: candidateId,
-        customerId,
-        generation: 1,
-      }),
-    ),
-    correlation,
-  ]);
+  await client.query(
+    'SELECT cc.confirm_google_customer($1,$2,$3,$4,$5,$6,$7)',
+    [
+      actor,
+      permissionVersion,
+      candidateId,
+      browser,
+      customerId,
+      JSON.stringify(
+        cipher.seal(credential, {
+          recordId: candidateId,
+          customerId,
+          generation: 1,
+        }),
+      ),
+      correlation,
+    ],
+  );
   // Confirmation uses the candidate identity for the first committed credential.
   assert.equal(
     (await client.query('SELECT credential_id FROM cc.google_connection'))
@@ -120,9 +132,10 @@ export async function seedPhase3State(client, actor) {
   const request = randomUUID();
   const settingsReceipt = (
     await client.query(
-      'SELECT cc.save_customer_settings($1,1,$2,0,$3,$4,$5) AS result',
+      'SELECT cc.save_customer_settings($1,$2,$3,0,$4,$5,$6) AS result',
       [
         actor,
+        permissionVersion,
         customerId,
         request,
         '{"displayName":"École Restore 学校"}',
@@ -131,8 +144,9 @@ export async function seedPhase3State(client, actor) {
     )
   ).rows[0].result;
   const referenceLease = randomUUID();
-  await client.query('SELECT cc.claim_school_references($1,1,$2,1,$3,$4)', [
+  await client.query('SELECT cc.claim_school_references($1,$2,$3,1,$4,$5)', [
     actor,
+    permissionVersion,
     customerId,
     referenceLease,
     correlation,
@@ -151,8 +165,14 @@ export async function seedPhase3State(client, actor) {
   };
   const references = (
     await client.query(
-      'SELECT cc.finish_school_references($1,1,$2,1,$3,$4,NULL) AS result',
-      [actor, customerId, referenceLease, JSON.stringify(reference)],
+      'SELECT cc.finish_school_references($1,$2,$3,1,$4,$5,NULL) AS result',
+      [
+        actor,
+        permissionVersion,
+        customerId,
+        referenceLease,
+        JSON.stringify(reference),
+      ],
     )
   ).rows[0].result;
   const schoolId = randomUUID(),
@@ -160,9 +180,10 @@ export async function seedPhase3State(client, actor) {
   const preview = async (id, expected, name) =>
     (
       await client.query(
-        'SELECT cc.preview_school_definition($1,1,$2,$3,$4,$5,$6,$7,$8,$9) AS result',
+        'SELECT cc.preview_school_definition($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
         [
           actor,
+          permissionVersion,
           id,
           customerId,
           expected,
@@ -175,8 +196,9 @@ export async function seedPhase3State(client, actor) {
       )
     ).rows[0].result;
   const review = await preview(schoolId, 0, 'École Restore');
-  await client.query('SELECT cc.confirm_school_definition($1,1,$2)', [
+  await client.query('SELECT cc.confirm_school_definition($1,$2,$3)', [
     actor,
+    permissionVersion,
     review.id,
   ]);
   const pendingReview = await preview(schoolId, 1, 'Pending school name');
@@ -190,9 +212,10 @@ export async function seedPhase3State(client, actor) {
   );
   const pendingId = randomUUID();
   await client.query(
-    'SELECT cc.stage_google_replacement($1,1,$2,$3,$4,$5,$6,$7,$8,$9)',
+    'SELECT cc.stage_google_replacement($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
     [
       actor,
+      permissionVersion,
       pendingId,
       browser,
       credential.serviceAccount.client_id,
@@ -213,8 +236,9 @@ export async function seedPhase3State(client, actor) {
     customerId,
     randomUUID(),
   ]);
-  await client.query('SELECT cc.claim_google_health($1,1,$2,1,$3,$4,$5)', [
+  await client.query('SELECT cc.claim_google_health($1,$2,$3,1,$4,$5,$6)', [
     actor,
+    permissionVersion,
     customerId,
     randomUUID(),
     '["customer-identity","domain-observations"]',
@@ -223,6 +247,7 @@ export async function seedPhase3State(client, actor) {
   const initial = await inventory(client);
   const source = {
     actor,
+    permissionVersion,
     customerId,
     keyId,
     key,
@@ -275,17 +300,17 @@ export async function verifyPhase3State(
   assert.deepEqual(
     (
       await runtime.query(
-        'SELECT cc.read_customer_settings_receipt($1,1,$2) AS result',
-        [source.actor, source.request],
+        'SELECT cc.read_customer_settings_receipt($1,$2,$3) AS result',
+        [source.actor, source.permissionVersion, source.request],
       )
     ).rows[0].result,
     source.settingsReceipt,
   );
   const school = (
-    await runtime.query('SELECT cc.read_school_definition($1,1,$2) AS result', [
-      source.actor,
-      source.schoolId,
-    ])
+    await runtime.query(
+      'SELECT cc.read_school_definition($1,$2,$3) AS result',
+      [source.actor, source.permissionVersion, source.schoolId],
+    )
   ).rows[0].result;
   assert.deepEqual(school.approvedIds, ['school']);
   assert.equal(school.effectiveIds, null);
@@ -303,8 +328,9 @@ export async function verifyPhase3State(
       0,
     );
   await assert.rejects(
-    runtime.query('SELECT cc.confirm_school_definition($1,1,$2)', [
+    runtime.query('SELECT cc.confirm_school_definition($1,$2,$3)', [
       source.actor,
+      source.permissionVersion,
       source.pendingReview,
     ]),
     (error) => error.detail === 'school-changed',
