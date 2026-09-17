@@ -30,8 +30,8 @@ gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
   -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Profile=hybrid
 ```
 
-This increment rejects hybrid upgrade, fault, lifecycle, and guided-update mode combinations.
-Those modes require their own Phase 3 fixtures before dispatch can accept them.
+Hybrid dispatch supports installation and Phase 2 upgrade modes.
+Fault, lifecycle, and guided-update modes require their own Phase 3 fixtures before dispatch can accept them.
 The existing Phase 2 targets retain their previous modes.
 
 ## Remaining evidence
@@ -158,3 +158,44 @@ The complete fixture took 319,751 milliseconds. The worker segment took 14,815 m
 PR CI passed at documentation revision `19a119c`.
 
 This checkpoint completes the synthetic replica-permission checks. Upgrade, isolated restore, fault recovery, operator lifecycle coverage, and prerequisite acceptance remain open.
+
+## Pinned Phase 2 upgrade fixture
+
+The `api-e2e:phase3-hybrid-upgrade-integration` target installs the verified, pinned Phase 2 bundle through its own extracted installer.
+The baseline manifest hash, source revision, and images must match the accepted Phase 2 implementation record.
+Baseline installation and repeated resume use `/baseline`. The Phase 3 upgrade and subsequent commands use `/release`.
+Each installer command records that source root.
+
+The baseline administrator signs in and saves a light theme. A second principal has separate saved preferences.
+The fixture publishes an artifact and records its metadata and byte hash.
+It records both baseline migration checksums, original audit events, existing secret bytes, and installer state before upgrade.
+
+The fixture stops application writers on all three daemons before backup.
+The delivered Phase 3 operator CLI generates a protected key, creates the cold backup, and verifies it.
+The operator container uses native PostgreSQL tools from the pinned image. No database tool function is substituted.
+A read-only mount supplies the runner's Linux Node binary to that container through the controller.
+Backup inputs remain private. Reports retain command results, tool identity, and the backup manifest hash.
+
+The fixture then activates the Phase 3 configuration and Google transport instrumentation.
+It executes the delivered upgrade, transfers the worker configuration, starts both upgraded workers, and repeats resume.
+Preservation checks run before explicit Phase 3 administrator confirmation.
+They require both principals, preferences, artifact metadata and bytes, original audit values, and migration checksums to survive.
+Existing audit events must receive null defaults for the two new Phase 3 columns.
+Existing secrets must retain their bytes. Installer state must identify the target release and configuration.
+
+The upgraded installation must pass the public workflows, both API replica checks, and distributed credential renewal.
+The upgrade report records baseline and target image observations and separates upgrade duration from complete fixture duration.
+It does not establish isolated restore, complete fault recovery, or district acceptance.
+
+Run the hosted upgrade with these CI inputs:
+
+```sh
+gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
+  -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Profile=hybrid \
+  -f phase3Upgrade=true
+```
+
+Workflow regressions verify routing and unsupported mode rejection.
+Preservation regressions reject lost principals, preferences, artifacts, audit values, or migration checksums.
+The audit regression reproduced the added-column comparison failure before correction.
+Hosted execution remains required. This fixture does not yet establish a passed hybrid upgrade.

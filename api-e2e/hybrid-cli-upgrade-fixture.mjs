@@ -23,6 +23,41 @@ async function checksums(root, relative = '') {
   return result.sort((left, right) => left.path.localeCompare(right.path));
 }
 
+export async function verifyHybridImages(
+  { hosts, controller, workers, compose },
+  images,
+) {
+  const records = [];
+  for (const [host, services] of [
+    [controller, ['api', 'frontend']],
+    ...workers.map((host) => [host, ['workers']]),
+  ]) {
+    for (const service of services) {
+      const ids = (await compose(host, ['ps', '--quiet', service]))
+        .split('\n')
+        .filter(Boolean);
+      assert.equal(ids.length, service === 'api' ? 2 : 1);
+      const expected = JSON.parse(
+        await hosts.run(host, ['docker', 'image', 'inspect', images[service]]),
+      )[0].Id;
+      for (const id of ids) {
+        const actual = JSON.parse(
+          await hosts.run(host, ['docker', 'inspect', id]),
+        )[0];
+        assert.equal(actual.Image, expected);
+        records.push({
+          host: host.daemonId,
+          service,
+          container: id,
+          image: images[service],
+          imageId: actual.Image,
+        });
+      }
+    }
+  }
+  return records;
+}
+
 /** Verify the distributed CLI upgrade with a real encrypted recovery backup. */
 export async function upgradeDistributedHybrid({
   hosts,
@@ -44,43 +79,10 @@ export async function upgradeDistributedHybrid({
 }) {
   const started = Date.now();
   const root = controller.root;
-  const verifyImages = async (images) => {
-    const records = [];
-    for (const [host, services] of [
-      [controller, ['api', 'frontend']],
-      ...workers.map((host) => [host, ['workers']]),
-    ]) {
-      for (const service of services) {
-        const ids = (await compose(host, ['ps', '--quiet', service]))
-          .split('\n')
-          .filter(Boolean);
-        assert.equal(ids.length, service === 'api' ? 2 : 1);
-        const expected = JSON.parse(
-          await hosts.run(host, [
-            'docker',
-            'image',
-            'inspect',
-            images[service],
-          ]),
-        )[0].Id;
-        for (const id of ids) {
-          const actual = JSON.parse(
-            await hosts.run(host, ['docker', 'inspect', id]),
-          )[0];
-          assert.equal(actual.Image, expected);
-          records.push({
-            host: host.daemonId,
-            service,
-            container: id,
-            image: images[service],
-            imageId: actual.Image,
-          });
-        }
-      }
-    }
-    return records;
-  };
-  const beforeImages = await verifyImages(baseline.images);
+  const beforeImages = await verifyHybridImages(
+    { hosts, controller, workers, compose },
+    baseline.images,
+  );
   const probe = async (script) => {
     const id = (await compose(controller, ['ps', '--quiet', 'api'])).split(
       '\n',
@@ -189,7 +191,10 @@ process.stdout.write(JSON.stringify({metadata,ledger,authTable,sha256:hash.diges
   for (const worker of workers)
     await compose(worker, ['up', '-d', '--wait', '--wait-timeout', '120']);
   assert.equal((await cli('resume')).status, 'ready');
-  const afterImages = await verifyImages(target.images);
+  const afterImages = await verifyHybridImages(
+    { hosts, controller, workers, compose },
+    target.images,
+  );
   const after = await inspectState();
   assert.deepEqual(after.metadata, before.metadata);
   assert.equal(after.sha256, before.sha256);

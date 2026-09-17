@@ -359,7 +359,7 @@ test('upgrade dispatch verifies the pinned baseline before running the delivered
     (step) => step.name === 'Qualify Phase 2-to-3 upgrade and workflows',
   );
   assert.equal(baseline.if, 'inputs.upgrade');
-  assert.equal(upgrade.if, 'inputs.upgrade');
+  assert.equal(upgrade.if, "inputs.profile == 'all-docker' && inputs.upgrade");
   assert.equal(
     upgrade.run,
     'npm exec nx run api-e2e:phase3-upgrade-integration',
@@ -721,7 +721,21 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
   const hybrid = steps.find(
     (s) => s.name === 'Qualify installed Phase 3 hybrid workflows',
   );
-  assert.equal(hybrid.if, "inputs.profile == 'hybrid'");
+  assert.equal(
+    hybrid.if,
+    "inputs.profile == 'hybrid' && inputs.upgrade != true",
+  );
+  const hybridUpgrade = steps.find(
+    (s) => s.name === 'Qualify Phase 2-to-3 hybrid upgrade',
+  );
+  assert.equal(
+    hybridUpgrade.if,
+    "inputs.profile == 'hybrid' && inputs.upgrade",
+  );
+  assert.match(hybridUpgrade.run, /CC_AUTH_BASELINE_INSTALLER_ROOT/);
+  assert.match(hybridUpgrade.run, /sudo -H -u '#1000' -g '#1000'/);
+  assert.match(hybridUpgrade.run, /api-e2e:phase3-hybrid-upgrade-integration/);
+  assert.equal(hybridUpgrade.env.NX_DAEMON, 'false');
   assert.match(hybrid.run, /sudo -H -u '#1000' -g '#1000'/);
   assert.match(hybrid.run, /CC_AUTH_INSTALLER_ROOT/);
   assert.match(hybrid.run, /PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG/);
@@ -762,12 +776,12 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
   );
   assert.ok(
     upload.with.name.startsWith(
-      "${{ inputs.profile == 'hybrid' && 'phase-3-hybrid-installation'",
+      "${{ inputs.profile == 'hybrid' && inputs.upgrade && 'phase-3-hybrid-upgrade'",
     ),
   );
   assert.ok(
     upload.with.path.startsWith(
-      "${{ inputs.profile == 'hybrid' && 'dist/phase-3-hybrid-installation/'",
+      "${{ inputs.profile == 'hybrid' && inputs.upgrade && 'dist/phase-3-hybrid-upgrade/'",
     ),
   );
   for (const selectedProfile of ['hybrid', 'invalid'])
@@ -790,7 +804,7 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
               });
             if (
               selectedProfile === 'hybrid' &&
-              ![upgrade, faults, lifecycle, update].some(Boolean)
+              ![faults, lifecycle, update].some(Boolean)
             )
               assert.doesNotThrow(run);
             else assert.throws(run);

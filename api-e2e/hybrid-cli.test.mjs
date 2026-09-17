@@ -33,17 +33,22 @@ import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
 import { qualifyHybridWorkerCredentials } from './phase3-hybrid-worker-fixture.mjs';
+import { loadPhase2UpgradeBaseline } from './phase3-upgrade-fixture.mjs';
+import { qualifyHybridPhase2Upgrade } from './phase3-hybrid-upgrade-fixture.mjs';
 import { upgradeDistributedHybrid } from './hybrid-cli-upgrade-fixture.mjs';
 import { faultDistributedHybrid } from './hybrid-cli-faults-fixture.mjs';
 import { qualifyHybridCapacity } from './hybrid-capacity-fixture.mjs';
 import { qualifyHybridCertificates } from './hybrid-certificates-fixture.mjs';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 
-const phase3 = process.env.CC_AUTH_PHASE3_HYBRID === '1';
+const phase3Upgrade = process.env.CC_AUTH_PHASE3_HYBRID_UPGRADE === '1';
+const phase3 = process.env.CC_AUTH_PHASE3_HYBRID === '1' || phase3Upgrade;
 const phase = phase3 ? 3 : 2;
-const evidenceDirectory = phase3
-  ? 'dist/phase-3-hybrid-installation'
-  : 'dist/phase-2-evidence';
+const evidenceDirectory = phase3Upgrade
+  ? 'dist/phase-3-hybrid-upgrade'
+  : phase3
+    ? 'dist/phase-3-hybrid-installation'
+    : 'dist/phase-2-evidence';
 if (phase3) {
   assert.ok(
     process.env.CC_AUTH_INSTALLER_ROOT,
@@ -100,8 +105,9 @@ test(
           ).trim()
             ? 'uncommitted-candidate'
             : 'clean',
-          command:
-            'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
+          command: phase3Upgrade
+            ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
+            : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
           environment: {
             nodeVersion: process.version,
             platform: process.platform,
@@ -145,15 +151,21 @@ test(
             sourceRevision,
           })
         : undefined;
+      const phase2Baseline = phase3Upgrade
+        ? await loadPhase2UpgradeBaseline(
+            process.env.CC_AUTH_BASELINE_INSTALLER_ROOT,
+          )
+        : undefined;
       const baseline =
-        process.env.CC_AUTH_HYBRID_CLI_UPGRADE === '1'
+        phase2Baseline?.manifest ??
+        (process.env.CC_AUTH_HYBRID_CLI_UPGRADE === '1'
           ? JSON.parse(
               await readFile(
                 'deployment/qualification/phase-1-upgrade-baseline.json',
                 'utf8',
               ),
             )
-          : undefined;
+          : undefined);
       for (const reference of Object.values(baseline?.images ?? {})) {
         try {
           await outerDocker(['image', 'inspect', reference]);
@@ -168,6 +180,7 @@ test(
         project,
         images,
         publicPort,
+        baselineRoot: phase2Baseline?.root,
         boundedArtifacts: process.env.CC_AUTH_HYBRID_CAPACITY === '1',
       });
       stage = 'image distribution';
@@ -223,15 +236,17 @@ test(
           new URL('../deployment/examples/hybrid.json', import.meta.url),
         ),
       );
-      config.phase = baseline ? 1 : phase;
+      config.phase = baseline?.phase ?? phase;
+      let googleConnection;
       if (phase3) {
-        config.googleConnection = {
+        googleConnection = {
           keyId: 'hybrid-google-qualification-key',
           encryptionKeySecretRef: {
             provider: 'file',
             path: '/run/secrets/google-qualification-key',
           },
         };
+        if (!phase3Upgrade) config.googleConnection = googleConnection;
         await writeFile(
           join(privateRoot, 'google-qualification-key'),
           randomBytes(32),
@@ -256,7 +271,8 @@ test(
       config.services.api.placement.replicas = 2;
       config.services.workers.endpoint.url =
         'https://workers.fixture.test:3001';
-      config.services.edge.access = baseline ? 'bootstrap-only' : 'application';
+      config.services.edge.access =
+        baseline && !phase3Upgrade ? 'bootstrap-only' : 'application';
       config.services.edge.endpoint = {
         url: publicOrigin,
         tls: {
@@ -285,7 +301,7 @@ test(
         publicOrigin,
         clientSecretRef: { provider: 'file', path: '/run/secrets/oidc-client' },
       };
-      if (!baseline) config.applicationAuth = applicationAuth;
+      if (!baseline || phase3Upgrade) config.applicationAuth = applicationAuth;
       const configPath = join(controller.root, 'deployment.json');
       const releasePath = join(controller.root, 'release.json');
       const operatorPath = join(controller.root, 'operator.json');
@@ -319,11 +335,12 @@ test(
       };
       await json(releasePath, baseline ?? targetRelease);
       await prepareSecrets(config, privateRoot);
+      let cliRoot = phase3Upgrade ? '/baseline' : '/release';
       const operator = {
         installationRoot: controller.root,
         configurationPath: configPath,
         releasePath,
-        releaseRoot: '/release',
+        releaseRoot: cliRoot,
         project,
         bindAddress: controller.address,
         workerBindAddresses: workers.map(({ address }) => address),
@@ -367,67 +384,70 @@ test(
       ]);
       const controllerFile = join(controller.root, 'docker-compose.json');
       const overlay = join(controller.root, 'qualification-provider.json');
-      for (const host of phase3 ? hosts.hosts : [controller]) {
-        const service = host === controller ? 'api' : 'workers';
-        await json(join(host.root, 'qualification-provider.json'), {
-          services: {
-            [service]: {
-              environment: {
-                ...(host === controller
-                  ? { NODE_EXTRA_CA_CERTS: '/run/secrets/district-ca' }
-                  : {}),
-                ...(phase3
+      const writeOverlays = async (active) => {
+        for (const host of phase3 ? hosts.hosts : [controller]) {
+          const service = host === controller ? 'api' : 'workers';
+          await json(join(host.root, 'qualification-provider.json'), {
+            services: {
+              [service]: {
+                environment: {
+                  ...(host === controller
+                    ? { NODE_EXTRA_CA_CERTS: '/run/secrets/district-ca' }
+                    : {}),
+                  ...(active
+                    ? {
+                        NODE_OPTIONS:
+                          '--require=/run/qualification/google-connection-preload.cjs' +
+                          (host === controller
+                            ? ''
+                            : ' --require=/run/qualification/phase3-hybrid-renewal-preload.cjs'),
+                      }
+                    : {}),
+                },
+                ...(active
                   ? {
-                      NODE_OPTIONS:
-                        '--require=/run/qualification/google-connection-preload.cjs' +
-                        (host === controller
-                          ? ''
-                          : ' --require=/run/qualification/phase3-hybrid-renewal-preload.cjs'),
+                      volumes: [
+                        {
+                          type: 'bind',
+                          source: join(
+                            host.root,
+                            'google-connection-preload.cjs',
+                          ),
+                          target:
+                            '/run/qualification/google-connection-preload.cjs',
+                          read_only: true,
+                        },
+                        ...(host === controller
+                          ? []
+                          : [
+                              {
+                                type: 'bind',
+                                source: join(
+                                  host.root,
+                                  'phase3-hybrid-renewal-preload.cjs',
+                                ),
+                                target:
+                                  '/run/qualification/phase3-hybrid-renewal-preload.cjs',
+                                read_only: true,
+                              },
+                              {
+                                type: 'bind',
+                                source: join(
+                                  host.root,
+                                  'qualification-observation',
+                                ),
+                                target: '/run/qualification-observation',
+                              },
+                            ]),
+                      ],
                     }
                   : {}),
               },
-              ...(phase3
-                ? {
-                    volumes: [
-                      {
-                        type: 'bind',
-                        source: join(
-                          host.root,
-                          'google-connection-preload.cjs',
-                        ),
-                        target:
-                          '/run/qualification/google-connection-preload.cjs',
-                        read_only: true,
-                      },
-                      ...(host === controller
-                        ? []
-                        : [
-                            {
-                              type: 'bind',
-                              source: join(
-                                host.root,
-                                'phase3-hybrid-renewal-preload.cjs',
-                              ),
-                              target:
-                                '/run/qualification/phase3-hybrid-renewal-preload.cjs',
-                              read_only: true,
-                            },
-                            {
-                              type: 'bind',
-                              source: join(
-                                host.root,
-                                'qualification-observation',
-                              ),
-                              target: '/run/qualification-observation',
-                            },
-                          ]),
-                    ],
-                  }
-                : {}),
             },
-          },
-        });
-      }
+          });
+        }
+      };
+      await writeOverlays(phase3 && !phase3Upgrade);
       const bin = join(controller.root, 'qualification-bin');
       await mkdir(bin, { mode: 0o700 });
       await writeFile(
@@ -451,7 +471,7 @@ process.exit(result.status??1);
             'env',
             `PATH=${bin}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
             'node',
-            '/release/deployment/installer/cli.mjs',
+            `${cliRoot}/deployment/installer/cli.mjs`,
             command,
             operatorPath,
             '--qualification',
@@ -459,6 +479,7 @@ process.exit(result.status??1);
         );
         commands.push({
           command,
+          ...(phase3 ? { releaseRoot: cliRoot } : {}),
           status: result.status,
           durationMs: Date.now() - commandStarted,
         });
@@ -510,6 +531,35 @@ process.exit(result.status??1);
           );
         }
       };
+      const applicationAccess = async (input) =>
+        JSON.parse(
+          await hosts.run(
+            controller,
+            [
+              'docker',
+              'compose',
+              '-f',
+              controllerFile,
+              '-p',
+              project,
+              'run',
+              '--rm',
+              '--no-deps',
+              '--interactive',
+              '--no-tty',
+              'database-migrate',
+              'node',
+              '/app/deployment/bootstrap/application-access-cli.mjs',
+              '/run/config/profile.json',
+              '/run/config/operator.json',
+              '/dev/stdin',
+            ],
+            {
+              input: JSON.stringify(input),
+            },
+          ),
+        );
+      let enrollment;
       stage = 'CLI preparation';
       assert.equal((await cli('prepare')).status, 'prepared');
       let original = await readFile(controllerFile);
@@ -520,7 +570,41 @@ process.exit(result.status??1);
       assert.equal((await cli('resume')).status, 'ready');
       if (phase3) assert.equal((await cli('resume')).status, 'ready');
       assert.deepEqual(await readFile(controllerFile), original);
-      if (baseline) {
+      if (phase3Upgrade) {
+        stage = 'Phase 2 administrator enrollment';
+        enrollment = await applicationAccess({
+          action: 'initialize',
+          issuer: provider.issuer,
+          subject: 'administrator',
+          displayName: 'Synthetic administrator',
+        });
+        assert.ok(enrollment.principalId);
+        stage = 'Phase 2-to-3 hybrid upgrade';
+        upgrade = await qualifyHybridPhase2Upgrade({
+          hosts,
+          controller,
+          workers,
+          compose,
+          cli,
+          transfer,
+          config,
+          configPath,
+          releasePath,
+          operator,
+          operatorPath,
+          target: targetRelease,
+          baseline: phase2Baseline,
+          publicOrigin,
+          activateTarget: async () => {
+            config.phase = 3;
+            config.images = images;
+            config.googleConnection = googleConnection;
+            cliRoot = '/release';
+            await writeOverlays(true);
+          },
+        });
+        original = await readFile(controllerFile);
+      } else if (baseline) {
         stage = 'CLI upgrade and encrypted backup';
         upgrade = await upgradeDistributedHybrid({
           hosts,
@@ -664,35 +748,7 @@ process.exit(result.status??1);
           'Each API replica must reach the verified synthetic provider.',
         );
       }
-      const applicationAccess = async (input) =>
-        JSON.parse(
-          await hosts.run(
-            controller,
-            [
-              'docker',
-              'compose',
-              '-f',
-              controllerFile,
-              '-p',
-              project,
-              'run',
-              '--rm',
-              '--no-deps',
-              '--interactive',
-              '--no-tty',
-              'database-migrate',
-              'node',
-              '/app/deployment/bootstrap/application-access-cli.mjs',
-              '/run/config/profile.json',
-              '/run/config/operator.json',
-              '/dev/stdin',
-            ],
-            {
-              input: JSON.stringify(input),
-            },
-          ),
-        );
-      const enrollment = await applicationAccess({
+      enrollment ??= await applicationAccess({
         action: 'initialize',
         issuer: provider.issuer,
         subject: 'administrator',
@@ -922,8 +978,9 @@ process.exit(result.status??1);
               workerCredentials,
               recipientAccessChecks,
               credentialKeyProjection,
-              durationScope:
-                'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
+              durationScope: phase3Upgrade
+                ? 'Extracted Phase 2 hybrid installation, Phase 3 upgrade, public workflows, lifecycle, and fixture cleanup.'
+                : 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
             }
           : {}),
         ...(upgrade ? { upgrade } : {}),
@@ -1046,8 +1103,13 @@ process.exit(result.status??1);
     }
     result.ownedResourcesRemoved = true;
     await mkdir(evidenceDirectory, { recursive: true });
-    if (phase3) {
-      result.durationMs = Date.now() - started;
+    if (phase3) result.durationMs = Date.now() - started;
+    if (phase3Upgrade)
+      await writeFile(
+        join(evidenceDirectory, 'hybrid-upgrade.json'),
+        JSON.stringify(result, null, 2),
+      );
+    if (phase3 && !phase3Upgrade) {
       for (const [kind, commands] of [
         [
           'installation',

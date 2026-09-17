@@ -27,6 +27,7 @@ export async function createHybridHosts({
   images,
   publicPort,
   boundedArtifacts = false,
+  baselineRoot,
 }) {
   assert.match(project, /^cc-phase[23]-hybrid-[a-f0-9]{12}$/);
   assert.ok(root.startsWith(`/tmp/${project}-`));
@@ -222,6 +223,14 @@ export async function createHybridHosts({
           ? [
               '--mount',
               `type=bind,source=${resolve(process.env.CC_AUTH_INSTALLER_ROOT ?? '.')},target=/release,readonly`,
+              ...(baselineRoot
+                ? [
+                    '--mount',
+                    `type=bind,source=${resolve(baselineRoot)},target=/baseline,readonly`,
+                    '--mount',
+                    `type=bind,source=${process.execPath},target=/qualification-node,readonly`,
+                  ]
+                : []),
               '-p',
               `127.0.0.1:${publicPort}:${publicPort}`,
             ]
