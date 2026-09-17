@@ -1,7 +1,7 @@
 # Phase 3 Google capability health
 
 [CC-48](https://easton-consulting.atlassian.net/browse/CC-48) owns capability authorization and Google connection health.
-The backend and browser workflow are implemented. Hosted browser qualification remains pending.
+The backend and browser workflow are implemented. Source and packaged qualification passed.
 
 ## Capability evidence
 
@@ -75,18 +75,35 @@ Applicable rules: UI-01 through UI-10 and FORM-01.
 ## Qualification status
 
 Local contract and provider tests, API build, lint, and deployment checks pass.
-Hosted PostgreSQL qualification passed at `4bb7002` in run `35163609142`.
-Source capability fault checks passed at `3ea4ead` before an unrelated worker-fixture precondition failed.
-The qualification now restores the API token after intentional rejection, before the worker reuse proof.
-Final source and packaged qualification remain pending.
+[Full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35164443584) passed all seven jobs at `320e24b`.
+The downloaded metadata confirms packaged Phase 3 execution against that runtime revision.
+PostgreSQL authority, lease, audit rollback, and partial-result checks passed.
+The run also passed API/worker token reuse, packaged Phase 2 compatibility, and all-Docker checks.
+Both packaged capability accessibility reports contain zero automated violations.
+Visual inspection of both packaged capability screenshots passed.
 
-Seven local Chromium checks pass.
+[Source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35165931671) passed at `64b23ac`.
+The downloaded source report confirms all 13 Google health checks.
+Changes between `320e24b` and `64b23ac` affect qualification fixtures only.
+
+Both hosted themes reported one manual-review item for the scope label, with zero automated violations.
+Revision `14117c2` gives the scope text a named group role.
+All eight local Chromium checks passed after this markup correction.
+Both themes now assert no incomplete `aria-prohibited-attr` result.
+Hosted qualification reports precede this final markup correction.
+
+Eight local Chromium checks pass.
 They cover partial access, targeted rechecks, stale and offline observations, denied reads, saved check expiry, uncertain requests, and read-only inspection.
 Both themes pass automated accessibility checks, 320-pixel reflow, and 200 percent CSS zoom.
 Three store regressions verify response ordering, permission-version fencing, and duplicate-check prevention.
+A component regression verifies that obsolete checks preserve keyboard focus.
+Health links focus the details across routes and during repeated navigation.
 Human screen-reader and owner acceptance checks remain pending.
 
-The approved live fixture uses the owner's declared Super Admin role on easton-consulting.com.
+The [live capability proof](../../deployment/evidence/CC-48-live-capability-check.json) passed at `320e24b`.
+It used the owner's approved customer and declared Super Admin role on easton-consulting.com.
+Both separate capability tokens had the exact requested scope, and both Directory reads passed.
+The result matched customer `C01zcarnq` and its approved primary domain.
 No Education fixture is available. Education capability validation remains pending.
 Minimum custom-role privileges, controlled revocation, and second-administrator replacement remain unqualified.
 The existing live Directory proof does not establish those results.
