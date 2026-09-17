@@ -2,6 +2,8 @@
 
 [CC-58](https://easton-consulting.atlassian.net/browse/CC-58) requires extracted installation, resume, Phase 2 upgrade, restore, faults, and operator lifecycle evidence.
 The task remains incomplete.
+Installation, resume, installed workflows, key projection, and distributed credential renewal have passed hosted qualification.
+The checkpoint sections below link their exact application and harness evidence.
 
 ## Installed workflow fixture
 
@@ -34,10 +36,9 @@ The existing Phase 2 targets retain their previous modes.
 
 ## Remaining evidence
 
-- Hosted installation, resume, workflow, and key-projection results.
 - Pinned Phase 2 upgrade with preserved state and migration checksums.
 - Isolated restore with backup identity, recovered credentials, and rejected source admissions.
-- Permission revocation and credential renewal checks across both worker hosts.
+- Hosted permission-version and revocation checks across both API replicas.
 - Service, network, certificate, and credential faults with bounded recovery and preserved state.
 - Guided update, retained external resources, and explicit erasure contracts.
 - Five completed profile reports and prerequisite acceptance.
