@@ -11,6 +11,7 @@ Google sign-in and Workspace responses use a simulator. This environment does no
 4. Open the HTTPS URL printed after startup completes.
 5. Accept the local development certificate for the displayed loopback address.
 6. Select **Sign in to Campus Commander**.
+7. Select **Sign in as review administrator** on the simulated provider page.
 
 The simulated sign-in provider uses a second loopback port with the same development certificate.
 Your browser also requests certificate acceptance there when needed.
@@ -29,9 +30,23 @@ The **Development review** notice identifies the simulated Google environment on
 - **Platform access:** Inspect the administrator and assigned permissions.
 - **Diagnostics:** Inspect application services and Google capability checks.
 
-The simulator signs in as the same review administrator.
-Invitation acceptance by another identity and live Google authorization require separate checks.
 Never upload real Google credentials to this simulated environment.
+
+## Review an invitation
+
+1. As the review administrator, open **Platform invitations**.
+2. Enter a recipient label. Leave the optional sign-in subject empty or enter `review-recipient`.
+3. Select the permissions to grant, then select **Create invitation**.
+4. Copy the invitation link into a separate browser profile or private window.
+5. Select **Sign in to accept invitation**, then **Sign in as review recipient**.
+6. In the administrator window, refresh invitations and select **Review identity**.
+7. Verify the subject `review-recipient`, confirm the checkbox, and select **Confirm identity and grant access**.
+8. In the recipient window, check the invitation status and select **Sign in to Campus Commander**.
+9. Select **Sign in as review recipient** again. Inspect the access that the selected permissions allow.
+
+The recipient starts without application access. The application uses its actual invitation, identity confirmation, and permission checks.
+The simulated provider keeps each browser's identity choice separate. It does not create real Google accounts.
+Live Google authorization still requires separate checks.
 
 ## Stop and restart
 
@@ -55,3 +70,11 @@ The two focused account tests passed after the change, including both themes and
 Frontend unit tests, affected lint checks, and the application builds passed.
 The running review environment passed real browser sign-in, customer connection, settings save and reload, and Schools navigation.
 Those browser requests reached the actual API and disposable data services. Google responses remained simulated.
+
+The identity chooser passed keyboard activation, automated accessibility in both themes, and a 320-pixel viewport check.
+Two browser sessions verified separate identity choices and denied recipient sign-in before an invitation.
+The invitation workflow passed creation, pending identity verification, administrator confirmation, and recipient sign-in.
+The recipient received only the approved customer-read grant. Customer settings stayed read-only, and invitation administration returned HTTP 403.
+The administrator could inspect the recipient through Platform access.
+Affected lint and formatting checks passed. Lint retains one existing unused-variable warning in the deferred update fixture.
+These checks do not establish human screen-reader acceptance or live Google authorization.

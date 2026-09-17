@@ -59,6 +59,10 @@ import { startKestraFixture } from './kestra-fixture.mjs';
 import { chromium, expect } from '@playwright/test';
 import { auditAccessibility as auditPageAccessibility } from './accessibility.mjs';
 import { qualifyInvitationBrowser } from './invitations-browser.mjs';
+import {
+  reviewIdentities,
+  reviewIdentityPage,
+} from './client-review-identity.mjs';
 
 const docker = (...args) =>
   execFileSync('docker', args, {
@@ -373,6 +377,22 @@ test(
               `${publicOrigin}/api/auth/callback`,
             );
             assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+            let selectedSubject = subject;
+            if (clientReview) {
+              const selected = url.searchParams.get('review_identity');
+              if (selected === null) {
+                res.writeHead(200, {
+                  'content-type': 'text/html; charset=utf-8',
+                  'cache-control': 'no-store',
+                  'referrer-policy': 'no-referrer',
+                  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${publicOrigin}; frame-ancestors 'none'; base-uri 'none'`,
+                });
+                return res.end(await reviewIdentityPage(url.searchParams));
+              }
+              if (!reviewIdentities.has(selected))
+                return json({ error: 'invalid_review_identity' }, 400);
+              selectedSubject = selected;
+            }
             const code = randomUUID();
             evidenceSecurity.register('authorization-code', code);
             evidenceSecurity.register(
@@ -390,7 +410,7 @@ test(
             codes.set(code, {
               nonce: url.searchParams.get('nonce'),
               challenge: url.searchParams.get('code_challenge'),
-              subject,
+              subject: selectedSubject,
             });
             const callback = new URL(`${publicOrigin}/api/auth/callback`);
             callback.searchParams.set('code', code);
@@ -422,6 +442,9 @@ test(
                 iss: invalidIssuer ? 'https://invalid.example' : issuer,
                 aud: invalidAudience ? 'wrong-client' : 'synthetic-client',
                 sub: grant.subject,
+                ...(clientReview
+                  ? { name: reviewIdentities.get(grant.subject) }
+                  : {}),
                 nonce: invalidNonce ? 'wrong' : grant.nonce,
                 iat: Math.floor(Date.now() / 1000),
                 exp: Math.floor(Date.now() / 1000) + 300,
