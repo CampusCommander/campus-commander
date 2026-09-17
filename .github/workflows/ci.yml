@@ -15,6 +15,10 @@ on:
         description: Immutable Phase 3 lab tag for extracted installation workflows
         type: string
         default: ''
+      phase3Upgrade:
+        description: Upgrade the pinned Phase 2 release before Phase 3 workflow checks
+        type: boolean
+        default: false
       phase3Only:
         description: Run only the Phase 3 source API and browser qualification
         type: boolean
@@ -34,6 +38,7 @@ jobs:
     uses: ./.github/workflows/phase-3-profile-check.yml
     with:
       release: ${{ inputs.phase3Release }}
+      upgrade: ${{ inputs.phase3Upgrade == true }}
     permissions:
       contents: read
       packages: read

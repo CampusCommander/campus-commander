@@ -342,3 +342,126 @@ test('published Phase 3 profile checks bind release identity before executing th
     await assert.rejects(run(changed));
   await assert.rejects(run(manifest, 'phase-3-lab-' + 'c'.repeat(12)));
 });
+
+test('upgrade dispatch verifies the pinned baseline before running the delivered upgrade', async (t) => {
+  const ci = await workflow('ci');
+  const profile = await workflow('phase-3-profile-check');
+  assert.equal(ci.on.workflow_dispatch.inputs.phase3Upgrade.default, false);
+  assert.equal(
+    ci.jobs['phase3-profile'].with.upgrade,
+    '${{ inputs.phase3Upgrade == true }}',
+  );
+  const steps = profile.jobs.installation.steps;
+  const baseline = steps.find(
+    (step) => step.name === 'Verify the pinned Phase 2 upgrade bundle',
+  );
+  const upgrade = steps.find(
+    (step) => step.name === 'Qualify Phase 2-to-3 upgrade and workflows',
+  );
+  assert.equal(baseline.if, 'inputs.upgrade');
+  assert.equal(upgrade.if, 'inputs.upgrade');
+  assert.equal(
+    upgrade.run,
+    'npm exec nx run api-e2e:phase3-upgrade-integration',
+  );
+  assert.ok(steps.indexOf(baseline) < steps.indexOf(upgrade));
+  assert.equal(
+    steps.find((step) => step.name === 'Qualify installed Phase 3 workflows')
+      .if,
+    'inputs.upgrade != true',
+  );
+  assert.equal(
+    baseline.env.BASELINE_IDENTITY,
+    'https://github.com/CampusCommander/campus-commander/.github/workflows/phase-2-candidate.yml@refs/heads/implementation/phase-2-cc-22',
+  );
+  assert.ok(
+    baseline.run.lastIndexOf('cosign verify-blob') <
+      baseline.run.indexOf('tar --extract'),
+  );
+  assert.ok(
+    baseline.run.indexOf('cosign verify "$reference"') <
+      baseline.run.indexOf('docker pull "$reference"'),
+  );
+  const script = baseline.run.match(
+    /node --input-type=module <<'NODE'\n([\s\S]*?)\nNODE/,
+  )[1];
+  const root = await mkdtemp(join(tmpdir(), 'cc-upgrade-baseline-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'deployment/qualification'), { recursive: true });
+  await mkdir(join(root, 'published-baseline'));
+  await mkdir(join(root, 'bundle'));
+  const cli = 'fixture installer';
+  const manifest = {
+    schemaVersion: 1,
+    phase: 2,
+    sourceRevision: 'a'.repeat(40),
+    architectures: ['linux/amd64'],
+    qualification: 'candidate-only',
+    images: Object.fromEntries(
+      ['api', 'frontend', 'workers'].map((service) => [
+        service,
+        `ghcr.io/campuscommander/campus-commander-${service === 'workers' ? 'worker' : service}@sha256:${'b'.repeat(64)}`,
+      ]),
+    ),
+    files: [{ path: 'cli.mjs', sizeBytes: cli.length, sha256: sha256(cli) }],
+  };
+  const manifestBytes = JSON.stringify(manifest);
+  const pinned = {
+    ...manifest,
+    sourceArchiveSha256: sha256('archive'),
+    sourceManifestSha256: sha256(manifestBytes),
+  };
+  const pinPath = join(
+    root,
+    'deployment/qualification/phase-2-upgrade-baseline.json',
+  );
+  await writeFile(pinPath, JSON.stringify(pinned));
+  await writeFile(
+    join(root, 'published-baseline/phase-2-candidate.tar.gz'),
+    'archive',
+  );
+  await writeFile(
+    join(root, 'published-baseline/release-manifest.json'),
+    manifestBytes,
+  );
+  const runChecksums = () =>
+    execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: root,
+      stdio: 'pipe',
+    });
+  runChecksums();
+  await writeFile(
+    join(root, 'published-baseline/phase-2-candidate.tar.gz'),
+    'changed',
+  );
+  assert.throws(runChecksums);
+  await writeFile(join(root, 'bundle/release-manifest.json'), manifestBytes);
+  await writeFile(join(root, 'bundle/cli.mjs'), cli);
+  const moduleUrl = new URL(
+    '../../api-e2e/phase3-upgrade-fixture.mjs',
+    import.meta.url,
+  ).href;
+  const runBundle = () =>
+    execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import {loadPhase2UpgradeBaseline} from ${JSON.stringify(moduleUrl)};await loadPhase2UpgradeBaseline(process.argv[1]);`,
+        join(root, 'bundle'),
+      ],
+      { cwd: root, stdio: 'pipe' },
+    );
+  runBundle();
+  for (const changed of [
+    { ...pinned, sourceManifestSha256: 'c'.repeat(64) },
+    { ...pinned, sourceRevision: 'c'.repeat(40) },
+    { ...pinned, images: { ...pinned.images, api: pinned.images.frontend } },
+  ]) {
+    await writeFile(pinPath, JSON.stringify(changed));
+    assert.throws(runBundle);
+  }
+  await writeFile(pinPath, JSON.stringify(pinned));
+  await writeFile(join(root, 'bundle/cli.mjs'), 'changed');
+  assert.throws(runBundle);
+});

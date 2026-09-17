@@ -19,14 +19,24 @@ import { qualifyApplicationRestore } from './restore-fixture.mjs';
 import { qualificationBrowserStep } from './qualification-sign-in.mjs';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
+import {
+  loadPhase2UpgradeBaseline,
+  qualifyPhase2Upgrade,
+} from './phase3-upgrade-fixture.mjs';
 
 const phase3Restore = process.env.CC_AUTH_PHASE3_RESTORE === '1';
-const phase3Workflows = process.env.CC_AUTH_PHASE3_WORKFLOWS === '1';
+const phase3Upgrade = process.env.CC_AUTH_PHASE3_UPGRADE === '1';
+const phase3Workflows =
+  process.env.CC_AUTH_PHASE3_WORKFLOWS === '1' || phase3Upgrade;
 assert.ok(
   !(phase3Restore && phase3Workflows),
   'Select one Phase 3 profile qualification mode.',
 );
 const applicationPhase = phase3Restore || phase3Workflows ? 3 : 2;
+assert.ok(
+  !phase3Upgrade || process.env.CC_AUTH_INSTALLER_ROOT,
+  'Upgrade qualification requires the verified Phase 3 installer directory.',
+);
 
 const execute = promisify(execFile);
 const docker = (...args) =>
@@ -56,9 +66,11 @@ test(
       : 'clean';
     const evidenceDirectory = phase3Restore
       ? 'dist/phase-3-recovery'
-      : phase3Workflows
-        ? 'dist/phase-3-installation'
-        : 'dist/phase-2-evidence';
+      : phase3Upgrade
+        ? 'dist/phase-3-upgrade'
+        : phase3Workflows
+          ? 'dist/phase-3-installation'
+          : 'dist/phase-2-evidence';
     await mkdir(evidenceDirectory, { recursive: true });
     const root = await mkdtemp(
       join(tmpdir(), `cc-phase${applicationPhase}-compose-`),
@@ -80,6 +92,12 @@ test(
       ).trim();
     const operatorPath = join(root, 'operator.json');
     const installerRoot = resolve(process.env.CC_AUTH_INSTALLER_ROOT ?? '.');
+    const baseline = phase3Upgrade
+      ? await loadPhase2UpgradeBaseline(
+          process.env.CC_AUTH_BASELINE_INSTALLER_ROOT,
+        )
+      : undefined;
+    let activeInstallerRoot = baseline?.root ?? installerRoot;
     const { applicationAccess, operatorEnrollmentRequest } = await import(
       pathToFileURL(
         join(installerRoot, 'deployment/installer/application-enrollment.mjs'),
@@ -91,7 +109,7 @@ test(
           await execute(
             process.execPath,
             [
-              join(installerRoot, 'deployment/installer/cli.mjs'),
+              join(activeInstallerRoot, 'deployment/installer/cli.mjs'),
               command,
               operatorPath,
               '--qualification',
@@ -251,20 +269,32 @@ test(
       }
       config.images = installationRelease.images;
       const configPath = join(root, 'deployment.json');
-      await writeFile(configPath, JSON.stringify(config), { mode: 0o600 });
-      const releasePath = join(root, 'release.json');
-      await writeFile(releasePath, JSON.stringify(installationRelease), {
+      const initialConfig = baseline
+        ? { ...config, phase: 2, images: baseline.manifest.images }
+        : config;
+      if (baseline) delete initialConfig.googleConnection;
+      await writeFile(configPath, JSON.stringify(initialConfig), {
         mode: 0o600,
       });
+      const releasePath = join(root, 'release.json');
+      await writeFile(
+        releasePath,
+        JSON.stringify(baseline?.manifest ?? installationRelease),
+        {
+          mode: 0o600,
+        },
+      );
       await writeFile(
         operatorPath,
         JSON.stringify({
           installationRoot: root,
           configurationPath: configPath,
           releasePath,
-          releaseRoot: process.env.CC_AUTH_INSTALLER_ROOT
-            ? installerRoot
-            : root,
+          releaseRoot: baseline
+            ? baseline.root
+            : process.env.CC_AUTH_INSTALLER_ROOT
+              ? installerRoot
+              : root,
           project,
           connectAddress: '127.0.0.1',
           bindAddress: '127.0.0.1',
@@ -305,7 +335,7 @@ if(args[0]==='compose' && args[index]===${JSON.stringify(composePath)} && fs.exi
   doc.services.api.environment.NODE_EXTRA_CA_CERTS='/run/qualification/ca.pem';
   doc.services.api.extra_hosts=['host.docker.internal:host-gateway'];
   doc.services.api.volumes.push({type:'bind',source:${JSON.stringify(certPath)},target:'/run/qualification/ca.pem',read_only:true});
-  if(${applicationPhase === 3})for(const service of ['api','workers']){
+  if(JSON.parse(fs.readFileSync(${JSON.stringify(join(root, 'runtime/profile.json'))})).phase===3)for(const service of ['api','workers']){
     doc.services[service].environment.NODE_OPTIONS='--require=/run/qualification/google-connection-preload.cjs';
     doc.services[service].volumes.push({type:'bind',source:${JSON.stringify(join(root, 'google-connection-preload.cjs'))},target:'/run/qualification/google-connection-preload.cjs',read_only:true});
   }
@@ -324,7 +354,7 @@ process.exit(result.status??1);
       rendered = JSON.parse(await readFile(composePath, 'utf8'));
       assert.equal((await cli('resume')).status, 'ready');
       assert.equal((await cli('resume')).status, 'ready');
-      const originalRender = await readFile(composePath, 'utf8');
+      let originalRender = await readFile(composePath, 'utf8');
       const bootstrapFile = join(privateRoot, 'bootstrap');
       const readiness = await httpsStartup({
         url: publicOrigin,
@@ -360,13 +390,35 @@ process.exit(result.status??1);
         },
       );
       assert.ok(enrolled.principalId);
+      const upgrade = baseline
+        ? await qualifyPhase2Upgrade({
+            root,
+            config,
+            release: installationRelease,
+            baseline,
+            compose,
+            cli,
+            activateTarget: () => {
+              activeInstallerRoot = installerRoot;
+            },
+            operatorPath,
+            configPath,
+            releasePath,
+            installerRoot,
+            publicOrigin,
+          })
+        : undefined;
+      if (upgrade) originalRender = await readFile(composePath, 'utf8');
       if (applicationPhase === 3)
-        await applicationAccess(setupOperator, {
-          action: 'confirm-platform-administrator',
-          principalId: enrolled.principalId,
-          expectedVersion: 1,
-          confirmation: 'grant-platform-administrator',
-        });
+        await applicationAccess(
+          JSON.parse(await readFile(operatorPath, 'utf8')),
+          {
+            action: 'confirm-platform-administrator',
+            principalId: enrolled.principalId,
+            expectedVersion: 1,
+            confirmation: 'grant-platform-administrator',
+          },
+        );
       const replicaObservations = [];
       const navigationRecovery = [];
       let sessionCookie;
@@ -580,7 +632,9 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                   : 'workspace',
                 bundleManifestSha256,
               },
-              command: 'npm exec -- nx run api-e2e:phase3-install-integration',
+              command: phase3Upgrade
+                ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
+                : 'npm exec -- nx run api-e2e:phase3-install-integration',
               environment: {
                 nodeVersion: process.version,
                 platform: process.platform,
@@ -588,6 +642,40 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                 browser: browser.browser,
               },
               ...installedWorkflows.report,
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+      }
+      if (upgrade) {
+        assert.ok(
+          Object.values(installedWorkflows.report.checks).every(
+            (value) => value === true,
+          ),
+        );
+        await writeFile(
+          `${evidenceDirectory}/all-docker-upgrade.json`,
+          JSON.stringify(
+            {
+              schemaVersion: 1,
+              phase: 3,
+              profile: 'all-docker',
+              sourceRevision,
+              harnessRevision,
+              harnessWorkingTree,
+              images,
+              bundleManifestSha256,
+              command: 'npm exec -- nx run api-e2e:phase3-upgrade-integration',
+              environment: {
+                nodeVersion: process.version,
+                platform: process.platform,
+                architecture: process.arch,
+                browser: browser.browser,
+              },
+              recordedAt: new Date().toISOString(),
+              ...upgrade,
+              postUpgradeWorkflows: installedWorkflows.report,
             },
             null,
             2,
@@ -621,9 +709,11 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             phase: applicationPhase,
             command: phase3Restore
               ? 'npm exec -- nx run api-e2e:phase3-restore-integration'
-              : phase3Workflows
-                ? 'npm exec -- nx run api-e2e:phase3-install-integration'
-                : 'npm exec -- nx run api-e2e:all-docker-integration',
+              : phase3Upgrade
+                ? 'npm exec -- nx run api-e2e:phase3-upgrade-integration'
+                : phase3Workflows
+                  ? 'npm exec -- nx run api-e2e:phase3-install-integration'
+                  : 'npm exec -- nx run api-e2e:all-docker-integration',
             environment: {
               nodeVersion: process.version,
               platform: process.platform,
@@ -650,6 +740,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                 'uninstall',
                 'resume',
               ],
+              ...(upgrade ? { upgradeCommands: ['upgrade', 'resume'] } : {}),
               repeatedResume: true,
               redisSessionsDiscarded: true,
               freshSignInPreservesPreferences: true,
@@ -672,7 +763,13 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                 ? [
                     'This report covers installation, resume, and restart. The separate restore report covers the isolated target. Upgrade requires separate evidence.',
                   ]
-                : ['Upgrade and isolated restore require separate evidence.']),
+                : upgrade
+                  ? [
+                      'Isolated restore and complete fault qualification require separate evidence.',
+                    ]
+                  : [
+                      'Upgrade and isolated restore require separate evidence.',
+                    ]),
             ],
           },
           null,

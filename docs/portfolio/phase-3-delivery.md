@@ -154,3 +154,26 @@ The complete profile took 176,766 milliseconds. The workflow and restart-persist
 The [retained report](../../deployment/evidence/CC-57-installed-workflows.json) records both revisions, images, manifest hash, report hashes, and limits.
 It also records two-replica session checks, stop, uninstall, repeated resume, and preserved preferences after fresh sign-in.
 PR CI passed at the same harness revision. Upgrade and complete fault qualification remain open.
+
+## Phase 2-to-3 upgrade qualification
+
+`api-e2e:phase3-upgrade-integration` installs the pinned Phase 2 bundle through its own delivered CLI.
+The fixture uses the delivered Phase 3 CLI for the upgrade and subsequent lifecycle commands.
+Before upgrade, it signs in, saves a theme preference, adds a second principal, and stores an artifact.
+It stops application writers, creates a native encrypted backup, and verifies that backup through the delivered operator CLI.
+The upgrade binds the previous installer release hash and the verified backup manifest hash.
+
+After upgrade, the fixture compares both principals, preferences, artifact bytes, existing secrets, and every previous migration checksum.
+It requires new migrations and an advanced installer configuration and release identity.
+The fixture then runs all installed Phase 3 workflows and restart, stop, uninstall, and resume checks.
+The upgrade report distinguishes baseline, application, and harness identities.
+
+```sh
+gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
+  -f phase3Release=phase-3-lab-<revision12> -f phase3Upgrade=true
+```
+
+The workflow verifies both baseline blob signatures, pinned archive and manifest hashes, extracted files, and all baseline image signatures.
+The fixture requires the exact pinned baseline manifest hash before it runs the installer.
+Local rejection tests cover changed archives, manifest hashes, source revisions, image identities, and extracted files.
+Hosted upgrade execution remains required. The pinned acceptance record does not identify the owner's exact previously installed revision.

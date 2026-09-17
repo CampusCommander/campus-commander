@@ -5,6 +5,9 @@ on:
       release:
         type: string
         required: true
+      upgrade:
+        type: boolean
+        default: false
 permissions:
   contents: read
   packages: read
@@ -80,13 +83,51 @@ jobs:
             done
             printf 'CC_AUTH_%s_IMAGE=%s\n' "${service^^}" "$reference" >> "$GITHUB_ENV"
           done
+      - name: Verify the pinned Phase 2 upgrade bundle
+        if: inputs.upgrade
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASELINE_IDENTITY: https://github.com/CampusCommander/campus-commander/.github/workflows/phase-2-candidate.yml@refs/heads/implementation/phase-2-cc-22
+        run: |-
+          mkdir published-baseline extracted-baseline
+          tag="$(node --input-type=module -e "import fs from 'node:fs';const b=JSON.parse(fs.readFileSync('deployment/qualification/phase-2-upgrade-baseline.json'));if(!/^phase-2-lab-[a-f0-9]{12}$/.test(b.sourceTag))throw Error('Invalid baseline tag');console.log(b.sourceTag)")"
+          gh release download "$tag" --dir published-baseline --pattern 'phase-2-candidate*' --pattern 'release-manifest*'
+          cosign verify-blob --bundle published-baseline/phase-2-candidate.sigstore.json --certificate-identity="$BASELINE_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com published-baseline/phase-2-candidate.tar.gz
+          cosign verify-blob --bundle published-baseline/release-manifest.sigstore.json --certificate-identity="$BASELINE_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com published-baseline/release-manifest.json
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFile} from 'node:fs/promises';
+          import {createHash} from 'node:crypto';
+          const pinned=JSON.parse(await readFile('deployment/qualification/phase-2-upgrade-baseline.json'));
+          for(const [name,expected] of [['phase-2-candidate.tar.gz',pinned.sourceArchiveSha256],['release-manifest.json',pinned.sourceManifestSha256]])
+            assert.equal(createHash('sha256').update(await readFile('published-baseline/'+name)).digest('hex'),expected);
+          NODE
+          tar --extract --gzip --file published-baseline/phase-2-candidate.tar.gz --directory extracted-baseline --no-same-owner --no-same-permissions
+          cmp published-baseline/release-manifest.json extracted-baseline/release-manifest.json
+          node --input-type=module <<'NODE'
+          import {appendFile,writeFile} from 'node:fs/promises';
+          import {loadPhase2UpgradeBaseline} from './api-e2e/phase3-upgrade-fixture.mjs';
+          const baseline=await loadPhase2UpgradeBaseline('extracted-baseline');
+          await writeFile('published-baseline/images.txt',Object.values(baseline.manifest.images).join('\n')+'\n');
+          await appendFile(process.env.GITHUB_ENV,'CC_AUTH_BASELINE_INSTALLER_ROOT='+process.cwd()+'/extracted-baseline\n');
+          NODE
+          while IFS= read -r reference; do
+            cosign verify "$reference" --certificate-identity="$BASELINE_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+            docker pull "$reference"
+          done < published-baseline/images.txt
       - name: Qualify installed Phase 3 workflows
+        if: inputs.upgrade != true
         run: npm exec nx run api-e2e:phase3-install-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - name: Qualify Phase 2-to-3 upgrade and workflows
+        if: inputs.upgrade
+        run: npm exec nx run api-e2e:phase3-upgrade-integration
         env:
           NX_NO_CLOUD: 'true'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: phase-3-installed-workflows
-          path: dist/phase-3-installation/
+          name: ${{ inputs.upgrade && 'phase-3-upgrade-workflows' || 'phase-3-installed-workflows' }}
+          path: ${{ inputs.upgrade && 'dist/phase-3-upgrade/' || 'dist/phase-3-installation/' }}
           if-no-files-found: warn

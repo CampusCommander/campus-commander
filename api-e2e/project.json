@@ -50,7 +50,9 @@
       "dependsOn": ["deployment:build"],
       "options": {
         "command": "node --test api-e2e/all-docker.test.mjs",
-        "env": { "CC_AUTH_PHASE3_WORKFLOWS": "1" }
+        "env": {
+          "CC_AUTH_PHASE3_WORKFLOWS": "1"
+        }
       }
     },
     "phase3-auth-integration": {
@@ -112,7 +114,9 @@
       "dependsOn": ["deployment:build"],
       "options": {
         "command": "node --test api-e2e/all-docker.test.mjs",
-        "env": { "CC_AUTH_PHASE3_RESTORE": "1" }
+        "env": {
+          "CC_AUTH_PHASE3_RESTORE": "1"
+        }
       }
     },
     "restore-integration": {
@@ -333,6 +337,17 @@
           "CC_AUTH_ALL_DOCKER_CERTIFICATES": "1"
         }
       }
+    },
+    "phase3-upgrade-integration": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_UPGRADE": "1"
+        }
+      },
+      "cache": false
     }
   }
 }
