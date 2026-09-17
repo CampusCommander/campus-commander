@@ -197,7 +197,12 @@ The ordinary principal must retain its school read while historical references r
 Restore must remove the pending health check without changing its recorded observations.
 
 Both application and operator CLI restore fixtures use this inventory.
-Local lint and all nine operations contract tests pass. Hosted qualification remains pending.
+Local lint and all nine operations contract tests pass. Both review axes found no actionable issues.
+The operator CLI job passed at `49ebf07` in [run 35207924636](https://github.com/CampusCommander/campus-commander/actions/runs/35207924636).
+The [retained report](../../deployment/evidence/CC-56-nonempty-state-restore.json) preserves two principals, thirteen grants, one access-change receipt, and two capability observations.
+Runtime receipt, health-history, and ordinary school-read checks passed. Seven revalidation denial cases and receipt-write recovery also passed.
+The fixture recorded 35,470 ms overall and an 11,608 ms backup age. Synthetic provider and shared-host limits still apply.
+The packaged application job remains pending. This operator result does not establish complete application compatibility.
 
 ## Remaining recovery work
 
