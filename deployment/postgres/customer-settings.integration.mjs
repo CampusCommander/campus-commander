@@ -150,7 +150,11 @@ export async function qualifyCustomerSettings({
     BEGIN IF NEW.event='customer-settings-changed' THEN RAISE EXCEPTION 'Synthetic audit failure'; END IF; RETURN NEW; END; $$;
     CREATE TRIGGER reject_customer_settings_audit BEFORE INSERT ON cc.security_events FOR EACH ROW EXECUTE FUNCTION cc.reject_customer_settings_audit()`);
   try {
-    await assert.rejects(save({ displayName: 'Must roll back' }, 2));
+    await assert.rejects(
+      save({ displayName: 'Must roll back' }, 2),
+      (error) =>
+        error.code === 'P0001' && error.message === 'Synthetic audit failure',
+    );
   } finally {
     await migrator.query(
       'DROP TRIGGER reject_customer_settings_audit ON cc.security_events; DROP FUNCTION cc.reject_customer_settings_audit()',

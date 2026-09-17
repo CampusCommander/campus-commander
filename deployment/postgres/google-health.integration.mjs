@@ -199,7 +199,11 @@ export async function qualifyGoogleHealth({
     IF NEW.event='connection-checked' AND NEW.detail='health-completed' THEN RAISE EXCEPTION 'Synthetic audit failure'; END IF;
     RETURN NEW; END; $$; CREATE TRIGGER reject_health_audit BEFORE INSERT ON cc.security_events FOR EACH ROW EXECUTE FUNCTION cc.reject_health_audit()`);
   try {
-    await assert.rejects(finish(newer, passed, connection.observation));
+    await assert.rejects(
+      finish(newer, passed, connection.observation),
+      (error) =>
+        error.code === 'P0001' && error.message === 'Synthetic audit failure',
+    );
   } finally {
     await migrator.query(
       'DROP TRIGGER reject_health_audit ON cc.security_events; DROP FUNCTION cc.reject_health_audit()',
