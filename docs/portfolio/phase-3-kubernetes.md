@@ -158,3 +158,19 @@ Regression checks reproduced late acceptance and incomplete cleanup after a lost
 The corrected checks pass, including rejected creation and foreign-resource preservation.
 Both reviews passed the helper corrections. Hosted enforcement remains unverified.
 These checks do not establish service-address behavior, Google egress, district TLS, or independent physical hosts.
+
+## Credential-key material correction
+
+[Run 35257810791](https://github.com/CampusCommander/campus-commander/actions/runs/35257810791) reached credential-candidate creation and failed its response-status assertion.
+Safe source locations identified that request without exposing its credential payload.
+`CC-59-installation-failure-3.json` retains the original report and verified archive provenance.
+The fixture took 313,300 milliseconds before cleanup.
+This attempt completed image preparation. The preceding image-preparation failure still has no confirmed cause.
+
+The fixture supplied 44 bytes of base64 text as an encryption key.
+The application requires 32 raw key bytes.
+A local regression reproduced `key-unavailable` through the actual credential cipher after Kubernetes Secret encoding and projection.
+The correction supplies raw key bytes and encodes only the Kubernetes Secret data representation.
+Actual pod verification now checks the projected key length before public workflows.
+The regression passes with this correction. Hosted verification remains pending.
+This change corrects the qualification fixture and does not require another application image.

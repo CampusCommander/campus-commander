@@ -4,7 +4,11 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { qualifyKubernetesWorkerCredentials } from './phase3-kubernetes-worker-fixture.mjs';
-import { configureKubernetesProvider } from '../deployment/kubernetes/qualification-provider.mjs';
+import {
+  configureKubernetesProvider,
+  seedKubernetesGoogleCredentialKey,
+} from '../deployment/kubernetes/qualification-provider.mjs';
+import { loadCredentialCipher } from '../libs/google-connection/src/lib/credential.ts';
 import {
   readKubernetesReplica,
   verifyKubernetesRecipientAccess,
@@ -63,7 +67,7 @@ test('credential projection rejects unauthorized consumers, writable mounts, and
       },
     }),
   );
-  const privateMarker = randomBytes(32).toString('base64');
+  const privateMarker = randomBytes(32);
   await writeFile(
     join(root, 'installer/private/google-key/encryption-key'),
     privateMarker,
@@ -85,9 +89,8 @@ test('credential projection rejects unauthorized consumers, writable mounts, and
     matches = true;
   const kube = async (args, input) => {
     if (args[0] === 'get') return JSON.stringify({ items: pods });
-    assert.equal(
-      Buffer.from(JSON.parse(input).expected, 'base64').toString(),
-      privateMarker,
+    assert.ok(
+      Buffer.from(JSON.parse(input).expected, 'base64').equals(privateMarker),
     );
     return JSON.stringify({ matches, mode: 0o440, keyId: 'version-1' });
   };
@@ -95,7 +98,7 @@ test('credential projection rejects unauthorized consumers, writable mounts, and
     verifyKubernetesCredentialProjection({ kube, root, project, images });
   const report = await run();
   assert.equal(report.status, 'passed');
-  assert.ok(!JSON.stringify(report).includes(privateMarker));
+  assert.ok(!JSON.stringify(report).includes(privateMarker.toString('base64')));
   pods.push(pod('frontend'));
   await assert.rejects(run, /Unrelated pods/);
   pods = structuredClone(original);
@@ -240,4 +243,32 @@ test('failure locations exclude private messages, command output, URLs, and unkn
   ]);
   assert.ok(!JSON.stringify(locations).includes(privateMarker));
   assert.deepEqual(kubernetesFailureLocations(undefined), []);
+});
+
+test('Kubernetes Secret projection preserves a usable credential encryption key', () => {
+  const reference = {
+    provider: 'kubernetes',
+    name: 'credential-key',
+    key: 'encryption-key',
+  };
+  const config = {
+    phase: 3,
+    googleConnection: {
+      keyId: 'fixture-key',
+      encryptionKeySecretRef: reference,
+    },
+  };
+  let secret;
+  seedKubernetesGoogleCredentialKey(config, (ref, bytes) => {
+    assert.deepEqual(ref, reference);
+    secret = { data: { [ref.key]: Buffer.from(bytes).toString('base64') } };
+  });
+  const projected = Buffer.from(secret.data[reference.key], 'base64');
+  assert.doesNotThrow(() =>
+    loadCredentialCipher(config.googleConnection, () => Buffer.from(projected)),
+  );
+  assert.equal(projected.length, 32);
+  seedKubernetesGoogleCredentialKey({ phase: 2 }, () =>
+    assert.fail('Phase 2 must not create a Google credential key.'),
+  );
 });

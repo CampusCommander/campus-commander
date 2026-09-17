@@ -21,6 +21,11 @@ export async function verifyKubernetesCredentialProjection({
   const expected = await readFile(
     join(root, 'installer/private', ref.name, ref.key),
   );
+  assert.equal(
+    expected.length,
+    32,
+    'The projected credential key must contain 32 bytes.',
+  );
   const pods = JSON.parse(
     await kube(['get', 'pods', '-o', 'json']),
   ).items.filter((pod) => !pod.metadata.deletionTimestamp);

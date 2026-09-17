@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 /** Add synthetic transport only to the isolated qualification workloads. */
 export function configureKubernetesProvider(resources, application) {
   for (const name of application.phase === 3 ? ['api', 'workers'] : ['api']) {
@@ -41,4 +43,10 @@ export function configureKubernetesProvider(resources, application) {
       readOnly: true,
     });
   }
+}
+
+/** Seed the credential key used by the isolated Kubernetes fixture. */
+export function seedKubernetesGoogleCredentialKey(config, put) {
+  if (config.phase !== 3) return;
+  put(config.googleConnection.encryptionKeySecretRef, randomBytes(32));
 }

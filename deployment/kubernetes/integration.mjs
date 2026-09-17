@@ -6,7 +6,10 @@ import { tmpdir } from 'node:os';
 import { renderKubernetes } from './render.mjs';
 import assert from 'node:assert/strict';
 import { qualificationImages } from '../qualification/images.mjs';
-import { configureKubernetesProvider } from './qualification-provider.mjs';
+import {
+  configureKubernetesProvider,
+  seedKubernetesGoogleCredentialKey,
+} from './qualification-provider.mjs';
 
 // This adapter targets only the explicitly named disposable Kind cluster.
 const capacity = process.env.CC_KUBERNETES_CAPACITY_FIXTURE
@@ -201,10 +204,7 @@ if (application) {
   );
 }
 if (config.phase === 3) {
-  put(
-    config.googleConnection.encryptionKeySecretRef,
-    randomBytes(32).toString('base64'),
-  );
+  seedKubernetesGoogleCredentialKey(config, put);
   put(
     {
       name: 'qualification-provider',
