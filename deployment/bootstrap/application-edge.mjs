@@ -57,6 +57,14 @@ const connectionWrite =
   /^\/api\/google-connection\/(?:health\/check|check|credentials\/(?:rotate-key|disconnect)|replacements(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/activate)?|candidates(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
 const customerRead =
   /^\/api\/customer(?:\/receipts\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
+const schoolIdPath =
+  '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
+const schoolRead = new RegExp(
+  `^/api/schools(?:/(?:${schoolIdPath}(?:/audit)?|reviews/${schoolIdPath}))?$`,
+);
+const schoolWrite = new RegExp(
+  `^/api/schools/reviews(?:/${schoolIdPath}/confirm)?$`,
+);
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
@@ -92,7 +100,8 @@ export async function proxyApplication(
         principalRead.test(pathname) ||
         connectionRead.test(pathname) ||
         customerRead.test(pathname) ||
-        pathname === '/api/schools/references'));
+        pathname === '/api/schools/references' ||
+        schoolRead.test(pathname)));
   const writable =
     postRoutes.has(pathname) ||
     (phase === 3 &&
@@ -101,7 +110,8 @@ export async function proxyApplication(
         principalWrite.test(pathname) ||
         connectionWrite.test(pathname) ||
         pathname === '/api/customer/settings' ||
-        pathname === '/api/schools/references/refresh'));
+        pathname === '/api/schools/references/refresh' ||
+        schoolWrite.test(pathname)));
   const api = readable || writable;
   const page =
     pages.has(pathname) || (phase === 3 && phase3Pages.has(pathname));
@@ -124,6 +134,7 @@ export async function proxyApplication(
           [
             '/api/google-connection/candidates',
             '/api/google-connection/replacements',
+            '/api/schools/reviews',
           ].includes(pathname)
             ? 65536
             : 4096;

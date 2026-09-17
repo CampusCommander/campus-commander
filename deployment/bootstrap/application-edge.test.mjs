@@ -58,6 +58,12 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       413,
     );
     const routes = [
+      ['GET', '/api/schools', 'api'],
+      ['GET', `/api/schools/${id}`, 'api'],
+      ['GET', `/api/schools/${id}/audit`, 'api'],
+      ['GET', `/api/schools/reviews/${id}`, 'api'],
+      ['POST', '/api/schools/reviews', 'api'],
+      ['POST', `/api/schools/reviews/${id}/confirm`, 'api'],
       ['GET', '/api/schools/references', 'api'],
       ['POST', '/api/schools/references/refresh', 'api'],
       ['GET', '/api/customer', 'api'],
@@ -99,6 +105,12 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       assert.equal(response.headers.get('cache-control'), 'no-store');
     }
     for (const [method, path, status] of [
+      ['POST', '/api/schools', 405],
+      ['GET', '/api/schools/reviews', 405],
+      ['POST', `/api/schools/${id}`, 405],
+      ['GET', `/api/schools/reviews/${id}/confirm`, 405],
+      ['GET', '/api/schools/not-a-uuid', 404],
+      ['GET', `/api/schools/reviews/${id}/audit`, 404],
       ['POST', '/api/schools/references', 405],
       ['GET', '/api/schools/references/refresh', 405],
       ['GET', '/api/schools/references/private', 404],

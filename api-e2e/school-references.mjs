@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
+import { qualifySchoolDefinitionsApi } from './school-definitions.mjs';
 
 export async function qualifySchoolReferencesApi({
   browser,
@@ -89,6 +90,17 @@ export async function qualifySchoolReferencesApi({
     const recovered = (await success.json()).references;
     assert.equal(recovered.fresh, true);
     assert.notEqual(recovered.observation.revision, valid.observation.revision);
+    await qualifySchoolDefinitionsApi({
+      api,
+      headers,
+      references: recovered,
+      browser,
+      publicOrigin,
+      migrator,
+      actor,
+      setSubject,
+      evidenceDirectory,
+    });
     await ready();
     const revoked = refresh();
     await expect.poll(async () => (await read()).checking).toBe(true);

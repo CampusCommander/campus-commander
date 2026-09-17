@@ -161,3 +161,74 @@ export function effectiveSchoolScope(
     ? { valid: true, ids }
     : { valid: false, reason: 'empty-scope' };
 }
+
+const schoolName = z
+  .string()
+  .min(1)
+  .max(256)
+  .refine(
+    (name) => name.trim().length > 0 && !/\p{Cc}/u.test(name),
+    { message: 'Enter a school name without control characters.' },
+  );
+const schoolIds = z.array(ouId).min(1).max(10000);
+export const schoolDefinitionSchema = z.strictObject({
+  id: z.uuid(),
+  customerId: googleCustomerIdSchema,
+  name: schoolName,
+  revision: z.number().int().positive(),
+  rules: schoolScopeRulesSchema,
+  approvedIds: schoolIds,
+  effectiveIds: schoolIds.nullable(),
+  referenceRevision: z.uuid(),
+  updatedAt: z.iso.datetime({ offset: true }),
+});
+export type SchoolDefinition = z.infer<typeof schoolDefinitionSchema>;
+export const schoolDefinitionPageSchema = z.strictObject({
+  total: z.number().int().nonnegative(),
+  offset: z.number().int().nonnegative(),
+  limit: z.number().int().min(1).max(100),
+  items: z.array(schoolDefinitionSchema).max(100),
+});
+export const schoolPreviewSchema = z.strictObject({
+  id: z.uuid(),
+  schoolId: z.uuid(),
+  customerId: googleCustomerIdSchema,
+  expectedRevision: z.number().int().min(0).max(2147483646),
+  referenceRevision: z.uuid(),
+  name: schoolName,
+  rules: schoolScopeRulesSchema,
+});
+export const schoolConfirmationSchema = z.strictObject({
+  confirmed: z.literal(true),
+});
+export const schoolReviewSchema = z.strictObject({
+  id: z.uuid(),
+  schoolId: z.uuid(),
+  customerId: googleCustomerIdSchema,
+  expectedRevision: z.number().int().nonnegative(),
+  referenceRevision: z.uuid(),
+  name: schoolName,
+  rules: schoolScopeRulesSchema,
+  approvedIds: schoolIds,
+  affectedPrincipalCount: z.number().int().nonnegative(),
+  invitationIds: z.array(z.uuid()),
+  expiresAt: z.iso.datetime({ offset: true }),
+  appliedAt: z.iso.datetime({ offset: true }).nullable(),
+  revision: z.number().int().positive().nullable(),
+});
+export type SchoolReview = z.infer<typeof schoolReviewSchema>;
+export const schoolAuditPageSchema = z.strictObject({
+  total: z.number().int().nonnegative(),
+  offset: z.number().int().nonnegative(),
+  items: z
+    .array(
+      z.strictObject({
+        id: z.uuid(),
+        event: z.string(),
+        detail: z.string().nullable(),
+        occurredAt: z.iso.datetime({ offset: true }),
+        correlationId: z.uuid(),
+      }),
+    )
+    .max(20),
+});
