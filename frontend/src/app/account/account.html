@@ -2,12 +2,15 @@
 <section class="card" aria-labelledby="identity-title">
   <h2 id="identity-title">{{ auth.session()?.identity?.displayName }}</h2>
   <p>You signed in to Campus Commander.</p>
-  <p>The installation operator manages your application access.</p>
+  <p>Contact your administrator if you need access to more features.</p>
 </section>
 @if (tasks().length > 0) {
 <section class="card" aria-labelledby="tasks-title">
   <h2 id="tasks-title">Start here</h2>
-  <p>Choose a task. Your assigned access determines the available controls.</p>
+  <p>
+    Choose what you want to do. This page shows the tasks available to your
+    account.
+  </p>
   <ul class="task-list">
     @for (task of tasks(); track task.path) {
     <li>
@@ -19,16 +22,17 @@
 </section>
 }
 <section class="card" id="application-help" aria-labelledby="help-title">
-  <h2 id="help-title">Application help</h2>
+  <h2 id="help-title">Help</h2>
   @if (auth.session()?.identity?.permissions?.includes('diagnostics:read')) {
   <p>
-    <a routerLink="/diagnostics">Open Diagnostics</a> to inspect service
-    connections and run service checks.
+    <a routerLink="/diagnostics">Open Diagnostics</a> to check connections and
+    troubleshoot problems.
   </p>
   }
   <p>Use the theme menu to select light, dark, or system appearance.</p>
   <p>Use the user menu to sign out. If your session expires, sign in again.</p>
   <p>
-    If a check fails, give its support reference to the installation operator.
+    If you need help with a failed check, send its support reference to your
+    administrator.
   </p>
 </section>

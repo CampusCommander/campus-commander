@@ -13,7 +13,7 @@
     <h2 id="create-invitation-title">Invite a platform user</h2>
     <form (ngSubmit)="create()">
       <mat-form-field appearance="outline" subscriptSizing="dynamic"
-        ><mat-label>Recipient label</mat-label>
+        ><mat-label>Recipient name</mat-label>
         <input
           matInput
           name="label"
@@ -23,11 +23,11 @@
           autocomplete="off"
         />
         <mat-hint
-          >Use a label that helps you identify this invitation.</mat-hint
+          >Enter a name so you can recognize this invitation later.</mat-hint
         >
       </mat-form-field>
       <mat-form-field appearance="outline" subscriptSizing="dynamic"
-        ><mat-label>Sign-in subject</mat-label>
+        ><mat-label>Sign-in ID</mat-label>
         <input
           matInput
           name="subject"
@@ -36,8 +36,8 @@
           autocomplete="off"
         />
         <mat-hint
-          >Optional. Enter an exact OIDC subject only if you already know it. An
-          email address is not a subject.</mat-hint
+          >Optional. Leave this blank unless you know the account’s OIDC subject
+          identifier. Do not enter an email address.</mat-hint
         >
       </mat-form-field>
       <mat-form-field appearance="outline" subscriptSizing="dynamic"
@@ -55,8 +55,8 @@
       <fieldset>
         <legend>Access after your confirmation</legend>
         <p>
-          With no selected grants, the recipient can sign in and view their own
-          account.
+          Leave all permissions unchecked to allow sign-in and access to the
+          recipient’s own account only.
         </p>
         @for (action of actions; track action) { @if (auth.can(action, {kind:
         'platform'})) {
@@ -65,8 +65,8 @@
         >
         } }
         <p>
-          Selected grants cover the installation. District and school grants
-          require their verified configuration.
+          These permissions apply across Campus Commander. Use Platform access
+          to assign permissions for individual districts or schools.
         </p>
       </fieldset>
       <button
@@ -91,8 +91,8 @@
       </mat-form-field>
       <button mat-stroked-button (click)="copy()">Copy invitation link</button>
       <p>
-        This link appears once. Its recipient must sign in and wait for your
-        identity confirmation.
+        Copy this link now. It will not appear again. After the recipient signs
+        in, return here to approve their access.
       </p>
     </div>
     }
@@ -126,7 +126,7 @@
       <p>
         Status: {{ item.status }} · Expires {{ item.expiresAt | date:'medium' }}
       </p>
-      <p>{{ item.grants.length }} installation grants</p>
+      <p>{{ item.grants.length }} permissions across Campus Commander</p>
       @if (canInvite() && active(item)) {
       <div class="actions">
         @if (item.status === 'pending' && item.createdBy ===
@@ -149,29 +149,29 @@
       </div>
       } @if (review()?.id === item.id) {
       <section aria-label="Confirm invited identity" class="identity-review">
-        <h4>Confirm this exact identity</h4>
+        <h4>Confirm the recipient</h4>
         <dl>
           <dt>Verified name</dt>
           <dd>{{ item.candidateName }}</dd>
-          <dt>Sign-in issuer</dt>
+          <dt>Sign-in provider</dt>
           <dd>{{ item.issuer }}</dd>
-          <dt>Verified subject</dt>
+          <dt>Verified sign-in ID</dt>
           <dd>{{ item.candidateSubject }}</dd>
         </dl>
         <p>
-          Check the issuer and subject with the recipient through a known
-          communication channel. A display name alone does not identify them.
+          Contact the recipient directly to check the sign-in provider and ID
+          shown here. Do not rely on the name alone.
         </p>
         <ul>
           @for (grant of item.grants; track grant.action) {
-          <li>{{ labels[grant.action] }} — installation scope</li>
+          <li>{{ labels[grant.action] }} — all of Campus Commander</li>
           }
         </ul>
         @if (!item.grants.length) {
-        <p>Application sign-in and own-account access only.</p>
+        <p>The recipient can sign in and view their own account only.</p>
         }
         <mat-checkbox [(ngModel)]="verified"
-          >I verified this exact identity and its intended access.</mat-checkbox
+          >I checked the recipient’s identity and permissions.</mat-checkbox
         >
         <button
           mat-flat-button

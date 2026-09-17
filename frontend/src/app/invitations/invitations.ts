@@ -127,7 +127,7 @@ export class Invitations implements OnInit, OnDestroy {
     });
     if (!parsed.success) {
       this.error.set(
-        'Enter a recipient label and an expiry between 1 and 168 hours.',
+        'Enter the recipient’s name and choose an expiry between 1 and 168 hours.',
       );
       return;
     }
@@ -183,7 +183,7 @@ export class Invitations implements OnInit, OnDestroy {
     this.review.set(item);
     this.verified = false;
     this.message.set(
-      'Review the verified identity and every grant before confirmation.',
+      'Check the recipient’s identity and permissions before approving access.',
     );
   }
   protected active(item: Invitation) {

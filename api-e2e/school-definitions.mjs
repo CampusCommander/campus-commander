@@ -71,11 +71,11 @@ export async function qualifySchoolDefinitionsApi({
   await adminPage
     .getByRole('treeitem', { name: 'Root organizational unit' })
     .click();
-  await adminPage.getByRole('button', { name: 'Add inclusion' }).click();
+  await adminPage.getByRole('button', { name: 'Include unit' }).click();
   await adminPage
     .getByRole('treeitem', { name: 'School B', exact: true })
     .click();
-  await adminPage.getByRole('button', { name: 'Add exclusion' }).click();
+  await adminPage.getByRole('button', { name: 'Exclude unit' }).click();
   for (const theme of ['light', 'dark']) {
     await adminPage.evaluate(
       (value) => (document.documentElement.dataset['theme'] = value),
@@ -114,20 +114,22 @@ export async function qualifySchoolDefinitionsApi({
     await route.abort('failed');
   });
   await adminPage
-    .getByLabel('I confirm this school scope and its access consequences')
+    .getByLabel('I reviewed the units and access changes for this school')
     .check();
-  await adminPage
-    .getByRole('button', { name: 'Confirm school definition' })
-    .click();
+  await adminPage.getByRole('button', { name: 'Save school' }).click();
   await expect(
-    adminPage.getByText('The school result is unknown.', { exact: false }),
+    adminPage.getByText('We have not received a save confirmation.', {
+      exact: false,
+    }),
   ).toBeVisible();
   await adminPage.unroute('**/api/schools/reviews/*/confirm');
   assert.deepEqual(browserReceipt.approvedIds, ['root', 'school-a']);
   await adminPage.reload();
-  await adminPage.getByRole('button', { name: 'Check school receipt' }).click();
+  await adminPage
+    .getByRole('button', { name: 'Check school save status' })
+    .click();
   await expect(
-    adminPage.getByRole('heading', { name: 'Confirmed school receipt' }),
+    adminPage.getByRole('heading', { name: 'School saved' }),
   ).toBeFocused();
   assert.equal((await read(api, `/${browserReceipt.schoolId}`)).revision, 1);
   assert.equal((await read(api, `/${browserReceipt.schoolId}/audit`)).total, 1);
@@ -162,7 +164,7 @@ export async function qualifySchoolDefinitionsApi({
     .getByRole('button', { name: `Review access for ${subject}`, exact: true })
     .click();
   await adminPage
-    .getByRole('button', { name: 'Load permitted scopes' })
+    .getByRole('button', { name: 'Choose district or school' })
     .click();
   await adminPage.getByRole('button', { name: /^Select district / }).click();
   await adminPage
@@ -173,16 +175,15 @@ export async function qualifySchoolDefinitionsApi({
       .getByRole('button', { name: 'Review access changes', exact: true })
       .click();
     await adminPage
-      .getByLabel('I reviewed this identity and its exact access changes.')
+      .getByLabel('I checked the person and the permissions shown above.')
       .check();
     await adminPage
       .getByRole('button', { name: 'Confirm access changes', exact: true })
       .click();
     await expect(
-      adminPage.getByText(
-        'Access changed. Previous sessions require sign-in.',
-        { exact: false },
-      ),
+      adminPage.getByText('Access saved. This person must sign in again.', {
+        exact: false,
+      }),
     ).toBeVisible();
   };
   await confirmAccess();
@@ -267,7 +268,7 @@ export async function qualifySchoolDefinitionsApi({
     ]);
     await page.goto(`${publicOrigin}/schools`);
     await expect(
-      page.getByText('1 permitted school definitions.', { exact: false }),
+      page.getByText('Schools available to you: 1.', { exact: false }),
     ).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'School B', exact: true }),
@@ -303,7 +304,7 @@ export async function qualifySchoolDefinitionsApi({
     const stale = await read(scoped, `/${a}`);
     assert.equal(stale.effectiveIds, null);
     assert.deepEqual(stale.approvedIds, ['school-a']);
-    await page.getByRole('button', { name: 'Refresh definition' }).click();
+    await page.getByRole('button', { name: 'Refresh school' }).click();
     await expect(
       page.getByText('Unavailable. The saved definition remains intact.'),
     ).toBeVisible();
@@ -318,7 +319,7 @@ export async function qualifySchoolDefinitionsApi({
     const revoked = await scoped.get(`${root}/${a}`);
     assert.equal(revoked.status(), 401, await revoked.text());
     assert.equal((await revoked.json()).code, 'access-changed');
-    await page.getByRole('button', { name: 'Refresh definition' }).click();
+    await page.getByRole('button', { name: 'Refresh school' }).click();
     await expect(
       page.getByRole('button', { name: 'Recheck access', exact: true }),
     ).toBeVisible();

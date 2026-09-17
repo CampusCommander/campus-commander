@@ -211,9 +211,9 @@ async function createDraft(page: Page) {
   await page
     .getByRole('treeitem', { name: 'Root organizational unit' })
     .click();
-  await page.getByRole('button', { name: 'Add inclusion' }).click();
+  await page.getByRole('button', { name: 'Include unit' }).click();
   await page.getByRole('treeitem', { name: 'School B', exact: true }).click();
-  await page.getByRole('button', { name: 'Add exclusion' }).click();
+  await page.getByRole('button', { name: 'Exclude unit' }).click();
 }
 
 test('recovers a lost school confirmation after reload without another write', async ({
@@ -229,28 +229,30 @@ test('recovers a lost school confirmation after reload without another write', a
   ).toBeVisible();
   expect(state.review()?.approvedIds).toEqual(['a', 'root']);
   await expect(
-    page.getByRole('button', { name: 'Confirm school definition' }),
+    page.getByRole('button', { name: 'Save school' }),
   ).toBeDisabled();
   await page
-    .getByLabel('I confirm this school scope and its access consequences')
+    .getByLabel('I reviewed the units and access changes for this school')
     .check();
   state.loseConfirmation();
-  await page.getByRole('button', { name: 'Confirm school definition' }).click();
+  await page.getByRole('button', { name: 'Save school' }).click();
   await expect(
-    page.getByText('The school result is unknown.', { exact: false }),
+    page.getByText('We have not received a save confirmation.', {
+      exact: false,
+    }),
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Return to draft' }),
   ).toHaveCount(0);
   await page.reload();
-  await page.getByRole('button', { name: 'Check school receipt' }).click();
+  await page.getByRole('button', { name: 'Check school save status' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Confirmed school receipt' }),
+    page.getByRole('heading', { name: 'School saved' }),
   ).toBeFocused();
   expect(state.confirmations()).toBe(1);
   await page.reload();
   await expect(
-    page.getByRole('heading', { name: 'Confirmed school receipt' }),
+    page.getByRole('heading', { name: 'School saved' }),
   ).toBeVisible();
   expect(state.confirmations()).toBe(1);
 });
@@ -264,14 +266,14 @@ test('preserves school drafts while stale references and access changes prevent 
     .getByRole('button', { name: 'Review school scope', exact: true })
     .click();
   await page
-    .getByLabel('I confirm this school scope and its access consequences')
+    .getByLabel('I reviewed the units and access changes for this school')
     .check();
   state.failReferences();
   await page
-    .getByRole('button', { name: 'Refresh references', exact: true })
+    .getByRole('button', { name: 'Refresh Google units', exact: true })
     .click();
   await expect(
-    page.getByRole('button', { name: 'Confirm school definition' }),
+    page.getByRole('button', { name: 'Save school' }),
   ).toBeDisabled();
   await page.getByRole('button', { name: 'Return to draft' }).click();
   await expect(page.getByLabel('School name', { exact: true })).toHaveValue(
@@ -294,7 +296,7 @@ test('preserves school drafts while stale references and access changes prevent 
   await expect(page.getByLabel('School name', { exact: true })).toHaveValue(
     'New school',
   );
-  await page.getByRole('button', { name: 'Recheck reference status' }).click();
+  await page.getByRole('button', { name: 'Check refresh status' }).click();
   await expect(
     page.getByRole('button', { name: 'Review school scope', exact: true }),
   ).toBeDisabled();
@@ -306,13 +308,13 @@ test('shows only permitted school data and keeps manager controls unavailable to
 }) => {
   await fixture(page, false);
   await expect(
-    page.getByText('1 permitted school definitions.', { exact: false }),
+    page.getByText('Schools available to you: 1.', { exact: false }),
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Create school', exact: true }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole('heading', { name: 'Organizational unit references' }),
+    page.getByRole('heading', { name: 'Google organizational units' }),
   ).toHaveCount(0);
   await page.getByRole('button', { name: 'School A', exact: true }).click();
   await expect(
@@ -343,7 +345,7 @@ test('qualifies the school draft and review in both themes, keyboard navigation,
   await expect(unit).toHaveAttribute('aria-selected', 'false');
   await page.keyboard.press('Enter');
   await expect(unit).toHaveAttribute('aria-selected', 'true');
-  await page.getByRole('button', { name: 'Add inclusion' }).click();
+  await page.getByRole('button', { name: 'Include unit' }).click();
   for (const theme of ['light', 'dark']) {
     await page.evaluate(
       (theme) => (document.documentElement.dataset['theme'] = theme),
@@ -408,9 +410,9 @@ test('recovers a new school reference conflict without discarding its name or sc
   const original = state.review();
   state.conflictOnConfirmation();
   await page
-    .getByLabel('I confirm this school scope and its access consequences')
+    .getByLabel('I reviewed the units and access changes for this school')
     .check();
-  await page.getByRole('button', { name: 'Confirm school definition' }).click();
+  await page.getByRole('button', { name: 'Save school' }).click();
   await expect(page.getByLabel('School name', { exact: true })).toHaveValue(
     'New school',
   );
@@ -426,11 +428,11 @@ test('recovers a new school reference conflict without discarding its name or sc
     original?.referenceRevision,
   );
   await page
-    .getByLabel('I confirm this school scope and its access consequences')
+    .getByLabel('I reviewed the units and access changes for this school')
     .check();
-  await page.getByRole('button', { name: 'Confirm school definition' }).click();
+  await page.getByRole('button', { name: 'Save school' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Confirmed school receipt' }),
+    page.getByRole('heading', { name: 'School saved' }),
   ).toBeVisible();
 });
 
@@ -452,6 +454,6 @@ test('associates invalid-name feedback and restores focus after discarding a dra
   ).toBeVisible();
   await page.getByRole('button', { name: 'Discard draft' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Saved school definitions' }),
+    page.getByRole('heading', { name: 'Your schools' }),
   ).toBeFocused();
 });

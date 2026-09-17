@@ -50,18 +50,18 @@
     </p>
     } @if (candidate(); as identity) {
     <section aria-labelledby="verified-invitation-identity">
-      <h2 id="verified-invitation-identity">Your verified sign-in identity</h2>
+      <h2 id="verified-invitation-identity">Your sign-in details</h2>
       <dl>
         <dt>Name</dt>
         <dd>{{ identity.displayName }}</dd>
-        <dt>Sign-in issuer</dt>
+        <dt>Sign-in provider</dt>
         <dd>{{ identity.issuer }}</dd>
-        <dt>Sign-in subject</dt>
+        <dt>Sign-in ID</dt>
         <dd>{{ identity.subject }}</dd>
       </dl>
       <p>
-        Confirm these values with your inviter through a known communication
-        channel.
+        Contact the person who invited you and confirm these sign-in details
+        with them.
       </p>
     </section>
     } @if (status() !== 'accepted') {

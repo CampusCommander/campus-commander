@@ -28,14 +28,14 @@ export async function qualifyPlatformAccessBrowser({
     }),
   ).toBeVisible();
   const grant = page.getByRole('checkbox', {
-    name: 'Read security events',
+    name: 'View security events',
     exact: true,
   });
   await page
     .getByRole('button', { name: 'Review access changes', exact: true })
     .click();
   await expect(page.getByRole('alert')).toContainText(
-    'No access changes selected.',
+    'There are no changes to review.',
   );
   await grant.check();
   await page.context().setOffline(true);
@@ -79,7 +79,7 @@ export async function qualifyPlatformAccessBrowser({
   ).toBeVisible();
   await page
     .getByRole('checkbox', {
-      name: 'I reviewed this identity and its exact access changes.',
+      name: 'I checked the person and the permissions shown above.',
       exact: true,
     })
     .check();
@@ -127,7 +127,7 @@ export async function qualifyPlatformAccessBrowser({
   }
   await page
     .getByRole('checkbox', {
-      name: 'I reviewed this identity and its exact access changes.',
+      name: 'I checked the person and the permissions shown above.',
       exact: true,
     })
     .check();
@@ -142,7 +142,7 @@ export async function qualifyPlatformAccessBrowser({
   await expect(
     page.getByRole('status', { name: 'Platform access status' }),
   ).toContainText(
-    'Access changed. Previous sessions require sign-in. Receipt:',
+    'Access saved. This person must sign in again. Change reference:',
   );
   await page
     .getByRole('button', {
@@ -152,10 +152,10 @@ export async function qualifyPlatformAccessBrowser({
     .click();
   await expect(
     page.getByRole('status', { name: 'Platform access status' }),
-  ).toContainText('Current access loaded.');
+  ).toContainText('Permissions loaded.');
   await expect(grant).toBeChecked();
   const receiptHistory = page.getByRole('region', {
-    name: 'Access receipt history',
+    name: 'Access change history',
   });
   await expect(receiptHistory.locator('summary')).not.toHaveCount(0);
   const receiptText = await receiptHistory
@@ -175,7 +175,7 @@ export async function qualifyPlatformAccessBrowser({
     .click();
   await page
     .getByRole('checkbox', {
-      name: 'I reviewed this identity and its exact access changes.',
+      name: 'I checked the person and the permissions shown above.',
       exact: true,
     })
     .check();
@@ -193,7 +193,7 @@ export async function qualifyPlatformAccessBrowser({
     .getByRole('button', { name: 'Confirm access changes', exact: true })
     .click();
   await expect(page.getByRole('alert')).toContainText(
-    'The confirmation outcome is unknown.',
+    'We have not received a save confirmation.',
   );
   await expect(
     page.getByRole('button', { name: 'Review access changes', exact: true }),
@@ -211,7 +211,7 @@ export async function qualifyPlatformAccessBrowser({
   );
   await receiptHistory.locator('summary').first().click();
   await expect(
-    receiptHistory.getByRole('heading', { name: 'Applied grants' }).first(),
+    receiptHistory.getByRole('heading', { name: 'Saved permissions' }).first(),
   ).toBeVisible();
   await page.setViewportSize({ width: 320, height: 720 });
   await expect

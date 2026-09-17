@@ -129,7 +129,7 @@ export class PlatformAccess implements OnInit, OnDestroy {
       ) {
         this.invalidate();
         this.message.set(
-          'This principal changed. Reload its access before another review.',
+          'This person’s access changed. Reload it before reviewing your changes.',
         );
       }
     } catch {
@@ -177,7 +177,7 @@ export class PlatformAccess implements OnInit, OnDestroy {
       );
       this.invalidate();
       this.message.set(
-        'Current access loaded. Review changes before confirmation.',
+        'Permissions loaded. Review your changes before saving.',
       );
     } catch {
       this.stale.set(true);
@@ -231,7 +231,7 @@ export class PlatformAccess implements OnInit, OnDestroy {
       ];
       if (!grantsSchema.safeParse(grants).success) {
         this.error.set(
-          'The proposal exceeds 256 grants or contains an invalid scope. Review the selected grants.',
+          'Check your permissions. Select no more than 256 and choose a valid district or school for each.',
         );
         return;
       }
@@ -252,7 +252,7 @@ export class PlatformAccess implements OnInit, OnDestroy {
       if (!this.currentSession(sessionToken)) return;
       this.preview.set(review);
       this.message.set(
-        'Review this identity, enabled state, and exact grants before confirmation.',
+        'Check the person, sign-in access, and permissions before saving.',
       );
     } catch {
       this.stale.set(true);
@@ -282,7 +282,7 @@ export class PlatformAccess implements OnInit, OnDestroy {
     } catch {
       if (this.selected()?.id === id)
         this.receiptError.set(
-          'Access receipts are unavailable. Retry receipt history when your connection and access return.',
+          'Access change history is unavailable. Check your connection and account access, then refresh the history.',
         );
     } finally {
       this.receiptLoading.set(false);
@@ -306,13 +306,13 @@ export class PlatformAccess implements OnInit, OnDestroy {
       'school-unavailable':
         'Refresh and verify the school scope before granting access.',
       unchanged:
-        'No access changes selected. Change the enabled state or grants before review.',
+        'There are no changes to review. Edit sign-in access or select different permissions first.',
       conflict:
         'Current access changed. Reload access and review your changes again.',
       delegation:
-        'This change exceeds your current grants. Select only access that you can delegate.',
+        'You can only assign permissions that you hold. Check your selections.',
       'last-administrator':
-        'Keep one enabled platform administrator with every platform grant. Grant another administrator access before this change.',
+        'At least one platform administrator must keep full access. Assign another administrator before removing these permissions.',
       forbidden:
         'Your current access does not permit this change. Reload your session or contact a platform administrator.',
     }[reason];
@@ -358,7 +358,7 @@ export class PlatformAccess implements OnInit, OnDestroy {
       );
       this.invalidate();
       this.message.set(
-        `Access changed. Previous sessions require sign-in. Receipt: ${result.receiptId}.`,
+        `Access saved. This person must sign in again. Change reference: ${result.receiptId}.`,
       );
       if (result.principal.id === this.auth.session()?.identity.id) {
         void this.auth.request('/api/auth/session').catch(() => {
@@ -373,7 +373,7 @@ export class PlatformAccess implements OnInit, OnDestroy {
       this.invalidate();
       this.stale.set(true);
       this.error.set(
-        'The confirmation outcome is unknown. Reload access and check receipt history before retrying. Your edits remain in place.',
+        'We have not received a save confirmation. Reload access and check the change history before trying again. Your edits are still here.',
       );
     } finally {
       this.busy.set(false);

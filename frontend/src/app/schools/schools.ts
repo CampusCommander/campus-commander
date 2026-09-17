@@ -76,7 +76,7 @@ export class SchoolsPage implements OnInit {
     const recovery = GOOGLE_HEALTH_RECOVERY[failure];
     return recovery
       ? `${recovery.label}. ${recovery.recovery}`
-      : 'Reference verification failed. Check Google connection diagnostics, then refresh references.';
+      : 'We could not check the Google units. Check Google access in Diagnostics, then refresh Google units.';
   }
 
   async copyScope() {

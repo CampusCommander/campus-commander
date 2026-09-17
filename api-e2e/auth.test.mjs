@@ -1089,7 +1089,7 @@ test(
           .getByLabel('Installer pairing code')
           .fill(pairingCode);
         await enrollmentPage
-          .getByRole('button', { name: 'Sign in to enroll administrator' })
+          .getByRole('button', { name: 'Sign in to set up administrator' })
           .click();
         await expect(enrollmentPage.getByRole('alert')).toHaveText(
           'This pairing code has already started sign-in in a browser.',
@@ -1189,7 +1189,7 @@ test(
       await enrollmentPage.keyboard.press('Tab');
       await expect(
         enrollmentPage.getByRole('button', {
-          name: 'Sign in to enroll administrator',
+          name: 'Sign in to set up administrator',
         }),
       ).toBeFocused();
       await enrollmentPage.keyboard.press('Enter');
@@ -1198,7 +1198,7 @@ test(
       assert.equal(enrolled.status, 'enrolled');
       await expect(
         enrollmentPage.getByText(
-          'Administrator enrollment completed. Sign in to open Campus Commander.',
+          'Your administrator account is ready. Sign in to open Campus Commander.',
         ),
       ).toBeVisible();
       assert.equal(
@@ -2178,7 +2178,7 @@ test(
         'Connection status is unavailable.',
       );
       await expect(
-        page.getByText('Stale observation', { exact: false }),
+        page.getByText('Out of date', { exact: false }),
       ).toBeVisible();
       assert.equal(
         await page

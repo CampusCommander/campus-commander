@@ -108,6 +108,21 @@ The approved Easton fixture remains available for read-only API checks without r
 An Education domain is not a prerequisite for current customer, domain, and OU reads.
 Unavailable live fixtures remain explicit limitations. No additional Google scopes or mutations are authorized by this record.
 
+## Owner feedback: readable client copy
+
+The owner asked for more natural, readable client copy.
+The client now uses everyday language across sign-in, setup, settings, Google connection, invitations, access, schools, and Diagnostics.
+For example, "Confirmed save receipt" became "Save confirmed," and "Load permitted scopes" became "Choose district or school."
+Messages explain the result and next step. Permission checks, confirmation steps, and Google operations remain unchanged.
+UI-05 now records this writing guidance for future client work.
+
+All 55 Chromium checks and 33 frontend unit tests passed. Both lint targets and the production build passed.
+The updated API browser scripts passed syntax checks. The full container integration suite was not repeated for copy changes.
+The rebuilt running application displayed the revised copy on settings, invitations, schools, platform access, and Diagnostics.
+Screenshot inspection confirmed readable settings copy without clipping. Browser checks cover both themes, focus, narrow layouts, and automated accessibility.
+The earlier native screen-reader evidence retains its original labels. This copy pass does not claim a new human screen-reader review.
+Applicable rules: UI-02, UI-05, UI-06, UI-09, UI-10, and FORM-01.
+
 ## Jira and Git disposition
 
 The current Jira query returned eighteen tasks under CC-42, from CC-44 through CC-61.

@@ -176,9 +176,7 @@ export async function qualifyGoogleHealth({
     await ready();
     await fault('');
     await page.getByRole('button', { name: 'Refresh Google status' }).click();
-    await page
-      .getByRole('button', { name: 'Check enabled Google capabilities' })
-      .click();
+    await page.getByRole('button', { name: 'Check Google access' }).click();
     await expect(page.locator('footer')).toContainText('2 last checks passed');
     const recovered = await read();
     assert.ok(

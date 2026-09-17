@@ -1,8 +1,6 @@
 <div class="connection-content">
   <h1>Google customer connection</h1>
-  <p>
-    Connect the Google Workspace customer that this installation will serve.
-  </p>
+  <p>Connect your organization to Google Workspace.</p>
   @if (error()) {
   <p role="alert" class="error">{{ error() }}</p>
   } @if (store.error()) {
@@ -18,7 +16,11 @@
       Refresh saved status
     </button>
     @if (store.stale() && store.loaded()) {
-    <span>Saved observations are stale. Refresh before confirmation.</span> }
+    <span
+      >The connection details are out of date. Refresh them before
+      continuing.</span
+    >
+    }
   </div>
   @if (store.loading() && !store.loaded()) {
   <section aria-label="Loading connection status" aria-busy="true">
@@ -29,7 +31,7 @@
   } @if (store.connection(); as connection) {
   <section class="card" aria-labelledby="connected-title">
     <h2 id="connected-title">Customer connected</h2>
-    <p>This installation is bound to {{ connection.customerId }}.</p>
+    <p>Connected Google customer: {{ connection.customerId }}.</p>
     <dl>
       <dt>Service account client ID</dt>
       <dd class="identifier">{{ connection.clientId }}</dd>
@@ -44,9 +46,9 @@
       [ngTemplateOutlet]="domains"
       [ngTemplateOutletContext]="{ $implicit: connection.observation }"
     ></ng-container>
-    <p>These domain observations describe the last successful Google read.</p>
+    <p>These domains came from the last successful Google check.</p>
     <a mat-stroked-button routerLink="/diagnostics" fragment="google-health"
-      >Inspect Google capability health</a
+      >Check Google access</a
     >
   </section>
   <app-credential-management />
@@ -69,8 +71,9 @@
   <section class="card" aria-labelledby="import-title">
     <h2 id="import-title">Import a service account</h2>
     <p>
-      Use a service account with domain-wide delegation for background Google
-      access. Application sign-in keeps its existing client.
+      Upload your service-account key to let Campus Commander read Google
+      Workspace data. Configure domain-wide delegation using the instructions
+      below.
     </p>
     <form (ngSubmit)="stage()">
       <input
@@ -95,8 +98,8 @@
         }}
       </p>
       <p>
-        The file stays in this tab until submission. The page clears it after
-        submission or when you leave.
+        Choose your JSON key file, then select Check credentials. Select the
+        file again if you leave this page.
       </p>
       <mat-form-field appearance="outline" subscriptSizing="dynamic">
         <mat-label>Service account client ID</mat-label>
@@ -132,8 +135,8 @@
           [disabled]="busy()"
         />
         <mat-hint
-          >Use an approved Google administrator in the intended
-          customer.</mat-hint
+          >Enter the email of a Google administrator in the organization you
+          want to connect.</mat-hint
         >
       </mat-form-field>
       <details>
@@ -170,8 +173,8 @@
           Copy required scopes
         </button>
         <p>
-          Google approval and propagation take time. Check the configuration
-          before retrying.
+          Google needs time to apply delegation changes. Check the settings,
+          then try again.
         </p>
       </details>
       <button
@@ -192,8 +195,8 @@
     <h2 id="review-title">Review Google customer</h2>
     @if (uncertain()) {
     <p>
-      The result is unknown. Refresh saved status and this review before
-      confirmation.
+      We have not received a result. Refresh the connection status and this
+      review before continuing.
     </p>
     } @if (candidate(); as candidate) {
     <dl>
@@ -211,8 +214,7 @@
     </p>
     } @else if (candidate.status === 'verifying') {
     <p role="status">
-      The credential check is pending. Refresh this review to retrieve its
-      result.
+      The credential check has not finished. Refresh this review to check again.
     </p>
     } @else if (candidate.status === 'failed') {
     <p role="alert" class="error">{{ failure(candidate) }}</p>
@@ -226,15 +228,15 @@
       [ngTemplateOutlet]="domains"
       [ngTemplateOutletContext]="{ $implicit: observation }"
     ></ng-container>
-    <p>Google observation: {{ candidate.observedAt | date:'medium' }}.</p>
+    <p>Last checked: {{ candidate.observedAt | date:'medium' }}.</p>
     @if (candidate.status === 'ready' && !expired()) {
     <p>
       Confirm {{ observation.customerId }} ({{ observation.primaryDomain }}) as
       this installation’s Google customer.
     </p>
     <p>
-      Confirmation activates background read access for this customer. It does
-      not change Google data.
+      Campus Commander will read data from this Google customer after you
+      confirm. This step does not change Google data.
     </p>
     <mat-checkbox
       [(ngModel)]="confirmed"
@@ -249,9 +251,7 @@
       Confirm customer
     </button>
     } } } @else {
-    <p role="status">
-      Retrieve the saved credential check to review its customer.
-    </p>
+    <p role="status">Select Refresh review to see the customer details.</p>
     }
     <div class="actions review-actions">
       <button
@@ -279,7 +279,7 @@
     <dt>Primary domain</dt>
     <dd>{{ observation.primaryDomain }}</dd>
   </dl>
-  <h3>Observed domains</h3>
+  <h3>Domains</h3>
   <ul>
     @for (domain of observation.domains; track domain.name) {
     <li>

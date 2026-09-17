@@ -176,7 +176,7 @@ export class SchoolsStore implements OnDestroy {
           ...value,
           [region]:
             region === 'references'
-              ? 'School references are unavailable. Check your connection and access, then refresh references. Your draft remains unchanged.'
+              ? 'Google organizational units are unavailable. Check your connection, then refresh Google units. Your draft is still here.'
               : 'Saved school data is unavailable or outside your access. Check your connection and access, then retry.',
         }));
     } finally {

@@ -205,7 +205,7 @@ test('assigns district and school presets while preserving other scopes and exac
   page,
 }) => {
   const state = await fixture(page);
-  await page.getByRole('button', { name: 'Load permitted scopes' }).click();
+  await page.getByRole('button', { name: 'Choose district or school' }).click();
   await page
     .getByRole('button', { name: 'Select school School A', exact: true })
     .click();
@@ -233,7 +233,7 @@ test('assigns district and school presets while preserving other scopes and exac
     page.getByRole('heading', { name: 'Reviewed school revisions' }),
   ).toBeVisible();
   await page
-    .getByLabel('I reviewed this identity and its exact access changes.')
+    .getByLabel('I checked the person and the permissions shown above.')
     .check();
   await page
     .getByRole('button', { name: 'Confirm access changes', exact: true })
@@ -243,7 +243,7 @@ test('assigns district and school presets while preserving other scopes and exac
   await expect(
     page.getByRole('status', { name: 'Platform access status' }),
   ).toContainText(
-    'Access changed. Previous sessions require sign-in. Receipt:',
+    'Access saved. This person must sign in again. Change reference:',
   );
 });
 
@@ -251,7 +251,7 @@ test('keeps removal available for an unavailable school and prevents new grants'
   page,
 }) => {
   const state = await fixture(page, true);
-  await page.getByRole('button', { name: 'Load permitted scopes' }).click();
+  await page.getByRole('button', { name: 'Choose district or school' }).click();
   await page
     .getByRole('button', { name: 'Select school School B', exact: true })
     .click();
@@ -260,7 +260,7 @@ test('keeps removal available for an unavailable school and prevents new grants'
   ).toBeDisabled();
   await page
     .getByRole('button', {
-      name: `Remove Read school scopes for School ${schoolB} in ${customerId}`,
+      name: `Remove View schools for School ${schoolB} in ${customerId}`,
     })
     .click();
   await expect(
@@ -274,7 +274,7 @@ test('keeps removal available for an unavailable school and prevents new grants'
   );
   expect(state.proposed()?.grants).toHaveLength(2);
   await page
-    .getByLabel('I reviewed this identity and its exact access changes.')
+    .getByLabel('I checked the person and the permissions shown above.')
     .check();
   await page
     .getByRole('button', { name: 'Confirm access changes', exact: true })
@@ -288,7 +288,7 @@ test('requires another review after a school revision conflict and invalidates p
   page,
 }) => {
   const state = await fixture(page);
-  await page.getByRole('button', { name: 'Load permitted scopes' }).click();
+  await page.getByRole('button', { name: 'Choose district or school' }).click();
   await page
     .getByRole('button', { name: 'Select school School A', exact: true })
     .click();
@@ -307,7 +307,7 @@ test('requires another review after a school revision conflict and invalidates p
     .click();
   state.conflict();
   await page
-    .getByLabel('I reviewed this identity and its exact access changes.')
+    .getByLabel('I checked the person and the permissions shown above.')
     .check();
   await page
     .getByRole('button', { name: 'Confirm access changes', exact: true })
@@ -324,7 +324,7 @@ test('requires another review after a school revision conflict and invalidates p
     .getByRole('button', { name: 'Review access changes', exact: true })
     .click();
   await page
-    .getByLabel('I reviewed this identity and its exact access changes.')
+    .getByLabel('I checked the person and the permissions shown above.')
     .check();
   await page
     .getByRole('button', { name: 'Confirm access changes', exact: true })
@@ -336,7 +336,7 @@ test('enforces delegation limits and qualifies scoped controls in both themes an
   page,
 }) => {
   await fixture(page, false, true);
-  await page.getByRole('button', { name: 'Load permitted scopes' }).click();
+  await page.getByRole('button', { name: 'Choose district or school' }).click();
   await page
     .getByRole('button', { name: 'Select school School A', exact: true })
     .click();
@@ -350,7 +350,7 @@ test('enforces delegation limits and qualifies scoped controls in both themes an
     name: 'Actions for this resource',
   });
   await expect(
-    actions.getByLabel('Read security events', { exact: true }),
+    actions.getByLabel('View security events', { exact: true }),
   ).toBeDisabled();
   for (const theme of ['light', 'dark']) {
     await page.evaluate(
@@ -389,13 +389,13 @@ test('keeps unchecked actions disabled at capacity and submits only displayed gr
     ),
   ];
   const state = await fixture(page, false, false, grants);
-  await page.getByRole('button', { name: 'Load permitted scopes' }).click();
+  await page.getByRole('button', { name: 'Choose district or school' }).click();
   await page
     .getByRole('button', { name: 'Select school School A', exact: true })
     .click();
   const action = page
     .getByRole('group', { name: 'Actions for this resource' })
-    .getByLabel('Read security events', { exact: true });
+    .getByLabel('View security events', { exact: true });
   await expect(action).toBeDisabled();
   await expect(action).not.toBeChecked();
   await page
@@ -405,7 +405,7 @@ test('keeps unchecked actions disabled at capacity and submits only displayed gr
   expect(state.proposed()?.grants).toEqual(expect.arrayContaining(grants));
   await page
     .getByRole('button', {
-      name: `Remove Read school scopes for School ${schoolB} in ${customerId}`,
+      name: `Remove View schools for School ${schoolB} in ${customerId}`,
     })
     .click();
   await expect(action).toBeEnabled();

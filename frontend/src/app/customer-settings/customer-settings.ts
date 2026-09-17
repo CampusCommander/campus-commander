@@ -107,7 +107,7 @@ export class CustomerSettingsPage implements OnDestroy, OnInit {
         this.busy.set(false);
         if (this.pending())
           this.message.set(
-            'The save result is unknown. Check its receipt before editing.',
+            'We have not received a save confirmation. Check the save status before editing.',
           );
       });
     });
@@ -163,7 +163,7 @@ export class CustomerSettingsPage implements OnDestroy, OnInit {
     const csrf = this.auth.session()?.csrfToken;
     this.busy.set(true);
     this.error.set('');
-    this.message.set('Reading the latest save receipt.');
+    this.message.set('Loading the last save.');
     try {
       const response = await this.auth.request(
         `/api/customer/receipts/${customer.lastRequestId}`,
@@ -178,13 +178,11 @@ export class CustomerSettingsPage implements OnDestroy, OnInit {
       )
         throw new Error();
       this.receipt.set(receipt);
-      this.message.set(
-        'Retrieved the confirmed save receipt. Your edited name remains in the form.',
-      );
+      this.message.set('Last save loaded. Your edits are still in the form.');
     } catch {
       if (this.current(operation, csrf))
         this.error.set(
-          'The saved receipt is unavailable. Check your connection and access, then retry.',
+          'The last save details are unavailable. Check your connection and account access, then try again.',
         );
     } finally {
       if (operation === this.operation) {
@@ -217,7 +215,7 @@ export class CustomerSettingsPage implements OnDestroy, OnInit {
     this.error.set('');
     this.message.set(
       keepName
-        ? 'Review your name, then save it against the latest revision.'
+        ? 'Check your edited name, then save when you are ready.'
         : 'Loaded the saved customer name.',
     );
   }
@@ -308,7 +306,7 @@ export class CustomerSettingsPage implements OnDestroy, OnInit {
         this.message.set('');
         this.error.set(
           response.status === 403
-            ? 'Your current access does not permit this save. Your name remains in this form.'
+            ? 'You do not have permission to save these settings. Your edited name is still in the form.'
             : 'The settings are invalid. Check the customer name and retry.',
         );
       } else throw new Error();
@@ -316,7 +314,7 @@ export class CustomerSettingsPage implements OnDestroy, OnInit {
       if (this.current(operation, csrf)) {
         this.message.set('');
         this.error.set(
-          'The save result is unknown. Check its receipt before editing.',
+          'We have not received a save confirmation. Check the save status before editing.',
         );
       }
     } finally {
@@ -350,14 +348,14 @@ export class CustomerSettingsPage implements OnDestroy, OnInit {
       if (response.ok) await this.acceptReceipt(body, input);
       else if (response.status === 404)
         this.message.set(
-          'No receipt is available yet. Retry the same save to resolve this request.',
+          'The save is not confirmed yet. Select Retry save to try again.',
         );
       else throw new Error();
     } catch {
       if (this.current(operation, csrf)) {
         this.message.set('');
         this.error.set(
-          'The save receipt is unavailable. Check your connection and access, then retry.',
+          'The save status is unavailable. Check your connection and account access, then try again.',
         );
       }
     } finally {
@@ -383,7 +381,7 @@ export class CustomerSettingsPage implements OnDestroy, OnInit {
     this.dirty.set(false);
     this.conflict.set(false);
     this.persistPending(null);
-    this.message.set('The server confirmed your customer settings save.');
+    this.message.set('Customer settings saved.');
     await this.store.refresh();
   }
 }

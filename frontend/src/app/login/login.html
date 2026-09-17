@@ -2,11 +2,10 @@
   <section class="card" aria-labelledby="login-title">
     <p class="wordmark">Campus Commander</p>
     <h1 id="login-title">Sign in</h1>
-    <p>Use your authorized application identity to continue.</p>
+    <p>Sign in with the account your administrator approved.</p>
     @if (callbackFailed) {
     <p role="alert" class="error">
-      Sign-in failed. Retry or ask the installation operator to verify your
-      application access.
+      Sign-in failed. Try again, or ask your administrator to check your access.
     </p>
     } @if (auth.error(); as error) {
     <p role="alert" class="error">{{ error }}</p>
@@ -17,15 +16,11 @@
     @if (signingIn()) {
     <p role="status">Connecting to sign-in.</p>
     } } @else {
-    <p role="status">
-      Application sign-in is unavailable. Contact the installation operator.
-    </p>
+    <p role="status">Sign-in is unavailable. Contact your administrator.</p>
     <button mat-stroked-button (click)="auth.metadataReady(true)">
       Retry connection
     </button>
     }
-    <p class="secondary">
-      The installation operator manages application access.
-    </p>
+    <p class="secondary">Contact your administrator if you need an account.</p>
   </section>
 </main>

@@ -18,7 +18,7 @@ export async function withInstalledAdmission(action) {
     'check school boundaries',
     'revoke access',
     'check revoked access',
-    'check access receipts',
+    'check saved access changes',
   ]);
   try {
     return await action((value) => {
@@ -351,7 +351,7 @@ export async function qualifyInstalledPhase3({
         undefined,
         401,
       );
-      checkpoint('check access receipts');
+      checkpoint('check saved access changes');
       receiptIds = [grantReceipt, revokeReceipt];
       const receipts = await read(
         `/api/platform-users/${principalId}/receipts`,

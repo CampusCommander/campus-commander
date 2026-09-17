@@ -105,12 +105,14 @@ it('preserves confirmed access when the following session check fails', async ()
     expect(request).toHaveBeenCalledWith('/api/auth/session');
   });
   expect(element.querySelector('[role="status"]')?.textContent).toContain(
-    `Receipt: ${receiptId}`,
+    `Change reference: ${receiptId}`,
   );
   expect(element.querySelector('[role="alert"]')?.textContent).toContain(
     'Access changed. Session verification is unavailable.',
   );
-  expect(element.textContent).not.toContain('outcome is unknown');
+  expect(element.textContent).not.toContain(
+    'We have not received a save confirmation',
+  );
 });
 
 it('discards a review response from the session before access recovery', async () => {

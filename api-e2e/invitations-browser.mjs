@@ -40,20 +40,20 @@ export async function qualifyInvitationBrowser({
     });
   }
   await page
-    .getByLabel('Recipient label', { exact: true })
+    .getByLabel('Recipient name', { exact: true })
     .fill('Controlled recipient');
   await page
-    .getByLabel('Sign-in subject', { exact: true })
+    .getByLabel('Sign-in ID', { exact: true })
     .fill('invited-platform-user');
   await page
-    .getByRole('checkbox', { name: 'Read customer settings', exact: true })
+    .getByRole('checkbox', { name: 'View customer settings', exact: true })
     .check();
   await page.context().setOffline(true);
   await page
     .getByRole('button', { name: 'Refresh invitations', exact: true })
     .click();
   await expect(page.getByRole('alert')).toBeVisible();
-  await expect(page.getByLabel('Recipient label', { exact: true })).toHaveValue(
+  await expect(page.getByLabel('Recipient name', { exact: true })).toHaveValue(
     'Controlled recipient',
   );
   await page.context().setOffline(false);
@@ -173,7 +173,7 @@ export async function qualifyInvitationBrowser({
     }
     await item
       .getByRole('checkbox', {
-        name: 'I verified this exact identity and its intended access.',
+        name: 'I checked the recipient’s identity and permissions.',
         exact: true,
       })
       .check();
@@ -290,7 +290,7 @@ export async function qualifyInvitationBrowser({
       'Invitation lists exclude token hashes.',
     );
     await page
-      .getByLabel('Recipient label', { exact: true })
+      .getByLabel('Recipient name', { exact: true })
       .fill('Revoked recipient');
     await page
       .getByRole('button', { name: 'Create invitation', exact: true })
