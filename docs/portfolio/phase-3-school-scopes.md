@@ -211,4 +211,20 @@ Both review axes have no remaining findings after that correction.
 [Grant source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173515623) passed at `cea7c9f`.
 Its fixture assigns school grants through public access review and confirmation.
 [Full definition qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173253662) passed all seven jobs at `4c30d49`.
-Full grant integration and browser school controls remain pending.
+[Full grant qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35173907683) passed all seven jobs at `e29f96e`.
+Downloaded reports confirm public school grant assignment through the packaged application and real PostgreSQL.
+Browser school controls remain pending.
+
+## Focused OU picker
+
+Revision `09151bb` adds a focused tree picker for the school editor.
+The picker separates keyboard focus from selection and uses stable OU IDs.
+Arrow keys navigate and expand the tree. Enter and Space select an OU.
+Disabled selection still permits reference inspection.
+Revision `0c66171` reveals updated ancestors when a refresh reparents the focused OU.
+It preserves focus without changing selection.
+
+Applicable rules: UI-04, UI-05, UI-09, UI-10, and TREE-01.
+Frontend tests, lint, and production build pass. Both review axes have no remaining picker findings.
+Browser integration, both themes, zoom, and human screen-reader qualification remain pending.
+The picker has no application route until the school editor integrates its reference and confirmation states.

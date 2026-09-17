@@ -46,9 +46,24 @@
   "grantIntegration": {
     "revision": "cea7c9f",
     "edgeCorrection": "d750e86",
-    "status": "source-passed-full-pending",
+    "status": "source-and-packaged-passed",
     "sourceRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35173515623",
     "sourceReport": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-school-grants-synthetic-google",
+      "checks": [
+        "strict preview input, CSRF, explicit confirmation, and durable receipt recovery",
+        "scoped lists, totals, details, and audit deny another school",
+        "scoped operator cannot manage references, previews, or receipts",
+        "failed reference health preserves saved definitions without effective resource access",
+        "definition confirmation invalidates an affected operator session"
+      ],
+      "limits": ["Browser school forms remain pending."]
+    },
+    "fullRevision": "e29f96e98c7d8445ffcad63e0cb0a5b856d4f5d4",
+    "fullRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35173907683",
+    "fullJobs": "All seven jobs passed, including PostgreSQL and packaged application integration.",
+    "packagedReport": {
       "schemaVersion": 1,
       "fixture": "real-api-postgres-school-grants-synthetic-google",
       "checks": [
@@ -66,7 +81,6 @@
     "specification": "No remaining findings after d750e86."
   },
   "remaining": [
-    "Full grant integration qualification.",
     "School browser forms and OU selector.",
     "Human accessibility and acceptance.",
     "Combined deployment and release qualification.",
@@ -77,5 +91,19 @@
     "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35173253662",
     "status": "passed",
     "scope": "All seven full-run jobs passed, including packaged school reference and definition APIs."
+  },
+  "picker": {
+    "revision": "0c66171",
+    "status": "component-checks-passed-page-integration-pending",
+    "checks": [
+      "Arrow, Home, End, Enter, and Space keyboard behavior",
+      "Focus and selection remain separate",
+      "Stable focus after rename and reparenting beneath a collapsed ancestor",
+      "Disabled selection retains reference inspection",
+      "Frontend tests, lint, and production build"
+    ],
+    "limits": [
+      "Browser integration, both themes, zoom, and human screen-reader qualification remain pending."
+    ]
   }
 }
