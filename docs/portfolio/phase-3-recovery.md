@@ -125,13 +125,21 @@ The school retains its approved scope. Its historical references do not establis
 The fixture uses packaged application images, real Kestra, and the production operator CLI from the workspace.
 Google transport and the sign-in provider remain synthetic. Both installations share one Docker host and reuse one loopback HTTPS origin.
 This fixture does not establish accepted Phase 2 upgrade, extracted release-bundle delivery, live Google privileges, or pending login-transaction recovery.
-Hosted execution remains pending. CI will retain separate profile and restore reports in `dist/phase-3-recovery`.
+[Run 35189111352](https://github.com/CampusCommander/campus-commander/actions/runs/35189111352) passed this fixture at `c4931fc`.
+The [retained report](../../deployment/evidence/CC-56-isolated-application-restore.json) records preserved state, 51 original security events, restored artifact bytes, and rejected source sessions.
+The restored browser session read the customer settings and school definition. PostgreSQL, Redis, Kestra, and artifact diagnostics passed.
+The isolated restore fixture took 45,959 ms. Database restore took 592 ms. The backup was approximately 41 seconds old at report creation.
+The complete Phase 3 installation and recovery fixture took 194,185 ms. These measurements do not establish district recovery objectives.
+
+The full run failed its separate Phase 2 all-Docker check while awaiting the Sign in heading after resume.
+The packaged Phase 3 check and seven other jobs passed. The independent Phase 3 restore step also passed.
+The Phase 2 browser failure and earlier response-observation failure remain unresolved. This run does not establish full compatibility.
 
 ## Remaining recovery work
 
 - Inventory and verify complete customer, settings, school, grant, progress, receipt, credential, and security-event state.
 - Test live revoked-grant and changed-privilege fixtures when available.
-- Execute the complete Phase 3 operator-CLI restore with distinct databases, networks, storage, and fresh Redis.
+- Extend the isolated application fixture to pending invitations, pending login transactions, and the complete durable state inventory.
 - Record measured recovery time, backup age, fixture limits, operator recovery, and erasure procedures.
 
 Local deployment lint, PostgreSQL contract tests, and operations contract tests pass.
