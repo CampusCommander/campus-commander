@@ -4,6 +4,7 @@
   "sourceRoot": "deployment/src",
   "projectType": "library",
   "tags": [],
+  "implicitDependencies": ["google-connection", "application-contracts"],
   "targets": {
     "installer-test": {
       "executor": "nx:run-commands",
@@ -94,7 +95,11 @@
       "cache": true,
       "outputs": ["{workspaceRoot}/dist/deployment"],
       "options": {
-        "command": "tsc -p deployment/tsconfig.lib.json"
+        "commands": [
+          "tsc -p deployment/tsconfig.lib.json",
+          "node deployment/google-runtime.build.mjs"
+        ],
+        "parallel": false
       }
     },
     "test": {

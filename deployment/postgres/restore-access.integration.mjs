@@ -49,16 +49,27 @@ export async function qualifyRestoredAccess({
       "SELECT count(*)::int AS count FROM cc.application_invitations WHERE status IN ('issued','redeeming','pending')",
     )
   ).rows[0].count;
+  const counts = (
+    await migrator.query(`SELECT
+    (SELECT count(*)::int FROM cc.google_credential_candidates WHERE status IN ('verifying','ready')) AS candidates,
+    (SELECT count(*)::int FROM cc.school_reviews WHERE applied_at IS NULL AND expires_at>clock_timestamp()) AS reviews`)
+  ).rows[0];
   const result = await invalidateRestoredAccess(migrator);
   assert.deepEqual(result, {
     bootstrapCredentialsRevoked: 1,
     pendingInvitationsRevoked: expected,
+    credentialCandidatesExpired: counts.candidates,
+    schoolReviewsExpired: counts.reviews,
+    googleConnection: { status: 'not-required' },
   });
   await verifyInvitationRecovery(migrator, runtime, fixtures);
   const restored = await state();
   assert.deepEqual(await invalidateRestoredAccess(migrator), {
     bootstrapCredentialsRevoked: 0,
     pendingInvitationsRevoked: 0,
+    credentialCandidatesExpired: 0,
+    schoolReviewsExpired: 0,
+    googleConnection: { status: 'not-required' },
   });
   assert.deepEqual(await state(), restored);
   return [

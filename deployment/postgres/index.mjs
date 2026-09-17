@@ -111,6 +111,7 @@ export async function loadMigrations() {
       '012-school-references',
       '013-school-definitions',
       '014-school-grants',
+      '015-restore-revalidation',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),

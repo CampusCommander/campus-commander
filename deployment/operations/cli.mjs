@@ -3,6 +3,7 @@ import { open, readFile } from 'node:fs/promises';
 import { backupFoundation, restoreFoundation, verifyBackup } from './index.mjs';
 import { secretPath } from '../redis/runtime.mjs';
 import { operationFailureReason } from './failure.mjs';
+import { revalidateRestoredGoogle } from './revalidate-google.mjs';
 
 try {
   const [command, inputPath] = process.argv.slice(2);
@@ -18,7 +19,10 @@ try {
       'A protected backup key was created. Preserve it separately from backup material.',
     );
   } else {
-    if (!['backup', 'verify', 'restore'].includes(command) || !inputPath)
+    if (
+      !['backup', 'verify', 'restore', 'revalidate-google'].includes(command) ||
+      !inputPath
+    )
       throw new Error('Invalid backup command.');
     const operator = JSON.parse(await readFile(inputPath, 'utf8'));
     const resolveSecret = (reference) => readFile(secretPath(reference));
@@ -27,7 +31,21 @@ try {
       keyRecovery: operator.keyRecovery,
       resolveSecret,
     };
-    if (command === 'verify') {
+    if (command === 'revalidate-google') {
+      const targetConfig = JSON.parse(
+        await readFile(operator.configurationPath, 'utf8'),
+      );
+      console.log(
+        JSON.stringify(
+          await revalidateRestoredGoogle({
+            targetConfig,
+            targetDirectory: operator.targetDirectory,
+            applicationCredentials: operator.applicationCredentials,
+            resolveSecret,
+          }),
+        ),
+      );
+    } else if (command === 'verify') {
       const manifest = await verifyBackup(common);
       console.log(
         JSON.stringify({

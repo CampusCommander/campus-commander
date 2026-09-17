@@ -28,17 +28,41 @@ It verifies that source invitation tokens and pending invitation browser binding
 Terminal invitation bindings retain their existing status projection. They do not create a platform session or grant.
 This foundation fixture does not establish the complete Phase 3 browser or deployment-profile restore workflow.
 
+## Google revalidation gate
+
+Restore expires pending credential candidates and unapplied school reviews within the same invalidation transaction.
+It erases candidate ciphertext, token caches, renewal leases, health-check leases, and school-reference leases.
+It preserves the confirmed customer, committed credential, credential generation, key identity, and historical observations.
+An active Google connection receives a PostgreSQL gate tied to the restore correlation ID.
+Runtime roles cannot change that gate. Background token access, observation publication, and health or school-reference checks reject the closed gate.
+A disconnected connection remains disconnected. A target without an active Google connection does not require Google revalidation.
+
+The `revalidate-google` operator command requires the private target directory, saved configuration, restore report, and `RESTORE_DISABLED` marker.
+It rejects configuration changes and database-identity overrides. It requires stopped application and Kestra database connections.
+The command decrypts the committed credential with its recorded key ID. It accepts that key from primary or additional key references.
+It does not try other keys. The credential key remains separate from the backup encryption key.
+The shared Google verifier checks the restored credential and requires the same confirmed customer.
+A successful transaction saves the observation, opens the gate, and records a `connection-checked` event with `restore-revalidated` detail.
+Missing keys, wrong keys, provider failures, changed credential state, and different customers leave the gate closed.
+An audit failure rolls back the observation and gate together.
+
+The command writes `google-revalidation.json` after the database commit. It retains `RESTORE_DISABLED` for the remaining operator acceptance checks.
+A repeated command returns `already-revalidated` with the original verification time. This receipt does not establish a new provider check.
+Restored school references remain historical until a new reference check succeeds after the restore boundary.
+Each restore creates a new boundary. Repeating invitation invalidation still produces no duplicate invitation revocation.
+
+The PostgreSQL fixture exercises key selection, provider failures, gate enforcement, audit rollback, and reference freshness with synthetic credentials.
+The provider fixture does not establish live grant revocation or minimum-role behavior.
+Hosted PostgreSQL qualification for this increment remains pending.
+
 ## Remaining recovery work
 
 - Inventory and verify complete customer, settings, school, grant, progress, receipt, credential, and security-event state.
-- Invalidate other pending reviews, credential candidates, and provider leases that belong to the source installation.
-- Verify recovered credential encryption keys independently from the encrypted backup key.
-- Require connection revalidation before background Google reads resume.
-- Prove missing-key, revoked-grant, changed-privilege, and wrong-customer failures without fallback.
+- Qualify the new gate against real PostgreSQL and test live revoked-grant and changed-privilege fixtures when available.
 - Execute the complete Phase 3 operator-CLI restore with distinct databases, networks, storage, and fresh Redis.
 - Record measured recovery time, backup age, fixture limits, operator recovery, and erasure procedures.
 
 Local deployment lint, PostgreSQL contract tests, and operations contract tests pass.
-[Full run 35184380912](https://github.com/CampusCommander/campus-commander/actions/runs/35184380912) passed its PostgreSQL and operations jobs at `24741c8`.
-Those jobs execute the audit-failure probes and actual backup/restore fixture. Packaged application compatibility remains pending.
+[Full run 35184380912](https://github.com/CampusCommander/campus-commander/actions/runs/35184380912) passed all seven jobs at `24741c8`.
+That run covers invitation invalidation, actual backup/restore, and packaged application compatibility. It predates the Google revalidation gate.
 This result does not qualify the complete Phase 3 operator-CLI restore workflow.

@@ -116,6 +116,25 @@ It writes `restore-report.json` and `target-configuration.json`. It removes temp
 A failed restore can retain plaintext dumps inside the private, disabled target directory.
 Protect and explicitly erase that failed target through district procedures after investigation.
 
+For Phase 3, restore also expires pending Google candidates and school reviews and discards provider token caches and leases.
+An active Google connection receives a database gate that blocks background reads until operator revalidation succeeds.
+Preserve its committed encryption key through independent recovery. The encrypted backup key does not decrypt Google credentials.
+If `accessRecovery.googleConnection.status` is `revalidation-required`, use the same target operator input:
+
+```sh
+node deployment/operations/cli.mjs revalidate-google /protected/restore-operator.json
+```
+
+Keep the target configuration unchanged. Recover the recorded key into its configured primary or additional secret mount.
+Use only `role` and `passwordSecretRef` in `applicationCredentials` for this command.
+Keep application services and Kestra stopped. The command checks both databases for other connections.
+The command verifies the recorded key, credential identity, and current Google customer with the shared Google verifier.
+A failure leaves the database gate closed. Resolve the reported prerequisite and repeat the command.
+Success writes `google-revalidation.json` with the restore identity, generation, and verification time. It retains `RESTORE_DISABLED`.
+A repeated command returns the original receipt as `already-revalidated`. It does not perform a new Google check.
+After release, refresh school references before using effective school scope. Restore preserves old references only as historical observations.
+A `not-required` restore report needs no Google revalidation command. Disconnected Google connections remain disconnected.
+
 Before release, inspect the report and verify expected application and Kestra fixture values.
 Read restored artifacts through the storage adapter and verify Kestra internal execution files.
 Create a fresh Redis instance with the configured authentication and TLS settings.
