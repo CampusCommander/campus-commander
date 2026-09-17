@@ -36,6 +36,11 @@ html {
       filled-container-shape: var(--cc-radius-control),
     )
   );
+  @include mat.form-field-overrides(
+    (
+      outlined-focus-label-text-color: var(--cc-text-primary),
+    )
+  );
   background: var(--cc-surface-app);
   color: var(--cc-text-primary);
   font:

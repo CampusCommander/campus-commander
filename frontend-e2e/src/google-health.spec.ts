@@ -338,7 +338,7 @@ test('health links focus details across routes and during repeated same-route na
   await footerLink.click();
   await expect(heading).toBeFocused();
   await page
-    .getByRole('link', { name: 'Google customer connection', exact: true })
+    .getByRole('link', { name: 'Google connection', exact: true })
     .click();
   await page
     .getByRole('link', { name: 'Inspect Google capability health' })

@@ -50,7 +50,7 @@ All ten [installed workflow checks](../../deployment/evidence/CC-60-review-a043e
 ## Open review work
 
 1. Resolve the inconclusive contrast observations against rendered controls in both themes.
-2. Record screen-reader interaction evidence separately from automated accessibility checks.
+2. Complete human screen-reader review. The native screen-reader sample below does not replace that review.
 3. Have the owner review connection, settings, invitations, access, schools, and recovery messages in the client.
 4. Correct reported defects and verify each affected workflow.
 5. Record acceptance or explicit exceptions against the selected build before closing Phase 3.
@@ -58,7 +58,7 @@ All ten [installed workflow checks](../../deployment/evidence/CC-60-review-a043e
 The 17 inconclusive results concern background overlap or partial obscuration in contrast checks.
 They are not recorded as passed contrast checks or confirmed accessibility defects.
 All 38 reports mark the human screen-reader walkthrough `not-run`.
-Applicable rules: UI-06, UI-09, and UI-10. No client controls change in this record.
+Applicable rules: UI-06, UI-09, and UI-10. The source corrections below follow this initial evidence review.
 
 A supplemental [rendered contrast check](../../deployment/evidence/CC-61-rendered-contrast.json) inspected the running source client with actual theme controls.
 It measured 180 visible text samples across settings, invitations, school drafts, and platform access in both themes.
@@ -67,6 +67,42 @@ The check expanded collapsed details and excluded hidden and disabled controls.
 Screenshot inspection confirmed visible settings text and school controls. The check restored the administrator's light theme.
 The initial probe included loading states and collapsed content. Those results did not establish product defects.
 This supplemental check does not replay every packaged state or close the original 17 inconclusive observations.
+
+## Native screen-reader check
+
+The [native reader result](../../deployment/evidence/CC-61-native-screen-reader.json) records Orca 50.2 with Chromium and AT-SPI2.
+All sixteen selected controls passed native focus and spoken-label checks.
+The controls cover sign-in, settings, invitations, connection status, school review, and platform access.
+Orca also announced **Confirmed save receipt** after the settings save.
+The fixture used simulated providers. It made no live Google requests.
+Audio went to an isolated null device. Human listening and usability review remain open.
+
+The initial probe raced Orca's automatic whole-page reading, which moved its caret through page content.
+A plain HTML control probe passed. Application focus also remained stable without Orca.
+The corrected probe disabled automatic whole-page reading through the isolated Orca service and verified the runtime setting.
+The complete probe then passed. Desktop preferences and application focus behavior did not change.
+
+The probe also exposed different visible and accessible names for the Google connection navigation link.
+The link displayed **Google connection** but exposed **Google customer connection** to assistive technology.
+The source correction uses **Google connection** for both names, following [W3C label guidance](https://www.w3.org/WAI/WCAG22/Understanding/label-in-name.html).
+The existing navigation test failed with the matching-name expectation before the correction.
+This correction follows the published review build. Its original artifact remains unchanged.
+Applicable rules: UI-02, UI-05, UI-09, and UI-10.
+
+## Focused field label correction
+
+Browser checks found a focused field label with 3.7:1 contrast in the dark theme.
+Material used the accent color for ordinary focused label text.
+The shared theme now uses `text/primary` for focused outlined field labels. Error labels retain their separate semantic color.
+The measured foreground and card colors produce 13.83:1 contrast in dark mode and 16.10:1 in light mode.
+The existing import test now checks the focused label color and rendered contrast directly in both themes.
+It uses a valid address to distinguish ordinary focus from empty-field validation.
+
+The Chromium suite passed 54 checks before that fixture correction. The corrected remaining check then passed separately.
+Frontend production build and both lint targets passed. Lint retains five existing warnings and no errors.
+The running application also passed navigation-name and focused settings-label checks in both themes after the rebuild.
+These checks cover the source corrections. The published review artifact retains its original source and evidence.
+Applicable rules: UI-04, UI-05, UI-09, and UI-10.
 
 The approved Easton fixture remains available for read-only API checks without repeated authorization requests.
 An Education domain is not a prerequisite for current customer, domain, and OU reads.

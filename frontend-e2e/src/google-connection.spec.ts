@@ -306,7 +306,7 @@ test('phase two does not expose customer onboarding', async ({ page }) => {
   await fixture(page, true, 2);
   await expect(page).toHaveURL(/\/account$/);
   await expect(
-    page.getByRole('link', { name: 'Google customer connection' }),
+    page.getByRole('link', { name: 'Google connection', exact: true }),
   ).toHaveCount(0);
 });
 
@@ -370,14 +370,58 @@ test('customer import and review meet automated accessibility and overflow check
       path: testInfo.outputPath(`import-${theme}.png`),
       fullPage: true,
     });
-    await page.getByLabel('Delegated administrator email').focus();
+    await page
+      .getByLabel('Delegated administrator email')
+      .fill('administrator@fixture.invalid');
+    await expect(
+      page
+        .locator('mat-form-field')
+        .filter({ has: page.getByLabel('Delegated administrator email') }),
+    ).toHaveClass(/mat-focused/);
+    await expect(
+      page
+        .locator('mat-form-field')
+        .filter({ has: page.getByLabel('Delegated administrator email') })
+        .locator('mat-label'),
+    ).toHaveCSS('color', color);
     await page.evaluate(async () => {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
       await Promise.all(
         document
           .getAnimations()
           .map((animation) => animation.finished.catch(() => undefined)),
       );
     });
+    const focusedLabelContrast = await page
+      .locator('mat-form-field')
+      .filter({ has: page.getByLabel('Delegated administrator email') })
+      .locator('mat-label')
+      .evaluate((label) => {
+        const surface = label.closest('.card');
+        if (!surface)
+          throw new Error('The field requires its rendered surface.');
+        const luminance = (color: string) => {
+          const channels = color.match(/^rgb\((\d+), (\d+), (\d+)\)$/);
+          if (!channels) throw new Error('Measure opaque RGB colors.');
+          return channels.slice(1).reduce((sum, channel, index) => {
+            const value = Number(channel) / 255;
+            const linear =
+              value <= 0.04045
+                ? value / 12.92
+                : ((value + 0.055) / 1.055) ** 2.4;
+            return sum + linear * [0.2126, 0.7152, 0.0722][index];
+          }, 0);
+        };
+        const text = luminance(getComputedStyle(label).color);
+        const background = luminance(getComputedStyle(surface).backgroundColor);
+        return (
+          (Math.max(text, background) + 0.05) /
+          (Math.min(text, background) + 0.05)
+        );
+      });
+    expect(focusedLabelContrast).toBeGreaterThanOrEqual(4.5);
     const focused = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze();
