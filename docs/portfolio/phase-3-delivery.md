@@ -177,3 +177,9 @@ The workflow verifies both baseline blob signatures, pinned archive and manifest
 The fixture requires the exact pinned baseline manifest hash before it runs the installer.
 Local rejection tests cover changed archives, manifest hashes, source revisions, image identities, and extracted files.
 Hosted upgrade execution remains required. The pinned acceptance record does not identify the owner's exact previously installed revision.
+
+Run `35216552096` verified both releases and all six image signatures before Nx rejected a duplicate `deployment` project.
+The extracted Phase 2 baseline contained its own project metadata. The installer did not run.
+A local duplicate-project fixture reproduced the same failure.
+Nx now excludes `extracted-baseline/`, alongside the existing extracted-candidate exclusion.
+The unchanged local fixture then passed project discovery. This check does not establish upgrade execution.
