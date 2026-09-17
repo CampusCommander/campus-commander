@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import { expect } from '@playwright/test';
 
 export async function qualificationSignIn(
@@ -40,11 +41,19 @@ export async function qualificationBrowserStep(
         ? 'authentication'
         : parsed.pathname.endsWith('.js')
           ? 'script'
-          : parsed.pathname === '/'
-            ? 'application-root'
-            : parsed.pathname === '/account'
-              ? 'account'
-              : 'other',
+          : parsed.pathname.startsWith('/api/google-connection')
+            ? 'connection-api'
+            : parsed.pathname.startsWith('/api/customer')
+              ? 'customer-api'
+              : parsed.pathname === '/google-connection'
+                ? 'connection-page'
+                : parsed.pathname === '/invitations'
+                  ? 'invitations-page'
+                  : parsed.pathname === '/'
+                    ? 'application-root'
+                    : parsed.pathname === '/account'
+                      ? 'account'
+                      : 'other',
     };
   };
   const failed = (request) =>
@@ -56,7 +65,11 @@ export async function qualificationBrowserStep(
         'unclassified',
     });
   const response = (value) => {
-    if (value.request().isNavigationRequest() || value.status() >= 400)
+    if (
+      value.request().isNavigationRequest() ||
+      value.status() >= 400 ||
+      new URL(value.url()).pathname.startsWith('/api/')
+    )
       record({
         kind: 'response',
         ...resource(value.url()),
@@ -66,9 +79,11 @@ export async function qualificationBrowserStep(
   const pageError = (error) =>
     record({
       kind: 'page-error',
-      codes: error.message.match(/NG[0-9]+|[A-Za-z]+Error/g)?.slice(0, 10) ?? [
-        'unclassified',
-      ],
+      codes: error.message
+        .match(
+          /\b(?:NG[0-9]{4}|TypeError|ReferenceError|SyntaxError|RangeError|URIError|EvalError|AggregateError|Error)\b/g,
+        )
+        ?.slice(0, 10) ?? ['unclassified'],
     });
   page.on('requestfailed', failed);
   page.on('response', response);
@@ -76,12 +91,26 @@ export async function qualificationBrowserStep(
   try {
     await action();
   } catch (error) {
+    const documentState = await Promise.race([
+      page
+        .evaluate(() => ({
+          readyState: document.readyState,
+          applicationChildren:
+            document.querySelector('app-root')?.childElementCount ?? 0,
+          headings: document.querySelectorAll('h1').length,
+          busyRegions: document.querySelectorAll('[aria-busy="true"]').length,
+          alerts: document.querySelectorAll('[role="alert"]').length,
+        }))
+        .catch(() => null),
+      delay(1000, null, { ref: false }),
+    ]);
     await writeFile(
       `${evidenceDirectory}/${label}-failure.json`,
       JSON.stringify(
         {
           schemaVersion: 1,
           finalLocation: resource(page.url()),
+          documentState,
           events,
         },
         null,

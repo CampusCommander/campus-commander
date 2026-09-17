@@ -1,4 +1,7 @@
-import { qualificationSignIn } from './qualification-sign-in.mjs';
+import {
+  qualificationSignIn,
+  qualificationBrowserStep,
+} from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { readFile, writeFile, rm } from 'node:fs/promises';
@@ -220,7 +223,20 @@ export async function qualifyGoogleLifecycleApi({
     assert.equal(current.active, true);
     assert.equal(current.keyId, 'synthetic-google-key');
     assert.equal((await workerRead(current.generation)).status, 200);
-    await page.goto(`${publicOrigin}/google-connection`);
+    await qualificationBrowserStep(
+      page,
+      publicOrigin,
+      evidenceDirectory,
+      'google-lifecycle-navigation',
+      async () => {
+        await page.goto(`${publicOrigin}/google-connection`);
+        await expect(
+          page.getByRole('button', {
+            name: /^(Replace|Reconnect) Google credentials$/,
+          }),
+        ).toBeVisible({ timeout: 30000 });
+      },
+    );
     const confirm = page.getByRole('checkbox', {
       name: 'I reviewed this credential change and its effect on background access',
       exact: true,
