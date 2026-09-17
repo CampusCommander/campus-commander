@@ -22,6 +22,10 @@ import { changeApplicationAccess } from '../bootstrap/application-access.mjs';
 import { createOperationsCliFixture } from './cli-fixture.mjs';
 import { noOtherConnections } from './quiescence.mjs';
 import {
+  seedInvitationRecovery,
+  verifyInvitationRecovery,
+} from './restore-access-fixture.mjs';
+import {
   backupFoundation,
   postgresToolArguments,
   restoreFoundation,
@@ -162,6 +166,10 @@ try {
   const originalEvents = (
     await migration.query('SELECT * FROM cc.security_events ORDER BY id')
   ).rows;
+  const invitationRecovery = await seedInvitationRecovery(
+    migration,
+    principalId,
+  );
   await migration.end();
   const sourceRoots = {
     artifacts: join(root, 'source-artifacts'),
@@ -559,6 +567,7 @@ try {
     policy: 'discard-cache',
     releaseRequiresFreshRedis: true,
   });
+  assert.equal(report.accessRecovery.pendingInvitationsRevoked, 3);
   assert.deepEqual(
     JSON.parse(
       await readFile(
@@ -603,9 +612,24 @@ try {
     originalPrincipals,
   );
   assert.deepEqual(
-    (await pool.query('SELECT * FROM cc.security_events ORDER BY id')).rows,
+    (
+      await pool.query(
+        "SELECT * FROM cc.security_events WHERE detail IS DISTINCT FROM 'restore-invalidated' ORDER BY id",
+      )
+    ).rows,
     originalEvents,
   );
+  const restoredAccess = new pg.Client({
+    ...connection,
+    user: 'migrator-target',
+    database: 'app-target',
+  });
+  await restoredAccess.connect();
+  try {
+    await verifyInvitationRecovery(restoredAccess, pool, invitationRecovery);
+  } finally {
+    await restoredAccess.end();
+  }
   store = await createArtifactStore({
     pool,
     root: targetConfig.artifacts.location,

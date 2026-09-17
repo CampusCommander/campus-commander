@@ -109,6 +109,9 @@ Create another empty target for retry. Preserve failed targets until the operato
 
 Successful restore verifies table inventories and every ready artifact checksum.
 It restores application grants and revokes restored bootstrap credentials.
+It revokes pending invitations and removes their source token hashes and browser bindings.
+Bootstrap revocation, invitation revocation, and invitation audit events commit together. An audit failure leaves the target disabled.
+Accepted and other terminal invitations retain their state. The report records revocation counts without invitation secrets.
 It writes `restore-report.json` and `target-configuration.json`. It removes temporary plaintext database dumps after success.
 A failed restore can retain plaintext dumps inside the private, disabled target directory.
 Protect and explicitly erase that failed target through district procedures after investigation.

@@ -1,4 +1,5 @@
 import { qualifySchoolReferences } from './school-references.integration.mjs';
+import { qualifyRestoredAccess } from './restore-access.integration.mjs';
 import { qualifyGoogleLifecycle } from './google-lifecycle.integration.mjs';
 import { qualifyGoogleHealth } from './google-health.integration.mjs';
 import { qualifyGoogleConnection } from './google-connection.integration.mjs';
@@ -620,6 +621,13 @@ try {
   assert.equal(await verifyBootstrap(runtime, replacement), false);
   results.push(
     'bootstrap resume preserves expiry; expiry, replacement CAS, old credential denial, and revocation: pass',
+  );
+  results.push(
+    ...(await qualifyRestoredAccess({
+      runtime,
+      migrator: migrators[0],
+      principalId,
+    })),
   );
   const ca = await readFile(join(directory, 'server.crt'), 'utf8');
   const external = {
