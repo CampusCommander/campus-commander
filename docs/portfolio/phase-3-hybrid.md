@@ -30,8 +30,8 @@ gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
   -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Profile=hybrid
 ```
 
-Hybrid dispatch supports installation, Phase 2 upgrade, and isolated restore modes.
-Fault, lifecycle, and guided-update modes require their own Phase 3 fixtures before dispatch can accept them.
+Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, and service fault modes.
+Other fault kinds, lifecycle, and guided-update modes require their own Phase 3 fixtures before dispatch can accept them.
 The existing Phase 2 targets retain their previous modes.
 
 ## Remaining evidence
@@ -299,3 +299,23 @@ The hosted fixture also checks that bootstrap access remains revoked after targe
 
 API tests, hybrid fixtures, lint, and formatting pass.
 PR CI passed at `63fa898`. Complete hosted restoration remains open.
+
+## Service fault increment
+
+The `api-e2e:phase3-hybrid-fault-integration` target installs the extracted Phase 3 bundle before fault injection.
+It completes public workflows and lifecycle checks before capturing durable state.
+Six cases interrupt API services, both worker hosts, external Redis, external PostgreSQL, Kestra, and shared artifact access.
+Protected access must fail during required dependency loss. Diagnostic operations must report failure with correlation identifiers.
+Recovery must complete within 180 seconds, including diagnostics, workflow reads, durable checks, and both API replicas.
+A Redis restart must invalidate the previous session. A fresh sign-in must succeed.
+
+The fixture hashes protected credential and policy records inside the owned external database.
+It compares principals, preferences, migration checksums, original audit records, artifact metadata and bytes, and completed Kestra executions.
+A UTF-8 marker verifies Kestra internal storage. Diagnostic records can increase without changing original records.
+Ownership checks reject foreign resources before filesystem or service access.
+The fixture repeats customer, school, credential-generation, disabled-user, and receipt reads after every fault.
+Distributed worker credential checks follow the fault cases.
+
+Hybrid dispatch accepts only the service fault kind. It rejects mixed restore, upgrade, lifecycle, and update modes.
+Separate reports identify the application, harness, executed cases, recovery durations, and preserved state.
+This increment requires hosted qualification. It does not establish network, certificate, capacity, or live Google fault acceptance.

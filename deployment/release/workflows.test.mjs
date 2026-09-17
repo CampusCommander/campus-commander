@@ -542,7 +542,10 @@ test('service fault dispatch rejects upgrade mode before starting containers', a
   const capacity = steps.find(
     (step) => step.name === 'Qualify Phase 3 capacity failure',
   );
-  assert.equal(capacity.if, "inputs.faults && inputs.faultKind == 'capacity'");
+  assert.equal(
+    capacity.if,
+    "inputs.profile == 'all-docker' && inputs.faults && inputs.faultKind == 'capacity'",
+  );
   assert.equal(
     capacity.run,
     'npm exec nx run api-e2e:phase3-capacity-fault-integration',
@@ -552,7 +555,7 @@ test('service fault dispatch rejects upgrade mode before starting containers', a
   );
   assert.equal(
     certificates.if,
-    "inputs.faults && inputs.faultKind == 'certificates'",
+    "inputs.profile == 'all-docker' && inputs.faults && inputs.faultKind == 'certificates'",
   );
   assert.equal(
     certificates.run,
@@ -561,7 +564,10 @@ test('service fault dispatch rejects upgrade mode before starting containers', a
   const provider = steps.find(
     (step) => step.name === 'Qualify Phase 3 provider failures',
   );
-  assert.equal(provider.if, "inputs.faults && inputs.faultKind == 'provider'");
+  assert.equal(
+    provider.if,
+    "inputs.profile == 'all-docker' && inputs.faults && inputs.faultKind == 'provider'",
+  );
   assert.equal(
     provider.run,
     'npm exec nx run api-e2e:phase3-provider-fault-integration',
@@ -569,7 +575,10 @@ test('service fault dispatch rejects upgrade mode before starting containers', a
   const fault = steps.find(
     (step) => step.name === 'Qualify Phase 3 service interruptions',
   );
-  assert.equal(fault.if, "inputs.faults && inputs.faultKind == 'services'");
+  assert.equal(
+    fault.if,
+    "inputs.profile == 'all-docker' && inputs.faults && inputs.faultKind == 'services'",
+  );
   assert.equal(fault.run, 'npm exec nx run api-e2e:phase3-fault-integration');
   assert.ok(
     steps.indexOf(fault) >
@@ -723,7 +732,7 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
   );
   assert.equal(
     hybrid.if,
-    "inputs.profile == 'hybrid' && inputs.upgrade != true && inputs.restore != true",
+    "inputs.profile == 'hybrid' && inputs.upgrade != true && inputs.restore != true && inputs.faults != true",
   );
   const hybridUpgrade = steps.find(
     (s) => s.name === 'Qualify Phase 2-to-3 hybrid upgrade',
@@ -804,7 +813,8 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
               });
             if (
               selectedProfile === 'hybrid' &&
-              ![faults, lifecycle, update].some(Boolean)
+              ![lifecycle, update].some(Boolean) &&
+              !(upgrade && faults)
             )
               assert.doesNotThrow(run);
             else assert.throws(run);
@@ -855,4 +865,57 @@ test('Hybrid restore dispatch rejects mixed modes and selects its own evidence',
               assert.doesNotThrow(run);
             else assert.throws(run);
           }
+});
+
+test('Hybrid service faults use their own target and reject unsupported fault kinds', async () => {
+  const profile = await workflow('phase-3-profile-check');
+  const steps = profile.jobs.installation.steps;
+  const fault = steps.find(
+    (step) => step.name === 'Qualify Phase 3 hybrid service interruptions',
+  );
+  assert.equal(
+    fault.if,
+    "inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'services'",
+  );
+  assert.match(fault.run, /api-e2e:phase3-hybrid-fault-integration/);
+  assert.match(fault.run, /sudo -H -u '#1000' -g '#1000'/);
+  assert.match(fault.run, /CC_AUTH_INSTALLER_ROOT/);
+  assert.equal(fault.env.NX_DAEMON, 'false');
+  const upload = steps.find((step) =>
+    step.uses?.startsWith('actions/upload-artifact@'),
+  );
+  assert.ok(
+    upload.with.name.includes(
+      "inputs.profile == 'hybrid' && inputs.faults && 'phase-3-hybrid-service-faults'",
+    ),
+  );
+  assert.ok(
+    upload.with.path.includes(
+      "inputs.profile == 'hybrid' && inputs.faults && 'dist/phase-3-hybrid-faults/'",
+    ),
+  );
+  for (const kind of [
+    'services',
+    'provider',
+    'certificates',
+    'capacity',
+    'unknown',
+  ]) {
+    const run = () =>
+      execFileSync('bash', ['-e', '-c', steps[0].run], {
+        env: {
+          ...process.env,
+          PROFILE: 'hybrid',
+          UPGRADE: 'false',
+          RESTORE: 'false',
+          FAULTS: 'true',
+          FAULT_KIND: kind,
+          LIFECYCLE: 'false',
+          UPDATE_RELEASE: '',
+        },
+        stdio: 'pipe',
+      });
+    if (kind === 'services') assert.doesNotThrow(run);
+    else assert.throws(run);
+  }
 });

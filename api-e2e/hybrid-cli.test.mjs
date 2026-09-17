@@ -37,6 +37,7 @@ import { loadPhase2UpgradeBaseline } from './phase3-upgrade-fixture.mjs';
 import { qualifyHybridRestore } from './phase3-hybrid-restore-fixture.mjs';
 import { qualifyHybridPhase2Upgrade } from './phase3-hybrid-upgrade-fixture.mjs';
 import { upgradeDistributedHybrid } from './hybrid-cli-upgrade-fixture.mjs';
+import { createHybridFaultStateProbe } from './phase3-hybrid-fault-state.mjs';
 import { faultDistributedHybrid } from './hybrid-cli-faults-fixture.mjs';
 import { qualifyHybridCapacity } from './hybrid-capacity-fixture.mjs';
 import { qualifyHybridCertificates } from './hybrid-certificates-fixture.mjs';
@@ -44,17 +45,25 @@ import { loadQualificationBundle } from '../deployment/release/qualification.mjs
 
 const phase3Upgrade = process.env.CC_AUTH_PHASE3_HYBRID_UPGRADE === '1';
 const phase3Restore = process.env.CC_AUTH_PHASE3_HYBRID_RESTORE === '1';
-assert.ok(!(phase3Upgrade && phase3Restore));
+const phase3Faults = process.env.CC_AUTH_PHASE3_HYBRID_FAULTS === '1';
+assert.ok(
+  [phase3Upgrade, phase3Restore, phase3Faults].filter(Boolean).length <= 1,
+);
 const phase3 =
-  process.env.CC_AUTH_PHASE3_HYBRID === '1' || phase3Upgrade || phase3Restore;
+  process.env.CC_AUTH_PHASE3_HYBRID === '1' ||
+  phase3Upgrade ||
+  phase3Restore ||
+  phase3Faults;
 const phase = phase3 ? 3 : 2;
 const evidenceDirectory = phase3Restore
   ? 'dist/phase-3-hybrid-restore'
-  : phase3Upgrade
-    ? 'dist/phase-3-hybrid-upgrade'
-    : phase3
-      ? 'dist/phase-3-hybrid-installation'
-      : 'dist/phase-2-evidence';
+  : phase3Faults
+    ? 'dist/phase-3-hybrid-faults'
+    : phase3Upgrade
+      ? 'dist/phase-3-hybrid-upgrade'
+      : phase3
+        ? 'dist/phase-3-hybrid-installation'
+        : 'dist/phase-2-evidence';
 if (phase3) {
   assert.ok(
     process.env.CC_AUTH_INSTALLER_ROOT,
@@ -114,9 +123,11 @@ test(
             : 'clean',
           command: phase3Restore
             ? 'npm exec -- nx run api-e2e:phase3-hybrid-restore-integration'
-            : phase3Upgrade
-              ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
-              : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
+            : phase3Faults
+              ? 'npm exec -- nx run api-e2e:phase3-hybrid-fault-integration'
+              : phase3Upgrade
+                ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
+                : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
           environment: {
             nodeVersion: process.version,
             platform: process.platform,
@@ -910,8 +921,10 @@ process.exit(result.status??1);
             await checks({ recoverySeconds: 120 });
             assert.deepEqual(await readFile(controllerFile), original);
           }
-          if (process.env.CC_AUTH_HYBRID_CLI_FAULTS === '1') {
+          if (phase3Faults || process.env.CC_AUTH_HYBRID_CLI_FAULTS === '1') {
             stage = 'distributed process and shared-storage faults';
+            if (phase3Faults)
+              await mkdir(evidenceDirectory, { recursive: true });
             faults = await faultDistributedHybrid({
               hosts,
               services,
@@ -922,6 +935,35 @@ process.exit(result.status??1);
               checks,
               verifyReplicas,
               context,
+              ...(phase3Faults
+                ? {
+                    verifyDurableState: await createHybridFaultStateProbe({
+                      hosts,
+                      services,
+                      config,
+                      project,
+                      compose,
+                    }),
+                    verifyWorkflows: () =>
+                      installedWorkflows.verifyAfterRestart(),
+                    evidencePath: join(
+                      evidenceDirectory,
+                      'hybrid-fault-progress.json',
+                    ),
+                    evidenceIdentity: {
+                      ...harness,
+                      schemaVersion: 1,
+                      phase,
+                      profile: 'hybrid',
+                      sourceRevision,
+                      images,
+                      bundleManifestSha256: bundle.manifestSha256,
+                    },
+                    setStage: (fault) => {
+                      stage = `distributed hybrid service fault: ${fault}`;
+                    },
+                  }
+                : {}),
             });
           }
           if (process.env.CC_AUTH_HYBRID_CERTIFICATES === '1') {
@@ -1014,9 +1056,11 @@ process.exit(result.status??1);
               credentialKeyProjection,
               durationScope: phase3Restore
                 ? 'Extracted hybrid installation, lifecycle, isolated restore, and fixture cleanup.'
-                : phase3Upgrade
-                  ? 'Extracted Phase 2 hybrid installation, Phase 3 upgrade, public workflows, lifecycle, and fixture cleanup.'
-                  : 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
+                : phase3Faults
+                  ? 'Extracted hybrid installation, public workflows, service interruptions, recovery, and fixture cleanup.'
+                  : phase3Upgrade
+                    ? 'Extracted Phase 2 hybrid installation, Phase 3 upgrade, public workflows, lifecycle, and fixture cleanup.'
+                    : 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',
             }
           : {}),
         ...(upgrade ? { upgrade } : {}),
@@ -1154,7 +1198,12 @@ process.exit(result.status??1);
         join(evidenceDirectory, 'hybrid-restore.json'),
         JSON.stringify(result, null, 2),
       );
-    if (phase3 && !phase3Upgrade && !phase3Restore) {
+    if (phase3Faults)
+      await writeFile(
+        join(evidenceDirectory, 'hybrid-faults.json'),
+        JSON.stringify(result, null, 2),
+      );
+    if (phase3 && !phase3Upgrade && !phase3Restore && !phase3Faults) {
       for (const [kind, commands] of [
         [
           'installation',
