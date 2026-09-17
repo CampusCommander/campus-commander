@@ -340,15 +340,15 @@ export async function qualifyHybridRestore(input) {
     // The fixture operator accepts the verified state before enabling target services.
     await rm(markerPath);
     stage('delivered target installation');
-    await target.start();
-    stage('bootstrap revocation after target startup');
+    await target.start(seeded.bootstrapGeneration, stage);
+    stage('bootstrap replacement after target startup');
     const bootstrap = await stateProbe(hosts, target.controller, 'bootstrap', {
       configurationPath: target.configPath,
       applicationCredentials,
+      proofPath: targetProof,
     });
     assert.equal(bootstrap.status, 'passed');
-    phase3State.bootstrapRevokedAfterStartup =
-      bootstrap.bootstrapRevokedAfterStartup;
+    phase3State.bootstrapRecovery = bootstrap;
 
     const replicas = (
       await target.compose(target.controller, ['ps', '--quiet', 'api'])

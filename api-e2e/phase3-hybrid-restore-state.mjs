@@ -96,13 +96,38 @@ export async function inspectHybridRestoreState(mode, inputPath) {
         root: config.artifacts.location,
       });
       if (mode === 'bootstrap') {
-        const row = (
+        const { bootstrap: original } = await json(input.proofPath);
+        const rows = (
           await migration.query(
-            'SELECT count(*)::int AS total,count(*) FILTER (WHERE revoked_at IS NULL)::int AS active FROM cc.bootstrap_access',
+            'SELECT generation,credential_hash,revoked_at FROM cc.bootstrap_access',
           )
-        ).rows[0];
-        assert.deepEqual(row, { total: 1, active: 0 });
-        return { status: 'passed', bootstrapRevokedAfterStartup: true };
+        ).rows;
+        assert.equal(rows.length, 1);
+        const row = rows[0];
+        assert.equal(
+          String(row.generation),
+          String(BigInt(original.generation) + 1n),
+        );
+        assert.equal(row.revoked_at, null);
+        assert.notEqual(row.credential_hash, original.credentialHash);
+        const { verifyBootstrap } = await import(
+          '/release/deployment/bootstrap/access.mjs'
+        );
+        assert.equal(
+          await verifyBootstrap(
+            migration,
+            (await secret(config.services.edge.bootstrapSecretRef)).toString(
+              'utf8',
+            ),
+          ),
+          true,
+        );
+        return {
+          status: 'passed',
+          sourceBootstrapRejected: true,
+          replacementBootstrapAccepted: true,
+          bootstrapGeneration: String(row.generation),
+        };
       }
       const snapshot = async () => {
         const executionRows = (
@@ -174,13 +199,23 @@ export async function inspectHybridRestoreState(mode, inputPath) {
           before.invitations.map((row) => row.value.status).sort(),
           ['issued', 'pending', 'redeeming'],
         );
+        const bootstrapRow = (
+          await migration.query(
+            'SELECT generation,credential_hash FROM cc.bootstrap_access WHERE id=1',
+          )
+        ).rows[0];
+        const bootstrap = {
+          generation: String(bootstrapRow.generation),
+          credentialHash: bootstrapRow.credential_hash,
+        };
         await writeFile(
           input.proofPath,
-          JSON.stringify({ source, before, artifact }),
+          JSON.stringify({ source, before, artifact, bootstrap }),
           { mode: 0o600, flag: 'wx' },
         );
         return {
           status: 'seeded',
+          bootstrapGeneration: bootstrap.generation,
           customerId: source.customerId,
           schoolId: source.schoolId,
           principals: before.principals.length,

@@ -319,3 +319,21 @@ Distributed worker credential checks follow the fault cases.
 Hybrid dispatch accepts only the service fault kind. It rejects mixed restore, upgrade, lifecycle, and update modes.
 Separate reports identify the application, harness, executed cases, recovery durations, and preserved state.
 This increment requires hosted qualification. It does not establish network, certificate, capacity, or live Google fault acceptance.
+
+## Controlled bootstrap replacement
+
+[Fourth restore attempt](https://github.com/CampusCommander/campus-commander/actions/runs/35243519217) failed during delivered target installation at harness `4f0b9f6`.
+The [retained failure](../../deployment/evidence/CC-58-restore-attempt4.json) preserves its original fields and verified source hashes. PR CI passed.
+The fixture preserved the original bootstrap file but omitted the documented replacement step.
+Restore revokes that credential. Authenticated installer readiness requires an active replacement credential.
+The actual bootstrap verifier regression reproduced the rejected readiness check.
+
+The target now runs delivered `prepare`, `reset-bootstrap`, `install`, and `resume` commands.
+Controlled replacement uses the restored generation and operator migration credentials.
+The restored source credential remains invalid. The replacement must advance the generation by one and pass the actual verifier.
+The native post-startup check requires exactly one row, the replacement generation, and a changed credential hash.
+The pre-startup check still requires all restored bootstrap access to remain revoked.
+Each delivered command now has a separate failure stage.
+
+Local API tests, hybrid fixtures, lint, formatting, and both reviews pass. Hosted qualification remains pending for this correction.
+The earlier failed reports remain unchanged. CC-58 remains incomplete.

@@ -47,6 +47,29 @@ export async function prepareHybridRestoreSecrets(
   await prepareSecrets(config, targetRoot);
 }
 
+/** Start the recovered application through the delivered installer. */
+export async function startHybridRestoreServices({
+  cli,
+  transfer,
+  expectedBootstrapGeneration,
+  setStage = () => undefined,
+}) {
+  setStage('target preparation');
+  assert.equal((await cli('prepare')).status, 'prepared');
+  setStage('controlled bootstrap replacement');
+  const replacement = await cli('reset-bootstrap');
+  assert.equal(replacement.status, 'replaced');
+  assert.equal(
+    String(replacement.generation),
+    String(BigInt(expectedBootstrapGeneration) + 1n),
+  );
+  await transfer();
+  setStage('target installation');
+  assert.equal((await cli('install')).status, 'ready');
+  setStage('target resume');
+  assert.equal((await cli('resume')).status, 'ready');
+}
+
 /** Prepare separate target services without starting the restored application. */
 export async function createHybridRestoreTarget({
   hosts,
@@ -126,14 +149,19 @@ export async function createHybridRestoreTarget({
     await json(join(root, 'release.json'), release);
     await json(join(root, 'runtime/profile.json'), targetConfig);
     await json(join(root, 'runtime/operator.json'), databaseOperator);
-    await json(operatorPath, {
+    const targetOperator = {
       ...operator,
       project,
       installationRoot: root,
       configurationPath: configPath,
       releasePath: join(root, 'release.json'),
       restoreDirectories: [targetDirectory],
-    });
+      migrationCredentials: {
+        role: databaseOperator.migrationRole,
+        passwordSecretRef: databaseOperator.migrationPasswordSecretRef,
+      },
+    };
+    await json(operatorPath, targetOperator);
     for (const host of targetHosts) {
       await copyFile(
         'api-e2e/google-connection-preload.cjs',
@@ -213,7 +241,9 @@ process.exit(result.status??1);
       '/run/config/operator.json',
     ]);
     const cli = async (command) => {
-      assert.ok(['prepare', 'install', 'resume'].includes(command));
+      assert.ok(
+        ['prepare', 'install', 'resume', 'reset-bootstrap'].includes(command),
+      );
       const started = Date.now();
       const result = JSON.parse(
         await hosts.run(targetController, [
@@ -234,8 +264,7 @@ process.exit(result.status??1);
       if (command === 'prepare') prepared.add(targetController);
       return result;
     };
-    const start = async () => {
-      assert.equal((await cli('prepare')).status, 'prepared');
+    const transfer = async () => {
       for (const [index, host] of targetWorkers.entries()) {
         const fragment = join(root, `docker-compose.worker-${index + 1}.json`);
         const document = JSON.parse(await readFile(fragment));
@@ -260,8 +289,19 @@ process.exit(result.status??1);
         prepared.add(host);
         await compose(host, ['up', '-d']);
       }
-      assert.equal((await cli('install')).status, 'ready');
-      assert.equal((await cli('resume')).status, 'ready');
+    };
+    const start = async (expectedBootstrapGeneration, setStage) => {
+      assert.match(String(expectedBootstrapGeneration), /^[1-9][0-9]*$/);
+      targetOperator.expectedBootstrapGeneration = String(
+        expectedBootstrapGeneration,
+      );
+      await json(operatorPath, targetOperator);
+      return startHybridRestoreServices({
+        cli,
+        transfer,
+        expectedBootstrapGeneration,
+        setStage,
+      });
     };
     return {
       controller: targetController,

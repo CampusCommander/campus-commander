@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
-import { initializeBootstrap } from '../deployment/bootstrap/access.mjs';
+import {
+  initializeBootstrap,
+  replaceBootstrap,
+  verifyBootstrap,
+} from '../deployment/bootstrap/access.mjs';
 import {
   readFile,
   mkdtemp,
@@ -12,6 +16,7 @@ import { join } from 'node:path';
 import { backupFoundation } from '../deployment/operations/index.mjs';
 import { parseDeploymentConfig } from '../dist/deployment/lib/deployment.js';
 import {
+  startHybridRestoreServices,
   createHybridRestoreConfiguration,
   prepareHybridRestoreSecrets,
 } from './phase3-hybrid-restore-target.mjs';
@@ -403,4 +408,62 @@ test('Restored initialization preserves the original bootstrap credential and re
   assert.deepEqual(result, { generation: '1', created: false });
   assert.equal(row.revoked_at, revokedAt);
   assert.equal(queries.length, 2);
+});
+
+test('Restored target replaces its revoked bootstrap credential before authenticated readiness', async () => {
+  const original = 'a'.repeat(43),
+    replacement = 'b'.repeat(43);
+  const row = {
+    generation: '1',
+    credential_hash: createHash('sha256').update(original).digest('hex'),
+    revoked_at: 'restored',
+  };
+  const client = {
+    async query(sql, parameters) {
+      if (sql.startsWith('UPDATE')) {
+        assert.equal(parameters[2], '1');
+        row.generation = '2';
+        row.credential_hash = parameters[0];
+        row.revoked_at = null;
+        return { rowCount: 1, rows: [{ generation: row.generation }] };
+      }
+      assert.match(sql, /^SELECT credential_hash/);
+      return {
+        rows: row.revoked_at ? [] : [{ credential_hash: row.credential_hash }],
+      };
+    },
+  };
+  assert.equal(await verifyBootstrap(client, original), false);
+  const commands = [];
+  let credential = original;
+  await startHybridRestoreServices({
+    expectedBootstrapGeneration: '1',
+    cli: async (command) => {
+      commands.push(command);
+      if (command === 'prepare') return { status: 'prepared' };
+      if (command === 'reset-bootstrap') {
+        const result = await replaceBootstrap(client, replacement, '1');
+        credential = replacement;
+        return { status: 'replaced', ...result };
+      }
+      assert.equal(
+        await verifyBootstrap(client, credential),
+        true,
+        'Installer readiness requires an active replacement credential.',
+      );
+      assert.equal(await verifyBootstrap(client, original), false);
+      return { status: 'ready' };
+    },
+    transfer: async () => {
+      commands.push('transfer');
+    },
+  });
+  assert.deepEqual(commands, [
+    'prepare',
+    'reset-bootstrap',
+    'transfer',
+    'install',
+    'resume',
+  ]);
+  assert.equal(row.generation, '2');
 });
