@@ -370,6 +370,17 @@
           "CC_AUTH_PHASE3_PROVIDER_FAULTS": "1"
         }
       }
+    },
+    "phase3-certificate-fault-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": {
+          "CC_AUTH_PHASE3_CERTIFICATE_FAULTS": "1"
+        }
+      }
     }
   }
 }

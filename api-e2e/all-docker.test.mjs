@@ -25,14 +25,29 @@ import {
 } from './phase3-upgrade-fixture.mjs';
 
 import { faultAllDocker } from './all-docker-faults-fixture.mjs';
+import { qualifyAllDockerCertificates } from './all-docker-certificates-fixture.mjs';
 import { qualifyInstalledProviderFaults } from './phase3-provider-faults.mjs';
 
+const phase3CertificateFaults =
+  process.env.CC_AUTH_PHASE3_CERTIFICATE_FAULTS === '1';
 const phase3ProviderFaults = process.env.CC_AUTH_PHASE3_PROVIDER_FAULTS === '1';
 const phase3Faults =
-  process.env.CC_AUTH_PHASE3_FAULTS === '1' || phase3ProviderFaults;
-const faultTarget = phase3ProviderFaults
-  ? 'phase3-provider-fault-integration'
-  : 'phase3-fault-integration';
+  process.env.CC_AUTH_PHASE3_FAULTS === '1' ||
+  phase3ProviderFaults ||
+  phase3CertificateFaults;
+assert.ok(
+  [
+    process.env.CC_AUTH_PHASE3_FAULTS === '1',
+    phase3ProviderFaults,
+    phase3CertificateFaults,
+  ].filter(Boolean).length <= 1,
+  'Select one Phase 3 fault group.',
+);
+const faultTarget = phase3CertificateFaults
+  ? 'phase3-certificate-fault-integration'
+  : phase3ProviderFaults
+    ? 'phase3-provider-fault-integration'
+    : 'phase3-fault-integration';
 const phase3Restore = process.env.CC_AUTH_PHASE3_RESTORE === '1';
 const phase3Upgrade = process.env.CC_AUTH_PHASE3_UPGRADE === '1';
 const phase3Workflows =
@@ -74,9 +89,11 @@ test(
       ? 'uncommitted-candidate'
       : 'clean';
     const evidenceDirectory = phase3Faults
-      ? phase3ProviderFaults
-        ? 'dist/phase-3-provider-faults'
-        : 'dist/phase-3-faults'
+      ? phase3CertificateFaults
+        ? 'dist/phase-3-certificate-faults'
+        : phase3ProviderFaults
+          ? 'dist/phase-3-provider-faults'
+          : 'dist/phase-3-faults'
       : phase3Restore
         ? 'dist/phase-3-recovery'
         : phase3Upgrade
@@ -532,9 +549,11 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             'dark',
           );
           if (phase3Faults) {
-            const qualifyFaults = phase3ProviderFaults
-              ? qualifyInstalledProviderFaults
-              : faultAllDocker;
+            const qualifyFaults = phase3CertificateFaults
+              ? qualifyAllDockerCertificates
+              : phase3ProviderFaults
+                ? qualifyInstalledProviderFaults
+                : faultAllDocker;
             await qualifyFaults({
               root,
               project,

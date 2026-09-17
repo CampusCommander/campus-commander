@@ -26,7 +26,7 @@ on:
       phase3FaultKind:
         description: Fault group for the installed Phase 3 release
         type: choice
-        options: [services, provider]
+        options: [services, provider, certificates]
         default: services
       phase3Only:
         description: Run only the Phase 3 source API and browser qualification

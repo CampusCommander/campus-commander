@@ -251,3 +251,22 @@ gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
 
 This fixture does not establish live privileges, revocation, or Education behavior.
 Hosted provider qualification remains pending.
+
+## Installed certificate failures
+
+The `api-e2e:phase3-certificate-fault-integration` target installs the signed release and completes the installed workflows.
+It tests expired, wrong-host, and untrusted certificates through a strict HTTPS client.
+Each recovery checks authenticated Diagnostics and preserved Phase 3 state within the shared 180-second bound.
+The fixture restores every original secret file and compares its bytes without including secret values in assertion errors.
+The report records failed progress, exact release identity, environment, duration, and fixture limits.
+
+Select certificate faults with these CI inputs:
+
+```sh
+gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
+  -f phase3Release=phase-3-lab-a3601eff2a55 \
+  -f phase3Faults=true -f phase3FaultKind=certificates
+```
+
+The synthetic fixture does not establish district browser trust or certificate renewal operations.
+Hosted certificate qualification remains pending.
