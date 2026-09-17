@@ -186,6 +186,10 @@ test('Restore evidence rejects missing or changed durable records and live admis
     ({ after }) => {
       after.kestraFiles = [];
     },
+    ({ before, after }) => {
+      before.kestraFiles = [];
+      after.kestraFiles = [];
+    },
     ({ after }) => {
       after.invitations[0].value.status = 'issued';
     },

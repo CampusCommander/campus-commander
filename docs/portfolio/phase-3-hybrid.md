@@ -375,3 +375,35 @@ Separate certificate reports retain application and harness identities, case res
 A failed case remains in the uploaded progress report. Raw errors and secret bytes remain excluded.
 The three Docker daemons still share one physical host and synthetic district services.
 This increment requires hosted qualification. It does not establish district certificate lifecycle or complete fault acceptance.
+
+## Passed initial restore checkpoint
+
+[Run 35245956954](https://github.com/CampusCommander/campus-commander/actions/runs/35245956954) passed isolated restore at harness `6614bcf` against signed application `a3601ef`.
+PR CI passed. The complete fixture took 306,760 milliseconds. The restore segment took 98,940 milliseconds.
+The delivered operator commands created five encrypted backup files, verified the backup, restored isolated services, and revalidated the synthetic Google customer.
+The delivered installer prepared the target, replaced bootstrap generation 1 with generation 2, installed the application, and resumed it.
+The target rejected the source bootstrap identity and source sessions through both API replicas.
+
+The restored state preserved two principals, thirteen grants, one access-change receipt, two capability observations, and 60 original security events.
+Customer settings, school definitions, artifact metadata and bytes, migration checksums, and four Kestra execution rows survived.
+Three invitations remained revoked. Both recipient bindings, both pending callbacks, and the issued link failed against the target.
+Callback rejection occurred after 55,289 milliseconds. The original callback succeeded after source restart.
+Fresh target browser checks read customer settings and the school definition. All four diagnostics passed.
+
+Source application services and PostgreSQL remained stopped during target checks. Source Redis remained paused.
+The target used fresh external PostgreSQL and Redis with separate storage and Compose projects.
+The [retained report](../../deployment/evidence/CC-58-restore.json) preserves all original fields and both report hashes.
+The archive matches its published SHA-256 digest.
+
+Report inspection found an empty Kestra internal storage tree in this run.
+This checkpoint establishes execution-row preservation but does not establish nonempty Kestra file recovery.
+The fixture requires a nonempty storage sample before complete restore acceptance. Full CC-58 acceptance remains open.
+
+## Nonempty internal storage correction
+
+The source fixture now writes a UTF-8 marker into the owned Kestra internal storage directory after source shutdown.
+The native operator container includes that file in the encrypted backup.
+Restored file paths and hashes must match the complete source tree before target startup.
+The snapshot verifier rejects empty source and target trees. Its regression reproduced the previous false acceptance.
+Local API tests, hybrid fixtures, lint, formatting, and both reviews pass.
+This correction requires another hosted restore run. The initial passed report remains unchanged.

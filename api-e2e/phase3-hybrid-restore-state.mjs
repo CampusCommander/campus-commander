@@ -28,6 +28,7 @@ export function assertHybridRestoreSnapshot(before, after) {
   assert.ok(before.events.length > 0);
   assert.ok(before.artifacts.length > 0);
   assert.ok(before.executionRows > 0);
+  assert.ok(before.kestraFiles.length > 0);
   assert.deepEqual(after.principals, before.principals);
   assert.deepEqual(after.artifacts, before.artifacts);
   const originalIds = new Set(before.events.map((row) => row.value.id));
@@ -192,7 +193,23 @@ export async function inspectHybridRestoreState(mode, inputPath) {
           [bytes],
         );
         await store.publish(artifact);
+        const storageMarker = Buffer.from(
+          'Phase 3 hybrid restored internal storage: École 学校',
+        );
+        const storageMarkerName = '.phase3-restore-marker';
+        await writeFile(
+          join(
+            config.services.kestra.internalStorage.location,
+            storageMarkerName,
+          ),
+          storageMarker,
+          { mode: 0o600, flag: 'wx' },
+        );
         const before = await snapshot();
+        assert.deepEqual(
+          before.kestraFiles.find((file) => file.path === storageMarkerName),
+          { path: storageMarkerName, sha256: hash(storageMarker) },
+        );
         assert.equal(before.principals.length, 2);
         assert.equal(before.invitations.length, 3);
         assert.deepEqual(
