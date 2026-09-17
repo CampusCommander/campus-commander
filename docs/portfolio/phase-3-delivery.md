@@ -456,3 +456,20 @@ Repeated update returned `already-current`. Repeated resume and saved public wor
 The update segment took 90,317 milliseconds. The complete profile took 253,850 milliseconds.
 All ten installed workflow checks passed. The profile inventory now includes the guided-update report.
 CC-54, CC-55, and CC-56 prerequisite acceptance remains open. This laboratory result does not close CC-57.
+
+## Kubernetes key-projection correction
+
+CC-59 review found that database-wait containers inherited Google credential-key mounts.
+Commit `0abf75e` limits those containers to configuration and separately projected database password and CA items.
+The regression reproduced the exposure before the correction. Bootstrap tests, Kubernetes renderer tests, lint, and both review axes passed.
+
+[Delivery run 35253912190](https://github.com/CampusCommander/campus-commander/actions/runs/35253912190) passed and published `phase-3-lab-0abf75ed6f03`.
+Image scans, signing, packaged authorization checks, extracted installation, repeated resume, and isolated restore passed.
+The complete extracted fixture took 247,010 milliseconds. The isolated restore segment took 51,746 milliseconds.
+Evidence binding took 903 milliseconds. That duration does not represent installation or restore time.
+
+The [retained qualification](../../deployment/evidence/CC-57-kubernetes-key-correction-qualification.json) preserves original reports and verified source-file and archive hashes.
+It binds application `0abf75ed6f03bb1202fe26fd928a40c09647f1b5` and manifest `d6291da7def3ec31da6e03da1f2f0297810694b5f4688c473bd9eccc552bde9c`.
+This release does not inherit older upgrade, fault, hybrid, or guided-update results.
+[Hosted Kubernetes run 35255775913](https://github.com/CampusCommander/campus-commander/actions/runs/35255775913) uses this release. Its result remains pending.
+Full release assembly and prerequisite acceptance remain open.
