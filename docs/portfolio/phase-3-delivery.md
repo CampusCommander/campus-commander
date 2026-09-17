@@ -74,3 +74,12 @@ The verification used an isolated empty Docker configuration because the host co
 This read-only verification does not establish Phase 2-to-Phase 3 upgrade behavior.
 
 Baseline manifest: `deployment/qualification/phase-2-upgrade-baseline.json`.
+
+## Initial encryption key during upgrade
+
+The upgrade policy rejected valid Phase 2-to-3 configuration when the operator supplied the initial Google encryption key.
+Regression tests reproduced that rejection in all three profiles.
+The corrected comparison permits the new Phase 3 key configuration after schema validation.
+It still rejects changed sign-in settings, storage, topology, downgrades, and same-phase key changes.
+Installer tests and deployment lint pass. Both review axes found no remaining issues.
+These policy tests do not establish complete upgrade execution.
