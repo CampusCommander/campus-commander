@@ -7,6 +7,27 @@ export async function qualificationSignIn(
   evidenceDirectory,
   label,
 ) {
+  return qualificationBrowserStep(
+    page,
+    publicOrigin,
+    evidenceDirectory,
+    `${label}-sign-in`,
+    async () => {
+      await page.goto(`${publicOrigin}/api/auth/login`);
+      await expect(
+        page.getByRole('heading', { name: 'Your account', exact: true }),
+      ).toBeVisible({ timeout: 15000 });
+    },
+  );
+}
+
+export async function qualificationBrowserStep(
+  page,
+  publicOrigin,
+  evidenceDirectory,
+  label,
+  action,
+) {
   const events = [];
   const record = (event) => {
     if (events.length < 100) events.push(event);
@@ -53,13 +74,10 @@ export async function qualificationSignIn(
   page.on('response', response);
   page.on('pageerror', pageError);
   try {
-    await page.goto(`${publicOrigin}/api/auth/login`);
-    await expect(
-      page.getByRole('heading', { name: 'Your account', exact: true }),
-    ).toBeVisible({ timeout: 15000 });
+    await action();
   } catch (error) {
     await writeFile(
-      `${evidenceDirectory}/${label}-sign-in-failure.json`,
+      `${evidenceDirectory}/${label}-failure.json`,
       JSON.stringify(
         {
           schemaVersion: 1,
