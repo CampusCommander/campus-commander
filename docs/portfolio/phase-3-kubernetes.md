@@ -1,18 +1,18 @@
 # Phase 3 Kubernetes qualification
 
 [CC-59](https://easton-consulting.atlassian.net/browse/CC-59) requires extracted installation, resume, Phase 2 upgrade, isolated restore, and fault evidence.
-The task remains incomplete. No Phase 3 Kubernetes hosted pass exists yet.
+The task remains incomplete. Initial installation, resume, replica, worker, and internal network-policy checks passed in the hosted laboratory.
 
 ## Installation boundary
 
-The fixture will install a separately verified Phase 3 laboratory bundle through its delivered installer.
+The fixture installs a separately verified Phase 3 laboratory bundle through its delivered installer.
 Application image labels, manifest identity, and inventory hashes must match before cluster changes.
 Installer commands must record their source root, result, and duration.
 The fixture must reject Phase 2 mode flags during Phase 3 qualification.
 
 A dedicated three-node Kind cluster provides one controller node and two worker nodes.
-The current Kind fixture uses default networking. This fixture has not measured NetworkPolicy enforcement.
-Initial installation results must retain this limitation. Network-policy acceptance requires measured allowed and denied traffic.
+The Kind fixture uses default networking. Measured checks prove worker-to-Redis and worker-to-Kestra TCP pod isolation.
+Service-address behavior and Google-provider egress require separate evidence.
 Synthetic shared host storage does not establish independent physical failure domains or district storage acceptance.
 Synthetic TLS does not establish district browser trust.
 
@@ -47,7 +47,7 @@ Each report must identify the application, harness, image digests, manifest, sto
 Failure evidence must retain safe stages without tokens, credentials, or raw provider errors.
 Fixture cleanup must remove only owned resources.
 
-Hosted installation, replica and renewal checks, enforcing CNI checks, upgrade, restore, faults, operator lifecycle, and report assembly remain open.
+Upgrade, restore, faults, complete operator lifecycle, service-address and Google-egress checks, and final report assembly remain open.
 CC-54, CC-55, and CC-56 prerequisite acceptance remains open.
 Live Google privileges, Education capabilities, district infrastructure, and human accessibility require separate evidence.
 Applicable UI rules are UI-01, UI-08, UI-09, UI-10, and FORM-01.
@@ -65,13 +65,13 @@ Unrelated pods and containers must exclude the credential key.
 Both workers must occupy distinct Kind nodes.
 Browser workflows verify saved state after API replacement and each lifecycle resume.
 Replica checks verify shared sessions and session rejection after lifecycle commands and sign-out.
-These checks do not establish distributed renewal or the complete policy acceptance matrix.
+The worker increment below establishes distributed renewal. The complete policy acceptance matrix remains open.
 
 CI installs a digest-verified Kind binary and runs the fixture as UID 1000.
 CI rejects unsupported Kubernetes modes before resource changes.
 Installation and resume reports retain separate duration scopes, source identity, manifest hash, command durations, pod placement, and fixture limits.
 Safe failure reports retain the current stage. Successful reports require owned-cluster removal.
-Hosted qualification remains pending.
+The hosted result below records this increment.
 
 ## Renderer correction required for qualification
 
@@ -79,7 +79,7 @@ The key-exclusion regression reproduced unnecessary Google-key mounts in databas
 Delivery commit `0abf75e` replaces inherited service mounts with configuration and separate database password and CA projections.
 Regression checks cover API, worker, and Kestra wait containers and both configured Google-key versions.
 Bootstrap tests, Kubernetes renderer tests, lint, and both review axes pass.
-Kubernetes hosted qualification requires a new signed laboratory bundle containing this correction.
+The signed `phase-3-lab-0abf75ed6f03` bundle contains this correction.
 The older `a3601ef` and `eb78e16` bundles do not contain this correction.
 
 ## Replica permission increment
@@ -90,7 +90,7 @@ A fresh scoped session must read its granted school and reject both ungranted an
 The shared permission probe applies these assertions to hybrid containers and Kubernetes pods.
 Kubernetes sends saved cookies through standard input. Process arguments and returned evidence contain no cookie values.
 The existing session probe uses the same bounded TLS reader.
-Hosted qualification remains pending.
+The hosted result below records this increment.
 
 ## Distributed worker renewal increment
 
@@ -104,7 +104,7 @@ Replacement workers must reuse the stored token without another renewal and reco
 Reports retain pod identities, node placement, dispatch results, renewal counts, pending-lease observations, and measured recovery time.
 Private credentials and token values remain absent from reports.
 Worker-only instrumentation uses an ephemeral observation volume. It does not change database lease results.
-Hosted qualification remains pending.
+The hosted result below records this increment.
 
 ## Network-policy evidence correction
 
@@ -156,7 +156,7 @@ Failed reports preserve observations without raw command errors.
 
 Regression checks reproduced late acceptance and incomplete cleanup after a lost creation response.
 The corrected checks pass, including rejected creation and foreign-resource preservation.
-Both reviews passed the helper corrections. Hosted enforcement remains unverified.
+Both reviews passed the helper corrections. The hosted result below verifies the stated internal pod paths.
 These checks do not establish service-address behavior, Google egress, district TLS, or independent physical hosts.
 
 ## Credential-key material correction
@@ -172,5 +172,48 @@ The application requires 32 raw key bytes.
 A local regression reproduced `key-unavailable` through the actual credential cipher after Kubernetes Secret encoding and projection.
 The correction supplies raw key bytes and encodes only the Kubernetes Secret data representation.
 Actual pod verification now checks the projected key length before public workflows.
-The regression passes with this correction. Hosted verification remains pending.
+The regression passes with this correction. The hosted result below verifies credential-candidate creation.
 This change corrects the qualification fixture and does not require another application image.
+
+## Initial hosted qualification passed
+
+[Run 35259178631](https://github.com/CampusCommander/campus-commander/actions/runs/35259178631) passed with application `0abf75e` and clean harness `310b29e`.
+The complete fixture took 531,429 milliseconds, including owned-cluster removal.
+The four delivered resume commands took 88,042 milliseconds in total.
+Prepare, stop/resume, uninstall/resume, and all ten installed workflow checks passed.
+The fixture preserved state after API replacement and worker rescheduling.
+
+Sixteen recipient observations verified grant changes, scoped access, hidden-school denials, and revocation across both API pods.
+Sixteen separate session observations covered API replacement, worker rescheduling, lifecycle session invalidation, and sign-out.
+Initial and final key checks passed for both API pods and both workers.
+Those checks require exact key bytes, version, read-only mounts, file mode `0440`, and exclusion from unrelated consumers.
+
+Worker credential checks took 33,978 milliseconds after browser closure.
+The fixture observed one renewal owner and a different pending worker within 1,259 milliseconds.
+Renewal-event counts progressed from one to two and remained two after worker replacement.
+Replacement recovery took 25,262 milliseconds against the 180-second bound.
+Unauthorized dispatch, supplied credential fields, and retired generations failed as required.
+
+Internal network-policy checks took 16,318 milliseconds.
+Twenty-four observations recorded eight worker denials, four temporary worker allowances, and twelve successful API controls.
+All four temporary policies were removed. Fifteen original policies retained their identities and content hashes.
+The report records Kubernetes `v1.35.8`, containerd `2.3.4`, kernel `6.17.0-1022-azure`, and actual Kindnet image digests.
+Three nodes still share one physical host and synthetic storage.
+
+`CC-59-installation.json`, `CC-59-resume.json`, and `CC-59-network-policy.json` retain every original report field and verified archive provenance.
+`CC-59-profile-evidence.json` binds their retained bytes by size and SHA-256.
+It records two report categories and one supplement. It remains incomplete.
+The earlier failed reports remain available. The image-preparation failure still has no confirmed cause.
+This pass does not close CC-59, prerequisite acceptance, or Phase 3.
+
+## Next upgrade boundary
+
+The upgrade fixture must verify the pinned Phase 2 bundle and Phase 3 target before cluster changes.
+Initial commands must use the delivered Phase 2 installer. Upgrade commands must use the delivered Phase 3 installer.
+The older Kubernetes backup helper calls workspace code and injects database tools.
+The Phase 3 fixture must instead execute native tools through the delivered operator CLI.
+It must generate a recovery key, stop writers, create a cold backup, and verify that backup before upgrade.
+
+Preservation checks must compare two principals, preferences, nonempty artifact bytes and metadata, audit records, existing secrets, and original migration checksums.
+Target checks must verify exact images, appended migrations, updated installer state, repeated resume, and installed Phase 3 workflows.
+Separate baseline and target identities must remain in the report.

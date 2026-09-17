@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "kubernetes",
+  "sourceRevision": "0abf75ed6f03bb1202fe26fd928a40c09647f1b5",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:254bff587eeb0fd0bff2b3e6dbae342a7724329109b3d0c2d659c31857544f18",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:a119fb30b7b24f3040dbfa84a10a322da1fdf9f92dab16279882b7994663cbdc",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:6b4dd0f5130fac0d055ff6e39e4378d322595ae01bcec1d2a840d6ae54a53316"
+  },
+  "bundleManifestSha256": "d6291da7def3ec31da6e03da1f2f0297810694b5f4688c473bd9eccc552bde9c",
+  "status": "incomplete",
+  "recordedAt": "2026-09-17T18:43:05.983591+00:00",
+  "reports": [
+    {
+      "kind": "installation",
+      "path": "CC-59-installation.json",
+      "sizeBytes": 54400,
+      "sha256": "f6c13856097068ac6cb1d82a405cd0759e8d34d8fab7f21244e972ca842f1f7f",
+      "status": "passed"
+    },
+    {
+      "kind": "resume",
+      "path": "CC-59-resume.json",
+      "sizeBytes": 54251,
+      "sha256": "fd93ddc49ae3f5f938e491fe8881e0250c65dd70931746a5acc03772bbf2ce5d",
+      "status": "passed"
+    }
+  ],
+  "supplementalReports": [
+    {
+      "kind": "network-policy",
+      "path": "CC-59-network-policy.json",
+      "sizeBytes": 22548,
+      "sha256": "3157faa2fdac84435a7d6a2550772b8076b8d3b2700ac4630eb6c09335ce0ca8",
+      "status": "passed"
+    }
+  ],
+  "remaining": [
+    "Qualify the pinned Phase 2 upgrade through delivered installer and native backup commands.",
+    "Qualify isolated restore, faults, complete operator lifecycle, and guided update.",
+    "Measure service-address behavior and Google-provider egress.",
+    "Reconcile CC-54, CC-55, and CC-56 prerequisite acceptance.",
+    "Bind final release qualification to matching application, installer, and harness revisions."
+  ],
+  "limits": [
+    "Three Kind nodes share one Docker host and synthetic shared storage.",
+    "NetworkPolicy evidence covers worker-to-Redis and worker-to-Kestra TCP pod paths only.",
+    "Synthetic providers do not establish live Google privileges, Education capabilities, or district browser trust.",
+    "Upgrade, isolated restore, faults, and complete lifecycle acceptance require separate evidence.",
+    "Final release qualification requires matching installer, test, and application source revisions.",
+    "This inventory retains two report categories and one network-policy supplement. It does not close CC-59 or permit full release assembly."
+  ]
+}
