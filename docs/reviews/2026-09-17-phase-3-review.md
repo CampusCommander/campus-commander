@@ -131,6 +131,15 @@ Authorization passed 100 boundary checks across 32 routes. All 38 accessibility 
 Seventeen automated contrast results remain inconclusive. Human accessibility review and owner acceptance remain open.
 [CI for the copy revision](https://github.com/CampusCommander/campus-commander/actions/runs/35273823264) also passed.
 
+All seventeen inconclusive rule results cite overlapping or partially obscured elements.
+A follow-up inspection of the three invitation text fields found each input at the front of its center hit-test point.
+Each field used `#202124` text on the white card, with transparent intervening backgrounds and no ancestor opacity or background images.
+This sample does not resolve the other recorded states. The original incomplete results remain open for visual review.
+
+The follow-up also found an empty frontend bind mount after a build replaced its output directory.
+Restarting the matching frontend container restored HTTP 200 and browser sign-in without restarting the API or replacing review data.
+The [client review guide](../testing/client-review.md#after-a-frontend-rebuild) records the recovery steps and current field labels.
+
 ## Jira and Git disposition
 
 The current Jira query returned eighteen tasks under CC-42, from CC-44 through CC-61.

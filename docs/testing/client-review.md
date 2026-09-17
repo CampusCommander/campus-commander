@@ -25,22 +25,22 @@ The **Development review** notice identifies the simulated Google environment on
 - **Google connection:** Select the generated sample service-account file printed in the terminal.
   Enter `administrator@fixture.invalid` as the delegated email. Check the credentials and confirm the simulated customer.
 - **Customer settings:** Save a customer display name and inspect the setup progress.
-- **Schools:** Inspect the available references and define a school scope.
+- **Schools:** Refresh Google units and choose which units belong to each school.
 - **Platform invitations:** Create an invitation and inspect its status.
 - **Platform access:** Inspect the administrator and assigned permissions.
-- **Diagnostics:** Inspect application services and Google capability checks.
+- **Diagnostics:** Check application services and Google access.
 
 Never upload real Google credentials to this simulated environment.
 
 ## Review an invitation
 
 1. As the review administrator, open **Platform invitations**.
-2. Enter a recipient label. Leave the optional sign-in subject empty or enter `review-recipient`.
+2. Enter a recipient name. Leave the optional sign-in ID empty or enter `review-recipient`.
 3. Select the permissions to grant, then select **Create invitation**.
 4. Copy the invitation link into a separate browser profile or private window.
 5. Select **Sign in to accept invitation**, then **Sign in as review recipient**.
 6. In the administrator window, refresh invitations and select **Review identity**.
-7. Verify the subject `review-recipient`, confirm the checkbox, and select **Confirm identity and grant access**.
+7. Verify the sign-in ID `review-recipient`, confirm the checkbox, and select **Confirm identity and grant access**.
 8. In the recipient window, check the invitation status and select **Sign in to Campus Commander**.
 9. Select **Sign in as review recipient** again. Inspect the access that the selected permissions allow.
 
@@ -54,6 +54,17 @@ Stop the command with Ctrl+C. It removes the review containers and temporary cre
 The next run creates new test data and prints a new URL.
 `dist/client-review/runtime.json` records the current URL and sample file path while the command runs.
 Do not treat this development command as a production installer or a full qualification run.
+
+### After a frontend rebuild
+
+A build or cache restore can replace the directory mounted by the running frontend container.
+The API remains available, but browser pages return HTTP 502 when that mount points to the old, empty directory.
+
+1. Run `docker ps --format '{{.Names}}'` and identify this review environment's `cc-phase2-frontend-…` container.
+2. Restart that container with `docker restart <frontend-container-name>`.
+3. Reload the review URL and confirm that the sign-in page opens.
+
+Restart only the matching frontend container. The API, services, and review data can remain running.
 
 ## Client changes
 
