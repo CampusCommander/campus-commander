@@ -62,12 +62,16 @@
       "sizeBytes": 11465,
       "sha256": "4d2b26349b11ee0f7683c7bf841c42579dd094cbc3eb133a9dc5d2acca5c4347",
       "status": "passed"
+    },
+    {
+      "kind": "guided-update",
+      "path": "CC-57-guided-update.json",
+      "sizeBytes": 9015,
+      "sha256": "96b111b7b93707634aabedcd3df11cb450532182bbc2970119ea48e315c75b87",
+      "status": "passed"
     }
   ],
-  "remaining": [
-    "Execute and retain the different-release guided update.",
-    "Reconcile CC-54, CC-55, and CC-56 prerequisite acceptance."
-  ],
+  "remaining": ["Reconcile CC-54, CC-55, and CC-56 prerequisite acceptance."],
   "limits": [
     "All listed profile reports bind application a3601eff2a55373074958c6bc93e9134adbea741. They do not qualify another application revision.",
     "This inventory records five distinct report categories. It does not close CC-57 or permit full release assembly.",

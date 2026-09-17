@@ -418,7 +418,7 @@ Its original bytes match the hash recorded by extracted qualification run `35211
 The fault aggregate references four independent runs against the same signed application.
 Every fault recovered within its recorded bound. Each source report retains its preservation checks and fixture limits.
 
-The inventory remains incomplete until guided update execution and prerequisite review finish.
+The inventory remains incomplete until prerequisite review finishes.
 It does not qualify another application revision or permit full release assembly.
 The corrected browser collector passed the hosted recheck described below.
 
@@ -447,4 +447,12 @@ The [target qualification record](../../deployment/evidence/CC-57-update-target-
 The complete installer fixture took 240,523 milliseconds. Its isolated restore segment took 57,456 milliseconds.
 
 [Guided-update run 35228925590](https://github.com/CampusCommander/campus-commander/actions/runs/35228925590) tests the delivered update from `a3601ef` to `eb78e16`.
-Its result remains pending. Existing profile reports retain their original application identity.
+The run passed with harness `eb78e16`. Existing profile reports retain their original application identity.
+The [guided-update report](../../deployment/evidence/CC-57-guided-update.json) binds both release identities and three original report hashes.
+
+Native backup and verification passed. Cancellation preserved the installation. The confirmed update selected the exact target images.
+Secrets, configuration, migration checksums, policy, principals, security events, artifacts, Kestra executions, and internal storage survived the update.
+Repeated update returned `already-current`. Repeated resume and saved public workflow checks passed.
+The update segment took 90,317 milliseconds. The complete profile took 253,850 milliseconds.
+All ten installed workflow checks passed. The profile inventory now includes the guided-update report.
+CC-54, CC-55, and CC-56 prerequisite acceptance remains open. This laboratory result does not close CC-57.
