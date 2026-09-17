@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import test from 'node:test';
+import { randomUUID } from 'node:crypto';
 import { proxyApplication } from './application-edge.mjs';
 
 test('application routes require Phase 3 and exact methods and paths', async () => {
@@ -30,6 +31,53 @@ test('application routes require Phase 3 and exact methods and paths', async () 
     );
     await listen(edge);
     const id = '11111111-1111-4111-8111-111111111111';
+    const customerId = 'C'.repeat(32);
+    const schoolIds = Array.from({ length: 256 }, () => randomUUID());
+    const grantBody = {
+      expectedVersion: 2147483647,
+      actorVersion: 2147483647,
+      enabled: true,
+      grants: schoolIds.map((schoolId) => ({
+        action: 'security-events:read',
+        scope: { kind: 'school', schoolId, customerId },
+      })),
+      schoolRevisions: schoolIds.map((schoolId) => ({
+        schoolId,
+        customerId,
+        revision: 2147483647,
+      })),
+      invitationIds: Array.from({ length: 50 }, () => randomUUID()),
+      confirmation: 'change-platform-access',
+    };
+    const confirmation = JSON.stringify(grantBody);
+    assert.ok(Buffer.byteLength(confirmation) > 65536);
+    for (const operation of ['review', 'access']) {
+      assert.equal(
+        (
+          await fetch(`${origin(edge)}/api/platform-users/${id}/${operation}`, {
+            method: 'POST',
+            body:
+              operation === 'access'
+                ? confirmation
+                : JSON.stringify({
+                    expectedVersion: 2147483647,
+                    enabled: true,
+                    grants: grantBody.grants,
+                  }),
+          })
+        ).status,
+        200,
+      );
+      assert.equal(
+        (
+          await fetch(`${origin(edge)}/api/platform-users/${id}/${operation}`, {
+            method: 'POST',
+            body: 'x'.repeat(98305),
+          })
+        ).status,
+        413,
+      );
+    }
     assert.equal(
       (
         await fetch(`${origin(edge)}/api/google-connection/candidates`, {

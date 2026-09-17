@@ -130,14 +130,16 @@ export async function proxyApplication(
       for await (const chunk of request) {
         size += chunk.length;
         const limit =
-          phase === 3 &&
-          [
-            '/api/google-connection/candidates',
-            '/api/google-connection/replacements',
-            '/api/schools/reviews',
-          ].includes(pathname)
-            ? 65536
-            : 4096;
+          phase === 3 && principalWrite.test(pathname)
+            ? 98304
+            : phase === 3 &&
+                [
+                  '/api/google-connection/candidates',
+                  '/api/google-connection/replacements',
+                  '/api/schools/reviews',
+                ].includes(pathname)
+              ? 65536
+              : 4096;
         if (size > limit)
           return finish(response, 413, 'The request exceeds the size limit.\n');
         chunks.push(chunk);
