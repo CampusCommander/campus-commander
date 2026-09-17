@@ -124,7 +124,7 @@ The school retains its approved scope. Its historical references do not establis
 
 The fixture uses packaged application images, real Kestra, and the production operator CLI from the workspace.
 Google transport and the sign-in provider remain synthetic. Both installations share one Docker host and reuse one loopback HTTPS origin.
-This fixture does not establish accepted Phase 2 upgrade, extracted release-bundle delivery, live Google privileges, or pending login-transaction recovery.
+The initial fixture does not establish accepted Phase 2 upgrade, extracted release-bundle delivery, live Google privileges, or pending login-transaction recovery.
 [Run 35189111352](https://github.com/CampusCommander/campus-commander/actions/runs/35189111352) passed this fixture at `c4931fc`.
 The [retained report](../../deployment/evidence/CC-56-isolated-application-restore.json) records preserved state, 51 original security events, restored artifact bytes, and rejected source sessions.
 The restored browser session read the customer settings and school definition. PostgreSQL, Redis, Kestra, and artifact diagnostics passed.
@@ -134,6 +134,20 @@ The complete Phase 3 installation and recovery fixture took 194,185 ms. These me
 The full run failed its separate Phase 2 all-Docker check while awaiting the Sign in heading after resume.
 The packaged Phase 3 check and seven other jobs passed. The independent Phase 3 restore step also passed.
 The Phase 2 browser failure and earlier response-observation failure remain unresolved. This run does not establish full compatibility.
+
+## Pending admission extension
+
+The isolated fixture now creates issued, redeeming, and pending invitations through the source API before backup.
+It holds a regular sign-in callback and an invitation callback before either reaches the source application.
+The restored database must revoke all three invitations, remove their token and browser hashes, and record three recovery audit events.
+Complete row hashes verify that restore changes only the intended invitation fields.
+
+The target must reject the issued link, both recipient browser bindings, and both pending callbacks.
+The fixture checks the original five-minute authorization lifetime before callback replay.
+After source restart, the original regular callback must still establish the original principal session.
+That control distinguishes restored transaction loss from provider rejection or ordinary expiry.
+Invitation tokens, callback URLs, and cookies remain in memory. Reports contain counts, hashes, statuses, and elapsed time.
+Local API fixture lint passes. Hosted qualification of this extension remains pending.
 
 ## Remaining recovery work
 

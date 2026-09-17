@@ -9,6 +9,7 @@ import { renderAllDocker } from '../deployment/profiles/all-docker/render.mjs';
 import { verifyBackup } from '../deployment/operations/index.mjs';
 import { createOperationsCliFixture } from '../deployment/operations/cli-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
+import { prepareRestoreAdmissions } from './restore-admission-fixture.mjs';
 import {
   readApplicationPhase3,
   seedApplicationPhase3,
@@ -47,6 +48,8 @@ export async function qualifyApplicationRestore({
   let sourceStopped = false;
   let targetPrepared = false;
   let sourcePhase3;
+  let admissions;
+  let report;
   const probe = `
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
@@ -156,6 +159,11 @@ await store.close();await pool.end();`;
     assert.equal(before.principals.length, 1);
     assert.equal(before.principals[0].preferences.theme, 'dark');
     assert.ok(before.events.length > 0);
+    if (phase3)
+      admissions = await prepareRestoreAdmissions(
+        page,
+        config.applicationAuth.publicOrigin,
+      );
     const sourceCookies = await context.cookies();
     assert.ok(
       sourceCookies.some((cookie) => cookie.name.startsWith('__Host-')),
@@ -185,6 +193,7 @@ await store.close();await pool.end();`;
         resolveSecret,
         applicationCredentials,
         before,
+        admissionIds: admissions.invitationIds,
       });
     sourceConfig.artifacts.location = sourceRoots.artifacts;
     sourceConfig.services.kestra.internalStorage.location =
@@ -358,6 +367,7 @@ await store.close();await pool.end();`;
     } finally {
       await rejectedContext.close();
     }
+    const admissionRecovery = await admissions?.verifyTarget();
     const application = await applicationBrowser(
       config.applicationAuth.publicOrigin,
       async ({ page: restoredPage }) => {
@@ -373,7 +383,7 @@ await store.close();await pool.end();`;
           );
       },
     );
-    return {
+    report = {
       status: 'passed',
       profile: 'all-docker',
       phase: config.phase,
@@ -395,6 +405,7 @@ await store.close();await pool.end();`;
       application,
       restoration,
       ...(phase3State ? { phase3State } : {}),
+      ...(admissionRecovery ? { admissionRecovery } : {}),
       operatorCli: { ...operatorCli.execution, commands: operatorCli.commands },
       preserved: {
         principals: before.principals.length,
@@ -416,7 +427,7 @@ await store.close();await pool.end();`;
           ? [
               'The fixture seeds customer state through database commands after source shutdown. It does not qualify source onboarding through the browser.',
               'Google transport responses are synthetic. Live Google privileges and Education capabilities require separate evidence.',
-              'Pending invitation and login-transaction recovery require separate application proofs.',
+              'Pending admission fixtures use the synthetic administrator identity. They do not qualify district identity-provider configuration.',
             ]
           : []),
       ],
@@ -431,7 +442,12 @@ await store.close();await pool.end();`;
       await expect(
         page.getByRole('heading', { name: 'Diagnostics', exact: true }),
       ).toBeVisible();
+      if (report && admissions)
+        report.admissionRecovery.sourcePendingLoginStillValid =
+          await admissions.verifySourceControl(sourcePhase3.actor);
     }
+    await admissions?.close();
     await rm(targetRoot, { recursive: true, force: true });
   }
+  return report;
 }

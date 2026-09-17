@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import pg from 'pg';
@@ -8,6 +9,16 @@ import {
   seedPhase3State,
   verifyPhase3State,
 } from '../deployment/operations/phase3-state-fixture.mjs';
+
+const hashRows = (rows) =>
+  createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+const readInvitations = async (client, ids) =>
+  (
+    await client.query(
+      'SELECT row_to_json(i) AS value FROM cc.application_invitations i WHERE id=ANY($1::uuid[]) ORDER BY id',
+      [ids],
+    )
+  ).rows.map(({ value }) => value);
 
 async function withDatabase(config, resolveSecret, credentials, run) {
   const client = new pg.Client(
@@ -30,6 +41,7 @@ export async function seedApplicationPhase3({
   resolveSecret,
   applicationCredentials,
   before,
+  admissionIds,
 }) {
   return withDatabase(
     config,
@@ -54,6 +66,13 @@ export async function seedApplicationPhase3({
             .rows,
         ),
       );
+      source.invitations = await readInvitations(client, admissionIds);
+      assert.equal(source.invitations.length, 3);
+      assert.deepEqual(source.invitations.map(({ status }) => status).sort(), [
+        'issued',
+        'pending',
+        'redeeming',
+      ]);
       return source;
     },
   );
@@ -73,8 +92,8 @@ export async function verifyApplicationPhase3({
     config,
     resolveSecret,
     applicationCredentials,
-    (migration) =>
-      withDatabase(config, resolveSecret, {}, (runtime) =>
+    async (migration) => {
+      const state = await withDatabase(config, resolveSecret, {}, (runtime) =>
         verifyPhase3State(
           migration,
           runtime,
@@ -85,7 +104,34 @@ export async function verifyApplicationPhase3({
             deferRevalidation: true,
           },
         ),
-      ),
+      );
+      const ids = source.invitations.map(({ id }) => id);
+      const restored = await readInvitations(migration, ids);
+      const expected = source.invitations.map((row) => ({
+        ...row,
+        status: 'revoked',
+        token_hash: null,
+        browser_hash: null,
+        version: row.version + 1,
+      }));
+      assert.equal(hashRows(restored), hashRows(expected));
+      assert.equal(restoration.accessRecovery.pendingInvitationsRevoked, 3);
+      const audit = await migration.query(
+        "SELECT count(*)::int AS count FROM cc.security_events WHERE target_id=ANY($1::uuid[]) AND event='invitation-revoked' AND detail='restore-invalidated' AND correlation_id=$2",
+        [ids, restoration.accessRecovery.googleConnection.recoveryId],
+      );
+      assert.equal(audit.rows[0].count, 3);
+      return {
+        ...state,
+        invitations: {
+          sourceStatuses: ['issued', 'redeeming', 'pending'],
+          revoked: restored.length,
+          sourceSha256: hashRows(source.invitations),
+          restoredSha256: hashRows(restored),
+          recoveryAuditEvents: 3,
+        },
+      };
+    },
   );
   const marker = await readFile(join(targetDirectory, 'RESTORE_DISABLED'));
   const { result } = await operatorCli.run('revalidate-google', {
