@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const callbackRoute = '**/api/auth/callback?**';
-
 async function navigate(page, url) {
   try {
     await page.goto(url);
@@ -31,7 +29,11 @@ async function request(page, path, data) {
 }
 
 /** Keep issued invitations and authorization callbacks pending in the source. */
-export async function prepareRestoreAdmissions(adminPage, publicOrigin) {
+export async function prepareRestoreAdmissions(
+  adminPage,
+  publicOrigin,
+  provider,
+) {
   const contexts = [];
   const createdAt = Date.now();
   const newPage = async () => {
@@ -52,22 +54,20 @@ export async function prepareRestoreAdmissions(adminPage, publicOrigin) {
     return page;
   };
   const holdCallback = async (page, url) => {
-    let callback;
-    await page.route(callbackRoute, async (route) => {
-      callback = route.request().url();
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/html',
-        body: '<p>Pending authorization</p>',
-      });
-    });
-    await navigate(page, url);
+    const held = provider.holdNextAuthorization();
+    try {
+      await navigate(page, url);
+    } finally {
+      held.cancel();
+    }
+    const callback = held.callback;
     assert.ok(
       callback,
-      'The fixture must intercept an authorization callback.',
+      'The provider fixture must hold an authorization callback.',
     );
     const cookies = await page.context().cookies();
     assert.ok(cookies.some((cookie) => cookie.name === '__Host-cc-login'));
+    await navigate(page, `${publicOrigin}/restore-fixture-hold`);
     return { page, callback, cookies };
   };
   const invitations = [];
@@ -134,7 +134,6 @@ export async function prepareRestoreAdmissions(adminPage, publicOrigin) {
         invitation.state,
       );
     const rejectCallback = async (authorization, expectedPath) => {
-      await authorization.page.unroute(callbackRoute);
       await navigate(authorization.page, authorization.callback);
       const final = new URL(authorization.page.url());
       assert.equal(final.pathname, expectedPath);

@@ -18,6 +18,7 @@ export async function startProvider({
     use: 'sig',
   };
   const codes = new Map();
+  let heldAuthorization;
   const server = https
     .createServer(
       { cert: certificate, key: privateKey },
@@ -55,6 +56,12 @@ export async function startProvider({
           const callback = new URL(`${publicOrigin}/api/auth/callback`);
           callback.searchParams.set('state', url.searchParams.get('state'));
           callback.searchParams.set('code', code);
+          if (heldAuthorization) {
+            heldAuthorization.callback = callback.href;
+            heldAuthorization = undefined;
+            response.writeHead(200, { 'content-type': 'text/html' });
+            return response.end('<p>Pending authorization</p>');
+          }
           response.writeHead(303, { location: callback.href });
           return response.end();
         }
@@ -99,6 +106,19 @@ export async function startProvider({
   const issuer = `https://host.docker.internal:${server.address().port}`;
   return {
     issuer,
+    holdNextAuthorization() {
+      assert.equal(heldAuthorization, undefined);
+      const held = {};
+      heldAuthorization = held;
+      return {
+        get callback() {
+          return held.callback;
+        },
+        cancel() {
+          if (heldAuthorization === held) heldAuthorization = undefined;
+        },
+      };
+    },
     async close() {
       server.closeAllConnections();
       await new Promise((done) => server.close(done));

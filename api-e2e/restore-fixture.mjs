@@ -36,6 +36,7 @@ export async function qualifyApplicationRestore({
   caFile,
   page,
   context,
+  provider,
 }) {
   const startedAt = Date.now();
   const phase3 = config.phase === 3;
@@ -163,6 +164,7 @@ await store.close();await pool.end();`;
       admissions = await prepareRestoreAdmissions(
         page,
         config.applicationAuth.publicOrigin,
+        provider,
       );
     const sourceCookies = await context.cookies();
     assert.ok(

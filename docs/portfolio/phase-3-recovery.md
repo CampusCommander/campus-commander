@@ -147,7 +147,12 @@ The fixture checks the original five-minute authorization lifetime before callba
 After source restart, the original regular callback must still establish the original principal session.
 That control distinguishes restored transaction loss from provider rejection or ordinary expiry.
 Invitation tokens, callback URLs, and cookies remain in memory. Reports contain counts, hashes, statuses, and elapsed time.
-Local API fixture lint passes. Hosted qualification of this extension remains pending.
+[Run 35190962752](https://github.com/CampusCommander/campus-commander/actions/runs/35190962752) failed this extension at `2978b08` before backup.
+Playwright did not invoke the callback route handler for the provider redirect. A local browser reproduction confirmed the failure.
+The provider fixture now holds the next authorization before redirecting and retains its unused code in memory.
+Local browser checks pass for direct authorization, redirected login, and the unchanged normal redirect.
+The fixture returns held pages to the application origin before recipient status checks.
+Local lint and API checks pass. Hosted admission recovery remains pending.
 
 ## Resume failure diagnostics
 
@@ -158,6 +163,15 @@ The artifact name identifies the application phase and the stop or uninstall com
 The report includes route categories, response statuses, request error codes, and document element counts.
 It excludes URLs, response contents, cookies, and tokens. The original assertion and timeout remain unchanged.
 Hosted execution of these diagnostics remains pending. This instrumentation does not establish a correction for the failure.
+
+## Operator procedures
+
+The [Phase 3 recovery checklist](../../deployment/operations/PHASE-3.md) defines inventory, interrupted restore, identity recovery, credential review, and erasure checks.
+Final comparison hashes follow source shutdown. Retry uses empty databases and a nonexistent target directory path.
+The checklist distinguishes installer marker enforcement from controlled direct service startup.
+It records the missing-key limitation and external material outside installer erasure.
+Local links, instruction lengths, and formatting pass. Both review axes passed after correcting the inventory timing and directory instructions.
+These procedures still require operator qualification and acceptance.
 
 ## Remaining recovery work
 

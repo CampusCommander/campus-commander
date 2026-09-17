@@ -499,6 +499,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
               caFile: certPath,
               page,
               context,
+              provider,
             });
             await mkdir('dist/phase-3-recovery', { recursive: true });
             await writeFile(
