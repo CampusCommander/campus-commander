@@ -56,6 +56,7 @@ test('response registration covers cookies and nested tokens without treating no
     { 'set-cookie': ['__Host-session=opaque-cookie-value; Secure'] },
     JSON.stringify({
       csrfToken: 'fixture-csrf-value',
+      csrf: 'fixture-setup-csrf-value',
       nested: { access_token: 'fixture-access-value' },
       code: 'forbidden',
     }),
@@ -63,6 +64,7 @@ test('response registration covers cookies and nested tokens without treating no
   for (const value of [
     'opaque-cookie-value',
     'fixture-csrf-value',
+    'fixture-setup-csrf-value',
     'fixture-access-value',
   ]) {
     assert.throws(() => security.assertSafe(value, 'response'), /protected/);

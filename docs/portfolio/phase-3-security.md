@@ -200,7 +200,7 @@ The source and packaged reports must contain the Redis operator category before 
 ## Audit rollback evidence inventory
 
 The following fixtures inject audit failures into effective mutations. Their assertions cover the listed state boundaries.
-Full run `35180100392` passed its PostgreSQL job at `63fca05`. Its application jobs remain pending.
+Full run `35180100392` passed its PostgreSQL job at `63fca05`. Its application job remained unfinished. The operator canceled the outdated run after the bounded scanner exposed an observation timeout.
 Revision `63fca05` requires exact injected errors for settings, health publication, replacement, rotation, and disconnect.
 
 | Mutation                                                                    | Fixture under `deployment/postgres`  | Retained state assertion                                                                        |
@@ -236,3 +236,19 @@ Their fixes require passing source and packaged evidence before closure.
 
 Browser response registration has a five-second limit. An unfinished response fails qualification with a fixed diagnostic.
 The regression uses a stalled response and a controlled clock. It does not establish the cause of an active hosted run.
+
+## Scanner integration finding
+
+Source run [35180757221](https://github.com/CampusCommander/campus-commander/actions/runs/35180757221) failed at `5951102`.
+Browser secret registration exceeded its five-second limit before the first enrollment screenshot.
+The retained artifact contains four early accessibility reports. It contains no completed redaction report.
+This P2 fixture defect blocks scanner qualification. It does not demonstrate a product credential disclosure.
+
+Earlier source run `35180101953` was superseded while unfinished. Full run `35180100392` was canceled after its six other jobs passed.
+Neither unfinished application result qualifies the scanner. The PostgreSQL result still qualifies the stricter audit assertions at `63fca05`.
+Revision `ac3e101` adds bounded failure diagnostics with fixed route categories, stages, status codes, and counts.
+The report excludes raw URLs, response content, headers, and error messages. It removes a failed screenshot before writing diagnostics.
+Source run `35181054132` identified one unfinished body: POST `/api/auth/enrollment/start`, status 201.
+The fixture returned that response's status without consuming its body before switching browser profiles.
+The fixture now drains the response before switching profiles. Hosted qualification must confirm this correction.
+The scanner also registers the local setup listener's `csrf` field.

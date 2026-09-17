@@ -6,6 +6,7 @@ import { basename, extname, join, resolve } from 'node:path';
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const secretFields = new Set([
   'csrfToken',
+  'csrf',
   'token',
   'browserToken',
   'private_key',

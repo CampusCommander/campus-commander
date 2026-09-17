@@ -962,6 +962,8 @@ test(
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ code }),
           });
+          // Drain the response before this fixture switches browser profiles.
+          await response.arrayBuffer();
           return response.status;
         }, pairingCode);
         assert.equal(firstPairStatus, 201);
