@@ -25,6 +25,10 @@ import {
   assertHybridKeyMount,
 } from './hybrid-evidence-fixture.mjs';
 import { createHybridServices } from './hybrid-services-fixture.mjs';
+import {
+  readHybridReplica,
+  verifyHybridRecipientAccess,
+} from './hybrid-replica-fixture.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
@@ -110,6 +114,7 @@ test(
     const credentialKeyProjection = [];
     const providerConnections = [];
     const sessionChecks = [];
+    const recipientAccessChecks = [];
     const restartRecoveries = [];
     const images = {};
     let sourceRevision;
@@ -722,23 +727,14 @@ process.exit(result.status??1);
           'Replica checks require the previous authenticated cookie.',
         );
         for (const replica of replicas) {
-          const readSession = async () =>
-            JSON.parse(
-              await hosts.run(
-                controller,
-                [
-                  'docker',
-                  'exec',
-                  '-i',
-                  replica,
-                  'node',
-                  '--input-type=module',
-                  '-e',
-                  `import fs from 'node:fs';import https from 'node:https';let input='';for await(const chunk of process.stdin)input+=chunk;const {cookie}=JSON.parse(input);const request=https.get({hostname:'127.0.0.1',port:3000,servername:'api',ca:fs.readFileSync('/run/secrets/district-ca'),path:'/api/auth/session',headers:{cookie},timeout:10000},response=>{let body='';response.on('data',chunk=>body+=chunk);response.on('end',()=>{const value=JSON.parse(body);console.log(JSON.stringify({status:response.statusCode,principalId:value.identity?.id}))})});request.on('timeout',()=>request.destroy(new Error('Session verification timed out.')));request.on('error',()=>process.exit(1));`,
-                ],
-                { input: JSON.stringify({ cookie }) },
-              ),
-            );
+          const readSession = () =>
+            readHybridReplica({
+              hosts,
+              controller,
+              replica,
+              path: '/api/auth/session',
+              cookie,
+            });
           let result;
           if (waitForRestart) {
             const started = Date.now();
@@ -794,6 +790,14 @@ process.exit(result.status??1);
               page,
               publicOrigin,
               provider,
+              verifyRecipientAccess: async (input) => {
+                recipientAccessChecks.push(
+                  ...(await verifyHybridRecipientAccess(
+                    { hosts, controller, compose },
+                    input,
+                  )),
+                );
+              },
             });
             await checks({ recoverySeconds: 120 });
           }
@@ -916,6 +920,7 @@ process.exit(result.status??1);
               },
               installedWorkflows: installedWorkflows.report,
               workerCredentials,
+              recipientAccessChecks,
               credentialKeyProjection,
               durationScope:
                 'Complete extracted hybrid installation, public workflows, lifecycle, and fixture cleanup.',

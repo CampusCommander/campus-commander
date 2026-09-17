@@ -117,3 +117,27 @@ The complete fixture took 212,787 milliseconds. Installation commands took 26,71
 The retained [installation](../../deployment/evidence/CC-58-installation.json), [resume](../../deployment/evidence/CC-58-resume.json), and [workflow](../../deployment/evidence/CC-58-installed-workflows.json) reports preserve original fields and three source-report hashes.
 Their source, images, and manifest identify the delivered application. Their harness revision identifies the executed checks.
 Three Docker daemons share one physical host. This checkpoint does not establish the new distributed-renewal checks or complete hybrid acceptance.
+
+## Permission checks across API replicas
+
+The installed invitation workflow now exposes optional replica checks after grant changes, after fresh sign-in, and after revocation.
+The fixture captures recipient cookies before each permission mutation and replays those exact cookies against both API replicas.
+Both replicas must reject the previous session after its permission version changes or access is revoked.
+With the renewed session, both replicas must allow the granted school and hide ungranted and unknown schools identically.
+
+The direct probes use verified TLS and bounded requests. Cookies travel through private standard input and remain outside process arguments and reports.
+Reports retain only replica identity, workflow stage, resource category, and status.
+Shared session checks use the same probe. Fixtures without the optional callback retain their existing behavior.
+Local API fixtures, hybrid fixtures, lint, and formatting pass. Hosted replica qualification remains required.
+
+## Passed distributed-renewal checkpoint
+
+[Run 35232255573](https://github.com/CampusCommander/campus-commander/actions/runs/35232255573) passed with harness `0e0db2f` against signed application `a3601ef`.
+Both worker daemons completed background reads after browser closure and rejected unauthorized dispatch, credential fields, and retired generation 1.
+The second daemon observed the pending renewal lease within 1,171 milliseconds while the first renewal remained held.
+Both reads then completed. Renewal events advanced from one to two and remained at two after worker restart.
+Both workers recovered within 2,682 milliseconds against the 30-second bound.
+
+The [distributed-renewal report](../../deployment/evidence/CC-58-distributed-renewal.json) records daemon identities, observations, original report hashes, and fixture limits.
+The renewal segment took 12,397 milliseconds. The complete hybrid fixture took 228,815 milliseconds.
+This checkpoint does not establish the subsequent replica-permission checks or complete hybrid acceptance.
