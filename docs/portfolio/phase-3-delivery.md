@@ -338,4 +338,23 @@ gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
 ```
 
 The workflow rejects combined lifecycle, upgrade, and fault modes.
-Hosted lifecycle execution and a different-release guided update remain pending.
+[Lifecycle run 35222326908](https://github.com/CampusCommander/campus-commander/actions/runs/35222326908) passed at harness `43f1de1` against application `a3601ef`.
+State survived restart, stop/resume, and uninstall/resume. Unconfirmed erasure failed and preserved the installation.
+Confirmed erasure removed 22 owned volumes and preserved the control marker. All ten installed workflows passed.
+The lifecycle segment took 113,193 milliseconds. The complete profile took 180,148 milliseconds.
+
+Retained reports record five original report hashes:
+
+- [Installation](../../deployment/evidence/CC-57-installation.json): prepare and first resume took 45,784 milliseconds.
+- [Resume](../../deployment/evidence/CC-57-resume.json): four resume commands took 109,965 milliseconds in total.
+- [Lifecycle](../../deployment/evidence/CC-57-lifecycle.json): state comparisons, rejected erasure, confirmed erasure, and replica session observations.
+
+PR CI found one formatting defect in the capacity fixture. Revision `270fe88` corrects it.
+[PR CI 35222525116](https://github.com/CampusCommander/campus-commander/actions/runs/35222525116) passed after that correction.
+A different-release guided update and complete profile report aggregation remain pending.
+
+## Next laboratory candidate
+
+[Candidate run 35222534304](https://github.com/CampusCommander/campus-commander/actions/runs/35222534304) builds source `270fe88` for the guided-update proof.
+The build remains active. Its validation job passed. Image publication and downstream qualification remain pending.
+Existing reports remain bound to application `a3601ef`. They do not qualify the new candidate.
