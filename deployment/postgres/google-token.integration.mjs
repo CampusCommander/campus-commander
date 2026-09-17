@@ -48,6 +48,41 @@ export async function qualifyGoogleTokens({
       correlation,
     ]);
   const changed = (error) => error.detail === 'credential-changed';
+  const rollback = async (event, action) => {
+    assert.ok(
+      [
+        'connection-token-renewed',
+        'connection-token-failed',
+        'connection-checked',
+      ].includes(event),
+    );
+    const state = async () =>
+      (
+        await migrator.query(`
+          SELECT 'token' AS relation, md5(row_to_json(item)::text) AS state FROM cc.google_access_tokens item
+          UNION ALL SELECT 'connection', md5(row_to_json(item)::text) FROM cc.google_connection item
+          UNION ALL SELECT 'credential', md5(row_to_json(item)::text) FROM cc.google_credentials item
+          UNION ALL SELECT 'event', md5(row_to_json(item)::text) FROM cc.security_events item
+          ORDER BY relation, state
+        `)
+      ).rows;
+    const before = await state();
+    await migrator.query(
+      `ALTER TABLE cc.security_events ADD CONSTRAINT token_audit_failure CHECK(event<>'${event}') NOT VALID`,
+    );
+    try {
+      await assert.rejects(
+        action(),
+        (error) =>
+          error.code === '23514' && error.constraint === 'token_audit_failure',
+      );
+      assert.deepEqual(await state(), before);
+    } finally {
+      await migrator.query(
+        'ALTER TABLE cc.security_events DROP CONSTRAINT token_audit_failure',
+      );
+    }
+  };
   await assert.rejects(
     runtime.query('SELECT * FROM cc.google_access_tokens'),
     (error) => error.code === '42501',
@@ -79,18 +114,10 @@ export async function qualifyGoogleTokens({
     scopeProfile: 'customer-domain-v1',
   };
   const envelope = cipher.sealAccessToken(token, context);
-  await migrator.query(
-    "ALTER TABLE cc.security_events ADD CONSTRAINT token_audit_failure CHECK(event<>'connection-token-renewed') NOT VALID",
-  );
-  await assert.rejects(
+  await rollback('connection-token-renewed', () =>
     complete(winner, envelope, token.expiresAt),
-    (error) =>
-      error.code === '23514' && error.constraint === 'token_audit_failure',
   );
   assert.equal((await access(randomUUID())).rows[0].result.status, 'pending');
-  await migrator.query(
-    'ALTER TABLE cc.security_events DROP CONSTRAINT token_audit_failure',
-  );
   await complete(winner, envelope, token.expiresAt);
   await assert.rejects(complete(winner, envelope, token.expiresAt), changed);
   const cached = (await access(randomUUID(), second)).rows[0].result;
@@ -104,6 +131,14 @@ export async function qualifyGoogleTokens({
   );
   assert.throws(() => cipher.open(cached.envelope, context));
   assert.equal(JSON.stringify(cached).includes(token.accessToken), false);
+  await rollback('connection-token-failed', () =>
+    runtime.query('SELECT cc.reject_google_access($1,1,$2,$3,$4)', [
+      customerId,
+      cached.tokenId,
+      'credential-rejected',
+      correlation,
+    ]),
+  );
   await runtime.query('SELECT cc.reject_google_access($1,1,$2,$3,$4)', [
     customerId,
     randomUUID(),
@@ -152,6 +187,13 @@ export async function qualifyGoogleTokens({
   ).read(input);
   assert.equal(renewals, 1);
 
+  await rollback('connection-checked', () =>
+    runtime.query('SELECT cc.record_google_observation($1,1,$2,$3)', [
+      customerId,
+      JSON.stringify(observation(customerId)),
+      correlation,
+    ]),
+  );
   const beforeObservation = (
     await migrator.query('SELECT observed_at FROM cc.google_connection')
   ).rows[0].observed_at;
@@ -215,6 +257,7 @@ export async function qualifyGoogleTokens({
   });
   assert.equal(renewals, 1);
   await assert.rejects(reset(1, 999), (error) => error.code === '42501');
+  await rollback('connection-checked', () => reset());
   await reset();
   await providers[0].read(input);
   assert.equal(renewals, 2);
@@ -278,6 +321,9 @@ export async function qualifyGoogleTokens({
     cipher.open(active.envelope, replacementContext),
     credential,
   );
+  await rollback('connection-token-failed', () =>
+    complete(activeLease, null, null, 'delegation-not-authorized', 2),
+  );
   await complete(activeLease, null, null, 'delegation-not-authorized', 2);
   assert.equal(
     (await access(randomUUID(), second, 2)).rows[0].result.failure,
@@ -286,6 +332,9 @@ export async function qualifyGoogleTokens({
   await reset(2);
   const retryLease = randomUUID();
   await access(retryLease, runtime, 2);
+  await rollback('connection-token-failed', () =>
+    complete(retryLease, null, null, 'network-failure', 2),
+  );
   await complete(retryLease, null, null, 'network-failure', 2);
   assert.equal(
     (await access(randomUUID(), second, 2)).rows[0].result.failure,
@@ -302,6 +351,7 @@ export async function qualifyGoogleTokens({
     'two replicas share one fenced renewal lease and reuse encrypted access tokens: pass',
     'token encryption binds credential, customer, generation, and payload purpose: pass',
     'failed renewal audit rolls back cache mutation and preserves its lease: pass',
+    'renewal failure, token rejection, observation, and retry audit faults preserve complete token, connection, credential, and event state: pass',
     'revoked access stops automatic renewal until current operator authority permits retry: pass',
     'lease expiry and credential replacement reject late renewal and observation writes: pass',
     'transient failures require a bounded cooldown before another renewal: pass',

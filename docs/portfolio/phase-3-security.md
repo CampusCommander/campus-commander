@@ -296,3 +296,11 @@ Confirmation now rejects each audit event separately: `invitation-confirmed` and
 Expiry covers issued, redeeming, and pending invitations in one sweep. Failed expiry preserves every row and event.
 The successful retry checks each invitation version and exactly one expiry event per invitation.
 Local deployment lint and PostgreSQL contract tests pass. Real PostgreSQL execution of this extension remains pending.
+
+## Token and observation rollback extension
+
+The token fixture compares complete token, connection, credential, and security-event rows after each injected audit failure.
+It covers successful renewal, terminal renewal failure, transient renewal failure, token rejection, observation publication, and authorized retry.
+Each probe requires the exact injected constraint failure. Cleanup removes the constraint after success or failure.
+The existing successful operations run after each fault to verify recovery.
+Local deployment lint and PostgreSQL contract tests pass. Real PostgreSQL execution of this extension remains pending.
