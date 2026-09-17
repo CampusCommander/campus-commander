@@ -40,6 +40,7 @@ export class EvidenceSecurity {
   #pageSequence = 0;
   #pageIds = new WeakMap();
   #closing = new WeakSet();
+  #requests = new Map();
 
   async newContext(browser, options) {
     const context = await browser.newContext(options);
@@ -50,6 +51,18 @@ export class EvidenceSecurity {
     let contextClosed = false;
     context.on('close', () => {
       contextClosed = true;
+      for (const [request, active] of this.#requests)
+        if (active.context === context) this.#finishRequest(request);
+    });
+    context.on('request', (request) => {
+      let page;
+      try {
+        page = request.frame().page();
+      } catch {
+        // Worker requests belong to the context.
+      }
+      const finished = Promise.withResolvers();
+      this.#requests.set(request, { context, page, finished });
     });
     const lifecycle = (request) => {
       let page;
@@ -146,6 +159,7 @@ export class EvidenceSecurity {
       );
     });
     context.on('requestfinished', (request) => {
+      this.#finishRequest(request);
       const path = new URL(request.url()).pathname;
       if (
         !['/api/auth/session', '/pair', '/api/auth/invitations'].includes(path)
@@ -172,7 +186,8 @@ export class EvidenceSecurity {
         request,
       );
     });
-    context.on('requestfailed', () => {
+    context.on('requestfailed', (request) => {
+      this.#finishRequest(request);
       this.#incompleteResponses++;
     });
     return context;
@@ -181,9 +196,55 @@ export class EvidenceSecurity {
   async close(resource) {
     this.#closing.add(resource);
     try {
+      if (typeof resource.contexts === 'function') {
+        const results = await Promise.allSettled(
+          resource.contexts().map((context) => this.close(context)),
+        );
+        const failure = results.find(({ status }) => status === 'rejected');
+        if (failure) throw failure.reason;
+      } else {
+        await resource.route?.('**/*', (route) => route.abort());
+        await this.#finishResourceRequests(resource);
+      }
       await this.observePendingResponses();
     } finally {
       await resource.close();
+    }
+  }
+
+  #finishRequest(request) {
+    const active = this.#requests.get(request);
+    this.#requests.delete(request);
+    active?.finished.resolve();
+  }
+
+  async #finishResourceRequests(resource) {
+    let timer;
+    try {
+      await Promise.race([
+        (async () => {
+          for (;;) {
+            const active = [...this.#requests.values()].filter(
+              ({ page, context }) => page === resource || context === resource,
+            );
+            if (!active.length) return;
+            await Promise.all(active.map(({ finished }) => finished.promise));
+          }
+        })(),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                this.#observationError(
+                  'Browser requests did not finish before closure.',
+                ),
+              ),
+            5000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 

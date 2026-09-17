@@ -357,3 +357,20 @@ A regression reproduced the exact closed-page font failure before this correctio
 After the correction, all 15 API and scanner tests pass. The regression also verifies that the font response cookie remains protected.
 Local lint passes. Hosted qualification remains pending.
 This correction does not establish a fix for earlier header-observation failures or other browser failures.
+
+## Active request closure correction
+
+[Run 35192138281](https://github.com/CampusCommander/campus-commander/actions/runs/35192138281) failed packaged authorization at `9a5b046`.
+The [retained diagnostics](../../deployment/evidence/CC-55-9a5-browser-observation-failure.json) identify a fetch response header after guarded page closure.
+The previous guard drained registered observations but did not wait for requests whose responses had not arrived.
+A local Chromium stress test reproduced header failures in four of 100 font-request closures.
+
+The guard now blocks new requests, waits for active requests belonging to the closing resource, and then drains observations.
+The active-request wait has a five-second limit. A timeout still closes the resource and rejects qualification.
+Browser closure drains each child context before browser disposal. It waits for every child cleanup even when one fails.
+The scanner still rejects header and required token-body observation failures.
+
+A deterministic regression failed before the correction and passes afterward.
+The same Chromium stress test now reports zero failures across 100 closures.
+Timeout, unrelated-page isolation, and browser-child cleanup checks also pass locally.
+Hosted qualification of this correction remains pending. Other browser failures retain their existing evidence and status.

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "sourceRevision": "9a5b046e46c45eb47c87a5440f85361de1864960",
+  "command": "npm exec nx run api-e2e:phase3-auth-integration",
+  "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35192138281",
+  "recordedAt": "2026-09-17T07:03:05Z",
+  "durationMilliseconds": 112773.444633,
+  "durationScope": "Node test process, as reported in the failed job log",
+  "environment": {
+    "runner": "ubuntu-latest",
+    "nodeVersion": "24.19.0",
+    "CC_AUTH_PACKAGED_IMAGES": "true",
+    "CC_AUTH_PHASE": "3"
+  },
+  "imageDigests": {
+    "status": "unavailable",
+    "reason": "The failed authorization fixture did not write its final image inventory."
+  },
+  "limitations": [
+    "This record identifies a fetch response header queried after its page closed.",
+    "The fixture used packaged images and synthetic Google and sign-in providers.",
+    "This record does not qualify image identity or successful evidence redaction for the failed run."
+  ],
+  "diagnostics": {
+    "status": "failed",
+    "pendingResponses": 0,
+    "pendingStages": [],
+    "responseFailures": {
+      "headers": 1,
+      "body": 0
+    },
+    "failedResponses": [
+      {
+        "stage": "headers",
+        "route": "other",
+        "status": 200,
+        "contextId": 3,
+        "pageId": 36,
+        "resourceType": "fetch",
+        "pageClosing": true,
+        "pageClosed": true,
+        "contextClosing": false,
+        "contextClosed": false,
+        "reason": "target-closed"
+      }
+    ],
+    "reason": "response-observation-failed"
+  }
+}

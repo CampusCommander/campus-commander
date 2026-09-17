@@ -497,3 +497,125 @@ test('completed assets retain cookies without querying a disposed page for unuse
     /protected/,
   );
 });
+
+test('guarded closure waits for an active asset response before disposing of the page', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  let closed = false;
+  const page = {
+    isClosed: () => closed,
+    close: async () => {
+      closed = true;
+    },
+  };
+  const request = {
+    url: () => 'https://fixture.invalid/font.woff2',
+    frame: () => ({ page: () => page }),
+    resourceType: () => 'font',
+  };
+  context.emit('request', request);
+  const closing = security.close(page);
+  await new Promise((done) => setImmediate(done));
+  const closedBeforeResponse = closed;
+  context.emit('response', {
+    url: request.url,
+    status: () => 200,
+    request: () => request,
+    headersArray: async () => {
+      if (closed) throw new Error('Target page has been closed');
+      return [
+        { name: 'Set-Cookie', value: 'asset=pending-font-cookie; Secure' },
+      ];
+    },
+  });
+  context.emit('requestfinished', request);
+  await closing;
+  assert.equal(closedBeforeResponse, false);
+  assert.equal(closed, true);
+  await security.observePendingResponses();
+  assert.throws(
+    () => security.assertSafe('pending-font-cookie', 'report'),
+    /protected/,
+  );
+});
+
+test('guarded closure bounds active requests and closes on timeout', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  let closed = false;
+  context.close = async () => {
+    closed = true;
+    context.emit('close');
+  };
+  context.emit('request', {
+    frame: () => {
+      throw new Error('Worker request');
+    },
+  });
+  const closing = assert.rejects(
+    security.close(context),
+    /Browser requests did not finish before closure/,
+  );
+  await Promise.resolve();
+  assert.equal(closed, false);
+  t.mock.timers.tick(5000);
+  await closing;
+  assert.equal(closed, true);
+});
+
+test('page closure blocks new requests without waiting for another page', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  const otherPage = {};
+  const request = { frame: () => ({ page: () => otherPage }) };
+  context.emit('request', request);
+  let blocked = false,
+    closed = false;
+  await security.close({
+    route: async (pattern, handler) => {
+      assert.equal(pattern, '**/*');
+      await handler({
+        abort: async () => {
+          blocked = true;
+        },
+      });
+    },
+    close: async () => {
+      closed = true;
+    },
+  });
+  assert.equal(blocked, true);
+  assert.equal(closed, true);
+  context.emit('requestfailed', request);
+});
+
+test('browser closure drains child contexts before browser disposal', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  let contextClosed = false,
+    browserClosed = false;
+  context.close = async () => {
+    contextClosed = true;
+    context.emit('close');
+  };
+  const request = { frame: () => ({ page: () => ({}) }) };
+  context.emit('request', request);
+  const closing = security.close({
+    contexts: () => [context],
+    close: async () => {
+      browserClosed = true;
+    },
+  });
+  await new Promise((done) => setImmediate(done));
+  assert.equal(contextClosed, false);
+  assert.equal(browserClosed, false);
+  context.emit('requestfailed', request);
+  await closing;
+  assert.equal(contextClosed, true);
+  assert.equal(browserClosed, true);
+});
