@@ -117,11 +117,19 @@ Messages explain the result and next step. Permission checks, confirmation steps
 UI-05 now records this writing guidance for future client work.
 
 All 55 Chromium checks and 33 frontend unit tests passed. Both lint targets and the production build passed.
-The updated API browser scripts passed syntax checks. The full container integration suite was not repeated for copy changes.
+The updated API browser scripts passed syntax checks.
 The rebuilt running application displayed the revised copy on settings, invitations, schools, platform access, and Diagnostics.
 Screenshot inspection confirmed readable settings copy without clipping. Browser checks cover both themes, focus, narrow layouts, and automated accessibility.
 The earlier native screen-reader evidence retains its original labels. This copy pass does not claim a new human screen-reader review.
 Applicable rules: UI-02, UI-05, UI-06, UI-09, UI-10, and FORM-01.
+
+The subsequent [integrated client check](../../deployment/evidence/CC-61-client-integration.json) passed against application source `f765c62`.
+It used real PostgreSQL, Redis, Kestra, two API replicas, and the worker with simulated Google and OIDC.
+The check covers settings, invitations, access changes, revocation, Google credentials, and school permissions through the API and browser.
+The school test now selects the exact Refresh school button. The keyboard save test verifies button readiness, focus, and request submission.
+Authorization passed 100 boundary checks across 32 routes. All 38 accessibility reports contain zero automated violations.
+Seventeen automated contrast results remain inconclusive. Human accessibility review and owner acceptance remain open.
+[CI for the copy revision](https://github.com/CampusCommander/campus-commander/actions/runs/35273823264) also passed.
 
 ## Jira and Git disposition
 

@@ -114,10 +114,15 @@ export async function qualifyCustomerSettings({
   await page
     .getByLabel('Customer display name')
     .fill('Confirmed fixture district');
-  await page
-    .getByRole('button', { name: 'Save customer settings', exact: true })
-    .focus();
+  const saveButton = page.getByRole('button', {
+    name: 'Save customer settings',
+    exact: true,
+  });
+  await expect(saveButton).toBeEnabled();
+  await saveButton.focus();
+  await expect(saveButton).toBeFocused();
   await page.keyboard.press('Enter');
+  await expect.poll(() => !!submitted).toBe(true);
   await expect(page.getByRole('alert')).toContainText(
     'We have not received a save confirmation',
   );

@@ -304,7 +304,9 @@ export async function qualifySchoolDefinitionsApi({
     const stale = await read(scoped, `/${a}`);
     assert.equal(stale.effectiveIds, null);
     assert.deepEqual(stale.approvedIds, ['school-a']);
-    await page.getByRole('button', { name: 'Refresh school' }).click();
+    await page
+      .getByRole('button', { name: 'Refresh school', exact: true })
+      .click();
     await expect(
       page.getByText('Unavailable. The saved definition remains intact.'),
     ).toBeVisible();
@@ -319,7 +321,9 @@ export async function qualifySchoolDefinitionsApi({
     const revoked = await scoped.get(`${root}/${a}`);
     assert.equal(revoked.status(), 401, await revoked.text());
     assert.equal((await revoked.json()).code, 'access-changed');
-    await page.getByRole('button', { name: 'Refresh school' }).click();
+    await page
+      .getByRole('button', { name: 'Refresh school', exact: true })
+      .click();
     await expect(
       page.getByRole('button', { name: 'Recheck access', exact: true }),
     ).toBeVisible();
