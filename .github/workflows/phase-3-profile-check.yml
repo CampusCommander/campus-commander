@@ -82,6 +82,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - run: npm ci
+      - name: Select shared browser storage
+        run: printf 'PLAYWRIGHT_BROWSERS_PATH=%s/.cache/ms-playwright\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - run: npx playwright install --with-deps chromium
       - run: npm exec nx run deployment:build
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
@@ -205,6 +207,27 @@ jobs:
             cosign verify "$reference" --certificate-identity="$BASELINE_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com
             docker pull "$reference"
           done < published-baseline/images.txt
+      - name: Prepare the shared-storage fixture account
+        if: inputs.profile == 'hybrid'
+        run: |
+          if ! getent passwd 1000 > /dev/null; then
+            sudo useradd --uid 1000 --user-group --create-home cc-qualification
+          fi
+          if ! command -v setfacl > /dev/null; then
+            sudo apt-get install --no-install-recommends -y acl
+          fi
+          cp -a "${DOCKER_CONFIG:-$HOME/.docker}" "$GITHUB_WORKSPACE/.qualification-docker"
+          fixture_socket="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+          test "${fixture_socket#unix://}" != "$fixture_socket"
+          fixture_socket="${fixture_socket#unix://}"
+          sudo setfacl -m u:1000:rw "$fixture_socket"
+          fixture_directory="$(dirname "$fixture_socket")"
+          while test "$fixture_directory" != /; do
+            sudo setfacl -m u:1000:x "$fixture_directory"
+            fixture_directory="$(dirname "$fixture_directory")"
+          done
+          sudo chown -R 1000:1000 "$GITHUB_WORKSPACE"
+          printf 'DOCKER_CONFIG=%s/.qualification-docker\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Qualify installed Phase 3 workflows
         if: inputs.profile == 'all-docker' && inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''
         run: npm exec nx run api-e2e:phase3-install-integration
@@ -212,9 +235,10 @@ jobs:
           NX_NO_CLOUD: 'true'
       - name: Qualify installed Phase 3 hybrid workflows
         if: inputs.profile == 'hybrid'
-        run: npm exec nx run api-e2e:phase3-hybrid-install-integration
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-install-integration
         env:
           NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
       - name: Qualify Phase 2-to-3 upgrade and workflows
         if: inputs.upgrade
         run: npm exec nx run api-e2e:phase3-upgrade-integration
@@ -250,6 +274,9 @@ jobs:
         run: npm exec nx run api-e2e:phase3-lifecycle-integration
         env:
           NX_NO_CLOUD: 'true'
+      - name: Restore evidence ownership
+        if: always() && inputs.profile == 'hybrid'
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

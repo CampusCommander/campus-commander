@@ -722,10 +722,37 @@ test('Phase 3 hybrid dispatch verifies signed images and rejects unsupported mod
     (s) => s.name === 'Qualify installed Phase 3 hybrid workflows',
   );
   assert.equal(hybrid.if, "inputs.profile == 'hybrid'");
-  assert.equal(
+  assert.match(hybrid.run, /sudo -H -u '#1000' -g '#1000'/);
+  assert.match(hybrid.run, /CC_AUTH_INSTALLER_ROOT/);
+  assert.match(hybrid.run, /PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG/);
+  assert.match(
     hybrid.run,
-    'npm exec nx run api-e2e:phase3-hybrid-install-integration',
+    /npm exec nx run api-e2e:phase3-hybrid-install-integration/,
   );
+  assert.equal(hybrid.env.NX_DAEMON, 'false');
+  const account = steps.find(
+    (s) => s.name === 'Prepare the shared-storage fixture account',
+  );
+  const restore = steps.find((s) => s.name === 'Restore evidence ownership');
+  const browsers = steps.find(
+    (s) => s.name === 'Select shared browser storage',
+  );
+  assert.equal(account?.if, "inputs.profile == 'hybrid'");
+  assert.match(account.run, /sudo chown -R 1000:1000/);
+  assert.match(account.run, /sudo setfacl -m u:1000:rw/);
+  assert.match(account.run, /sudo setfacl -m u:1000:x/);
+  assert.match(account.run, /DOCKER_CONFIG/);
+  assert.equal(restore?.if, "always() && inputs.profile == 'hybrid'");
+  assert.match(restore.run, /sudo chown -R "\$\(id -u\):\$\(id -g\)"/);
+  assert.match(browsers?.run, /PLAYWRIGHT_BROWSERS_PATH/);
+  assert.ok(
+    steps.indexOf(browsers) <
+      steps.findIndex(
+        (s) => s.run === 'npx playwright install --with-deps chromium',
+      ),
+  );
+  assert.ok(steps.indexOf(account) < steps.indexOf(hybrid));
+  assert.ok(steps.indexOf(restore) > steps.indexOf(hybrid));
   assert.ok(
     steps.indexOf(hybrid) >
       steps.findIndex((s) => s.name === 'Prepare published image references'),

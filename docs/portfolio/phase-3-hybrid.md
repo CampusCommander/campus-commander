@@ -59,3 +59,19 @@ It records the process UID and GID and only an allowlisted failure category and 
 Tests verify that arbitrary exception data cannot enter the diagnostic report.
 Harness state now checks tracked files. Generated bundle files no longer mark committed source as modified.
 This increment does not claim a corrected installation or a hosted pass.
+
+## Shared-storage account correction
+
+[Diagnostic run 35228930026](https://github.com/CampusCommander/campus-commander/actions/runs/35228930026) failed during image distribution before delivered installation.
+Its [retained report](../../deployment/evidence/CC-58-installation-attempt2.json) records a clean harness at `24b8635` and runner UID/GID 1001.
+Hybrid host commands run as UID/GID 1000. Private fixture directories require the same owner.
+The new workflow omitted the account preparation used by the Phase 2 hybrid workflow.
+
+The workflow now uses that established account contract.
+It grants UID 1000 access to the selected Docker socket and its parent directories.
+It transfers workspace ownership and executes hybrid qualification as UID/GID 1000.
+Shared browser storage and preserved installer, image, and Docker configuration variables support the account change.
+The workflow restores evidence ownership before upload, including failed runs.
+
+The workflow regression failed before the correction. Hosted qualification must verify the correction against the original failure.
+The original failure reports remain intact. This correction does not establish successful installation.

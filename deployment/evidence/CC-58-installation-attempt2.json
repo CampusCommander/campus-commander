@@ -1,0 +1,49 @@
+{
+  "status": "failed",
+  "profile": "hybrid",
+  "phase": 3,
+  "harnessRevision": "24b863544a33de18fd96e5d2461a91173db2afaa",
+  "harnessWorkingTree": "clean",
+  "command": "npm exec -- nx run api-e2e:phase3-hybrid-install-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "uid": 1001,
+    "gid": 1001
+  },
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "stage": "image distribution",
+  "failure": {
+    "category": "unclassified",
+    "exitCode": 1
+  },
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "durationMs": 59361,
+  "providerConnections": [],
+  "sessionChecks": [],
+  "restartRecoveries": [],
+  "recordedAt": "2026-09-17T13:46:24.540Z",
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35228930026",
+    "artifact": "phase-3-hybrid-installation",
+    "artifactId": 10500711314,
+    "artifactArchiveSha256": "b315da6760a68e18a48e1a33d7e21ad20ba979d2104210faf5b5727741da5c59",
+    "originalReport": {
+      "path": "hybrid-cli-failure.json",
+      "sizeBytes": 1073,
+      "sha256": "d954d5aa4a452db579425c6a6834cc029215fd00156f1d9af4b9957b6200a160"
+    }
+  },
+  "limits": [
+    "The failure occurred during image distribution before delivered installation.",
+    "The runner used UID/GID 1001. Hybrid host commands require UID/GID 1000.",
+    "The safe failure category is unclassified. This report does not identify the original error text.",
+    "The account correction requires a successful hosted recheck."
+  ]
+}
