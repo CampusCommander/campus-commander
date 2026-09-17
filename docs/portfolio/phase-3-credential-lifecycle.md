@@ -179,8 +179,10 @@ Its formatting job failed. Revision `1aec3e1` corrects fixture formatting and in
 The page reported an unknown result before confirmation. The other six jobs passed.
 The same runtime revision passed source qualification. The failed run did not retain the staging response status.
 Fixture revision `4e47aed` records sanitized staging status before waiting for browser confirmation.
-[Diagnostic source](https://github.com/CampusCommander/campus-commander/actions/runs/35170681326) and [full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35170679600) are running.
-Do not treat the latest packaged browser result as qualified until diagnosis and final validation complete.
+[Diagnostic source](https://github.com/CampusCommander/campus-commander/actions/runs/35170681326) and [full qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35170679600) passed at `4e47aed`.
+The full run passed all seven jobs. Both downloaded staging reports record HTTP 201 and a ready candidate.
+The earlier staging failure did not recur. No runtime fix explains that failure.
+Combined workflow qualification must retain this intermittent failure and continue its investigation.
 Standards and specification reviews report no remaining findings after `29a09d7`.
 
 All three complete Phase 3 deployment profiles remain separate evidence.
