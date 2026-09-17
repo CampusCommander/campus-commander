@@ -420,3 +420,18 @@ Cleanup removes the fixture filler before recovery checks.
 Diagnostics, saved workflow reads, both API replicas, durable checks, and restored capacity must pass within 180 seconds.
 Separate reports retain the selected mode, identities, fault observations, failure stage, and duration scope.
 This increment requires hosted qualification. Temporary storage does not establish district capacity or persistent storage acceptance.
+
+## Passed certificate fault checkpoint
+
+[Run 35246760613](https://github.com/CampusCommander/campus-commander/actions/runs/35246760613) passed at harness `53d1095` against signed application `a3601ef`.
+PR CI passed at the same harness. The complete fixture took 271,504 milliseconds. The certificate segment took 29,595 milliseconds.
+The expired certificate produced `CERT_HAS_EXPIRED`. Recovery took 5,280 milliseconds.
+The wrong-host certificate produced `ERR_TLS_CERT_ALTNAME_INVALID`. Recovery took 5,383 milliseconds.
+Both cases passed authenticated diagnostics, saved workflow reads, replica checks, and durable state checks within 180 seconds.
+
+Each case preserved two principals, 75 original security events, thirteen grants, two access-change records, and two school definitions.
+Credential and settings records, artifact metadata and bytes, five completed Kestra executions, and the internal storage marker remained intact.
+The fixture restored every original secret byte. Distributed credential renewal and worker restart also passed.
+The [retained report](../../deployment/evidence/CC-58-certificate-faults.json) preserves all original fields and three source-report hashes.
+Its archive matches the published SHA-256 digest.
+District certificate lifecycle, remaining fault groups, and complete CC-58 acceptance remain open.
