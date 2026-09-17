@@ -27,7 +27,10 @@ import { qualifyKubernetesUpgrade } from './kubernetes-upgrade-fixture.mjs';
 import { faultKubernetesCertificates } from './kubernetes-certificates-fixture.mjs';
 import { faultKubernetes } from './kubernetes-faults-fixture.mjs';
 import { prepareKubernetesInstaller } from './kubernetes-installer-fixture.mjs';
-import { kubernetesReplicaProbe } from './kubernetes-replicas-fixture.mjs';
+import {
+  kubernetesReplicaProbe,
+  verifyKubernetesRecipientAccess,
+} from './kubernetes-replicas-fixture.mjs';
 import { createKubernetesCapacityVolume } from './kubernetes-capacity-volume.mjs';
 import { qualifyKubernetesCapacity } from './kubernetes-capacity-fixture.mjs';
 
@@ -97,6 +100,7 @@ test(
     let replicaEvidence;
     let capacityVolume, capacityEvidence;
     let installedWorkflows, credentialKeyProjection, phase3Evidence;
+    const recipientAccessChecks = [];
     let stage = 'initialize';
     const harness = phase3
       ? {
@@ -119,9 +123,11 @@ test(
           },
         }
       : undefined;
-    let releaseIdentity;
+    let releaseIdentity, qualificationFailure;
+    const failureStages = [];
 
     const reportFailure = async (failedStage) => {
+      failureStages.push(failedStage);
       await mkdir(evidenceDirectory, { recursive: true });
       await writeFile(
         join(evidenceDirectory, 'kubernetes-failure.json'),
@@ -130,7 +136,8 @@ test(
             ...releaseIdentity,
             ...harness,
             status: 'failed',
-            stage: failedStage,
+            stage: failureStages[0],
+            failureStages,
             durationMs: Date.now() - started,
             error: 'Kubernetes Phase 3 qualification failed.',
           },
@@ -642,6 +649,11 @@ test(
               page,
               publicOrigin,
               provider,
+              verifyRecipientAccess: async (input) => {
+                recipientAccessChecks.push(
+                  ...(await verifyKubernetesRecipientAccess(kube, input)),
+                );
+              },
             });
             await checks({ recoverySeconds: 120 });
           }
@@ -972,6 +984,7 @@ test(
             'Extracted installation, repeated resume, public workflows, API replacement, worker rescheduling, stop/resume, uninstall/resume, and owned cluster removal.',
           application,
           installedWorkflows: installedWorkflows.report,
+          recipientAccessChecks,
           credentialKeyProjection: {
             initial: credentialKeyProjection,
             final: finalProjection,
@@ -985,7 +998,7 @@ test(
             'Three Kind nodes share one Docker host and synthetic shared storage.',
             'Kind default networking does not enforce NetworkPolicy.',
             'Synthetic providers do not establish live Google privileges, Education capabilities, or district browser trust.',
-            'Distributed renewal, replica permission changes, upgrade, isolated restore, faults, and complete lifecycle acceptance require separate evidence.',
+            'Distributed renewal, upgrade, isolated restore, faults, and complete lifecycle acceptance require separate evidence.',
             'Final release qualification requires matching installer, test, and application source revisions.',
           ],
         };
@@ -1084,9 +1097,9 @@ test(
       process.stderr.write(
         `Kubernetes qualification failed. Private fixture: ${root}\n`,
       );
-      if (phase3)
-        throw new Error(`Kubernetes Phase 3 qualification failed at ${stage}.`);
-      throw error;
+      qualificationFailure = phase3
+        ? new Error(`Kubernetes Phase 3 qualification failed at ${stage}.`)
+        : error;
     } finally {
       try {
         forward?.kill('SIGTERM');
@@ -1112,13 +1125,15 @@ test(
               .includes(project),
           );
       } catch (error) {
-        if (!phase3) throw error;
-        await reportFailure('remove owned cluster');
-        throw new Error(
-          'Kubernetes Phase 3 qualification failed during owned-cluster removal.',
-        );
+        if (phase3) await reportFailure('remove owned cluster');
+        qualificationFailure ??= phase3
+          ? new Error(
+              'Kubernetes Phase 3 qualification failed during owned-cluster removal.',
+            )
+          : error;
       }
     }
+    if (qualificationFailure) throw qualificationFailure;
     if (phase3Evidence) {
       phase3Evidence.durationMs = Date.now() - started;
       phase3Evidence.ownedClusterRemoved = true;

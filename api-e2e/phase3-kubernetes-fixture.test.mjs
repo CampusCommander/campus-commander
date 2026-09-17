@@ -4,6 +4,10 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { configureKubernetesProvider } from '../deployment/kubernetes/qualification-provider.mjs';
+import {
+  readKubernetesReplica,
+  verifyKubernetesRecipientAccess,
+} from './kubernetes-replicas-fixture.mjs';
 import { verifyKubernetesCredentialProjection } from './phase3-kubernetes-fixture.mjs';
 
 const pod = (service, index = 0) => ({
@@ -127,5 +131,77 @@ test('synthetic transport targets API only in Phase 2 and API plus workers in Ph
         phase === 3 && enabled,
       );
     }
+  }
+});
+
+test('Kubernetes replica reads keep cookies out of arguments and reject unrelated routes', async () => {
+  const calls = [];
+  const kube = async (args, input) => {
+    calls.push({ args, input });
+    return JSON.stringify({ status: 401 });
+  };
+  const request = {
+    kube,
+    replica: 'api-123-abc',
+    path: '/api/auth/session',
+    cookie: '__Host-session=private-cookie',
+  };
+  for (const path of [
+    '/api/google-connection',
+    '/api/schools?count=true',
+    '/api/auth/session?token=value',
+  ])
+    await assert.rejects(readKubernetesReplica({ ...request, path }));
+  await assert.rejects(
+    readKubernetesReplica({ ...request, replica: 'workers-123-abc' }),
+  );
+  assert.equal(calls.length, 0);
+  const result = await readKubernetesReplica(request);
+  assert.equal(result.status, 401);
+  assert.ok(!JSON.stringify(calls[0].args).includes(request.cookie));
+  assert.equal(JSON.parse(calls[0].input).cookie, request.cookie);
+});
+
+test('Kubernetes permission checks replay stale sessions and hide ungranted and unknown schools', async () => {
+  const principalId = 'principal';
+  const schoolId = '01234567-89ab-cdef-0123-456789abcdef';
+  const hiddenSchoolId = '12345678-9abc-def0-1234-56789abcdef0';
+  for (const stage of ['grants-changed', 'scoped-access', 'revoked']) {
+    const expectedStatus = stage === 'scoped-access' ? 200 : 401;
+    const calls = [];
+    const kube = async (args, input) => {
+      if (args[0] === 'get')
+        return JSON.stringify({
+          items: ['api-a-123', 'api-b-456'].map((name) => ({
+            metadata: { name },
+            status: {
+              phase: 'Running',
+              containerStatuses: [{ name: 'api', ready: true }],
+            },
+          })),
+        });
+      const request = JSON.parse(input);
+      calls.push(request);
+      if (expectedStatus === 401) return JSON.stringify({ status: 401 });
+      if (request.path === '/api/auth/session')
+        return JSON.stringify({ status: 200, principalId });
+      if (request.path === `/api/schools/${schoolId}`)
+        return JSON.stringify({ status: 200, schoolId });
+      return JSON.stringify({ status: 404, hiddenSchoolResponse: true });
+    };
+    const observations = await verifyKubernetesRecipientAccess(kube, {
+      principalId,
+      schoolId,
+      hiddenSchoolId,
+      expectedStatus,
+      stage,
+      cookies: [{ name: '__Host-session', value: 'saved-cookie' }],
+    });
+    assert.equal(observations.length, stage === 'scoped-access' ? 8 : 4);
+    assert.equal(new Set(observations.map((item) => item.replica)).size, 2);
+    assert.ok(
+      calls.every((item) => item.cookie === '__Host-session=saved-cookie'),
+    );
+    assert.ok(!JSON.stringify(observations).includes('saved-cookie'));
   }
 });

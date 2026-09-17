@@ -65,7 +65,7 @@ Unrelated pods and containers must exclude the credential key.
 Both workers must occupy distinct Kind nodes.
 Browser workflows verify saved state after API replacement and each lifecycle resume.
 Replica checks verify shared sessions and session rejection after lifecycle commands and sign-out.
-These checks do not establish the complete replica permission matrix or distributed renewal.
+These checks do not establish distributed renewal or the complete policy acceptance matrix.
 
 CI installs a digest-verified Kind binary and runs the fixture as UID 1000.
 CI rejects unsupported Kubernetes modes before resource changes.
@@ -81,3 +81,13 @@ Regression checks cover API, worker, and Kestra wait containers and both configu
 Bootstrap tests, Kubernetes renderer tests, lint, and both review axes pass.
 Kubernetes hosted qualification requires a new signed laboratory bundle containing this correction.
 The older `a3601ef` and `eb78e16` bundles do not contain this correction.
+
+## Replica permission increment
+
+Installed admission workflows now replay the saved recipient session against both current API pods.
+Grant changes and revocation must invalidate that session on both pods.
+A fresh scoped session must read its granted school and reject both ungranted and unknown schools with the same response.
+The shared permission probe applies these assertions to hybrid containers and Kubernetes pods.
+Kubernetes sends saved cookies through standard input. Process arguments and returned evidence contain no cookie values.
+The existing session probe uses the same bounded TLS reader.
+Hosted qualification remains pending.
