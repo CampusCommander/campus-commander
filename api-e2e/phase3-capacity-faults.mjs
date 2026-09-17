@@ -136,14 +136,12 @@ console.log(JSON.stringify({filesystemType:Number(before.type),totalBytes,writte
     assert.equal(report.capacity.enospc, true);
     assert.equal(report.capacity.availableBytesAfter, 0);
     await save();
-    const card = page
-      .getByRole('article')
-      .filter({
-        has: page.getByRole('heading', {
-          name: 'Artifact storage',
-          exact: true,
-        }),
-      });
+    const card = page.getByRole('article').filter({
+      has: page.getByRole('heading', {
+        name: 'Artifact storage',
+        exact: true,
+      }),
+    });
     const response = page.waitForResponse(
       (result) =>
         new URL(result.url()).pathname === '/api/diagnostics/artifacts' &&
