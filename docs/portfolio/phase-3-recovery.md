@@ -39,4 +39,6 @@ This foundation fixture does not establish the complete Phase 3 browser or deplo
 - Record measured recovery time, backup age, fixture limits, operator recovery, and erasure procedures.
 
 Local deployment lint, PostgreSQL contract tests, and operations contract tests pass.
-Real PostgreSQL and operator restore qualification remain pending for this increment.
+[Full run 35184380912](https://github.com/CampusCommander/campus-commander/actions/runs/35184380912) passed its PostgreSQL and operations jobs at `24741c8`.
+Those jobs execute the audit-failure probes and actual backup/restore fixture. Packaged application compatibility remains pending.
+This result does not qualify the complete Phase 3 operator-CLI restore workflow.
