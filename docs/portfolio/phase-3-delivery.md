@@ -21,8 +21,15 @@ gh workflow run phase-2-candidate.yml \
 ```
 
 The historical dispatcher name is a development detail. Operators install the current bundle without selecting a development phase.
-Use [the fresh installation guide](../testing/fresh-install-review.md) after the candidate publishes.
-Local release, installer, and lint checks pass. Hosted execution remains necessary before claiming a delivered candidate.
+Use [the fresh installation guide](../testing/fresh-install-review.md) for the published review build.
+Local release, installer, and lint checks pass.
+
+[Delivery run 35267378305](https://github.com/CampusCommander/campus-commander/actions/runs/35267378305) passed at source `a043ef187dc6efbda7b5db84d7367594f0922cb0`.
+It published [review build a043ef187dc6](https://github.com/CampusCommander/campus-commander/releases/tag/phase-3-lab-a043ef187dc6).
+The fresh-install fixture took 174,277 milliseconds and passed all ten application workflow checks.
+Independent download verification passed both blob signatures, three image signatures, and 1,991 inventoried files.
+The [retained record](../../deployment/evidence/CC-60-review-a043ef1/release-verification.json) binds the original reports and published bytes.
+Human accessibility and owner acceptance remain open. This result does not establish production qualification.
 
 ## Historical delivery requirements and evidence
 
