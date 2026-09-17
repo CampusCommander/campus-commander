@@ -4,46 +4,48 @@
 
 ## Glossary
 
-| Term | Meaning |
-|---|---|
-| **Customer account** | One Google Workspace account containing its primary, secondary, and alias domains. One installation serves one account. |
-| **Entity** | A Google Workspace user, device, group, or OU represented in the local inventory. |
-| **Entity type** | A category of entities. It does not imply one shared freshness timestamp for all related data. |
-| **Platform user** | An identity authorized to use Campus Commander through application permission grants. Managed Google user records remain separate. |
-| **EntityCache** | The local inventory subsystem that synchronizes provider observations and serves authorized reads with explicit freshness and coverage. |
-| **JobService** | The application responsibility for mutation acceptance, admission, orchestration integration, worker observations, durable results, and cleanup. |
-| **Observation** | Provider data recorded at a known time with scope and coverage information. |
-| **Write overlay** | Accepted field changes shown alongside their verification status until provider observations resolve them. |
-| **Capability** | An enabled read, mutation, report, or diagnostic operation with defined authorization and availability. |
-| **Google identity** | The district-managed identity used for background Google requests, separate from the application requester. |
-| **DWD** | Domain-wide delegation authorizing a service account to impersonate a Workspace user within granted scopes. |
-| **Permission grant** | Authority for a principal to perform an action within resource, destination, field, and policy constraints. |
-| **Selection** | A browsing target specification with original filters and explicit inclusions or exclusions. |
-| **Selection ID** | An opaque reference to a selection. It does not grant permission or replace a frozen preview. |
-| **Draft** | Proposed field changes and their baselines awaiting review. Drafts survive grid row eviction. |
-| **Batch edit** | Editing several fields or entities as drafts before Save starts preview and confirmation. |
-| **Preview** | An immutable description of exact targets, proposed values, counts, preconditions, and approval requirements. |
-| **Job** | One accepted unit of work with stable identity, steps, operation evidence, and auditable results. |
-| **Step** | A phase of a job with dependencies and an aggregation policy for its assignments. |
-| **Assignment** | A bounded set of operations assigned to one worker execution. It replaces the ambiguous term chunk. |
-| **Operation** | One logical action on a target within a job. It retains its own attempts and outcome. |
-| **Attempt** | One recorded effort to dispatch or verify an operation. |
-| **Batch request** | A provider transport request containing several operations. Its size follows the specific Google method. |
-| **Settled assignment** | An assignment with a durable execution outcome available for step aggregation, including failures. |
-| **Unknown outcome** | A dispatched operation whose external effect lacks sufficient confirmation. It requires reconciliation. |
-| **Reconciliation** | Resolving uncertain or conflicting effects using observations, evidence, and operator decisions where required. |
-| **Admission hold** | A temporary pause on new jobs of one type while existing jobs continue. |
-| **Job service** | The application responsibility for admission, worker reports, hold updates, recovery aggregation, and cleanup. |
-| **Artifact** | A job file such as an approved manifest, assignment input, result, or audit bundle. |
-| **Artifact ID** | A stable reference independent from a host path, storage backend, or temporary download address. |
-| **Published artifact** | A completed, verified artifact made available to authorized job consumers. |
-| **Audit evidence** | The retained record of authority, intent, attempts, outcomes, and subsequent reconciliation. |
-| **Cache Sync** | The user-facing refresh operation. Full Entity Sync performs complete enumeration of a collection scope. |
-| **Generation** | A staged or published collection version with its own coverage and completion evidence. |
-| **Absence** | An entity missing from a complete authorized enumeration. It does not alone establish deletion or its cause. |
-| **Export baseline** | Stored values and identities from an export, used to compare subsequent edits with current values. |
-| **Three-way compare** | Comparing baseline, edited value, and current value for one field. |
-| **Annotated fields** | District-maintained device fields such as user, location, asset ID, and notes. |
+| Term                   | Meaning                                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Customer account**   | One Google Workspace account containing its primary, secondary, and alias domains. One installation serves one account.                          |
+| **School scope**       | A district-defined school identity with explicit resource inclusions and exclusions within one customer account.                                 |
+| **OU reference**       | A customer-bound stable organizational unit identity. Paths describe its location.                                                               |
+| **Entity**             | A Google Workspace user, device, group, or OU represented in the local inventory.                                                                |
+| **Entity type**        | A category of entities. It does not imply one shared freshness timestamp for all related data.                                                   |
+| **Platform user**      | An identity authorized to use Campus Commander through application permission grants. Managed Google user records remain separate.               |
+| **EntityCache**        | The local inventory subsystem that synchronizes provider observations and serves authorized reads with explicit freshness and coverage.          |
+| **JobService**         | The application responsibility for mutation acceptance, admission, orchestration integration, worker observations, durable results, and cleanup. |
+| **Observation**        | Provider data recorded at a known time with scope and coverage information.                                                                      |
+| **Write overlay**      | Accepted field changes shown alongside their verification status until provider observations resolve them.                                       |
+| **Capability**         | An enabled read, mutation, report, or diagnostic operation with defined authorization and availability.                                          |
+| **Google identity**    | The district-managed identity used for background Google requests, separate from the application requester.                                      |
+| **DWD**                | Domain-wide delegation authorizing a service account to impersonate a Workspace user within granted scopes.                                      |
+| **Permission grant**   | Authority for a principal to perform an action within resource, destination, field, and policy constraints.                                      |
+| **Selection**          | A browsing target specification with original filters and explicit inclusions or exclusions.                                                     |
+| **Selection ID**       | An opaque reference to a selection. It does not grant permission or replace a frozen preview.                                                    |
+| **Draft**              | Proposed field changes and their baselines awaiting review. Drafts survive grid row eviction.                                                    |
+| **Batch edit**         | Editing several fields or entities as drafts before Save starts preview and confirmation.                                                        |
+| **Preview**            | An immutable description of exact targets, proposed values, counts, preconditions, and approval requirements.                                    |
+| **Job**                | One accepted unit of work with stable identity, steps, operation evidence, and auditable results.                                                |
+| **Step**               | A phase of a job with dependencies and an aggregation policy for its assignments.                                                                |
+| **Assignment**         | A bounded set of operations assigned to one worker execution. It replaces the ambiguous term chunk.                                              |
+| **Operation**          | One logical action on a target within a job. It retains its own attempts and outcome.                                                            |
+| **Attempt**            | One recorded effort to dispatch or verify an operation.                                                                                          |
+| **Batch request**      | A provider transport request containing several operations. Its size follows the specific Google method.                                         |
+| **Settled assignment** | An assignment with a durable execution outcome available for step aggregation, including failures.                                               |
+| **Unknown outcome**    | A dispatched operation whose external effect lacks sufficient confirmation. It requires reconciliation.                                          |
+| **Reconciliation**     | Resolving uncertain or conflicting effects using observations, evidence, and operator decisions where required.                                  |
+| **Admission hold**     | A temporary pause on new jobs of one type while existing jobs continue.                                                                          |
+| **Job service**        | The application responsibility for admission, worker reports, hold updates, recovery aggregation, and cleanup.                                   |
+| **Artifact**           | A job file such as an approved manifest, assignment input, result, or audit bundle.                                                              |
+| **Artifact ID**        | A stable reference independent from a host path, storage backend, or temporary download address.                                                 |
+| **Published artifact** | A completed, verified artifact made available to authorized job consumers.                                                                       |
+| **Audit evidence**     | The retained record of authority, intent, attempts, outcomes, and subsequent reconciliation.                                                     |
+| **Cache Sync**         | The user-facing refresh operation. Full Entity Sync performs complete enumeration of a collection scope.                                         |
+| **Generation**         | A staged or published collection version with its own coverage and completion evidence.                                                          |
+| **Absence**            | An entity missing from a complete authorized enumeration. It does not alone establish deletion or its cause.                                     |
+| **Export baseline**    | Stored values and identities from an export, used to compare subsequent edits with current values.                                               |
+| **Three-way compare**  | Comparing baseline, edited value, and current value for one field.                                                                               |
+| **Annotated fields**   | District-maintained device fields such as user, location, asset ID, and notes.                                                                   |
 
 Architecture [03](03-architecture.md) defines storage and execution mechanisms for these terms.
 An application job is distinct from its Kestra execution. Preserve both identities for correlation and recovery.
@@ -111,14 +113,14 @@ CSV round-trip is the first implementation. Google Sheets requires a later file-
 Retain an export ID, owner, schema version, stable row identities, selected fields, expiry, and baseline artifact.
 CSV identity and integrity columns are visible machine metadata. A hash cannot reconstruct baseline values.
 
-| Baseline B, edited E, current C | Result |
-|---|---|
-| E = B | No user edit. Preserve current value. |
-| E differs from B, C = B | Propose the edited value. |
-| E differs from B, C = E | Already at the requested value. No write. |
-| E, B, and C all differ | Conflict requiring explicit review. |
-| Missing or expired baseline | Reject round-trip comparison. Offer a separate new-import workflow. |
-| Unknown stable entity ID | Invalid identity. Create only in explicit create mode. |
+| Baseline B, edited E, current C | Result                                                              |
+| ------------------------------- | ------------------------------------------------------------------- |
+| E = B                           | No user edit. Preserve current value.                               |
+| E differs from B, C = B         | Propose the edited value.                                           |
+| E differs from B, C = E         | Already at the requested value. No write.                           |
+| E, B, and C all differ          | Conflict requiring explicit review.                                 |
+| Missing or expired baseline     | Reject round-trip comparison. Offer a separate new-import workflow. |
+| Unknown stable entity ID        | Invalid identity. Create only in explicit create mode.              |
 
 Recompute hashes from canonical imported values after matching export identity and schema.
 A user-supplied hash cannot skip validation.

@@ -83,3 +83,5 @@ Do not reopen retained LibreGrid, Redis, or Kestra selection without new evidenc
 All seven planning documents and the prototype map received the 2026-09-05 integration.
 The [C01–C20 map](07-issues-and-opportunities.md#review-integration-map) connects each review change to its current home.
 Version choices, exact thresholds, credential experiments, and district acceptance remain unverified where marked.
+
+The [Phase 3 school-scope contract](phase-3-school-scopes.md) defines stable references, explicit inclusion, and scope-change qualification.
