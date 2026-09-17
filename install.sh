@@ -676,7 +676,7 @@ HELP
     const paths=fs.readFileSync(root+"/archive-paths.txt","utf8").trim().split("\n");
     const seen=new Set();
     for(let path of paths){path=path.replace(/^\.\//,"").replace(/\/$/,""); if(!path)continue;
-      if(!/^[A-Za-z0-9_.\/-]+$/.test(path)||path.startsWith("/")||path.split("/").some(p=>!p||p==="."||p==="..")||seen.has(path))throw Error("Unsafe archive path");seen.add(path);}
+      if(!/^[A-Za-z0-9_@.\/-]+$/.test(path)||path.startsWith("/")||path.split("/").some(p=>!p||p==="."||p==="..")||seen.has(path))throw Error("Unsafe archive path");seen.add(path);}
     for(const line of fs.readFileSync(root+"/archive-types.txt","utf8").trim().split("\n")){if(!["-","d"].includes(line[0]))throw Error("Unsupported archive entry");}
   ' "$cc_stage" || cc_fail 'The archive contains unsafe paths or links.'
   mkdir "$cc_stage/bundle"
@@ -693,7 +693,7 @@ HELP
     if(!Array.isArray(manifest.files)||!manifest.files.length||manifest.files.length>10000)throw Error("Invalid file inventory");
     const seen=new Set();
     for(const item of manifest.files){
-      if(typeof item.path!=="string"||!/^[A-Za-z0-9_.\/-]+$/.test(item.path)||item.path.startsWith("/")||item.path.split("/").some(x=>!x||x==="."||x==="..")||seen.has(item.path))throw Error("Invalid inventory path");
+      if(typeof item.path!=="string"||!/^[A-Za-z0-9_@.\/-]+$/.test(item.path)||item.path.startsWith("/")||item.path.split("/").some(x=>!x||x==="."||x==="..")||seen.has(item.path))throw Error("Invalid inventory path");
       seen.add(item.path);let filename=root+"/bundle";
       for(const part of item.path.split("/")){filename=path.join(filename,part);if(fs.lstatSync(filename).isSymbolicLink())throw Error("Unexpected symbolic link");}
       const stat=fs.lstatSync(filename);if(!stat.isFile()||stat.size>64*1024*1024||stat.size!==item.sizeBytes)throw Error("Invalid release file");

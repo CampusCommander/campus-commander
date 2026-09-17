@@ -104,7 +104,7 @@ export async function verifyReleaseEvidence(root, manifest) {
 async function releaseFile(root, path) {
   if (
     typeof path !== 'string' ||
-    !/^[A-Za-z0-9_./-]+$/.test(path) ||
+    !/^[A-Za-z0-9_@./-]+$/.test(path) ||
     path.startsWith('/') ||
     path.split('/').some((part) => !part || part === '.' || part === '..')
   ) {

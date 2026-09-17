@@ -91,3 +91,17 @@ Independent Cosign verification passed for each digest against the fixed Phase 3
 [The verification record](../../deployment/evidence/CC-57-signed-image-verification.json) records digests, command, environment, durations, and limitations.
 This checkpoint does not claim a signed archive, completed extracted qualification, or release acceptance.
 The later initial-key correction requires its own applicable qualification. PR CI passed at `1a673dd`.
+
+## Candidate path correction
+
+Run 35210688406 passed packaged Phase 3 authorization. Independent inspection accepted its 79 evidence files.
+Bundle smoke verification then rejected `node_modules/node-fetch/@types/index.d.ts` because the path allowlist excluded `@`.
+No archive signature or laboratory release followed that failure. Extracted qualification did not run.
+The same locked dependency reproduced the exact error locally.
+
+Release verification and hosted archive and inventory checks now permit literal `@` characters.
+Absolute paths, traversal, empty components, symlinks, oversized files, and changed checksums remain prohibited.
+Regression tests cover the dependency path, unsafe paths, and changed bytes through both verification routes.
+Release and installer tests and deployment lint pass. Both review axes found no remaining issues.
+The corrected verifier also accepted all 1,284 files from the actual locked runtime installation.
+New hosted qualification remains required for the corrected source.

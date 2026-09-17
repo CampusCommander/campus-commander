@@ -27,6 +27,8 @@ async function fixture(
     qualified = false,
     lab = false,
     wrongQualification = false,
+    dependencyTypes = false,
+    changedDependency = false,
   } = {},
 ) {
   const candidate = `phase-${phase}-${qualified ? 'qualified' : 'candidate'}`;
@@ -50,6 +52,13 @@ async function fixture(
     'import fs from "node:fs";fs.writeFileSync(process.env.CC_ENTRY_EXECUTED,JSON.stringify(process.argv.slice(2)));\n';
   content['deployment/installer/cli.mjs'] =
     content['deployment/installer/setup.mjs'];
+  if (dependencyTypes) {
+    await mkdir(join(bundle, 'node_modules/node-fetch/@types'), {
+      recursive: true,
+    });
+    content['node_modules/node-fetch/@types/index.d.ts'] =
+      'export interface Request {}\n';
+  }
   const manifest = {
     schemaVersion: 1,
     ...(lab ? { validationScope: 'lab', qualification: 'candidate-only' } : {}),
@@ -84,6 +93,11 @@ async function fixture(
     await writeFile(join(bundle, path), bytes);
   const manifestBytes = JSON.stringify(manifest);
   await writeFile(join(bundle, 'release-manifest.json'), manifestBytes);
+  if (changedDependency)
+    await writeFile(
+      join(bundle, 'node_modules/node-fetch/@types/index.d.ts'),
+      'changed',
+    );
   if (link) await symlink('/tmp', join(bundle, 'unsafe-link'));
   assert.equal(
     spawnSync('tar', [
@@ -612,4 +626,19 @@ for (const failure of ['verify-blob', 'manifest', 'verify'])
     assert.notEqual(result.status, 0);
     assert.equal(await f.executed(), null);
     assert.match(result.stderr, /signature verification failed/i);
+  });
+
+for (const changedDependency of [false, true])
+  test(`hosted Phase 3 verifies dependency @ paths with changed bytes=${changedDependency}`, async (t) => {
+    const f = await fixture(t, {
+      phase: 3,
+      lab: true,
+      dependencyTypes: true,
+      changedDependency,
+    });
+    const result = f.run(['--verify-only']);
+    assert.equal(result.status === 0, !changedDependency, result.stderr);
+    assert.equal(await f.executed(), null);
+    if (changedDependency)
+      assert.match(result.stderr, /integrity verification failed/i);
   });
