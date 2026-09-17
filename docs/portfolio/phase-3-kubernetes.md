@@ -91,3 +91,17 @@ The shared permission probe applies these assertions to hybrid containers and Ku
 Kubernetes sends saved cookies through standard input. Process arguments and returned evidence contain no cookie values.
 The existing session probe uses the same bounded TLS reader.
 Hosted qualification remains pending.
+
+## Distributed worker renewal increment
+
+After browser closure, both workers must reject unauthorized dispatch, supplied credential fields, and retired credential generations.
+Both workers must complete current-generation Google reads.
+The fixture advances its owned token expiry and holds synthetic renewal while another worker observes the real pending lease.
+Concurrent reads must produce one renewal event and one encrypted stored token.
+
+Worker replacement must create new pod identities on two distinct nodes.
+Replacement workers must reuse the stored token without another renewal and recover within 180 seconds.
+Reports retain pod identities, node placement, dispatch results, renewal counts, pending-lease observations, and measured recovery time.
+Private credentials and token values remain absent from reports.
+Worker-only instrumentation uses an ephemeral observation volume. It does not change database lease results.
+Hosted qualification remains pending.

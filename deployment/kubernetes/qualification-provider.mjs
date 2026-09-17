@@ -19,8 +19,22 @@ export function configureKubernetesProvider(resources, application) {
     if (application.phase === 3)
       container.env.push({
         name: 'NODE_OPTIONS',
-        value: '--require=/run/qualification/google-connection-preload.cjs',
+        value:
+          '--require=/run/qualification/google-connection-preload.cjs' +
+          (name === 'workers'
+            ? ' --require=/run/qualification/phase3-hybrid-renewal-preload.cjs'
+            : ''),
       });
+    if (application.phase === 3 && name === 'workers') {
+      pod.volumes.push({
+        name: 'qualification-observation',
+        emptyDir: { medium: 'Memory', sizeLimit: '1Mi' },
+      });
+      container.volumeMounts.push({
+        name: 'qualification-observation',
+        mountPath: '/run/qualification-observation',
+      });
+    }
     container.volumeMounts.push({
       name: 'qualification-provider',
       mountPath: '/run/qualification',

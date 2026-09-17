@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
+import { qualifyKubernetesWorkerCredentials } from './phase3-kubernetes-worker-fixture.mjs';
 import { configureKubernetesProvider } from '../deployment/kubernetes/qualification-provider.mjs';
 import {
   readKubernetesReplica,
@@ -204,4 +205,19 @@ test('Kubernetes permission checks replay stale sessions and hide ungranted and 
     );
     assert.ok(!JSON.stringify(observations).includes('saved-cookie'));
   }
+});
+
+test('Kubernetes renewal rejects unowned roots before database or pod access', async () => {
+  const project = 'cc-capacity-kube-0123456789ab';
+  const kube = () => {
+    throw new Error('Cluster access must not start.');
+  };
+  for (const input of [
+    { project: 'production', root: '/tmp/production-test' },
+    { project, root: '/district/production' },
+  ])
+    await assert.rejects(
+      qualifyKubernetesWorkerCredentials({ ...input, kube }),
+      { name: 'AssertionError' },
+    );
 });

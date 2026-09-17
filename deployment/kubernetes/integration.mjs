@@ -206,6 +206,18 @@ if (config.phase === 3) {
     randomBytes(32).toString('base64'),
   );
   put(
+    {
+      name: 'qualification-provider',
+      key: 'phase3-hybrid-renewal-preload.cjs',
+    },
+    await readFile(
+      new URL(
+        '../../api-e2e/phase3-hybrid-renewal-preload.cjs',
+        import.meta.url,
+      ),
+    ),
+  );
+  put(
     { name: 'qualification-provider', key: 'google-connection-preload.cjs' },
     await readFile(
       new URL('../../api-e2e/google-connection-preload.cjs', import.meta.url),

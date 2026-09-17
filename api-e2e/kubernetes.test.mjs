@@ -19,6 +19,7 @@ import test from 'node:test';
 import { expect } from '@playwright/test';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
+import { qualifyKubernetesWorkerCredentials } from './phase3-kubernetes-worker-fixture.mjs';
 import { verifyKubernetesCredentialProjection } from './phase3-kubernetes-fixture.mjs';
 import { renderKubernetes } from '../deployment/kubernetes/render.mjs';
 import { startProvider } from './provider-fixture.mjs';
@@ -99,7 +100,10 @@ test(
     let certificateEvidence;
     let replicaEvidence;
     let capacityVolume, capacityEvidence;
-    let installedWorkflows, credentialKeyProjection, phase3Evidence;
+    let installedWorkflows,
+      credentialKeyProjection,
+      phase3Evidence,
+      workerCredentials;
     const recipientAccessChecks = [];
     let stage = 'initialize';
     const harness = phase3
@@ -902,6 +906,14 @@ test(
         },
       );
       assert.ok(installerEvidence);
+      if (phase3) {
+        stage = 'distributed worker credentials after browser closure';
+        workerCredentials = await qualifyKubernetesWorkerCredentials({
+          root,
+          project,
+          kube,
+        });
+      }
       if (capacityFaults)
         capacityEvidence = {
           status: 'passed',
@@ -985,6 +997,7 @@ test(
           application,
           installedWorkflows: installedWorkflows.report,
           recipientAccessChecks,
+          workerCredentials,
           credentialKeyProjection: {
             initial: credentialKeyProjection,
             final: finalProjection,
@@ -998,7 +1011,7 @@ test(
             'Three Kind nodes share one Docker host and synthetic shared storage.',
             'Kind default networking does not enforce NetworkPolicy.',
             'Synthetic providers do not establish live Google privileges, Education capabilities, or district browser trust.',
-            'Distributed renewal, upgrade, isolated restore, faults, and complete lifecycle acceptance require separate evidence.',
+            'Upgrade, isolated restore, faults, and complete lifecycle acceptance require separate evidence.',
             'Final release qualification requires matching installer, test, and application source revisions.',
           ],
         };
