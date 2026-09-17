@@ -29,6 +29,10 @@ export async function qualifySchoolReferences({
       ],
     );
   }
+  await migrator.query(
+    'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
+    [actor, 'connection:manage', JSON.stringify({ kind: 'platform' })],
+  );
   const read = (who = actor, version = 1) =>
     runtime
       .query('SELECT cc.read_school_references($1,$2) AS result', [
@@ -154,22 +158,15 @@ export async function qualifySchoolReferences({
     assert.equal((await read()).fresh, false);
     await resetRate();
     const retired = await claim();
-    await migrator.query(
-      'UPDATE cc.google_connection SET generation=generation+1 WHERE customer_id=$1',
-      [customer],
+    await runtime.query(
+      'SELECT cc.disconnect_google_credential($1,$2,$3,$4,$5,$6)',
+      [actor, 1, customer, generation, randomUUID(), randomUUID()],
     );
-    try {
-      assert.equal((await read()).fresh, false);
-      await assert.rejects(
-        finish(retired.id),
-        (error) => error.detail === 'credential-changed',
-      );
-    } finally {
-      await migrator.query(
-        'UPDATE cc.google_connection SET generation=$1 WHERE customer_id=$2',
-        [generation, customer],
-      );
-    }
+    assert.equal((await read()).fresh, false);
+    await assert.rejects(
+      finish(retired.id),
+      (error) => error.detail === 'credential-changed',
+    );
     await migrator.query(
       'UPDATE cc.application_principals SET permission_version=2 WHERE id=$1',
       [actor],
