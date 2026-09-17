@@ -21,6 +21,19 @@ Apply this direction to every plan, implementation choice, test, and release req
 This direction supersedes conflicting historical phase plans, task criteria, and qualification checklists.
 Do not infer a live deployment or a data-preservation obligation from the existence of an earlier phase or test installation.
 
+## Standing live Google test authorization — owner direction, 2026-09-17
+
+The owner authorizes ongoing read-only API plumbing tests against `easton-consulting.com`, confirmed customer `C01zcarnq`.
+Use DWD service-account client ID `113794681976879482895` with delegated subject `spencer@easton-consulting.com`.
+The owner confirms that this account has the Super Admin role and that the server credentials are configured.
+Reuse this approved fixture when development needs live API checks. Do not request the same authorization again.
+The protected local credential is `/mnt/c/Users/spenc/Downloads/DWD_SA_CC.json`. Keep its contents outside Git, reports, and messages.
+An Education domain and populated entity collections are not prerequisites for standard API plumbing checks.
+Empty collections are valid observations. Record actual results without inventing entity coverage or minimum-role qualification.
+Use currently authorized scopes. Additional scopes require their corresponding Google configuration before testing dependent APIs.
+This authorization does not permit DWD revocation, key disablement, or Google data mutations.
+See [the credential record](docs/portfolio/phase-3-google-credentials.md) for the current scopes and limitations.
+
 # General Guidelines for communication and writing
 
 Apply the `ste-writing` skill to all prose output (docs, READMEs, PR descriptions, error messages, release notes, comments). See `.opencode/skills/ste-writing-skill/SKILL.md` for the full ruleset. Key rules:
@@ -32,7 +45,6 @@ Apply the `ste-writing` skill to all prose output (docs, READMEs, PR description
 - No run-on sentences; each independent clause gets its own sentence.
 - No semicolons, no contractions. Max 20 words per instruction sentence.
 - One topic per paragraph (max six sentences).
-
 
 ## Client UI implementation
 

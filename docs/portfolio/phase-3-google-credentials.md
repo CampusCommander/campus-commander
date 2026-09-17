@@ -7,6 +7,27 @@ This instruction replaces D01's background browser OAuth proposal in the approve
 Application sign-in retains its existing web OAuth client, sessions, enrollment, and callback protections.
 The eighteen delivery tasks and their dependencies remain unchanged.
 
+## Standing test authorization — 2026-09-17
+
+The owner authorizes ongoing API plumbing tests against `easton-consulting.com`, confirmed customer `C01zcarnq`.
+The approved DWD client is `113794681976879482895`. The delegated subject is `spencer@easton-consulting.com`.
+The owner confirms the subject has the Super Admin role and that the service-account credentials are configured.
+The protected local credential remains available for reuse. Do not copy credential values into repository records.
+
+Use this fixture for read-only checks whenever development needs live Google API validation.
+The owner reports one user account. Empty entity collections do not block API plumbing tests.
+An Education domain is not required for the enabled customer, domain, and organizational-unit reads.
+Keep entity coverage, Education capability evidence, and minimum-role evidence separate from successful API connectivity.
+The configured scopes below remain the current test boundary. User or device inventory requires its own enabled scopes and implementation.
+This authorization does not include Google mutations, DWD revocation, or service-account key disablement.
+
+The application provider passed a live read-only check on 2026-09-17 using this fixture.
+It confirmed `C01zcarnq` and `easton-consulting.com`, then read three organizational-unit references, including the root.
+It observed one primary domain, no secondary domains, and no alias domains.
+The provider verified the exact requested scopes during token exchange.
+The [sanitized result](../../deployment/evidence/CC-44-live-plumbing-2026-09-17.json) records method names, code hashes, counts, timing, and limitations.
+This check does not claim user inventory, Education capabilities, minimum-role validation, or a browser session with live Google sign-in.
+
 ## Credential contract
 
 The background provider uses service-account DWD with one explicit delegated Workspace subject.
