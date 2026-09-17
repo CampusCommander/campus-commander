@@ -1093,5 +1093,28 @@
     "selectedAt": "2026-09-16",
     "authority": "Owner supplied a service account and configured DWD for background authentication.",
     "document": "phase-3-google-credentials.md"
+  },
+  "scopeRevision": {
+    "date": "2026-09-17",
+    "authority": "Owner confirmed nothing is live and rejected complicated Phase 2 migration work.",
+    "currentPlan": "docs/portfolio/phase-3-current-plan.md",
+    "installationBaseline": "fresh-installation",
+    "immediateDeliverable": "Runnable client review build using the existing all-Docker installation.",
+    "supersededRequirements": [
+      "Phase 2 to Phase 3 upgrade qualification as a Phase 3 delivery gate"
+    ],
+    "deferredWork": [
+      "Further hybrid and Kubernetes qualification",
+      "Exhaustive fault, capacity, lifecycle, and guided-update matrix"
+    ],
+    "retainedRequirements": [
+      "Application authorization",
+      "Credential protection",
+      "Data integrity",
+      "Focused recovery checks",
+      "Truthful build identity and limitations",
+      "Owner acceptance"
+    ],
+    "historicalTaskCriteria": "Task criteria and dependency snapshots below retain the original published plan. This scope revision governs active work."
   }
 }

@@ -19,11 +19,13 @@ The [archive](../archive/README.md) preserves earlier sources as history. Archiv
 
 ## Implementation status
 
-The repository contains deployment code and Phase 2 application code alongside records of Figma prototypes.
+The repository contains deployment code and implemented Phase 3 Angular pages on draft branches.
+The [current Phase 3 work plan](phase-3-current-plan.md) prioritizes a fresh installation and owner review of the client.
+The owner confirmed that nothing is live. Further Phase 2 upgrade work has stopped.
 The [owner acceptance record](../reviews/2026-09-16-phase-2-acceptance.md) closes Phase 2 with its recorded limitations.
 The [Phase 3 handoff](phase-3-handoff.md) defines the next work and credential proof.
 The [Phase 3 delivery plan](phase-3-plan.md) defines eighteen approved slices with acceptance criteria, dependencies, and Git and Jira procedures.
-The owner approved the plan on 2026-09-16. Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 30 verified dependencies. CC-45 and CC-50 are in review. CC-51 implementation is active.
+The owner approved the plan on 2026-09-16. Epic [CC-42](https://easton-consulting.atlassian.net/browse/CC-42) contains eighteen tasks and 30 verified dependencies. Historical task snapshots do not describe the current execution order. Use the current work plan and Jira task descriptions.
 The [Phase 3 authorization contract](phase-3-authorization.md) records the action matrix, preset boundaries, and integration status.
 The [invitation record](phase-3-invitations.md) retains qualified platform invitation evidence.
 The [platform access record](phase-3-platform-access.md) tracks grant management and remaining resource integrations.

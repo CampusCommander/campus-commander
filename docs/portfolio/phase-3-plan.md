@@ -1,5 +1,9 @@
 # Phase 3 delivery plan
 
+**Scope revised on 2026-09-17:** [The current work plan](phase-3-current-plan.md) takes precedence.
+The owner confirmed that nothing is live. Phase 3 targets a fresh installation and client review.
+Phase 2 upgrade requirements below are historical. Further deployment-matrix qualification is deferred.
+
 Plan date: 2026-09-16.
 Status: APPROVED by the owner on 2026-09-16. Jira publication and verification are complete. Phase 3 implementation is active.
 The [owner acceptance record](../reviews/2026-09-16-phase-2-acceptance.md) closes Phase 2 with its recorded limitations.
