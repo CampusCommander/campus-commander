@@ -2,7 +2,7 @@
 
 [CC-58](https://easton-consulting.atlassian.net/browse/CC-58) requires extracted installation, resume, Phase 2 upgrade, restore, faults, and operator lifecycle evidence.
 The task remains incomplete.
-Installation, resume, Phase 2 upgrade, isolated restore, service faults, and certificate faults have passed hosted qualification.
+Installation, resume, Phase 2 upgrade, isolated restore, service faults, certificate faults, and capacity faults have passed hosted qualification.
 Installed workflows, key projection, distributed renewal, and replica permission checks also passed.
 The checkpoint sections below link their exact application and harness evidence.
 
@@ -37,7 +37,7 @@ The existing Phase 2 targets retain their previous modes.
 
 ## Remaining evidence
 
-- Remaining provider and capacity faults with bounded recovery and preserved state.
+- Provider faults with bounded recovery and preserved state.
 - Guided update, retained external resources, and explicit erasure contracts.
 - Five completed profile reports and prerequisite acceptance.
 
@@ -468,3 +468,20 @@ Failed reports retain public case results and clear the synthetic fault without 
 
 This increment requires hosted qualification. It does not establish live Google privileges, revocation, or Education capabilities.
 Complete CC-58 acceptance remains open.
+
+## Passed capacity fault checkpoint
+
+[Run 35248551259](https://github.com/CampusCommander/campus-commander/actions/runs/35248551259) passed at harness `80ac14d` against signed application `a3601ef`.
+The complete fixture took 257,924 milliseconds. The capacity segment took 13,587 milliseconds.
+Both API replicas and both worker daemons observed zero available space in the owned 16 MiB tmpfs volume.
+The authenticated artifact diagnostic failed with a correlation identifier. Artifact metadata and file names remained unchanged.
+
+Recovery took 4,526 milliseconds against the 180-second bound. All four consumers recovered their original 16,773,120 available bytes.
+Saved workflow reads, replica checks, and durable checks passed.
+Two principals, 75 original security events, thirteen grants, two access-change records, and two school definitions remained intact.
+Credential and settings records, artifact bytes, five completed Kestra executions, and internal storage also remained intact.
+Distributed credential renewal and worker restart passed.
+
+The [retained report](../../deployment/evidence/CC-58-capacity-faults.json) preserves all original fields and three source-report hashes.
+Its archive matches the published SHA-256 digest.
+This checkpoint does not establish district capacity or persistent storage acceptance. Complete CC-58 acceptance remains open.
