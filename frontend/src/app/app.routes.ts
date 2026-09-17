@@ -12,6 +12,21 @@ const authenticated: CanActivateFn = async () => {
 
 export const routes: Routes = [
   {
+    path: 'invitation',
+    title: 'Accept invitation · Campus Commander',
+    canActivate: [
+      async () => {
+        const auth = inject(AuthStore);
+        const router = inject(Router);
+        return (
+          (await auth.metadataReady())?.phase === 3 || router.parseUrl('/login')
+        );
+      },
+    ],
+    loadComponent: () =>
+      import('./invitations/redeem').then((m) => m.RedeemInvitation),
+  },
+  {
     path: 'setup',
     title: 'Administrator setup · Campus Commander',
     loadComponent: () => import('./setup/setup').then((m) => m.Setup),
@@ -41,6 +56,22 @@ export const routes: Routes = [
     canActivate: [authenticated],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'account' },
+      {
+        path: 'invitations',
+        title: 'Platform invitations · Campus Commander',
+        canActivate: [
+          () => {
+            const auth = inject(AuthStore);
+            const router = inject(Router);
+            return (
+              auth.can('platform-users:read', { kind: 'platform' }) ||
+              router.parseUrl('/account')
+            );
+          },
+        ],
+        loadComponent: () =>
+          import('./invitations/invitations').then((m) => m.Invitations),
+      },
       {
         path: 'account',
         title: 'Your account · Campus Commander',

@@ -1,0 +1,58 @@
+.invitation-content {
+  max-width: var(--cc-content-max-width);
+  margin-inline: auto;
+}
+.card {
+  margin-block: var(--cc-space-xl);
+}
+mat-form-field {
+  display: block;
+  width: 100%;
+  margin-bottom: var(--cc-space-lg);
+}
+fieldset {
+  border: 1px solid var(--cc-border);
+  margin: 0 0 var(--cc-space-xl);
+  padding: var(--cc-space-lg);
+}
+mat-checkbox {
+  display: block;
+  margin-block: var(--cc-space-sm);
+}
+button {
+  max-width: 100%;
+  height: auto;
+  min-height: 40px;
+  white-space: normal;
+  padding-block: var(--cc-space-sm);
+}
+.list-heading,
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cc-space-lg);
+}
+.list-heading {
+  justify-content: space-between;
+}
+.identity-review,
+.link-result {
+  margin-top: var(--cc-space-xl);
+  border-top: 1px solid var(--cc-border);
+  padding-top: var(--cc-space-lg);
+}
+dd {
+  margin-inline-start: 0;
+  margin-bottom: var(--cc-space-md);
+  overflow-wrap: anywhere;
+}
+dt {
+  font-weight: 500;
+}
+
+h3,
+p,
+li {
+  overflow-wrap: anywhere;
+}

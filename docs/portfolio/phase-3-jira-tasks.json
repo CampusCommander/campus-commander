@@ -548,8 +548,18 @@
       "stableLabel": "p3-t07",
       "description": "## Parent\n\n[CC-42: Phase 3](https://easton-consulting.atlassian.net/browse/CC-42).\n\n## What to build\n\nA platform administrator creates an invitation, shares its link independently, confirms the intended OIDC identity, and grants bounded application access.\n\nStories: S05. Packages: P9.1, P6.1.\n\n## Acceptance criteria\n\n- [ ] Create invitations through authenticated, authorized browser requests and display a copyable link without requiring SMTP.\n- [ ] Store only a token hash with bounded expiry, intended authority, issuer restrictions, and lifecycle state.\n- [ ] Bind redemption to verified OIDC issuer and subject. Never grant access from an email suffix or bearer link alone.\n- [ ] Require inviter confirmation before an unknown redeemed identity receives grants, according to the reviewed invitation policy.\n- [ ] Consume redemption atomically. Deny wrong identity, expired invitations, replay, revoked invitations, and concurrent redemption.\n- [ ] Support invitation review, revocation, and replacement without exposing tokens in lists, logs, browser caches, or audit evidence.\n- [ ] Recheck inviter authority before activating grants. A revoked inviter cannot complete pending authorization.\n- [ ] Record each transition and demonstrate usable sign-in, denial, and recovery in both themes.\n\n## Blocked by\n\n- [CC-45](https://easton-consulting.atlassian.net/browse/CC-45) (P3-T02).\n\n## Evidence\n\n- Real OIDC invitation and administrator-confirmation browser workflow.\n- Database redemption race and revocation results.\n- Hash storage, redaction, and UI evidence.\n\n## Demonstration\n\nCopy an invitation link, redeem it in a separate browser, confirm the identity, and sign in with only its intended access.\n\n## Ownership and UI\n\nProposed owner role: Platform access lead. Relative size: L.\nApplicable UI rules: UI-01, UI-02, UI-03, UI-04, UI-05, UI-06, UI-07, UI-08, UI-09, UI-10, FORM-01. Record actual validation results.",
       "blockers": ["CC-45"],
-      "jiraStatus": "To Do",
-      "jiraParent": "CC-42"
+      "jiraStatus": "In Review",
+      "jiraParent": "CC-42",
+      "implementation": {
+        "branch": "codex/cc-50-platform-invitations",
+        "status": "hosted-integration-passed-review-pending",
+        "base": "codex/cc-45-authorization-contracts",
+        "contract": "phase-3-invitations.md",
+        "pr": "https://github.com/CampusCommander/campus-commander/pull/7",
+        "qualifiedRevision": "55b53fe3d4164eac5c127a9026c25000cc60bcb8",
+        "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35131956143",
+        "evidence": "deployment/evidence/CC-50-platform-invitations.json"
+      }
     },
     {
       "id": "P3-T08",

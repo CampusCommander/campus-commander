@@ -34,11 +34,22 @@
       <mat-icon fontSet="material-symbols-outlined">monitor_heart</mat-icon
       ><span class="nav-label">Diagnostics</span>
     </a>
+    } @if (auth.can('platform-users:read', {kind: 'platform'})) {
+    <a
+      routerLink="/invitations"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Platform invitations"
+    >
+      <mat-icon fontSet="material-symbols-outlined">person_add</mat-icon
+      ><span class="nav-label">Platform invitations</span>
+    </a>
     }
   </nav>
   <header>
     <span class="header-title"
-      >{{ router.url.startsWith('/diagnostics') ? 'Diagnostics' : 'Your account'
+      >{{ router.url.startsWith('/invitations') ? 'Platform invitations' :
+      router.url.startsWith('/diagnostics') ? 'Diagnostics' : 'Your account'
       }}</span
     >
     <div class="header-actions">

@@ -1,0 +1,77 @@
+<main class="login-page">
+  <section class="card" aria-labelledby="invitation-title">
+    <p class="wordmark">Campus Commander</p>
+    <h1 id="invitation-title">Accept a platform invitation</h1>
+    @if (status() === 'start') {
+    <p>
+      Use the browser profile for your intended account. Your inviter must
+      confirm your identity before you receive access.
+    </p>
+    <form (ngSubmit)="redeem()">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic"
+        ><mat-label>Invitation code</mat-label>
+        <input
+          matInput
+          type="password"
+          name="token"
+          [(ngModel)]="token"
+          maxlength="64"
+          autocomplete="off"
+          required
+        />
+      </mat-form-field>
+      <button
+        mat-flat-button
+        type="submit"
+        [disabled]="busy() || !token.trim()"
+      >
+        Sign in to accept invitation
+      </button>
+    </form>
+    } @else if (status() === 'accepted') {
+    <p role="status">
+      Your inviter confirmed your access. Sign in to continue.
+    </p>
+    <a mat-flat-button href="/api/auth/login">Sign in to Campus Commander</a>
+    } @else if (status() === 'pending') {
+    <p role="status">
+      Your identity is verified. Ask your inviter to review and confirm your
+      access.
+    </p>
+    } @else if (status() === 'redeeming') {
+    <p role="status">
+      Sign-in did not complete. Ask your inviter to replace this invitation if
+      you cannot finish sign-in.
+    </p>
+    } @else {
+    <p role="status">
+      This invitation is {{ status() }}. Ask your inviter to create another
+      invitation.
+    </p>
+    } @if (candidate(); as identity) {
+    <section aria-labelledby="verified-invitation-identity">
+      <h2 id="verified-invitation-identity">Your verified sign-in identity</h2>
+      <dl>
+        <dt>Name</dt>
+        <dd>{{ identity.displayName }}</dd>
+        <dt>Sign-in issuer</dt>
+        <dd>{{ identity.issuer }}</dd>
+        <dt>Sign-in subject</dt>
+        <dd>{{ identity.subject }}</dd>
+      </dl>
+      <p>
+        Confirm these values with your inviter through a known communication
+        channel.
+      </p>
+    </section>
+    } @if (status() !== 'accepted') {
+    <button mat-stroked-button (click)="check()" [disabled]="busy()">
+      Check invitation status
+    </button>
+    } @if (busy()) {
+    <p role="status">Checking the invitation.</p>
+    } @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+    }
+  </section>
+</main>

@@ -98,6 +98,7 @@ export const applicationErrorSchema = z.strictObject({
     'unavailable',
     'busy',
     'not-found',
+    'conflict',
   ]),
   message: z.string().min(1).max(500),
   correlationId: z.uuid(),

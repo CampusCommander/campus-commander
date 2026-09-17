@@ -57,6 +57,10 @@ export class ApplicationExceptionFilter implements ExceptionFilter {
         'This request requires additional permission or valid browser security checks.',
       ],
       404: ['not-found', 'This route is unavailable.'],
+      409: [
+        'conflict',
+        'The record changed. Refresh and review its current state.',
+      ],
       429: ['busy', 'A check is already running. Wait before another request.'],
     };
     const [code, message] =

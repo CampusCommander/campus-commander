@@ -71,6 +71,7 @@ export async function createBootstrapEdge({
         response,
         upstreams,
         config.applicationAuth.publicOrigin,
+        config.phase,
       );
     if (request.method !== 'GET' && request.method !== 'HEAD')
       return finish(response, 405, 'Method unavailable.\n');

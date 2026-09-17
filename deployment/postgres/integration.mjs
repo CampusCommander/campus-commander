@@ -22,6 +22,7 @@ import {
   verifyBootstrap,
 } from '../bootstrap/access.mjs';
 import { changeApplicationAccess } from '../bootstrap/application-access.mjs';
+import { qualifyInvitations } from './invitations.integration.mjs';
 
 const qualification = JSON.parse(
   await readFile(new URL('./qualification.json', import.meta.url), 'utf8'),
@@ -459,6 +460,15 @@ try {
   );
   results.push(
     'runtime grant writes and audit rewriting denied; malformed and unsupported scopes rejected: pass',
+  );
+  results.push(
+    ...(await qualifyInvitations({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      principalId,
+      issuer,
+    })),
   );
   const broken = [
     ...migrations,

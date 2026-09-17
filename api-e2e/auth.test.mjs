@@ -39,6 +39,7 @@ import { createBootstrapEdge } from '../deployment/bootstrap/edge.mjs';
 import { startKestraFixture } from './kestra-fixture.mjs';
 import { chromium, expect } from '@playwright/test';
 import { auditAccessibility as auditPageAccessibility } from './accessibility.mjs';
+import { qualifyInvitationBrowser } from './invitations-browser.mjs';
 
 const docker = (...args) =>
   execFileSync('docker', args, {
@@ -1977,6 +1978,19 @@ test(
       assert.ok(
         await page.evaluate(() => document.activeElement !== document.body),
       );
+      if (applicationPhase === 3)
+        await qualifyInvitationBrowser({
+          browser,
+          page,
+          publicOrigin,
+          migrator,
+          principalId,
+          setSubject: (value) => {
+            subject = value;
+          },
+          auditAccessibility,
+          evidenceDirectory,
+        });
       await page.getByRole('button', { name: 'Open user menu' }).click();
       await page.getByRole('menuitem', { name: 'Sign out' }).click();
       await expect(

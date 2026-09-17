@@ -1,0 +1,188 @@
+<div class="invitation-content">
+  <h1>Platform invitations</h1>
+  <p>
+    Invite people to Campus Commander. These invitations do not create Google
+    Workspace accounts.
+  </p>
+  @if (error()) {
+  <p role="alert" class="error">{{ error() }}</p>
+  }
+  <p role="status">{{ message() }}</p>
+  @if (canInvite()) {
+  <section class="card" aria-labelledby="create-invitation-title">
+    <h2 id="create-invitation-title">Invite a platform user</h2>
+    <form (ngSubmit)="create()">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic"
+        ><mat-label>Recipient label</mat-label>
+        <input
+          matInput
+          name="label"
+          [(ngModel)]="label"
+          required
+          maxlength="120"
+          autocomplete="off"
+        />
+        <mat-hint
+          >Use a label that helps you identify this invitation.</mat-hint
+        >
+      </mat-form-field>
+      <mat-form-field appearance="outline" subscriptSizing="dynamic"
+        ><mat-label>Sign-in subject</mat-label>
+        <input
+          matInput
+          name="subject"
+          [(ngModel)]="expectedSubject"
+          maxlength="512"
+          autocomplete="off"
+        />
+        <mat-hint
+          >Optional. Enter an exact OIDC subject only if you already know it. An
+          email address is not a subject.</mat-hint
+        >
+      </mat-form-field>
+      <mat-form-field appearance="outline" subscriptSizing="dynamic"
+        ><mat-label>Expires after (hours)</mat-label>
+        <input
+          matInput
+          type="number"
+          name="hours"
+          [(ngModel)]="expiresInHours"
+          min="1"
+          max="168"
+          required
+        />
+      </mat-form-field>
+      <fieldset>
+        <legend>Access after your confirmation</legend>
+        <p>
+          With no selected grants, the recipient can sign in and view their own
+          account.
+        </p>
+        @for (action of actions; track action) { @if (auth.can(action, {kind:
+        'platform'})) {
+        <mat-checkbox [name]="action" [(ngModel)]="selected[action]"
+          >{{ labels[action] }}</mat-checkbox
+        >
+        } }
+        <p>
+          Selected grants cover the installation. District and school grants
+          require their verified configuration.
+        </p>
+      </fieldset>
+      <button
+        mat-flat-button
+        type="submit"
+        [disabled]="busy() || !label.trim()"
+      >
+        Create invitation
+      </button>
+    </form>
+    @if (link()) {
+    <div class="link-result">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic"
+        ><mat-label>Invitation link</mat-label>
+        <textarea
+          matInput
+          [value]="link()"
+          readonly
+          rows="3"
+          autocomplete="off"
+        ></textarea>
+      </mat-form-field>
+      <button mat-stroked-button (click)="copy()">Copy invitation link</button>
+      <p>
+        This link appears once. Its recipient must sign in and wait for your
+        identity confirmation.
+      </p>
+    </div>
+    }
+  </section>
+  }
+  <section aria-labelledby="invitation-list-title" [attr.aria-busy]="loading()">
+    <div class="list-heading">
+      <h2 id="invitation-list-title">Recent invitations</h2>
+      <button
+        mat-stroked-button
+        (click)="refresh()"
+        [disabled]="loading() || busy()"
+      >
+        Refresh invitations
+      </button>
+    </div>
+    @if (loading()) {
+    <p role="status">Loading invitations.</p>
+    } @if (observedAt()) {
+    <p>
+      {{ stale() ? 'Last available result' : 'Updated' }}: {{ observedAt() |
+      date:'medium' }}
+    </p>
+    } @if (!loading() && !items().length && !stale()) {
+    <p>No invitations yet.</p>
+    } @if (items().length === 200) {
+    <p>This list shows the 200 most recent invitations.</p>
+    } @for (item of items(); track item.id) {
+    <article class="card" [attr.aria-label]="'Invitation for ' + item.label">
+      <h3>{{ item.label }}</h3>
+      <p>
+        Status: {{ item.status }} · Expires {{ item.expiresAt | date:'medium' }}
+      </p>
+      <p>{{ item.grants.length }} installation grants</p>
+      @if (canInvite() && active(item)) {
+      <div class="actions">
+        @if (item.status === 'pending' && item.createdBy ===
+        auth.session()?.identity?.id) {
+        <button
+          mat-stroked-button
+          (click)="inspect(item)"
+          [disabled]="busy() || stale()"
+        >
+          Review identity
+        </button>
+        }
+        <button
+          mat-stroked-button
+          (click)="mutate(item, 'revoke')"
+          [disabled]="busy() || stale()"
+        >
+          Revoke invitation
+        </button>
+      </div>
+      } @if (review()?.id === item.id) {
+      <section aria-label="Confirm invited identity" class="identity-review">
+        <h4>Confirm this exact identity</h4>
+        <dl>
+          <dt>Verified name</dt>
+          <dd>{{ item.candidateName }}</dd>
+          <dt>Sign-in issuer</dt>
+          <dd>{{ item.issuer }}</dd>
+          <dt>Verified subject</dt>
+          <dd>{{ item.candidateSubject }}</dd>
+        </dl>
+        <p>
+          Check the issuer and subject with the recipient through a known
+          communication channel. A display name alone does not identify them.
+        </p>
+        <ul>
+          @for (grant of item.grants; track grant.action) {
+          <li>{{ labels[grant.action] }} — installation scope</li>
+          }
+        </ul>
+        @if (!item.grants.length) {
+        <p>Application sign-in and own-account access only.</p>
+        }
+        <mat-checkbox [(ngModel)]="verified"
+          >I verified this exact identity and its intended access.</mat-checkbox
+        >
+        <button
+          mat-flat-button
+          (click)="mutate(item, 'confirm')"
+          [disabled]="!verified || busy() || stale()"
+        >
+          Confirm identity and grant access
+        </button>
+      </section>
+      }
+    </article>
+    }
+  </section>
+</div>

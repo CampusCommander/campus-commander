@@ -30,6 +30,17 @@ const postRoutes = new Set([
 ]);
 const assets =
   /^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.(?:js|css|ico|png|svg|woff2?)$/;
+const invitationPages = new Set(['/invitation', '/invitations']);
+const invitationReads = new Set([
+  '/api/auth/invitations',
+  '/api/auth/invitations/status',
+]);
+const invitationWrites = new Set([
+  '/api/auth/invitations',
+  '/api/auth/invitations/redeem',
+]);
+const invitationChange =
+  /^\/api\/auth\/invitations\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(?:confirm|revoke)$/;
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
@@ -44,6 +55,7 @@ export async function proxyApplication(
   response,
   upstreams,
   publicOrigin,
+  phase = 2,
 ) {
   const path = request.url ?? '';
   if (
@@ -57,14 +69,21 @@ export async function proxyApplication(
   if (request.headers.host !== new URL(publicOrigin).host)
     return finish(response, 421, 'Use the configured application address.\n');
   const pathname = path.split('?')[0];
-  const api = getRoutes.has(pathname) || postRoutes.has(pathname);
-  if (!api && !pages.has(pathname) && !assets.test(pathname))
+  const readable =
+    getRoutes.has(pathname) || (phase === 3 && invitationReads.has(pathname));
+  const writable =
+    postRoutes.has(pathname) ||
+    (phase === 3 &&
+      (invitationWrites.has(pathname) || invitationChange.test(pathname)));
+  const api = readable || writable;
+  const page =
+    pages.has(pathname) || (phase === 3 && invitationPages.has(pathname));
+  if (!api && !page && !assets.test(pathname))
     return finish(response, 404, 'Route unavailable.\n');
   const methodAllowed =
     request.method === 'POST'
-      ? postRoutes.has(pathname)
-      : ['GET', 'HEAD'].includes(request.method) &&
-        (!api || getRoutes.has(pathname));
+      ? writable
+      : ['GET', 'HEAD'].includes(request.method) && (!api || readable);
   if (!methodAllowed) return finish(response, 405, 'Method unavailable.\n');
   let body;
   if (request.method === 'POST') {

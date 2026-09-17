@@ -19,6 +19,7 @@ import { ConfigurationService } from '../configuration/configuration.service';
 import { DatabaseService } from '../database/database.service';
 import { CacheService } from '../cache/cache.service';
 import { EnrollmentService } from './enrollment.service';
+import { InvitationService } from './invitation.service';
 
 const sessionSchema = z.strictObject({
   principalId: z.uuid(),
@@ -33,6 +34,12 @@ const loginSchema = z.strictObject({
   enrollmentId: z
     .string()
     .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  invitation: z
+    .strictObject({
+      id: z.uuid(),
+      browserHash: z.string().regex(/^[a-f0-9]{64}$/),
+    })
     .optional(),
 });
 export const sessionCookie = '__Host-cc-session';
@@ -76,6 +83,7 @@ export class AuthService {
     private readonly database: DatabaseService,
     private readonly cache: CacheService,
     private readonly enrollment: EnrollmentService,
+    private readonly invitations: InvitationService,
   ) {}
 
   private provider() {
@@ -98,13 +106,18 @@ export class AuthService {
     return this.discovery;
   }
 
-  async start(correlationId: string, enrollmentId?: string) {
+  async start(
+    correlationId: string,
+    enrollmentId?: string,
+    invitation?: { id: string; browserHash: string },
+  ) {
     const provider = await this.provider();
     const login = {
       state: oidc.randomState(),
       nonce: oidc.randomNonce(),
       verifier: oidc.randomPKCECodeVerifier(),
       ...(enrollmentId ? { enrollmentId } : {}),
+      ...(invitation ? { invitation } : {}),
     };
     const token = opaqueToken();
     const url = oidc.buildAuthorizationUrl(provider, {
@@ -115,7 +128,7 @@ export class AuthService {
       nonce: login.nonce,
       code_challenge: await oidc.calculatePKCECodeChallenge(login.verifier),
       code_challenge_method: 'S256',
-      ...(enrollmentId ? { prompt: 'select_account' } : {}),
+      ...(enrollmentId || invitation ? { prompt: 'select_account' } : {}),
     });
     await this.database.audit('login-started', correlationId);
     await this.cache.set(key('login', token), JSON.stringify(login), 300);
@@ -154,6 +167,16 @@ export class AuthService {
       });
     const claims = tokens.claims();
     if (!claims?.sub) throw new UnauthorizedException();
+    if (login.invitation) {
+      await this.invitations.verified(
+        login.invitation.id,
+        login.invitation.browserHash,
+        claims.sub,
+        claims['name'],
+        correlationId,
+      );
+      return { invitation: true as const };
+    }
     if (login.enrollmentId) {
       await this.enrollment.verified(
         login.enrollmentId,

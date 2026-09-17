@@ -96,19 +96,22 @@ export async function verifyConnection(client) {
 
 export async function loadMigrations() {
   return Promise.all(
-    ['001-foundation', '002-application-auth', '003-application-grants'].map(
-      async (id) => {
-        const sql = await readFile(
-          new URL(`./migrations/${id}.sql`, import.meta.url),
-          'utf8',
-        );
-        return {
-          id,
-          sql,
-          checksum: createHash('sha256').update(sql).digest('hex'),
-        };
-      },
-    ),
+    [
+      '001-foundation',
+      '002-application-auth',
+      '003-application-grants',
+      '004-application-invitations',
+    ].map(async (id) => {
+      const sql = await readFile(
+        new URL(`./migrations/${id}.sql`, import.meta.url),
+        'utf8',
+      );
+      return {
+        id,
+        sql,
+        checksum: createHash('sha256').update(sql).digest('hex'),
+      };
+    }),
   );
 }
 
@@ -167,6 +170,16 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
       await client.query(
         `GRANT SELECT ON cc.application_actions, cc.application_grants TO ${role}`,
       );
+    }
+    if (migrations.some(({ id }) => id === '004-application-invitations')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.create_invitation(uuid,integer,text,text,text,jsonb,integer,uuid),
+        cc.list_invitations(uuid,integer,uuid),
+        cc.claim_invitation(text,text,text,uuid),
+        cc.verify_invitation(uuid,text,text,text,text,uuid),
+        cc.invitation_browser_status(text,uuid),
+        cc.confirm_invitation(uuid,integer,uuid,integer,text,uuid),
+        cc.revoke_invitation(uuid,integer,uuid,integer,uuid) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);
