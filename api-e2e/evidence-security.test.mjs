@@ -630,3 +630,43 @@ test('browser closure drains child contexts before browser disposal', async () =
   assert.equal(contextClosed, true);
   assert.equal(browserClosed, true);
 });
+
+test('closure waits for token bodies but not unfinished non-token bodies after cookie registration', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const tokenBody of [false, true]) {
+    const security = new EvidenceSecurity();
+    const context = new EventEmitter();
+    await security.newContext({ newContext: async () => context }, {});
+    context.close = async () => context.emit('close');
+    const request = {
+      url: () =>
+        `https://fixture.invalid/${tokenBody ? 'api/auth/session' : 'stream'}`,
+      frame: () => {
+        throw new Error('Worker request');
+      },
+    };
+    context.emit('request', request);
+    context.emit('response', {
+      url: request.url,
+      status: () => 200,
+      request: () => request,
+      headersArray: async () => [
+        { name: 'Set-Cookie', value: 'stream=stream-response-cookie; Secure' },
+      ],
+    });
+    const closing = security.close(context);
+    const result = tokenBody
+      ? assert.rejects(
+          closing,
+          /Browser requests did not finish before closure/,
+        )
+      : assert.doesNotReject(closing);
+    await new Promise((done) => setImmediate(done));
+    t.mock.timers.tick(5000);
+    await result;
+    assert.throws(
+      () => security.assertSafe('stream-response-cookie', 'report'),
+      /protected/,
+    );
+  }
+});

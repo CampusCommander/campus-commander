@@ -387,4 +387,12 @@ The diagnostic extension now records a bounded active-request inventory when obs
 It includes allowlisted route and resource categories, numeric page and context IDs, closure flags, and successful-header observation state.
 It records at most 32 requests and the total count. It excludes raw URLs, bodies, cookies, and underlying error messages.
 The timeout regression verifies exclusion of a sensitive request URL. It preserves the existing timeout and failure behavior.
-Hosted diagnosis of the unfinished request remains pending.
+[Run 35194294259](https://github.com/CampusCommander/campus-commander/actions/runs/35194294259) reproduced the timeout at `c71b38a`.
+The [retained diagnostics](../../deployment/evidence/CC-55-c71-request-wait-failure.json) identify two unfinished fetch requests with successful header observations.
+Neither request used a required token-body route. The observer arrays remained empty.
+
+The correction releases non-token requests after successful cookie-header registration.
+Required token-body routes still wait for request completion. Closure still drains observers and rejects observation failures.
+A regression verifies that unfinished non-token bodies permit closure while unfinished token bodies reject closure.
+Both cases retain protection for the response cookie. A native Chromium stress check passed 100 unfinished-body closures.
+The local API and scanner suite passed all 20 checks. Lint passed. Hosted qualification remains pending.

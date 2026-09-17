@@ -15,6 +15,11 @@ const secretFields = new Set([
   'refresh_token',
   'id_token',
 ]);
+const tokenBodyPaths = new Set([
+  '/api/auth/session',
+  '/pair',
+  '/api/auth/invitations',
+]);
 
 export function captureEvidenceOutput(command, args) {
   const result = spawnSync(command, args, {
@@ -156,9 +161,11 @@ export class EvidenceSecurity {
       void observation.then(() => this.#pending.delete(observation));
     };
     context.on('response', (response) => {
-      const active = this.#requests.get(response.request?.());
+      const request = response.request?.();
+      const active = this.#requests.get(request);
+      const state = stateFor(response, 'headers');
       observe(
-        stateFor(response, 'headers'),
+        state,
         async () => {
           const headers = await response.headersArray();
           this.observeResponse(
@@ -169,7 +176,10 @@ export class EvidenceSecurity {
             },
             '',
           );
-          if (active) active.headersObserved = true;
+          if (active) {
+            active.headersObserved = true;
+            if (!tokenBodyPaths.has(state.route)) this.#finishRequest(request);
+          }
         },
         response.request?.(),
       );
@@ -177,10 +187,7 @@ export class EvidenceSecurity {
     context.on('requestfinished', (request) => {
       this.#finishRequest(request);
       const path = new URL(request.url()).pathname;
-      if (
-        !['/api/auth/session', '/pair', '/api/auth/invitations'].includes(path)
-      )
-        return;
+      if (!tokenBodyPaths.has(path)) return;
       const state = { stage: 'body', route: 'other', status: 0 };
       observe(
         state,
