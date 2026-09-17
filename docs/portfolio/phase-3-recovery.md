@@ -75,7 +75,12 @@ Source and target databases share one PostgreSQL container. Separate storage tre
 Google verification uses a synthetic verifier. The fixture does not establish isolated networks, fresh Redis, browser sessions, or the revalidation CLI.
 Review identified missing initial platform authority and missing command and image fields in the evidence report.
 Revision `e60c688` confirms platform authority, passes the recorded permission version, and records the required evidence identity.
-Both review axes found no remaining issues. Hosted qualification for this state fixture remains pending.
+Both review axes found no remaining issues.
+[Run 35186725120](https://github.com/CampusCommander/campus-commander/actions/runs/35186725120) passed the Phase 3 restore job at `06685a9`.
+The [retained report](../../deployment/evidence/CC-56-phase3-state-restore.json) records one customer, credential, settings revision, school, principal, and reference observation, plus 12 grants.
+The synthetic backup took 328 ms. Restore took 304 ms. Backup age at the final check was 532 ms.
+These measurements describe this small fixture. They do not establish district recovery objectives.
+Full application qualification at that revision remains active.
 
 ## Remaining recovery work
 
