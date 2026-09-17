@@ -37,6 +37,7 @@ export async function prepareHybridRestoreSecrets(
   targetRoot,
 ) {
   for (const name of [
+    'bootstrap',
     'oidc-client',
     'worker-dispatch',
     'kestra-auth',

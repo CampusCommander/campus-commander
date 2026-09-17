@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { initializeBootstrap } from '../deployment/bootstrap/access.mjs';
 import {
   readFile,
   mkdtemp,
@@ -352,4 +354,53 @@ test('Restore target prepares every required recovery secret before native resto
     await readFile(join(targetRoot, 'google-qualification-key')),
     Buffer.alloc(32, 1),
   );
+});
+
+test('Restored initialization preserves the original bootstrap credential and revocation', async (t) => {
+  const root = await mkdtemp('/tmp/cc-hybrid-restore-bootstrap-');
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const sourceRoot = join(root, 'source'),
+    targetRoot = join(root, 'target');
+  await mkdir(sourceRoot, { mode: 0o700 });
+  await mkdir(targetRoot, { mode: 0o700 });
+  const config = JSON.parse(
+    await readFile(
+      new URL('../deployment/examples/hybrid.json', import.meta.url),
+    ),
+  );
+  const original = 'b'.repeat(43);
+  for (const name of [
+    'bootstrap',
+    'oidc-client',
+    'worker-dispatch',
+    'kestra-auth',
+    'google-qualification-key',
+  ])
+    await writeFile(
+      join(sourceRoot, name),
+      name === 'bootstrap' ? original : 'a'.repeat(43),
+      { mode: 0o600 },
+    );
+  await prepareHybridRestoreSecrets(config, sourceRoot, targetRoot);
+  const revokedAt = '2026-09-17T00:00:00.000Z';
+  const row = {
+    generation: '1',
+    credential_hash: createHash('sha256').update(original).digest('hex'),
+    revoked_at: revokedAt,
+  };
+  const queries = [];
+  const result = await initializeBootstrap(
+    {
+      async query(sql) {
+        queries.push(sql);
+        if (sql.startsWith('INSERT')) return { rowCount: 0, rows: [] };
+        assert.match(sql, /^SELECT generation, credential_hash/);
+        return { rows: [row] };
+      },
+    },
+    await readFile(join(targetRoot, 'bootstrap'), 'utf8'),
+  );
+  assert.deepEqual(result, { generation: '1', created: false });
+  assert.equal(row.revoked_at, revokedAt);
+  assert.equal(queries.length, 2);
 });

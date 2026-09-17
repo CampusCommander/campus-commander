@@ -341,6 +341,15 @@ export async function qualifyHybridRestore(input) {
     await rm(markerPath);
     stage('delivered target installation');
     await target.start();
+    stage('bootstrap revocation after target startup');
+    const bootstrap = await stateProbe(hosts, target.controller, 'bootstrap', {
+      configurationPath: target.configPath,
+      applicationCredentials,
+    });
+    assert.equal(bootstrap.status, 'passed');
+    phase3State.bootstrapRevokedAfterStartup =
+      bootstrap.bootstrapRevokedAfterStartup;
+
     const replicas = (
       await target.compose(target.controller, ['ps', '--quiet', 'api'])
     )

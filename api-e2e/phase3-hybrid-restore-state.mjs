@@ -60,7 +60,7 @@ export function assertHybridRestoreSnapshot(before, after) {
 
 /** Inspect private fixture state inside the native operator container. */
 export async function inspectHybridRestoreState(mode, inputPath) {
-  assert.ok(['seed', 'verify'].includes(mode));
+  assert.ok(['seed', 'verify', 'bootstrap'].includes(mode));
   const input = await json(inputPath);
   const config = await json(input.configurationPath);
   const { connectDatabase, connectionOptions } = await import(
@@ -95,6 +95,15 @@ export async function inspectHybridRestoreState(mode, inputPath) {
         pool: runtime,
         root: config.artifacts.location,
       });
+      if (mode === 'bootstrap') {
+        const row = (
+          await migration.query(
+            'SELECT count(*)::int AS total,count(*) FILTER (WHERE revoked_at IS NULL)::int AS active FROM cc.bootstrap_access',
+          )
+        ).rows[0];
+        assert.deepEqual(row, { total: 1, active: 0 });
+        return { status: 'passed', bootstrapRevokedAfterStartup: true };
+      }
       const snapshot = async () => {
         const executionRows = (
           await kestra.query(

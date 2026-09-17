@@ -285,3 +285,17 @@ Tests require complete private recovery material, preserved Google key bytes, an
 Failure reports now retain an allowlisted operator reason through bounded aggregate errors.
 Tests reject arbitrary provider text, unknown reasons, trailing private data, and cyclic error chains.
 PR CI passed at `7365415`. Hosted restoration still requires a successful rerun.
+
+## Restored bootstrap identity correction
+
+[Run 35241830253](https://github.com/CampusCommander/campus-commander/actions/runs/35241830253) passed native restore, state verification, Google revalidation, and startup-lock rejection at `63fa898`.
+It failed during delivered target installation. The [retained failure](../../deployment/evidence/CC-58-restore-attempt3.json) preserves original fields and verified hashes.
+
+The generated target bootstrap credential differed from the credential hash in the restored database.
+A regression reproduced the initializer rejection through actual target secret preparation and the real initializer with a restored row.
+Target preparation now preserves the original bootstrap file with the other application recovery material.
+The initializer can then preserve the revoked row without replacing its credential or restoring bootstrap access.
+The hosted fixture also checks that bootstrap access remains revoked after target startup.
+
+API tests, hybrid fixtures, lint, and formatting pass.
+PR CI passed at `63fa898`. Complete hosted restoration remains open.
