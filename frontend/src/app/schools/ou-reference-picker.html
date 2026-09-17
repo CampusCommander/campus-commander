@@ -1,0 +1,53 @@
+<p class="help">
+  Use arrow keys to navigate. Press Enter or Space to select an organizational
+  unit.
+</p>
+<div
+  role="tree"
+  aria-label="Organizational units"
+  [attr.aria-disabled]="disabled()"
+>
+  @for (row of rows(); track row.unit.id) {
+  <div
+    role="treeitem"
+    [attr.data-ou-id]="row.unit.id"
+    [attr.tabindex]="tabId() === row.unit.id ? 0 : -1"
+    [attr.aria-level]="row.level"
+    [attr.aria-posinset]="row.position"
+    [attr.aria-setsize]="row.size"
+    [attr.aria-selected]="selectedId() === row.unit.id"
+    [attr.aria-expanded]="children().has(row.unit.id) ? expanded(row.unit) : null"
+    [attr.aria-disabled]="disabled()"
+    [style.--ou-depth]="row.level - 1"
+    (focus)="focus(row.unit.id)"
+    (click)="choose(row.unit.id)"
+    (keydown)="key($event, row)"
+  >
+    @if (children().has(row.unit.id)) {
+    <button
+      mat-icon-button
+      type="button"
+      class="expand"
+      tabindex="-1"
+      [attr.aria-label]="(expanded(row.unit) ? 'Collapse ' : 'Expand ') + row.unit.name"
+      (click)="toggle($event, row.unit)"
+    >
+      <mat-icon aria-hidden="true"
+        >{{ expanded(row.unit) ? 'expand_more' : 'chevron_right' }}</mat-icon
+      >
+    </button>
+    } @else {
+    <span class="expand" aria-hidden="true"></span>
+    }
+    <span class="label"
+      >{{ row.unit.parentId === null ? 'Root organizational unit' :
+      row.unit.name }}</span
+    >
+  </div>
+  } @empty {
+  <p>
+    No organizational unit references are available. Refresh references before
+    selecting a scope.
+  </p>
+  }
+</div>
