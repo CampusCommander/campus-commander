@@ -11,6 +11,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   googleCandidateSchema,
+  googleCredentialManagementSchema,
+  googleCredentialReplacementSchema,
+  googleCredentialActivationSchema,
+  googleKeyRotationSchema,
   googleHealthSchema,
   googleHealthCheckSchema,
   googleCapabilityResultSchema,
@@ -82,7 +86,24 @@ export class GoogleConnectionService
     let key: Buffer | undefined;
     try {
       key = this.configuration.secret(config.encryptionKeySecretRef);
-      return new CredentialCipher(config.keyId, key);
+      const additionalKeys: { keyId: string; key: Buffer }[] = [];
+      try {
+        for (const entry of config.additionalKeys ?? []) {
+          try {
+            const material = this.configuration.secret(
+              entry.encryptionKeySecretRef,
+            );
+            if (material.length === 32)
+              additionalKeys.push({ keyId: entry.keyId, key: material });
+            else material.fill(0);
+          } catch {
+            /* An unavailable additional key cannot decrypt or become active. */
+          }
+        }
+        return new CredentialCipher(config.keyId, key, additionalKeys);
+      } finally {
+        for (const entry of additionalKeys) entry.key.fill(0);
+      }
     } catch {
       throw new ServiceUnavailableException({
         reason: 'connection-key-unavailable',
@@ -135,6 +156,7 @@ export class GoogleConnectionService
           reason: [
             'already-connected',
             'credential-changed',
+            'connection-disconnected',
             'health-check-changed',
           ].includes(reason ?? '')
             ? reason
@@ -372,6 +394,7 @@ export class GoogleConnectionService
     session: SessionResponse,
     input: z.infer<typeof googleCredentialImportSchema>,
     correlation: string,
+    replacement?: { customerId: string; generation: number },
   ) {
     const cipher = this.cipher();
     let credential;
@@ -399,13 +422,18 @@ export class GoogleConnectionService
       generation: 0,
     });
     await this.query(
-      'SELECT cc.stage_google_credential($1,$2,$3,$4,$5,$6,$7,$8) AS result',
+      replacement
+        ? 'SELECT cc.stage_google_replacement($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result'
+        : 'SELECT cc.stage_google_credential($1,$2,$3,$4,$5,$6,$7,$8) AS result',
       [
         ...actor,
         input.clientId,
         input.subject,
         JSON.stringify(envelope),
         correlation,
+        ...(replacement
+          ? [replacement.customerId, replacement.generation]
+          : []),
       ],
     );
     let observation = null;
@@ -473,5 +501,170 @@ export class GoogleConnectionService
         });
       throw error;
     }
+  }
+
+  private async privateManagement(session: SessionResponse) {
+    return googleCredentialManagementSchema
+      .extend({ envelope: z.unknown() })
+      .nullable()
+      .parse(
+        await this.query(
+          'SELECT cc.read_google_credential_management($1,$2) AS result',
+          this.actor(session),
+        ),
+      );
+  }
+
+  async management(session: SessionResponse) {
+    const record = await this.privateManagement(session);
+    const config = this.configuration.deployment?.googleConnection;
+    return {
+      credential: record
+        ? googleCredentialManagementSchema.parse({
+            customerId: record.customerId,
+            generation: record.generation,
+            credentialId: record.credentialId,
+            active: record.active,
+            keyId: record.keyId,
+          })
+        : null,
+      configuredKeyIds: config
+        ? [
+            config.keyId,
+            ...(config.additionalKeys ?? []).map((entry) => entry.keyId),
+          ]
+        : [],
+    };
+  }
+
+  async replace(
+    session: SessionResponse,
+    input: z.infer<typeof googleCredentialReplacementSchema>,
+    correlation: string,
+  ) {
+    return this.stage(session, input, correlation, input);
+  }
+
+  async activateReplacement(
+    session: SessionResponse,
+    id: string,
+    input: z.infer<typeof googleCredentialActivationSchema>,
+    correlation: string,
+  ) {
+    const actor = this.candidateActor(session, id);
+    const stored = z
+      .object({ envelope: z.unknown() })
+      .passthrough()
+      .parse(
+        await this.query(
+          'SELECT cc.read_google_candidate($1,$2,$3,$4) AS result',
+          actor,
+        ),
+      );
+    const candidate = this.publicCandidate(stored);
+    const current = await this.privateManagement(session);
+    if (
+      candidate.status !== 'ready' ||
+      candidate.expectedCustomerId !== input.customerId ||
+      candidate.expectedGeneration !== input.generation ||
+      candidate.observation?.customerId !== input.customerId ||
+      current?.generation !== input.generation ||
+      current.customerId !== input.customerId
+    )
+      throw new ConflictException({ reason: 'credential-changed' });
+    try {
+      const cipher = this.cipher();
+      const credential = cipher.open(stored.envelope, {
+        recordId: id,
+        customerId: null,
+        generation: 0,
+      });
+      const envelope = cipher.forKey(current.keyId).seal(credential, {
+        recordId: id,
+        customerId: input.customerId,
+        generation: input.generation + 1,
+      });
+      return googleCredentialManagementSchema.parse(
+        await this.query(
+          'SELECT cc.activate_google_replacement($1,$2,$3,$4,$5,$6,$7,$8) AS result',
+          [
+            ...actor,
+            input.customerId,
+            input.generation,
+            JSON.stringify(envelope),
+            correlation,
+          ],
+        ),
+      );
+    } catch (error) {
+      if (error instanceof CredentialError)
+        throw new ServiceUnavailableException({ reason: error.code });
+      throw error;
+    }
+  }
+
+  async rotateKey(
+    session: SessionResponse,
+    input: z.infer<typeof googleKeyRotationSchema>,
+    correlation: string,
+  ) {
+    const current = await this.privateManagement(session);
+    if (
+      !current?.active ||
+      current.customerId !== input.customerId ||
+      current.generation !== input.generation ||
+      current.keyId === input.keyId
+    )
+      throw new ConflictException({ reason: 'credential-changed' });
+    try {
+      const cipher = this.cipher();
+      const credential = cipher.open(current.envelope, {
+        recordId: current.credentialId,
+        customerId: current.customerId,
+        generation: current.generation,
+      });
+      const id = randomUUID();
+      const envelope = cipher.forKey(input.keyId).seal(credential, {
+        recordId: id,
+        customerId: input.customerId,
+        generation: input.generation + 1,
+      });
+      return googleCredentialManagementSchema.parse(
+        await this.query(
+          'SELECT cc.rotate_google_credential_key($1,$2,$3,$4,$5,$6,$7) AS result',
+          [
+            ...this.actor(session),
+            input.customerId,
+            input.generation,
+            id,
+            JSON.stringify(envelope),
+            correlation,
+          ],
+        ),
+      );
+    } catch (error) {
+      if (error instanceof CredentialError)
+        throw new ServiceUnavailableException({ reason: error.code });
+      throw error;
+    }
+  }
+
+  async disconnect(
+    session: SessionResponse,
+    input: z.infer<typeof googleCredentialActivationSchema>,
+    correlation: string,
+  ) {
+    return googleCredentialManagementSchema.parse(
+      await this.query(
+        'SELECT cc.disconnect_google_credential($1,$2,$3,$4,$5,$6) AS result',
+        [
+          ...this.actor(session),
+          input.customerId,
+          input.generation,
+          randomUUID(),
+          correlation,
+        ],
+      ),
+    );
   }
 }

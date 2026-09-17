@@ -164,8 +164,11 @@ export function renderKubernetes(input, operatorInput) {
         name: operator.kestraRuntime.name,
         key: operator.kestraRuntime.applicationKey,
       },
-    ]).some(
-      (ref) => ref.name === config.googleConnection.encryptionKeySecretRef.name,
+    ]).some((ref) =>
+      [
+        config.googleConnection,
+        ...(config.googleConnection.additionalKeys ?? []),
+      ].some((entry) => ref.name === entry.encryptionKeySecretRef.name),
     )
   )
     throw new Error('Use a separate Google encryption key secret.');

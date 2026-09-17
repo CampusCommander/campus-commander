@@ -116,6 +116,22 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
           : { provider: 'file', path: '/run/secrets/oidc-client-secret' },
     };
     config.googleConnection = {
+      additionalKeys: [
+        {
+          keyId: 'google-key-2',
+          encryptionKeySecretRef:
+            profile === 'kubernetes'
+              ? {
+                  provider: 'kubernetes',
+                  name: 'campus-google-key-2',
+                  key: 'encryption-key',
+                }
+              : {
+                  provider: 'file',
+                  path: '/run/secrets/google-encryption-key-2',
+                },
+        },
+      ],
       keyId: 'google-key-1',
       encryptionKeySecretRef:
         profile === 'kubernetes'
@@ -162,7 +178,7 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
       )) {
         assert.equal(
           item.spec.template.spec.volumes.some(
-            (volume) => volume.secret?.secretName === 'campus-google-key',
+            (volume) => volume.secret?.secretName === 'campus-google-key-2',
           ),
           ['api', 'workers'].includes(item.metadata.name),
         );
@@ -206,7 +222,7 @@ for (const profile of ['all-docker', 'hybrid', 'kubernetes']) {
         assert.ok(compose.services.workers.networks.includes('google-egress'));
         assert.ok(compose.networks['google-egress']);
       }
-      assert.equal(copies.length, 2);
+      assert.equal(copies.length, 4);
       assert.equal(
         copies.some((line) => line.includes('api-secrets')),
         true,

@@ -107,6 +107,7 @@ export async function loadMigrations() {
       '008-google-token-coordination',
       '009-customer-settings',
       '010-google-capability-health',
+      '011-google-credential-lifecycle',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -200,6 +201,14 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.finish_google_access(text,integer,uuid,jsonb,timestamptz,text,uuid),
         cc.reject_google_access(text,integer,uuid,text,uuid),cc.record_google_observation(text,integer,jsonb,uuid,uuid,integer),
         cc.reset_google_access(uuid,integer,text,integer,uuid) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '011-google-credential-lifecycle')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.stage_google_replacement(uuid,integer,uuid,text,text,text,jsonb,uuid,text,integer),
+        cc.read_google_credential_management(uuid,integer),
+        cc.activate_google_replacement(uuid,integer,uuid,text,text,integer,jsonb,uuid),
+        cc.rotate_google_credential_key(uuid,integer,text,integer,uuid,jsonb,uuid),
+        cc.disconnect_google_credential(uuid,integer,text,integer,uuid,uuid) TO ${role}`);
     }
     if (migrations.some(({ id }) => id === '010-google-capability-health')) {
       await client.query(`GRANT EXECUTE ON FUNCTION cc.read_google_health(uuid,integer),

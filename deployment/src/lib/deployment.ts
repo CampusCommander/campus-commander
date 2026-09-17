@@ -168,6 +168,15 @@ const shape = z.strictObject({
     .strictObject({
       keyId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
       encryptionKeySecretRef: secretReferenceSchema,
+      additionalKeys: z
+        .array(
+          z.strictObject({
+            keyId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
+            encryptionKeySecretRef: secretReferenceSchema,
+          }),
+        )
+        .max(3)
+        .optional(),
     })
     .optional(),
   profile: z.enum(['all-docker', 'hybrid', 'kubernetes']),
@@ -220,19 +229,48 @@ export const deploymentConfigSchema = shape.superRefine((config, ctx) => {
     ctx.addIssue({ code: 'custom', path, message });
   if (config.googleConnection && config.phase !== 3)
     reject(['googleConnection'], 'Google connections require Phase 3.');
-  const googleKey = config.googleConnection?.encryptionKeySecretRef;
+  const googleKeys = config.googleConnection
+    ? [
+        config.googleConnection,
+        ...(config.googleConnection.additionalKeys ?? []),
+      ]
+    : [];
   if (
-    googleKey?.provider === 'file' &&
-    [
-      'postgres-migrator',
-      'application-postgres-admin-password',
-      'kestra-postgres-admin-password',
-    ].includes(googleKey.path.split('/').at(-1) ?? '')
+    new Set(googleKeys.map((entry) => entry.keyId)).size !== googleKeys.length
   )
     reject(
-      ['googleConnection', 'encryptionKeySecretRef'],
-      'Operator secrets cannot supply the Google encryption key.',
+      ['googleConnection'],
+      'Google encryption key identifiers must be unique.',
     );
+  for (let i = 0; i < googleKeys.length; i += 1) {
+    if (
+      googleKeys.some(
+        (entry, j) =>
+          i !== j &&
+          sameSecret(
+            entry.encryptionKeySecretRef,
+            googleKeys[i].encryptionKeySecretRef,
+          ),
+      )
+    )
+      reject(
+        ['googleConnection'],
+        'Google encryption keys require distinct secret references.',
+      );
+    const googleKey = googleKeys[i].encryptionKeySecretRef;
+    if (
+      googleKey?.provider === 'file' &&
+      [
+        'postgres-migrator',
+        'application-postgres-admin-password',
+        'kestra-postgres-admin-password',
+      ].includes(googleKey.path.split('/').at(-1) ?? '')
+    )
+      reject(
+        ['googleConnection', 'encryptionKeySecretRef'],
+        'Operator secrets cannot supply the Google encryption key.',
+      );
+  }
   const services = config.services;
   const distributed =
     config.profile === 'kubernetes' || config.host.workerHosts > 1;
@@ -451,7 +489,9 @@ export const deploymentConfigSchema = shape.superRefine((config, ctx) => {
           ref.success &&
           config.googleConnection &&
           path[0] !== 'googleConnection' &&
-          sameSecret(ref.data, config.googleConnection.encryptionKeySecretRef)
+          googleKeys.some((entry) =>
+            sameSecret(ref.data, entry.encryptionKeySecretRef),
+          )
         )
           reject(
             ['googleConnection', 'encryptionKeySecretRef'],

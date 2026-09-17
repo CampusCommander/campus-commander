@@ -52,9 +52,9 @@ const principalRead =
 const principalWrite =
   /^\/api\/platform-users\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(?:review|access)$/;
 const connectionRead =
-  /^\/api\/google-connection(?:\/health|\/candidates\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
+  /^\/api\/google-connection(?:\/health|\/credentials|\/candidates\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
 const connectionWrite =
-  /^\/api\/google-connection\/(?:health\/check|check|candidates(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
+  /^\/api\/google-connection\/(?:health\/check|check|credentials\/(?:rotate-key|disconnect)|replacements(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/activate)?|candidates(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
 const customerRead =
   /^\/api\/customer(?:\/receipts\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
 const finish = (response, status, message) => {
@@ -118,7 +118,11 @@ export async function proxyApplication(
       for await (const chunk of request) {
         size += chunk.length;
         const limit =
-          phase === 3 && pathname === '/api/google-connection/candidates'
+          phase === 3 &&
+          [
+            '/api/google-connection/candidates',
+            '/api/google-connection/replacements',
+          ].includes(pathname)
             ? 65536
             : 4096;
         if (size > limit)

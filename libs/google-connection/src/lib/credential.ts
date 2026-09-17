@@ -163,16 +163,52 @@ function additionalData(
 /** Encrypt persisted credentials. Callers supply keys outside the database. */
 export class CredentialCipher {
   readonly #key: Buffer;
+  readonly #keys: Map<string, Buffer>;
   readonly keyId: string;
-  constructor(keyId: string, key: Uint8Array) {
+  constructor(
+    keyId: string,
+    key: Uint8Array,
+    additionalKeys: ReadonlyArray<{ keyId: string; key: Uint8Array }> = [],
+  ) {
     if (
       !keyIdSchema.safeParse(keyId).success ||
       !(key instanceof Uint8Array) ||
       key.byteLength !== 32
     )
       throw new CredentialError('key-unavailable');
+    if (additionalKeys.length > 3) throw new CredentialError('key-unavailable');
+    this.#keys = new Map([[keyId, Buffer.from(key)]]);
+    for (const entry of additionalKeys) {
+      if (
+        !keyIdSchema.safeParse(entry.keyId).success ||
+        this.#keys.has(entry.keyId) ||
+        !(entry.key instanceof Uint8Array) ||
+        entry.key.byteLength !== 32
+      )
+        throw new CredentialError('key-unavailable');
+      this.#keys.set(entry.keyId, Buffer.from(entry.key));
+    }
     this.keyId = keyId;
-    this.#key = Buffer.from(key);
+    this.#key = this.#keys.get(keyId)!;
+  }
+
+  /** Select a deployed key explicitly. Never fall back to another key. */
+  forKey(keyId: string): CredentialCipher {
+    const key = this.#keys.get(keyId);
+    if (!key) throw new CredentialError('key-unavailable');
+    return new CredentialCipher(
+      keyId,
+      key,
+      [...this.#keys]
+        .filter(([id]) => id !== keyId)
+        .map(([id, material]) => ({ keyId: id, key: material })),
+    );
+  }
+
+  forEnvelope(value: unknown): CredentialCipher {
+    const envelope = envelopeSchema.safeParse(value);
+    if (!envelope.success) throw new CredentialError('credential-unavailable');
+    return this.forKey(envelope.data.keyId);
   }
 
   seal(
@@ -243,13 +279,14 @@ export class CredentialCipher {
   ): T {
     try {
       const envelope = envelopeSchema.parse(value);
-      if (envelope.keyId !== this.keyId) throw new Error();
+      const key = this.#keys.get(envelope.keyId);
+      if (!key) throw new CredentialError('key-unavailable');
       const decipher = createDecipheriv(
         'aes-256-gcm',
-        this.#key,
+        key,
         Buffer.from(envelope.iv, 'base64url'),
       );
-      decipher.setAAD(additionalData(context, this.keyId, purpose));
+      decipher.setAAD(additionalData(context, envelope.keyId, purpose));
       decipher.setAuthTag(Buffer.from(envelope.tag, 'base64url'));
       const plaintext = Buffer.concat([
         decipher.update(Buffer.from(envelope.ciphertext, 'base64url')),
@@ -260,7 +297,8 @@ export class CredentialCipher {
       } finally {
         plaintext.fill(0);
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof CredentialError) throw error;
       throw new CredentialError('credential-unavailable');
     }
   }

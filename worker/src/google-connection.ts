@@ -40,7 +40,22 @@ export class GoogleWorker {
       const google = this.config.googleConnection;
       if (this.config.phase !== 3 || !google) throw new Error();
       key = secret(google.encryptionKeySecretRef);
-      cipher = new CredentialCipher(google.keyId, key);
+      const additionalKeys: { keyId: string; key: Buffer }[] = [];
+      try {
+        for (const entry of google.additionalKeys ?? []) {
+          try {
+            const material = secret(entry.encryptionKeySecretRef);
+            if (material.length === 32)
+              additionalKeys.push({ keyId: entry.keyId, key: material });
+            else material.fill(0);
+          } catch {
+            /* Requests for an unavailable additional key fail without fallback. */
+          }
+        }
+        cipher = new CredentialCipher(google.keyId, key, additionalKeys);
+      } finally {
+        for (const entry of additionalKeys) entry.key.fill(0);
+      }
     } catch {
       throw new Error('connection-key-unavailable');
     } finally {
