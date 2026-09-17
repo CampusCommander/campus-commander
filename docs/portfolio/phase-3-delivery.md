@@ -351,7 +351,7 @@ Retained reports record five original report hashes:
 
 PR CI found one formatting defect in the capacity fixture. Revision `270fe88` corrects it.
 [PR CI 35222525116](https://github.com/CampusCommander/campus-commander/actions/runs/35222525116) passed after that correction.
-A different-release guided update and complete profile report aggregation remain pending.
+A different-release guided update remains pending. The report inventory below records the completed evidence categories.
 
 ## Next laboratory candidate
 
@@ -398,3 +398,31 @@ A numeric guard rejects missing artifact IDs. Assembly retains its existing repo
 The pinned [download action](https://github.com/actions/download-artifact/blob/d3f86a106a0bac45b974a628896c90dbdf5c8093/src/download-artifact.ts) selects metadata with `latest: true`, including downloads by ID.
 Unique attempt names prevent its duplicate-name filter from discarding the requested artifact.
 This correction preserves the failed artifact for diagnosis. The original browser-closure failure remains unresolved.
+
+## All-Docker report inventory
+
+The [profile inventory](../../deployment/evidence/CC-57-profile-evidence.json) binds five distinct report categories to application `a3601ef` and its signed manifest.
+Each entry records the retained file size and SHA-256 hash.
+The inventory also includes installed workflow and lifecycle reports.
+
+| Report       | Evidence                                                                                                          |
+| ------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Installation | [Delivered prepare and initial resume](../../deployment/evidence/CC-57-installation.json)                         |
+| Resume       | [Four delivered resume commands](../../deployment/evidence/CC-57-resume.json)                                     |
+| Upgrade      | [Pinned Phase 2 upgrade and preserved state](../../deployment/evidence/CC-57-phase2-upgrade.json)                 |
+| Restore      | [Isolated restore, preserved state, and rejected source admissions](../../deployment/evidence/CC-57-restore.json) |
+| Faults       | [Service, provider, certificate, and capacity groups](../../deployment/evidence/CC-57-faults.json)                |
+
+The restore report retains the original report contents and adds provenance and duration scope.
+Its original bytes match the hash recorded by extracted qualification run `35211855292`.
+The fault aggregate references four independent runs against the same signed application.
+Every fault recovered within its recorded bound. Each source report retains its preservation checks and fixture limits.
+
+The inventory remains incomplete until guided update execution and prerequisite review finish.
+It does not qualify another application revision or permit full release assembly.
+The intermittent browser-closure failure remains unresolved.
+
+[Candidate run 35224752965](https://github.com/CampusCommander/campus-commander/actions/runs/35224752965) passed validation and image publication at `5e276ef`.
+Packaged authorization failed before assembly. The collector retained one font request without observed headers when its context closed.
+The failed application artifact remains available as `qualification-phase3-auth-integration-1`, ID `10497898683`.
+No second candidate or guided-update result followed this run. PR CI passed at the same source revision.
