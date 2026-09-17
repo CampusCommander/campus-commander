@@ -18,9 +18,15 @@ import { startRegistry } from './registry-fixture.mjs';
 import { qualifyApplicationRestore } from './restore-fixture.mjs';
 import { qualificationBrowserStep } from './qualification-sign-in.mjs';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
+import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
 
 const phase3Restore = process.env.CC_AUTH_PHASE3_RESTORE === '1';
-const applicationPhase = phase3Restore ? 3 : 2;
+const phase3Workflows = process.env.CC_AUTH_PHASE3_WORKFLOWS === '1';
+assert.ok(
+  !(phase3Restore && phase3Workflows),
+  'Select one Phase 3 profile qualification mode.',
+);
+const applicationPhase = phase3Restore || phase3Workflows ? 3 : 2;
 
 const execute = promisify(execFile);
 const docker = (...args) =>
@@ -33,12 +39,26 @@ const docker = (...args) =>
 
 test(
   `the all-Docker installer installs Phase ${applicationPhase} and restores application access through resume and restart`,
-  { timeout: phase3Restore ? 900000 : 360000 },
+  { timeout: applicationPhase === 3 ? 900000 : 360000 },
   async () => {
     const startedAt = Date.now();
+    const harnessRevision = execFileSync('git', ['rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+    }).trim();
+    const harnessWorkingTree = execFileSync(
+      'git',
+      ['status', '--porcelain', '--untracked-files=no'],
+      {
+        encoding: 'utf8',
+      },
+    ).trim()
+      ? 'uncommitted-candidate'
+      : 'clean';
     const evidenceDirectory = phase3Restore
       ? 'dist/phase-3-recovery'
-      : 'dist/phase-2-evidence';
+      : phase3Workflows
+        ? 'dist/phase-3-installation'
+        : 'dist/phase-2-evidence';
     await mkdir(evidenceDirectory, { recursive: true });
     const root = await mkdtemp(
       join(tmpdir(), `cc-phase${applicationPhase}-compose-`),
@@ -133,7 +153,7 @@ test(
         await readFile('deployment/examples/all-docker.json', 'utf8'),
       );
       config.phase = applicationPhase;
-      if (phase3Restore) {
+      if (applicationPhase === 3) {
         config.googleConnection = {
           keyId: 'isolated-google-recovery-key',
           encryptionKeySecretRef: {
@@ -285,7 +305,7 @@ if(args[0]==='compose' && args[index]===${JSON.stringify(composePath)} && fs.exi
   doc.services.api.environment.NODE_EXTRA_CA_CERTS='/run/qualification/ca.pem';
   doc.services.api.extra_hosts=['host.docker.internal:host-gateway'];
   doc.services.api.volumes.push({type:'bind',source:${JSON.stringify(certPath)},target:'/run/qualification/ca.pem',read_only:true});
-  if(${phase3Restore})for(const service of ['api','workers']){
+  if(${applicationPhase === 3})for(const service of ['api','workers']){
     doc.services[service].environment.NODE_OPTIONS='--require=/run/qualification/google-connection-preload.cjs';
     doc.services[service].volumes.push({type:'bind',source:${JSON.stringify(join(root, 'google-connection-preload.cjs'))},target:'/run/qualification/google-connection-preload.cjs',read_only:true});
   }
@@ -340,7 +360,7 @@ process.exit(result.status??1);
         },
       );
       assert.ok(enrolled.principalId);
-      if (phase3Restore)
+      if (applicationPhase === 3)
         await applicationAccess(setupOperator, {
           action: 'confirm-platform-administrator',
           principalId: enrolled.principalId,
@@ -422,10 +442,19 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
           ]),
         );
       const initialAddresses = addresses();
+      let installedWorkflows;
       const browser = await applicationBrowser(
         publicOrigin,
         async ({ page, context, checks }) => {
           await verifyReplicas(context, 'initial-session');
+          if (phase3Workflows) {
+            installedWorkflows = await qualifyInstalledPhase3({
+              page,
+              publicOrigin,
+              provider,
+            });
+            await checks();
+          }
           await page.getByRole('button', { name: 'Choose theme' }).click();
           await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
           await expect(page.locator('html')).toHaveAttribute(
@@ -436,6 +465,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
           compose('up', '-d', '--wait', '--wait-timeout', '120');
           const restartedAddresses = addresses();
           await verifyReplicas(context, 'restart-session');
+          await installedWorkflows?.verifyAfterRestart();
           navigationRecovery.push({
             phase: 'restart',
             ...(await reloadAfterNetworkChange(page)),
@@ -526,6 +556,44 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
         JSON.parse(await readFile(releasePath, 'utf8')),
         installationRelease,
       );
+      if (installedWorkflows) {
+        assert.ok(
+          Object.values(installedWorkflows.report.checks).every(
+            (value) => value === true,
+          ),
+        );
+        await writeFile(
+          `${evidenceDirectory}/phase3-workflows.json`,
+          JSON.stringify(
+            {
+              schemaVersion: 1,
+              recordedAt: new Date().toISOString(),
+              phase: 3,
+              profile: 'all-docker',
+              sourceRevision,
+              harnessRevision,
+              harnessWorkingTree,
+              images,
+              installer: {
+                source: process.env.CC_AUTH_INSTALLER_ROOT
+                  ? 'extracted-published-bundle'
+                  : 'workspace',
+                bundleManifestSha256,
+              },
+              command: 'npm exec -- nx run api-e2e:phase3-install-integration',
+              environment: {
+                nodeVersion: process.version,
+                platform: process.platform,
+                architecture: process.arch,
+                browser: browser.browser,
+              },
+              ...installedWorkflows.report,
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+      }
       if (browser.screenReader) {
         await writeFile(
           'dist/phase-2-evidence/screen-reader.json',
@@ -553,7 +621,9 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             phase: applicationPhase,
             command: phase3Restore
               ? 'npm exec -- nx run api-e2e:phase3-restore-integration'
-              : 'npm exec -- nx run api-e2e:all-docker-integration',
+              : phase3Workflows
+                ? 'npm exec -- nx run api-e2e:phase3-install-integration'
+                : 'npm exec -- nx run api-e2e:all-docker-integration',
             environment: {
               nodeVersion: process.version,
               platform: process.platform,
@@ -564,6 +634,8 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
             durationMs: Date.now() - startedAt,
             images,
             sourceRevision,
+            harnessRevision,
+            harnessWorkingTree,
             imageBuildId,
             workingTree,
             imageMirrors: registry?.copies ?? [],

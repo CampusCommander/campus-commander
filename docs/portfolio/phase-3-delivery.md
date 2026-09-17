@@ -104,4 +104,34 @@ Absolute paths, traversal, empty components, symlinks, oversized files, and chan
 Regression tests cover the dependency path, unsafe paths, and changed bytes through both verification routes.
 Release and installer tests and deployment lint pass. Both review axes found no remaining issues.
 The corrected verifier also accepted all 1,284 files from the actual locked runtime installation.
-New hosted qualification remains required for the corrected source.
+[Run 35211855292](https://github.com/CampusCommander/campus-commander/actions/runs/35211855292) passed all Phase 3 candidate jobs at `a3601ef`.
+It published `phase-3-lab-a3601eff2a55` after extracted installation, repeated resume, and isolated restore passed.
+Independent hosted-installer verification passed both blob signatures, all three image signatures, and the extracted inventory.
+The retained [qualification record](../../deployment/evidence/CC-57-extracted-lab-qualification.json) binds source, images, manifest, and report hashes.
+Upgrade and fault qualification remain `not-run`.
+
+## Published installation workflow qualification
+
+`api-e2e:phase3-install-integration` installs the selected Phase 3 bundle through its delivered CLI.
+It uses separate administrator and ordinary-user sessions to exercise public application workflows.
+The checks cover customer confirmation, settings, school scopes, invitation redemption, explicit identity confirmation, grants, denial, revocation, and credential replacement.
+After restart, the checks read saved settings, school scopes, credential generation, disabled access, and access receipts again.
+The existing lifecycle checks still exercise repeated resume, stop, uninstall, fresh sign-in, and two API replicas.
+
+The synthetic provider binds the selected subject to each authorization code.
+Its local tests verify the token signature, nonce, PKCE, identity binding, and replay rejection.
+A fixed-message error boundary prevents invitation fragments and authorization codes from entering recipient-flow failure logs.
+The application uses synthetic Google and OIDC providers. These checks do not establish district privileges or human accessibility acceptance.
+
+A separate read-only workflow can qualify an existing signed laboratory release:
+
+```sh
+gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
+  -f phase3Release=phase-3-lab-<revision12>
+```
+
+The workflow verifies archive, manifest, and image signatures against the fixed Phase 3 publisher.
+It validates the immutable tag, source revision, image digests, and extracted inventory before executing the installer.
+The reports separate the delivered application revision from the qualification harness revision.
+This permits new checks against unchanged published bytes without asserting that later product changes inherited earlier evidence.
+The workflow produces `phase-3-installed-workflows` artifacts. Successful hosted execution remains required.

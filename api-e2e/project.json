@@ -44,6 +44,15 @@
         "deployment:build"
       ]
     },
+    "phase3-install-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/all-docker.test.mjs",
+        "env": { "CC_AUTH_PHASE3_WORKFLOWS": "1" }
+      }
+    },
     "phase3-auth-integration": {
       "executor": "nx:run-commands",
       "cache": false,
@@ -63,7 +72,7 @@
     "e2e": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test api-e2e/api.test.mjs api-e2e/evidence-security.test.mjs"
+        "command": "node --test api-e2e/api.test.mjs api-e2e/evidence-security.test.mjs api-e2e/provider-fixture.test.mjs"
       },
       "dependsOn": ["api:build"]
     },

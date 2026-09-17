@@ -18,6 +18,7 @@ export async function startProvider({
     use: 'sig',
   };
   const codes = new Map();
+  let subject = 'administrator';
   let heldAuthorization;
   const server = https
     .createServer(
@@ -50,6 +51,7 @@ export async function startProvider({
           assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
           const code = randomUUID();
           codes.set(code, {
+            subject,
             nonce: url.searchParams.get('nonce'),
             challenge: url.searchParams.get('code_challenge'),
           });
@@ -86,7 +88,7 @@ export async function startProvider({
           const input = `${encode({ alg: 'RS256', kid: jwk.kid })}.${encode({
             iss: issuer,
             aud: 'qualification',
-            sub: 'administrator',
+            sub: grant.subject,
             nonce: grant.nonce,
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(Date.now() / 1000) + 300,
@@ -106,6 +108,12 @@ export async function startProvider({
   const issuer = `https://host.docker.internal:${server.address().port}`;
   return {
     issuer,
+    setSubject(value) {
+      assert.ok(
+        typeof value === 'string' && value.length > 0 && value.length <= 255,
+      );
+      subject = value;
+    },
     holdNextAuthorization() {
       assert.equal(heldAuthorization, undefined);
       const held = {};

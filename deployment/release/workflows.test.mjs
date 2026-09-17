@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, rm, mkdir, writeFile, cp } from 'node:fs/promises';
 import { join, matchesGlob } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { parse } from 'yaml';
 import { applicationReports } from './application-evidence.mjs';
 import { bundleTargets } from './bundle-qualification.mjs';
+import { sha256 } from './integrity.mjs';
 
 const workflow = async (name) =>
   parse(await readFile(`.github/workflows/${name}.yml`, 'utf8'));
@@ -102,10 +103,16 @@ test('pull requests and focused authorization runs avoid duplicate qualification
   ])
     assert.equal(
       ci.jobs[name].if,
-      "inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)",
+      "inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)",
     );
-  assert.equal(ci.jobs['phase3-authorization'].if, 'inputs.phase3Only == true');
-  assert.equal(ci.jobs.main.if, 'inputs.phase3Only != true');
+  assert.equal(
+    ci.jobs['phase3-authorization'].if,
+    "inputs.phase3Release == '' && inputs.phase3Only == true",
+  );
+  assert.equal(
+    ci.jobs.main.if,
+    "inputs.phase3Only != true && inputs.phase3Release == ''",
+  );
   assert.equal(ci.on.workflow_dispatch.inputs.phase3Only.default, false);
   assert.equal(ci.concurrency['cancel-in-progress'], true);
   assert.ok(
@@ -122,7 +129,12 @@ test('workflow shell steps remain valid and image pulls have bounded retries', a
     assert.match(prepare.run, /for attempt in 1 2 3/);
     assert.match(prepare.run, /if \[ "\$attempt" -eq 3 \]; then exit 1; fi/);
   }
-  for (const name of ['ci', 'phase-2-candidate']) {
+  for (const name of [
+    'ci',
+    'phase-2-candidate',
+    'phase-3-candidate',
+    'phase-3-profile-check',
+  ]) {
     const parsed = await workflow(name);
     for (const job of Object.values(parsed.jobs)) {
       for (const step of job.steps ?? []) {
@@ -206,4 +218,127 @@ test('Phase 3 dispatch rejects full mode and gates publication on extracted qual
   assert.match(steps[publish].run, /--prerelease/);
   assert.match(steps[publish].run, /phase-3-lab-/);
   assert.doesNotMatch(steps[publish].run, /--clobber|--latest/);
+});
+
+test('published Phase 3 profile checks bind release identity before executing the installer', async (t) => {
+  const ci = await workflow('ci');
+  assert.equal(
+    ci.jobs['phase3-profile'].uses,
+    './.github/workflows/phase-3-profile-check.yml',
+  );
+  assert.equal(
+    ci.jobs['phase3-profile'].with.release,
+    '${{ inputs.phase3Release }}',
+  );
+  const profile = await workflow('phase-3-profile-check');
+  assert.deepEqual(profile.permissions, { contents: 'read', packages: 'read' });
+  const steps = profile.jobs.installation.steps;
+  const download = steps.find(
+    (step) =>
+      step.name === 'Download and verify the published laboratory bundle',
+  );
+  assert.equal((download.run.match(/cosign verify-blob/g) || []).length, 2);
+  assert.ok(
+    download.run.lastIndexOf('cosign verify-blob') <
+      download.run.indexOf('tar --extract'),
+  );
+  assert.ok(
+    steps.indexOf(download) <
+      steps.findIndex(
+        (step) => step.name === 'Prepare published image references',
+      ),
+  );
+  assert.equal(
+    steps.find((step) => step.name === 'Qualify installed Phase 3 workflows')
+      .run,
+    'npm exec nx run api-e2e:phase3-install-integration',
+  );
+  const script = download.run.match(
+    /node --input-type=module <<'NODE'\n([\s\S]*?)\nNODE/,
+  )[1];
+  const root = await mkdtemp(join(tmpdir(), 'cc-profile-workflow-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const dir of [
+    'published-bundle',
+    'extracted-candidate',
+    'image-evidence',
+    'deployment/release',
+  ])
+    await mkdir(join(root, dir), { recursive: true });
+  for (const file of ['qualification.mjs', 'integrity.mjs'])
+    await cp(
+      `deployment/release/${file}`,
+      join(root, 'deployment/release', file),
+    );
+  const cli = 'fixture installer';
+  await writeFile(join(root, 'extracted-candidate/cli.mjs'), cli);
+  const manifest = {
+    schemaVersion: 1,
+    phase: 3,
+    sourceRevision: 'a'.repeat(40),
+    validationScope: 'lab',
+    qualification: 'candidate-only',
+    architectures: ['linux/amd64'],
+    images: Object.fromEntries(
+      [
+        ['frontend', 'frontend'],
+        ['api', 'api'],
+        ['workers', 'worker'],
+      ].map(([key, service]) => [
+        key,
+        `ghcr.io/campuscommander/campus-commander-${service}@sha256:${'b'.repeat(64)}`,
+      ]),
+    ),
+    files: [{ path: 'cli.mjs', sizeBytes: cli.length, sha256: sha256(cli) }],
+  };
+  const run = async (
+    value = manifest,
+    release = 'phase-3-lab-' + manifest.sourceRevision.slice(0, 12),
+  ) => {
+    for (const dir of ['published-bundle', 'extracted-candidate'])
+      await writeFile(
+        join(root, dir, 'release-manifest.json'),
+        JSON.stringify(value),
+      );
+    return execFileSync(
+      process.execPath,
+      ['--input-type=module', '-e', script],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          RELEASE_TAG: release,
+          GITHUB_ENV: join(root, 'env'),
+        },
+        stdio: 'pipe',
+      },
+    );
+  };
+  await run();
+  assert.equal(
+    await readFile(join(root, 'image-evidence/api.reference'), 'utf8'),
+    manifest.images.api + '\n',
+  );
+  assert.equal(
+    await readFile(join(root, 'env'), 'utf8'),
+    'CC_AUTH_INSTALLER_ROOT=' + root + '/extracted-candidate\n',
+  );
+  for (const changed of [
+    { ...manifest, phase: 2 },
+    { ...manifest, validationScope: 'full' },
+    {
+      ...manifest,
+      images: { ...manifest.images, api: manifest.images.workers },
+    },
+    {
+      ...manifest,
+      images: {
+        ...manifest.images,
+        api: manifest.images.api.replace('ghcr.io', 'ghcrXio'),
+      },
+    },
+    { ...manifest, files: [{ ...manifest.files[0], sha256: 'c'.repeat(64) }] },
+  ])
+    await assert.rejects(run(changed));
+  await assert.rejects(run(manifest, 'phase-3-lab-' + 'c'.repeat(12)));
 });

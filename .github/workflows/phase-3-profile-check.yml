@@ -1,0 +1,92 @@
+name: Phase 3 published profile qualification
+on:
+  workflow_call:
+    inputs:
+      release:
+        type: string
+        required: true
+permissions:
+  contents: read
+  packages: read
+env:
+  CC_SIGNING_IDENTITY: https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery
+jobs:
+  installation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1
+        with:
+          version: v29.7.2
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - uses: docker/setup-compose-action@4eb059ff7f16592f9c84d5ca339c53cb7c5064e2
+        with:
+          version: v5.5.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm exec nx run deployment:build
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.1.3
+      - name: Download and verify the published laboratory bundle
+        env:
+          RELEASE_TAG: ${{ inputs.release }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |-
+          [[ "$RELEASE_TAG" =~ ^phase-3-lab-[a-f0-9]{12}$ ]] || { echo 'Select an immutable Phase 3 laboratory release.' >&2; exit 1; }
+          mkdir published-bundle image-evidence extracted-candidate
+          gh release download "$RELEASE_TAG" --dir published-bundle --pattern 'phase-3-candidate*' --pattern 'release-manifest*'
+          cosign verify-blob --bundle published-bundle/phase-3-candidate.sigstore.json --certificate-identity="$CC_SIGNING_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com published-bundle/phase-3-candidate.tar.gz
+          cosign verify-blob --bundle published-bundle/release-manifest.sigstore.json --certificate-identity="$CC_SIGNING_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com published-bundle/release-manifest.json
+          tar --extract --gzip --file published-bundle/phase-3-candidate.tar.gz --directory extracted-candidate --no-same-owner --no-same-permissions
+          cmp published-bundle/release-manifest.json extracted-candidate/release-manifest.json
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFile,writeFile,appendFile} from 'node:fs/promises';
+          import {loadQualificationBundle} from './deployment/release/qualification.mjs';
+          const manifest=JSON.parse(await readFile('published-bundle/release-manifest.json'));
+          assert.equal(manifest.phase,3);
+          assert.equal(manifest.validationScope,'lab');
+          assert.equal(manifest.qualification,'candidate-only');
+          assert.match(manifest.sourceRevision,/^[a-f0-9]{40}$/);
+          assert.equal(process.env.RELEASE_TAG,'phase-3-lab-'+manifest.sourceRevision.slice(0,12));
+          await loadQualificationBundle('extracted-candidate',manifest);
+          for(const [service,key] of [['api','api'],['frontend','frontend'],['worker','workers']]){
+            const reference=manifest.images[key];
+            assert.match(reference,new RegExp('^ghcr\\.io/campuscommander/campus-commander-'+service+'@sha256:[a-f0-9]{64}$'));
+            await writeFile('image-evidence/'+service+'.reference',reference+'\n');
+          }
+          await appendFile(process.env.GITHUB_ENV,'CC_AUTH_INSTALLER_ROOT='+process.cwd()+'/extracted-candidate\n');
+          NODE
+      - name: Prepare published image references
+        run: |
+          for service in api frontend worker; do
+            reference="$(cat "image-evidence/${service}.reference")"
+            cosign verify "$reference" --certificate-identity="$CC_SIGNING_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+            for attempt in 1 2 3; do
+              if docker pull "$reference"; then break; fi
+              if [ "$attempt" -eq 3 ]; then exit 1; fi
+              sleep "$((attempt * 2))"
+            done
+            printf 'CC_AUTH_%s_IMAGE=%s\n' "${service^^}" "$reference" >> "$GITHUB_ENV"
+          done
+      - name: Qualify installed Phase 3 workflows
+        run: npm exec nx run api-e2e:phase3-install-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-3-installed-workflows
+          path: dist/phase-3-installation/
+          if-no-files-found: warn
