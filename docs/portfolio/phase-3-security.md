@@ -1,7 +1,7 @@
 # Phase 3 security qualification
 
 Owner: CC-55. Status: implementation and qualification in progress.
-Baseline: `9052ba1`, the CC-52 integration branch. This record does not establish release acceptance.
+Baseline: `3e64ce5`, the CC-52 integration branch. This record does not establish release acceptance.
 
 ## Boundary and demonstration
 
@@ -14,7 +14,7 @@ Run `npm exec -- nx run api-e2e:phase3-auth-integration` for source qualificatio
 The full CI workflow builds images and repeats that target with `CC_AUTH_PACKAGED_IMAGES=true`.
 Run `npm exec -- nx run deployment:postgres-integration` for real database role, concurrency, and audit-failure checks.
 Local static checks use `npm exec -- nx run api-e2e:lint` and `npm exec -- nx format:check --base=9052ba1`.
-Source and packaged qualification for this increment remain not run.
+Source qualification passed at `e036c9e`. Packaged qualification remains pending.
 
 ## Shared enforcement
 
@@ -135,7 +135,7 @@ The final evidence inventory must bind every result to the selected revision and
 Remaining checks:
 
 - Reconcile all public routes against this inventory after each controller change.
-- Execute source and packaged route checks and inspect the resulting report.
+- Complete packaged route checks and inspect the resulting report.
 - Verify audit rollback for each mutation branch, including candidate staging and reference publication.
 - Reconcile cross-customer, cross-school, guessed-identity, count, list, detail, and audit denial evidence.
 - Scan final browser, application, provider, database, and release evidence for seeded secret values and sensitive provider fields.
@@ -144,3 +144,22 @@ Remaining checks:
 CC-54 retains unexplained browser sign-in, credential staging, and invitation navigation failures.
 Those failures remain unresolved even when another run passes. Human accessibility evidence remains a separate acceptance gate.
 The approved Super Admin fixture does not establish minimum Google privilege, identity replacement, or Education-specific qualification.
+
+## Retained qualification
+
+[Source qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35177978798) passed at `e036c9e`.
+The downloaded report records 100 requests across 32 routes.
+It includes 32 missing-session denials and 17 probes for each browser check and its valid-browser control.
+The [retained report](../../deployment/evidence/CC-55-source-route-security.json) records the exact checks, environment, revision, and timing.
+School definition recovery and district and school grant assignment also passed through the real API and PostgreSQL.
+
+Revision `0a89f67` adds candidate audit-failure injection for staging, verification success, verification failure, and expiry.
+Each probe requires the exact injected constraint error and unchanged candidate state hashes.
+Both review axes report no remaining findings. Five local PostgreSQL contract tests pass.
+The PostgreSQL job passed in [full run 35178237363](https://github.com/CampusCommander/campus-commander/actions/runs/35178237363).
+The packaged application job remains active in that run. The other six jobs passed.
+
+The earlier CC-52 packaged run `35177847162` failed before school checks during credential lifecycle navigation.
+Its credential replacement button did not appear. The cause remains unresolved in CC-54.
+The diagnostic fixture now captures that navigation without retrying it.
+It records bounded route and error categories, HTTP status, and document state counts without page text or response bodies.
