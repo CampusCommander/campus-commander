@@ -23,13 +23,16 @@ Do not enter secret values in shell arguments or commit them to Git.
 
 ## Install
 
-From the checked-out delivery branch, run:
+Download the installer from the trusted delivery branch:
 
 ```sh
-sh install.sh --profile all-docker --qualification --release phase-3-lab-REVISION12
+curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/codex/cc-60-review-delivery/install.sh \
+  -o campus-commander-install.sh
+sh campus-commander-install.sh --profile all-docker --qualification --release phase-3-lab-REVISION12
 ```
 
 Replace `REVISION12` with the first twelve source revision characters from the published review tag.
+No source checkout or application compilation is required.
 The installer verifies the archive, manifest, image signatures, and file inventory before application startup.
 Follow the guided prerequisite and configuration steps. Select a new installation directory and a disposable `cc-` project name.
 The release determines application features. No development-phase selection is required.
