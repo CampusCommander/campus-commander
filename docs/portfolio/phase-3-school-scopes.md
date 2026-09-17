@@ -292,4 +292,9 @@ Both review axes have no remaining findings.
 The full scoped-grant run at `9052ba1` failed because the older platform-access fixture matched two status regions.
 Revision `3e64ce5` gives the access status an accessible name and scopes both result assertions.
 Five scoped-grant browser cases and local unit, lint, and build checks pass after this correction.
-[The next full run](https://github.com/CampusCommander/campus-commander/actions/runs/35177847162) is active at `3e64ce5`.
+[The next full run](https://github.com/CampusCommander/campus-commander/actions/runs/35177847162) failed before school checks at `3e64ce5`.
+The credential replacement button did not appear after navigation. The cause remains unresolved. Six other jobs passed.
+
+[Source browser qualification](https://github.com/CampusCommander/campus-commander/actions/runs/35177978798) passed at `e036c9e` on the downstream security branch.
+That revision includes the school workflow and status correction. Downloaded reports confirm definition recovery and scoped browser grant assignment.
+Packaged school browser qualification remains pending. CC-54 retains the credential navigation failure.
