@@ -30,7 +30,7 @@ gh workflow run ci.yml --ref codex/cc-58-phase3-hybrid \
   -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Profile=hybrid
 ```
 
-Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, service faults, and certificate faults.
+Hybrid dispatch supports installation, Phase 2 upgrade, isolated restore, service faults, certificate faults, and capacity faults.
 Other fault kinds, lifecycle, and guided-update modes require their own Phase 3 fixtures before dispatch can accept them.
 The existing Phase 2 targets retain their previous modes.
 
@@ -407,3 +407,16 @@ Restored file paths and hashes must match the complete source tree before target
 The snapshot verifier rejects empty source and target trees. Its regression reproduced the previous false acceptance.
 Local API tests, hybrid fixtures, lint, formatting, and both reviews pass.
 This correction requires another hosted restore run. The initial passed report remains unchanged.
+
+## Capacity fault increment
+
+The `api-e2e:phase3-hybrid-capacity-fault-integration` target uses an owned 16 MiB tmpfs artifact volume across three Docker daemons.
+The fixture verifies the volume label, options, size, and filesystem type before writing.
+One worker fills the capped volume until ENOSPC. Both API replicas and both workers must observe zero available space.
+An authenticated artifact diagnostic must fail with a correlation identifier.
+Artifact metadata and file names must remain unchanged. The shared durable probe also verifies policy, credentials, grants, receipts, and preserved application state.
+
+Cleanup removes the fixture filler before recovery checks.
+Diagnostics, saved workflow reads, both API replicas, durable checks, and restored capacity must pass within 180 seconds.
+Separate reports retain the selected mode, identities, fault observations, failure stage, and duration scope.
+This increment requires hosted qualification. Temporary storage does not establish district capacity or persistent storage acceptance.

@@ -48,7 +48,25 @@ const phase3Restore = process.env.CC_AUTH_PHASE3_HYBRID_RESTORE === '1';
 const phase3Faults = process.env.CC_AUTH_PHASE3_HYBRID_FAULTS === '1';
 const phase3FaultKind =
   process.env.CC_AUTH_PHASE3_HYBRID_FAULT_KIND ?? 'services';
-assert.ok(['services', 'certificates'].includes(phase3FaultKind));
+const phase3FaultModes = {
+  services: {
+    directory: 'dist/phase-3-hybrid-faults',
+    target: 'phase3-hybrid-fault-integration',
+    report: 'hybrid-faults.json',
+  },
+  certificates: {
+    directory: 'dist/phase-3-hybrid-certificate-faults',
+    target: 'phase3-hybrid-certificate-fault-integration',
+    report: 'hybrid-certificates.json',
+  },
+  capacity: {
+    directory: 'dist/phase-3-hybrid-capacity-faults',
+    target: 'phase3-hybrid-capacity-fault-integration',
+    report: 'hybrid-capacity.json',
+  },
+};
+assert.ok(Object.hasOwn(phase3FaultModes, phase3FaultKind));
+const phase3FaultMode = phase3FaultModes[phase3FaultKind];
 assert.ok(
   [phase3Upgrade, phase3Restore, phase3Faults].filter(Boolean).length <= 1,
 );
@@ -61,9 +79,7 @@ const phase = phase3 ? 3 : 2;
 const evidenceDirectory = phase3Restore
   ? 'dist/phase-3-hybrid-restore'
   : phase3Faults
-    ? phase3FaultKind === 'certificates'
-      ? 'dist/phase-3-hybrid-certificate-faults'
-      : 'dist/phase-3-hybrid-faults'
+    ? phase3FaultMode.directory
     : phase3Upgrade
       ? 'dist/phase-3-hybrid-upgrade'
       : phase3
@@ -129,9 +145,7 @@ test(
           command: phase3Restore
             ? 'npm exec -- nx run api-e2e:phase3-hybrid-restore-integration'
             : phase3Faults
-              ? phase3FaultKind === 'certificates'
-                ? 'npm exec -- nx run api-e2e:phase3-hybrid-certificate-fault-integration'
-                : 'npm exec -- nx run api-e2e:phase3-hybrid-fault-integration'
+              ? `npm exec -- nx run api-e2e:${phase3FaultMode.target}`
               : phase3Upgrade
                 ? 'npm exec -- nx run api-e2e:phase3-hybrid-upgrade-integration'
                 : 'npm exec -- nx run api-e2e:phase3-hybrid-install-integration',
@@ -209,7 +223,9 @@ test(
         publicPort,
         baselineRoot: phase2Baseline?.root,
         nativeOperations: phase3Restore,
-        boundedArtifacts: process.env.CC_AUTH_HYBRID_CAPACITY === '1',
+        boundedArtifacts:
+          (phase3Faults && phase3FaultKind === 'capacity') ||
+          process.env.CC_AUTH_HYBRID_CAPACITY === '1',
       });
       stage = 'image distribution';
       await hosts.loadImages(
@@ -993,9 +1009,13 @@ process.exit(result.status??1);
               context,
             });
           }
-          if (process.env.CC_AUTH_HYBRID_CAPACITY === '1') {
+          if (
+            (phase3Faults && phase3FaultKind === 'capacity') ||
+            process.env.CC_AUTH_HYBRID_CAPACITY === '1'
+          ) {
             stage = 'authenticated shared artifact capacity';
             capacity = await qualifyHybridCapacity({
+              ...phase3FaultInputs,
               hosts,
               services,
               compose,
@@ -1213,12 +1233,7 @@ process.exit(result.status??1);
       );
     if (phase3Faults)
       await writeFile(
-        join(
-          evidenceDirectory,
-          phase3FaultKind === 'certificates'
-            ? 'hybrid-certificates.json'
-            : 'hybrid-faults.json',
-        ),
+        join(evidenceDirectory, phase3FaultMode.report),
         JSON.stringify(result, null, 2),
       );
     if (phase3 && !phase3Upgrade && !phase3Restore && !phase3Faults) {

@@ -432,6 +432,14 @@
         "command": "CC_AUTH_PHASE3_HYBRID_UPGRADE=1 node --test api-e2e/hybrid-cli.test.mjs"
       }
     },
+    "phase3-hybrid-capacity-fault-integration": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["deployment:build"],
+      "cache": false,
+      "options": {
+        "command": "CC_AUTH_PHASE3_HYBRID_FAULTS=1 CC_AUTH_PHASE3_HYBRID_FAULT_KIND=capacity node --test api-e2e/hybrid-cli.test.mjs"
+      }
+    },
     "phase3-hybrid-certificate-fault-integration": {
       "executor": "nx:run-commands",
       "dependsOn": ["deployment:build"],
