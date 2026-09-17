@@ -55,7 +55,8 @@ The PostgreSQL fixture exercises key selection, provider failures, gate enforcem
 The provider fixture does not establish live grant revocation or minimum-role behavior.
 [Run 35185727466](https://github.com/CampusCommander/campus-commander/actions/runs/35185727466) passed PostgreSQL, operations, browser, storage, Redis, and main checks at `f0837f1`.
 Its application job failed before runtime tests because the image context excluded the new Google build script.
-The image context now includes that script and its entry module. Packaged compatibility requires another full run.
+The image context correction includes that script and its entry module.
+[Run 35186048400](https://github.com/CampusCommander/campus-commander/actions/runs/35186048400) passed all seven jobs at `ea5a16a`, including packaged application and all-Docker compatibility.
 Both review axes found no actionable issues in `fa1993f...f0837f1`.
 
 ## Phase 3 state fixture
@@ -72,7 +73,9 @@ The recovered credential key then opens the restore gate through the revalidatio
 The fixture writes `dist/phase-3-recovery/operations.json`. CI retains that report with counts, hashes, timings, backup age, and source revision.
 Source and target databases share one PostgreSQL container. Separate storage trees share one Docker host.
 Google verification uses a synthetic verifier. The fixture does not establish isolated networks, fresh Redis, browser sessions, or the revalidation CLI.
-Hosted qualification for this state fixture remains pending.
+Review identified missing initial platform authority and missing command and image fields in the evidence report.
+Revision `e60c688` confirms platform authority, passes the recorded permission version, and records the required evidence identity.
+Both review axes found no remaining issues. Hosted qualification for this state fixture remains pending.
 
 ## Remaining recovery work
 
