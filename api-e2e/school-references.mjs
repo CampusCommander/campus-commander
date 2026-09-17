@@ -97,7 +97,8 @@ export async function qualifySchoolReferencesApi({
       [actor],
     );
     const denied = await revoked;
-    assert.equal(denied.status(), 403, await denied.text());
+    assert.equal(denied.status(), 401, await denied.text());
+    assert.equal((await denied.json()).code, 'access-changed');
     const retained = (
       await migrator.query('SELECT observation FROM cc.school_reference_state')
     ).rows[0].observation;
