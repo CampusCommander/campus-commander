@@ -108,7 +108,9 @@ Both review axes found no actionable issues in `60857a5...5b741c8`.
 That run passed all eight jobs, including packaged applications and all-Docker compatibility.
 [Run 35188533234](https://github.com/CampusCommander/campus-commander/actions/runs/35188533234) passed the receipt-write failure check at `c7932e2`.
 The [receipt recovery report](../../deployment/evidence/CC-56-receipt-write-recovery.json) records the failed write, preserved database verification, and reconstructed receipt.
-Its full application job remains active.
+Its full application job failed during browser evidence registration in the access-revocation check.
+The failure records closed browser targets while reading response headers and bodies. The failed run remains available for diagnosis.
+The isolated restore step now runs after successful image builds even when an earlier application check fails.
 The retained `06685a9` report predates this CLI increment and remains library-level evidence.
 
 ## Isolated application fixture

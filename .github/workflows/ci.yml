@@ -125,6 +125,7 @@ jobs:
       - run: npm audit --omit=dev
       - run: npm exec -- playwright install --with-deps chromium
       - run: npm exec nx run-many -- -t image -p api,frontend,worker --parallel=2
+        id: application-images
         env:
           NX_NO_CLOUD: 'true'
           CC_IMAGE_VERSION: phase-2-ci
@@ -139,6 +140,7 @@ jobs:
         env:
           NX_NO_CLOUD: 'true'
       - run: npm exec nx run api-e2e:phase3-restore-integration
+        if: ${{ !cancelled() && steps.application-images.outcome == 'success' }}
         env:
           NX_NO_CLOUD: 'true'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
