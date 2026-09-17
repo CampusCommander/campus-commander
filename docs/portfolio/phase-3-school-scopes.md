@@ -1,7 +1,8 @@
 # Phase 3 school scopes
 
 Owner: [CC-52](https://easton-consulting.atlassian.net/browse/CC-52).
-Status: shared contracts and scope resolver implemented. The optional provider reader is implemented. Persistence, API, browser, and complete qualification remain pending.
+Status: reference contracts, resolver, provider, persistence, and reference APIs are implemented.
+School definitions, grants, browser controls, and complete qualification remain pending.
 This slice follows CC-48 and CC-51 through the CC-49 stack.
 
 ## Outcome and language
@@ -122,4 +123,42 @@ Four new provider cases cover isolated scopes, extra-scope rejection, classified
 Standards and specification reviews report no remaining findings in this increment.
 The [direct provider proof](../../deployment/evidence/CC-52-provider-live-proof.json) passed against the approved customer at `c227d90`.
 It returned three validated OU references, including the root, with the exact read-only scope.
-Database credential-generation checks before publication remain pending.
+The reference persistence increment now checks current authority and credential generation before publication.
+
+## Reference persistence and API
+
+Migration 012 stores one complete reference observation and separate refresh failure evidence for the confirmed customer.
+Refresh uses a bounded lease and a shared rate limit across replicas.
+The database validates the complete hierarchy and assigns the publication revision and observation time.
+Failed refresh retains the prior observation but denies freshness.
+Audit failure rolls back publication and preserves the pending lease.
+Retired credential generations and changed actor permission versions cannot publish results.
+
+The PostgreSQL integration job passed at `3d90adc` in [run 35171919312](https://github.com/CampusCommander/campus-commander/actions/runs/35171919312).
+The fixture uses a real credential disconnect for retired-generation checks.
+An earlier fixture incremented the connection generation without a matching credential and failed its foreign-key constraint.
+Revision `8902fc2` corrected that fixture. Both review axes have no remaining persistence findings.
+
+`GET /api/schools/references` requires current school-management authority and returns no credential material.
+`POST /api/schools/references/refresh` also requires the current customer, credential generation, browser origin, and CSRF token.
+Refresh rechecks the session after the Google read.
+The public edge exposes these exact methods only in Phase 3 and limits refresh requests to 4 KiB.
+Reference API review found missing public-edge routes. Revision `304738c` added those routes and regression checks.
+Contract tests, API lint and build, and bootstrap tests pass. Both review axes report no remaining findings.
+Hosted source and packaged API qualification remain pending for the corrected edge revision.
+
+The earlier full run at `84d8d39` also failed during packaged login with `ERR_NETWORK_CHANGED`.
+That browser failure preceded the school checks. Its cause remains unresolved.
+The next runs retain the existing bounded credential-staging diagnostics from CC-49.
+
+## Remaining transaction design
+
+School previews must retain the exact rules, approved IDs, school revision, reference revision, actor version, and affected principal versions.
+Confirmation must compare that retained state inside the shared authority transaction lock.
+The receipt must permit recovery after an interrupted response without applying the change twice.
+School changes must preserve the approved set until a new preview and confirmation explicitly replace it.
+
+Separate school existence checks from freshness checks for grant changes.
+Require fresh verified scope only for new school grants.
+Permit removal of existing school grants when reference refresh fails or expires.
+Otherwise, a failed Google read would prevent local access revocation.
