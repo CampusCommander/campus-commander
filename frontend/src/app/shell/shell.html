@@ -67,6 +67,16 @@
       <mat-icon fontSet="material-symbols-outlined">monitor_heart</mat-icon
       ><span class="nav-label">Diagnostics</span>
     </a>
+    } @if (schoolsReadable()) {
+    <a
+      routerLink="/schools"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Schools"
+    >
+      <mat-icon fontSet="material-symbols-outlined">school</mat-icon
+      ><span class="nav-label">Schools</span>
+    </a>
     } @if (auth.can('platform-users:read', {kind: 'platform'})) {
     <a
       routerLink="/platform-users"
@@ -90,7 +100,8 @@
   </nav>
   <header>
     <span class="header-title"
-      >{{ router.url.startsWith('/customer-settings') ? 'Customer settings' :
+      >{{ router.url.startsWith('/schools') ? 'Schools' :
+      router.url.startsWith('/customer-settings') ? 'Customer settings' :
       router.url.startsWith('/google-connection') ? 'Google customer connection'
       : router.url.startsWith('/platform-users') ? 'Platform access' :
       router.url.startsWith('/invitations') ? 'Platform invitations' :

@@ -36,6 +36,7 @@ const phase3Pages = new Set([
   '/platform-users',
   '/google-connection',
   '/customer-settings',
+  '/schools',
 ]);
 const invitationReads = new Set([
   '/api/auth/invitations',

@@ -118,6 +118,7 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', `/api/customer/receipts/${id}`, 'api'],
       ['POST', '/api/customer/settings', 'api'],
       ['GET', '/customer-settings', 'frontend'],
+      ['GET', '/schools', 'frontend'],
       ['GET', '/api/google-connection', 'api'],
       ['GET', '/api/google-connection/health', 'api'],
       ['GET', '/api/google-connection/credentials', 'api'],

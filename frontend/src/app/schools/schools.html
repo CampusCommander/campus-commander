@@ -1,0 +1,309 @@
+<div class="schools-content">
+  <h1>Schools</h1>
+  <p>
+    Define school scopes and inspect the schools permitted by your application
+    access.
+  </p>
+  @if (!store.readable()) {
+  <p role="status">
+    Recheck access to read saved schools. Your school draft remains in this tab.
+  </p>
+  } @if (store.manager()) {
+  <section class="card" aria-labelledby="school-references-title">
+    <h2 id="school-references-title">Organizational unit references</h2>
+    <p>
+      School scopes use an optional read-only Google permission. This permission
+      does not change the required customer connection scopes.
+    </p>
+    <details>
+      <summary>Optional Google authorization</summary>
+      <p>
+        Add this scope to the service account client in your Google domain-wide
+        delegation configuration.
+      </p>
+      <p class="identifier">{{ optionalScope }}</p>
+      <div class="actions">
+        <button mat-stroked-button type="button" (click)="copyScope()">
+          Copy OU scope
+        </button>
+        <a
+          href="https://admin.google.com/ac/owl/domainwidedelegation"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Open Google domain-wide delegation</a
+        >
+      </div>
+      <p role="status">{{ copied() }}</p>
+      <p>
+        The delegated administrator also needs permission to read organizational
+        units. Refresh references after Google authorizes access.
+      </p>
+    </details>
+    @if (store.loading().references) {
+    <div aria-label="Loading organizational unit references">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+    }
+    <div role="status" aria-live="polite">
+      @if (store.errors().references) {
+      <p class="error">{{ store.errors().references }}</p>
+      } @if (store.references(); as references) {
+      <p>
+        {{ store.fresh() ? 'References verified' : 'References unavailable or
+        stale' }}. Customer
+        <span class="identifier">{{ references.customerId }}</span>.
+      </p>
+      @if (references.observation; as observation) {
+      <p>
+        {{ observation.units.length }} organizational units. Observed {{
+        observation.observedAt | date:'medium' }}.
+      </p>
+      } @if (references.failure) {
+      <p class="error">{{ failureCopy() }}</p>
+      } @if (references.checking) {
+      <p>
+        A reference refresh is active. Recheck reference status after it
+        finishes.
+      </p>
+      } @if (references.retryAt) {
+      <p>
+        Next refresh permitted after {{ references.retryAt | date:'mediumTime'
+        }}.
+      </p>
+      } } @else if (store.observedAt().references) {
+      <p>
+        Confirm an active Google customer connection before defining school
+        scopes.
+      </p>
+      }
+    </div>
+    <div class="actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="store.readReferences()"
+        [disabled]="store.loading().references"
+      >
+        Recheck reference status
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="store.readReferences(true)"
+        [disabled]="store.loading().references || !store.references() || !!store.references()?.checking || (!!store.references()?.retryAt && store.now() < referenceRetryTime())"
+      >
+        Refresh references
+      </button>
+      <a routerLink="/google-connection">Google connection</a>
+    </div>
+  </section>
+  }
+  <section class="card" aria-labelledby="school-list-title">
+    <h2 id="school-list-title">Saved school definitions</h2>
+    <div class="actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="store.refresh()"
+        [disabled]="store.loading().list || !store.readable()"
+      >
+        Refresh schools
+      </button>
+      @if (store.manager()) {
+      <button
+        mat-flat-button
+        type="button"
+        (click)="editor.begin()"
+        [disabled]="!!editor.draft() || !store.references()"
+      >
+        Create school
+      </button>
+      }
+    </div>
+    @if (store.loading().list) {
+    <div aria-label="Loading schools">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+    } @if (store.errors().list) {
+    <p class="error" role="status">
+      {{ store.errors().list }} Previously loaded data remains below.
+    </p>
+    } @if (store.page(); as page) {
+    <p>
+      {{ page.total }} permitted school definitions. Read {{
+      store.observedAt().list | date:'medium' }}.
+    </p>
+    <ul class="school-list">
+      @for (school of page.items; track school.id) {
+      <li>
+        <button
+          mat-button
+          type="button"
+          (click)="inspect(school.id)"
+          [disabled]="store.loading().detail"
+        >
+          {{ school.name }}
+        </button>
+        — revision {{ school.revision }}
+      </li>
+      } @empty {
+      <li>No school definitions are available within your access.</li>
+      }
+    </ul>
+    <div class="actions">
+      <button
+        mat-button
+        type="button"
+        (click)="store.refresh(page.offset - page.limit)"
+        [disabled]="page.offset === 0 || store.loading().list"
+      >
+        Previous schools
+      </button>
+      <button
+        mat-button
+        type="button"
+        (click)="store.refresh(page.offset + page.limit)"
+        [disabled]="page.offset + page.limit >= page.total || store.loading().list"
+      >
+        Next schools
+      </button>
+    </div>
+    }
+  </section>
+  @if (store.loading().detail) {
+  <div aria-label="Loading school definition">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+  </div>
+  } @if (store.errors().detail) {
+  <p class="error" role="status">{{ store.errors().detail }}</p>
+  } @if (store.detail(); as school) {
+  <section class="card" aria-labelledby="school-detail-title">
+    <h2 id="school-detail-title" tabindex="-1">{{ school.name }}</h2>
+    <dl>
+      <dt>School identifier</dt>
+      <dd class="identifier">{{ school.id }}</dd>
+      <dt>Customer</dt>
+      <dd class="identifier">{{ school.customerId }}</dd>
+      <dt>Saved revision</dt>
+      <dd>{{ school.revision }}</dd>
+      <dt>Saved at</dt>
+      <dd>{{ school.updatedAt | date:'medium' }}</dd>
+      <dt>Approved organizational units</dt>
+      <dd>{{ school.approvedIds.length }}</dd>
+      <dt>Server-reported effective scope</dt>
+      <dd>
+        {{ school.effectiveIds === null ? 'Unavailable. The saved definition
+        remains intact.' : school.effectiveIds.length + ' organizational units'
+        }}
+      </dd>
+    </dl>
+    <p>
+      Scope reported {{ store.observedAt().detail | date:'medium' }}. The server
+      rechecks access for every request.
+    </p>
+    <details>
+      <summary>Saved inclusion and exclusion rules</summary>
+      <h3>Include</h3>
+      <ul>
+        @for (rule of school.rules.include; track rule.id) {
+        <li>
+          <span class="identifier">{{ rule.id }}</span> — {{ rule.descendants ?
+          'with descendants' : 'this unit only' }}
+        </li>
+        }
+      </ul>
+      <h3>Exclude</h3>
+      <ul>
+        @for (rule of school.rules.exclude; track rule.id) {
+        <li>
+          <span class="identifier">{{ rule.id }}</span> — {{ rule.descendants ?
+          'with descendants' : 'this unit only' }}
+        </li>
+        } @empty {
+        <li>No exclusions.</li>
+        }
+      </ul>
+    </details>
+    <details>
+      <summary>Approved organizational unit identities</summary>
+      <ul>
+        @for (id of school.approvedIds; track id) {
+        <li class="identifier">{{ id }}</li>
+        }
+      </ul>
+    </details>
+    <div class="actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="inspect(school.id)"
+        [disabled]="store.loading().detail"
+      >
+        Refresh definition
+      </button>
+      @if (store.manager()) {
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="editor.begin(school)"
+        [disabled]="!!editor.draft() || !!store.errors().detail"
+      >
+        Edit school
+      </button>
+      } @if (auditAllowed()) {
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="store.readAudit()"
+        [disabled]="store.loading().audit"
+      >
+        Read school audit
+      </button>
+      }
+    </div>
+    @if (store.loading().audit) {
+    <div aria-label="Loading school audit"><div class="skeleton"></div></div>
+    } @if (store.errors().audit) {
+    <p class="error" role="status">{{ store.errors().audit }}</p>
+    } @if (store.audit(); as audit) {
+    <h3>School audit</h3>
+    <p>
+      {{ audit.total }} permitted events. Read {{ store.observedAt().audit |
+      date:'medium' }}.
+    </p>
+    <ul>
+      @for (event of audit.items; track event.id) {
+      <li>
+        {{ event.event }} — {{ event.occurredAt | date:'medium' }}@if
+        (event.detail) { . {{ event.detail }} }<br />Correlation:
+        <span class="identifier">{{ event.correlationId }}</span>
+      </li>
+      } @empty {
+      <li>No school audit events.</li>
+      }
+    </ul>
+    <div class="actions">
+      <button
+        mat-button
+        type="button"
+        (click)="store.readAudit(audit.offset - 20)"
+        [disabled]="audit.offset === 0 || store.loading().audit"
+      >
+        Previous events</button
+      ><button
+        mat-button
+        type="button"
+        (click)="store.readAudit(audit.offset + 20)"
+        [disabled]="audit.offset + 20 >= audit.total || store.loading().audit"
+      >
+        Next events
+      </button>
+    </div>
+    }
+  </section>
+  }
+  <app-school-editor #editor (saved)="saved($event)" />
+</div>

@@ -32,8 +32,8 @@ export class GoogleHealthStore implements OnDestroy {
   readonly message = signal('');
   readonly recovery = GOOGLE_HEALTH_RECOVERY;
   readonly capabilities = GOOGLE_CAPABILITIES.filter(
-    (item) => item.enabled && item.qualified,
-  );
+    (item) => item.requiredForConnection,
+  ).filter((item) => item.enabled && item.qualified);
   private readonly elapsed = signal(performance.now());
   private receivedAt = performance.now();
   private readonly timer = setInterval(

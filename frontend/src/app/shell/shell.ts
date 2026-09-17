@@ -14,6 +14,7 @@ import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
 import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
+import { schoolsReadable } from '../schools/schools.store';
 
 @Component({
   selector: 'app-shell',
@@ -30,6 +31,7 @@ import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
 })
 export class Shell implements OnInit {
   protected readonly auth = inject(AuthStore);
+  protected readonly schoolsReadable = () => schoolsReadable(this.auth);
   protected readonly customer = inject(CustomerStore);
   protected readonly connection = inject(ConnectionStore);
   protected readonly router = inject(Router);

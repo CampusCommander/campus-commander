@@ -1,0 +1,269 @@
+@if (draft(); as draft) {
+<section class="card" aria-labelledby="school-editor-title">
+  <h2 id="school-editor-title">
+    {{ draft.expectedRevision ? 'Edit school definition' : 'Create school
+    definition' }}
+  </h2>
+  <p>
+    This definition controls application access. It does not change
+    organizational units in Google.
+  </p>
+  <p>
+    Customer: <span class="identifier">{{ draft.customerId }}</span>. Saved
+    revision: {{ draft.expectedRevision }}.
+  </p>
+  <div id="school-editor-status" tabindex="-1" role="status" aria-live="polite">
+    @if (message()) {
+    <p>{{ message() }}</p>
+    } @if (error()) {
+    <p class="error">{{ error() }}</p>
+    } @if (storageError()) {
+    <p class="error">{{ storageError() }}</p>
+    }
+  </div>
+  @if (!writable()) {
+  <p>
+    Your current access does not permit school changes. Your draft remains in
+    this tab.
+  </p>
+  }
+  <mat-form-field appearance="outline">
+    <mat-label>School name</mat-label>
+    <input
+      matInput
+      id="school-name"
+      name="schoolName"
+      maxlength="256"
+      [ngModel]="draft.name"
+      (ngModelChange)="editName($event)"
+      [disabled]="!editable()"
+    />
+    <mat-hint>Enter 1–256 characters without control characters.</mat-hint>
+  </mat-form-field>
+  <h3 id="school-rules-title" tabindex="-1">Scope rules</h3>
+  <p>
+    Included units form the scope. Exclusions take precedence. Descendants apply
+    only when you select that option.
+  </p>
+  @for (kind of ['include', 'exclude']; track kind) {
+  <h4>{{ kind === 'include' ? 'Include' : 'Exclude' }}</h4>
+  <ul class="rule-list">
+    @for (rule of kind === 'include' ? draft.rules.include :
+    draft.rules.exclude; track rule.id) {
+    <li>
+      <span
+        >{{ unitLabel(rule.id) }} — {{ rule.descendants ? 'with descendants' :
+        'this unit only' }}</span
+      >
+      <button
+        mat-button
+        type="button"
+        [disabled]="!editable()"
+        (click)="removeRule(kind === 'include' ? 'include' : 'exclude', rule.id)"
+        [attr.aria-label]="'Remove ' + (kind === 'include' ? 'inclusion ' : 'exclusion ') + rule.id"
+      >
+        Remove rule
+      </button>
+    </li>
+    } @empty {
+    <li>
+      {{ kind === 'include' ? 'Add at least one inclusion.' : 'No exclusions.'
+      }}
+    </li>
+    }
+  </ul>
+  } @if (!pending() && !review()?.appliedAt) { @if
+  (store.references()?.observation; as observation) {
+  <div class="picker-layout">
+    <app-ou-reference-picker
+      [units]="observation.units"
+      [selectedId]="selectedId()"
+      [disabled]="!editable() || !store.fresh()"
+      (selected)="selectedId.set($event)"
+    />
+    <section aria-labelledby="selected-ou-title">
+      <h4 id="selected-ou-title">Selected organizational unit</h4>
+      @if (selected(); as unit) {
+      <p>{{ unit.path }}</p>
+      <p class="identifier">{{ unit.id }}</p>
+      <mat-checkbox
+        [ngModel]="descendants()"
+        (ngModelChange)="descendants.set($event)"
+        [disabled]="!editable() || !store.fresh()"
+        >Include descendants in this rule</mat-checkbox
+      >
+      <div class="actions">
+        <button
+          mat-stroked-button
+          type="button"
+          (click)="addRule('include')"
+          [disabled]="!editable() || !store.fresh()"
+        >
+          Add inclusion
+        </button>
+        <button
+          mat-stroked-button
+          type="button"
+          (click)="addRule('exclude')"
+          [disabled]="!editable() || !store.fresh()"
+        >
+          Add exclusion
+        </button>
+      </div>
+      <p>A new rule replaces any existing rule for this unit.</p>
+      } @else {
+      <p>Select an organizational unit to add an inclusion or exclusion.</p>
+      }
+    </section>
+  </div>
+  } @if (!store.fresh()) {
+  <p>
+    Fresh verified references are required before selecting units or reviewing
+    this draft. Refresh references above.
+  </p>
+  } @if (conflict()) {
+  <p>
+    The saved revision needs review. Your draft name and rules remain unchanged.
+  </p>
+  <button
+    mat-stroked-button
+    type="button"
+    (click)="useLatestRevision()"
+    [disabled]="!editable() || store.loading().detail"
+  >
+    Use latest revision and keep draft
+  </button>
+  }
+  <div class="actions">
+    <button
+      mat-flat-button
+      type="button"
+      (click)="preview()"
+      [disabled]="!canPreview()"
+    >
+      Review school scope
+    </button>
+    <button mat-button type="button" (click)="close()" [disabled]="busy()">
+      Discard draft
+    </button>
+  </div>
+  } @if (pending(); as pending) {
+  <p>
+    Review identifier: <span class="identifier">{{ pending.input.id }}</span>.
+  </p>
+  <div class="actions">
+    <button
+      mat-stroked-button
+      type="button"
+      (click)="recover()"
+      [disabled]="busy() || !writable()"
+    >
+      Check school receipt
+    </button>
+    @if (pending.stage === 'confirm') {
+    <button
+      mat-stroked-button
+      type="button"
+      (click)="retryConfirmation()"
+      [disabled]="busy() || !writable()"
+    >
+      Retry same confirmation
+    </button>
+    } @else {
+    <button
+      mat-button
+      type="button"
+      (click)="returnToDraft()"
+      [disabled]="busy()"
+    >
+      Return to draft
+    </button>
+    }
+  </div>
+  } @if (review(); as review) {
+  <section aria-labelledby="school-review-title">
+    <h3 id="school-review-title" tabindex="-1">
+      {{ review.appliedAt ? 'Confirmed school receipt' : 'Review school scope'
+      }}
+    </h3>
+    <p>
+      {{ review.name }} — {{ review.approvedIds.length }} approved
+      organizational units.
+    </p>
+    <p>
+      {{ review.affectedPrincipalCount }} affected principals must recheck
+      application access. {{ review.invitationIds.length }} pending invitations
+      will be revoked.
+    </p>
+    <p>
+      Future hierarchy changes cannot add units outside this approved set. A new
+      review is required to expand access.
+    </p>
+    <details>
+      <summary>
+        Approved organizational units ({{ review.approvedIds.length }})
+      </summary>
+      <ul>
+        @for (id of review.approvedIds; track id) {
+        <li>{{ unitLabel(id) }}</li>
+        }
+      </ul>
+    </details>
+    @if (review.invitationIds.length) {
+    <details>
+      <summary>
+        Invitations to revoke ({{ review.invitationIds.length }})
+      </summary>
+      <ul>
+        @for (id of review.invitationIds; track id) {
+        <li class="identifier">{{ id }}</li>
+        }
+      </ul>
+    </details>
+    } @if (review.appliedAt) {
+    <p>
+      Confirmed {{ review.appliedAt | date:'medium' }}. Saved revision {{
+      review.revision }}.
+    </p>
+    <p>Receipt: <span class="identifier">{{ review.id }}</span>.</p>
+    <div class="actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="returnToDraft()"
+        [disabled]="!writable()"
+      >
+        Edit saved definition
+      </button>
+      <button mat-button type="button" (click)="close()">Close receipt</button>
+    </div>
+    } @else if (pending()?.stage === 'review') {
+    <p>Review expires {{ review.expiresAt | date:'medium' }}.</p>
+    @if (!store.fresh() || review.referenceRevision !==
+    store.references()?.observation?.revision || reviewExpired()) {
+    <p>
+      The references or review changed or expired. Return to the draft, refresh
+      references, and review again.
+    </p>
+    }
+    <mat-checkbox
+      [ngModel]="confirmed()"
+      (ngModelChange)="confirmed.set($event)"
+      [disabled]="busy() || !writable()"
+      >I confirm this school scope and its access consequences</mat-checkbox
+    >
+    <div class="actions">
+      <button
+        mat-flat-button
+        type="button"
+        (click)="confirm()"
+        [disabled]="!canConfirm()"
+      >
+        Confirm school definition
+      </button>
+    </div>
+    }
+  </section>
+  }
+</section>
+}

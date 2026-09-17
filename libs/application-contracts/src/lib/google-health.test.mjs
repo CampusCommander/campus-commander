@@ -13,7 +13,10 @@ import {
 
 test('Phase 3 scope instructions exclude optional OUs and every inventory or mutation scope', () => {
   const enabled = GOOGLE_CAPABILITIES.filter(
-    (capability) => capability.enabled && capability.qualified,
+    (capability) =>
+      capability.requiredForConnection &&
+      capability.enabled &&
+      capability.qualified,
   );
   assert.deepEqual(
     enabled.map((capability) => capability.id),
@@ -23,6 +26,15 @@ test('Phase 3 scope instructions exclude optional OUs and every inventory or mut
     'https://www.googleapis.com/auth/admin.directory.customer.readonly',
     'https://www.googleapis.com/auth/admin.directory.domain.readonly',
   ]);
+  assert.deepEqual(
+    GOOGLE_CAPABILITIES.filter(
+      (capability) =>
+        !capability.requiredForConnection &&
+        capability.enabled &&
+        capability.qualified,
+    ).map((capability) => capability.scope),
+    ['https://www.googleapis.com/auth/admin.directory.orgunit.readonly'],
+  );
   assert.ok(
     enabled.every(
       (capability) =>
