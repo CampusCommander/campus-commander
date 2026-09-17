@@ -1,4 +1,11 @@
-import { Component, effect, inject, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  effect,
+  inject,
+  OnDestroy,
+  OnInit,
+  signal,
+} from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -6,6 +13,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import {
   actionSchema,
   grantsForPreset,
+  grantsSchema,
   platformAccessResultSchema,
   platformAccessRejectionSchema,
   platformAccessReceiptPageSchema,
@@ -20,14 +28,21 @@ import {
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { actionLabels } from '../action-labels';
+import { ScopedGrants } from './scoped-grants';
 
 @Component({
   selector: 'app-platform-access',
-  imports: [DatePipe, FormsModule, MatButtonModule, MatCheckboxModule],
+  imports: [
+    DatePipe,
+    FormsModule,
+    MatButtonModule,
+    MatCheckboxModule,
+    ScopedGrants,
+  ],
   templateUrl: './platform-access.html',
   styleUrl: './platform-access.css',
 })
-export class PlatformAccess implements OnInit {
+export class PlatformAccess implements OnInit, OnDestroy {
   protected readonly auth = inject(AuthStore);
   protected readonly labels = actionLabels;
   protected readonly permissionLabels = {
@@ -50,12 +65,17 @@ export class PlatformAccess implements OnInit {
   protected readonly loading = signal(false);
   protected readonly busy = signal(false);
   protected readonly stale = signal(false);
+  protected readonly scopedGrants = signal<Grant[]>([]);
+  private destroyed = false;
+  private identity = this.sessionKey();
   protected enabled = true;
   protected chosen: Partial<Record<Action, boolean>> = {};
   protected confirmed = false;
   constructor() {
     effect(() => {
-      if (this.auth.interrupted()) {
+      const identity = this.sessionKey();
+      if (this.auth.interrupted() || identity !== this.identity) {
+        this.identity = identity;
         this.invalidate();
         this.stale.set(true);
       }
@@ -64,12 +84,28 @@ export class PlatformAccess implements OnInit {
   ngOnInit() {
     void this.refresh();
   }
+  ngOnDestroy() {
+    this.destroyed = true;
+  }
+  private sessionKey() {
+    const session = this.auth.session();
+    return session
+      ? `${session.identity.id}:${session.identity.permissionVersion}:${session.csrfToken}`
+      : undefined;
+  }
+  protected scopedCapacity() {
+    return 256 - this.actions.filter((action) => this.chosen[action]).length;
+  }
+  protected changeScopedGrants(grants: Grant[]) {
+    this.scopedGrants.set(grants);
+    this.invalidate();
+  }
   protected canManage() {
     return this.auth.can('platform-users:manage', { kind: 'platform' });
   }
   protected async refresh(offset = this.offset()) {
     if (this.loading() || this.busy()) return;
-    const sessionToken = this.auth.session()?.csrfToken;
+    const sessionToken = this.sessionKey();
     this.loading.set(true);
     this.error.set('');
     try {
@@ -107,7 +143,9 @@ export class PlatformAccess implements OnInit {
     }
   }
   private currentSession(token: string | undefined) {
-    return token === this.auth.session()?.csrfToken && !this.auth.interrupted();
+    return (
+      !this.destroyed && token === this.sessionKey() && !this.auth.interrupted()
+    );
   }
   protected invalidate() {
     this.preview.set(null);
@@ -115,7 +153,7 @@ export class PlatformAccess implements OnInit {
   }
   protected async inspect(id: string) {
     if (this.busy()) return;
-    const sessionToken = this.auth.session()?.csrfToken;
+    const sessionToken = this.sessionKey();
     this.invalidate();
     this.busy.set(true);
     this.error.set('');
@@ -129,6 +167,9 @@ export class PlatformAccess implements OnInit {
       this.receipts.set(null);
       void this.loadReceipts();
       this.enabled = principal.enabled;
+      this.scopedGrants.set(
+        principal.grants.filter((grant) => grant.scope.kind !== 'platform'),
+      );
       this.chosen = Object.fromEntries(
         principal.grants
           .filter((grant) => grant.scope.kind === 'platform')
@@ -164,6 +205,7 @@ export class PlatformAccess implements OnInit {
   }
   protected close() {
     this.selected.set(null);
+    this.scopedGrants.set([]);
     this.invalidate();
   }
   protected scope(grant: Grant) {
@@ -176,17 +218,23 @@ export class PlatformAccess implements OnInit {
   protected async review() {
     const principal = this.selected();
     if (!principal || this.busy() || this.stale() || !this.canManage()) return;
-    const sessionToken = this.auth.session()?.csrfToken;
+    const sessionToken = this.sessionKey();
     this.busy.set(true);
     this.error.set('');
     this.invalidate();
     try {
       const grants = [
-        ...principal.grants.filter((grant) => grant.scope.kind !== 'platform'),
+        ...this.scopedGrants(),
         ...this.actions
           .filter((action) => this.chosen[action])
           .map((action) => ({ action, scope: { kind: 'platform' as const } })),
       ];
+      if (!grantsSchema.safeParse(grants).success) {
+        this.error.set(
+          'The proposal exceeds 256 grants or contains an invalid scope. Review the selected grants.',
+        );
+        return;
+      }
       const response = await this.auth.request(
         `/api/platform-users/${principal.id}/review`,
         {
@@ -218,7 +266,7 @@ export class PlatformAccess implements OnInit {
   protected async loadReceipts(offset = 0) {
     const id = this.selected()?.id;
     if (!id) return;
-    const sessionToken = this.auth.session()?.csrfToken;
+    const sessionToken = this.sessionKey();
     this.receiptLoading.set(true);
     this.receiptError.set('');
     try {
@@ -272,6 +320,7 @@ export class PlatformAccess implements OnInit {
   protected async apply() {
     const preview = this.preview();
     if (!preview || !this.confirmed || this.busy() || this.stale()) return;
+    const sessionToken = this.sessionKey();
     this.busy.set(true);
     this.error.set('');
     try {
@@ -295,7 +344,13 @@ export class PlatformAccess implements OnInit {
         return;
       }
       const result = platformAccessResultSchema.parse(await response.json());
+      if (!this.currentSession(sessionToken)) return;
       this.selected.set(result.principal);
+      this.scopedGrants.set(
+        result.principal.grants.filter(
+          (grant) => grant.scope.kind !== 'platform',
+        ),
+      );
       this.principals.update((items) =>
         items.map((item) =>
           item.id === result.principal.id ? result.principal : item,

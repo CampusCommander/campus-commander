@@ -202,18 +202,20 @@
       >
       }
       <p>
-        Platform grants cover the installation. District and school presets
-        require verified resource configuration.
+        Platform grants cover the installation. Select district and school
+        grants below for narrower access.
       </p>
       <p>
         Keep one enabled platform administrator. Your current grants limit which
         access you can change.
       </p>
     </fieldset>
-    @for (grant of principal.grants; track $index) { @if (grant.scope.kind !==
-    'platform') {
-    <p>{{ labels[grant.action] }} · {{ scope(grant) }}</p>
-    } }
+    <app-scoped-grants
+      [value]="scopedGrants()"
+      [disabled]="!canManage() || busy() || stale()"
+      [capacity]="scopedCapacity()"
+      (changed)="changeScopedGrants($event)"
+    />
     <div class="actions">
       @if (canManage()) {
       <button
@@ -238,6 +240,21 @@
     @if (preview(); as review) {
     <section class="review" aria-labelledby="access-confirmation-title">
       <h3 id="access-confirmation-title">Confirm access changes</h3>
+      @if (review.schoolRevisions.length) {
+      <h4>Reviewed school revisions</h4>
+      <p>
+        Confirmation requires these exact school revisions. A changed definition
+        requires another access review.
+      </p>
+      <ul>
+        @for (school of review.schoolRevisions; track school.schoolId) {
+        <li>
+          School {{ school.schoolId }} in {{ school.customerId }} — revision {{
+          school.revision }}
+        </li>
+        }
+      </ul>
+      }
       <p>{{ review.current.displayName }} · {{ review.current.subject }}</p>
       <p>
         Sign-in: {{ review.current.enabled ? 'enabled' : 'disabled' }} → {{

@@ -156,19 +156,71 @@ export async function qualifySchoolDefinitionsApi({
   assert.deepEqual(access.schoolRevisions, [
     { schoolId: a, customerId: references.customerId, revision: 1 },
   ]);
-  const assigned = await api.post(`${grantRoot}/access`, {
-    headers,
-    data: {
-      expectedVersion: 1,
-      enabled: true,
-      grants,
-      actorVersion: access.actorVersion,
-      schoolRevisions: access.schoolRevisions,
-      invitationIds: [],
-      confirmation: 'change-platform-access',
-    },
+  await adminPage.goto(`${publicOrigin}/platform-users`);
+  await adminPage
+    .getByRole('button', { name: `Review access for ${subject}`, exact: true })
+    .click();
+  await adminPage
+    .getByRole('button', { name: 'Load permitted scopes' })
+    .click();
+  await adminPage.getByRole('button', { name: /^Select district / }).click();
+  await adminPage
+    .getByRole('button', { name: 'Use district viewer preset' })
+    .click();
+  const confirmAccess = async () => {
+    await adminPage
+      .getByRole('button', { name: 'Review access changes', exact: true })
+      .click();
+    await adminPage
+      .getByLabel('I reviewed this identity and its exact access changes.')
+      .check();
+    await adminPage
+      .getByRole('button', { name: 'Confirm access changes', exact: true })
+      .click();
+    await expect(
+      adminPage.getByText(
+        'Access changed. Previous sessions require sign-in.',
+        { exact: false },
+      ),
+    ).toBeVisible();
+  };
+  await confirmAccess();
+  const districtAssignment = await (await api.get(grantRoot)).json();
+  assert.equal(districtAssignment.grants.length, 3);
+  assert.ok(
+    districtAssignment.grants.every(
+      (grant) =>
+        grant.scope.kind === 'district' &&
+        grant.scope.customerId === references.customerId,
+    ),
+  );
+  await adminPage
+    .getByRole('button', { name: 'Select school School A', exact: true })
+    .click();
+  await adminPage
+    .getByRole('button', { name: 'Use school administrator preset' })
+    .click();
+  const districtRemovals = adminPage.getByRole('button', {
+    name: new RegExp(`^Remove .* for District ${references.customerId}$`),
   });
-  assert.equal(assigned.status(), 201, await assigned.text());
+  for (let index = 0; index < 3; index += 1)
+    await districtRemovals.first().click();
+  await expect(districtRemovals).toHaveCount(0);
+  for (const theme of ['light', 'dark']) {
+    await adminPage.evaluate(
+      (value) => (document.documentElement.dataset['theme'] = value),
+      theme,
+    );
+    await auditAccessibility(adminPage, `scoped-grants-${theme}`);
+    await adminPage.screenshot({
+      path: `${evidenceDirectory}/scoped-grants-${theme}.png`,
+      fullPage: true,
+    });
+  }
+  await confirmAccess();
+  const assigned = await api.get(grantRoot);
+  assert.equal(assigned.status(), 200, await assigned.text());
+  assert.deepEqual((await assigned.json()).grants, grants);
   const context = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
     setSubject(subject);
@@ -286,9 +338,10 @@ export async function qualifySchoolDefinitionsApi({
           'browser inclusion and exclusion preview, lost confirmation response, reload, and durable receipt recovery',
           'school viewer browser list, audit, stale definition, and access interruption',
           'school draft and review accessibility in both themes',
+          'district viewer and school administrator assignment through browser presets and exact reviewed revisions',
         ],
         limits: [
-          'Scoped grant browser controls, human screen-reader qualification, and acceptance remain pending.',
+          'Human screen-reader qualification and acceptance remain pending.',
         ],
       },
       null,

@@ -46,6 +46,7 @@ it('preserves confirmed access when the following session check fails', async ()
         provide: AuthStore,
         useValue: {
           request,
+          metadata: () => ({ phase: 3 }),
           can: () => true,
           interrupted: () => false,
           session: () => ({ identity: principal }),
@@ -166,7 +167,13 @@ it('discards a review response from the session before access recovery', async (
     providers: [
       {
         provide: AuthStore,
-        useValue: { request, can: () => !interrupted(), interrupted, session },
+        useValue: {
+          request,
+          metadata: () => ({ phase: 3 }),
+          can: () => !interrupted(),
+          interrupted,
+          session,
+        },
       },
     ],
   }).compileComponents();

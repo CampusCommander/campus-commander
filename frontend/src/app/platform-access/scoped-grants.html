@@ -1,0 +1,159 @@
+<section aria-labelledby="scoped-grants-title">
+  <h3 id="scoped-grants-title" tabindex="-1">
+    Proposed district and school access
+  </h3>
+  <p>
+    Each grant names one district or school. A school grant does not grant
+    access to another school.
+  </p>
+  <p>
+    Removing grants remains available when Google references are stale. The
+    server verifies new grants during review and confirmation.
+  </p>
+  <p role="status">{{ message() }}</p>
+  @if (error()) {
+  <p role="alert" class="error">{{ error() }}</p>
+  }
+  <ul>
+    @for (grant of value(); track grant.action + scopeLabel(grant.scope)) {
+    <li>
+      {{ labels[grant.action] }} · {{ scopeLabel(grant.scope) }}
+      <button
+        mat-button
+        type="button"
+        (click)="remove(grant)"
+        [disabled]="!canRemove(grant)"
+        [attr.aria-label]="'Remove ' + labels[grant.action] + ' for ' + scopeLabel(grant.scope)"
+      >
+        Remove grant
+      </button>
+    </li>
+    } @empty {
+    <li>No district or school grants selected.</li>
+    }
+  </ul>
+  <button
+    mat-stroked-button
+    type="button"
+    (click)="load()"
+    [disabled]="disabled() || customer.loading() || schools.loading().list"
+  >
+    Load permitted scopes
+  </button>
+  @if (loaded()) {
+  <h4>District</h4>
+  @if (customer.loading()) {
+  <div class="loading-placeholder" aria-label="Loading district"></div>
+  } @if (customer.error()) {
+  <p class="error" role="status">{{ customer.error() }}</p>
+  } @if (customer.customer(); as district) {
+  <button
+    mat-stroked-button
+    type="button"
+    (click)="choose({kind: 'district', customerId: district.customerId})"
+    [disabled]="disabled() || customer.stale()"
+  >
+    Select district {{ district.settings.displayName || district.primaryDomain
+    }}
+  </button>
+  } @else if (!customer.loading()) {
+  <p>No confirmed district is available within your current access.</p>
+  }
+  <h4>Schools</h4>
+  @if (schools.loading().list) {
+  <div class="loading-placeholder" aria-label="Loading school scopes"></div>
+  } @if (schools.errors().list) {
+  <p class="error" role="status">{{ schools.errors().list }}</p>
+  } @if (schools.page(); as page) {
+  <p>
+    {{ page.total }} permitted school definitions. Read {{
+    schools.observedAt().list | date:'medium' }}.
+  </p>
+  <ul>
+    @for (school of page.items; track school.id) {
+    <li>
+      <button
+        mat-button
+        type="button"
+        (click)="choose({kind: 'school', customerId: school.customerId, schoolId: school.id})"
+        [disabled]="disabled() || schools.loading().detail"
+      >
+        Select school {{ school.name }}
+      </button>
+    </li>
+    } @empty {
+    <li>No school definitions are available within your access.</li>
+    }
+  </ul>
+  <div class="actions">
+    <button
+      mat-button
+      type="button"
+      (click)="schools.refresh(page.offset - page.limit)"
+      [disabled]="disabled() || page.offset === 0 || schools.loading().list"
+    >
+      Previous school scopes</button
+    ><button
+      mat-button
+      type="button"
+      (click)="schools.refresh(page.offset + page.limit)"
+      [disabled]="disabled() || page.offset + page.limit >= page.total || schools.loading().list"
+    >
+      Next school scopes
+    </button>
+  </div>
+  } @else if (!schools.loading().list && !schools.readable()) {
+  <p>Your access does not permit browsing school definitions.</p>
+  } } @if (selected(); as scope) {
+  <h4>{{ scopeLabel(scope) }}</h4>
+  @if (scope.kind === 'school') { @if (schools.loading().detail) {
+  <div class="loading-placeholder" aria-label="Reading school scope"></div>
+  } @if (schools.errors().detail) {
+  <p class="error" role="status">{{ schools.errors().detail }}</p>
+  } @if (currentSchool(); as school) {
+  <p>
+    {{ school.name }}. Revision {{ school.revision }}. {{
+    school.approvedIds.length }} approved organizational units.
+  </p>
+  } } @if (!canAdd()) {
+  <p>
+    Current resource verification is unavailable. Load permitted scopes and
+    select the resource again before adding grants.
+  </p>
+  }
+  <div class="actions">
+    <button
+      mat-stroked-button
+      type="button"
+      (click)="preset(true)"
+      [disabled]="!presetAllowed(true)"
+    >
+      Use {{ scope.kind === 'school' ? 'school' : 'district' }} administrator
+      preset
+    </button>
+    <button
+      mat-stroked-button
+      type="button"
+      (click)="preset(false)"
+      [disabled]="!presetAllowed(false)"
+    >
+      Use {{ scope.kind === 'school' ? 'school' : 'district' }} viewer preset
+    </button>
+  </div>
+  <p>
+    Each preset replaces the proposed grants for this resource only. Review the
+    explicit grants before confirmation.
+  </p>
+  <fieldset [disabled]="disabled()">
+    <legend>Actions for this resource</legend>
+    @for (action of selectedActions(); track action) {
+    <mat-checkbox
+      [checked]="has(action)"
+      (change)="toggle(action, $event.checked)"
+      [disabled]="disabled() || !auth.can(action, scope) || (!has(action) && !canAdd())"
+      >{{ labels[action] }}</mat-checkbox
+    >
+    }
+  </fieldset>
+  }
+</section>
