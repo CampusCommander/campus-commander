@@ -20,6 +20,7 @@ import { expect } from '@playwright/test';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
 import { qualifyKubernetesWorkerCredentials } from './phase3-kubernetes-worker-fixture.mjs';
+import { qualifyKubernetesNetworkPolicies } from './phase3-kubernetes-network-fixture.mjs';
 import {
   kubernetesFailureLocations,
   verifyKubernetesCredentialProjection,
@@ -86,7 +87,7 @@ test(
     const project = `cc-capacity-kube-${randomBytes(6).toString('hex')}`;
     const root = await mkdtemp(`/tmp/${project}-`);
     const kubeconfig = join(root, 'kubeconfig');
-    const kube = (args, input) =>
+    const kube = (args, input, options) =>
       run(
         'kubectl',
         [
@@ -99,6 +100,7 @@ test(
           ...args,
         ],
         input,
+        options,
       );
     let provider,
       forward,
@@ -111,7 +113,8 @@ test(
     let installedWorkflows,
       credentialKeyProjection,
       phase3Evidence,
-      workerCredentials;
+      workerCredentials,
+      networkPolicyEvidence;
     const recipientAccessChecks = [];
     let stage = 'initialize';
     const harness = phase3
@@ -943,6 +946,31 @@ test(
           project,
           kube,
         });
+        stage = 'internal NetworkPolicy enforcement';
+        const retainNetworkEvidence = async (report) => {
+          await mkdir(evidenceDirectory, { recursive: true });
+          await writeFile(
+            join(evidenceDirectory, 'kubernetes-network-policy.json'),
+            JSON.stringify(
+              {
+                ...releaseIdentity,
+                ...harness,
+                durationScope:
+                  'Internal pod policy probes, temporary control policies, and control-policy cleanup.',
+                ...report,
+              },
+              null,
+              2,
+            ),
+          );
+        };
+        networkPolicyEvidence = await qualifyKubernetesNetworkPolicies({
+          kube,
+          project,
+          images,
+          onFailure: retainNetworkEvidence,
+        });
+        await retainNetworkEvidence(networkPolicyEvidence);
       }
       if (capacityFaults)
         capacityEvidence = {
@@ -1023,11 +1051,12 @@ test(
           status: 'passed',
           recordedAt: new Date().toISOString(),
           durationScope:
-            'Extracted installation, repeated resume, public workflows, API replacement, worker rescheduling, stop/resume, uninstall/resume, and owned cluster removal.',
+            'Extracted installation, repeated resume, public workflows, API replacement, worker rescheduling, stop/resume, uninstall/resume, worker credentials, internal network policies, and owned cluster removal.',
           application,
           installedWorkflows: installedWorkflows.report,
           recipientAccessChecks,
           workerCredentials,
+          networkPolicyEvidence,
           credentialKeyProjection: {
             initial: credentialKeyProjection,
             final: finalProjection,
@@ -1039,7 +1068,7 @@ test(
           replicaObservations: replicas.observations,
           limits: [
             'Three Kind nodes share one Docker host and synthetic shared storage.',
-            'This run does not measure NetworkPolicy enforcement.',
+            'NetworkPolicy evidence covers worker-to-Redis and worker-to-Kestra TCP pod paths only.',
             'Synthetic providers do not establish live Google privileges, Education capabilities, or district browser trust.',
             'Upgrade, isolated restore, faults, and complete lifecycle acceptance require separate evidence.',
             'Final release qualification requires matching installer, test, and application source revisions.',

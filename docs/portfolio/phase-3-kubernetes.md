@@ -1,7 +1,7 @@
 # Phase 3 Kubernetes qualification
 
 [CC-59](https://easton-consulting.atlassian.net/browse/CC-59) requires extracted installation, resume, Phase 2 upgrade, isolated restore, and fault evidence.
-The task remains incomplete. No Phase 3 Kubernetes hosted result exists yet.
+The task remains incomplete. No Phase 3 Kubernetes hosted pass exists yet.
 
 ## Installation boundary
 
@@ -138,3 +138,23 @@ Its duration was 60,630 milliseconds before cleanup.
 The next attempt separates image retrieval, archive creation, and node import stages.
 A fixed command error preserves asynchronous fixture call sites without printing the original command failure.
 The first workflow failure remains unresolved.
+
+## Internal network-policy increment
+
+The fixture now measures worker-to-Redis and worker-to-Kestra TCP pod paths after worker credential checks.
+Both workers must occupy distinct nodes and retain exact image identities.
+An API pod must reach each target before and after every worker probe.
+Both worker paths must time out, connect under temporary narrow policies, then time out after those policies disappear.
+Socket errors and unavailable targets cannot prove policy denial.
+
+Every probe command uses the remaining 30-second convergence deadline.
+Temporary policies carry unique ownership markers.
+Cleanup reconciles uncertain creation results and checks namespace, ownership, and policy content before deletion.
+Original policies must retain their identities and content hashes.
+Reports record node versions, CNI image identities, control policies, and measured connection outcomes.
+Failed reports preserve observations without raw command errors.
+
+Regression checks reproduced late acceptance and incomplete cleanup after a lost creation response.
+The corrected checks pass, including rejected creation and foreign-resource preservation.
+Both reviews passed the helper corrections. Hosted enforcement remains unverified.
+These checks do not establish service-address behavior, Google egress, district TLS, or independent physical hosts.

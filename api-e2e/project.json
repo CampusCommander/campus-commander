@@ -501,7 +501,7 @@
       "dependsOn": ["deployment:build"],
       "cache": false,
       "options": {
-        "command": "node --test api-e2e/phase3-kubernetes-fixture.test.mjs api-e2e/kubernetes-shutdown.test.mjs"
+        "command": "node --test api-e2e/phase3-kubernetes-fixture.test.mjs api-e2e/phase3-kubernetes-network-fixture.test.mjs api-e2e/kubernetes-shutdown.test.mjs"
       }
     }
   }
