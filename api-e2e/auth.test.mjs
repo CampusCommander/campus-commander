@@ -1125,6 +1125,8 @@ test(
           ca,
           cookie: sessionCookie,
           csrfToken: session.csrfToken,
+          actorId: principalId,
+          observer: migrator,
           evidenceDirectory,
         });
       await migrator.query(

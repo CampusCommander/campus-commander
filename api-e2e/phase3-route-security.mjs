@@ -44,10 +44,22 @@ export async function qualifyPhase3RouteSecurity({
   ca,
   cookie,
   csrfToken,
+  actorId,
+  observer,
   evidenceDirectory,
 }) {
   const started = Date.now();
   const results = [];
+  const browserDenials = async (response) => {
+    const correlation = response.headers['x-correlation-id'];
+    assert.match(correlation ?? '', /^[0-9a-f-]{36}$/);
+    return (
+      await observer.query(
+        "SELECT actor_id FROM cc.security_events WHERE correlation_id=$1 AND event='access-denied' AND detail='browser-security'",
+        [correlation],
+      )
+    ).rows;
+  };
   const verify = (response, status, route, boundary) => {
     assert.equal(response.status, status, `${boundary}: ${route}`);
     assert.equal(response.headers['cache-control'], 'no-store', route);
@@ -94,13 +106,43 @@ export async function qualifyPhase3RouteSecurity({
         },
       ],
     ]) {
-      verify(
-        await request(url, { ca, cookie, method, body, headers }),
-        403,
-        route,
-        boundary,
+      const response = await request(url, {
+        ca,
+        cookie,
+        method,
+        body,
+        headers,
+      });
+      verify(response, 403, route, boundary);
+      assert.deepEqual(
+        await browserDenials(response),
+        [{ actor_id: actorId }],
+        `${boundary} audit: ${route}`,
       );
     }
+    const control = await request(url, {
+      ca,
+      cookie,
+      method,
+      body,
+      headers: { origin: publicOrigin, 'x-csrf-token': csrfToken },
+    });
+    // Empty input and a grantless principal cannot authorize a mutation.
+    assert.ok(
+      [400, 403].includes(control.status),
+      `Valid browser checks: ${route}`,
+    );
+    verify(
+      control,
+      control.status,
+      route,
+      'valid-browser-checks-invalid-input-or-action',
+    );
+    assert.deepEqual(
+      await browserDenials(control),
+      [],
+      `Valid browser checks audit: ${route}`,
+    );
   }
   await writeFile(
     `${evidenceDirectory}/phase3-route-security.json`,

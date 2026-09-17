@@ -121,6 +121,10 @@ Worker token leases have no public HTTP route. Restricted database functions con
 `api-e2e/phase3-route-security.mjs` sends every protected Phase 3 route without a session.
 It also sends each POST with missing CSRF, wrong Origin, and wrong content type.
 Every response must deny access, disable caching, omit permissive CORS, and exclude the supplied session and CSRF values.
+Each browser-boundary denial must retain its correlated `browser-security` audit event for the expected actor.
+A control request uses valid browser checks, empty input, and the grantless principal.
+That control must fail input or action checks without recording a browser-security denial.
+These audit assertions distinguish browser enforcement from an unrelated permission failure.
 The report retains route templates, boundary names, status codes, revision, timing, and environment. It excludes response bodies and secret values.
 This guard check does not prove the handler's action or resource policy. Valid-session resource checks remain separate.
 
