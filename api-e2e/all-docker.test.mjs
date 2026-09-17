@@ -136,11 +136,32 @@ test(
         )
       : undefined;
     let activeInstallerRoot = baseline?.root ?? installerRoot;
-    const { applicationAccess, operatorEnrollmentRequest } = await import(
+    const { applicationAccess: deliveredApplicationAccess, operatorEnrollmentRequest } = await import(
       pathToFileURL(
         join(installerRoot, 'deployment/installer/application-enrollment.mjs'),
       ).href
     );
+    const applicationAccess = (operator, input) =>
+      deliveredApplicationAccess(
+        operator,
+        input,
+        async (file, args, { input: payload } = {}) => {
+          const invocation = execute(file, args, {
+            env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+            timeout: 300000,
+            maxBuffer: 4 * 1024 * 1024,
+          });
+          invocation.child.stdin.on('error', () => undefined);
+          invocation.child.stdin.end(payload);
+          try {
+            return (await invocation).stdout.trim();
+          } catch {
+            throw new Error(
+              'Installed application enrollment failed through the qualification runtime.',
+            );
+          }
+        },
+      );
     const cli = async (command) =>
       JSON.parse(
         (
