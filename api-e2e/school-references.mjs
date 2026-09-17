@@ -155,6 +155,6 @@ export async function qualifySchoolReferencesApi({
         'UPDATE cc.application_principals SET permission_version=$1 WHERE id=$2',
         [priorVersion, actor],
       );
-    await context.close();
+    await evidenceSecurity.close(context);
   }
 }

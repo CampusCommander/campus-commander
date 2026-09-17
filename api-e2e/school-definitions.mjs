@@ -325,7 +325,7 @@ export async function qualifySchoolDefinitionsApi({
   } finally {
     setSubject('administrator');
     await migrator.query('UPDATE cc.school_reference_state SET failure=NULL');
-    await context.close();
+    await evidenceSecurity.close(context);
   }
   await writeFile(
     `${evidenceDirectory}/school-definitions-api.json`,

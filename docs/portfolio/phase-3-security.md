@@ -182,7 +182,7 @@ It also scans current audit records and a new support bundle. The report lists f
 The scanner removes rejected artifacts. It does not publish matched values or surrounding text.
 Unknown evidence formats fail the scan. Release archives and live district evidence require separate checks.
 
-Nine local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
+Ten local scanner tests pass through `api-e2e:e2e`. Fixture lint also passes.
 Hosted source and packaged qualification of this increment remain pending. Failed runs do not establish a completed final scan.
 
 The first review found three gaps: omitted service stderr, unregistered transient browser cookies, and unchecked artifact paths.
@@ -258,3 +258,9 @@ The scanner now observes JSON tokens after `requestfinished`. It still observes 
 Interrupted requests retain their observed cookies and increment a separate count. Their incomplete JSON bodies do not establish token coverage.
 A regression verifies this distinction. A completed response with an unreadable body still fails qualification.
 The scanner does not claim unknown or partial secrets in interrupted response bodies.
+
+Run `35181740936` retained one failed body observation after the completed-request change.
+Context closure now drains pending observations before disposing of browser resources. Cleanup still closes resources if observation fails.
+Failure diagnostics also retain bounded route and error categories. They exclude the underlying error message.
+The scanner removes rejected symlinks before artifact publication. Its regression verifies that the link target remains available.
+Hosted qualification must verify these changes. The earlier failed runs remain failed evidence.

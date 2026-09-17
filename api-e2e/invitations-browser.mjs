@@ -378,6 +378,6 @@ export async function qualifyInvitationBrowser({
     );
   } finally {
     setSubject('administrator');
-    await recipient.close();
+    await evidenceSecurity.close(recipient);
   }
 }

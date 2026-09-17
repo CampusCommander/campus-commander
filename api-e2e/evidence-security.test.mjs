@@ -165,6 +165,8 @@ test('screenshot checks reject content changes and bind passing checks to exact 
     await assert.rejects(security.scan(directory), /matching screenshot/);
     await symlink('/tmp', join(directory, 'outside'));
     await assert.rejects(security.scan(directory), /regular files/);
+    await assert.rejects(access(join(directory, 'outside')));
+    await access('/tmp');
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -306,4 +308,38 @@ test('browser response registration fails within its time limit for an unfinishe
   );
   t.mock.timers.tick(5000);
   await pending;
+});
+
+test('browser closure drains observations and still closes after an observation failure', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  let closed = false;
+  context.close = async () => {
+    closed = true;
+  };
+  await security.newContext({ newContext: async () => context }, {});
+  const headers = Promise.withResolvers();
+  context.emit('response', { headersArray: () => headers.promise });
+  const closing = security.close(context);
+  assert.equal(closed, false);
+  headers.resolve([
+    { name: 'Set-Cookie', value: 'fixture=closing-cookie-secret; Secure' },
+  ]);
+  await closing;
+  assert.equal(closed, true);
+  assert.throws(
+    () => security.assertSafe('closing-cookie-secret', 'log'),
+    /protected/,
+  );
+  closed = false;
+  context.emit('response', {
+    headersArray: async () => {
+      throw new Error(secret);
+    },
+  });
+  await assert.rejects(
+    security.close(context),
+    /registration did not complete/,
+  );
+  assert.equal(closed, true);
 });

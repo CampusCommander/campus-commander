@@ -35,6 +35,7 @@ export class EvidenceSecurity {
   #responseFailures = 0;
   #incompleteResponses = 0;
   #failureStages = { headers: 0, body: 0 };
+  #failedResponses = [];
 
   async newContext(browser, options) {
     const context = await browser.newContext(options);
@@ -43,6 +44,8 @@ export class EvidenceSecurity {
         '/pair',
         '/import',
         '/api/auth/session',
+        '/api/auth/preferences',
+        '/api/application',
         '/api/auth/login',
         '/api/auth/callback',
         '/api/auth/enrollment/start',
@@ -57,9 +60,22 @@ export class EvidenceSecurity {
       };
     };
     const observe = (state, operation) => {
-      const observation = operation().catch(() => {
+      const observation = operation().catch((error) => {
         this.#responseFailures++;
         this.#failureStages[state.stage]++;
+        if (this.#failedResponses.length < 32)
+          this.#failedResponses.push({
+            ...state,
+            reason: /closed/i.test(error.message)
+              ? 'target-closed'
+              : /redirect/i.test(error.message)
+                ? 'redirect-body-unavailable'
+                : /No resource|No data found/i.test(error.message)
+                  ? 'body-unavailable'
+                  : /Protocol error/i.test(error.message)
+                    ? 'protocol-failure'
+                    : 'unclassified',
+          });
       });
       this.#pending.set(observation, state);
       void observation.then(() => this.#pending.delete(observation));
@@ -95,6 +111,23 @@ export class EvidenceSecurity {
     return context;
   }
 
+  async close(resource) {
+    try {
+      await this.observePendingResponses();
+    } finally {
+      await resource.close();
+    }
+  }
+
+  #observationError(message) {
+    const error = new Error(message);
+    error.observations = {
+      pending: [...this.#pending.values()].slice(0, 32),
+      failures: this.#failedResponses,
+    };
+    return error;
+  }
+
   async observePendingResponses() {
     let timer;
     try {
@@ -106,7 +139,7 @@ export class EvidenceSecurity {
           timer = setTimeout(
             () =>
               reject(
-                new Error(
+                this.#observationError(
                   'Browser response secret registration exceeded its time limit.',
                 ),
               ),
@@ -118,7 +151,9 @@ export class EvidenceSecurity {
       clearTimeout(timer);
     }
     if (this.#responseFailures)
-      throw new Error('Browser response secret registration did not complete.');
+      throw this.#observationError(
+        'Browser response secret registration did not complete.',
+      );
   }
 
   register(category, value) {
@@ -220,6 +255,7 @@ export class EvidenceSecurity {
             pendingResponses: this.#pending.size,
             pendingStages: [...this.#pending.values()].slice(0, 32),
             responseFailures: this.#failureStages,
+            failedResponses: this.#failedResponses,
             reason:
               error.message ===
               'Browser response secret registration did not complete.'
@@ -265,8 +301,11 @@ export class EvidenceSecurity {
           await walk(file);
           continue;
         }
-        if (!entry.isFile())
-          throw new Error('Evidence must contain regular files only.');
+        if (!entry.isFile()) {
+          findings.push('Evidence must contain regular files only.');
+          await rm(file, { force: true });
+          continue;
+        }
         const bytes = await readFile(file);
         try {
           if (!['.json', '.png'].includes(extname(entry.name)))

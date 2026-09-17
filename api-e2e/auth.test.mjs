@@ -1050,7 +1050,7 @@ test(
           enrollmentPage.getByLabel('Installer pairing code'),
         ).toHaveValue('');
       } finally {
-        await firstBrowser.close();
+        await evidenceSecurity.close(firstBrowser);
       }
       await enrollmentPage.emulateMedia({ colorScheme: 'light' });
       await enrollmentPage.goto(`${publicOrigin}/setup`);
@@ -1106,7 +1106,7 @@ test(
         output: () => undefined,
       });
       assert.equal(resumed.status, 'already-enrolled');
-      await browser.close();
+      await evidenceSecurity.close(browser);
       browser = undefined;
       const inspected = await callOperator({ action: 'inspect' });
       assert.equal(inspected.principals[0].id, principalId);
@@ -2211,7 +2211,7 @@ test(
           auditAccessibility,
           evidenceDirectory,
         });
-      await context.close();
+      await evidenceSecurity.close(context);
       if (applicationPhase === 3)
         await qualifyGoogleWorker({
           fixture: kestraFixture,

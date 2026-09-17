@@ -228,6 +228,6 @@ export async function qualifyAccessRevocationBrowser({
     );
   } finally {
     setSubject('administrator');
-    await context.close();
+    await evidenceSecurity.close(context);
   }
 }

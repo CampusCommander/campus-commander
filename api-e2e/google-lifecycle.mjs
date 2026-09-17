@@ -422,6 +422,6 @@ export async function qualifyGoogleLifecycleApi({
     );
   } finally {
     await rm(faultPath, { force: true });
-    await context.close();
+    await evidenceSecurity.close(context);
   }
 }
