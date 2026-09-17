@@ -6,6 +6,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -15,45 +16,19 @@ import { MatInputModule } from '@angular/material/input';
 import { z } from 'zod';
 import {
   GOOGLE_CUSTOMER_SCOPES,
+  GOOGLE_HEALTH_RECOVERY,
   googleCandidateSchema,
   googleCredentialImportSchema,
   type GoogleCandidate,
-  type GoogleFailure,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from './connection.store';
-
-const recovery: Record<GoogleFailure, string> = {
-  'credential-rejected':
-    'Google rejected this credential. Select an active service-account key and check the delegated administrator.',
-  'delegation-not-authorized':
-    'Google has not authorized delegation. Check the service-account client ID and both scopes in the Admin console, then retry.',
-  'api-not-enabled':
-    'Enable the Admin SDK API in the service-account project, then retry.',
-  'policy-restricted':
-    'Google policy denied access. Ask your Google administrator to review the policy, then retry.',
-  'network-failure':
-    'The Google request did not finish. Check connectivity and refresh this review before another import.',
-  'scope-mismatch':
-    'Google returned different scopes. Authorize both displayed scopes for this service account, then retry.',
-  'permission-denied':
-    'The delegated administrator lacks Google privileges. Check their customer and domain read privileges, then retry.',
-  quota:
-    'Google limited the request rate. Wait before another credential check.',
-  'provider-unavailable':
-    'Google is unavailable. Retry the credential check after service returns.',
-  'invalid-response':
-    'Google returned an invalid customer response. Refresh this review or ask the installation operator for help.',
-  'wrong-customer':
-    'The credential resolved to another customer. Use the intended customer administrator and check the service account.',
-  'request-failed':
-    'The Google request failed. Check the service account and Google configuration, then retry.',
-};
 
 @Component({
   selector: 'app-google-connection',
   imports: [
     DatePipe,
+    RouterLink,
     NgTemplateOutlet,
     FormsModule,
     MatButtonModule,
@@ -136,7 +111,9 @@ export class GoogleConnectionPage implements OnInit, OnDestroy {
     );
   }
   protected failure(candidate: GoogleCandidate) {
-    return candidate.failure ? recovery[candidate.failure] : '';
+    return candidate.failure
+      ? GOOGLE_HEALTH_RECOVERY[candidate.failure].recovery
+      : '';
   }
   private storageKey() {
     return `cc:google-candidate:${this.auth.session()?.identity.id ?? this.auth.interruptedPrincipalId() ?? 'unavailable'}`;

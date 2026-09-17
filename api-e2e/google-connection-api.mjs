@@ -161,6 +161,18 @@ export async function qualifyGoogleConnectionApi({
   assert.equal(checked.status(), 201, await checked.text());
   assert.equal((await checked.json()).observation.customerId, 'C0123456');
 
+  assert.equal(
+    (
+      await admin.post(`${root}/check`, {
+        headers,
+        data: { customerId: 'C0123456', generation: 1 },
+      })
+    ).status(),
+    429,
+  );
+  await migrator.query(
+    "UPDATE cc.google_health_checks SET retry_at=clock_timestamp()-interval '1 second'",
+  );
   const actor = session.identity.id;
   const originalScopes = (
     await migrator.query(

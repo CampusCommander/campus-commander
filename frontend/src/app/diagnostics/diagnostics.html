@@ -2,7 +2,7 @@
 <p>Check application services and inspect their results.</p>
 @if (!auth.session()?.identity?.permissions?.includes('diagnostics:read')) {
 <p role="alert">
-  Your account does not have diagnostic access. Contact the installation
+  Your account does not have service diagnostic access. Contact the installation
   operator.
 </p>
 } @else { @if (diagnostics.error(); as error) {
@@ -91,5 +91,204 @@
     </article>
     }
   </div>
+</section>
+} @if (google.readable()) {
+<section
+  id="google-health"
+  class="google-health card"
+  aria-labelledby="google-health-title"
+  [attr.aria-busy]="google.loading() || google.running()"
+>
+  <div class="section-heading">
+    <h2 #googleHeading id="google-health-title" tabindex="-1">
+      Google capability health
+    </h2>
+    <button
+      mat-stroked-button
+      (click)="google.refresh()"
+      [disabled]="google.loading() || google.running()"
+    >
+      Refresh Google status
+    </button>
+  </div>
+  <p>
+    Google checks do not control local sign-in or application service readiness.
+  </p>
+  <div #googleResult tabindex="-1" role="status" aria-atomic="true">
+    @if (google.error()) {
+    <p class="error">{{ google.error() }}</p>
+    } @if (google.message()) {
+    <p>{{ google.message() }}</p>
+    }
+  </div>
+  @if (google.loading() && !google.loaded()) {
+  <div class="health-skeleton" aria-hidden="true">
+    <span></span><span></span>
+  </div>
+  <p role="status">Loading Google capability observations.</p>
+  } @else if (!google.health() && !google.unavailable()) {
+  <p>
+    No Google customer is connected. Confirm a customer before checking
+    capabilities.
+  </p>
+  <a mat-stroked-button routerLink="/google-connection"
+    >Connect Google customer</a
+  >
+  } @if (google.health(); as health) {
+  <p>
+    Customer <code>{{ health.customerId }}</code>. {{ google.capabilities.length
+    }} enabled and qualified read capabilities.
+  </p>
+  <p>
+    Last checks describe observed access. They do not guarantee continued Google
+    authorization.
+  </p>
+  @if (google.pending() || google.running()) {
+  <p role="status">
+    A Google check is running. Refresh Google status to retrieve its saved
+    result.
+  </p>
+  } @else if (google.expired()) {
+  <p role="status">
+    The Google check expired without a result. Previous observations remain
+    historical. Run another check.
+  </p>
+  } @if (google.retrySeconds() > 0) {
+  <p>Another check is available in {{ google.retrySeconds() }} seconds.</p>
+  } @if (!google.canCheck()) {
+  <p>
+    Your account can inspect Google status. A current connection diagnostic
+    grant is required to run checks.
+  </p>
+  }
+  <button
+    mat-flat-button
+    (click)="checkGoogle()"
+    [disabled]="google.disabled()"
+  >
+    Check enabled Google capabilities
+  </button>
+  @if (health.backgroundFailure; as failure) {
+  <div class="background-failure">
+    <h3>Background Google access</h3>
+    <p class="error">{{ google.recovery[failure].label }}</p>
+    <p>{{ google.recovery[failure].recovery }}</p>
+    <p>
+      After recovery, check both enabled capabilities to verify access and
+      resume background reads.
+    </p>
+  </div>
+  } @for (capability of google.capabilities; track capability.id) { @if
+  (google.result(capability.id); as result) {
+  <article class="capability" [attr.aria-labelledby]="capability.id + '-title'">
+    <h3 [id]="capability.id + '-title'">{{ capability.label }}</h3>
+    <p [class.error]="!!result.failure">
+      {{ result.failure ? google.recovery[result.failure].label : 'Last check
+      passed' }} @if (google.stale(result.checkedAt)) { · Stale observation }
+    </p>
+    <p class="secondary">
+      <time
+        [attr.datetime]="result.checkedAt"
+        [attr.title]="result.checkedAt | date:'medium'"
+        >Checked {{ google.age(result.checkedAt) }} seconds ago</time
+      >
+    </p>
+    <p>
+      Required scope: {{ result.scopeVerified ? 'Verified in the checked token'
+      : 'Not verified in the last check' }}.
+    </p>
+    @if (result.failure) {
+    <p>{{ google.recovery[result.failure].recovery }}</p>
+    } @if (result.lastSucceededAt) {
+    <p>
+      Last successful check:
+      <time [attr.datetime]="result.lastSucceededAt"
+        >{{ result.lastSucceededAt | date:'medium' }}</time
+      >.
+    </p>
+    }
+    <button
+      mat-stroked-button
+      (click)="checkGoogle(capability.id)"
+      [disabled]="google.disabled()"
+    >
+      Recheck {{ capability.label }}
+    </button>
+    <details>
+      <summary>{{ capability.label }} authorization and evidence</summary>
+      <p>
+        Enable domain-wide delegation for this scope. The delegated
+        administrator must also have access to this operation.
+      </p>
+      <code class="scope-text">{{ capability.scope }}</code>
+      <button mat-stroked-button (click)="copyGoogle(capability.scope)">
+        Copy {{ capability.label }} scope
+      </button>
+      <p>
+        <a [href]="capability.source" target="_blank" rel="noopener noreferrer"
+          >Google {{ capability.method }} documentation</a
+        >
+      </p>
+      <p>Checked at: {{ result.checkedAt | date:'medium' }}.</p>
+      <p>Qualification: {{ capability.evidence }}.</p>
+      <p>
+        The controlled live fixture used a Super Admin. Minimum custom
+        administrator privileges remain unqualified.
+      </p>
+      @if (result.correlationId) {
+      <p>Support reference: <code>{{ result.correlationId }}</code></p>
+      }
+    </details>
+  </article>
+  } }
+  <details class="authorization">
+    <summary>Configure required Google authorization</summary>
+    <p>
+      {{ googleScopes.length }} required scopes from enabled, qualified
+      capabilities.
+    </p>
+    <ol>
+      <li>Enable the Admin SDK API in the service-account project.</li>
+      <li>
+        Open
+        <a
+          href="https://admin.google.com/ac/owl/domainwidedelegation"
+          target="_blank"
+          rel="noopener noreferrer"
+          >domain-wide delegation in Google Admin console</a
+        >.
+      </li>
+      <li>
+        Add the service-account numeric client ID and the required scopes below.
+      </li>
+    </ol>
+    @if (connection.connection(); as saved) {
+    <p>Service account client ID: <code>{{ saved.clientId }}</code></p>
+    <button mat-stroked-button (click)="copyGoogle(saved.clientId)">
+      Copy service account client ID
+    </button>
+    }
+    <pre
+      class="scope-text"
+      role="group"
+      tabindex="0"
+      aria-label="Required Google capability scopes"
+    >
+{{ googleScopes.join(',\n') }}</pre
+    >
+    <button mat-stroked-button (click)="copyGoogle(googleScopes.join(','))">
+      Copy required Google scopes
+    </button>
+    <p>
+      Google approval and propagation take time. Recheck the affected capability
+      after the grant takes effect.
+    </p>
+    <p>
+      Optional school OU references remain disabled and unqualified for this
+      workflow. Their scope is not requested.
+    </p>
+    <p>Inventory and mutation capabilities are not enabled.</p>
+  </details>
+  }
 </section>
 }

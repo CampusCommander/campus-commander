@@ -28,6 +28,7 @@ The [Phase 3 authorization contract](phase-3-authorization.md) records the actio
 The [invitation record](phase-3-invitations.md) retains qualified platform invitation evidence.
 The [platform access record](phase-3-platform-access.md) tracks grant management and remaining resource integrations.
 The [customer settings record](phase-3-customer-settings.md) tracks durable revisions, receipt recovery, and onboarding progress.
+The [Google health record](phase-3-google-health.md) tracks capability authorization, diagnostic limits, recovery, and live evidence.
 The [Phase 2 implementation record](phase-2-implementation.md) preserves tests, profile evidence, and historical release gates.
 The [September 12 manual test record](../testing/phase-2-ubuntu-google-results-2026-09-12.md) records the operator's passing Ubuntu and Google Workspace tests.
 Resume reached readiness after a full disk during installation. The owner subsequently accepted the work as it is.

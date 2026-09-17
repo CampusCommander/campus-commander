@@ -56,7 +56,8 @@
       <mat-icon fontSet="material-symbols-outlined">account_circle</mat-icon
       ><span class="nav-label">Your account</span>
     </a>
-    @if (auth.session()?.identity?.permissions?.includes('diagnostics:read')) {
+    @if (auth.session()?.identity?.permissions?.includes('diagnostics:read') ||
+    googleHealth.readable()) {
     <a
       routerLink="/diagnostics"
       routerLinkActive="active"
@@ -180,6 +181,13 @@
       (diagnostics.health()?.status === 'ready') { Services ready } @else {
       Services need attention }
     </a>
+    } @if (googleHealth.readable()) {
+    <a
+      routerLink="/diagnostics"
+      fragment="google-health"
+      (click)="focusGoogleHealth($event)"
+      >{{ googleHealth.summary() }}</a
+    >
     }
   </footer>
 </div>

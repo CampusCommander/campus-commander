@@ -2,6 +2,10 @@ import { JWT, OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import {
   GOOGLE_CUSTOMER_SCOPES,
+  GOOGLE_CAPABILITIES,
+  googleHealthCheckSchema,
+  type GoogleCapabilityResult,
+  type GoogleHealthCapability,
   googleCustomerIdSchema,
   googleDomainNameSchema,
   googleObservationSchema,
@@ -27,7 +31,10 @@ export class GoogleConnectionError extends Error {
   }
 }
 
-function failure(error: unknown): GoogleConnectionError {
+function failure(
+  error: unknown,
+  stage: 'token' | 'read' = 'read',
+): GoogleConnectionError {
   if (error instanceof GoogleConnectionError) return error;
   if (error instanceof z.ZodError)
     return new GoogleConnectionError('invalid-response');
@@ -56,11 +63,16 @@ function failure(error: unknown): GoogleConnectionError {
     typeof provider === 'string' ? provider : provider?.errors?.[0]?.reason;
   const status = response?.status;
   if (
-    ['invalid_grant', 'invalid_client'].includes(reason ?? '') ||
+    ['invalid_grant', 'invalid_client', 'deleted_client'].includes(
+      reason ?? '',
+    ) ||
     status === 401
   )
     return new GoogleConnectionError('credential-rejected');
-  if (reason === 'unauthorized_client')
+  if (
+    reason === 'unauthorized_client' ||
+    (stage === 'token' && reason === 'access_denied')
+  )
     return new GoogleConnectionError('delegation-not-authorized');
   if (reason === 'accessNotConfigured')
     return new GoogleConnectionError('api-not-enabled');
@@ -137,6 +149,34 @@ const domainResponse = z.object({
     .max(1000),
 });
 
+function domainObservation(
+  customerId: string,
+  primaryDomain: string,
+  domains: z.infer<typeof domainResponse>,
+): GoogleObservation {
+  for (const domain of domains.domains) {
+    if (
+      domain.domainAliases?.some(
+        (alias) => alias.parentDomainName !== domain.domainName,
+      )
+    )
+      throw new GoogleConnectionError('invalid-response');
+  }
+  return googleObservationSchema.parse({
+    customerId,
+    primaryDomain,
+    domains: domains.domains.map((domain) => ({
+      name: domain.domainName,
+      primary: domain.isPrimary,
+      verified: domain.verified,
+      aliases: (domain.domainAliases ?? []).map((alias) => ({
+        name: alias.domainAliasName,
+        verified: alias.verified,
+      })),
+    })),
+  });
+}
+
 /** Bound every SDK request, including signed token exchange and introspection. */
 function boundClient(client: OAuth2Client, signal: AbortSignal) {
   const request = client.transporter.request.bind(client.transporter);
@@ -205,8 +245,121 @@ export class GoogleCustomerVerifier {
         throw new GoogleConnectionError('invalid-response');
       return result;
     } catch (error) {
-      throw failure(error);
+      throw failure(error, 'token');
     }
+  }
+
+  /** Check only the selected enabled capabilities with separate token scope evidence. */
+  async checkCapabilities(
+    credential: DelegatedCredential,
+    expectedCustomer: string,
+    capabilities: readonly GoogleHealthCapability[],
+    signal: AbortSignal,
+  ): Promise<{
+    results: GoogleCapabilityResult[];
+    observation: GoogleObservation | null;
+  }> {
+    googleCustomerIdSchema.parse(expectedCustomer);
+    capabilities =
+      googleHealthCheckSchema.shape.capabilities.parse(capabilities);
+    signal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+    let observedCustomer: z.infer<typeof customerResponse> | undefined;
+    let observedDomains: z.infer<typeof domainResponse> | undefined;
+    const results = await Promise.all(
+      capabilities.map(async (capability): Promise<GoogleCapabilityResult> => {
+        const record = GOOGLE_CAPABILITIES.find(
+          (record) =>
+            record.id === capability && record.enabled && record.qualified,
+        );
+        if (!record) throw new GoogleConnectionError('request-failed');
+        let scopeVerified = false;
+        let stage: 'token' | 'read' = 'token';
+        try {
+          const issuer = new JWT({
+            email: credential.serviceAccount.client_email,
+            key: credential.serviceAccount.private_key,
+            keyId: credential.serviceAccount.private_key_id,
+            subject: credential.subject,
+            scopes: [record.scope],
+          });
+          boundClient(issuer, signal);
+          const { token } = await issuer.getAccessToken();
+          if (!token) throw new GoogleConnectionError('credential-rejected');
+          const info = await issuer.getTokenInfo(token);
+          if (info.scopes.length !== 1 || info.scopes[0] !== record.scope)
+            throw new GoogleConnectionError('scope-mismatch');
+          if (
+            !Number.isFinite(info.expiry_date) ||
+            info.expiry_date <= Date.now() + 60_000 ||
+            info.expiry_date > Date.now() + 3_605_000
+          )
+            throw new GoogleConnectionError('invalid-response');
+          scopeVerified = true;
+          stage = 'read';
+          const client = new OAuth2Client();
+          client.eagerRefreshThresholdMillis = 0;
+          client.setCredentials({
+            access_token: token,
+            expiry_date: info.expiry_date,
+          });
+          boundClient(client, signal);
+          if (capability === 'customer-identity') {
+            const result = customerResponse.parse(
+              (
+                await client.request({
+                  url: `${directory}/customers/my_customer`,
+                  method: 'GET',
+                  params: { fields: 'id,customerDomain' },
+                })
+              ).data,
+            );
+            if (result.id !== expectedCustomer)
+              throw new GoogleConnectionError('wrong-customer');
+            observedCustomer = result;
+          } else {
+            const result = domainResponse.parse(
+              (
+                await client.request({
+                  url: `${directory}/customer/${expectedCustomer}/domains`,
+                  method: 'GET',
+                  params: {
+                    fields:
+                      'domains(domainName,isPrimary,verified,domainAliases(domainAliasName,parentDomainName,verified))',
+                  },
+                })
+              ).data,
+            );
+            domainObservation(
+              expectedCustomer,
+              result.domains.find((domain) => domain.isPrimary)?.domainName ??
+                '',
+              result,
+            );
+            observedDomains = result;
+          }
+          return { capability, scopeVerified, failure: null };
+        } catch (error) {
+          return {
+            capability,
+            scopeVerified,
+            failure: failure(error, stage).code,
+          };
+        }
+      }),
+    );
+    let observation: GoogleObservation | null = null;
+    if (observedCustomer && observedDomains) {
+      try {
+        observation = domainObservation(
+          expectedCustomer,
+          observedCustomer.customerDomain,
+          observedDomains,
+        );
+      } catch {
+        for (const result of results) result.failure = 'invalid-response';
+      }
+    }
+    return { results, observation };
   }
 
   async observe(
@@ -244,27 +397,7 @@ export class GoogleCustomerVerifier {
           })
         ).data,
       );
-      for (const domain of domains.domains) {
-        if (
-          domain.domainAliases?.some(
-            (alias) => alias.parentDomainName !== domain.domainName,
-          )
-        )
-          throw new GoogleConnectionError('invalid-response');
-      }
-      return googleObservationSchema.parse({
-        customerId: customer.id,
-        primaryDomain: customer.customerDomain,
-        domains: domains.domains.map((domain) => ({
-          name: domain.domainName,
-          primary: domain.isPrimary,
-          verified: domain.verified,
-          aliases: (domain.domainAliases ?? []).map((alias) => ({
-            name: alias.domainAliasName,
-            verified: alias.verified,
-          })),
-        })),
-      });
+      return domainObservation(customer.id, customer.customerDomain, domains);
     } catch (error) {
       throw failure(error);
     }

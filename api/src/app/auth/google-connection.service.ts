@@ -11,6 +11,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   googleCandidateSchema,
+  googleHealthSchema,
+  googleHealthCheckSchema,
+  googleCapabilityResultSchema,
+  googleFailureSchema,
+  type GoogleHealthCapability,
+  type GoogleCapabilityResult,
+  type GoogleObservation,
   googleConnectionSchema,
   googleCredentialImportSchema,
   type SessionResponse,
@@ -112,13 +119,24 @@ export class GoogleConnectionService
         .safeParse(error);
       if (parsed.success && parsed.data.code === '42501')
         throw new ForbiddenException({ reason: 'forbidden' });
+      if (
+        parsed.success &&
+        parsed.data.code === 'P0001' &&
+        ['health-check-running', 'health-rate-limited'].includes(
+          parsed.data.detail ?? '',
+        )
+      ) {
+        throw new HttpException({ reason: parsed.data.detail }, 429);
+      }
       if (parsed.success && parsed.data.code === 'P0001') {
         const reason = parsed.data.detail;
         if (reason === 'busy') throw new HttpException({ reason: 'busy' }, 429);
         throw new ConflictException({
-          reason: ['already-connected', 'credential-changed'].includes(
-            reason ?? '',
-          )
+          reason: [
+            'already-connected',
+            'credential-changed',
+            'health-check-changed',
+          ].includes(reason ?? '')
             ? reason
             : 'candidate-changed',
         });
@@ -146,6 +164,121 @@ export class GoogleConnectionService
       );
   }
 
+  async health(session: SessionResponse) {
+    return googleHealthSchema
+      .nullable()
+      .parse(
+        await this.query(
+          'SELECT cc.read_google_health($1,$2) AS result',
+          this.actor(session),
+        ),
+      );
+  }
+
+  private async claimHealth(
+    session: SessionResponse,
+    customerId: string,
+    generation: number,
+    capabilities: GoogleHealthCapability[],
+    correlationId: string,
+  ) {
+    return z
+      .strictObject({
+        id: z.uuid(),
+        credentialId: z.uuid(),
+        envelope: z.unknown(),
+      })
+      .parse(
+        await this.query(
+          'SELECT cc.claim_google_health($1,$2,$3,$4,$5,$6,$7) AS result',
+          [
+            ...this.actor(session),
+            customerId,
+            generation,
+            randomUUID(),
+            JSON.stringify(capabilities),
+            correlationId,
+          ],
+        ),
+      );
+  }
+
+  private async finishHealth(
+    session: SessionResponse,
+    customerId: string,
+    generation: number,
+    id: string,
+    results: GoogleCapabilityResult[],
+    observation: GoogleObservation | null,
+  ) {
+    return googleHealthSchema.parse(
+      await this.query(
+        'SELECT cc.finish_google_health($1,$2,$3,$4,$5,$6,$7) AS result',
+        [
+          ...this.actor(session),
+          customerId,
+          generation,
+          id,
+          JSON.stringify(z.array(googleCapabilityResultSchema).parse(results)),
+          observation ? JSON.stringify(observation) : null,
+        ],
+      ),
+    );
+  }
+
+  async checkHealth(
+    session: SessionResponse,
+    input: z.infer<typeof googleHealthCheckSchema>,
+    correlationId: string,
+  ) {
+    const claim = await this.claimHealth(
+      session,
+      input.customerId,
+      input.generation,
+      input.capabilities,
+      correlationId,
+    );
+    let checked: {
+      results: GoogleCapabilityResult[];
+      observation: GoogleObservation | null;
+    };
+    try {
+      const credential = this.cipher().open(claim.envelope, {
+        recordId: claim.credentialId,
+        customerId: input.customerId,
+        generation: input.generation,
+      });
+      checked = await this.verifier.checkCapabilities(
+        credential,
+        input.customerId,
+        input.capabilities,
+        AbortSignal.timeout(30_000),
+      );
+    } catch (error) {
+      const failure =
+        error instanceof CredentialError ||
+        error instanceof ServiceUnavailableException
+          ? 'key-unavailable'
+          : 'request-failed';
+      checked = {
+        results: input.capabilities.map((capability) => ({
+          capability,
+          scopeVerified: false,
+          failure,
+        })),
+        observation: null,
+      };
+    }
+    return this.finishHealth(
+      session,
+      input.customerId,
+      input.generation,
+      claim.id,
+      checked.results,
+      checked.observation,
+    );
+  }
+
   async check(
     session: SessionResponse,
     customerId: string,
@@ -153,6 +286,17 @@ export class GoogleConnectionService
     retry: boolean,
     correlationId: string,
   ) {
+    const capabilities: GoogleHealthCapability[] = [
+      'customer-identity',
+      'domain-observations',
+    ];
+    const claim = await this.claimHealth(
+      session,
+      customerId,
+      generation,
+      capabilities,
+      correlationId,
+    );
     if (retry)
       await this.query('SELECT cc.reset_google_access($1,$2,$3,$4,$5)', [
         ...this.actor(session),
@@ -160,15 +304,35 @@ export class GoogleConnectionService
         generation,
         correlationId,
       ]);
+    let result;
     try {
-      return await new GoogleConnectionProvider(
+      result = await new GoogleConnectionProvider(
         this.database.connection,
         this.cipher(),
-      ).read({ customerId, generation, correlationId }, undefined, {
-        actorId: session.identity.id,
-        permissionVersion: session.identity.permissionVersion,
-      });
+      ).read(
+        { customerId, generation, correlationId },
+        AbortSignal.timeout(30_000),
+        {
+          actorId: session.identity.id,
+          permissionVersion: session.identity.permissionVersion,
+        },
+      );
     } catch (error) {
+      const category =
+        error instanceof GoogleConnectionError
+          ? googleFailureSchema.parse(error.code)
+          : error instanceof CredentialError ||
+              error instanceof ServiceUnavailableException
+            ? 'key-unavailable'
+            : 'request-failed';
+      await this.finishHealth(
+        session,
+        customerId,
+        generation,
+        claim.id,
+        [],
+        null,
+      );
       if (error instanceof GoogleStoreError && error.code === 'forbidden')
         throw new ForbiddenException({ reason: 'forbidden' });
       if (
@@ -176,14 +340,23 @@ export class GoogleConnectionService
         error.code === 'credential-changed'
       )
         throw new ConflictException({ reason: error.code });
-      if (
-        error instanceof GoogleConnectionError ||
-        error instanceof GoogleStoreError ||
-        error instanceof CredentialError
-      )
-        throw new ServiceUnavailableException({ reason: error.code });
-      throw error;
+      throw new ServiceUnavailableException({
+        reason: error instanceof GoogleStoreError ? error.code : category,
+      });
     }
+    await this.finishHealth(
+      session,
+      customerId,
+      generation,
+      claim.id,
+      capabilities.map((capability) => ({
+        capability,
+        scopeVerified: true,
+        failure: null,
+      })),
+      result.observation,
+    );
+    return result;
   }
 
   async candidate(session: SessionResponse, id: string) {

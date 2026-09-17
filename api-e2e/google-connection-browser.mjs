@@ -30,17 +30,22 @@ export async function stageGoogleConnectionBrowser({
 }) {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${publicOrigin}/google-connection`);
-  const navigation = page.getByRole('button', { name: 'Toggle navigation' });
-  if ((await navigation.getAttribute('aria-expanded')) === 'false') {
-    await navigation.click();
-    await expect(navigation).toHaveAttribute('aria-expanded', 'true');
-  }
   await expect(
     page.getByRole('heading', {
       name: 'Import a service account',
       exact: true,
     }),
   ).toBeVisible();
+  const navigation = page.getByRole('button', { name: 'Toggle navigation' });
+  await expect(navigation).toHaveAttribute('aria-expanded', /^(true|false)$/);
+  if ((await navigation.getAttribute('aria-expanded')) === 'false') {
+    await navigation.click();
+  }
+  await expect(navigation).toHaveAttribute('aria-expanded', 'true');
+  const savedSession = await (
+    await page.context().request.get(`${publicOrigin}/api/auth/session`)
+  ).json();
+  assert.equal(savedSession.identity.preferences.navigationCollapsed, false);
   const file = page.getByLabel('Service-account JSON key file');
   await file.setInputFiles({
     name: 'wrong-client.json',
