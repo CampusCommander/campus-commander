@@ -44,11 +44,14 @@ async function inventory(client) {
 }
 
 /** Seed durable customer state through the same database commands used by the application. */
-export async function seedPhase3State(client, actor, permissionVersion) {
+export async function seedPhase3State(
+  client,
+  actor,
+  permissionVersion,
+  { key = randomBytes(32), keyId = 'independent-google-recovery-key' } = {},
+) {
   const customerId = 'C0123456',
     candidateId = randomUUID();
-  const key = randomBytes(32),
-    keyId = 'independent-google-recovery-key';
   const cipher = new CredentialCipher(keyId, key);
   const { privateKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,

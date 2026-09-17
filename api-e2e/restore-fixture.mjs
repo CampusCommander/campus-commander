@@ -9,6 +9,11 @@ import { renderAllDocker } from '../deployment/profiles/all-docker/render.mjs';
 import { verifyBackup } from '../deployment/operations/index.mjs';
 import { createOperationsCliFixture } from '../deployment/operations/cli-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
+import {
+  readApplicationPhase3,
+  seedApplicationPhase3,
+  verifyApplicationPhase3,
+} from './phase3-restore-fixture.mjs';
 
 const docker = (args, input) =>
   execFileSync('docker', args, {
@@ -32,7 +37,8 @@ export async function qualifyApplicationRestore({
   context,
 }) {
   const startedAt = Date.now();
-  const project = `cc-phase2-restore-${randomUUID().slice(0, 12)}`;
+  const phase3 = config.phase === 3;
+  const project = `cc-phase${config.phase}-restore-${randomUUID().slice(0, 12)}`;
   const targetRoot = join(root, 'isolated-application');
   const targetFile = join(targetRoot, 'docker-compose.json');
   const targetCompose = (...args) =>
@@ -40,6 +46,7 @@ export async function qualifyApplicationRestore({
   const proxies = [];
   let sourceStopped = false;
   let targetPrepared = false;
+  let sourcePhase3;
   const probe = `
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
@@ -60,7 +67,13 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
   const inspectApplication = (run) =>
     JSON.parse(
       docker(
-        ['exec', '-i', run('ps', '-q', 'api'), 'node', '--input-type=module'],
+        [
+          'exec',
+          '-i',
+          run('ps', '-q', 'api').split('\n')[0],
+          'node',
+          '--input-type=module',
+        ],
         probe,
       ),
     );
@@ -108,14 +121,37 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
     },
   };
   try {
-    const preference = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === '/api/auth/preferences' &&
-        response.request().method() === 'POST',
-    );
-    await page.getByRole('button', { name: 'Choose theme' }).click();
-    await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
-    assert.equal((await preference).status(), 201);
+    if ((await page.locator('html').getAttribute('data-theme')) !== 'dark') {
+      const preference = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/auth/preferences' &&
+          response.request().method() === 'POST',
+      );
+      await page.getByRole('button', { name: 'Choose theme' }).click();
+      await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
+      assert.equal((await preference).status(), 201);
+    }
+    if (phase3) {
+      const seedArtifact =
+        probe.slice(0, probe.indexOf('const principals=')) +
+        `
+const store=await createArtifactStore({pool,root:c.artifacts.location});
+const bytes=Buffer.from('CC56 preserved École 学校');
+const artifact=await store.stage({schemaVersion:1,expectedSizeBytes:bytes.length,expectedSha256:crypto.createHash('sha256').update(bytes).digest('hex')},[bytes]);
+await store.publish(artifact);
+await fs.writeFile(c.artifacts.location+'/.cc16-fixture.json',JSON.stringify(artifact));
+await store.close();await pool.end();`;
+      docker(
+        [
+          'exec',
+          '-i',
+          compose('ps', '-q', 'api').split('\n')[0],
+          'node',
+          '--input-type=module',
+        ],
+        seedArtifact,
+      );
+    }
     const before = inspectApplication(compose);
     assert.equal(before.principals.length, 1);
     assert.equal(before.principals[0].preferences.theme, 'dark');
@@ -134,7 +170,7 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
       await mkdir(directory, { mode: 0o700 });
     docker([
       'cp',
-      `${compose('ps', '-a', '-q', 'api')}:${config.artifacts.location}/.`,
+      `${compose('ps', '-a', '-q', 'api').split('\n')[0]}:${config.artifacts.location}/.`,
       sourceRoots.artifacts,
     ]);
     docker([
@@ -143,6 +179,13 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
       sourceRoots.kestraInternal,
     ]);
     const sourceConfig = await connectDatabases(compose, config, 'source');
+    if (phase3)
+      sourcePhase3 = await seedApplicationPhase3({
+        config: sourceConfig,
+        resolveSecret,
+        applicationCredentials,
+        before,
+      });
     sourceConfig.artifacts.location = sourceRoots.artifacts;
     sourceConfig.services.kestra.internalStorage.location =
       sourceRoots.kestraInternal;
@@ -153,6 +196,9 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
       {
         container: process.env.CC_OPERATIONS_CLI_HOST !== '1',
         mountDirectories: [root],
+        ...(phase3
+          ? { googlePreload: join(root, 'google-connection-preload.cjs') }
+          : {}),
       },
     );
     const { result: backupResult } = await operatorCli.run('backup', {
@@ -205,6 +251,17 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
       target: '/run/qualification/provider-ca',
       read_only: true,
     });
+    if (phase3)
+      for (const service of ['api', 'workers']) {
+        rendered.services[service].environment.NODE_OPTIONS =
+          '--require=/run/qualification/google-connection-preload.cjs';
+        rendered.services[service].volumes.push({
+          type: 'bind',
+          source: join(root, 'google-connection-preload.cjs'),
+          target: '/run/qualification/google-connection-preload.cjs',
+          read_only: true,
+        });
+      }
     await writeFile(targetFile, JSON.stringify(rendered), { mode: 0o600 });
     targetPrepared = true;
     targetCompose(
@@ -241,6 +298,17 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
     );
     assert.equal(restoration.status, 'verified-services-disabled');
     assert.equal(restoration.redisRecovery.releaseRequiresFreshRedis, true);
+    const phase3State = phase3
+      ? await verifyApplicationPhase3({
+          config: restoreConfig,
+          resolveSecret,
+          applicationCredentials,
+          source: sourcePhase3,
+          restoration,
+          operatorCli,
+          targetDirectory,
+        })
+      : undefined;
     for (const [volume, directory] of [
       ['artifacts', 'artifacts'],
       ['kestra-storage', 'kestra-internal'],
@@ -265,7 +333,17 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
     }
     targetCompose('up', '-d', '--wait', '--wait-timeout', '180');
     const after = inspectApplication(targetCompose);
-    assert.deepEqual(after, before);
+    if (phase3) {
+      assert.deepEqual(after.principals, before.principals);
+      assert.equal(after.artifactId, before.artifactId);
+      assert.equal(after.sha256, before.sha256);
+      const oldEventIds = new Set(before.events.map((event) => event.id));
+      assert.deepEqual(
+        after.events.filter((event) => oldEventIds.has(event.id)),
+        before.events,
+      );
+      assert.ok(after.events.length > before.events.length);
+    } else assert.deepEqual(after, before);
     const rejectedContext = await context
       .browser()
       .newContext({ ignoreHTTPSErrors: true });
@@ -287,17 +365,36 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
           'data-theme',
           'dark',
         );
+        if (phase3)
+          return readApplicationPhase3(
+            restoredPage,
+            config.applicationAuth.publicOrigin,
+            sourcePhase3,
+          );
       },
     );
     return {
       status: 'passed',
       profile: 'all-docker',
+      phase: config.phase,
+      ...(phase3
+        ? {
+            command: 'npm exec -- nx run api-e2e:phase3-restore-integration',
+            environment: {
+              nodeVersion: process.version,
+              platform: process.platform,
+              architecture: process.arch,
+              ci: process.env.CI === 'true',
+            },
+          }
+        : {}),
       images: release.images,
       recordedAt: new Date().toISOString(),
       durationMs: Date.now() - startedAt,
       sourceRevision: release.sourceRevision,
       application,
       restoration,
+      ...(phase3State ? { phase3State } : {}),
       operatorCli: { ...operatorCli.execution, commands: operatorCli.commands },
       preserved: {
         principals: before.principals.length,
@@ -315,9 +412,17 @@ process.stdout.write(JSON.stringify({principals,events,artifactId:a.artifactId,s
         'The stopped source and restored target reuse one loopback HTTPS origin.',
         'Synthetic credentials remain unchanged for this restore and require district review before deployment.',
         'The fixture adds a synthetic provider CA and host mapping.',
+        ...(phase3
+          ? [
+              'The fixture seeds customer state through database commands after source shutdown. It does not qualify source onboarding through the browser.',
+              'Google transport responses are synthetic. Live Google privileges and Education capabilities require separate evidence.',
+              'Pending invitation and login-transaction recovery require separate application proofs.',
+            ]
+          : []),
       ],
     };
   } finally {
+    sourcePhase3?.key.fill(0);
     if (targetPrepared) targetCompose('down', '--volumes', '--remove-orphans');
     for (const name of proxies) docker(['rm', '-f', name]);
     if (sourceStopped) {

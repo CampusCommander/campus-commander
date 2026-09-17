@@ -105,8 +105,25 @@ The [retained CLI report](../../deployment/evidence/CC-56-operator-cli-restore.j
 It records PostgreSQL 18.6 tools inside the pinned operator container without an injected database runner.
 The backup took 367 ms. Restore took 340 ms. The complete fixture took 31,943 ms.
 Both review axes found no actionable issues in `60857a5...5b741c8`.
-Full application qualification remains active. The added receipt-write failure check requires another hosted run.
+That run passed all eight jobs, including packaged applications and all-Docker compatibility.
+[Run 35188533234](https://github.com/CampusCommander/campus-commander/actions/runs/35188533234) passed the receipt-write failure check at `c7932e2`.
+The [receipt recovery report](../../deployment/evidence/CC-56-receipt-write-recovery.json) records the failed write, preserved database verification, and reconstructed receipt.
+Its full application job remains active.
 The retained `06685a9` report predates this CLI increment and remains library-level evidence.
+
+## Isolated application fixture
+
+The `api-e2e:phase3-restore-integration` target installs Phase 3 and checks resume, restart, stop, and uninstall with retained data.
+It then stops the source and seeds durable customer state through the application database commands.
+The operator CLI restores that state into separate Compose databases, networks, and storage volumes.
+The fixture compares durable state before Google revalidation. It then revalidates the credential before target application startup.
+A fresh Redis instance rejects the source browser session. A new sign-in reads restored settings and the school definition.
+The school retains its approved scope. Its historical references do not establish effective scope.
+
+The fixture uses packaged application images, real Kestra, and the production operator CLI from the workspace.
+Google transport and the sign-in provider remain synthetic. Both installations share one Docker host and reuse one loopback HTTPS origin.
+This fixture does not establish accepted Phase 2 upgrade, extracted release-bundle delivery, live Google privileges, or pending login-transaction recovery.
+Hosted execution remains pending. CI will retain separate profile and restore reports in `dist/phase-3-recovery`.
 
 ## Remaining recovery work
 

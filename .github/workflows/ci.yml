@@ -138,6 +138,15 @@ jobs:
       - run: npm exec nx run api-e2e:all-docker-integration
         env:
           NX_NO_CLOUD: 'true'
+      - run: npm exec nx run api-e2e:phase3-restore-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-3-application-restore-evidence
+          path: dist/phase-3-recovery/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
