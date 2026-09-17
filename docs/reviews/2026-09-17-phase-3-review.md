@@ -60,6 +60,14 @@ They are not recorded as passed contrast checks or confirmed accessibility defec
 All 38 reports mark the human screen-reader walkthrough `not-run`.
 Applicable rules: UI-06, UI-09, and UI-10. No client controls change in this record.
 
+A supplemental [rendered contrast check](../../deployment/evidence/CC-61-rendered-contrast.json) inspected the running source client with actual theme controls.
+It measured 180 visible text samples across settings, invitations, school drafts, and platform access in both themes.
+All measured ratios met 4.5:1. The lowest ratio was 4.51:1.
+The check expanded collapsed details and excluded hidden and disabled controls.
+Screenshot inspection confirmed visible settings text and school controls. The check restored the administrator's light theme.
+The initial probe included loading states and collapsed content. Those results did not establish product defects.
+This supplemental check does not replay every packaged state or close the original 17 inconclusive observations.
+
 The approved Easton fixture remains available for read-only API checks without repeated authorization requests.
 An Education domain is not a prerequisite for current customer, domain, and OU reads.
 Unavailable live fixtures remain explicit limitations. No additional Google scopes or mutations are authorized by this record.

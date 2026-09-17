@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "observedAt": "2026-09-17T20:21:14.195Z",
+  "environment": "Running source client-review fixture. Synthetic Google and OIDC providers.",
+  "applicationSource": "dc7b349",
+  "publishedSourceWithSameFrontend": "a043ef187dc6efbda7b5db84d7367594f0922cb0",
+  "command": "node dist/client-review/check-contrast.mjs",
+  "scriptSha256": "dd5026daaae64be4b8792109394cafb81612261cf67013ed413e44a7744609ec",
+  "rawReportSha256": "44305ea7e6668bc33eb1dd20c8c313d5f724be1e1614f2cdab9e4093d8bc7e77",
+  "method": "Computed foreground and ancestor background alpha composition. Actual application theme controls. Administrator preference restored to light afterward.",
+  "checks": [
+    {
+      "route": "customer-settings",
+      "theme": "light",
+      "visibleTextSamples": 10,
+      "minimumContrastRatio": 4.51,
+      "screenshotSha256": "3a597f17ed7ee7dc4fca9b2898f53d72650abcf14686a584a2b67b87d0360ef9",
+      "colorPairs": [
+        {
+          "foreground": "rgb(21, 86, 176)",
+          "background": [248, 250, 252],
+          "contrastRatio": 6.71
+        },
+        {
+          "foreground": "rgb(21, 86, 176)",
+          "background": [255, 255, 255],
+          "contrastRatio": 7.02
+        },
+        {
+          "foreground": "rgb(255, 255, 255)",
+          "background": [26, 115, 232],
+          "contrastRatio": 4.51
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [230.24, 239.2, 250.4],
+          "contrastRatio": 13.9
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [248, 250, 252],
+          "contrastRatio": 15.39
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [255, 255, 255],
+          "contrastRatio": 16.1
+        },
+        {
+          "foreground": "rgb(95, 99, 104)",
+          "background": [255, 255, 255],
+          "contrastRatio": 6.05
+        }
+      ]
+    },
+    {
+      "route": "customer-settings",
+      "theme": "dark",
+      "visibleTextSamples": 10,
+      "minimumContrastRatio": 4.51,
+      "screenshotSha256": "1768eae85c32a4be50b184c8478675495c77b3ceaa6ca392e892707ded611c43",
+      "colorPairs": [
+        {
+          "foreground": "rgb(138, 180, 248)",
+          "background": [18, 18, 18],
+          "contrastRatio": 8.89
+        },
+        {
+          "foreground": "rgb(138, 180, 248)",
+          "background": [30, 30, 30],
+          "contrastRatio": 7.91
+        },
+        {
+          "foreground": "rgb(154, 160, 166)",
+          "background": [30, 30, 30],
+          "contrastRatio": 6.31
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [18, 18, 18],
+          "contrastRatio": 15.54
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [19.12, 31.580000000000002, 47.96000000000001],
+          "contrastRatio": 13.69
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [30, 30, 30],
+          "contrastRatio": 13.83
+        },
+        {
+          "foreground": "rgb(255, 255, 255)",
+          "background": [26, 115, 232],
+          "contrastRatio": 4.51
+        }
+      ]
+    },
+    {
+      "route": "invitations",
+      "theme": "light",
+      "visibleTextSamples": 14,
+      "minimumContrastRatio": 6.05,
+      "screenshotSha256": "e74d43e26d1f68b30843abf72eb725bcef9c5d00f37ca9763610b8c617250e64",
+      "colorPairs": [
+        {
+          "foreground": "rgb(21, 86, 176)",
+          "background": [248, 250, 252],
+          "contrastRatio": 6.71
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [230.24, 239.2, 250.4],
+          "contrastRatio": 13.9
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [248, 250, 252],
+          "contrastRatio": 15.39
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [255, 255, 255],
+          "contrastRatio": 16.1
+        },
+        {
+          "foreground": "rgb(95, 99, 104)",
+          "background": [255, 255, 255],
+          "contrastRatio": 6.05
+        }
+      ]
+    },
+    {
+      "route": "invitations",
+      "theme": "dark",
+      "visibleTextSamples": 14,
+      "minimumContrastRatio": 6.31,
+      "screenshotSha256": "279053b0d70d1761080042f412151b2c93a25c1672550bbe99344b1fab8fcbd5",
+      "colorPairs": [
+        {
+          "foreground": "rgb(138, 180, 248)",
+          "background": [18, 18, 18],
+          "contrastRatio": 8.89
+        },
+        {
+          "foreground": "rgb(154, 160, 166)",
+          "background": [30, 30, 30],
+          "contrastRatio": 6.31
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [18, 18, 18],
+          "contrastRatio": 15.54
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [19.12, 31.580000000000002, 47.96000000000001],
+          "contrastRatio": 13.69
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [30, 30, 30],
+          "contrastRatio": 13.83
+        }
+      ]
+    },
+    {
+      "route": "schools",
+      "theme": "light",
+      "visibleTextSamples": 28,
+      "minimumContrastRatio": 6.05,
+      "screenshotSha256": "44fb8968d84bf604447c51b0ef826bbdd81ddaedb44aafd8b1dcba45e5df1acf",
+      "colorPairs": [
+        {
+          "foreground": "rgb(179, 38, 30)",
+          "background": [255, 255, 255],
+          "contrastRatio": 6.54
+        },
+        {
+          "foreground": "rgb(21, 86, 176)",
+          "background": [255, 255, 255],
+          "contrastRatio": 7.02
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [230.24, 239.2, 250.4],
+          "contrastRatio": 13.9
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [248, 250, 252],
+          "contrastRatio": 15.39
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [255, 255, 255],
+          "contrastRatio": 16.1
+        },
+        {
+          "foreground": "rgb(95, 99, 104)",
+          "background": [255, 255, 255],
+          "contrastRatio": 6.05
+        }
+      ]
+    },
+    {
+      "route": "schools",
+      "theme": "dark",
+      "visibleTextSamples": 28,
+      "minimumContrastRatio": 6.31,
+      "screenshotSha256": "fa50ad4d7c89c57ecdc7acaf355086a4c943fc24d097892d87877d052f8cf095",
+      "colorPairs": [
+        {
+          "foreground": "rgb(138, 180, 248)",
+          "background": [30, 30, 30],
+          "contrastRatio": 7.91
+        },
+        {
+          "foreground": "rgb(154, 160, 166)",
+          "background": [30, 30, 30],
+          "contrastRatio": 6.31
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [18, 18, 18],
+          "contrastRatio": 15.54
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [19.12, 31.580000000000002, 47.96000000000001],
+          "contrastRatio": 13.69
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [30, 30, 30],
+          "contrastRatio": 13.83
+        },
+        {
+          "foreground": "rgb(242, 139, 130)",
+          "background": [30, 30, 30],
+          "contrastRatio": 6.98
+        }
+      ]
+    },
+    {
+      "route": "platform-users",
+      "theme": "light",
+      "visibleTextSamples": 38,
+      "minimumContrastRatio": 4.51,
+      "screenshotSha256": "20a2d9031c79a14f850207bdc0ee76832d055bdf2a2814493ce424ee577f8bbc",
+      "colorPairs": [
+        {
+          "foreground": "rgb(21, 86, 176)",
+          "background": [248, 250, 252],
+          "contrastRatio": 6.71
+        },
+        {
+          "foreground": "rgb(255, 255, 255)",
+          "background": [26, 115, 232],
+          "contrastRatio": 4.51
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [230.24, 239.2, 250.4],
+          "contrastRatio": 13.9
+        },
+        {
+          "foreground": "rgb(32, 33, 36)",
+          "background": [248, 250, 252],
+          "contrastRatio": 15.39
+        }
+      ]
+    },
+    {
+      "route": "platform-users",
+      "theme": "dark",
+      "visibleTextSamples": 38,
+      "minimumContrastRatio": 4.51,
+      "screenshotSha256": "02b8af2c79dbd483001f99df0dce57d76e3a069d5eb6f6863b1b847ad2d20188",
+      "colorPairs": [
+        {
+          "foreground": "rgb(138, 180, 248)",
+          "background": [18, 18, 18],
+          "contrastRatio": 8.89
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [18, 18, 18],
+          "contrastRatio": 15.54
+        },
+        {
+          "foreground": "rgb(232, 234, 237)",
+          "background": [19.12, 31.580000000000002, 47.96000000000001],
+          "contrastRatio": 13.69
+        },
+        {
+          "foreground": "rgb(255, 255, 255)",
+          "background": [26, 115, 232],
+          "contrastRatio": 4.51
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Representative current states, not a replay of all packaged states.",
+    "Measurements exclude disabled controls and do not prove overlap or full accessibility conformance.",
+    "No production code changed. This report does not close the 17 original inconclusive checks.",
+    "The check measures text colors against composed ancestor backgrounds. It does not measure control borders, indicators, or image backgrounds.",
+    "No human screen-reader or owner acceptance claim."
+  ]
+}
