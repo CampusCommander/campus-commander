@@ -217,3 +217,12 @@ gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
 
 The workflow rejects combined upgrade and fault modes before it starts containers.
 Capacity, certificate, provider, stale-credential, and complete profile acceptance require separate evidence.
+
+[Run 35218528299](https://github.com/CampusCommander/campus-commander/actions/runs/35218528299) passed all seven service faults at harness `6cb04af` against application `a3601ef`.
+Recovery took 1,031 to 73,823 milliseconds. The service fault segment took 186,002 milliseconds.
+Every case preserved two principals, one credential, one settings revision, two schools, thirteen grants, and two access receipts.
+The probes also preserved 51 security events, an artifact, two completed Kestra executions, and an internal storage marker.
+Redis recovery rejected the previous session. All ten installed workflow checks passed.
+
+The [retained service fault report](../../deployment/evidence/CC-57-service-faults.json) includes exact release identity and three original report hashes.
+PR CI passed at the implementation and documentation revisions. Complete fault and profile acceptance remain open.
