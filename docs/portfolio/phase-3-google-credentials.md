@@ -72,7 +72,9 @@ Both runs used the encrypted credential without access to the original service-a
 Missing and incorrect key tests failed before any Google request.
 The [sanitized evidence](../../deployment/evidence/CC-44-dwd-credential-proof.json) retains these results and their limits.
 The owner confirmed the resolved customer on 2026-09-16.
-The delegated Google role remains unrecorded until the owner supplies it.
+The owner reports that the delegated identity has the Super Admin role. This statement does not establish minimum-role validation.
+The owner has no Education test domain and is seeking one. An approved second administrator remains unavailable.
+The evidence records this statement separately from the original live reports. Those reports retain their original role metadata.
 Live DWD revocation, key disablement, and alternate same-customer identity replacement remain NOT RUN.
 An isolated second-customer identity remains unavailable. Simulator evidence proves wrong-customer rejection.
 Do not label CC-44 qualified while its required live cases remain incomplete.
