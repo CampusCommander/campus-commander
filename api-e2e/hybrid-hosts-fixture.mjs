@@ -27,8 +27,11 @@ export async function createHybridHosts({
   images,
   publicPort,
   boundedArtifacts = false,
+  baselineRoot,
+  updateRoot,
+  nativeOperations = false,
 }) {
-  assert.match(project, /^cc-phase2-hybrid-[a-f0-9]{12}$/);
+  assert.match(project, /^cc-phase[23]-hybrid-[a-f0-9]{12}$/);
   assert.ok(root.startsWith(`/tmp/${project}-`));
   const network = `${project}-district`;
   const owned = [];
@@ -222,6 +225,24 @@ export async function createHybridHosts({
           ? [
               '--mount',
               `type=bind,source=${resolve(process.env.CC_AUTH_INSTALLER_ROOT ?? '.')},target=/release,readonly`,
+              ...(baselineRoot
+                ? [
+                    '--mount',
+                    `type=bind,source=${resolve(baselineRoot)},target=/baseline,readonly`,
+                  ]
+                : []),
+              ...(updateRoot
+                ? [
+                    '--mount',
+                    `type=bind,source=${resolve(updateRoot)},target=/update,readonly`,
+                  ]
+                : []),
+              ...(baselineRoot || nativeOperations
+                ? [
+                    '--mount',
+                    `type=bind,source=${process.execPath},target=/qualification-node,readonly`,
+                  ]
+                : []),
               '-p',
               `127.0.0.1:${publicPort}:${publicPort}`,
             ]

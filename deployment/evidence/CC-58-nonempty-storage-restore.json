@@ -1,0 +1,769 @@
+{
+  "status": "passed",
+  "profile": "hybrid",
+  "schemaVersion": 1,
+  "phase": 3,
+  "harnessRevision": "1bd9a895514d45c5465ec3e7ac368bcec2eeb075",
+  "harnessWorkingTree": "clean",
+  "command": "npm exec -- nx run api-e2e:phase3-hybrid-restore-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "uid": 1000,
+    "gid": 1000,
+    "browser": "149.0.7827.55"
+  },
+  "recipientAccessChecks": [],
+  "credentialKeyProjection": [
+    {
+      "host": "controller",
+      "daemonId": "f0cf1bba-7bf5-437b-a15e-986f4bddae25",
+      "service": "api",
+      "containerId": "f0382dcbbc8ff79e4fbf08c4edf25ac8a93c33b35428dbeb758123d6a9929be7",
+      "readOnly": true,
+      "volumeName": "cc-phase3-hybrid-8beb67091910_api-secrets",
+      "keyBytesVerified": true,
+      "fileMode": 384,
+      "fileUid": 1000,
+      "fileGid": 1000,
+      "keyId": "hybrid-google-qualification-key"
+    },
+    {
+      "host": "controller",
+      "daemonId": "f0cf1bba-7bf5-437b-a15e-986f4bddae25",
+      "service": "api",
+      "containerId": "25f61ef674221997dd55c6d6410597c9e63b09add8855c15a24a44c9b9998cfe",
+      "readOnly": true,
+      "volumeName": "cc-phase3-hybrid-8beb67091910_api-secrets",
+      "keyBytesVerified": true,
+      "fileMode": 384,
+      "fileUid": 1000,
+      "fileGid": 1000,
+      "keyId": "hybrid-google-qualification-key"
+    },
+    {
+      "host": "worker-1",
+      "daemonId": "9310992a-c7ca-40bd-9ef7-219de037af6a",
+      "service": "workers",
+      "containerId": "3ed9ef11b888e3c013a1ec820b9c387243e4b81e1fe483a6e45d520120c514b9",
+      "readOnly": true,
+      "volumeName": "cc-phase3-hybrid-8beb67091910-worker-1_workers-secrets",
+      "keyBytesVerified": true,
+      "fileMode": 384,
+      "fileUid": 1000,
+      "fileGid": 1000,
+      "keyId": "hybrid-google-qualification-key"
+    },
+    {
+      "host": "worker-2",
+      "daemonId": "72c65191-54ab-42a5-b734-a4c11275fe01",
+      "service": "workers",
+      "containerId": "8d247f27df817198d6bb30b5d2c0995beda539bfc51b0629da5ebce0f9c29a12",
+      "readOnly": true,
+      "volumeName": "cc-phase3-hybrid-8beb67091910-worker-2_workers-secrets",
+      "keyBytesVerified": true,
+      "fileMode": 384,
+      "fileUid": 1000,
+      "fileGid": 1000,
+      "keyId": "hybrid-google-qualification-key"
+    }
+  ],
+  "durationScope": "Extracted hybrid installation, lifecycle, isolated restore, and fixture cleanup.",
+  "restoration": {
+    "status": "passed",
+    "durationMs": 119285,
+    "backup": {
+      "manifestSha256": "7d8db86c0ced336bcefc884868b8f95f415f2fa3abf45d9026079792daf2cfa4",
+      "createdAt": "2026-09-17T16:41:38.937Z",
+      "encryptedFiles": 6
+    },
+    "operatorCli": {
+      "runner": "operator-container-native",
+      "postgresImage": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+      "nodeVersion": "v24.19.0",
+      "source": "extracted-published-phase3-bundle",
+      "injectedDatabaseTool": false,
+      "googleTransport": "synthetic-gaxios-preload",
+      "sourceCommands": [
+        {
+          "command": "generate-key",
+          "status": "created",
+          "durationMs": 755
+        },
+        {
+          "command": "backup",
+          "status": "complete",
+          "durationMs": 1132
+        },
+        {
+          "command": "verify",
+          "status": "verified",
+          "durationMs": 534
+        }
+      ],
+      "targetCommands": [
+        {
+          "command": "verify",
+          "status": "verified",
+          "durationMs": 569
+        },
+        {
+          "command": "restore",
+          "status": "verified-services-disabled",
+          "durationMs": 1498
+        },
+        {
+          "command": "revalidate-google",
+          "status": "revalidated",
+          "durationMs": 1931
+        }
+      ]
+    },
+    "targetInstallerCommands": [
+      {
+        "command": "prepare",
+        "status": "prepared",
+        "durationMs": 6117
+      },
+      {
+        "command": "reset-bootstrap",
+        "status": "replaced",
+        "durationMs": 317
+      },
+      {
+        "command": "install",
+        "status": "ready",
+        "durationMs": 26270
+      },
+      {
+        "command": "resume",
+        "status": "ready",
+        "durationMs": 8290
+      }
+    ],
+    "phase3State": {
+      "preserved": {
+        "google_connection": {
+          "count": 1,
+          "sha256": "741a8b431e02c40c3ec6286d92db4ec1fcc699c1d34ea4381b45c2471d8a0219"
+        },
+        "google_credentials": {
+          "count": 1,
+          "sha256": "64b919386f38d6b9a7c1a6d5a8fd4ec4241f511ad11e6538cccfa2c135a63475"
+        },
+        "customer_settings_revisions": {
+          "count": 1,
+          "sha256": "b489f0f276f0f04f5fd8bfb1ce5e0f73a83751061347a26c05b89b220ba9a4e4"
+        },
+        "school_definitions": {
+          "count": 1,
+          "sha256": "e2999586982b4610e082059abeda39d4ef44c0911a77d021370ab9af76877111"
+        },
+        "application_grants": {
+          "count": 13,
+          "sha256": "af24a16716f1c8734f0d7e8b5e601125332ed3830481f4847fc4ce42949c199a"
+        },
+        "application_principals": {
+          "count": 2,
+          "sha256": "a8274767b3d3c8698f67047737b99f1412c32d9c9a383cbb231e59ad7d571b46"
+        },
+        "application_access_changes": {
+          "count": 1,
+          "sha256": "e6ed4d2a2b5ca44ee49f497be119d893923e63b4a64a5c23f0a89ca733761ac5"
+        },
+        "google_capability_health": {
+          "count": 2,
+          "sha256": "6ad45ad302bac7613604c1a8dfed783cae762436bf03b57fb13cce007711e833"
+        },
+        "school_reference_history": {
+          "count": 1,
+          "sha256": "9c52d8dadc60ce464633805a9933d397b0a8b27ffd3ba48df171011104473952"
+        }
+      },
+      "oldSettingsReceiptPreserved": true,
+      "accessChangeReceiptsPreserved": true,
+      "healthHistoryPreserved": true,
+      "ordinaryPrincipalSchoolReadPreserved": true,
+      "approvedSchoolScopePreserved": true,
+      "oldSchoolReferencesEffective": false,
+      "pendingCandidatesExpired": 1,
+      "pendingReviewsExpired": 1,
+      "status": "passed",
+      "customerId": "C0123456",
+      "schoolId": "a0e9cdcd-e865-4bc1-b0cc-184312e68866",
+      "principals": 2,
+      "originalSecurityEvents": 60,
+      "originalSecurityEventsPreserved": true,
+      "migrationChecksumsPreserved": true,
+      "artifactMetadataPreserved": true,
+      "artifact": {
+        "id": "91e4fd91-e0cb-45ce-b2a4-fbfee52cbfe4",
+        "sha256": "62646fa1edd2ba694ab6d20a0e5c981a99af925a7178d814e4bffcaef53b47a5"
+      },
+      "executionRows": 4,
+      "executionSha256": "5447f4de75756c94434babc3d0f139f6056685d4106174e32002038e4482d36b",
+      "kestraFiles": [
+        {
+          "path": ".phase3-restore-marker",
+          "sha256": "1007e76c74ec89429c904ad660ac2246d51c23049edaefaf2497cc835e78fc71"
+        }
+      ],
+      "bootstrapRevoked": true,
+      "invitations": {
+        "revoked": 3,
+        "recoveryAuditEvents": 3,
+        "sourceSha256": "9f0fbd10b7200871f9f7c3c49b74f68e3ef558a0c2f2daf95b6d4e0e9f229114",
+        "restoredSha256": "8a6059c4cd5e0e33953e08cd0df3d16305782a8686d4e71a0add9554fb0ebc23"
+      },
+      "bootstrapRecovery": {
+        "status": "passed",
+        "sourceBootstrapRejected": true,
+        "replacementBootstrapAccepted": true,
+        "bootstrapGeneration": "2"
+      },
+      "revalidation": {
+        "status": "revalidated",
+        "recoveryId": "faa47ec5-c81f-40af-bc85-338b7a70a9c5",
+        "customerId": "C0123456",
+        "generation": 1,
+        "verifiedAt": "2026-09-17T16:41:45.506Z"
+      },
+      "markerPreserved": true,
+      "startupBlockedBeforeAcceptance": true
+    },
+    "isolation": {
+      "targetProject": "cc-phase3-hybrid-8beb67091910-restore",
+      "sourceContainers": [
+        {
+          "host": "controller",
+          "daemonId": "f0cf1bba-7bf5-437b-a15e-986f4bddae25",
+          "project": "cc-phase3-hybrid-8beb67091910",
+          "id": "75009d84cdf27610f3ac332feea50590d4dd5ce9f77e178b8cc14ddfdb9d673b"
+        },
+        {
+          "host": "controller",
+          "daemonId": "f0cf1bba-7bf5-437b-a15e-986f4bddae25",
+          "project": "cc-phase3-hybrid-8beb67091910",
+          "id": "97b916f08b6980dc1cfd1878d9890565434805ed016aaa4f1655959c7aec55e2"
+        },
+        {
+          "host": "controller",
+          "daemonId": "f0cf1bba-7bf5-437b-a15e-986f4bddae25",
+          "project": "cc-phase3-hybrid-8beb67091910",
+          "id": "5dc0cb4428a3e587187b80a7f05e1b1a688e4b52627abe16660de98c8ed27481"
+        },
+        {
+          "host": "controller",
+          "daemonId": "f0cf1bba-7bf5-437b-a15e-986f4bddae25",
+          "project": "cc-phase3-hybrid-8beb67091910",
+          "id": "e3e136e28fd5aa2409da36445302dccb0c0021b64c71909991fc1e408fe5a76b"
+        },
+        {
+          "host": "controller",
+          "daemonId": "f0cf1bba-7bf5-437b-a15e-986f4bddae25",
+          "project": "cc-phase3-hybrid-8beb67091910",
+          "id": "5cc2a1c67e9e9a84aeab911f3cce573c0caa89f3fa41a1b786c79f42cce336d2"
+        },
+        {
+          "host": "worker-1",
+          "daemonId": "9310992a-c7ca-40bd-9ef7-219de037af6a",
+          "project": "cc-phase3-hybrid-8beb67091910-worker-1",
+          "id": "13138398f908ba4799483961f54416557d38dd8f121b59949b3b2d77856e74f5"
+        },
+        {
+          "host": "worker-2",
+          "daemonId": "72c65191-54ab-42a5-b734-a4c11275fe01",
+          "project": "cc-phase3-hybrid-8beb67091910-worker-2",
+          "id": "d15c42ae8913a486d8608fc6e766d17c20cdf8d7a532faec06018fb5474acda5"
+        }
+      ],
+      "observations": [
+        {
+          "stage": "before-restore",
+          "stoppedApplicationContainers": 7,
+          "quiescedExternalServices": [
+            {
+              "id": "e60e6994293189685408ba24e94098c32ab20724cc93280de1864ed10deaea05",
+              "name": "cc-phase3-hybrid-8beb67091910-postgres",
+              "state": "stopped"
+            },
+            {
+              "id": "963285f89d26c826fa56984359318d89ee1c752bee8d8fb780b3e47d5d4e73eb",
+              "name": "cc-phase3-hybrid-8beb67091910-redis",
+              "state": "paused"
+            }
+          ],
+          "observedAt": "2026-09-17T16:41:41.112Z"
+        },
+        {
+          "stage": "after-revalidation",
+          "stoppedApplicationContainers": 7,
+          "quiescedExternalServices": [
+            {
+              "id": "e60e6994293189685408ba24e94098c32ab20724cc93280de1864ed10deaea05",
+              "name": "cc-phase3-hybrid-8beb67091910-postgres",
+              "state": "stopped"
+            },
+            {
+              "id": "963285f89d26c826fa56984359318d89ee1c752bee8d8fb780b3e47d5d4e73eb",
+              "name": "cc-phase3-hybrid-8beb67091910-redis",
+              "state": "paused"
+            }
+          ],
+          "observedAt": "2026-09-17T16:41:47.523Z"
+        },
+        {
+          "stage": "after-target-browser-verification",
+          "stoppedApplicationContainers": 7,
+          "quiescedExternalServices": [
+            {
+              "id": "e60e6994293189685408ba24e94098c32ab20724cc93280de1864ed10deaea05",
+              "name": "cc-phase3-hybrid-8beb67091910-postgres",
+              "state": "stopped"
+            },
+            {
+              "id": "963285f89d26c826fa56984359318d89ee1c752bee8d8fb780b3e47d5d4e73eb",
+              "name": "cc-phase3-hybrid-8beb67091910-redis",
+              "state": "paused"
+            }
+          ],
+          "observedAt": "2026-09-17T16:42:38.367Z"
+        }
+      ],
+      "freshExternalServices": [
+        {
+          "id": "87e7ec292080d1aef2ba9407fef006e02bf5398938ac85d69685161160aa249b",
+          "name": "cc-phase3-hybrid-8beb67091910-restore-postgres"
+        },
+        {
+          "id": "ff737f921d3caf712d138043f254210657b888207c9416df448b658779b273de",
+          "name": "cc-phase3-hybrid-8beb67091910-restore-redis"
+        }
+      ],
+      "targetStorageSeparate": true
+    },
+    "sessionChecks": [
+      {
+        "replica": "2f2652cb06d44a8fa648dff7c49ccb5b275eb70a1f898bdd5b44015a3b4cc4ac",
+        "status": 401
+      },
+      {
+        "replica": "25f8fd9cb20e1356998bab87d2600e7eecc1d18441a32781e334c22b94637335",
+        "status": 401
+      }
+    ],
+    "admissionRecovery": {
+      "status": "passed",
+      "issuedInvitationRejected": true,
+      "recipientBindingsRejected": 2,
+      "pendingLoginRejected": true,
+      "pendingInvitationCallbackRejected": true,
+      "transactionAgeMilliseconds": 70492,
+      "sourceCallbackControlPassed": true
+    },
+    "application": {
+      "status": "passed",
+      "browser": "149.0.7827.55",
+      "operations": ["postgresql", "redis", "kestra", "artifacts"],
+      "observations": [
+        {
+          "operation": "postgresql",
+          "status": "passed",
+          "correlationId": "e06c2077-45f5-4a61-8e3e-3d2dd2165ebe",
+          "observedAt": "2026-09-17T16:42:35.999Z"
+        },
+        {
+          "operation": "redis",
+          "status": "passed",
+          "correlationId": "d95b7acf-7558-4378-bd6d-f24eb91fd16f",
+          "observedAt": "2026-09-17T16:42:36.093Z"
+        },
+        {
+          "operation": "kestra",
+          "status": "passed",
+          "correlationId": "d89718a0-db7e-486b-a2c3-73d266995d4f",
+          "observedAt": "2026-09-17T16:42:37.101Z"
+        },
+        {
+          "operation": "artifacts",
+          "status": "passed",
+          "correlationId": "13107fd0-29fa-4714-8385-28ce43e56ec9",
+          "observedAt": "2026-09-17T16:42:37.375Z"
+        }
+      ],
+      "recoveryBoundSeconds": 120,
+      "lifecycle": {
+        "customerSettingsRead": true,
+        "schoolDefinitionRead": true,
+        "oldReferencesEffective": false
+      },
+      "districtBrowserTrustQualified": false,
+      "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+    },
+    "limits": [
+      "Separate Compose projects and storage trees reuse three Docker daemons on one physical host.",
+      "Fresh external PostgreSQL and Redis containers share the synthetic district network.",
+      "Source Redis remains paused to preserve the pending authorization control. Other source services remain stopped.",
+      "The fixture seeds customer state after source shutdown and uses a synthetic Google provider.",
+      "The source and target reuse the same HTTPS origin and synthetic sign-in provider."
+    ]
+  },
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "recordedAt": "2026-09-17T16:43:19.029Z",
+  "durationMs": 399362,
+  "hosts": [
+    {
+      "role": "controller",
+      "name": "cc-phase3-hybrid-8beb67091910-controller",
+      "address": "172.18.0.3",
+      "daemonId": "f0cf1bba-7bf5-437b-a15e-986f4bddae25",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.200.0.1/24",
+        "pool": "10.200.0.0/16"
+      }
+    },
+    {
+      "role": "worker-1",
+      "name": "cc-phase3-hybrid-8beb67091910-worker-1",
+      "address": "172.18.0.4",
+      "daemonId": "9310992a-c7ca-40bd-9ef7-219de037af6a",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.201.0.1/24",
+        "pool": "10.201.0.0/16"
+      }
+    },
+    {
+      "role": "worker-2",
+      "name": "cc-phase3-hybrid-8beb67091910-worker-2",
+      "address": "172.18.0.5",
+      "daemonId": "72c65191-54ab-42a5-b734-a4c11275fe01",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.202.0.1/24",
+        "pool": "10.202.0.0/16"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "command": "prepare",
+      "releaseRoot": "/release",
+      "status": "prepared",
+      "durationMs": 4250
+    },
+    {
+      "command": "install",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 25073
+    },
+    {
+      "command": "resume",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 7745
+    },
+    {
+      "command": "resume",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 8675
+    },
+    {
+      "command": "stop",
+      "releaseRoot": "/release",
+      "status": "stopped",
+      "durationMs": 2630
+    },
+    {
+      "command": "resume",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 28621
+    },
+    {
+      "command": "uninstall",
+      "releaseRoot": "/release",
+      "status": "uninstalled",
+      "durationMs": 3815
+    },
+    {
+      "command": "resume",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 27284
+    },
+    {
+      "command": "resume",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 25082
+    }
+  ],
+  "apiReplicaCount": 2,
+  "sessionChecks": [
+    {
+      "replica": "f0382dcbbc8ff79e4fbf08c4edf25ac8a93c33b35428dbeb758123d6a9929be7",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "25f61ef674221997dd55c6d6410597c9e63b09add8855c15a24a44c9b9998cfe",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "f0382dcbbc8ff79e4fbf08c4edf25ac8a93c33b35428dbeb758123d6a9929be7",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "25f61ef674221997dd55c6d6410597c9e63b09add8855c15a24a44c9b9998cfe",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "f0382dcbbc8ff79e4fbf08c4edf25ac8a93c33b35428dbeb758123d6a9929be7",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "25f61ef674221997dd55c6d6410597c9e63b09add8855c15a24a44c9b9998cfe",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "f0382dcbbc8ff79e4fbf08c4edf25ac8a93c33b35428dbeb758123d6a9929be7",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "25f61ef674221997dd55c6d6410597c9e63b09add8855c15a24a44c9b9998cfe",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "75009d84cdf27610f3ac332feea50590d4dd5ce9f77e178b8cc14ddfdb9d673b",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "97b916f08b6980dc1cfd1878d9890565434805ed016aaa4f1655959c7aec55e2",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "75009d84cdf27610f3ac332feea50590d4dd5ce9f77e178b8cc14ddfdb9d673b",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "97b916f08b6980dc1cfd1878d9890565434805ed016aaa4f1655959c7aec55e2",
+      "status": 200,
+      "principalId": "9c582b86-5d5e-4a1f-9305-a3d77bf9034a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "75009d84cdf27610f3ac332feea50590d4dd5ce9f77e178b8cc14ddfdb9d673b",
+      "status": 401,
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "97b916f08b6980dc1cfd1878d9890565434805ed016aaa4f1655959c7aec55e2",
+      "status": 401,
+      "hiddenSchoolResponse": false
+    }
+  ],
+  "restartRecoveries": [
+    {
+      "replica": "f0382dcbbc8ff79e4fbf08c4edf25ac8a93c33b35428dbeb758123d6a9929be7",
+      "recoveryMs": 569,
+      "observations": [
+        {
+          "status": 200,
+          "elapsedMs": 568
+        }
+      ]
+    },
+    {
+      "replica": "25f61ef674221997dd55c6d6410597c9e63b09add8855c15a24a44c9b9998cfe",
+      "recoveryMs": 326,
+      "observations": [
+        {
+          "status": 200,
+          "elapsedMs": 326
+        }
+      ]
+    }
+  ],
+  "providerConnections": [
+    {
+      "replica": "f0382dcbbc8ff79e4fbf08c4edf25ac8a93c33b35428dbeb758123d6a9929be7",
+      "status": 200
+    },
+    {
+      "replica": "25f61ef674221997dd55c6d6410597c9e63b09add8855c15a24a44c9b9998cfe",
+      "status": 200
+    }
+  ],
+  "qualificationSourceState": "Extracted published installer bundle with matching application images.",
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "originalRenderPreserved": true,
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "8a5b38b2-d38b-451e-ae59-27c7e93f6ecc",
+        "observedAt": "2026-09-17T16:39:49.806Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "888097ab-e0c4-4546-ac30-8b73538d03e5",
+        "observedAt": "2026-09-17T16:39:49.974Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "126b7d2e-0d02-4747-b2c0-acec0e24169e",
+        "observedAt": "2026-09-17T16:39:51.514Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "e7e38904-ff09-4f97-ba82-d37250806df8",
+        "observedAt": "2026-09-17T16:39:51.609Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "e0c28794-8c91-48d3-8186-3cdbf61e765e",
+        "observedAt": "2026-09-17T16:39:56.824Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "2d012552-1506-4b11-8f62-e8733c2ce428",
+        "observedAt": "2026-09-17T16:39:56.965Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "fc3f2ecb-c257-41bf-8ca3-7e79b4715ac3",
+        "observedAt": "2026-09-17T16:39:57.610Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "60ecd66b-020e-436b-a991-d83e84ede744",
+        "observedAt": "2026-09-17T16:39:57.910Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "c79cc509-3eb5-483f-b94b-95126809e690",
+        "observedAt": "2026-09-17T16:40:34.984Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "55be6902-2af9-46e1-8b25-1b04bf559442",
+        "observedAt": "2026-09-17T16:40:35.081Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "8355ef2c-8879-4bd1-8d66-ec6f65a4e826",
+        "observedAt": "2026-09-17T16:40:36.054Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "6f638b07-5ea6-4e8d-a0cf-a43f58e0d663",
+        "observedAt": "2026-09-17T16:40:36.422Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "fca1f665-b5e9-4326-97f1-a754ae87dadd",
+        "observedAt": "2026-09-17T16:41:16.385Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "76200c2e-2fad-4aa4-9ffc-e39cc624b0f4",
+        "observedAt": "2026-09-17T16:41:16.528Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "be2747e9-266e-4f29-92c8-e2c4a70c954c",
+        "observedAt": "2026-09-17T16:41:17.999Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "344137ef-b1e6-4b4e-a186-7f3d1603333b",
+        "observedAt": "2026-09-17T16:41:18.248Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "limits": [
+    "Three Docker daemons share one physical Docker host and synthetic shared storage.",
+    "A separate Compose overlay trusts the synthetic identity provider through the existing district CA mount.",
+    "Final release qualification requires matching installer, test, and application source revisions.",
+    "Upgrade requires separate evidence.",
+    "Separate Compose projects and storage trees reuse three Docker daemons on one physical host.",
+    "Fresh external PostgreSQL and Redis containers share the synthetic district network.",
+    "Source Redis remains paused to preserve the pending authorization control. Other source services remain stopped.",
+    "The fixture seeds customer state after source shutdown and uses a synthetic Google provider.",
+    "The source and target reuse the same HTTPS origin and synthetic sign-in provider.",
+    "Complete fault acceptance and district infrastructure require separate evidence."
+  ],
+  "ownedResourcesRemoved": true,
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35247457432",
+    "artifact": "phase-3-hybrid-restore",
+    "artifactId": 10508780298,
+    "artifactArchiveSha256": "747bde288db3e44b85b6f472bd0aef0ff826db35358edf5807d87c5463bf94c3",
+    "releaseTag": "phase-3-lab-a3601eff2a55",
+    "reports": [
+      {
+        "path": "hybrid-cli.json",
+        "sizeBytes": 25412,
+        "sha256": "9e7c8922352aa100aa0d7bdf9beef510b3f44d4e0831f5f720ed8180be360a69"
+      },
+      {
+        "path": "hybrid-restore.json",
+        "sizeBytes": 25412,
+        "sha256": "9e7c8922352aa100aa0d7bdf9beef510b3f44d4e0831f5f720ed8180be360a69"
+      }
+    ]
+  }
+}

@@ -35,7 +35,12 @@ export async function withInstalledAdmission(action) {
 }
 
 /** Exercise delivered Phase 3 workflows through browser sessions and public APIs. */
-export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
+export async function qualifyInstalledPhase3({
+  page,
+  publicOrigin,
+  provider,
+  verifyRecipientAccess,
+}) {
   const startedAt = Date.now();
   const observations = [];
   const request = async (
@@ -275,7 +280,18 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
         },
       ];
       checkpoint('assign scoped grant');
+      const previousGrantCookies = verifyRecipientAccess
+        ? await recipient.cookies(publicOrigin)
+        : undefined;
       const grantReceipt = await changeAccess(true, grants);
+      await verifyRecipientAccess?.({
+        cookies: previousGrantCookies,
+        principalId,
+        schoolId: schools[0].id,
+        hiddenSchoolId: schools[1].id,
+        expectedStatus: 401,
+        stage: 'grants-changed',
+      });
       await request(recipientPage, '/api/auth/session', undefined, 401);
       checkpoint('renew recipient session');
       await recipientPage.goto(`${publicOrigin}/api/auth/login`);
@@ -306,9 +322,28 @@ export async function qualifyInstalledPhase3({ page, publicOrigin, provider }) {
         ),
         hiddenSchool,
       );
+      await verifyRecipientAccess?.({
+        cookies: await recipient.cookies(publicOrigin),
+        principalId,
+        schoolId: schools[0].id,
+        hiddenSchoolId: schools[1].id,
+        expectedStatus: 200,
+        stage: 'scoped-access',
+      });
       checkpoint('revoke access');
+      const previousRevokeCookies = verifyRecipientAccess
+        ? await recipient.cookies(publicOrigin)
+        : undefined;
       const revokeReceipt = await changeAccess(false, grants);
       checkpoint('check revoked access');
+      await verifyRecipientAccess?.({
+        cookies: previousRevokeCookies,
+        principalId,
+        schoolId: schools[0].id,
+        hiddenSchoolId: schools[1].id,
+        expectedStatus: 401,
+        stage: 'revoked',
+      });
       await request(recipientPage, '/api/auth/session', undefined, 401);
       await request(
         recipientPage,

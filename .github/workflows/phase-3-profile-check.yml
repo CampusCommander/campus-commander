@@ -5,10 +5,16 @@ on:
       release:
         type: string
         required: true
+      profile:
+        type: string
+        default: all-docker
       updateRelease:
         type: string
         default: ''
       upgrade:
+        type: boolean
+        default: false
+      restore:
         type: boolean
         default: false
       faults:
@@ -31,12 +37,29 @@ jobs:
     steps:
       - name: Validate qualification mode
         env:
+          PROFILE: ${{ inputs.profile }}
           UPGRADE: ${{ inputs.upgrade }}
+          RESTORE: ${{ inputs.restore }}
           FAULTS: ${{ inputs.faults }}
           FAULT_KIND: ${{ inputs.faultKind }}
           LIFECYCLE: ${{ inputs.lifecycle }}
           UPDATE_RELEASE: ${{ inputs.updateRelease }}
         run: |
+          case "${PROFILE:-all-docker}" in
+            all-docker) ;;
+            hybrid)
+              if [ "$FAULTS" = true ] && [ "$FAULT_KIND" != services ] && [ "$FAULT_KIND" != certificates ] && [ "$FAULT_KIND" != capacity ] && [ "$FAULT_KIND" != provider ]; then
+                echo 'Hybrid qualification supports installation, Phase 2 upgrade, isolated restore, service faults, certificate faults, capacity faults, provider faults, lifecycle, and guided update.' >&2
+                exit 1
+              fi
+              ;;
+            *) exit 1 ;;
+          esac
+          if [ "${RESTORE:-false}" = true ]; then
+            if [ "$PROFILE" != hybrid ] || [ "$UPGRADE" = true ] || [ "$FAULTS" = true ] || [ "${LIFECYCLE:-false}" = true ] || [ -n "${UPDATE_RELEASE:-}" ]; then
+              exit 1
+            fi
+          fi
           [ "$UPGRADE" != true ] || [ "$FAULTS" != true ]
           if [ "${LIFECYCLE:-false}" = true ]; then
             if [ "$UPGRADE" = true ] || [ "$FAULTS" = true ]; then
@@ -68,6 +91,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - run: npm ci
+      - name: Select shared browser storage
+        run: printf 'PLAYWRIGHT_BROWSERS_PATH=%s/.cache/ms-playwright\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - run: npx playwright install --with-deps chromium
       - run: npm exec nx run deployment:build
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
@@ -191,49 +216,127 @@ jobs:
             cosign verify "$reference" --certificate-identity="$BASELINE_IDENTITY" --certificate-oidc-issuer=https://token.actions.githubusercontent.com
             docker pull "$reference"
           done < published-baseline/images.txt
+      - name: Prepare the shared-storage fixture account
+        if: inputs.profile == 'hybrid'
+        run: |
+          if ! getent passwd 1000 > /dev/null; then
+            sudo useradd --uid 1000 --user-group --create-home cc-qualification
+          fi
+          if ! command -v setfacl > /dev/null; then
+            sudo apt-get install --no-install-recommends -y acl
+          fi
+          cp -a "${DOCKER_CONFIG:-$HOME/.docker}" "$GITHUB_WORKSPACE/.qualification-docker"
+          fixture_socket="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+          test "${fixture_socket#unix://}" != "$fixture_socket"
+          fixture_socket="${fixture_socket#unix://}"
+          sudo setfacl -m u:1000:rw "$fixture_socket"
+          fixture_directory="$(dirname "$fixture_socket")"
+          while test "$fixture_directory" != /; do
+            sudo setfacl -m u:1000:x "$fixture_directory"
+            fixture_directory="$(dirname "$fixture_directory")"
+          done
+          sudo chown -R 1000:1000 "$GITHUB_WORKSPACE"
+          printf 'DOCKER_CONFIG=%s/.qualification-docker\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Qualify installed Phase 3 workflows
-        if: inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''
+        if: inputs.profile == 'all-docker' && inputs.upgrade != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''
         run: npm exec nx run api-e2e:phase3-install-integration
         env:
           NX_NO_CLOUD: 'true'
+      - name: Qualify installed Phase 3 hybrid workflows
+        if: inputs.profile == 'hybrid' && inputs.upgrade != true && inputs.restore != true && inputs.faults != true && inputs.lifecycle != true && inputs.updateRelease == ''
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-install-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
+      - name: Qualify Phase 3 hybrid service interruptions
+        if: inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'services'
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-fault-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
+      - name: Qualify Phase 3 hybrid certificate failures
+        if: inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'certificates'
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-certificate-fault-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
+      - name: Qualify Phase 3 hybrid capacity failure
+        if: inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'capacity'
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-capacity-fault-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
+      - name: Qualify Phase 3 hybrid provider failures
+        if: inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'provider'
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-provider-fault-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
+      - name: Qualify Phase 3 hybrid installer lifecycle
+        if: inputs.profile == 'hybrid' && inputs.lifecycle
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-lifecycle-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
+      - name: Qualify Phase 3 hybrid guided update
+        if: inputs.profile == 'hybrid' && inputs.updateRelease != ''
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_UPDATE_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-update-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
+      - name: Qualify isolated Phase 3 hybrid restore
+        if: inputs.profile == 'hybrid' && inputs.restore
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-restore-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
+      - name: Qualify Phase 2-to-3 hybrid upgrade
+        if: inputs.profile == 'hybrid' && inputs.upgrade
+        run: sudo -H -u '#1000' -g '#1000' --preserve-env=CC_AUTH_INSTALLER_ROOT,CC_AUTH_BASELINE_INSTALLER_ROOT,CC_AUTH_API_IMAGE,CC_AUTH_FRONTEND_IMAGE,CC_AUTH_WORKER_IMAGE,NX_NO_CLOUD,NX_DAEMON,PLAYWRIGHT_BROWSERS_PATH,DOCKER_CONFIG /usr/bin/env "PATH=$PATH" npm exec nx run api-e2e:phase3-hybrid-upgrade-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          NX_DAEMON: 'false'
       - name: Qualify Phase 2-to-3 upgrade and workflows
-        if: inputs.upgrade
+        if: inputs.profile == 'all-docker' && inputs.upgrade
         run: npm exec nx run api-e2e:phase3-upgrade-integration
         env:
           NX_NO_CLOUD: 'true'
       - name: Qualify Phase 3 service interruptions
-        if: inputs.faults && inputs.faultKind == 'services'
+        if: inputs.profile == 'all-docker' && inputs.faults && inputs.faultKind == 'services'
         run: npm exec nx run api-e2e:phase3-fault-integration
         env:
           NX_NO_CLOUD: 'true'
       - name: Qualify Phase 3 provider failures
-        if: inputs.faults && inputs.faultKind == 'provider'
+        if: inputs.profile == 'all-docker' && inputs.faults && inputs.faultKind == 'provider'
         run: npm exec nx run api-e2e:phase3-provider-fault-integration
         env:
           NX_NO_CLOUD: 'true'
       - name: Qualify Phase 3 certificate failures
-        if: inputs.faults && inputs.faultKind == 'certificates'
+        if: inputs.profile == 'all-docker' && inputs.faults && inputs.faultKind == 'certificates'
         run: npm exec nx run api-e2e:phase3-certificate-fault-integration
         env:
           NX_NO_CLOUD: 'true'
       - name: Qualify Phase 3 capacity failure
-        if: inputs.faults && inputs.faultKind == 'capacity'
+        if: inputs.profile == 'all-docker' && inputs.faults && inputs.faultKind == 'capacity'
         run: npm exec nx run api-e2e:phase3-capacity-fault-integration
         env:
           NX_NO_CLOUD: 'true'
       - name: Qualify Phase 3 guided update
-        if: inputs.updateRelease != ''
+        if: inputs.profile == 'all-docker' && inputs.updateRelease != ''
         run: npm exec nx run api-e2e:phase3-update-integration
         env:
           NX_NO_CLOUD: 'true'
       - name: Qualify Phase 3 installer lifecycle
-        if: inputs.lifecycle
+        if: inputs.profile == 'all-docker' && inputs.lifecycle
         run: npm exec nx run api-e2e:phase3-lifecycle-integration
         env:
           NX_NO_CLOUD: 'true'
+      - name: Restore evidence ownership
+        if: always() && inputs.profile == 'hybrid'
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: ${{ inputs.updateRelease != '' && 'phase-3-guided-update' || inputs.lifecycle && 'phase-3-installer-lifecycle' || inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-capacity-faults' || inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-certificate-faults' || inputs.faults && inputs.faultKind == 'provider' && 'phase-3-provider-faults' || inputs.faults && 'phase-3-service-faults' || inputs.upgrade && 'phase-3-upgrade-workflows' || 'phase-3-installed-workflows' }}
-          path: ${{ inputs.updateRelease != '' && 'dist/phase-3-update/' || inputs.lifecycle && 'dist/phase-3-lifecycle/' || inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-capacity-faults/' || inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-certificate-faults/' || inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-provider-faults/' || inputs.faults && 'dist/phase-3-faults/' || inputs.upgrade && 'dist/phase-3-upgrade/' || 'dist/phase-3-installation/' }}
+          name: ${{ inputs.profile == 'hybrid' && inputs.restore && 'phase-3-hybrid-restore' || inputs.profile == 'hybrid' && inputs.updateRelease != '' && 'phase-3-hybrid-update' || inputs.profile == 'hybrid' && inputs.lifecycle && 'phase-3-hybrid-lifecycle' || inputs.profile == 'hybrid' && inputs.upgrade && 'phase-3-hybrid-upgrade' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'provider' && 'phase-3-hybrid-provider-faults' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-hybrid-capacity-faults' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-hybrid-certificate-faults' || inputs.profile == 'hybrid' && inputs.faults && 'phase-3-hybrid-service-faults' || inputs.profile == 'hybrid' && 'phase-3-hybrid-installation' || inputs.updateRelease != '' && 'phase-3-guided-update' || inputs.lifecycle && 'phase-3-installer-lifecycle' || inputs.faults && inputs.faultKind == 'capacity' && 'phase-3-capacity-faults' || inputs.faults && inputs.faultKind == 'certificates' && 'phase-3-certificate-faults' || inputs.faults && inputs.faultKind == 'provider' && 'phase-3-provider-faults' || inputs.faults && 'phase-3-service-faults' || inputs.upgrade && 'phase-3-upgrade-workflows' || 'phase-3-installed-workflows' }}
+          path: ${{ inputs.profile == 'hybrid' && inputs.restore && 'dist/phase-3-hybrid-restore/' || inputs.profile == 'hybrid' && inputs.updateRelease != '' && 'dist/phase-3-hybrid-update/' || inputs.profile == 'hybrid' && inputs.lifecycle && 'dist/phase-3-hybrid-lifecycle/' || inputs.profile == 'hybrid' && inputs.upgrade && 'dist/phase-3-hybrid-upgrade/' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-hybrid-provider-faults/' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-hybrid-capacity-faults/' || inputs.profile == 'hybrid' && inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-hybrid-certificate-faults/' || inputs.profile == 'hybrid' && inputs.faults && 'dist/phase-3-hybrid-faults/' || inputs.profile == 'hybrid' && 'dist/phase-3-hybrid-installation/' || inputs.updateRelease != '' && 'dist/phase-3-update/' || inputs.lifecycle && 'dist/phase-3-lifecycle/' || inputs.faults && inputs.faultKind == 'capacity' && 'dist/phase-3-capacity-faults/' || inputs.faults && inputs.faultKind == 'certificates' && 'dist/phase-3-certificate-faults/' || inputs.faults && inputs.faultKind == 'provider' && 'dist/phase-3-provider-faults/' || inputs.faults && 'dist/phase-3-faults/' || inputs.upgrade && 'dist/phase-3-upgrade/' || 'dist/phase-3-installation/' }}
           if-no-files-found: warn

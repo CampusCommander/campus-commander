@@ -17,13 +17,14 @@ export async function qualifyInstalledProviderFaults({
   checks,
   evidencePath,
   evidenceIdentity,
+  runtime,
 }) {
   const startedAt = Date.now();
   const report = {
     ...evidenceIdentity,
     schemaVersion: 1,
     phase: 3,
-    profile: 'all-docker',
+    profile: config.profile,
     status: 'in-progress',
     sourceRevision: release.sourceRevision,
     images: release.images,
@@ -52,12 +53,14 @@ export async function qualifyInstalledProviderFaults({
       mode: 0o600,
     });
   };
-  const fault = (mode) =>
-    writeFile(
-      join(root, 'google-health-fault.json'),
-      JSON.stringify({ mode }),
-      { mode: 0o644 },
-    );
+  const fault =
+    runtime?.fault ??
+    ((mode) =>
+      writeFile(
+        join(root, 'google-health-fault.json'),
+        JSON.stringify({ mode }),
+        { mode: 0o644 },
+      ));
   const request = async (
     path,
     data,
@@ -90,36 +93,48 @@ export async function qualifyInstalledProviderFaults({
     return result.body;
   };
   const connectionPath = '/api/google-connection';
-  const ready = () =>
-    execFileSync(
-      'docker',
-      [
-        'exec',
-        id('application-postgres'),
-        'psql',
-        '-U',
-        'postgres',
-        '-d',
-        config.services.applicationDatabase.database,
-        '-v',
-        'ON_ERROR_STOP=1',
-        '-c',
-        "UPDATE cc.google_health_checks SET retry_at=clock_timestamp()-interval '1 second';",
-      ],
-      { stdio: 'pipe', timeout: 15000 },
-    );
+  const ready =
+    runtime?.ready ??
+    (() =>
+      execFileSync(
+        'docker',
+        [
+          'exec',
+          id('application-postgres'),
+          'psql',
+          '-U',
+          'postgres',
+          '-d',
+          config.services.applicationDatabase.database,
+          '-v',
+          'ON_ERROR_STOP=1',
+          '-c',
+          "UPDATE cc.google_health_checks SET retry_at=clock_timestamp()-interval '1 second';",
+        ],
+        { stdio: 'pipe', timeout: 15000 },
+      ));
   let ownsFixture = false;
   try {
     await save();
-    const verifyDurable = await createAllDockerDurableProbe({
-      root,
-      project,
-      config,
-      release,
-      compose,
-      id,
-      allowObservationRefresh: true,
-    });
+    if (config.profile === 'hybrid')
+      for (const method of [
+        'createDurableProbe',
+        'fault',
+        'ready',
+        'verifyRecovery',
+      ])
+        assert.equal(typeof runtime?.[method], 'function');
+    const verifyDurable = runtime
+      ? await runtime.createDurableProbe()
+      : await createAllDockerDurableProbe({
+          root,
+          project,
+          config,
+          release,
+          compose,
+          id,
+          allowObservationRefresh: true,
+        });
     ownsFixture = true;
     const connection = (await request(connectionPath)).connection;
     assert.equal(connection.generation, 2);
@@ -129,13 +144,13 @@ export async function qualifyInstalledProviderFaults({
       capabilities: ['customer-identity', 'domain-observations'],
     };
     const check = async (data = input, status = 201) => {
-      ready();
+      await ready();
       return (await request(`${connectionPath}/health/check`, data, status))
         .health;
     };
     const baseline = await check();
     assert.ok(baseline.capabilities.every((item) => item.failure === null));
-    ready();
+    await ready();
     const retired = await request(
       `${connectionPath}/health/check`,
       { ...input, generation: input.generation - 1 },
@@ -206,16 +221,17 @@ export async function qualifyInstalledProviderFaults({
           (await request('/api/customer')).customer,
           beforeCustomer,
         );
-        record.durableState = verifyDurable();
+        record.durableState = await verifyDurable();
       } finally {
         await fault('');
       }
       const recoveryStartedAt = Date.now();
       const recovered = await check();
       assert.ok(recovered.capabilities.every((item) => item.failure === null));
+      record.durableState = await verifyDurable();
+      await runtime?.verifyRecovery();
       record.recoveryMs = Date.now() - recoveryStartedAt;
       assert.ok(record.recoveryMs <= report.recoveryBoundSeconds * 1000);
-      record.durableState = verifyDurable();
       record.recovered = true;
       record.durationMs = Date.now() - caseStartedAt;
       record.status = 'passed';

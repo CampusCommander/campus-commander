@@ -15,12 +15,21 @@ on:
         description: Immutable Phase 3 lab tag for extracted installation workflows
         type: string
         default: ''
+      phase3Profile:
+        description: Installation profile for the signed Phase 3 laboratory release
+        type: choice
+        options: [all-docker, hybrid]
+        default: all-docker
       phase3UpdateRelease:
         description: Different signed Phase 3 lab tag for guided update
         type: string
         default: ''
       phase3Upgrade:
         description: Upgrade the pinned Phase 2 release before Phase 3 workflow checks
+        type: boolean
+        default: false
+      phase3Restore:
+        description: Restore the signed Phase 3 hybrid release into isolated services
         type: boolean
         default: false
       phase3Faults:
@@ -55,7 +64,9 @@ jobs:
     uses: ./.github/workflows/phase-3-profile-check.yml
     with:
       release: ${{ inputs.phase3Release }}
+      profile: ${{ inputs.phase3Profile || 'all-docker' }}
       upgrade: ${{ inputs.phase3Upgrade == true }}
+      restore: ${{ inputs.phase3Restore == true }}
       faults: ${{ inputs.phase3Faults == true }}
       faultKind: ${{ inputs.phase3FaultKind || 'services' }}
       lifecycle: ${{ inputs.phase3Lifecycle == true }}

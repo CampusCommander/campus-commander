@@ -1,0 +1,49 @@
+{
+  "status": "failed",
+  "profile": "hybrid",
+  "phase": 3,
+  "harnessRevision": "e3ce8b998ef99ab3aa25e4a1f2c777f0ec90532e",
+  "harnessWorkingTree": "clean",
+  "command": "npm exec -- nx run api-e2e:phase3-hybrid-install-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "uid": 1000,
+    "gid": 1000
+  },
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "stage": "credential key projection",
+  "failure": {
+    "category": "unclassified",
+    "exitCode": null
+  },
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "durationMs": 154270,
+  "providerConnections": [],
+  "sessionChecks": [],
+  "restartRecoveries": [],
+  "recordedAt": "2026-09-17T13:57:05.954Z",
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35229878452",
+    "artifact": "phase-3-hybrid-installation",
+    "artifactId": 10501100413,
+    "artifactArchiveSha256": "cba4ec0db5c940e1590a7ea865b65b071a09c147a6505c5b5072812bb8926af4",
+    "originalReport": {
+      "path": "hybrid-cli-failure.json",
+      "sizeBytes": 1084,
+      "sha256": "4804d985a56e37af2f997457f02f5b16bc037e62b3116c071358c541fc0616f1"
+    }
+  },
+  "limits": [
+    "Account correction cleared image distribution and delivered prepare, install, and repeated resume.",
+    "The run failed at credential-key projection before browser workflows.",
+    "The fixture expected a direct file mount. The delivered renderer stages per-service read-only secrets volumes.",
+    "The projection correction requires a successful hosted recheck."
+  ]
+}

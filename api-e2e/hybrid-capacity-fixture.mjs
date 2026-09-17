@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
+import { assertHybridFaultOwnership } from './phase3-hybrid-fault-state.mjs';
 import { outerDocker } from './hybrid-hosts-fixture.mjs';
 import { faultRecoveryTimeoutSeconds } from '../deployment/qualification/faults.mjs';
 
@@ -17,12 +18,27 @@ export async function qualifyHybridCapacity({
   checks,
   verifyReplicas,
   context,
+  verifyDurableState,
+  verifyWorkflows,
+  evidencePath,
+  evidenceIdentity = {},
+  setStage,
 }) {
+  const startedAt = Date.now();
   const controller = hosts.hosts[0];
-  assert.match(controller.name, /^cc-phase2-hybrid-[a-f0-9]{12}-controller$/);
+  assert.match(
+    controller.name,
+    config.phase === 3
+      ? /^cc-phase3-hybrid-[a-f0-9]{12}-controller$/
+      : /^cc-phase2-hybrid-[a-f0-9]{12}-controller$/,
+  );
   assert.equal(new Set(hosts.hosts.map((host) => host.daemonId)).size, 3);
-  assert.equal(upgrade.status, 'passed');
   const project = controller.name.replace(/-controller$/, '');
+  if (config.phase === 3) {
+    assertHybridFaultOwnership({ hosts, services, config, project });
+    assert.equal(typeof verifyDurableState, 'function');
+    assert.equal(typeof verifyWorkflows, 'function');
+  } else assert.equal(upgrade.status, 'passed');
   assert.equal(hosts.artifactVolume, `${project}-bounded-artifacts`);
   const volume = JSON.parse(
     await outerDocker(['volume', 'inspect', hosts.artifactVolume]),
@@ -56,6 +72,17 @@ import {secretPath} from '/app/deployment/redis/runtime.mjs';
 import {createArtifactStore} from '/app/deployment/storage/index.mjs';
 const c=JSON.parse(await fs.readFile(process.env.CC_CONFIG_FILE));
 const pool=new pg.Pool(await connectionOptions(c.services.applicationDatabase,r=>fs.readFile(secretPath(r))));`;
+  const metadata = () =>
+    run(
+      processes[0],
+      common +
+        `
+try {
+const artifacts=(await pool.query('SELECT * FROM cc.artifacts ORDER BY id')).rows;
+const files=(await fs.readdir(c.artifacts.location)).filter(n=>/^[a-f0-9-]{36}\\.[a-f0-9-]{36}$/.test(n)).sort();
+console.log(JSON.stringify({artifacts,files}));
+} finally {await pool.end();}`,
+    );
   const state = () =>
     run(
       processes[0],
@@ -87,13 +114,27 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
     );
   await checks();
   await verifyReplicas(context);
-  const baseline = await state(),
-    baselineExecutions = await executions();
-  assert.equal(baseline.principals.length, 1);
-  assert.ok(baseline.events.length > 0);
-  assert.ok(baselineExecutions.length > 0);
-  assert.equal(baseline.artifactSha256, upgrade.artifact.sha256);
+  const baseline = verifyDurableState ? await metadata() : await state();
+  const baselineExecutions = verifyDurableState
+    ? undefined
+    : await executions();
+  if (verifyDurableState) await verifyDurableState();
+  else {
+    assert.equal(baseline.principals.length, 1);
+    assert.ok(baseline.events.length > 0);
+    assert.ok(baselineExecutions.length > 0);
+    assert.equal(baseline.artifactSha256, upgrade.artifact.sha256);
+  }
   const verifyState = async () => {
+    if (verifyDurableState) {
+      assert.deepEqual(await metadata(), baseline);
+      return {
+        ...(await verifyDurableState()),
+        failedDiagnosticArtifactsRemoved: true,
+        artifactMetadataPreserved: true,
+        artifactFilesPreserved: true,
+      };
+    }
     const after = await state();
     for (const name of [
       'principals',
@@ -147,6 +188,10 @@ const c=JSON.parse(await fs.readFile(process.env.CC_CONFIG_FILE));const s=await 
 console.log(JSON.stringify({filesystemType:s.type,totalBytes:s.blocks*s.bsize,availableBytes:s.bavail*s.bsize}));`,
     );
   const report = {
+    ...evidenceIdentity,
+    durationScope:
+      'Bounded storage exhaustion, failed publication, authenticated recovery, and preserved state.',
+    stage: 'baseline',
     status: 'in-progress',
     recoveryBoundSeconds: faultRecoveryTimeoutSeconds,
     sharedVolume: hosts.artifactVolume,
@@ -156,109 +201,133 @@ console.log(JSON.stringify({filesystemType:s.type,totalBytes:s.blocks*s.bsize,av
       'The capacity fixture does not establish persistent storage, district capacity, or district infrastructure acceptance.',
     ],
   };
-  const save = () =>
-    writeFile(
-      join(controller.root, 'capacity-progress.json'),
+  const save = () => {
+    report.durationMs = Date.now() - startedAt;
+    report.recordedAt = new Date().toISOString();
+    return writeFile(
+      evidencePath ?? join(controller.root, 'capacity-progress.json'),
       JSON.stringify(report, null, 2),
       { mode: 0o600 },
     );
+  };
   const writer = processes.find((process) => process.role === 'workers');
-  const filler = '.phase2-capacity-filler';
+  const filler = `.phase${config.phase}-capacity-filler`;
   let filled = false;
+  await save();
   try {
-    for (const process of processes) {
-      const before = await filesystem(process);
-      assert.equal(before.filesystemType, 0x01021994);
-      assert.ok(
-        Number.isSafeInteger(before.totalBytes) &&
-          before.totalBytes > 0 &&
-          before.totalBytes <= 16777216,
-      );
-      report.observations.push({
-        host: process.host.name,
-        daemonId: process.host.daemonId,
-        role: process.role,
-        processId: process.id,
-        before,
-      });
-    }
-    filled = true;
-    report.fault = await run(
-      writer,
-      `import fs from 'node:fs';
+    try {
+      for (const process of processes) {
+        const before = await filesystem(process);
+        assert.equal(before.filesystemType, 0x01021994);
+        assert.ok(
+          Number.isSafeInteger(before.totalBytes) &&
+            before.totalBytes > 0 &&
+            before.totalBytes <= 16777216,
+        );
+        report.observations.push({
+          host: process.host.name,
+          daemonId: process.host.daemonId,
+          role: process.role,
+          processId: process.id,
+          before,
+        });
+      }
+      report.stage = 'storage-exhaustion';
+      setStage?.('storage-exhaustion');
+      await save();
+      filled = true;
+      report.fault = await run(
+        writer,
+        `import fs from 'node:fs';
 const c=JSON.parse(fs.readFileSync(process.env.CC_CONFIG_FILE));const before=fs.statfsSync(c.artifacts.location);
 if(before.type!==0x01021994||before.blocks*before.bsize>16777216||before.blocks*before.bsize<=0)throw Error('Capacity writer requires capped tmpfs.');
 const fd=fs.openSync(c.artifacts.location+'/'+${JSON.stringify(filler)},'wx',0o600),bytes=Buffer.alloc(65536,42);let writtenBytes=0,kind;
 try{for(let i=0;i<300;i++)writtenBytes+=fs.writeSync(fd,bytes);}catch(error){if(error.code!=='ENOSPC')throw error;kind=error.code;}finally{fs.closeSync(fd);}
 if(kind!=='ENOSPC')throw Error('The bounded capacity writer did not reach ENOSPC.');
 const after=fs.statfsSync(c.artifacts.location);console.log(JSON.stringify({kind,writtenBytes,availableBytes:after.bavail*after.bsize}));`,
-    );
-    assert.equal(report.fault.kind, 'ENOSPC');
-    for (const [index, process] of processes.entries()) {
-      const during = await filesystem(process);
-      assert.equal(
-        during.totalBytes,
-        report.observations[index].before.totalBytes,
       );
-      assert.equal(during.availableBytes, 0);
-      report.observations[index].during = during;
+      assert.equal(report.fault.kind, 'ENOSPC');
+      for (const [index, process] of processes.entries()) {
+        const during = await filesystem(process);
+        assert.equal(
+          during.totalBytes,
+          report.observations[index].before.totalBytes,
+        );
+        assert.equal(during.availableBytes, 0);
+        report.observations[index].during = during;
+      }
+      await save();
+      report.stage = 'failed-publication';
+      setStage?.('failed-publication');
+      await save();
+      const card = page.getByRole('article').filter({
+        has: page.getByRole('heading', {
+          name: 'Artifact storage',
+          exact: true,
+        }),
+      });
+      const pending = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/diagnostics/artifacts' &&
+          response.request().method() === 'POST',
+      );
+      await card
+        .getByRole('button', { name: 'Check Artifact storage', exact: true })
+        .click();
+      const response = await pending,
+        body = await response.json();
+      assert.equal(response.status(), 201);
+      assert.equal(body.status, 'failed');
+      assert.match(body.correlationId, /^[a-f0-9-]{36}$/);
+      await expect(
+        card.getByText(
+          'The check failed. Inspect the service configuration and retry.',
+        ),
+      ).toBeVisible();
+      report.authenticatedFailure = {
+        httpStatus: response.status(),
+        status: body.status,
+        correlationId: body.correlationId,
+      };
+      await verifyState();
+      report.fault.publicationRejected = true;
+      report.fault.readyRowsUnchanged = true;
+    } finally {
+      if (filled)
+        await run(
+          writer,
+          `import fs from 'node:fs/promises';const c=JSON.parse(await fs.readFile(process.env.CC_CONFIG_FILE));await fs.rm(c.artifacts.location+'/'+${JSON.stringify(filler)},{force:true});console.log('{}');`,
+        );
     }
+    const recoveryStarted = Date.now();
+    report.stage = 'recovery';
+    setStage?.('recovery');
     await save();
-    const card = page.getByRole('article').filter({
-      has: page.getByRole('heading', {
-        name: 'Artifact storage',
-        exact: true,
-      }),
+    await checks({
+      recoverySeconds: faultRecoveryTimeoutSeconds,
+      recoveryDeadline: recoveryStarted + faultRecoveryTimeoutSeconds * 1000,
     });
-    const pending = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === '/api/diagnostics/artifacts' &&
-        response.request().method() === 'POST',
-    );
-    await card
-      .getByRole('button', { name: 'Check Artifact storage', exact: true })
-      .click();
-    const response = await pending,
-      body = await response.json();
-    assert.equal(response.status(), 201);
-    assert.equal(body.status, 'failed');
-    assert.match(body.correlationId, /^[a-f0-9-]{36}$/);
-    await expect(
-      card.getByText(
-        'The check failed. Inspect the service configuration and retry.',
-      ),
-    ).toBeVisible();
-    report.authenticatedFailure = {
-      httpStatus: response.status(),
-      status: body.status,
-      correlationId: body.correlationId,
-    };
-    await verifyState();
-    report.fault.publicationRejected = true;
-    report.fault.readyRowsUnchanged = true;
-  } finally {
-    if (filled)
-      await run(
-        writer,
-        `import fs from 'node:fs/promises';const c=JSON.parse(await fs.readFile(process.env.CC_CONFIG_FILE));await fs.rm(c.artifacts.location+'/'+${JSON.stringify(filler)},{force:true});console.log('{}');`,
+    await verifyWorkflows?.();
+    await verifyReplicas(context);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    report.preserved = await verifyState();
+    for (const [index, process] of processes.entries()) {
+      const after = await filesystem(process);
+      assert.equal(
+        after.availableBytes,
+        report.observations[index].before.availableBytes,
       );
+      report.observations[index].after = after;
+    }
+    report.recoveryMs = Date.now() - recoveryStarted;
+    assert.ok(report.recoveryMs <= faultRecoveryTimeoutSeconds * 1000);
+    report.status = 'passed';
+    report.stage = 'complete';
+    await save();
+    return report;
+  } catch (error) {
+    report.status = 'failed';
+    await save();
+    throw error;
   }
-  const recoveryStarted = Date.now();
-  await checks({ recoverySeconds: faultRecoveryTimeoutSeconds });
-  await verifyReplicas(context);
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  report.preserved = await verifyState();
-  report.recoveryMs = Date.now() - recoveryStarted;
-  assert.ok(report.recoveryMs <= faultRecoveryTimeoutSeconds * 1000);
-  for (const [index, process] of processes.entries()) {
-    const after = await filesystem(process);
-    assert.equal(
-      after.availableBytes,
-      report.observations[index].before.availableBytes,
-    );
-    report.observations[index].after = after;
-  }
-  report.status = 'passed';
-  await save();
-  return report;
 }

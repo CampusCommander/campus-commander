@@ -17,10 +17,21 @@ export async function faultDistributedHybrid({
   checks,
   verifyReplicas,
   context,
+  verifyDurableState,
+  verifyWorkflows,
+  setStage,
+  evidencePath,
+  evidenceIdentity = {},
 }) {
+  const startedAt = Date.now();
   const controller = hosts.hosts[0];
   const workers = hosts.hosts.slice(1);
-  assert.match(controller.name, /^cc-phase2-hybrid-[a-f0-9]{12}-controller$/);
+  assert.match(
+    controller.name,
+    config.phase === 3
+      ? /^cc-phase3-hybrid-[a-f0-9]{12}-controller$/
+      : /^cc-phase2-hybrid-[a-f0-9]{12}-controller$/,
+  );
   assert.equal(new Set(hosts.hosts.map((host) => host.daemonId)).size, 3);
   for (const name of [services.database, services.redis])
     assert.ok(name.startsWith(controller.name.replace(/controller$/, '')));
@@ -29,7 +40,10 @@ export async function faultDistributedHybrid({
     config.artifacts.location,
   );
   assert.ok(config.artifacts.location.startsWith(hosts.shared + '/'));
-  assert.equal(upgrade.status, 'passed');
+  if (config.phase === 3) {
+    assert.equal(typeof verifyDurableState, 'function');
+    assert.equal(typeof verifyWorkflows, 'function');
+  } else assert.equal(upgrade.status, 'passed');
 
   const request = (path, operation) =>
     page.evaluate(
@@ -85,9 +99,10 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
       ),
     );
   };
-  const baseline = await durable();
-  assert.equal(baseline.artifactSha256, upgrade.artifact.sha256);
+  const baseline = verifyDurableState ? undefined : await durable();
+  if (baseline) assert.equal(baseline.artifactSha256, upgrade.artifact.sha256);
   const verifyDurable = async () => {
+    if (verifyDurableState) return verifyDurableState();
     const after = await durable();
     assert.deepEqual(after.principals, baseline.principals);
     assert.deepEqual(after.migrations, baseline.migrations);
@@ -162,30 +177,40 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
     },
   ];
   const report = {
+    ...evidenceIdentity,
     status: 'in-progress',
+    durationScope:
+      'Service fault baselines, interruption, recovery, and state verification.',
     recoveryBoundSeconds: faultRecoveryTimeoutSeconds,
     cases: [],
     limits: [
       'Process and shared-artifact access faults only. Capacity and certificate faults require separate evidence.',
     ],
   };
-  const save = () =>
-    writeFile(
-      join(controller.root, 'fault-progress.json'),
+  const save = () => {
+    report.durationMs = Date.now() - startedAt;
+    report.recordedAt = new Date().toISOString();
+    return writeFile(
+      evidencePath ?? join(controller.root, 'fault-progress.json'),
       JSON.stringify(report, null, 2),
       { mode: 0o600 },
     );
+  };
   try {
     for (const fault of cases) {
       console.log('Distributed hybrid fault:', fault.name);
-      await checks({ recoverySeconds: faultRecoveryTimeoutSeconds });
-      await verifyDurable();
+      setStage?.(fault.name);
       const record = {
         name: fault.name,
         startedAt: new Date().toISOString(),
         status: 'in-progress',
+        stage: 'baseline',
       };
       report.cases.push(record);
+      await save();
+      await checks({ recoverySeconds: faultRecoveryTimeoutSeconds });
+      await verifyDurable();
+      record.stage = 'interruption';
       await save();
       const started = Date.now();
       try {
@@ -205,7 +230,12 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
           assert.match(record.observed.correlationId, /^[a-f0-9-]{36}$/);
         }
       } finally {
-        await fault.recover();
+        record.stage = 'recovery';
+        try {
+          await save();
+        } finally {
+          await fault.recover();
+        }
       }
       record.interruptionMs = Date.now() - started;
       await save();
@@ -231,17 +261,21 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
           })
           .toBe(200);
       }
+      record.stage = 'verification';
+      await save();
       await checks({
         recoverySeconds: faultRecoveryTimeoutSeconds,
         recoveryDeadline: recoveryStarted + faultRecoveryTimeoutSeconds * 1000,
       });
+      await verifyWorkflows?.();
+      record.durableState = await verifyDurable();
+      await verifyReplicas(context);
       record.recoveryMs = Date.now() - recoveryStarted;
       assert.ok(
         record.recoveryMs <= faultRecoveryTimeoutSeconds * 1000,
         'Fault recovery exceeded the foundation deadline.',
       );
-      record.durableState = await verifyDurable();
-      await verifyReplicas(context);
+      record.stage = 'complete';
       record.status = 'passed';
       await save();
     }
@@ -250,6 +284,11 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
     return report;
   } catch (error) {
     report.status = 'failed';
+    const current = report.cases.at(-1);
+    if (current?.status === 'in-progress') {
+      current.status = 'failed';
+      current.elapsedMs = Date.now() - Date.parse(current.startedAt);
+    }
     await save();
     throw error;
   }
