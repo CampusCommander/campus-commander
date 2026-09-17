@@ -121,10 +121,10 @@ export class EvidenceSecurity {
 
   #observationError(message) {
     const error = new Error(message);
-    error.observations = {
+    error.observations = JSON.stringify({
       pending: [...this.#pending.values()].slice(0, 32),
       failures: this.#failedResponses,
-    };
+    });
     return error;
   }
 
