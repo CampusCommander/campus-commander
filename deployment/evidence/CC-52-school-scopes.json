@@ -81,7 +81,6 @@
     "specification": "No remaining findings after d750e86."
   },
   "remaining": [
-    "Packaged school browser qualification.",
     "Human accessibility and acceptance.",
     "Combined deployment and release qualification.",
     "Retained intermittent browser sign-in and credential staging failures in CC-54."
@@ -110,7 +109,7 @@
     "implementationRevision": "192dc26",
     "reviewCorrections": "f2fd25b",
     "qualificationRevision": "b1abfc4",
-    "status": "source-passed-packaged-pending",
+    "status": "source-and-packaged-passed",
     "local": {
       "chromiumCases": 7,
       "frontendUnitTests": 33,
@@ -147,11 +146,13 @@
       "diagnosticRevision": "ba39a67"
     },
     "sourceRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35177978798",
-    "sourceRevision": "e036c9e8e46224b92fb9732b43215a2cca54d30b"
+    "sourceRevision": "e036c9e8e46224b92fb9732b43215a2cca54d30b",
+    "packagedRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35178237363",
+    "packagedRevision": "0a89f67"
   },
   "scopedGrantBrowser": {
     "implementationRevision": "e6d0ed6",
-    "status": "source-passed-packaged-pending",
+    "status": "source-and-packaged-passed",
     "local": {
       "chromiumCases": 5,
       "checks": [
@@ -181,9 +182,9 @@
       "correction": "3e64ce5 names the access status and scopes its assertions. Five browser cases and local checks pass.",
       "otherJobs": "Six jobs passed."
     },
-    "fullRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35177847162",
-    "fullRevision": "3e64ce5",
-    "fullStatus": "failed-before-school-checks",
+    "fullRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35178237363",
+    "fullRevision": "0a89f67",
+    "fullStatus": "passed",
     "sourceRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35177978798",
     "sourceRevision": "e036c9e8e46224b92fb9732b43215a2cca54d30b",
     "sourceReport": {
@@ -204,6 +205,28 @@
         "Human screen-reader qualification and acceptance remain pending."
       ]
     },
-    "fullFailure": "Credential lifecycle navigation did not expose Replace or Reconnect Google credentials within 30 seconds. Cause unresolved. Six other jobs passed."
+    "previousFullFailure": {
+      "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35177847162",
+      "revision": "3e64ce5",
+      "cause": "Credential lifecycle navigation did not expose Replace or Reconnect Google credentials within 30 seconds. Cause unresolved. Six other jobs passed."
+    },
+    "packagedReport": {
+      "schemaVersion": 1,
+      "fixture": "real-api-postgres-school-grants-synthetic-google",
+      "checks": [
+        "strict preview input, CSRF, explicit confirmation, and durable receipt recovery",
+        "scoped lists, totals, details, and audit deny another school",
+        "scoped operator cannot manage references, previews, or receipts",
+        "failed reference health preserves saved definitions without effective resource access",
+        "definition confirmation invalidates an affected operator session",
+        "browser inclusion and exclusion preview, lost confirmation response, reload, and durable receipt recovery",
+        "school viewer browser list, audit, stale definition, and access interruption",
+        "school draft and review accessibility in both themes",
+        "district viewer and school administrator assignment through browser presets and exact reviewed revisions"
+      ],
+      "limits": [
+        "Human screen-reader qualification and acceptance remain pending."
+      ]
+    }
   }
 }

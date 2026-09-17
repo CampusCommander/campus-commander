@@ -1,6 +1,6 @@
 # Phase 3 platform access implementation
 
-Owner: CC-51. Status: platform database, API, and browser implementation exist. Hosted platform qualification passed after review fixes. District and school browser controls pass local checks. Combined packaged qualification remains pending.
+Owner: CC-51. Status: platform database, API, and browser implementation exist. Hosted platform qualification passed after review fixes. District and school browser controls pass source and packaged qualification.
 This branch builds on CC-50. It does not establish Phase 3 completion.
 
 ## Change contract
@@ -40,7 +40,7 @@ The initial CC-51 increment accepted platform grants only.
 CC-46 connects district validation to the confirmed customer record.
 CC-52 extends validation with current school resources and exact reviewed school revisions.
 CC-52 revision `e6d0ed6` adds district and school selection, explicit actions, and presets to the browser.
-Five local browser cases pass. The combined source and packaged browser fixture still requires qualification.
+Five local browser cases pass. Source run `35177978798` and packaged run `35178237363` qualify the combined browser fixture.
 Preset expansion continues to use the shared action and resource contract.
 No browser value establishes that a Google customer or school exists.
 
@@ -63,4 +63,4 @@ The same revision passed all seven jobs in the [full compatibility run](https://
 Local regression checks cover failed detail reloads, unchanged reviews, durable receipts, and lost confirmation responses.
 A component test verifies that a failed session check preserves an already confirmed access change.
 UI rules UI-01 through UI-10 and FORM-01 apply to the grant workflow.
-Human screen-reader validation remains not run. District and school presets use verified resource integration. Combined packaged browser evidence remains pending.
+Human screen-reader validation remains not run. District and school presets use verified resource integration. Packaged browser evidence passed at downstream revision `0a89f67`.
