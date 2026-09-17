@@ -193,3 +193,27 @@ The upgrade segment took 51,313 milliseconds. The complete profile took 220,114 
 The [retained upgrade report](../../deployment/evidence/CC-57-phase2-upgrade.json) binds baseline, application, harness, image, manifest, and report identities.
 It also records two-replica session checks, restart persistence, stop, uninstall, repeated resume, and preserved preferences after fresh sign-in.
 PR CI passed at the same harness revision. Complete fault qualification and five distinct profile reports remain open.
+
+## Installed service recovery
+
+The `api-e2e:phase3-fault-integration` target installs the verified Phase 3 bundle and completes the installed workflows.
+It then interrupts API, workers, Redis, application PostgreSQL, Kestra PostgreSQL, Kestra, and artifact access separately.
+Each service fault recovery must complete within 180 seconds. Redis recovery requires a fresh session.
+
+Each case preserves principals, preferences, migration checksums, security events, an artifact, completed Kestra executions, and internal storage.
+The Phase 3 probe also compares hashes for customer connection, credentials, settings revisions, schools, grants, and access changes.
+The database computes protected policy hashes. Reports contain counts and hashes without credential envelopes.
+
+The standalone report records source, images, harness, bundle manifest, environment, duration, observations, and limits.
+Failed progress remains in `dist/phase-3-faults/all-docker-faults.json` after fixture cleanup.
+An ownership rejection test verifies failure retention without invoking Docker.
+
+Dispatch the signed release through CI:
+
+```sh
+gh workflow run ci.yml --ref codex/cc-57-phase3-delivery \
+  -f phase3Release=phase-3-lab-a3601eff2a55 -f phase3Faults=true
+```
+
+The workflow rejects combined upgrade and fault modes before it starts containers.
+Capacity, certificate, provider, stale-credential, and complete profile acceptance require separate evidence.
