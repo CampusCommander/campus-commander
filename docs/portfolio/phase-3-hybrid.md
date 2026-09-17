@@ -2,7 +2,7 @@
 
 [CC-58](https://easton-consulting.atlassian.net/browse/CC-58) requires extracted installation, resume, Phase 2 upgrade, restore, faults, and operator lifecycle evidence.
 The task remains incomplete.
-Installation, resume, installed workflows, key projection, and distributed credential renewal have passed hosted qualification.
+Installation, resume, installed workflows, key projection, distributed credential renewal, and replica permission checks have passed hosted qualification.
 The checkpoint sections below link their exact application and harness evidence.
 
 ## Installed workflow fixture
@@ -38,7 +38,6 @@ The existing Phase 2 targets retain their previous modes.
 
 - Pinned Phase 2 upgrade with preserved state and migration checksums.
 - Isolated restore with backup identity, recovered credentials, and rejected source admissions.
-- Hosted permission-version and revocation checks across both API replicas.
 - Service, network, certificate, and credential faults with bounded recovery and preserved state.
 - Guided update, retained external resources, and explicit erasure contracts.
 - Five completed profile reports and prerequisite acceptance.
@@ -74,8 +73,8 @@ It transfers workspace ownership and executes hybrid qualification as UID/GID 10
 Shared browser storage and preserved installer, image, and Docker configuration variables support the account change.
 The workflow restores evidence ownership before upload, including failed runs.
 
-The workflow regression failed before the correction. Hosted qualification must verify the correction against the original failure.
-The original failure reports remain intact. This correction does not establish successful installation.
+The workflow regression failed before the correction. The passed installation checkpoint below verifies the correction.
+The original failure reports remain intact.
 
 ## Delivered key-projection contract
 
@@ -90,7 +89,7 @@ Reports contain only the comparison result, ownership, permissions, and mount me
 Unauthorized running containers must lack the key file and the authorized secrets volume.
 The initializer retains its established temporary provisioning access.
 
-The regression and API fixture lint pass. The correction requires hosted validation before installation qualification can pass.
+The regression and API fixture lint pass. The passed installation checkpoint below verifies the corrected projection checks.
 
 ## Distributed credential checks
 
@@ -106,7 +105,7 @@ Both workers then restart. Reads must recover within 30 seconds and reuse that t
 Reports retain worker daemon identities, fixed response metadata, renewal counts, durations, and limits.
 Ownership checks reject foreign fixture roots and shared daemon identities before database access.
 
-This increment requires hosted execution. It does not complete permission revocation, upgrade, restore, fault recovery, or hybrid acceptance.
+The passed distributed-renewal checkpoint below verifies this increment. Upgrade, restore, fault recovery, and hybrid acceptance remain open.
 
 ## Passed installation checkpoint
 
@@ -129,7 +128,7 @@ With the renewed session, both replicas must allow the granted school and hide u
 The direct probes use verified TLS and bounded requests. Cookies travel through private standard input and remain outside process arguments and reports.
 Reports retain only replica identity, workflow stage, resource category, and status.
 Shared session checks use the same probe. Fixtures without the optional callback retain their existing behavior.
-Local API fixtures, hybrid fixtures, lint, and formatting pass. Hosted replica qualification remains required.
+Local API fixtures, hybrid fixtures, lint, and formatting pass. The passed replica-permission checkpoint below verifies hosted behavior.
 
 ## Passed distributed-renewal checkpoint
 
@@ -142,3 +141,20 @@ Both workers recovered within 2,682 milliseconds against the 30-second bound.
 The [distributed-renewal report](../../deployment/evidence/CC-58-distributed-renewal.json) records daemon identities, observations, original report hashes, and fixture limits.
 The renewal segment took 12,397 milliseconds. The complete hybrid fixture took 228,815 milliseconds.
 This checkpoint does not establish the subsequent replica-permission checks or complete hybrid acceptance.
+
+## Passed replica-permission checkpoint
+
+[Run 35233163753](https://github.com/CampusCommander/campus-commander/actions/runs/35233163753) passed with harness `c2884ab` against signed application `a3601ef`.
+The [replica-permission report](../../deployment/evidence/CC-58-replica-permissions.json) retains all original run fields and three source-report hashes.
+The downloaded artifact archive matches its published SHA-256 digest.
+
+Both API replicas rejected the previous session after grant changes and after revocation.
+Both replicas allowed the granted school after fresh sign-in and returned the same denial for ungranted and unknown schools.
+All 16 direct observations passed. All ten installed workflows passed in the same run.
+
+Distributed renewal also passed. Renewal events advanced from one to two and remained at two after worker restart.
+The second worker observed the pending lease within 460 milliseconds. Both workers recovered within 2,211 milliseconds against the 30-second bound.
+The complete fixture took 319,751 milliseconds. The worker segment took 14,815 milliseconds.
+PR CI passed at documentation revision `19a119c`.
+
+This checkpoint completes the synthetic replica-permission checks. Upgrade, isolated restore, fault recovery, operator lifecycle coverage, and prerequisite acceptance remain open.
