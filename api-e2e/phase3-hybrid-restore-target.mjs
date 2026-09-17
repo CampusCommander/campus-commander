@@ -1,10 +1,33 @@
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { parseDeploymentConfig } from '../dist/deployment/lib/deployment.js';
 import { createHybridServices } from './hybrid-services-fixture.mjs';
 
 const json = (path, value) =>
   writeFile(path, JSON.stringify(value), { mode: 0o600 });
+
+/** Derive separate target database identities and storage paths. */
+export function createHybridRestoreConfiguration(
+  config,
+  { databaseHostname, redisHostname, targetDirectory },
+) {
+  const targetConfig = structuredClone(config);
+  for (const name of ['applicationDatabase', 'kestraDatabase']) {
+    targetConfig.services[name].endpoint.url =
+      `postgresql://${databaseHostname}:5432`;
+    targetConfig.services[name].database =
+      `restored-${config.services[name].database}`;
+  }
+  targetConfig.services.redis.endpoint.url = `rediss://${redisHostname}:6379`;
+  targetConfig.artifacts.location = join(targetDirectory, 'artifacts');
+  targetConfig.services.kestra.internalStorage.location = join(
+    targetDirectory,
+    'kestra-internal',
+  );
+  parseDeploymentConfig(targetConfig);
+  return targetConfig;
+}
 
 /** Prepare separate target services without starting the restored application. */
 export async function createHybridRestoreTarget({
@@ -28,6 +51,11 @@ export async function createHybridRestoreTarget({
   const targetDirectory = join(hosts.shared, 'isolated-restore');
   const databaseHostname = `${project}-postgres.fixture.test`;
   const redisHostname = `${project}-redis.fixture.test`;
+  const targetConfig = createHybridRestoreConfiguration(config, {
+    databaseHostname,
+    redisHostname,
+    targetDirectory,
+  });
   const services = await createHybridServices(
     { ...hosts, hosts: targetHosts },
     project,
@@ -38,19 +66,6 @@ export async function createHybridRestoreTarget({
   const controllerFile = join(root, 'docker-compose.json');
   const overlay = join(root, 'qualification-provider.json');
   const bin = join(root, 'qualification-bin');
-  const targetConfig = structuredClone(config);
-  for (const name of ['applicationDatabase', 'kestraDatabase']) {
-    targetConfig.services[name].endpoint.url =
-      `postgresql://${databaseHostname}:5432`;
-    targetConfig.services[name].database =
-      `restored_${config.services[name].database}`;
-  }
-  targetConfig.services.redis.endpoint.url = `rediss://${redisHostname}:6379`;
-  targetConfig.artifacts.location = join(targetDirectory, 'artifacts');
-  targetConfig.services.kestra.internalStorage.location = join(
-    targetDirectory,
-    'kestra-internal',
-  );
   const commands = [];
   const compose = (host, args) =>
     hosts.run(host, [

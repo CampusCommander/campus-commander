@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import { parseDeploymentConfig } from '../dist/deployment/lib/deployment.js';
+import { createHybridRestoreConfiguration } from './phase3-hybrid-restore-target.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -188,4 +191,57 @@ test('Restore evidence rejects missing or changed durable records and live admis
     mutate(value);
     assert.throws(() => assertHybridRestoreSnapshot(value.before, value.after));
   }
+});
+
+test('Derived restore configuration satisfies the delivered deployment contract', async () => {
+  const source = JSON.parse(
+    await readFile(
+      new URL('../deployment/examples/hybrid.json', import.meta.url),
+    ),
+  );
+  source.phase = 3;
+  source.services.edge.access = 'application';
+  source.applicationAuth = {
+    issuer: 'https://identity.example.org',
+    clientId: 'qualification',
+    publicOrigin: 'https://campus.example.org',
+    clientSecretRef: { provider: 'file', path: '/run/secrets/oidc-client' },
+  };
+  source.googleConnection = {
+    keyId: 'restore-fixture-key',
+    encryptionKeySecretRef: {
+      provider: 'file',
+      path: '/run/secrets/google-qualification-key',
+    },
+  };
+  const original = structuredClone(source);
+  assert.doesNotThrow(() => parseDeploymentConfig(source));
+  const target = createHybridRestoreConfiguration(source, {
+    databaseHostname: 'restore-postgres.fixture.test',
+    redisHostname: 'restore-redis.fixture.test',
+    targetDirectory: '/tmp/cc-phase3-hybrid-fixture/shared/isolated-restore',
+  });
+  assert.doesNotThrow(() => parseDeploymentConfig(target));
+  assert.deepEqual(source, original);
+  for (const name of ['applicationDatabase', 'kestraDatabase']) {
+    assert.notEqual(
+      target.services[name].endpoint.url,
+      source.services[name].endpoint.url,
+    );
+    assert.notEqual(
+      target.services[name].database,
+      source.services[name].database,
+    );
+  }
+  assert.notEqual(
+    target.services.redis.endpoint.url,
+    source.services.redis.endpoint.url,
+  );
+  assert.notEqual(target.artifacts.location, source.artifacts.location);
+  assert.notEqual(
+    target.services.kestra.internalStorage.location,
+    source.services.kestra.internalStorage.location,
+  );
+  assert.deepEqual(target.googleConnection, source.googleConnection);
+  assert.deepEqual(target.applicationAuth, source.applicationAuth);
 });

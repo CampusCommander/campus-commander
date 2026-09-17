@@ -257,3 +257,16 @@ The [retained report](../../deployment/evidence/CC-58-native-operator-upgrade.js
 The archive matches its published SHA-256 digest.
 The complete upgrade fixture took 341,020 milliseconds.
 PR CI also passed at `f88ceba`.
+
+## First restore attempt
+
+[Run 35239418295](https://github.com/CampusCommander/campus-commander/actions/runs/35239418295) failed during target service preparation at `ede2db3`.
+The [retained failure](../../deployment/evidence/CC-58-restore-attempt1.json) preserves all original fields and the source-report hash.
+The artifact archive matches its published SHA-256 digest. Source installation and lifecycle checks completed before target preparation.
+
+The target configuration used underscores in database names. The delivered deployment schema permits hyphens but rejects underscores.
+A local regression called the actual configuration builder and reproduced both schema errors before correction.
+The builder now uses valid names and validates the target configuration before creating external services.
+The hybrid fixture target now declares its deployment-build dependency.
+The original failure category remains intact. Its broad TLS classification does not establish a certificate failure.
+PR CI passed at `ede2db3`. Hosted restoration still requires a successful rerun.

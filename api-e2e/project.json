@@ -212,7 +212,8 @@
       "cache": false,
       "options": {
         "command": "node --test api-e2e/hybrid-network-fixture.test.mjs api-e2e/hybrid-evidence-fixture.test.mjs api-e2e/phase3-hybrid-worker-fixture.test.mjs api-e2e/hybrid-replica-fixture.test.mjs api-e2e/phase3-hybrid-upgrade-fixture.test.mjs api-e2e/hybrid-operations-fixture.test.mjs api-e2e/phase3-hybrid-restore-fixture.test.mjs"
-      }
+      },
+      "dependsOn": ["deployment:build"]
     },
     "all-docker-process-fault-integration": {
       "executor": "nx:run-commands",
