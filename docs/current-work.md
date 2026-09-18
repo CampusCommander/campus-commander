@@ -15,8 +15,9 @@ The owner confirmed directory selection, invitations outside the Workspace, and 
 Campus Commander sends invitation emails.
 Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
 Administrators assign permissions through reusable roles, without individual permission exceptions.
+Resource access is scoped by an OrgUnit or a collection of OrgUnits.
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
-Authentication, role details, resource access, email configuration, and exact screen compositions remain open.
+Authentication, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
 Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.

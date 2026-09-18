@@ -66,9 +66,25 @@ The owner answered "1" to the question:
 
 Administrators define permissions in reusable roles and assign those roles to platform users.
 Per-person permission exceptions and direct individual permission assignment are outside the agreed model.
-Resource access remains a separate decision. Selecting reusable roles does not define access to specific OUs or other resources.
+Roles define permissions. The resource-access decision below defines the scope basis.
 Role names, permission choices, role multiplicity, role-change behavior, and delegation authority remain open.
 Historical presets do not establish the role catalog for this workflow.
+
+### Resource access — 2026-09-17
+
+The owner stated:
+
+> Access is scoped by OrgUnits or a collection of OrgUnuits
+
+Resource access is scoped by an OrgUnit or a collection of OrgUnits.
+This establishes OrgUnits as the scope basis for the Google users and devices discussed in the preceding question.
+It does not establish a separate school entity or authorize school creation.
+
+Descendant access, exclusions, and the treatment of later OrgUnit changes remain open.
+Whether a collection is a selection for one assignment or a named reusable collection remains open.
+The relationship between role assignments and OrgUnit scopes remains open.
+Group access and platform-wide administrative permissions require separate definitions.
+This answer does not establish a separate whole-Workspace access option.
 
 ### Interface organization — 2026-09-17
 
@@ -88,7 +104,8 @@ The exact entry controls, identity verification steps, success presentation, and
 ## Permissions and failures
 
 Administrators assign permissions through reusable roles.
-Role definitions, assignment controls, resource selection, and delegation authority remain open.
+Resource access uses an OrgUnit or a collection of OrgUnits.
+Role definitions, assignment controls, scope behavior, and delegation authority remain open.
 External sign-in requirements, identity matching, invitation failures, expiry, and repeat invitations remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
@@ -99,9 +116,11 @@ No access-request workflow is permitted.
 - A district administrator invites an external consultant who has no account in the connected Workspace.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
 - An administrator assigns a reusable role to a platform user instead of configuring individual permission exceptions.
+- An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
 - An uninvited person cannot request access. The exact sign-in message remains open.
 
-These examples define eligibility, activation, and permission assignment through roles. Authentication details and resource access remain open.
+These examples define eligibility, activation, reusable roles, and the OrgUnit scope basis.
+Authentication details and scope behavior remain open.
 
 ## Exclusions and open decisions
 
@@ -110,11 +129,12 @@ Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
-1. Resource access, role definitions, role assignment details, and delegation authority.
-2. External identity requirements and entry method.
-3. Identity verification and remaining recipient steps.
-4. Detailed page interactions and Figma compositions under the confirmed Settings organization.
-5. Email configuration, invitation content, and delivery failure handling.
+1. OrgUnit descendants, collections, scope behavior, and the relationship between roles and scopes.
+2. Role definitions, assignment details, delegation authority, and group access.
+3. External identity requirements and entry method.
+4. Identity verification and remaining recipient steps.
+5. Detailed page interactions and Figma compositions under the confirmed Settings organization.
+6. Email configuration, invitation content, and delivery failure handling.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
