@@ -12,6 +12,8 @@ Source: the owner's platform-access discussion on 2026-09-17.
 Ask one focused question at a time. Record answers in the workflow and update the relevant gap entries.
 
 The owner confirmed directory selection, invitations outside the Workspace, and no access requests.
+External invitees do not need Google accounts. Their sign-in method remains open.
+
 Campus Commander sends invitation emails.
 Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
 Administrators assign permissions through reusable roles, without individual permission exceptions.

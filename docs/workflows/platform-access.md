@@ -25,6 +25,21 @@ Adding platform access does not create or modify a Google Workspace account.
 Recipient authentication remains unresolved. The activation decision below excludes a second administrator confirmation.
 The external-person entry method remains open.
 
+### External invitees without Google accounts — 2026-09-17
+
+The owner answered "2" to the question:
+
+> Must external invitees have a Google account?
+
+1. Yes. Use Google sign-in for both district staff and external invitees.
+2. No. Support invitees without Google accounts, with their sign-in method defined next.
+
+External invitees do not need a Google account.
+Campus Commander must support invited platform users who have no Google account.
+The platform remains invite-only. Acceptance and identity verification still precede access activation.
+The sign-in method for these invitees remains open.
+This decision does not select local passwords, email sign-in codes, or a particular identity provider.
+
 ### Invitation delivery — 2026-09-17
 
 The owner answered "1" to these options:
@@ -249,14 +264,16 @@ Each selected OrgUnit has its own "Include descendants" option, which follows th
 Saved role and collection changes automatically apply to every assignment using them.
 The complete permission catalog, exact assignment controls, remaining scope behavior, and delegation authority remain open.
 
-External sign-in requirements, identity matching, invitation failures, expiry, and repeat invitations remain open.
+External invitees do not need Google accounts. Their sign-in method and identity matching remain open.
+Invitation failures, expiry, and repeat invitations remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
 
 ## Examples
 
 - A district administrator selects a staff member from the Google directory for platform access.
-- A district administrator invites an external consultant who has no account in the connected Workspace.
+- A district administrator invites an external consultant who has no Google account.
+- The consultant can receive platform access after acceptance and identity verification through the method still to be defined.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
 - An administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
 - That assignment permits device and Google user reads within the collection. It does not permit edits or out-of-scope reads.
@@ -280,7 +297,7 @@ Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. The permission catalog, remaining scope behavior, delegation authority, and group access.
-3. External identity requirements and entry method.
+3. Sign-in for external invitees without Google accounts, identity matching, and external-person entry.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, and delivery failure handling.
 
