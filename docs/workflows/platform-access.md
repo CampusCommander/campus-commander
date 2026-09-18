@@ -121,8 +121,30 @@ The owner answered "1" to the question:
 Administrators define permissions in reusable roles and assign those roles to platform users.
 Per-person permission exceptions and direct individual permission assignment are outside the agreed model.
 Roles define permissions. The resource-access decision below defines the scope basis.
-Granular permissions and initial examples are confirmed below. The remaining catalog, built-in roles, and delegation authority remain open.
+Granular permissions, Asset Super Admin, and Platform Admin assignment authority are confirmed below.
+The remaining catalog, other built-in roles, and delegation by other users remain open.
 Historical presets do not establish the role catalog for this workflow.
+
+### Platform Admin and Asset Super Admin — 2026-09-17
+
+The owner answered the question about automatic full Google resource access for platform administrators:
+
+> Yes. But it is a special built in Role, Asset Super Admin. Since platform admin can give any person any role they have defacto Asset Super Admin access. Giving it the built in role just makes it formal and unambiguous that Asset Admin work is different from Platform Admin work.
+
+Asset Super Admin is a special built-in role representing full access to managed Google resources across the connected Workspace.
+Platform Admin has full asset access, formally represented by Asset Super Admin.
+Platform administration and asset administration remain distinct responsibilities and must remain explicit in the role model.
+Asset Super Admin represents asset administration. It does not itself grant Platform Admin authority.
+
+Platform Admin can assign any role to any platform user, including themselves.
+That authority includes assigning Asset Super Admin and is not limited by the administrator's existing asset assignments.
+The owner recognizes this assignment authority as de facto Asset Super Admin access.
+Do not describe Platform Admin as isolated from asset authority merely because the two responsibilities have different names.
+
+These are Campus Commander authorities. They do not confer a Google Workspace Super Admin role on the person's Google account.
+Ordinary asset roles retain their OrgUnit-collection scopes. Asset Super Admin represents full asset access.
+The exact grant presentation for the built-in role remains to be designed.
+This decision does not define other users' delegation authority or the remaining built-in role catalog.
 
 ### Granular permissions — 2026-09-17
 
@@ -189,8 +211,8 @@ It does not establish a separate school entity or authorize school creation.
 The descendant-selection decision below defines the control for each selected OrgUnit.
 Exclusions remain open. Descendant scope follows the current hierarchy as confirmed below.
 The collection and access-assignment decision below defines named reusable collections and their relationship to roles.
-Group access and platform-wide administrative permissions require separate definitions.
-This answer does not establish a separate whole-Workspace access option.
+Ordinary group access and the detailed platform permission catalog require separate definitions.
+Asset Super Admin provides full asset access as confirmed above. Ordinary role assignments remain scoped by OrgUnit collections.
 
 ### Include descendants — 2026-09-17
 
@@ -239,7 +261,7 @@ The owner provided this example:
 | Permission | An action available within an entity area. | `devices-read`, `users-read` |
 | Role | A named reusable collection of permissions. | Librarians contains `devices-read` and `users-read`. |
 | OrgUnit collection | A named reusable collection of OrgUnits defining resource scope. | Smith Elementary contains `/devices/schools/smith/lib1` and `/devices/schools/smith/lib2`. |
-| Access assignment | The association of a platform user, a role, and an OrgUnit collection. | `mSmith@school.edu` receives Librarians scoped to Smith Elementary. |
+| Access assignment | For ordinary asset roles, the association of a platform user, a role, and an OrgUnit collection. | `mSmith@school.edu` receives Librarians scoped to Smith Elementary. |
 
 The example uses "Librarians" consistently for the role called "Librarian`s" and "Libraries" in the owner's message.
 These example names do not establish built-in roles or a fixed permission catalog.
@@ -265,7 +287,7 @@ The owner answered "1" to the question:
 2. No. Each platform user has one role-and-collection assignment.
 
 A platform user can have multiple access assignments.
-Each assignment pairs one role with its own OrgUnit collection.
+Each ordinary asset assignment pairs one role with its own OrgUnit collection.
 The role's permissions apply within that assignment's collection, not automatically across the user's other collections.
 For example, read access through one assignment does not transfer another assignment's editing permissions to that first collection.
 This example describes separate scopes. Where collections overlap, the most-permissive rule below applies.
@@ -347,7 +369,7 @@ The exact entry controls, identity verification steps, success presentation, and
 ## Permissions and failures
 
 Roles contain permissions. Named OrgUnit collections define resource scope.
-An access assignment associates a platform user with a role and an OrgUnit collection.
+An ordinary asset access assignment associates a platform user with a role and an OrgUnit collection.
 A platform user can have multiple assignments. Each role remains paired with its assignment's collection.
 Within overlapping scopes, permissions combine and most permissive wins.
 
@@ -355,7 +377,10 @@ Each selected OrgUnit has its own "Include descendants" option, which follows th
 Saved role and collection changes automatically apply to every assignment using them.
 Roles use granular permissions, including the owner's initial device and Google-user examples.
 Bulk operations require both Bulk Actions and the action-specific permission within the applicable scope.
-The remaining catalog, other permission dependencies, exact controls, scope behavior, and delegation authority remain open.
+The remaining catalog, other permission dependencies, exact controls, scope behavior, and other users' delegation authority remain open.
+
+Platform Admin can assign any role to any platform user, including Asset Super Admin.
+Asset Super Admin formally represents full Google resource access and remains distinct from platform administration.
 
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Identity matching remains open.
@@ -380,6 +405,8 @@ No access-request workflow is permitted.
 - An administrator includes descendants for one selected OrgUnit and selects only another OrgUnit without its descendants.
 - A new descendant enters an enabled descendant scope. A moved-out descendant leaves that scope.
 - Another applicable assignment still grants access to a moved-out OrgUnit according to the most-permissive rule.
+- A Platform Admin can assign Asset Super Admin to another platform user or to themselves.
+- Asset Super Admin gives full managed Google resource access without itself granting platform administration authority.
 - An uninvited person cannot request access. The exact sign-in message remains open.
 
 These examples define eligibility, activation, reusable roles, and the OrgUnit scope basis.
@@ -393,7 +420,7 @@ Do not change application code until the owner authorizes implementation.
 Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
-2. Remaining action coverage and permission dependencies, remaining catalog, scope behavior, delegation authority, and group access.
+2. Remaining action coverage, dependencies, catalog, scope behavior, delegation by other users, and ordinary group access.
 3. Identity matching, sign-in method defaults and controls, and external-person entry.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, and delivery failure handling.

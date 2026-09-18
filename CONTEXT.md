@@ -19,13 +19,22 @@ _Avoid_: Role as a synonym for one permission.
 A named reusable collection of permissions, such as Librarians.
 _Avoid_: Resource scope or OrgUnit collection as synonyms.
 
+**Platform Admin**:
+The platform administrator who can assign any role to any platform user, including themselves.
+Full asset access is formally represented by the distinct Asset Super Admin role.
+_Avoid_: Treating platform administration and asset administration as interchangeable responsibilities.
+
+**Asset Super Admin**:
+The special built-in Campus Commander role representing full access to managed Google resources across the connected Workspace.
+_Avoid_: Google Workspace Super Admin, which is a Google-side role, or Platform Admin as a synonym.
+
 **OrgUnit collection**:
 A named reusable collection of OrgUnits defining resource scope, with an "Include descendants" option for each entry.
 An OrgUnit collection such as Smith Elementary represents a school for access administration.
 _Avoid_: A separate school entity as the access model.
 
 **Access assignment**:
-The association of a platform user, a role, and an OrgUnit collection.
+For ordinary asset roles, the association of a platform user, a role, and an OrgUnit collection.
 _Avoid_: Job assignment, which concerns worker execution.
 
 ## Historical school access language

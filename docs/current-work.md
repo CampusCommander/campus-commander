@@ -24,10 +24,14 @@ Administrators control "Include descendants" separately for each selected OrgUni
 
 Enabled descendant scopes follow the current Google hierarchy, including new or moved-in descendants and excluding moved-out descendants.
 
-An access assignment associates a platform user with a role and an OrgUnit collection.
+An ordinary asset access assignment associates a platform user with a role and an OrgUnit collection.
 A platform user can have multiple access assignments, each with its own role-and-collection pairing.
 Within overlapping scopes, permissions combine and most permissive wins.
 Saved role and collection changes automatically apply to every assignment using them.
+
+Asset Super Admin is a special built-in role representing full managed Google resource access.
+Platform Admin has full asset access through that distinct role and can assign any role to any platform user.
+Platform administration and asset administration remain explicit, separate responsibilities.
 
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
 Platform Users, Platform Roles and Permissions, OrgUnit Collections, and Access Assignments each have their own Settings page.

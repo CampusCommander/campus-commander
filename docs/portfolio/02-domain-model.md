@@ -15,8 +15,10 @@ The [platform-access workflow](../workflows/platform-access.md#roles-orgunit-col
 | **School scope (historical)** | The implementation's independent school identity. The owner-confirmed OrgUnit collection model replaces this interpretation. |
 | **Permission** | A separately selectable capability in a role, such as Device Read or Device Bulk Actions. |
 | **Role** | A named reusable collection of permissions, such as Librarians. |
+| **Platform Admin** | The platform administrator who can assign any role to any platform user, including themselves. Full asset access is formally represented by Asset Super Admin. |
+| **Asset Super Admin** | The special built-in Campus Commander role representing full access to managed Google resources across the connected Workspace. Distinct from Platform Admin and Google's Super Admin role. |
 | **OrgUnit collection** | A named reusable collection of OrgUnits defining resource scope. Each entry has an "Include descendants" option. It represents a school for access administration. |
-| **Access assignment** | The association of a platform user, a role, and an OrgUnit collection. |
+| **Access assignment** | For ordinary asset roles, the association of a platform user, a role, and an OrgUnit collection. |
 | **OU reference**       | A customer-bound stable organizational unit identity. Paths describe its location.                                                               |
 | **Entity**             | A Google Workspace user, device, group, or OU represented in the local inventory.                                                                |
 | **Entity type**        | A category of entities. It does not imply one shared freshness timestamp for all related data.                                                   |
