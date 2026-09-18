@@ -24,7 +24,7 @@ Adding platform access does not create or modify a Google Workspace account.
 
 External sign-in methods and administrator control of allowed methods are defined below. Invitation acceptance requires verification of the invited email address, as confirmed below.
 The activation decision below excludes a second administrator confirmation.
-The external-person entry method remains open.
+External email entry and recipient review are confirmed below.
 
 ### Multiple directory invitees — 2026-09-18
 
@@ -41,6 +41,22 @@ Each recipient accepts their own invitation and verifies their invited email add
 Selection grants no platform access and does not change the selected Google Workspace accounts.
 Role and resource assignments remain on the separate Access Assignments page.
 Exact controls and the Figma composition remain open.
+
+### External invitee entry — 2026-09-18
+
+The owner answered "1" to the question:
+
+> How should Platform Admin enter external invitees?
+
+1. Enter or paste one or more email addresses. Review the recipients before sending invitations together.
+2. One email address at a time. Send each invitation separately.
+
+From Settings > Platform Users, Platform Admin enters or pastes one or more external email addresses.
+The administrator reviews the recipients before sending their invitations together.
+Each recipient accepts their own invitation and verifies the invited email address before platform access activates.
+External invitees do not need Google accounts. Allowed sign-in methods remain controlled per platform user.
+Role and resource assignments remain on the separate Access Assignments page.
+Exact controls, address validation feedback, and the Figma composition remain open.
 
 ### External invitees without Google accounts — 2026-09-17
 
@@ -483,7 +499,7 @@ Administrators manage assignments through Settings > Access Assignments.
 Role definitions and OrgUnit collections have their own Settings pages.
 
 Platform Admin can select one or more people in a searchable Google directory grid and send their invitations together.
-Platform Admin can also invite someone outside the Workspace.
+For external invitees, Platform Admin enters or pastes one or more email addresses and reviews the recipients before sending.
 Campus Commander delivers the invitation by email.
 Platform Admin can resend pending or expired invitations on Platform Users. Resend starts a fresh seven-day validity period.
 Platform Admin can revoke pending invitations on that page.
@@ -522,7 +538,8 @@ No access-request workflow is permitted.
 
 - Platform Admin selects three staff members in the searchable Google directory grid and sends their invitations together.
 - Each selected staff member must accept and verify their invited email address before their own access activates.
-- A district administrator invites an external consultant who has no Google account.
+- Platform Admin pastes two external email addresses, reviews the recipients, and sends their invitations together.
+- An external consultant without a Google account accepts through an allowed sign-in method.
 - Platform Admin resends a pending invitation from Platform Users. Campus Commander sends another invitation email.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
@@ -560,7 +577,7 @@ Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
-3. Sign-in method defaults and controls, external-person entry, and identity-change recovery.
+3. Sign-in method defaults and controls, external email validation feedback, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, invitations after revocation, and delivery failure handling.
 
