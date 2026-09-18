@@ -101,7 +101,8 @@ When selected, that scope includes the selected OrgUnit and its descendants.
 When cleared, that scope includes only the selected OrgUnit.
 The administrator makes this choice separately for each OrgUnit in a collection.
 The option's initial state and the treatment of later OrgUnit changes remain open.
-Overlapping selections and exclusions remain open. Clearing this option does not establish an explicit denial rule.
+Overlapping assignments follow the most-permissive rule below. Exclusions remain open.
+Clearing this option does not establish an explicit denial rule.
 
 ### Roles, OrgUnit collections, and access assignments — 2026-09-17
 
@@ -128,7 +129,7 @@ The example does not specify those option values or assert that the example OrgU
 An OrgUnit collection represents a school for this access model. Its name does not create a separate school entity.
 This decision replaces the historical school-scope interpretation that required an independent school identity.
 Collection creation, editing, and assignment controls still need their own interface definition under Settings.
-Multiple assignments are confirmed below. Overlapping scopes and effects of later role or collection changes remain open.
+Multiple assignments and their overlap rule are confirmed below. Effects of later role or collection changes remain open.
 
 ### Multiple access assignments — 2026-09-17
 
@@ -143,7 +144,26 @@ A platform user can have multiple access assignments.
 Each assignment pairs one role with its own OrgUnit collection.
 The role's permissions apply within that assignment's collection, not automatically across the user's other collections.
 For example, read access through one assignment does not transfer another assignment's editing permissions to that first collection.
-This example describes separate scopes. The rule for combining permissions where collections overlap remains open.
+This example describes separate scopes. Where collections overlap, the most-permissive rule below applies.
+
+### Overlapping access assignments — 2026-09-17
+
+The owner answered:
+
+> 1) Most permissive wins
+
+The question offered combining permissions or preventing overlapping assignments.
+The owner selected combining permissions.
+
+Overlapping access assignments are allowed. Most permissive wins within the overlap.
+For a resource, combine the permissions from every applicable assignment whose OrgUnit collection includes that resource.
+An assignment that lacks a permission does not cancel another applicable assignment that grants it.
+Permissions remain paired with each assignment's OrgUnit collection. They do not extend into unrelated collections.
+
+For example, read access from one assignment and edit access from another both apply within their shared scope.
+Outside that overlap, each assignment grants only its own permissions within its own collection.
+If no applicable assignment grants an action, the platform user lacks permission for that action on that resource.
+This rule does not define collection exclusions or bypass invitation, identity, or account-authorization checks.
 
 ### Interface organization — 2026-09-17
 
@@ -165,6 +185,7 @@ The exact entry controls, identity verification steps, success presentation, and
 Roles contain permissions. Named OrgUnit collections define resource scope.
 An access assignment associates a platform user with a role and an OrgUnit collection.
 A platform user can have multiple assignments. Each role remains paired with its assignment's collection.
+Within overlapping scopes, permissions combine and most permissive wins.
 
 Each selected OrgUnit has its own "Include descendants" option.
 The complete permission catalog, assignment controls, remaining scope behavior, and delegation authority remain open.
@@ -180,6 +201,8 @@ No access-request workflow is permitted.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
 - An administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
 - That assignment permits device and Google user reads within the collection. It does not permit edits or out-of-scope reads.
+- Overlapping read and edit assignments allow both actions within their shared scope.
+- Outside the overlap, a read assignment does not gain editing permission from the other assignment.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
 - An administrator includes descendants for one selected OrgUnit and selects only another OrgUnit without its descendants.
 - An uninvited person cannot request access. The exact sign-in message remains open.
@@ -194,7 +217,7 @@ Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
-1. Overlapping scopes and effects of role or collection changes.
+1. Effects of role or collection changes.
 2. The permission catalog, remaining scope behavior, delegation authority, and group access.
 3. External identity requirements and entry method.
 4. Identity verification and remaining recipient steps.
