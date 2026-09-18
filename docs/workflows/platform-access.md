@@ -22,7 +22,7 @@ Adding platform access does not create or modify a Google Workspace account.
 - Campus Commander is invite-only.
 - People cannot request access.
 
-External sign-in methods are defined below. Identity matching and method availability rules remain open.
+External sign-in methods and administrator control of allowed methods are defined below. Identity matching remains open.
 The activation decision below excludes a second administrator confirmation.
 The external-person entry method remains open.
 
@@ -57,8 +57,26 @@ The provider examples do not establish the complete provider catalog.
 
 These methods authenticate invited platform users. They do not allow self-registration or access requests.
 Invitation acceptance and identity verification still precede immediate access activation.
-Identity matching and the rules controlling method availability for each platform user remain open.
+Administrators control allowed methods for each platform user, as confirmed below. Identity matching remains open.
 Provider configuration, email-code delivery failures, and recovery interactions remain open.
+
+### Allowed sign-in methods per platform user — 2026-09-17
+
+The owner answered "1" to the question:
+
+> Who controls which sign-in methods a platform user can use?
+
+1. Administrator selects allowed methods per platform user. Supports provider-only access where required.
+2. The platform user chooses either enabled method. No restrictions per platform user.
+
+An administrator selects the allowed sign-in methods for each platform user.
+The platform user can sign in only through an allowed method.
+Email-code sign-in does not provide an alternative when the administrator permits only provider sign-in.
+If the administrator permits both methods, either method is available to that platform user.
+
+This is a platform-user setting. Installation-wide identity-provider configuration remains a separate Provider settings concern.
+The initial method selection, exact provider-selection controls, and effects of method changes on active sessions remain open.
+Identity matching and recovery interactions remain open.
 
 ### Invitation delivery — 2026-09-17
 
@@ -286,7 +304,7 @@ Saved role and collection changes automatically apply to every assignment using 
 The complete permission catalog, exact assignment controls, remaining scope behavior, and delegation authority remain open.
 
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
-Identity matching and method availability rules remain open.
+Administrators select allowed methods per platform user. Identity matching remains open.
 Invitation failures, expiry, and repeat invitations remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
@@ -295,7 +313,8 @@ No access-request workflow is permitted.
 
 - A district administrator selects a staff member from the Google directory for platform access.
 - A district administrator invites an external consultant who has no Google account.
-- The consultant accepts the invitation and verifies identity through a configured provider or an emailed one-time sign-in code.
+- The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
+- A platform user restricted to provider sign-in cannot sign in through an email code.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
 - An administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
 - That assignment permits device and Google user reads within the collection. It does not permit edits or out-of-scope reads.
@@ -319,7 +338,7 @@ Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. The permission catalog, remaining scope behavior, delegation authority, and group access.
-3. Identity matching, sign-in method availability rules, and external-person entry.
+3. Identity matching, sign-in method defaults and controls, and external-person entry.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, and delivery failure handling.
 
