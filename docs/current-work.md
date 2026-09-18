@@ -12,6 +12,7 @@ Source: the owner's platform-access discussion on 2026-09-17 through 2026-09-18.
 Ask one focused question at a time. Record answers in the workflow and update the relevant gap entries.
 
 The owner confirmed directory selection, invitations outside the Workspace, and no access requests.
+Platform Admin selects one or more people in a searchable Google directory grid and sends their invitations together.
 External invitees do not need Google accounts.
 Support configured identity providers and emailed one-time sign-in codes for external invitees.
 Administrators select the allowed sign-in methods for each platform user.

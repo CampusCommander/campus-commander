@@ -26,6 +26,22 @@ External sign-in methods and administrator control of allowed methods are define
 The activation decision below excludes a second administrator confirmation.
 The external-person entry method remains open.
 
+### Multiple directory invitees — 2026-09-18
+
+The owner answered "1" to the question:
+
+> For Google directory selection, should Platform Admin invite multiple people at once?
+
+1. Yes. Select multiple people in a searchable directory grid and send their invitations together.
+2. One person at a time. Repeat directory selection for each invitation.
+
+Platform Admin selects one or more people in a searchable Google directory grid from Settings > Platform Users.
+The administrator can send invitations to the selected people together without repeating directory selection for each person.
+Each recipient accepts their own invitation and verifies their invited email address before their platform access activates.
+Selection grants no platform access and does not change the selected Google Workspace accounts.
+Role and resource assignments remain on the separate Access Assignments page.
+Exact controls and the Figma composition remain open.
+
 ### External invitees without Google accounts — 2026-09-17
 
 The owner answered "2" to the question:
@@ -466,7 +482,8 @@ Platform Admin adds platform users through Settings > Platform Users.
 Administrators manage assignments through Settings > Access Assignments.
 Role definitions and OrgUnit collections have their own Settings pages.
 
-Administrators can select a directory account or invite someone outside the Workspace.
+Platform Admin can select one or more people in a searchable Google directory grid and send their invitations together.
+Platform Admin can also invite someone outside the Workspace.
 Campus Commander delivers the invitation by email.
 Platform Admin can resend pending or expired invitations on Platform Users. Resend starts a fresh seven-day validity period.
 Platform Admin can revoke pending invitations on that page.
@@ -503,7 +520,8 @@ No access-request workflow is permitted.
 
 ## Examples
 
-- A district administrator selects a staff member from the Google directory for platform access.
+- Platform Admin selects three staff members in the searchable Google directory grid and sends their invitations together.
+- Each selected staff member must accept and verify their invited email address before their own access activates.
 - A district administrator invites an external consultant who has no Google account.
 - Platform Admin resends a pending invitation from Platform Users. Campus Commander sends another invitation email.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
