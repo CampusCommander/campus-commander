@@ -24,6 +24,8 @@ Within overlapping scopes, permissions combine and most permissive wins.
 Saved role and collection changes automatically apply to every assignment using them.
 
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
+Platform Users, Platform Roles and Permissions, OrgUnit Collections, and Access Assignments each have their own Settings page.
+Access Assignments uses a grid of platform user, role, and OrgUnit collection.
 Authentication, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 

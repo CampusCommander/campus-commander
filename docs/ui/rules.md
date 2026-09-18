@@ -166,6 +166,14 @@ The owner named these separate concerns:
 - Provider settings
 - Platform Roles and Permissions
 
+The owner explicitly confirmed Access Assignments as another separate page under Settings:
+
+> 1. Separate Concerns get their own page. Do Not Mix concerns.
+
+The established access concerns also include OrgUnit Collections, which receives its own page under this rule.
+The [workflow](../workflows/platform-access.md#interface-organization--2026-09-17) records each page's responsibility.
+Access Assignments uses a grid listing platform user, role, and OrgUnit collection.
+
 Apply these rules:
 
 - Nest all platform settings under Settings.
@@ -173,6 +181,8 @@ Apply these rules:
 - Prefer grid views when a page needs a list.
 - Prefer horizontal tabs over vertical grouping, especially when vertical grouping pushes work below the fold.
 - Use tabs within a concern without combining separate concerns into one page.
+- Keep Access Assignments separate from Platform Users details. Do not use a tab to merge these concerns.
+- Apply established page boundaries directly. Do not offer mixed-concern alternatives unless the owner changes this rule.
 - Arrange primary work and controls to minimize scrolling below the initial viewport.
 - Preserve readable controls, keyboard access, and zoom support while reducing unnecessary vertical space.
 

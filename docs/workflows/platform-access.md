@@ -188,12 +188,33 @@ Effects on work already running remain part of the unresolved access-revocation 
 
 The owner placed all platform settings under Settings and required a separate page for each concern.
 [UI-11](../ui/rules.md#ui-11--settings-organization-and-visible-work) contains the canonical layout rules and the owner's named concerns.
-Platform Users and Platform Roles and Permissions are separate concerns under Settings.
-Exact controls for role definitions, OrgUnit collections, and access assignments remain open within this organization.
+The owner selected a separate Access Assignments page and reiterated:
+
+> 1. Separate Concerns get their own page. Do Not Mix concerns.
+
+Access Assignments has its own page under Settings.
+Its grid lists the platform user, role, and OrgUnit collection for each assignment.
+Do not place assignment management inside Platform Users details or an assignments tab on that page.
+
+Apply the owner's one-page-per-concern rule to the established access model:
+
+| Settings page | Concern |
+| --- | --- |
+| Platform Users | Platform users and invitations. |
+| Platform Roles and Permissions | Role definitions and their permissions. |
+| OrgUnit Collections | Named collections of OrgUnits and each entry's descendant option. |
+| Access Assignments | Assignments connecting platform users, roles, and OrgUnit collections. |
+
+These pages remain separate. Tabs organize content within one concern, not multiple concerns on one page.
+Do not reopen this separation as a product choice in later design questions.
+Exact controls, navigation order, and Figma compositions remain open.
 
 ## Interaction
 
-The workflow belongs to the Platform Users concern under Settings.
+Administrators add platform users through Settings > Platform Users.
+Administrators manage assignments through Settings > Access Assignments.
+Role definitions and OrgUnit collections have their own Settings pages.
+
 Administrators can select a directory account or invite someone outside the Workspace.
 Campus Commander delivers the invitation by email.
 The recipient accepts a valid invitation and verifies their identity. Access activates immediately without another administrator confirmation.
@@ -208,7 +229,7 @@ Within overlapping scopes, permissions combine and most permissive wins.
 
 Each selected OrgUnit has its own "Include descendants" option.
 Saved role and collection changes automatically apply to every assignment using them.
-The complete permission catalog, assignment controls, remaining scope behavior, and delegation authority remain open.
+The complete permission catalog, exact assignment controls, remaining scope behavior, and delegation authority remain open.
 
 External sign-in requirements, identity matching, invitation failures, expiry, and repeat invitations remain open.
 Retain application authorization and credential protection.
@@ -237,7 +258,7 @@ Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
-1. Access-assignment placement, remaining page interactions, and Figma compositions under Settings.
+1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. The permission catalog, remaining scope behavior, delegation authority, and group access.
 3. External identity requirements and entry method.
 4. Identity verification and remaining recipient steps.
