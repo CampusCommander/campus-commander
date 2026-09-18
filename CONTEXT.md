@@ -12,7 +12,7 @@ A person authorized to use Campus Commander.
 _Avoid_: Google user as a synonym. Managed Google Workspace accounts are separate resources.
 
 **Permission**:
-An action available within an entity area, such as `devices-read` or `users-read`.
+A separately selectable capability in a role, such as Device Read or Device Bulk Actions.
 _Avoid_: Role as a synonym for one permission.
 
 **Role**:

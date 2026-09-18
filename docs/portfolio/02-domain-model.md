@@ -13,7 +13,7 @@ The [platform-access workflow](../workflows/platform-access.md#roles-orgunit-col
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Customer account**   | One Google Workspace account containing its primary, secondary, and alias domains. One installation serves one account.                          |
 | **School scope (historical)** | The implementation's independent school identity. The owner-confirmed OrgUnit collection model replaces this interpretation. |
-| **Permission** | An action available within an entity area, such as `devices-read` or `users-read`. |
+| **Permission** | A separately selectable capability in a role, such as Device Read or Device Bulk Actions. |
 | **Role** | A named reusable collection of permissions, such as Librarians. |
 | **OrgUnit collection** | A named reusable collection of OrgUnits defining resource scope. Each entry has an "Include descendants" option. It represents a school for access administration. |
 | **Access assignment** | The association of a platform user, a role, and an OrgUnit collection. |

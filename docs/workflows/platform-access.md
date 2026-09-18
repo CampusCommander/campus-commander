@@ -121,8 +121,33 @@ The owner answered "1" to the question:
 Administrators define permissions in reusable roles and assign those roles to platform users.
 Per-person permission exceptions and direct individual permission assignment are outside the agreed model.
 Roles define permissions. The resource-access decision below defines the scope basis.
-The complete permission catalog, built-in roles, and delegation authority remain open.
+Granular permissions and initial examples are confirmed below. The remaining catalog, built-in roles, and delegation authority remain open.
 Historical presets do not establish the role catalog for this workflow.
+
+### Granular permissions — 2026-09-17
+
+The owner stated:
+
+> Granular. Device Read, Device Write, Device Deprecate, Device Bulk Actions, User Read, User Write , User schema manage, User Bulk Actions, etc
+
+Roles contain separately selectable granular permissions.
+The owner named these initial permissions:
+
+| Entity area | Permission labels |
+| --- | --- |
+| Devices | Device Read, Device Write, Device Deprecate, Device Bulk Actions |
+| Google users | User Read, User Write, User Schema Manage, User Bulk Actions |
+
+These are distinct permission choices. A single broad "Manage devices" or "Manage users" permission does not replace them.
+The list is illustrative, not a complete catalog. Exact action coverage and dependencies require definition before dependent implementation.
+Do not assume Write includes Deprecate, schema management, or bulk actions.
+Do not assume Bulk Actions grants every underlying action without its corresponding permission.
+
+"Device Deprecate" remains the owner's label pending clarification.
+The existing [device domain reference](../portfolio/02-domain-model.md#devices-chromeos) names a Deprovision action.
+Do not equate those terms without the owner's answer.
+User Schema Manage is confirmed as a distinct permission. Its schema-definition and field-value boundaries remain open.
+These permissions concern managed Google resources. Platform administration permissions remain a separate part of the catalog.
 
 ### Resource access — 2026-09-17
 
@@ -301,7 +326,8 @@ Within overlapping scopes, permissions combine and most permissive wins.
 
 Each selected OrgUnit has its own "Include descendants" option, which follows the current Google hierarchy when enabled.
 Saved role and collection changes automatically apply to every assignment using them.
-The complete permission catalog, exact assignment controls, remaining scope behavior, and delegation authority remain open.
+Roles use granular permissions, including the owner's initial device and Google-user examples.
+The remaining permission catalog, action coverage, dependencies, exact assignment controls, scope behavior, and delegation authority remain open.
 
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Identity matching remains open.
@@ -337,7 +363,7 @@ Do not change application code until the owner authorizes implementation.
 Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
-2. The permission catalog, remaining scope behavior, delegation authority, and group access.
+2. Device Deprecate meaning, permission action coverage and dependencies, remaining catalog, scope behavior, delegation authority, and group access.
 3. Identity matching, sign-in method defaults and controls, and external-person entry.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, and delivery failure handling.

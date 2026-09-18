@@ -18,7 +18,7 @@ Administrators select the allowed sign-in methods for each platform user.
 
 Campus Commander sends invitation emails.
 Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
-Administrators assign permissions through reusable roles, without individual permission exceptions.
+Administrators assign granular permissions through reusable roles, without individual permission exceptions.
 Named OrgUnit collections define resource scope and represent schools for access administration.
 Administrators control "Include descendants" separately for each selected OrgUnit.
 
@@ -32,6 +32,9 @@ Saved role and collection changes automatically apply to every assignment using 
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
 Platform Users, Platform Roles and Permissions, OrgUnit Collections, and Access Assignments each have their own Settings page.
 Access Assignments uses a grid of platform user, role, and OrgUnit collection.
+The owner named distinct read, write, bulk-action, device-deprecation, and user-schema permissions in the [workflow](workflows/platform-access.md#granular-permissions--2026-09-17).
+Device Deprecate meaning and exact permission action coverage remain open.
+
 Identity matching, sign-in method defaults, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
