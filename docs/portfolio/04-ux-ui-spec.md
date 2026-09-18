@@ -8,7 +8,7 @@
 The contractor review and owner decisions replace conflicting behavior from earlier prototype boards.
 [03](03-architecture.md) defines runtime behavior. [05](05-decisions-and-open-questions.md) records current decisions.
 The [prototype map](prototype-map.md) identifies the current Figma reference and its review flows.
-The [agent UI contract](../ui/README.md) supplies implementation rules without requiring agents to parse Figma.
+The [agent UI contract](../ui/README.md) supplies shared rules. Agents must inspect relevant Figma designs before screen implementation.
 The September 5 Figma revision implements the design review. It does not establish working-client acceptance.
 
 ## Development milestones
@@ -39,6 +39,9 @@ Rules that serve both groups: plain-language action labels first, with technical
 4. **Familiar enterprise patterns.** Patterns come from products admins already know: Google Admin Console, GCP Console job pages, GAM7 onboarding, the Google OU picker. Nothing exotic.
 5. **One visual system.** Angular Material tokens are the single source of truth for color, type, and elevation. Tailwind handles layout only. The grid inherits the same tokens through `@libregrid/material`.
 6. **Server truth, plainly stated.** Copy states what the backend actually does. No promises the backend does not keep.
+7. **Separate settings concerns and keep work visible.** Follow the owner-confirmed [UI-11](../ui/rules.md#ui-11--settings-organization-and-visible-work), dated 2026-09-17.
+   All platform settings belong under Settings, with one page per concern.
+   Prefer grids for lists and horizontal tabs over vertical grouping. Minimize work below the fold while preserving accessibility.
 
 ## 3. Brand
 
@@ -48,6 +51,9 @@ Rules that serve both groups: plain-language action labels first, with technical
 - **Brand presence:** wordmark in the nav header. Accent on all primary actions and active states. Branded empty states (wordmark + one sentence of guidance + one next action). App version in the footer.
 
 ## 4. Layout and app shell
+
+The owner's [UI-11 direction](../ui/rules.md#ui-11--settings-organization-and-visible-work) controls settings placement and separation of concerns.
+Exact settings compositions remain undesigned. Earlier shell descriptions do not authorize separate top-level settings destinations.
 
 Standard enterprise layout: a full-height left navigation panel, a header above the main column only, and a full-width footer.
 

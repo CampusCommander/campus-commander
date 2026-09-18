@@ -4,19 +4,23 @@ Updated: 2026-09-17.
 
 ## Authorized now
 
-Index all project documentation, identify defined and missing behavior, and organize the documentation for consistent execution.
-The owner also authorized removing Jira from the process and changing the development order where needed.
-Application implementation is paused during this reset.
+The documentation reset was committed and pushed as `a19acd0` on `codex/documentation-scope-reset`.
+Do not repeat the documentation audit.
 
-Deliverables:
+Resolve one active workflow: [add a platform user and assign access](workflows/platform-access.md).
+Source: the owner's platform-access discussion on 2026-09-17.
+Ask one focused question at a time. Record answers in the workflow and update the relevant gap entries.
 
-- [Documentation entry point and format](README.md).
-- [Complete file inventory](document-index.csv).
-- [Workflow coverage, open decisions, and disputed scope](workflow-gaps.md).
-- [Updated Figma design map](portfolio/prototype-map.md).
+The owner confirmed directory selection, invitations outside the Workspace, and no access requests.
+The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
+Invitation delivery, activation, permissions, resource access, and exact screen compositions remain open.
+Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
-The audit does not authorize a replacement invitation system, school model, or permission editor.
-Existing code remains available for inspection. Its existence does not settle those choices.
+Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.
+Do not require resolution of all 27 gaps before progress.
+Application implementation remains paused until the owner authorizes it.
+Exclude feature removal, broad qualification suites, branch merges, Jira synchronization, and deferred infrastructure work.
+Existing code remains available for inspection. Its existence does not settle product choices.
 
 ## Standing constraints
 

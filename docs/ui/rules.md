@@ -29,6 +29,7 @@ Rule IDs provide references for implementation plans, review findings, and accep
 
 ## UI-03 — Layout and density
 
+- Apply UI-11 for settings organization, list presentation, tabs, and visibility of primary work.
 - Use semantic dimensions and spacing from `tokens.json`.
 - Expand grids into the available width. Keep their status region visible beneath a bounded scrolling viewport.
 - Center ordinary forms and wizards within `layout/content-max-width`.
@@ -149,3 +150,31 @@ References: [text contrast](https://www.w3.org/TR/WCAG22/#contrast-minimum), [no
 - Record keyboard, focus, screen-reader, and usability evidence separately from static screenshots.
 - Report checks as passed, failed, not run, or inapplicable with a reason.
 - Do not claim implementation acceptance from Figma prototype validation.
+
+## UI-11 — Settings organization and visible work
+
+Source: owner direction in the platform-access discussion, 2026-09-17.
+
+> All platform settings are nested under the settings area. Each area of concern gets its on page. Do NOT mix concerns in one page.
+
+The owner named these separate concerns:
+
+- Platform Users
+- Platform Settings
+- Audit records
+- Service state
+- Provider settings
+- Platform Roles and Permissions
+
+Apply these rules:
+
+- Nest all platform settings under Settings.
+- Give each concern its own page. Do not combine separate concerns on one page.
+- Prefer grid views when a page needs a list.
+- Prefer horizontal tabs over vertical grouping, especially when vertical grouping pushes work below the fold.
+- Use tabs within a concern without combining separate concerns into one page.
+- Arrange primary work and controls to minimize scrolling below the initial viewport.
+- Preserve readable controls, keyboard access, and zoom support while reducing unnecessary vertical space.
+
+This direction establishes organization and layout preferences. Individual page behavior and Figma compositions still require definition.
+It does not authorize application implementation or settle permission assignment, invitation delivery, or access activation.

@@ -24,6 +24,8 @@ This establishes design coverage. It does not certify every interaction or visua
 | 10 — Users | `240:2` | Eighteen numbered frames plus an index for Google Workspace user workflows. |
 
 No complete design for adding platform users, assigning their permissions, creating schools, or onboarding was found in this file.
+The owner subsequently confirmed [settings organization and layout rules](../ui/rules.md#ui-11--settings-organization-and-visible-work) on 2026-09-17.
+The [platform-access workflow](../workflows/platform-access.md) records confirmed behavior. These decisions do not supply the missing Figma compositions.
 The Settings frame `106:383` only presents a read-only connection warning and a return to Devices.
 It does not define the implemented connection, invitation, access, customer-settings, or Schools pages.
 

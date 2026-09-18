@@ -1,12 +1,13 @@
 # Agent UI contract
 
-Version: 1.4.0. Updated: 2026-09-17.
+Version: 1.5.0. Updated: 2026-09-17.
 Scope: client pages, shared controls, feature flows, and UI reviews.
 Status: implementation requirements. Product implementation and owner acceptance remain separate evidence.
 
 Agents inspect the relevant Figma design before implementing a screen or changing its composition.
 The shared rules support that inspection. They do not replace the design or authorize new workflows.
 This contract translates the portfolio and the September 5–6 Figma revisions into implementation requirements.
+The owner's September 17 [settings and layout direction](rules.md#ui-11--settings-organization-and-visible-work) supersedes conflicting earlier compositions.
 
 ## Read order
 
@@ -78,7 +79,7 @@ Use `not-run` for missing evidence. Use `not-applicable` only with a reason.
 
 ```json
 {
-  "contractVersion": "1.3.0",
+  "contractVersion": "1.5.0",
   "page": "<route or component>",
   "primaryJob": "<one user task>",
   "pattern": "entity-grid | entity-detail | centered-form | split-pane | list-detail",
