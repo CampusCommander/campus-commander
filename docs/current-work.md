@@ -16,6 +16,8 @@ Campus Commander sends invitation emails.
 Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
 Administrators assign permissions through reusable roles, without individual permission exceptions.
 Resource access is scoped by an OrgUnit or a collection of OrgUnits.
+Administrators control "Include descendants" separately for each selected OrgUnit.
+
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
 Authentication, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).

@@ -80,11 +80,29 @@ Resource access is scoped by an OrgUnit or a collection of OrgUnits.
 This establishes OrgUnits as the scope basis for the Google users and devices discussed in the preceding question.
 It does not establish a separate school entity or authorize school creation.
 
-Descendant access, exclusions, and the treatment of later OrgUnit changes remain open.
+The descendant-selection decision below defines the control for each selected OrgUnit.
+Exclusions and the treatment of later OrgUnit changes remain open.
 Whether a collection is a selection for one assignment or a named reusable collection remains open.
 The relationship between role assignments and OrgUnit scopes remains open.
 Group access and platform-wide administrative permissions require separate definitions.
 This answer does not establish a separate whole-Workspace access option.
+
+### Include descendants — 2026-09-17
+
+The owner answered "3" to the question:
+
+> Should access to an OrgUnit include its descendants?
+
+1. Include all descendants. Covers existing descendants and those added later.
+2. Selected OrgUnits only. Administrators explicitly select each accessible OrgUnit.
+3. Administrator chooses per selection. Each selected OrgUnit has an "Include descendants" option.
+
+Each selected OrgUnit has an "Include descendants" option controlled by the administrator.
+When selected, that scope includes the selected OrgUnit and its descendants.
+When cleared, that scope includes only the selected OrgUnit.
+The administrator makes this choice separately for each OrgUnit in a collection.
+The option's initial state and the treatment of later OrgUnit changes remain open.
+Overlapping selections and exclusions remain open. Clearing this option does not establish an explicit denial rule.
 
 ### Interface organization — 2026-09-17
 
@@ -105,6 +123,7 @@ The exact entry controls, identity verification steps, success presentation, and
 
 Administrators assign permissions through reusable roles.
 Resource access uses an OrgUnit or a collection of OrgUnits.
+Each selected OrgUnit has its own "Include descendants" option.
 Role definitions, assignment controls, scope behavior, and delegation authority remain open.
 External sign-in requirements, identity matching, invitation failures, expiry, and repeat invitations remain open.
 Retain application authorization and credential protection.
@@ -117,6 +136,7 @@ No access-request workflow is permitted.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
 - An administrator assigns a reusable role to a platform user instead of configuring individual permission exceptions.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
+- An administrator includes descendants for one selected OrgUnit and selects only another OrgUnit without its descendants.
 - An uninvited person cannot request access. The exact sign-in message remains open.
 
 These examples define eligibility, activation, reusable roles, and the OrgUnit scope basis.
@@ -129,7 +149,7 @@ Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
-1. OrgUnit descendants, collections, scope behavior, and the relationship between roles and scopes.
+1. OrgUnit collections, remaining scope behavior, and the relationship between roles and scopes.
 2. Role definitions, assignment details, delegation authority, and group access.
 3. External identity requirements and entry method.
 4. Identity verification and remaining recipient steps.
