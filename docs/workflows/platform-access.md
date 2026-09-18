@@ -398,10 +398,24 @@ Each selected OrgUnit has an "Include descendants" option controlled by the admi
 When selected, that scope includes the selected OrgUnit and its descendants.
 When cleared, that scope includes only the selected OrgUnit.
 The administrator makes this choice separately for each OrgUnit in a collection.
-The option's initial state remains open.
+The option defaults to off when adding an OrgUnit, as confirmed below.
 
 Overlapping assignments follow the most-permissive rule below. Exclusions remain open.
 Clearing this option does not establish an explicit denial rule.
+
+### Include descendants default — 2026-09-18
+
+The owner answered "1" to the question:
+
+> For resource access, when adding an OrgUnit to a collection, should Include descendants start off or on?
+
+1. Off. Include only the selected OrgUnit until the administrator enables descendants.
+2. On. Include the selected OrgUnit and its descendants unless the administrator disables it.
+
+"Include descendants" defaults to off for each OrgUnit added to a collection.
+That entry includes only the selected OrgUnit until Platform Admin explicitly enables descendants for it.
+The choice remains independent for each entry. Enabling it follows the current Google hierarchy as confirmed below.
+This default does not change saved choices or deny access granted through another applicable assignment.
 
 ### Descendant hierarchy changes — 2026-09-17
 
@@ -550,7 +564,8 @@ An ordinary asset access assignment associates a platform user with a role and a
 A platform user can have multiple assignments. Each role remains paired with its assignment's collection.
 Within overlapping scopes, permissions combine and most permissive wins.
 
-Each selected OrgUnit has its own "Include descendants" option, which follows the current Google hierarchy when enabled.
+Each selected OrgUnit has its own "Include descendants" option, which defaults to off when added to a collection.
+When enabled, it follows the current Google hierarchy.
 Saved role and collection changes automatically apply to every assignment using them.
 Roles use granular permissions, including the owner's initial device and Google-user examples.
 Bulk operations require both Bulk Actions and the action-specific permission within the applicable scope.
@@ -594,6 +609,7 @@ No access-request workflow is permitted.
 - Device Bulk Actions enables access to the dropdown. Device Deprovision additionally permits its deprovision feature.
 - Device Bulk Actions without Device Deprovision does not permit bulk deprovisioning.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
+- Platform Admin adds an OrgUnit to a collection. Include descendants starts off, so the entry includes only that OrgUnit.
 - An administrator includes descendants for one selected OrgUnit and selects only another OrgUnit without its descendants.
 - A new descendant enters an enabled descendant scope. A moved-out descendant leaves that scope.
 - Another applicable assignment still grants access to a moved-out OrgUnit according to the most-permissive rule.

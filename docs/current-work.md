@@ -30,6 +30,7 @@ Administrators can configure pending invitees' assignments on Access Assignments
 Administrators assign granular permissions through reusable roles, without individual permission exceptions.
 Named OrgUnit collections define resource scope and represent schools for access administration.
 Administrators control "Include descendants" separately for each selected OrgUnit.
+It defaults to off for each OrgUnit added to a collection.
 
 Enabled descendant scopes follow the current Google hierarchy, including new or moved-in descendants and excluding moved-out descendants.
 
