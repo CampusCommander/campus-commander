@@ -24,10 +24,12 @@ The platform administrator who can assign any role to any platform user, includi
 Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
 See the [authority decision](docs/workflows/platform-access.md#access-administration-authority--2026-09-18).
 Full asset access is formally represented by the distinct Asset Super Admin role.
+Platform Admin is a built-in role with a fixed, undeletable definition.
 _Avoid_: Treating platform administration and asset administration as interchangeable responsibilities.
 
 **Asset Super Admin**:
 The special built-in Campus Commander role representing full access to managed Google resources across the connected Workspace.
+Its definition is fixed and undeletable. Platform Admin manages who holds it.
 _Avoid_: Google Workspace Super Admin, which is a Google-side role, or Platform Admin as a synonym.
 
 **OrgUnit collection**:

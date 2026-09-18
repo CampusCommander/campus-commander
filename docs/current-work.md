@@ -44,6 +44,7 @@ Deletion is blocked while assignments reference a role or collection. Platform A
 Asset Super Admin is a special built-in role representing full managed Google resource access.
 Platform Admin has full asset access through that distinct role and can assign any role to any platform user.
 Platform administration and asset administration remain explicit, separate responsibilities.
+Platform Admin and Asset Super Admin have fixed, undeletable definitions. Platform Admin manages who holds them.
 Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
 Delegated access administration is outside the initial workflow.
 

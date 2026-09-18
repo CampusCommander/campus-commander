@@ -301,6 +301,22 @@ Ordinary asset roles retain their OrgUnit-collection scopes. Asset Super Admin r
 The exact grant presentation for the built-in role remains to be designed.
 The access-administration decision below defines who manages access. The remaining built-in role catalog remains open.
 
+### Fixed built-in role definitions — 2026-09-18
+
+The owner answered "1" to the question:
+
+> Should the built-in Platform Admin and Asset Super Admin role definitions be editable?
+
+1. Fixed and undeletable. Administrators manage who holds them, while their meaning stays consistent.
+2. Editable permissions, but undeletable. Administrators can change what these roles permit.
+
+Platform Admin and Asset Super Admin are built-in roles with fixed definitions.
+Platform Admin cannot edit their definitions or delete either role, including when no assignment references it.
+Platform Admin can manage who holds these roles through access assignments.
+Their confirmed authority remains unchanged. Asset Super Admin alone does not grant platform administration authority.
+Custom roles retain editable permissions and cannot be deleted while assignments reference them.
+The exact presentation of built-in role assignments remains a design requirement.
+
 ### Access administration authority — 2026-09-18
 
 The owner answered "1" to the question:
@@ -525,7 +541,7 @@ Saving an OrgUnit collection updates resource scope for every assignment using t
 Assignments do not retain separate copies that require manual updates.
 The most-permissive rule still applies when another assignment grants access to the same resource.
 
-This decision covers edits to saved roles and collections within Campus Commander.
+This decision covers edits to custom roles and saved collections within Campus Commander. Built-in role definitions remain fixed.
 The descendant-hierarchy decision above covers changes to the Google OrgUnit hierarchy.
 Effects on work already running remain part of the unresolved access-revocation workflow.
 
@@ -544,8 +560,9 @@ This includes assignments configured for pending invitees.
 A blocked deletion leaves the definition and its assignments unchanged.
 Deleting a role or collection does not automatically delete its assignments.
 
-After resolving references, Platform Admin returns to the separate role or collection page to delete the definition.
-Exact blocked-deletion presentation remains a design requirement. This decision does not establish editability or deletion rules for built-in roles.
+After resolving references, Platform Admin deletes the custom role on Platform Roles and Permissions or the collection on OrgUnit Collections.
+Platform Admin and Asset Super Admin remain undeletable even without assignments.
+Exact blocked-deletion presentation remains a design requirement.
 
 ### Interface organization — 2026-09-17
 
@@ -608,6 +625,7 @@ The remaining catalog, other permission dependencies, exact controls, and scope 
 Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
 Platform Admin can assign any role to any platform user, including Asset Super Admin.
 Asset Super Admin formally represents full Google resource access and remains distinct from platform administration.
+Platform Admin and Asset Super Admin have fixed definitions and cannot be deleted. Their holders remain administratively assignable.
 
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
@@ -651,6 +669,7 @@ No access-request workflow is permitted.
 - A new descendant enters an enabled descendant scope. A moved-out descendant leaves that scope.
 - Another applicable assignment still grants access to a moved-out OrgUnit according to the most-permissive rule.
 - A Platform Admin can assign Asset Super Admin to another platform user or to themselves.
+- Platform Admin cannot edit or delete either built-in role definition, even if it has no assignments.
 - Asset Super Admin gives full managed Google resource access without itself granting platform administration authority.
 - A platform user without Platform Admin cannot invite people or edit roles, OrgUnit collections, or access assignments.
 - An uninvited person cannot request access. The exact sign-in message remains open.
