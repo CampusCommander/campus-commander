@@ -379,7 +379,7 @@ This establishes OrgUnits as the scope basis for the Google users and devices di
 It does not establish a separate school entity or authorize school creation.
 
 The descendant-selection decision below defines the control for each selected OrgUnit.
-Exclusions remain open. Descendant scope follows the current hierarchy as confirmed below.
+The initial workflow has no collection exclusion rules, as confirmed below. Descendant scope follows the current hierarchy.
 The collection and access-assignment decision below defines named reusable collections and their relationship to roles.
 Ordinary group access and the detailed platform permission catalog require separate definitions.
 Asset Super Admin provides full asset access as confirmed above. Ordinary role assignments remain scoped by OrgUnit collections.
@@ -400,7 +400,7 @@ When cleared, that scope includes only the selected OrgUnit.
 The administrator makes this choice separately for each OrgUnit in a collection.
 The option defaults to off when adding an OrgUnit, as confirmed below.
 
-Overlapping assignments follow the most-permissive rule below. Exclusions remain open.
+Overlapping assignments follow the most-permissive rule below. The initial workflow has no collection exclusion rules.
 Clearing this option does not establish an explicit denial rule.
 
 ### Include descendants default — 2026-09-18
@@ -416,6 +416,21 @@ The owner answered "1" to the question:
 That entry includes only the selected OrgUnit until Platform Admin explicitly enables descendants for it.
 The choice remains independent for each entry. Enabling it follows the current Google hierarchy as confirmed below.
 This default does not change saved choices or deny access granted through another applicable assignment.
+
+### No collection exclusions initially — 2026-09-18
+
+The owner answered "1" to the question:
+
+> Should OrgUnit collections support exclusions?
+
+1. No exclusions initially. Build collections from selected OrgUnits and optional descendants.
+2. Allow excluded branches. Include Smith Elementary and its descendants except its Administration branch. Other assignments can still grant access there.
+
+Initial OrgUnit collections contain selected OrgUnits with an optional Include descendants setting for each entry.
+They do not support excluded OrgUnits or excluded branches.
+To include only selected branches, Platform Admin adds those OrgUnits instead of including a broader ancestor with descendants.
+Collection exclusions are outside the initial workflow. They are not a prerequisite for implementation.
+The most-permissive rule across applicable assignments remains unchanged.
 
 ### Descendant hierarchy changes — 2026-09-17
 
@@ -493,7 +508,7 @@ Permissions remain paired with each assignment's OrgUnit collection. They do not
 For example, read access from one assignment and edit access from another both apply within their shared scope.
 Outside that overlap, each assignment grants only its own permissions within its own collection.
 If no applicable assignment grants an action, the platform user lacks permission for that action on that resource.
-This rule does not define collection exclusions or bypass invitation, identity, or account-authorization checks.
+This rule does not bypass invitation, identity, or account-authorization checks. Initial collections have no exclusion rules.
 
 ### Saved role and collection changes — 2026-09-17
 
@@ -565,7 +580,7 @@ A platform user can have multiple assignments. Each role remains paired with its
 Within overlapping scopes, permissions combine and most permissive wins.
 
 Each selected OrgUnit has its own "Include descendants" option, which defaults to off when added to a collection.
-When enabled, it follows the current Google hierarchy.
+When enabled, it follows the current Google hierarchy. Collections have no exclusion rules in the initial workflow.
 Saved role and collection changes automatically apply to every assignment using them.
 Roles use granular permissions, including the owner's initial device and Google-user examples.
 Bulk operations require both Bulk Actions and the action-specific permission within the applicable scope.
@@ -609,6 +624,7 @@ No access-request workflow is permitted.
 - Device Bulk Actions enables access to the dropdown. Device Deprovision additionally permits its deprovision feature.
 - Device Bulk Actions without Device Deprovision does not permit bulk deprovisioning.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
+- To omit Administration, Platform Admin selects the required sibling branches instead of including their ancestor with all descendants.
 - Platform Admin adds an OrgUnit to a collection. Include descendants starts off, so the entry includes only that OrgUnit.
 - An administrator includes descendants for one selected OrgUnit and selects only another OrgUnit without its descendants.
 - A new descendant enters an enabled descendant scope. A moved-out descendant leaves that scope.
@@ -624,6 +640,7 @@ Authentication details and scope behavior remain open.
 ## Exclusions and open decisions
 
 Exclude Google account creation, school creation, and automatic access through an access request.
+OrgUnit collection exclusions are outside the initial workflow.
 Do not change application code until the owner authorizes implementation.
 
 Next decisions:

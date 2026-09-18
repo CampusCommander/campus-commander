@@ -31,6 +31,7 @@ Administrators assign granular permissions through reusable roles, without indiv
 Named OrgUnit collections define resource scope and represent schools for access administration.
 Administrators control "Include descendants" separately for each selected OrgUnit.
 It defaults to off for each OrgUnit added to a collection.
+Initial collections have no exclusion rules. Platform Admin selects the required OrgUnits and optional descendants.
 
 Enabled descendant scopes follow the current Google hierarchy, including new or moved-in descendants and excluding moved-out descendants.
 
