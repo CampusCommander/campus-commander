@@ -135,17 +135,23 @@ The owner named these initial permissions:
 
 | Entity area | Permission labels |
 | --- | --- |
-| Devices | Device Read, Device Write, Device Deprecate, Device Bulk Actions |
+| Devices | Device Read, Device Write, Device Deprovision, Device Bulk Actions |
 | Google users | User Read, User Write, User Schema Manage, User Bulk Actions |
 
 These are distinct permission choices. A single broad "Manage devices" or "Manage users" permission does not replace them.
 The list is illustrative, not a complete catalog. Exact action coverage and dependencies require definition before dependent implementation.
-Do not assume Write includes Deprecate, schema management, or bulk actions.
+Do not assume Write includes Deprovision, schema management, or bulk actions.
 Do not assume Bulk Actions grants every underlying action without its corresponding permission.
 
-"Device Deprecate" remains the owner's label pending clarification.
-The existing [device domain reference](../portfolio/02-domain-model.md#devices-chromeos) names a Deprovision action.
-Do not equate those terms without the owner's answer.
+The owner clarified the terminology and scope of the examples:
+
+> Deprovision yea. But like you said this is not a exhaustive list
+
+Use "Device Deprovision" for the existing [Deprovision action](../portfolio/02-domain-model.md#devices-chromeos).
+This replaces "Device Deprecate" in the permission labels. The original quotation remains above for provenance.
+The owner explicitly confirmed that the list is non-exhaustive.
+Define additional permissions as their workflows require them. Do not require the entire catalog before progress.
+
 User Schema Manage is confirmed as a distinct permission. Its schema-definition and field-value boundaries remain open.
 These permissions concern managed Google resources. Platform administration permissions remain a separate part of the catalog.
 
@@ -363,7 +369,7 @@ Do not change application code until the owner authorizes implementation.
 Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
-2. Device Deprecate meaning, permission action coverage and dependencies, remaining catalog, scope behavior, delegation authority, and group access.
+2. Permission action coverage and dependencies, remaining catalog, scope behavior, delegation authority, and group access.
 3. Identity matching, sign-in method defaults and controls, and external-person entry.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, and delivery failure handling.

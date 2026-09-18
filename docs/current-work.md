@@ -32,8 +32,8 @@ Saved role and collection changes automatically apply to every assignment using 
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
 Platform Users, Platform Roles and Permissions, OrgUnit Collections, and Access Assignments each have their own Settings page.
 Access Assignments uses a grid of platform user, role, and OrgUnit collection.
-The owner named distinct read, write, bulk-action, device-deprecation, and user-schema permissions in the [workflow](workflows/platform-access.md#granular-permissions--2026-09-17).
-Device Deprecate meaning and exact permission action coverage remain open.
+The owner named distinct read, write, bulk-action, device-deprovisioning, and user-schema permissions in the [workflow](workflows/platform-access.md#granular-permissions--2026-09-17).
+The permission list is explicitly non-exhaustive. Exact action coverage and dependencies remain open.
 
 Identity matching, sign-in method defaults, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
