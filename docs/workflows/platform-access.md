@@ -67,7 +67,7 @@ The owner answered "1" to the question:
 Administrators define permissions in reusable roles and assign those roles to platform users.
 Per-person permission exceptions and direct individual permission assignment are outside the agreed model.
 Roles define permissions. The resource-access decision below defines the scope basis.
-Role names, permission choices, role multiplicity, role-change behavior, and delegation authority remain open.
+The complete permission catalog, built-in roles, multiple assignments, role-change behavior, and delegation authority remain open.
 Historical presets do not establish the role catalog for this workflow.
 
 ### Resource access — 2026-09-17
@@ -82,8 +82,7 @@ It does not establish a separate school entity or authorize school creation.
 
 The descendant-selection decision below defines the control for each selected OrgUnit.
 Exclusions and the treatment of later OrgUnit changes remain open.
-Whether a collection is a selection for one assignment or a named reusable collection remains open.
-The relationship between role assignments and OrgUnit scopes remains open.
+The collection and access-assignment decision below defines named reusable collections and their relationship to roles.
 Group access and platform-wide administrative permissions require separate definitions.
 This answer does not establish a separate whole-Workspace access option.
 
@@ -104,12 +103,39 @@ The administrator makes this choice separately for each OrgUnit in a collection.
 The option's initial state and the treatment of later OrgUnit changes remain open.
 Overlapping selections and exclusions remain open. Clearing this option does not establish an explicit denial rule.
 
+### Roles, OrgUnit collections, and access assignments — 2026-09-17
+
+The owner provided this example:
+
+> A role is a collection of permissions. Like `devices-read`, `users-read`. Is saved as a role named `Librarian`s. A collection of orgUnits /devices/schools/smith/lib1, /devices/schools/smith/lib2 with a name like Smith Elementary. Note: An orgUnit collection is the best representation of a school in google workspace meta. Then you Make the Assignment, mSmith@school.edu is assigned Libraries and Smith Elementary. So Mrs. Smith can now read Devices and Users scoped by the orgUnit collection.
+
+| Concept | Owner-confirmed meaning | Example |
+| --- | --- | --- |
+| Permission | An action available within an entity area. | `devices-read`, `users-read` |
+| Role | A named reusable collection of permissions. | Librarians contains `devices-read` and `users-read`. |
+| OrgUnit collection | A named reusable collection of OrgUnits defining resource scope. | Smith Elementary contains `/devices/schools/smith/lib1` and `/devices/schools/smith/lib2`. |
+| Access assignment | The association of a platform user, a role, and an OrgUnit collection. | `mSmith@school.edu` receives Librarians scoped to Smith Elementary. |
+
+The example uses "Librarians" consistently for the role called "Librarian`s" and "Libraries" in the owner's message.
+These example names do not establish built-in roles or a fixed permission catalog.
+"Access assignment" distinguishes this product relationship from the existing job-execution term "Assignment."
+
+Mrs. Smith can read devices and Google users within the Smith Elementary OrgUnit collection.
+That assignment does not authorize other actions or access outside its collection.
+Each OrgUnit entry retains its own "Include descendants" option.
+The example does not specify those option values or assert that the example OrgUnits contain Google users.
+
+An OrgUnit collection represents a school for this access model. Its name does not create a separate school entity.
+This decision replaces the historical school-scope interpretation that required an independent school identity.
+Collection creation, editing, and assignment controls still need their own interface definition under Settings.
+Multiple assignments, overlapping scopes, and effects of later role or collection changes remain open.
+
 ### Interface organization — 2026-09-17
 
 The owner placed all platform settings under Settings and required a separate page for each concern.
 [UI-11](../ui/rules.md#ui-11--settings-organization-and-visible-work) contains the canonical layout rules and the owner's named concerns.
 Platform Users and Platform Roles and Permissions are separate concerns under Settings.
-The location and interaction for assigning roles to a person remain open within this organization.
+Exact controls for role definitions, OrgUnit collections, and access assignments remain open within this organization.
 
 ## Interaction
 
@@ -121,10 +147,11 @@ The exact entry controls, identity verification steps, success presentation, and
 
 ## Permissions and failures
 
-Administrators assign permissions through reusable roles.
-Resource access uses an OrgUnit or a collection of OrgUnits.
+Roles contain permissions. Named OrgUnit collections define resource scope.
+An access assignment associates a platform user with a role and an OrgUnit collection.
 Each selected OrgUnit has its own "Include descendants" option.
-Role definitions, assignment controls, scope behavior, and delegation authority remain open.
+The complete permission catalog, assignment controls, remaining scope behavior, and delegation authority remain open.
+
 External sign-in requirements, identity matching, invitation failures, expiry, and repeat invitations remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
@@ -134,7 +161,8 @@ No access-request workflow is permitted.
 - A district administrator selects a staff member from the Google directory for platform access.
 - A district administrator invites an external consultant who has no account in the connected Workspace.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
-- An administrator assigns a reusable role to a platform user instead of configuring individual permission exceptions.
+- An administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
+- That assignment permits device and Google user reads within the collection. It does not permit edits or out-of-scope reads.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
 - An administrator includes descendants for one selected OrgUnit and selects only another OrgUnit without its descendants.
 - An uninvited person cannot request access. The exact sign-in message remains open.
@@ -149,8 +177,8 @@ Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
-1. OrgUnit collections, remaining scope behavior, and the relationship between roles and scopes.
-2. Role definitions, assignment details, delegation authority, and group access.
+1. Multiple access assignments, overlapping scopes, and effects of role or collection changes.
+2. The permission catalog, remaining scope behavior, delegation authority, and group access.
 3. External identity requirements and entry method.
 4. Identity verification and remaining recipient steps.
 5. Detailed page interactions and Figma compositions under the confirmed Settings organization.

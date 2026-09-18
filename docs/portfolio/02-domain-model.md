@@ -4,14 +4,19 @@
 > [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
 
 
-**Status:** current domain model, revised 2026-09-05. This glossary defines canonical terms for the portfolio.
+**Status:** domain reference with platform-access terminology updated from owner decisions on 2026-09-17.
+The [platform-access workflow](../workflows/platform-access.md#roles-orgunit-collections-and-access-assignments--2026-09-17) defines the agreed access behavior and remaining decisions.
 
 ## Glossary
 
 | Term                   | Meaning                                                                                                                                          |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Customer account**   | One Google Workspace account containing its primary, secondary, and alias domains. One installation serves one account.                          |
-| **School scope**       | A district-defined school identity with explicit resource inclusions and exclusions within one customer account.                                 |
+| **School scope (historical)** | The implementation's independent school identity. The owner-confirmed OrgUnit collection model replaces this interpretation. |
+| **Permission** | An action available within an entity area, such as `devices-read` or `users-read`. |
+| **Role** | A named reusable collection of permissions, such as Librarians. |
+| **OrgUnit collection** | A named reusable collection of OrgUnits defining resource scope. Each entry has an "Include descendants" option. It represents a school for access administration. |
+| **Access assignment** | The association of a platform user, a role, and an OrgUnit collection. |
 | **OU reference**       | A customer-bound stable organizational unit identity. Paths describe its location.                                                               |
 | **Entity**             | A Google Workspace user, device, group, or OU represented in the local inventory.                                                                |
 | **Entity type**        | A category of entities. It does not imply one shared freshness timestamp for all related data.                                                   |
@@ -31,7 +36,7 @@
 | **Preview**            | An immutable description of exact targets, proposed values, counts, preconditions, and approval requirements.                                    |
 | **Job**                | One accepted unit of work with stable identity, steps, operation evidence, and auditable results.                                                |
 | **Step**               | A phase of a job with dependencies and an aggregation policy for its assignments.                                                                |
-| **Assignment**         | A bounded set of operations assigned to one worker execution. It replaces the ambiguous term chunk.                                              |
+| **Assignment (job execution)** | A bounded set of operations assigned to one worker execution. Distinct from an access assignment. |
 | **Operation**          | One logical action on a target within a job. It retains its own attempts and outcome.                                                            |
 | **Attempt**            | One recorded effort to dispatch or verify an operation.                                                                                          |
 | **Batch request**      | A provider transport request containing several operations. Its size follows the specific Google method.                                         |
