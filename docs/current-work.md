@@ -39,6 +39,7 @@ An ordinary asset access assignment associates a platform user with a role and a
 A platform user can have multiple access assignments, each with its own role-and-collection pairing.
 Within overlapping scopes, permissions combine and most permissive wins.
 Saved role and collection changes automatically apply to every assignment using them.
+Deletion is blocked while assignments reference a role or collection. Platform Admin must change or remove those assignments first.
 
 Asset Super Admin is a special built-in role representing full managed Google resource access.
 Platform Admin has full asset access through that distinct role and can assign any role to any platform user.

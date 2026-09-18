@@ -529,6 +529,24 @@ This decision covers edits to saved roles and collections within Campus Commande
 The descendant-hierarchy decision above covers changes to the Google OrgUnit hierarchy.
 Effects on work already running remain part of the unresolved access-revocation workflow.
 
+### Deleting assigned roles and collections — 2026-09-18
+
+The owner answered "1" to the question:
+
+> If a role or OrgUnit collection has existing access assignments, how should deletion work?
+
+1. Block deletion. Platform Admin must change or remove those assignments first.
+2. Delete its assignments too, after showing the affected users and receiving confirmation.
+
+Block deletion of a role or OrgUnit collection while any access assignment references it.
+Platform Admin must change or remove those assignments on Settings > Access Assignments first.
+This includes assignments configured for pending invitees.
+A blocked deletion leaves the definition and its assignments unchanged.
+Deleting a role or collection does not automatically delete its assignments.
+
+After resolving references, Platform Admin returns to the separate role or collection page to delete the definition.
+Exact blocked-deletion presentation remains a design requirement. This decision does not establish editability or deletion rules for built-in roles.
+
 ### Interface organization — 2026-09-17
 
 The owner placed all platform settings under Settings and required a separate page for each concern.
@@ -582,6 +600,7 @@ Within overlapping scopes, permissions combine and most permissive wins.
 Each selected OrgUnit has its own "Include descendants" option, which defaults to off when added to a collection.
 When enabled, it follows the current Google hierarchy. Collections have no exclusion rules in the initial workflow.
 Saved role and collection changes automatically apply to every assignment using them.
+Deletion is blocked while assignments reference a role or OrgUnit collection. Resolve those references on Access Assignments first.
 Roles use granular permissions, including the owner's initial device and Google-user examples.
 Bulk operations require both Bulk Actions and the action-specific permission within the applicable scope.
 The remaining catalog, other permission dependencies, exact controls, and scope behavior remain open.
@@ -619,6 +638,8 @@ No access-request workflow is permitted.
 - While the invitation is pending, an administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
 - The assignment grants no access until the recipient accepts and verifies their identity.
 - That assignment permits device and Google user reads within the collection. It does not permit edits or out-of-scope reads.
+- Deleting Librarians or Smith Elementary is blocked while that assignment references it, including while the invitation is pending.
+- Platform Admin changes or removes the assignment on Access Assignments before deleting the referenced definition.
 - Overlapping read and edit assignments allow both actions within their shared scope.
 - Outside the overlap, a read assignment does not gain editing permission from the other assignment.
 - Device Bulk Actions enables access to the dropdown. Device Deprovision additionally permits its deprovision feature.
