@@ -3,7 +3,7 @@
 Status: proposed workflow with owner-confirmed decisions below. Implementation is not authorized.
 Source: owner instructions in the platform-access discussion, 2026-09-17. Exact decision text appears below.
 Design: missing. See the [Figma coverage record](../portfolio/prototype-map.md).
-Replaces: conflicting interpretations of historical decision 17.7. The implemented invitation sequence remains disputed.
+Replaces: conflicting interpretations of historical decision 17.7, manual copy-link delivery, and the implemented second administrator confirmation.
 
 ## User and outcome
 
@@ -22,7 +22,7 @@ Adding platform access does not create or modify a Google Workspace account.
 - Campus Commander is invite-only.
 - People cannot request access.
 
-Recipient authentication, activation, and a second administrator confirmation remain unresolved.
+Recipient authentication remains unresolved. The activation decision below excludes a second administrator confirmation.
 The external-person entry method remains open.
 
 ### Invitation delivery — 2026-09-17
@@ -36,8 +36,23 @@ The owner answered "1" to these options:
 Campus Commander sends invitation emails. The selected delivery method requires configured email delivery.
 Manual sharing of a copyable invitation link is outside this agreed workflow.
 Email transport, provider configuration, invitation content, and delivery failure handling remain open.
-This decision does not determine recipient authentication or access activation.
+Email delivery does not determine recipient authentication. The next decision defines access activation.
 It supersedes the historical implementation's copyable invitation without SMTP as the intended delivery workflow.
+
+### Access activation — 2026-09-17
+
+The owner answered "1" to the question:
+
+> After the recipient accepts and verifies their identity, when should access activate?
+
+1. Immediately — recommended. The invitation already represents the administrator's approval.
+2. After another administrator confirmation. The recipient waits for a second review.
+
+Access activates immediately after the recipient accepts a valid invitation and verifies their identity.
+No second administrator confirmation is required. The invitation represents the administrator's approval.
+This decision replaces the implemented requirement for the inviter to confirm the recipient after identity verification.
+It does not allow uninvited access or bypass invitation validity and authorization checks.
+The identity verification method and the assigned permissions remain open.
 
 ### Interface organization — 2026-09-17
 
@@ -51,8 +66,8 @@ The location and interaction for assigning a person's permissions remain open wi
 The workflow belongs to the Platform Users concern under Settings.
 Administrators can select a directory account or invite someone outside the Workspace.
 Campus Commander delivers the invitation by email.
-The exact entry controls, recipient steps, success result, and return path remain open.
-Do not infer acceptance of the implemented copy-link, redemption, and administrator-confirmation sequence.
+The recipient accepts a valid invitation and verifies their identity. Access activates immediately without another administrator confirmation.
+The exact entry controls, identity verification steps, success presentation, and return path remain open.
 
 ## Permissions and failures
 
@@ -65,9 +80,10 @@ No access-request workflow is permitted.
 
 - A district administrator selects a staff member from the Google directory for platform access.
 - A district administrator invites an external consultant who has no account in the connected Workspace.
+- An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
 - An uninvited person cannot request access. The exact sign-in message remains open.
 
-These examples define eligibility. They do not specify unresolved invitation or permission steps.
+These examples define eligibility and activation. They do not specify unresolved authentication or permission steps.
 
 ## Exclusions and open decisions
 
@@ -76,9 +92,9 @@ Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
-1. The recipient's path to access and when access activates.
+1. Permission assignment, resource access, and delegation authority.
 2. External identity requirements and entry method.
-3. Permission assignment, resource access, and delegation authority.
+3. Identity verification and remaining recipient steps.
 4. Detailed page interactions and Figma compositions under the confirmed Settings organization.
 5. Email configuration, invitation content, and delivery failure handling.
 

@@ -13,8 +13,9 @@ Ask one focused question at a time. Record answers in the workflow and update th
 
 The owner confirmed directory selection, invitations outside the Workspace, and no access requests.
 Campus Commander sends invitation emails.
+Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
-Activation, permissions, resource access, email configuration, and exact screen compositions remain open.
+Authentication, permissions, resource access, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
 Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.
