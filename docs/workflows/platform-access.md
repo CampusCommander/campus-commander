@@ -107,8 +107,25 @@ Email-code sign-in does not provide an alternative when the administrator permit
 If the administrator permits both methods, either method is available to that platform user.
 
 This is a platform-user setting. Installation-wide identity-provider configuration remains a separate Provider settings concern.
-The initial method selection, exact provider-selection controls, and effects of method changes on active sessions remain open.
+Initial methods are selected separately for each recipient before sending, as confirmed below.
+Exact provider-selection controls and effects of method changes on active sessions remain open.
 The invited-email verification rule is confirmed below. Recovery interactions remain open.
+
+### Sign-in selection before sending — 2026-09-18
+
+The owner answered "2" to the question:
+
+> When inviting several people, how should Platform Admin select their allowed sign-in methods?
+
+1. Choose once for the selected recipients. Apply those methods to each person, with individual editing available afterward.
+2. Choose separately for every recipient before sending invitations.
+
+Platform Admin selects allowed sign-in methods separately for every recipient before sending invitations.
+This applies to directory selections and external email entry, including invitations sent together.
+A single shared selection for all recipients does not replace this individual selection.
+Different recipients can have different allowed methods within the same invitation operation.
+These choices belong to Platform Users. Provider configuration remains on its separate Settings page.
+Exact controls and the Figma composition remain open.
 
 ### Invited email verification — 2026-09-17
 
@@ -500,6 +517,7 @@ Role definitions and OrgUnit collections have their own Settings pages.
 
 Platform Admin can select one or more people in a searchable Google directory grid and send their invitations together.
 For external invitees, Platform Admin enters or pastes one or more email addresses and reviews the recipients before sending.
+Before sending, Platform Admin selects allowed sign-in methods separately for each recipient.
 Campus Commander delivers the invitation by email.
 Platform Admin can resend pending or expired invitations on Platform Users. Resend starts a fresh seven-day validity period.
 Platform Admin can revoke pending invitations on that page.
@@ -538,7 +556,8 @@ No access-request workflow is permitted.
 
 - Platform Admin selects three staff members in the searchable Google directory grid and sends their invitations together.
 - Each selected staff member must accept and verify their invited email address before their own access activates.
-- Platform Admin pastes two external email addresses, reviews the recipients, and sends their invitations together.
+- Platform Admin pastes two external email addresses and reviews the recipients.
+- Before sending together, Platform Admin permits provider sign-in for one recipient and email codes for the other.
 - An external consultant without a Google account accepts through an allowed sign-in method.
 - Platform Admin resends a pending invitation from Platform Users. Campus Commander sends another invitation email.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
@@ -577,7 +596,7 @@ Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
-3. Sign-in method defaults and controls, external email validation feedback, and identity-change recovery.
+3. Sign-in method controls, external email validation feedback, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, invitations after revocation, and delivery failure handling.
 

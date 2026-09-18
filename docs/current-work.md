@@ -16,7 +16,7 @@ Platform Admin selects one or more people in a searchable Google directory grid 
 For external invitees, Platform Admin enters or pastes one or more email addresses and reviews the recipients before sending.
 External invitees do not need Google accounts.
 Support configured identity providers and emailed one-time sign-in codes for external invitees.
-Administrators select the allowed sign-in methods for each platform user.
+Platform Admin selects allowed sign-in methods separately for every recipient before sending invitations.
 Invitation acceptance requires verification of the invited email address through an allowed method.
 
 Campus Commander sends invitation emails.
@@ -52,7 +52,7 @@ The permission list is explicitly non-exhaustive.
 Bulk Actions grants access to the dropdown button. Action-specific permissions determine which features are enabled within it.
 Bulk operations require both permissions within the applicable scope. Other action coverage and dependencies remain open.
 
-Sign-in method defaults, identity-change recovery, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
+Sign-in method controls, identity-change recovery, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
 Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.
