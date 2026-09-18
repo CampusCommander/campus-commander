@@ -52,14 +52,30 @@ Access activates immediately after the recipient accepts a valid invitation and 
 No second administrator confirmation is required. The invitation represents the administrator's approval.
 This decision replaces the implemented requirement for the inviter to confirm the recipient after identity verification.
 It does not allow uninvited access or bypass invitation validity and authorization checks.
-The identity verification method and the assigned permissions remain open.
+The identity verification method remains open. The permission model is recorded below.
+
+### Permission assignment — 2026-09-17
+
+The owner answered "1" to the question:
+
+> How should administrators assign permissions to platform users?
+
+1. Reusable roles. Define permissions in roles, then assign those roles to people.
+2. Roles plus individual exceptions. Assign roles, then adjust permissions for specific people.
+3. Individual permissions only. Configure each person's permissions separately.
+
+Administrators define permissions in reusable roles and assign those roles to platform users.
+Per-person permission exceptions and direct individual permission assignment are outside the agreed model.
+Resource access remains a separate decision. Selecting reusable roles does not define access to specific OUs or other resources.
+Role names, permission choices, role multiplicity, role-change behavior, and delegation authority remain open.
+Historical presets do not establish the role catalog for this workflow.
 
 ### Interface organization — 2026-09-17
 
 The owner placed all platform settings under Settings and required a separate page for each concern.
 [UI-11](../ui/rules.md#ui-11--settings-organization-and-visible-work) contains the canonical layout rules and the owner's named concerns.
 Platform Users and Platform Roles and Permissions are separate concerns under Settings.
-The location and interaction for assigning a person's permissions remain open within this organization.
+The location and interaction for assigning roles to a person remain open within this organization.
 
 ## Interaction
 
@@ -71,7 +87,8 @@ The exact entry controls, identity verification steps, success presentation, and
 
 ## Permissions and failures
 
-Permission assignment, resource selection, and delegation authority remain open.
+Administrators assign permissions through reusable roles.
+Role definitions, assignment controls, resource selection, and delegation authority remain open.
 External sign-in requirements, identity matching, invitation failures, expiry, and repeat invitations remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
@@ -81,9 +98,10 @@ No access-request workflow is permitted.
 - A district administrator selects a staff member from the Google directory for platform access.
 - A district administrator invites an external consultant who has no account in the connected Workspace.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
+- An administrator assigns a reusable role to a platform user instead of configuring individual permission exceptions.
 - An uninvited person cannot request access. The exact sign-in message remains open.
 
-These examples define eligibility and activation. They do not specify unresolved authentication or permission steps.
+These examples define eligibility, activation, and permission assignment through roles. Authentication details and resource access remain open.
 
 ## Exclusions and open decisions
 
@@ -92,7 +110,7 @@ Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
-1. Permission assignment, resource access, and delegation authority.
+1. Resource access, role definitions, role assignment details, and delegation authority.
 2. External identity requirements and entry method.
 3. Identity verification and remaining recipient steps.
 4. Detailed page interactions and Figma compositions under the confirmed Settings organization.
