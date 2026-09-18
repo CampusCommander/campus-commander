@@ -150,7 +150,22 @@ The owner answered "1" to the question:
 Resend gives the recipient seven days from the resend to accept the invitation.
 It replaces the original expiration time with that new deadline.
 Resend does not activate access. The recipient must still accept and verify the invited email address.
-This decision covers pending invitations. Resend eligibility after expiry and invitations after revocation remain open.
+Resend also applies to expired invitations, as confirmed below. Invitations after revocation remain open.
+
+### Resend expired invitations — 2026-09-18
+
+The owner answered "1" to the question:
+
+> Should Platform Admin also use Resend for an expired invitation?
+
+1. Yes. Send another invitation email with a fresh seven-day period.
+2. No. Require a new invitation through the add-person process.
+
+Platform Admin can use Resend for an expired invitation from Settings > Platform Users.
+Campus Commander sends another invitation email with a fresh seven-day validity period.
+The administrator does not repeat the add-person process.
+The recipient must still accept the invitation and verify the invited email address before access activates.
+This decision does not authorize resending revoked invitations.
 
 ### Access activation — 2026-09-17
 
@@ -453,7 +468,8 @@ Role definitions and OrgUnit collections have their own Settings pages.
 
 Administrators can select a directory account or invite someone outside the Workspace.
 Campus Commander delivers the invitation by email.
-Platform Admin can resend or revoke pending invitations on Platform Users. Resend restarts the seven-day validity period.
+Platform Admin can resend pending or expired invitations on Platform Users. Resend starts a fresh seven-day validity period.
+Platform Admin can revoke pending invitations on that page.
 While the invitation is pending, an administrator can configure assignments on the separate Access Assignments page.
 The recipient accepts a valid invitation and verifies their identity. Access activates immediately without another administrator confirmation.
 Previously configured assignments take effect after acceptance and identity verification.
@@ -480,8 +496,8 @@ Asset Super Admin formally represents full Google resource access and remains di
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
 Invitations have a seven-day validity period. Expired or revoked invitations cannot activate access.
-Resend restarts the seven-day validity period.
-Invitation failures, resend eligibility after expiry, and invitations after revocation remain open.
+Resend starts a fresh seven-day validity period for pending or expired invitations.
+Invitation failures and invitations after revocation remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
 
@@ -495,6 +511,7 @@ No access-request workflow is permitted.
 - A recipient using a different verified email address cannot accept the invitation.
 - Platform Admin revokes a pending invitation. The recipient cannot accept it to activate access.
 - An invitation expires after seven days without a resend. The recipient cannot use it to activate access.
+- Platform Admin resends an expired invitation. The recipient receives another email and has seven days to accept.
 - Platform Admin resends an invitation two days before expiry. The recipient now has seven days from that resend.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
 - While the invitation is pending, an administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
@@ -527,7 +544,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method defaults and controls, external-person entry, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
-5. Email configuration, invitation content, resend eligibility after expiry, invitations after revocation, and delivery failure handling.
+5. Email configuration, invitation content, invitations after revocation, and delivery failure handling.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
