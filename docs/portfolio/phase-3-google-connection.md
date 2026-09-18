@@ -1,5 +1,9 @@
 # Phase 3 Google customer connection
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 [CC-46](https://easton-consulting.atlassian.net/browse/CC-46) owns this implementation.
 [PR #10](https://github.com/CampusCommander/campus-commander/pull/10) remains a draft.
 The implementation now includes credential storage, provider verification, and public API confirmation.

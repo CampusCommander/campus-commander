@@ -1,5 +1,9 @@
 # 07 — Issues and Opportunities
 
+> Consolidated reference, subject to the 2026-09-17 owner reset.
+> [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
+
+
 **Status:** review integrated 2026-09-05. This file distinguishes adopted design from remaining experiments and opportunities.
 
 Current decisions live in [05](05-decisions-and-open-questions.md). Execution gates live in [06](06-work-breakdown.md).

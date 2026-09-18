@@ -1,5 +1,9 @@
 # Phase 3 platform access implementation
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 Owner: CC-51. Status: platform database, API, and browser implementation exist. Hosted platform qualification passed after review fixes. District and school browser controls pass local checks. Combined packaged qualification remains pending.
 This branch builds on CC-50. It does not establish Phase 3 completion.
 

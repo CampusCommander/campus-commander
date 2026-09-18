@@ -1,5 +1,9 @@
 # Phase 3 credential lifecycle
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 [CC-49](https://easton-consulting.atlassian.net/browse/CC-49) owns replacement, encryption-key rotation, and local disconnect.
 [Draft PR 13](https://github.com/CampusCommander/campus-commander/pull/13) contains the implementation.
 Backend operations and browser management controls are implemented. Final hosted and live qualification remain pending.

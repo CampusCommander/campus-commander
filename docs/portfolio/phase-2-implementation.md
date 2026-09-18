@@ -1,5 +1,9 @@
 # Phase 2 implementation record
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 Epic: [CC-22](https://easton-consulting.atlassian.net/browse/CC-22).
 Status: ACCEPTED AND CLOSED by the owner on 2026-09-16. Phase 3 is authorized.
 

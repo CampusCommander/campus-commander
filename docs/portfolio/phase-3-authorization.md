@@ -1,5 +1,9 @@
 # Phase 3 authorization contracts
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 Decision owner: CC-45. Status: implemented contracts, hosted integration passed. Review remains pending.
 This document settles D05 through D08 for dependent implementation slices.
 

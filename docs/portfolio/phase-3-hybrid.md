@@ -1,5 +1,9 @@
 # Phase 3 hybrid qualification
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 [CC-58](https://easton-consulting.atlassian.net/browse/CC-58) requires extracted installation, resume, Phase 2 upgrade, restore, faults, and operator lifecycle evidence.
 The task remains incomplete.
 Installation, resume, Phase 2 upgrade, isolated restore, service faults, certificate faults, capacity faults, and provider faults have passed hosted qualification.

@@ -1,5 +1,9 @@
 # Phase 3 invitation implementation
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 Owner: CC-50. Status: implementation complete for platform grants. Hosted database and browser qualification passed. Review remains pending.
 This branch builds on the tested CC-45 contracts in PR #5. Review and merge remain separate gates.
 

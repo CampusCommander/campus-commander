@@ -1,5 +1,9 @@
 # Phase 1 — Jira task backlog
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 **Publication status: 17 tasks and 36 dependency links created and verified in Jira.**
 
 Target: the **Campus-Commander** Jira space. Requested issue type: **Task**.

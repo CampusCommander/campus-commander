@@ -1,5 +1,9 @@
 # Phase 3 delivery plan
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 **Scope revised on 2026-09-17:** [The current work plan](phase-3-current-plan.md) takes precedence.
 The owner confirmed that nothing is live. Phase 3 targets a fresh installation and client review.
 Phase 2 upgrade requirements below are historical. Further deployment-matrix qualification is deferred.

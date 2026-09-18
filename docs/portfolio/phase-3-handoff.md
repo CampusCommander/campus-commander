@@ -1,5 +1,9 @@
 # Phase 3 handoff
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 **Current scope:** The [current work plan](phase-3-current-plan.md) supersedes historical upgrade, recovery, and deployment-matrix requirements below.
 The [review-readiness record](../reviews/2026-09-17-phase-3-review.md) identifies the delivered build and remaining review work.
 

@@ -1,11 +1,12 @@
 # Campus Commander
 
 Campus Commander is a locally hosted Google Workspace administration tool for K–12 districts.
-Current development includes Google customer connection, settings, invitations, platform access, and school scopes.
+The intended product centers on device, user, OU, and group administration.
+The owner rejected the current UI and disputed the school-creation and invitation workflows. Documentation and scope are under review.
 
 **Status: Greenfield application development. Nothing is live.**
 Phases organize development. They are not a user upgrade path. Development test data is disposable.
-Read [the current work plan](docs/portfolio/phase-3-current-plan.md) for the active scope.
+Start with [the documentation guide](docs/README.md), [current work](docs/current-work.md), and [workflow gaps](docs/workflow-gaps.md).
 
 ## Run the application for review
 
@@ -106,18 +107,20 @@ Published candidates provide prebuilt images and an installer. Customers do not 
 
 ## Documentation
 
-- [Design portfolio](docs/portfolio/README.md): current product, architecture, interactions, decisions, and work plan.
+- [Documentation guide](docs/README.md): source authority, reading order, and workflow format.
+- [Workflow gaps](docs/workflow-gaps.md): defined behavior, disputed features, and missing product decisions.
+- [File inventory](docs/document-index.csv): all indexed project documentation and evidence.
+- [Design portfolio](docs/portfolio/README.md): product, architecture, and interaction references.
 - [Contractor report](docs/reviews/2026-09-04-contractor-report.md): review conclusions and supporting evidence.
 - [Archive](docs/archive/README.md): earlier sources retained for traceability without current authority.
 
 ## Work tracking
 
 GitHub records source changes, planning documents, validation evidence, and pull requests.
-Jira records implementation tasks and dependencies in the Campus-Commander project, key `CC`.
-The [Phase 1 backlog](docs/portfolio/phase-1-jira-tasks.md) maps local planning references to CC-4 through CC-20.
-
-Include the Jira issue key in implementation branch names, commit messages, and pull request titles.
-For example, use `CC-4-deployment-contract` for the configuration contract task.
+Jira is no longer required for development. Existing issues and task snapshots remain historical references.
+Do not synchronize or expand Jira unless the owner requests it.
+Use focused `codex/` branches and describe the actual change. Jira keys are not required.
+The [current work record](docs/current-work.md) controls development order.
 Link the Jira task and describe validation evidence in each implementation pull request.
 Update task status only when its acceptance criteria have supporting evidence.
 

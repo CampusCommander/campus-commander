@@ -1,5 +1,9 @@
 # Phase 3 school scopes
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 Owner: [CC-52](https://easton-consulting.atlassian.net/browse/CC-52).
 Status: reference contracts, resolver, provider, persistence, and reference APIs are implemented.
 School definition persistence, APIs, and grant assignment are implemented. Browser controls and complete qualification remain pending.

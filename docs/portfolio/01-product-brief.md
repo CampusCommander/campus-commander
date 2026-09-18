@@ -1,5 +1,9 @@
 # 01 — Product Brief
 
+> Consolidated reference, subject to the 2026-09-17 owner reset.
+> [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
+
+
 **Status:** current planning baseline, revised 2026-09-05. Validation gates remain open in [06](06-work-breakdown.md).
 
 ## What Campus Commander is

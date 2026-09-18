@@ -1,5 +1,9 @@
 # Phase 3 access revocation
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 Owner: CC-53. Status: platform revocation and browser recovery implemented. Combined recovery qualification passed.
 CC-52 remains the completion prerequisite for school scope integration.
 

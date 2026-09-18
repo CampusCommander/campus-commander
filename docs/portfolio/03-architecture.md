@@ -1,5 +1,9 @@
 # 03 — Architecture
 
+> Consolidated reference, subject to the 2026-09-17 owner reset.
+> [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
+
+
 **Status:** current planning baseline, revised 2026-09-05. See [05](05-decisions-and-open-questions.md) for decision status.
 
 This document integrates the [contractor review](../reviews/2026-09-04-contractor-report.md) and subsequent owner decisions.
@@ -78,7 +82,9 @@ Audit application permission, credential, and configuration changes as security 
 ## Google connection and capabilities
 
 Replace the former identity-only OAuth plus DWD combination. It lacks a complete runtime credential exchange.
-The candidate default uses district-owned OAuth authorization-code access with actual API scopes and encrypted offline refresh credentials.
+The owner selected service-account DWD for background Google access on 2026-09-16.
+Use the [credential record](phase-3-google-credentials.md) for this profile and the standing test boundary.
+The earlier offline-OAuth candidate and its qualification sequence below remain historical alternatives.
 Keep application sign-in separate from authorization for background Google API access.
 Use a dedicated district-managed Google identity with minimum verified privileges.
 Test the default before implementing the wizard. [Google web-server OAuth](https://developers.google.com/identity/protocols/oauth2/web-server)
@@ -170,7 +176,8 @@ The shared Google identity does not enforce individual application users' school
 
 Enforce permission on searches, counts, details, selection, preview, confirmation, dispatch, export, artifacts, audit, and SSE.
 Increment the permission version when grants change. Revalidate queued work before dispatch.
-Use invitation-only application access, established OIDC libraries, Redis sessions, secure cookies, and CSRF protection.
+Use established OIDC libraries, Redis sessions, secure cookies, and CSRF protection.
+The owner disputes the invitation workflow. Resolve [G01 and G02](../workflow-gaps.md#decisions-needed-for-access-and-setup) before changing platform enrollment or its permissions UI.
 Define logout, expiry, recovery, credential replacement, and internal service authentication in the first slice.
 District policy determines actions requiring a separate approver. Thresholds remain validation settings.
 

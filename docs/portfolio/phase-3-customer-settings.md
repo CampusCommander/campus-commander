@@ -1,5 +1,9 @@
 # Phase 3 customer settings
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 [CC-47](https://easton-consulting.atlassian.net/browse/CC-47) owns customer settings and durable onboarding progress.
 Implementation starts from the qualified CC-46 customer binding.
 The issue is In Review. Source and packaged browser qualification passed. Human acceptance remains pending.

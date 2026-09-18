@@ -5,6 +5,9 @@ The [portfolio glossary](docs/portfolio/02-domain-model.md) defines the broader 
 
 ## School access language
 
+These terms describe the existing implementation, whose product scope the owner disputes.
+They do not authorize school creation or a Schools page. See [G03](docs/workflow-gaps.md#decisions-needed-for-access-and-setup).
+
 **School scope**:
 A district-defined school identity with explicit resource inclusions and exclusions within one customer account.
 _Avoid_: OU, domain, subtree as names for the school itself.

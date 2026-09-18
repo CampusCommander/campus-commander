@@ -1,5 +1,9 @@
 # Phase 3 Google capability health
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 [CC-48](https://easton-consulting.atlassian.net/browse/CC-48) owns capability authorization and Google connection health.
 The backend and browser workflow are implemented. Source and packaged qualification passed.
 

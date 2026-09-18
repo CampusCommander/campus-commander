@@ -1,5 +1,9 @@
 # Phase 3 Kubernetes qualification
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 [CC-59](https://easton-consulting.atlassian.net/browse/CC-59) requires extracted installation, resume, Phase 2 upgrade, isolated restore, and fault evidence.
 The task remains incomplete. Initial installation, resume, replica, worker, and internal network-policy checks passed in the hosted laboratory.
 

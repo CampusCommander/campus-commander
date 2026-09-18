@@ -1,5 +1,9 @@
 # Phase 2 dependency qualification
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 Status: runtime qualification remains in progress under CC-37.
 
 The September 12, 2026 production audit reports zero known vulnerabilities.

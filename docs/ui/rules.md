@@ -10,8 +10,9 @@ Rule IDs provide references for implementation plans, review findings, and accep
 - Keep advanced filtering, bulk actions, and keyboard access available to frequent administrators.
 - Expose navigation and actions only for capabilities available in the installed release.
 - Distinguish platform access management from Google Workspace user management.
-- Preserve earlier released workflows when adding another phase.
-- Follow the [delivery sequence](../portfolio/06-work-breakdown.md#delivery-sequence). Do not treat prototype page order as delivery order.
+- Follow the [current work order](../current-work.md). Phases are internal development milestones.
+- Do not infer a feature, navigation destination, or business entity from a generic pattern or historical task.
+- Inspect the relevant Figma composition before implementing the screen. Record missing workflow decisions explicitly.
 
 ## UI-02 — Shared shell
 

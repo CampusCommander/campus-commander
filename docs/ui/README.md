@@ -1,24 +1,26 @@
 # Agent UI contract
 
-Version: 1.3.2. Updated: 2026-09-17.
+Version: 1.4.0. Updated: 2026-09-17.
 Scope: client pages, shared controls, feature flows, and UI reviews.
 Status: implementation requirements. Product implementation and owner acceptance remain separate evidence.
 
-Agents implement routine UI work from this directory without opening Figma.
-Figma remains the visual design workspace for humans.
+Agents inspect the relevant Figma design before implementing a screen or changing its composition.
+The shared rules support that inspection. They do not replace the design or authorize new workflows.
 This contract translates the portfolio and the September 5–6 Figma revisions into implementation requirements.
 
 ## Read order
 
-1. Read [rules.md](rules.md) for every UI task.
-2. Read the relevant sections of [patterns.md](patterns.md).
-3. Read [tokens.json](tokens.json) when changing presentation or shared controls.
-4. Read the relevant domain, capability, and phase requirements in the [portfolio](../portfolio/README.md).
-5. Inspect existing client components before adding another implementation.
+1. Read [current work](../current-work.md) and the relevant [workflow gap or decision](../workflow-gaps.md).
+2. Inspect the relevant frames from the [Figma map](../portfolio/prototype-map.md).
+3. Read [rules.md](rules.md) for every UI task.
+4. Read the relevant sections of [patterns.md](patterns.md).
+5. Read [tokens.json](tokens.json) when changing presentation or shared controls.
+6. Read the linked domain and capability requirements relevant to the workflow.
+7. Inspect existing client components before adding another implementation.
 
 For entity grids, also read [entity-grid-fields.json](entity-grid-fields.json).
 It defines detail navigation, explicit editor metadata, draft actions, and typed filter controls.
-Markdown defines behavior. JSON supplies structured metadata for agents. Neither requires a Figma parse.
+Markdown defines behavior. JSON supplies structured metadata. Figma supplies the visual composition to inspect.
 The batch-edit module requires server-side compatibility qualification before release. See GRID-05 in [patterns.md](patterns.md#draft-and-mutation).
 
 For Jobs, also read [jobs-grid.json](jobs-grid.json) and JOB-03 through JOB-04 in [patterns.md](patterns.md#jobs-and-recovery).
@@ -37,18 +39,18 @@ Jobs use a read-only operational grid and dedicated detail pages.
 ## Authority
 
 - Current task instructions define the authorized task scope.
-- The portfolio defines product behavior, domain terms, phase availability, architecture, and decision status.
+- The [documentation guide](../README.md) defines source authority. Disputed workflow choices remain unresolved.
 - Verified capability evidence limits the actions and claims the client exposes.
 - This contract defines reusable UI implementation rules. `tokens.json` defines exact design values.
-- Figma illustrates composition. Screenshots, prototype links, and archived boards do not override the written contract.
+- Figma defines the referenced visual composition. A conflict with written behavior requires explicit resolution.
 
-Resolve a behavior conflict in the relevant portfolio document before implementing the affected behavior.
+Resolve a behavior conflict in the relevant workflow record before implementing the affected behavior.
 Continue independent work while a required product decision remains unresolved.
 Do not infer provider support from a design or a package name.
 
-Routine implementation does not require a fresh Figma export or another design approval.
-Use Figma when the task requests visual design work or introduces composition absent from this contract.
-Device owner acceptance remains the Phase 6 gate before Users development.
+Reuse a previously inspected design for routine fixes that preserve its composition and behavior.
+Missing workflow or composition is a design gap. Generic form rules do not fill it.
+Use the [current work order](../current-work.md#development-order-after-the-reset), not historical phase acceptance matrices.
 
 ## Token format
 

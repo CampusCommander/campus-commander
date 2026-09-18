@@ -1,5 +1,9 @@
 # 06 — Work Breakdown
 
+> Consolidated reference, subject to the 2026-09-17 owner reset.
+> [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
+
+
 **Status:** revised 2026-09-05. Every implementation package is **TODO**. V0 validation is **IN PROGRESS**.
 
 The [V0 report](../validation/v0-2026-09-05/README.md) records measured local behavior, failed assumptions, and remaining acceptance requirements.

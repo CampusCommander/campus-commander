@@ -1,5 +1,9 @@
 # Phase 3 security qualification
 
+> Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
+> This record does not authorize disputed features or require completion of its old checklists.
+
+
 Owner: CC-55. Status: implementation and qualification in progress.
 Baseline: `3e64ce5`, the CC-52 integration branch. This record does not establish release acceptance.
 

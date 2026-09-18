@@ -1,5 +1,9 @@
 # 05 — Decisions and Open Questions
 
+> Consolidated reference, subject to the 2026-09-17 owner reset.
+> [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
+
+
 **Status:** current decision index, revised 2026-09-05.
 
 The owner authorized integration of the contractor report into the planning documents on 2026-09-05.
@@ -25,6 +29,18 @@ It also records frontend and Compose defects, duplicate worker dispatch, and unr
 No retained technology decision changed. Exact release qualification and proposed recovery settings remain open.
 
 ## Current decisions
+
+### Owner reset, 2026-09-17
+
+The table below preserves earlier decisions and adopted planning directions. Apply these later dispositions first:
+
+- R09's background OAuth candidate is superseded by the [owner-selected DWD profile](phase-3-google-credentials.md).
+- R12's school model and invitation-related interpretations are disputed. See G01–G03 in [workflow gaps](../workflow-gaps.md).
+- R20's trial-promotion work and R22's backup/restore prerequisite are deferred under the owner's greenfield direction.
+- R24's cumulative release and upgrade interpretation is superseded. Phases are internal development milestones.
+- [Current work](../current-work.md) replaces the historical phase checklist as the execution order.
+
+The technical register below is historical. An unchecked item does not start work or require another qualification run.
 
 All entries were integrated on 2026-09-05. Owner conversation supplies accepted constraints and authorizes the adopted planning directions.
 Technical instructions C01–C20 supply the review mapping in [07](07-issues-and-opportunities.md#review-integration-map).
@@ -75,7 +91,7 @@ Earlier source wording remains in the archive. The following table preserves tra
 | 17.2, 17.3 | Superseded. Current architecture is portfolio 03. This file indexes its decisions. |
 | 17.4 | Retained: shared contracts contain types and schemas without framework dependencies. |
 | 17.5 | Superseded by R09/R10. The old credential combination is incomplete. |
-| 17.7, 17.35 | Superseded by R12. Invite-only access remains. |
+| 17.7, 17.35 | Historical consolidation into R12. The current invitation and school workflows are disputed under G01–G03. The archived file contains 17.7 but no 17.35 entry. |
 | 17.8 | Revised by R13. Browsing selection persistence does not replace frozen approved manifests. |
 | 17.12 | Superseded by R09/R10. Google identity replacement follows the tested credential profile. |
 | 17.13 | Retained and extended by R15 with replay and current permission checks. |
@@ -92,7 +108,7 @@ Earlier source wording remains in the archive. The following table preserves tra
 | 17.30 | Revised by R14. Full reconciliation plus targeted reads. No invented universal delta stream. |
 | 17.31 | Revised by R11. Check cancellation at each external request and preserve unknown outcomes. |
 | 17.32 | Revised by R03/R07. Stable job and artifact IDs replace mandatory host-path references. |
-| 17.34 | Retained: application users require invitations. |
+| 17.34 | Historical reference without an entry in the indexed archived decision file. Do not treat it as independent approval of an invitation workflow. See G01. |
 | 17.36 | Superseded by R09. Reuse access tokens and renew through the credential provider. |
 | 17.37 | Retained: Linux production. |
 | 17.38 | Revised by R10/R20. District-controlled hostname and trusted HTTPS replace the sslip.io default. |

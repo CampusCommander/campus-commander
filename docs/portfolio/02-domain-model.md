@@ -1,5 +1,9 @@
 # 02 — Domain Model
 
+> Consolidated reference, subject to the 2026-09-17 owner reset.
+> [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
+
+
 **Status:** current domain model, revised 2026-09-05. This glossary defines canonical terms for the portfolio.
 
 ## Glossary

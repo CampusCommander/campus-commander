@@ -1,3 +1,17 @@
+# Documentation and scope — owner reset, 2026-09-17
+
+Read [docs/README.md](docs/README.md) and [docs/current-work.md](docs/current-work.md) before choosing work.
+Use [docs/workflow-gaps.md](docs/workflow-gaps.md) to distinguish defined behavior, missing decisions, and disputed scope.
+These records supersede historical phase plans and Jira execution instructions.
+
+- Do not infer product approval from agent-written requirements, existing code, passing tests, or Jira status.
+- School creation and the built invitation workflow are disputed. Do not expand or replace them without a resolved workflow.
+- Inspect the relevant Figma design before implementing a screen or changing its composition.
+- Record missing product behavior before dependent implementation. Do not invent new entities, workflows, or navigation destinations.
+- Keep one user workflow active. Use its source, design, exclusions, and concise completion criteria.
+- Jira is optional historical reference. Do not create or synchronize tasks unless the owner requests it.
+- Use focused `codex/` branches. Jira keys are not required in branches, commits, or PR titles.
+
 # Current development model — owner direction, 2026-09-17
 
 Campus Commander is greenfield work. Nothing is live, and no incremental customer environment requires support.
@@ -36,7 +50,8 @@ See [the credential record](docs/portfolio/phase-3-google-credentials.md) for th
 
 # General Guidelines for communication and writing
 
-Apply the `ste-writing` skill to all prose output (docs, READMEs, PR descriptions, error messages, release notes, comments). See `.opencode/skills/ste-writing-skill/SKILL.md` for the full ruleset. Key rules:
+Apply the `ste-writing` skill to prose when available. The required repository writing rules are listed below.
+The former `.opencode/skills/ste-writing-skill/SKILL.md` path does not exist. Do not depend on it or stop work to recover it.
 
 - One name for one thing; no synonym rotation.
 - No hedging ("might", "may", "could", "seems", "appears", "potentially", "likely", "possibly").
@@ -50,9 +65,11 @@ Apply the `ste-writing` skill to all prose output (docs, READMEs, PR description
 
 For client pages, controls, feature flows, and UI reviews, read [docs/ui/README.md](docs/ui/README.md) first.
 Follow its shared rules, relevant patterns, and exact design tokens.
-Routine UI implementation must not require parsing Figma.
-Use Figma for requested visual design work or composition absent from the repository contract.
-Keep product behavior and phase availability consistent with [docs/portfolio/README.md](docs/portfolio/README.md).
+Inspect the relevant Figma frames before implementing a screen or changing its composition.
+Shared rules and tokens do not replace that visual inspection.
+If a workflow or composition is missing, record the gap and resolve it before dependent implementation.
+A routine code fix that preserves the inspected design does not require exporting the complete Figma file again.
+Use [docs/README.md](docs/README.md) for source authority and [docs/current-work.md](docs/current-work.md) for active scope.
 Include applicable rule IDs and validation evidence in the task handoff.
 
 <!-- nx configuration start-->

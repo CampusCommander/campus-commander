@@ -1,6 +1,9 @@
 # Archive
 
-Files moved out of the active documentation set on 2026-09-03. Every file here was scanned before the move: its content either lives in the finalized portfolio (`docs/portfolio/`), is tracked as backlog (`06-work-breakdown.md`, `07-issues-and-opportunities.md`), or was deemed obsolete. Nothing unique was lost. Do not cite these files as current design truth. Do not edit them. The portfolio wins on any conflict.
+Files moved out of the active documentation set on 2026-09-03. Preserve their content as historical source material.
+Use them to trace original intent and identify later additions. They do not override current owner instructions.
+The earlier claim that consolidation preserved every decision is not proof of approval or completeness.
+Start with [the documentation guide](../README.md) and [workflow gaps](../workflow-gaps.md) for current authority and unresolved provenance.
 
 The owner requested removal of retired design-tool documentation on 2026-09-05.
 That cleanup removed obsolete setup instructions and platform references. Product findings remain historical review evidence.

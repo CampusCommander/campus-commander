@@ -1,8 +1,50 @@
 # Campus Commander — Prototype Map
 
 The current visual reference is [Figma page 09 — Device Workflows · Revised](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=122-364).
-Agents implement routine UI work from the [repository UI contract](../ui/README.md).
-Figma remains the human visual workspace. Written requirements govern behavior and exact repository tokens govern implementation values.
+Agents inspect the relevant frames before screen implementation and apply the [repository UI contract](../ui/README.md).
+Use [the documentation guide](../README.md) for source authority and [workflow gaps](../workflow-gaps.md) for missing behavior.
+
+## File inventory checked on 2026-09-17
+
+The read-only audit inspected page structure, frame names, and text relevant to access and setup across all eleven pages.
+This establishes design coverage. It does not certify every interaction or visual state.
+
+| Page | Node | Coverage |
+| --- | --- | --- |
+| 00 — Start Here | `17:2` | Historical guide and source instructions. Current repository authority supersedes conflicting instructions. |
+| 01 — Design Language | `17:3` | Audience, principles, character, and voice. |
+| 02 — Foundations | `17:4` | Colors, typography, dimensions, icons, and accessibility specimens. |
+| 03 — Layout Templates | `17:5` | Shell and generic page patterns. No complete platform-access or onboarding flow. |
+| 04 — Components & States | `17:6` | Shared controls, grid components, field states, and typed filters. |
+| 05 — UX Rules | `17:7` | Action language, system state, and Google-change interactions. |
+| 06 — Agent Build Checklist | `17:8` | Historical construction checklist. It cannot authorize missing workflows. |
+| 07 — Reference Screen | `0:1` | Earlier light/dark Users examples. |
+| 08 — Device Management | `57:2` | Earlier device studies. Prefer revised page 09 for current composition. |
+| 09 — Device Workflows · Revised | `94:2` | Device, grid editing/filtering, CSV, Jobs, and recovery examples. |
+| 10 — Users | `240:2` | Eighteen numbered frames plus an index for Google Workspace user workflows. |
+
+No complete design for adding platform users, assigning their permissions, creating schools, or onboarding was found in this file.
+The Settings frame `106:383` only presents a read-only connection warning and a return to Devices.
+It does not define the implemented connection, invitation, access, customer-settings, or Schools pages.
+
+## Google Workspace Users references
+
+These designs concern managed Google accounts. They do not define how people receive Campus Commander access.
+Their presence does not change the current development order.
+
+| Starting point | Reference |
+| --- | --- |
+| Users index | [Start here](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=254-823) |
+| Inventory, light | [Users](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=240-3) |
+| Inventory, dark | [Users dark](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=243-132) |
+| User details | [Details](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=244-395) |
+| Suspension | [Preview](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=245-399) |
+| OU edit | [Staged edit](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=247-413) |
+| Results | [Job results](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=246-409) |
+| States | [States and recovery](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=249-807) |
+| Other actions and CSV | [Action catalog](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=252-823) |
+
+The last frame summarizes actions and CSV. A catalog is not a complete design for every action it names.
 
 ## Current Figma reference
 
@@ -29,10 +71,10 @@ The original device studies remain available for comparison.
 
 ## Design authority
 
-- Product behavior and domain terms: [portfolio](README.md).
+- Source authority and current scope: [documentation guide](../README.md) and [workflow gaps](../workflow-gaps.md).
 - Agent implementation rules and page patterns: [UI contract](../ui/README.md).
 - Exact design values: [tokens.json](../ui/tokens.json).
-- Human visual review: the Figma flows listed above.
+- Required visual reference for screen implementation: the relevant Figma flows listed above.
 
 ## Maintenance
 
@@ -40,6 +82,5 @@ Update this map when Figma flow entry points change.
 Keep reusable rules and exact values in the repository UI contract.
 Record design validation separately from working-client acceptance.
 
-The device experience requires owner acceptance in Phase 6 before Users development.
-Adapt accepted patterns for Users, OUs, and Groups in Phases 7–9.
-Fleet Status and reports belong to Phase 10.
+Follow [current work](../current-work.md) for development order.
+Adapt the working device patterns for Google users, OUs, and groups. Define reports before implementing them.
