@@ -19,7 +19,8 @@ Invitation acceptance requires verification of the invited email address through
 
 Campus Commander sends invitation emails.
 Platform Admin can resend or revoke pending invitations from Settings > Platform Users.
-Invitations remain valid for seven days. Expired or revoked invitations cannot activate access.
+Invitations remain valid for seven days. Resend restarts the seven-day period.
+Expired or revoked invitations cannot activate access.
 Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
 Administrators can configure pending invitees' assignments on Access Assignments. They take effect after acceptance and identity verification.
 

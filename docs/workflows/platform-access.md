@@ -121,7 +121,7 @@ Platform Admin can resend or revoke a pending invitation from Settings > Platfor
 Resend sends another invitation email to the invited address without requiring the administrator to repeat the invitation process.
 Revoke prevents acceptance of that invitation. It cannot activate platform access after revocation.
 These actions concern pending invitations. They do not define suspension or removal of an active platform user.
-The invitation validity period is seven days, as confirmed below. Resend validity rules and delivery failure handling remain open.
+The invitation validity period is seven days. Resend restarts that period, as confirmed below. Delivery failure handling remains open.
 
 ### Invitation validity period — 2026-09-18
 
@@ -136,7 +136,21 @@ The owner answered "1" to the question:
 An invitation remains valid for seven days unless accepted or revoked earlier.
 An expired invitation cannot activate platform access.
 The selected duration is fixed. An administrator-configurable duration is outside the agreed workflow.
-Whether Resend restarts the seven-day period remains open.
+Resend restarts the seven-day period, as confirmed below.
+
+### Resend restarts invitation validity — 2026-09-18
+
+The owner answered "1" to the question:
+
+> Should Resend restart the seven-day period?
+
+1. Yes. Give the recipient seven days from the resend.
+2. No. Keep the original expiration time.
+
+Resend gives the recipient seven days from the resend to accept the invitation.
+It replaces the original expiration time with that new deadline.
+Resend does not activate access. The recipient must still accept and verify the invited email address.
+This decision covers pending invitations. Resend eligibility after expiry and invitations after revocation remain open.
 
 ### Access activation — 2026-09-17
 
@@ -439,7 +453,7 @@ Role definitions and OrgUnit collections have their own Settings pages.
 
 Administrators can select a directory account or invite someone outside the Workspace.
 Campus Commander delivers the invitation by email.
-Platform Admin can resend or revoke pending invitations on Platform Users.
+Platform Admin can resend or revoke pending invitations on Platform Users. Resend restarts the seven-day validity period.
 While the invitation is pending, an administrator can configure assignments on the separate Access Assignments page.
 The recipient accepts a valid invitation and verifies their identity. Access activates immediately without another administrator confirmation.
 Previously configured assignments take effect after acceptance and identity verification.
@@ -466,7 +480,8 @@ Asset Super Admin formally represents full Google resource access and remains di
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
 Invitations have a seven-day validity period. Expired or revoked invitations cannot activate access.
-Invitation failures, resend validity rules, and invitations after revocation remain open.
+Resend restarts the seven-day validity period.
+Invitation failures, resend eligibility after expiry, and invitations after revocation remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
 
@@ -479,7 +494,8 @@ No access-request workflow is permitted.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
 - A recipient using a different verified email address cannot accept the invitation.
 - Platform Admin revokes a pending invitation. The recipient cannot accept it to activate access.
-- An invitation expires after seven days. The recipient cannot use it to activate access.
+- An invitation expires after seven days without a resend. The recipient cannot use it to activate access.
+- Platform Admin resends an invitation two days before expiry. The recipient now has seven days from that resend.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
 - While the invitation is pending, an administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
 - The assignment grants no access until the recipient accepts and verifies their identity.
@@ -511,7 +527,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method defaults and controls, external-person entry, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
-5. Email configuration, invitation content, resend validity rules, invitations after revocation, and delivery failure handling.
+5. Email configuration, invitation content, resend eligibility after expiry, invitations after revocation, and delivery failure handling.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
