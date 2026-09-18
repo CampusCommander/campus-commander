@@ -22,8 +22,22 @@ Adding platform access does not create or modify a Google Workspace account.
 - Campus Commander is invite-only.
 - People cannot request access.
 
-This decision does not establish invitation delivery, recipient authentication, activation, or a second administrator confirmation.
+Recipient authentication, activation, and a second administrator confirmation remain unresolved.
 The external-person entry method remains open.
+
+### Invitation delivery — 2026-09-17
+
+The owner answered "1" to these options:
+
+1. Email from Campus Commander — requires configured email delivery.
+2. Copyable invitation link — the administrator shares it.
+3. Both.
+
+Campus Commander sends invitation emails. The selected delivery method requires configured email delivery.
+Manual sharing of a copyable invitation link is outside this agreed workflow.
+Email transport, provider configuration, invitation content, and delivery failure handling remain open.
+This decision does not determine recipient authentication or access activation.
+It supersedes the historical implementation's copyable invitation without SMTP as the intended delivery workflow.
 
 ### Interface organization — 2026-09-17
 
@@ -36,7 +50,8 @@ The location and interaction for assigning a person's permissions remain open wi
 
 The workflow belongs to the Platform Users concern under Settings.
 Administrators can select a directory account or invite someone outside the Workspace.
-The exact entry controls, invitation delivery, recipient steps, success result, and return path remain open.
+Campus Commander delivers the invitation by email.
+The exact entry controls, recipient steps, success result, and return path remain open.
 Do not infer acceptance of the implemented copy-link, redemption, and administrator-confirmation sequence.
 
 ## Permissions and failures
@@ -61,10 +76,11 @@ Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
-1. Invitation delivery and the recipient's path to access.
+1. The recipient's path to access and when access activates.
 2. External identity requirements and entry method.
 3. Permission assignment, resource access, and delegation authority.
 4. Detailed page interactions and Figma compositions under the confirmed Settings organization.
+5. Email configuration, invitation content, and delivery failure handling.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 

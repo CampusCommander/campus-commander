@@ -12,8 +12,9 @@ Source: the owner's platform-access discussion on 2026-09-17.
 Ask one focused question at a time. Record answers in the workflow and update the relevant gap entries.
 
 The owner confirmed directory selection, invitations outside the Workspace, and no access requests.
+Campus Commander sends invitation emails.
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
-Invitation delivery, activation, permissions, resource access, and exact screen compositions remain open.
+Activation, permissions, resource access, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
 Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.
