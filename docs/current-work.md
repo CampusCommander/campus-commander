@@ -18,6 +18,8 @@ Administrators assign permissions through reusable roles, without individual per
 Named OrgUnit collections define resource scope and represent schools for access administration.
 Administrators control "Include descendants" separately for each selected OrgUnit.
 
+Enabled descendant scopes follow the current Google hierarchy, including new or moved-in descendants and excluding moved-out descendants.
+
 An access assignment associates a platform user with a role and an OrgUnit collection.
 A platform user can have multiple access assignments, each with its own role-and-collection pairing.
 Within overlapping scopes, permissions combine and most permissive wins.

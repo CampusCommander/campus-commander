@@ -81,7 +81,7 @@ This establishes OrgUnits as the scope basis for the Google users and devices di
 It does not establish a separate school entity or authorize school creation.
 
 The descendant-selection decision below defines the control for each selected OrgUnit.
-Exclusions and the treatment of later OrgUnit changes remain open.
+Exclusions remain open. Descendant scope follows the current hierarchy as confirmed below.
 The collection and access-assignment decision below defines named reusable collections and their relationship to roles.
 Group access and platform-wide administrative permissions require separate definitions.
 This answer does not establish a separate whole-Workspace access option.
@@ -100,9 +100,27 @@ Each selected OrgUnit has an "Include descendants" option controlled by the admi
 When selected, that scope includes the selected OrgUnit and its descendants.
 When cleared, that scope includes only the selected OrgUnit.
 The administrator makes this choice separately for each OrgUnit in a collection.
-The option's initial state and the treatment of later OrgUnit changes remain open.
+The option's initial state remains open.
+
 Overlapping assignments follow the most-permissive rule below. Exclusions remain open.
 Clearing this option does not establish an explicit denial rule.
+
+### Descendant hierarchy changes — 2026-09-17
+
+The owner answered "1" to the question:
+
+> When "Include descendants" is enabled, should access follow changes to the Google OrgUnit hierarchy?
+
+1. Follow the current hierarchy. New or moved-in descendants become included. Moved-out descendants leave that scope.
+2. Keep the descendants selected when saved. Administrators explicitly update the collection to include later hierarchy changes.
+
+When "Include descendants" is enabled, the scope follows the current Google OrgUnit hierarchy.
+New or moved-in descendants enter that scope. Descendants moved outside the selected OrgUnit leave that scope.
+Administrators do not need to save the collection again to apply those hierarchy changes.
+A platform user retains access to a moved-out OrgUnit if another applicable assignment grants it.
+
+This decision replaces a fixed snapshot of descendants for this access workflow.
+It does not define provider refresh timing or the effects on work already running.
 
 ### Roles, OrgUnit collections, and access assignments — 2026-09-17
 
@@ -181,7 +199,7 @@ Assignments do not retain separate copies that require manual updates.
 The most-permissive rule still applies when another assignment grants access to the same resource.
 
 This decision covers edits to saved roles and collections within Campus Commander.
-The treatment of later Google OrgUnit hierarchy changes remains open.
+The descendant-hierarchy decision above covers changes to the Google OrgUnit hierarchy.
 Effects on work already running remain part of the unresolved access-revocation workflow.
 
 ### Interface organization — 2026-09-17
@@ -227,7 +245,7 @@ An access assignment associates a platform user with a role and an OrgUnit colle
 A platform user can have multiple assignments. Each role remains paired with its assignment's collection.
 Within overlapping scopes, permissions combine and most permissive wins.
 
-Each selected OrgUnit has its own "Include descendants" option.
+Each selected OrgUnit has its own "Include descendants" option, which follows the current Google hierarchy when enabled.
 Saved role and collection changes automatically apply to every assignment using them.
 The complete permission catalog, exact assignment controls, remaining scope behavior, and delegation authority remain open.
 
@@ -246,6 +264,8 @@ No access-request workflow is permitted.
 - Outside the overlap, a read assignment does not gain editing permission from the other assignment.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
 - An administrator includes descendants for one selected OrgUnit and selects only another OrgUnit without its descendants.
+- A new descendant enters an enabled descendant scope. A moved-out descendant leaves that scope.
+- Another applicable assignment still grants access to a moved-out OrgUnit according to the most-permissive rule.
 - An uninvited person cannot request access. The exact sign-in message remains open.
 
 These examples define eligibility, activation, reusable roles, and the OrgUnit scope basis.
