@@ -108,6 +108,21 @@ It does not allow uninvited access or bypass invitation validity and authorizati
 The supported external sign-in methods are defined above. Identity-matching details remain open.
 The permission model is recorded below.
 
+### Assignments for pending invitees — 2026-09-17
+
+The owner answered "1" to the question:
+
+> Can administrators create access assignments while someone's invitation is pending?
+
+1. Yes. Configure assignments on Access Assignments before acceptance. They take effect after acceptance and identity verification.
+2. No. Create assignments only after the person accepts.
+
+Administrators can create access assignments for pending invitees on Settings > Access Assignments.
+These assignments grant no access before invitation acceptance and identity verification.
+After acceptance and identity verification, the assignments take effect without a second administrator confirmation.
+This permits advance assignment. It does not require assignments before acceptance.
+Platform Users continues to handle invitations. Assignment management remains on its separate page.
+
 ### Permission assignment — 2026-09-17
 
 The owner answered "1" to the question:
@@ -363,7 +378,10 @@ Role definitions and OrgUnit collections have their own Settings pages.
 
 Administrators can select a directory account or invite someone outside the Workspace.
 Campus Commander delivers the invitation by email.
+While the invitation is pending, an administrator can configure assignments on the separate Access Assignments page.
 The recipient accepts a valid invitation and verifies their identity. Access activates immediately without another administrator confirmation.
+Previously configured assignments take effect after acceptance and identity verification.
+
 The exact entry controls, identity verification steps, success presentation, and return path remain open.
 
 ## Permissions and failures
@@ -395,7 +413,8 @@ No access-request workflow is permitted.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
-- An administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
+- While the invitation is pending, an administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
+- The assignment grants no access until the recipient accepts and verifies their identity.
 - That assignment permits device and Google user reads within the collection. It does not permit edits or out-of-scope reads.
 - Overlapping read and edit assignments allow both actions within their shared scope.
 - Outside the overlap, a read assignment does not gain editing permission from the other assignment.

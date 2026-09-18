@@ -18,6 +18,8 @@ Administrators select the allowed sign-in methods for each platform user.
 
 Campus Commander sends invitation emails.
 Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
+Administrators can configure pending invitees' assignments on Access Assignments. They take effect after acceptance and identity verification.
+
 Administrators assign granular permissions through reusable roles, without individual permission exceptions.
 Named OrgUnit collections define resource scope and represent schools for access administration.
 Administrators control "Include descendants" separately for each selected OrgUnit.
