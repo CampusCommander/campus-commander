@@ -4,7 +4,7 @@
 > [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
 
 
-**Status:** domain reference with platform-access terminology updated from owner decisions on 2026-09-17.
+**Status:** domain reference with platform-access terminology updated from owner decisions on 2026-09-17 through 2026-09-18.
 The [platform-access workflow](../workflows/platform-access.md#roles-orgunit-collections-and-access-assignments--2026-09-17) defines the agreed access behavior and remaining decisions.
 
 ## Glossary
@@ -15,7 +15,7 @@ The [platform-access workflow](../workflows/platform-access.md#roles-orgunit-col
 | **School scope (historical)** | The implementation's independent school identity. The owner-confirmed OrgUnit collection model replaces this interpretation. |
 | **Permission** | A separately selectable capability in a role, such as Device Read or Device Bulk Actions. |
 | **Role** | A named reusable collection of permissions, such as Librarians. |
-| **Platform Admin** | The platform administrator who can assign any role to any platform user, including themselves. Full asset access is formally represented by Asset Super Admin. |
+| **Platform Admin** | The platform administrator who can assign any role to any platform user, including themselves. Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow. Full asset access is formally represented by Asset Super Admin. |
 | **Asset Super Admin** | The special built-in Campus Commander role representing full access to managed Google resources across the connected Workspace. Distinct from Platform Admin and Google's Super Admin role. |
 | **OrgUnit collection** | A named reusable collection of OrgUnits defining resource scope. Each entry has an "Include descendants" option. It represents a school for access administration. |
 | **Access assignment** | For ordinary asset roles, the association of a platform user, a role, and an OrgUnit collection. |

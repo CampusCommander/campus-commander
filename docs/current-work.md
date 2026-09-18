@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-09-17.
+Updated: 2026-09-18.
 
 ## Authorized now
 
@@ -8,7 +8,7 @@ The documentation reset was committed and pushed as `a19acd0` on `codex/document
 Do not repeat the documentation audit.
 
 Resolve one active workflow: [add a platform user and assign access](workflows/platform-access.md).
-Source: the owner's platform-access discussion on 2026-09-17.
+Source: the owner's platform-access discussion on 2026-09-17 through 2026-09-18.
 Ask one focused question at a time. Record answers in the workflow and update the relevant gap entries.
 
 The owner confirmed directory selection, invitations outside the Workspace, and no access requests.
@@ -35,6 +35,8 @@ Saved role and collection changes automatically apply to every assignment using 
 Asset Super Admin is a special built-in role representing full managed Google resource access.
 Platform Admin has full asset access through that distinct role and can assign any role to any platform user.
 Platform administration and asset administration remain explicit, separate responsibilities.
+Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
+Delegated access administration is outside the initial workflow.
 
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
 Platform Users, Platform Roles and Permissions, OrgUnit Collections, and Access Assignments each have their own Settings page.

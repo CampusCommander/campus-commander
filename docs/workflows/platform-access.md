@@ -1,13 +1,13 @@
 # Add a platform user and assign access
 
 Status: proposed workflow with owner-confirmed decisions below. Implementation is not authorized.
-Source: owner instructions in the platform-access discussion, 2026-09-17. Exact decision text appears below.
+Source: owner instructions in the platform-access discussion, 2026-09-17 through 2026-09-18. Exact decision text appears below.
 Design: missing. See the [Figma coverage record](../portfolio/prototype-map.md).
 Replaces: conflicting interpretations of historical decision 17.7, manual copy-link delivery, and the implemented second administrator confirmation.
 
 ## User and outcome
 
-An administrator adds a person to Campus Commander and assigns platform permissions and resource access.
+A Platform Admin adds a person to Campus Commander and assigns platform permissions and resource access.
 Platform users use Campus Commander. Google Workspace accounts are records that Campus Commander manages.
 Adding platform access does not create or modify a Google Workspace account.
 
@@ -153,7 +153,7 @@ Administrators define permissions in reusable roles and assign those roles to pl
 Per-person permission exceptions and direct individual permission assignment are outside the agreed model.
 Roles define permissions. The resource-access decision below defines the scope basis.
 Granular permissions, Asset Super Admin, and Platform Admin assignment authority are confirmed below.
-The remaining catalog, other built-in roles, and delegation by other users remain open.
+The remaining catalog and other built-in roles remain open. Platform Admin-only access administration is confirmed below.
 Historical presets do not establish the role catalog for this workflow.
 
 ### Platform Admin and Asset Super Admin — 2026-09-17
@@ -175,7 +175,22 @@ Do not describe Platform Admin as isolated from asset authority merely because t
 These are Campus Commander authorities. They do not confer a Google Workspace Super Admin role on the person's Google account.
 Ordinary asset roles retain their OrgUnit-collection scopes. Asset Super Admin represents full asset access.
 The exact grant presentation for the built-in role remains to be designed.
-This decision does not define other users' delegation authority or the remaining built-in role catalog.
+The access-administration decision below defines who manages access. The remaining built-in role catalog remains open.
+
+### Access administration authority — 2026-09-18
+
+The owner answered "1" to the question:
+
+> Who can manage platform users, roles, OrgUnit collections, and access assignments?
+
+1. Platform Admin only. Keeps access administration centralized for the initial workflow.
+2. Delegated administrators too. Separate platform permissions let other roles manage selected administrative concerns.
+
+Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
+This includes invitations and each platform user's allowed sign-in methods.
+Asset Super Admin alone does not grant this authority.
+Delegated access administration is outside the initial workflow. It is not approved or a prerequisite for implementation.
+These concerns retain their separate pages under Settings.
 
 ### Granular permissions — 2026-09-17
 
@@ -388,7 +403,7 @@ Exact controls, navigation order, and Figma compositions remain open.
 
 ## Interaction
 
-Administrators add platform users through Settings > Platform Users.
+Platform Admin adds platform users through Settings > Platform Users.
 Administrators manage assignments through Settings > Access Assignments.
 Role definitions and OrgUnit collections have their own Settings pages.
 
@@ -411,8 +426,9 @@ Each selected OrgUnit has its own "Include descendants" option, which follows th
 Saved role and collection changes automatically apply to every assignment using them.
 Roles use granular permissions, including the owner's initial device and Google-user examples.
 Bulk operations require both Bulk Actions and the action-specific permission within the applicable scope.
-The remaining catalog, other permission dependencies, exact controls, scope behavior, and other users' delegation authority remain open.
+The remaining catalog, other permission dependencies, exact controls, and scope behavior remain open.
 
+Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
 Platform Admin can assign any role to any platform user, including Asset Super Admin.
 Asset Super Admin formally represents full Google resource access and remains distinct from platform administration.
 
@@ -443,6 +459,7 @@ No access-request workflow is permitted.
 - Another applicable assignment still grants access to a moved-out OrgUnit according to the most-permissive rule.
 - A Platform Admin can assign Asset Super Admin to another platform user or to themselves.
 - Asset Super Admin gives full managed Google resource access without itself granting platform administration authority.
+- A platform user without Platform Admin cannot invite people or edit roles, OrgUnit collections, or access assignments.
 - An uninvited person cannot request access. The exact sign-in message remains open.
 
 These examples define eligibility, activation, reusable roles, and the OrgUnit scope basis.
@@ -456,7 +473,7 @@ Do not change application code until the owner authorizes implementation.
 Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
-2. Remaining action coverage, dependencies, catalog, scope behavior, delegation by other users, and ordinary group access.
+2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method defaults and controls, external-person entry, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, and delivery failure handling.

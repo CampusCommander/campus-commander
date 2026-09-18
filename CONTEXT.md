@@ -21,6 +21,8 @@ _Avoid_: Resource scope or OrgUnit collection as synonyms.
 
 **Platform Admin**:
 The platform administrator who can assign any role to any platform user, including themselves.
+Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
+See the [authority decision](docs/workflows/platform-access.md#access-administration-authority--2026-09-18).
 Full asset access is formally represented by the distinct Asset Super Admin role.
 _Avoid_: Treating platform administration and asset administration as interchangeable responsibilities.
 
