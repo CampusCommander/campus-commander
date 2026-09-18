@@ -15,6 +15,7 @@ The owner confirmed directory selection, invitations outside the Workspace, and 
 External invitees do not need Google accounts.
 Support configured identity providers and emailed one-time sign-in codes for external invitees.
 Administrators select the allowed sign-in methods for each platform user.
+Invitation acceptance requires verification of the invited email address through an allowed method.
 
 Campus Commander sends invitation emails.
 Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
@@ -44,7 +45,7 @@ The permission list is explicitly non-exhaustive.
 Bulk Actions grants access to the dropdown button. Action-specific permissions determine which features are enabled within it.
 Bulk operations require both permissions within the applicable scope. Other action coverage and dependencies remain open.
 
-Identity matching, sign-in method defaults, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
+Sign-in method defaults, identity-change recovery, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
 Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.

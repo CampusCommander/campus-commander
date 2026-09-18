@@ -22,7 +22,7 @@ Adding platform access does not create or modify a Google Workspace account.
 - Campus Commander is invite-only.
 - People cannot request access.
 
-External sign-in methods and administrator control of allowed methods are defined below. Identity matching remains open.
+External sign-in methods and administrator control of allowed methods are defined below. Invitation acceptance requires verification of the invited email address, as confirmed below.
 The activation decision below excludes a second administrator confirmation.
 The external-person entry method remains open.
 
@@ -57,7 +57,7 @@ The provider examples do not establish the complete provider catalog.
 
 These methods authenticate invited platform users. They do not allow self-registration or access requests.
 Invitation acceptance and identity verification still precede immediate access activation.
-Administrators control allowed methods for each platform user, as confirmed below. Identity matching remains open.
+Administrators control allowed methods for each platform user, as confirmed below. Invitation acceptance requires verification of the invited email address, as confirmed below.
 Provider configuration, email-code delivery failures, and recovery interactions remain open.
 
 ### Allowed sign-in methods per platform user — 2026-09-17
@@ -76,7 +76,23 @@ If the administrator permits both methods, either method is available to that pl
 
 This is a platform-user setting. Installation-wide identity-provider configuration remains a separate Provider settings concern.
 The initial method selection, exact provider-selection controls, and effects of method changes on active sessions remain open.
-Identity matching and recovery interactions remain open.
+The invited-email verification rule is confirmed below. Recovery interactions remain open.
+
+### Invited email verification — 2026-09-17
+
+The owner answered "yes." to the question:
+
+> Must the recipient verify the same email address that received the invitation?
+
+Acceptance requires verification of the invited email address through a sign-in method allowed for that platform user.
+For provider sign-in, the verified email address must match the invited address.
+For email-code sign-in, the recipient verifies the invited address using the code delivered to that address.
+A different verified email address cannot accept the invitation.
+An unverified email assertion does not satisfy this requirement.
+
+For example, an invitation to `mSmith@school.edu` cannot be accepted using a different verified address.
+A forwarded invitation does not transfer eligibility to its recipient's own address.
+This rule defines invitation acceptance. Later identity changes and account recovery still need their applicable workflow rules.
 
 ### Invitation delivery — 2026-09-17
 
@@ -105,7 +121,7 @@ Access activates immediately after the recipient accepts a valid invitation and 
 No second administrator confirmation is required. The invitation represents the administrator's approval.
 This decision replaces the implemented requirement for the inviter to confirm the recipient after identity verification.
 It does not allow uninvited access or bypass invitation validity and authorization checks.
-The supported external sign-in methods are defined above. Identity-matching details remain open.
+The supported external sign-in methods and invited-email verification rule are defined above.
 The permission model is recorded below.
 
 ### Assignments for pending invitees — 2026-09-17
@@ -401,7 +417,7 @@ Platform Admin can assign any role to any platform user, including Asset Super A
 Asset Super Admin formally represents full Google resource access and remains distinct from platform administration.
 
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
-Administrators select allowed methods per platform user. Identity matching remains open.
+Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
 Invitation failures, expiry, and repeat invitations remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
@@ -412,6 +428,7 @@ No access-request workflow is permitted.
 - A district administrator invites an external consultant who has no Google account.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
+- A recipient using a different verified email address cannot accept the invitation.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
 - While the invitation is pending, an administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
 - The assignment grants no access until the recipient accepts and verifies their identity.
@@ -440,7 +457,7 @@ Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. Remaining action coverage, dependencies, catalog, scope behavior, delegation by other users, and ordinary group access.
-3. Identity matching, sign-in method defaults and controls, and external-person entry.
+3. Sign-in method defaults and controls, external-person entry, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, and delivery failure handling.
 
