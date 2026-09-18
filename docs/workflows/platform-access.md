@@ -56,7 +56,23 @@ The administrator reviews the recipients before sending their invitations togeth
 Each recipient accepts their own invitation and verifies the invited email address before platform access activates.
 External invitees do not need Google accounts. Allowed sign-in methods remain controlled per platform user.
 Role and resource assignments remain on the separate Access Assignments page.
-Exact controls, address validation feedback, and the Figma composition remain open.
+Invalid addresses must be corrected or removed before sending, as confirmed below.
+Exact controls, validation message presentation, and the Figma composition remain open.
+
+### Invalid recipient addresses — 2026-09-18
+
+The owner answered "1" to the question:
+
+> If recipient review finds an invalid email address, what should happen?
+
+1. Require correction or removal before sending. The administrator resolves the recipient list first.
+2. Send to valid addresses only. Show which addresses were skipped and why.
+
+If recipient review finds an invalid email address, sending is blocked for the selected recipients.
+Platform Admin must correct or remove each invalid address before sending any invitations in that selection.
+The application does not send only to the valid addresses while invalid addresses remain in the selection.
+This rule concerns validation before sending. Delivery failures after sending remain a separate unresolved behavior.
+Exact validation message presentation remains a design requirement.
 
 ### External invitees without Google accounts — 2026-09-17
 
@@ -517,7 +533,7 @@ Role definitions and OrgUnit collections have their own Settings pages.
 
 Platform Admin can select one or more people in a searchable Google directory grid and send their invitations together.
 For external invitees, Platform Admin enters or pastes one or more email addresses and reviews the recipients before sending.
-Before sending, Platform Admin selects allowed sign-in methods separately for each recipient.
+Before sending, Platform Admin corrects or removes invalid email addresses and selects allowed sign-in methods separately for each recipient.
 Campus Commander delivers the invitation by email.
 Platform Admin can resend pending or expired invitations on Platform Users. Resend starts a fresh seven-day validity period.
 Platform Admin can revoke pending invitations on that page.
@@ -548,7 +564,8 @@ External invitees do not need Google accounts. Configured identity providers and
 Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
 Invitations have a seven-day validity period. Expired or revoked invitations cannot activate access.
 Resend starts a fresh seven-day validity period for pending or expired invitations.
-Invitation failures and invitations after revocation remain open.
+Invalid recipient addresses block sending until Platform Admin corrects or removes them.
+Delivery failures and invitations after revocation remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
 
@@ -557,6 +574,7 @@ No access-request workflow is permitted.
 - Platform Admin selects three staff members in the searchable Google directory grid and sends their invitations together.
 - Each selected staff member must accept and verify their invited email address before their own access activates.
 - Platform Admin pastes two external email addresses and reviews the recipients.
+- If one address is invalid, no invitations in that selection are sent until it is corrected or removed.
 - Before sending together, Platform Admin permits provider sign-in for one recipient and email codes for the other.
 - An external consultant without a Google account accepts through an allowed sign-in method.
 - Platform Admin resends a pending invitation from Platform Users. Campus Commander sends another invitation email.
@@ -596,7 +614,7 @@ Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
-3. Sign-in method controls, external email validation feedback, and identity-change recovery.
+3. Sign-in method controls, validation message presentation, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, invitations after revocation, and delivery failure handling.
 
