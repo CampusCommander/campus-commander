@@ -19,6 +19,7 @@ Named OrgUnit collections define resource scope and represent schools for access
 Administrators control "Include descendants" separately for each selected OrgUnit.
 
 An access assignment associates a platform user with a role and an OrgUnit collection.
+A platform user can have multiple access assignments, each with its own role-and-collection pairing.
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
 Authentication, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).

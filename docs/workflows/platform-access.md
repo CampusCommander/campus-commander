@@ -67,7 +67,7 @@ The owner answered "1" to the question:
 Administrators define permissions in reusable roles and assign those roles to platform users.
 Per-person permission exceptions and direct individual permission assignment are outside the agreed model.
 Roles define permissions. The resource-access decision below defines the scope basis.
-The complete permission catalog, built-in roles, multiple assignments, role-change behavior, and delegation authority remain open.
+The complete permission catalog, built-in roles, role-change behavior, and delegation authority remain open.
 Historical presets do not establish the role catalog for this workflow.
 
 ### Resource access — 2026-09-17
@@ -128,7 +128,22 @@ The example does not specify those option values or assert that the example OrgU
 An OrgUnit collection represents a school for this access model. Its name does not create a separate school entity.
 This decision replaces the historical school-scope interpretation that required an independent school identity.
 Collection creation, editing, and assignment controls still need their own interface definition under Settings.
-Multiple assignments, overlapping scopes, and effects of later role or collection changes remain open.
+Multiple assignments are confirmed below. Overlapping scopes and effects of later role or collection changes remain open.
+
+### Multiple access assignments — 2026-09-17
+
+The owner answered "1" to the question:
+
+> Can a platform user have multiple access assignments?
+
+1. Yes. Each assignment pairs a role with its own OrgUnit collection, allowing different responsibilities across collections.
+2. No. Each platform user has one role-and-collection assignment.
+
+A platform user can have multiple access assignments.
+Each assignment pairs one role with its own OrgUnit collection.
+The role's permissions apply within that assignment's collection, not automatically across the user's other collections.
+For example, read access through one assignment does not transfer another assignment's editing permissions to that first collection.
+This example describes separate scopes. The rule for combining permissions where collections overlap remains open.
 
 ### Interface organization — 2026-09-17
 
@@ -149,6 +164,8 @@ The exact entry controls, identity verification steps, success presentation, and
 
 Roles contain permissions. Named OrgUnit collections define resource scope.
 An access assignment associates a platform user with a role and an OrgUnit collection.
+A platform user can have multiple assignments. Each role remains paired with its assignment's collection.
+
 Each selected OrgUnit has its own "Include descendants" option.
 The complete permission catalog, assignment controls, remaining scope behavior, and delegation authority remain open.
 
@@ -177,7 +194,7 @@ Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
-1. Multiple access assignments, overlapping scopes, and effects of role or collection changes.
+1. Overlapping scopes and effects of role or collection changes.
 2. The permission catalog, remaining scope behavior, delegation authority, and group access.
 3. External identity requirements and entry method.
 4. Identity verification and remaining recipient steps.
