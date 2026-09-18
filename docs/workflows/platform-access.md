@@ -67,7 +67,7 @@ The owner answered "1" to the question:
 Administrators define permissions in reusable roles and assign those roles to platform users.
 Per-person permission exceptions and direct individual permission assignment are outside the agreed model.
 Roles define permissions. The resource-access decision below defines the scope basis.
-The complete permission catalog, built-in roles, role-change behavior, and delegation authority remain open.
+The complete permission catalog, built-in roles, and delegation authority remain open.
 Historical presets do not establish the role catalog for this workflow.
 
 ### Resource access — 2026-09-17
@@ -129,7 +129,7 @@ The example does not specify those option values or assert that the example OrgU
 An OrgUnit collection represents a school for this access model. Its name does not create a separate school entity.
 This decision replaces the historical school-scope interpretation that required an independent school identity.
 Collection creation, editing, and assignment controls still need their own interface definition under Settings.
-Multiple assignments and their overlap rule are confirmed below. Effects of later role or collection changes remain open.
+Multiple assignments, their overlap rule, and automatic application of saved changes are confirmed below.
 
 ### Multiple access assignments — 2026-09-17
 
@@ -165,6 +165,25 @@ Outside that overlap, each assignment grants only its own permissions within its
 If no applicable assignment grants an action, the platform user lacks permission for that action on that resource.
 This rule does not define collection exclusions or bypass invitation, identity, or account-authorization checks.
 
+### Saved role and collection changes — 2026-09-17
+
+The owner answered "1" to the question:
+
+> When an administrator edits a saved role or OrgUnit collection, should existing assignments use the changes automatically?
+
+1. Yes. Saving updates access for everyone assigned that role or collection.
+2. No. Existing assignments retain their previous permissions and scope until explicitly updated.
+
+Existing access assignments automatically use saved changes to their role or OrgUnit collection.
+Saving a role updates its permissions for every assignment using that role.
+Saving an OrgUnit collection updates resource scope for every assignment using that collection.
+Assignments do not retain separate copies that require manual updates.
+The most-permissive rule still applies when another assignment grants access to the same resource.
+
+This decision covers edits to saved roles and collections within Campus Commander.
+The treatment of later Google OrgUnit hierarchy changes remains open.
+Effects on work already running remain part of the unresolved access-revocation workflow.
+
 ### Interface organization — 2026-09-17
 
 The owner placed all platform settings under Settings and required a separate page for each concern.
@@ -188,6 +207,7 @@ A platform user can have multiple assignments. Each role remains paired with its
 Within overlapping scopes, permissions combine and most permissive wins.
 
 Each selected OrgUnit has its own "Include descendants" option.
+Saved role and collection changes automatically apply to every assignment using them.
 The complete permission catalog, assignment controls, remaining scope behavior, and delegation authority remain open.
 
 External sign-in requirements, identity matching, invitation failures, expiry, and repeat invitations remain open.
@@ -217,12 +237,11 @@ Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
-1. Effects of role or collection changes.
+1. Access-assignment placement, remaining page interactions, and Figma compositions under Settings.
 2. The permission catalog, remaining scope behavior, delegation authority, and group access.
 3. External identity requirements and entry method.
 4. Identity verification and remaining recipient steps.
-5. Detailed page interactions and Figma compositions under the confirmed Settings organization.
-6. Email configuration, invitation content, and delivery failure handling.
+5. Email configuration, invitation content, and delivery failure handling.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
