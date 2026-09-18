@@ -12,7 +12,8 @@ Source: the owner's platform-access discussion on 2026-09-17.
 Ask one focused question at a time. Record answers in the workflow and update the relevant gap entries.
 
 The owner confirmed directory selection, invitations outside the Workspace, and no access requests.
-External invitees do not need Google accounts. Their sign-in method remains open.
+External invitees do not need Google accounts.
+Support configured identity providers and emailed one-time sign-in codes for external invitees.
 
 Campus Commander sends invitation emails.
 Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
@@ -30,7 +31,7 @@ Saved role and collection changes automatically apply to every assignment using 
 The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
 Platform Users, Platform Roles and Permissions, OrgUnit Collections, and Access Assignments each have their own Settings page.
 Access Assignments uses a grid of platform user, role, and OrgUnit collection.
-Authentication, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
+Identity matching, sign-in method availability, role details, OrgUnit scope behavior, email configuration, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
 Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.
