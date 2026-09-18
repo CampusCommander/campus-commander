@@ -18,6 +18,8 @@ Administrators select the allowed sign-in methods for each platform user.
 Invitation acceptance requires verification of the invited email address through an allowed method.
 
 Campus Commander sends invitation emails.
+Platform Admin can resend or revoke pending invitations from Settings > Platform Users.
+Revoked invitations cannot activate access.
 Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
 Administrators can configure pending invitees' assignments on Access Assignments. They take effect after acceptance and identity verification.
 

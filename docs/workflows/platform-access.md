@@ -108,6 +108,21 @@ Email transport, provider configuration, invitation content, and delivery failur
 Email delivery does not determine recipient authentication. The next decision defines access activation.
 It supersedes the historical implementation's copyable invitation without SMTP as the intended delivery workflow.
 
+### Pending invitation actions — 2026-09-18
+
+The owner answered "1" to the question:
+
+> How should Platform Admin manage pending invitations from Settings > Platform Users?
+
+1. Resend and revoke. Resend the invitation email or cancel acceptance.
+2. Revoke and create again. Cancel the existing invitation and repeat the invitation process when needed.
+
+Platform Admin can resend or revoke a pending invitation from Settings > Platform Users.
+Resend sends another invitation email to the invited address without requiring the administrator to repeat the invitation process.
+Revoke prevents acceptance of that invitation. It cannot activate platform access after revocation.
+These actions concern pending invitations. They do not define suspension or removal of an active platform user.
+Invitation expiry, resend validity rules, and delivery failure handling remain open.
+
 ### Access activation — 2026-09-17
 
 The owner answered "1" to the question:
@@ -409,6 +424,7 @@ Role definitions and OrgUnit collections have their own Settings pages.
 
 Administrators can select a directory account or invite someone outside the Workspace.
 Campus Commander delivers the invitation by email.
+Platform Admin can resend or revoke pending invitations on Platform Users.
 While the invitation is pending, an administrator can configure assignments on the separate Access Assignments page.
 The recipient accepts a valid invitation and verifies their identity. Access activates immediately without another administrator confirmation.
 Previously configured assignments take effect after acceptance and identity verification.
@@ -434,7 +450,8 @@ Asset Super Admin formally represents full Google resource access and remains di
 
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
-Invitation failures, expiry, and repeat invitations remain open.
+Revoked invitations cannot activate access.
+Invitation failures, expiry, resend validity rules, and invitations after revocation remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
 
@@ -442,9 +459,11 @@ No access-request workflow is permitted.
 
 - A district administrator selects a staff member from the Google directory for platform access.
 - A district administrator invites an external consultant who has no Google account.
+- Platform Admin resends a pending invitation from Platform Users. Campus Commander sends another invitation email.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
 - A recipient using a different verified email address cannot accept the invitation.
+- Platform Admin revokes a pending invitation. The recipient cannot accept it to activate access.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
 - While the invitation is pending, an administrator assigns Librarians and Smith Elementary to `mSmith@school.edu`.
 - The assignment grants no access until the recipient accepts and verifies their identity.
@@ -476,7 +495,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method defaults and controls, external-person entry, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
-5. Email configuration, invitation content, and delivery failure handling.
+5. Email configuration, invitation content, expiry, resend validity rules, invitations after revocation, and delivery failure handling.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
