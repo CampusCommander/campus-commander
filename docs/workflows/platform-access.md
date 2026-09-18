@@ -141,7 +141,7 @@ The owner named these initial permissions:
 These are distinct permission choices. A single broad "Manage devices" or "Manage users" permission does not replace them.
 The list is illustrative, not a complete catalog. Exact action coverage and dependencies require definition before dependent implementation.
 Do not assume Write includes Deprovision, schema management, or bulk actions.
-Do not assume Bulk Actions grants every underlying action without its corresponding permission.
+Bulk Actions and action-specific permissions work together as confirmed below.
 
 The owner clarified the terminology and scope of the examples:
 
@@ -154,6 +154,27 @@ Define additional permissions as their workflows require them. Do not require th
 
 User Schema Manage is confirmed as a distinct permission. Its schema-definition and field-value boundaries remain open.
 These permissions concern managed Google resources. Platform administration permissions remain a separate part of the catalog.
+
+### Bulk Actions permission — 2026-09-17
+
+The owner answered yes to requiring both the action permission and the corresponding Bulk Actions permission:
+
+> Yes. Bulk actions gives access to the Bulk Actions menu dropdown button. Further permissions show which features are enabled in that dropdown.
+
+The entity's Bulk Actions permission controls access to its Bulk Actions dropdown button.
+Action-specific permissions determine which features are enabled inside the dropdown.
+A bulk operation requires both the entity's Bulk Actions permission and the permission for that operation within the applicable scope.
+Bulk Actions alone does not grant the underlying operations.
+An action permission alone does not grant access to the Bulk Actions dropdown.
+
+For example, bulk deprovisioning requires Device Bulk Actions and Device Deprovision for the applicable resource scope.
+A user with Device Bulk Actions but without Device Deprovision cannot execute deprovisioning from that dropdown.
+An action remains subject to its selection, eligibility, and provider requirements.
+The permission requirements apply to authorization, not only to the visual state of the menu.
+
+[GRID-06](../ui/patterns.md#entity-grid) records the reusable UI rule.
+Existing GRID-01 guidance keeps supported menu items visible and disables unavailable actions with an explanation.
+The exact button state without Bulk Actions permission remains a design detail to resolve against Figma.
 
 ### Resource access — 2026-09-17
 
@@ -333,7 +354,8 @@ Within overlapping scopes, permissions combine and most permissive wins.
 Each selected OrgUnit has its own "Include descendants" option, which follows the current Google hierarchy when enabled.
 Saved role and collection changes automatically apply to every assignment using them.
 Roles use granular permissions, including the owner's initial device and Google-user examples.
-The remaining permission catalog, action coverage, dependencies, exact assignment controls, scope behavior, and delegation authority remain open.
+Bulk operations require both Bulk Actions and the action-specific permission within the applicable scope.
+The remaining catalog, other permission dependencies, exact controls, scope behavior, and delegation authority remain open.
 
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Identity matching remains open.
@@ -352,6 +374,8 @@ No access-request workflow is permitted.
 - That assignment permits device and Google user reads within the collection. It does not permit edits or out-of-scope reads.
 - Overlapping read and edit assignments allow both actions within their shared scope.
 - Outside the overlap, a read assignment does not gain editing permission from the other assignment.
+- Device Bulk Actions enables access to the dropdown. Device Deprovision additionally permits its deprovision feature.
+- Device Bulk Actions without Device Deprovision does not permit bulk deprovisioning.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
 - An administrator includes descendants for one selected OrgUnit and selects only another OrgUnit without its descendants.
 - A new descendant enters an enabled descendant scope. A moved-out descendant leaves that scope.
@@ -369,7 +393,7 @@ Do not change application code until the owner authorizes implementation.
 Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
-2. Permission action coverage and dependencies, remaining catalog, scope behavior, delegation authority, and group access.
+2. Remaining action coverage and permission dependencies, remaining catalog, scope behavior, delegation authority, and group access.
 3. Identity matching, sign-in method defaults and controls, and external-person entry.
 4. Identity verification and remaining recipient steps.
 5. Email configuration, invitation content, and delivery failure handling.
@@ -381,5 +405,5 @@ Resolve only decisions needed for this workflow. Other gaps remain attached to t
 Record the agreed administrator and recipient interactions, permission assignment, resource access, and interface placement.
 Record the normal outcome and material denied or failed outcomes.
 Inspect relevant Figma compositions before authorized screen implementation. Current compositions are missing.
-Applicable UI rules: UI-01, UI-03, UI-09, and UI-11.
+Applicable UI rules: UI-01, UI-03, UI-09, UI-11, GRID-01, and GRID-06.
 Current validation covers documentation consistency only. No implementation, browser checks, or visual acceptance occurred.

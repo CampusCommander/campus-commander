@@ -1,6 +1,6 @@
 # Agent UI contract
 
-Version: 1.6.0. Updated: 2026-09-17.
+Version: 1.7.0. Updated: 2026-09-17.
 Scope: client pages, shared controls, feature flows, and UI reviews.
 Status: implementation requirements. Product implementation and owner acceptance remain separate evidence.
 
@@ -79,7 +79,7 @@ Use `not-run` for missing evidence. Use `not-applicable` only with a reason.
 
 ```json
 {
-  "contractVersion": "1.6.0",
+  "contractVersion": "1.7.0",
   "page": "<route or component>",
   "primaryJob": "<one user task>",
   "pattern": "entity-grid | entity-detail | centered-form | split-pane | list-detail",

@@ -57,6 +57,17 @@ Examples describe display requirements. They do not define new API payloads or b
 - Store typed values and stable field identifiers. Do not parse displayed chip text into queries.
 - Support arrow navigation, Enter, Escape, visible focus, and announcements for matches and applied changes.
 
+**GRID-06 — Bulk Actions permissions.** Follow the [owner-confirmed dependency](../workflows/platform-access.md#bulk-actions-permission--2026-09-17), dated 2026-09-17.
+
+- Require the entity's Bulk Actions permission for access to its dropdown button.
+- Use action-specific permissions to determine which features are enabled inside the dropdown.
+- Require both permissions within the applicable resource scope for bulk execution.
+- Keep supported menu items visible. Disable unauthorized actions with a permission explanation, as required by GRID-01.
+- Apply selection, eligibility, and provider requirements alongside permission checks.
+- Enforce these permissions through authorization as well as the menu state.
+
+The button's exact presentation without Bulk Actions permission remains subject to Figma design.
+
 **GRID-02 — Qualification.** Reuse the approved Material and LibreGrid integration.
 Verify package compatibility and virtualization behavior during implementation.
 Do not copy historical package versions from a design document.
