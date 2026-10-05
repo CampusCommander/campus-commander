@@ -201,6 +201,7 @@ The owner answered "1" to these options:
 3. Both.
 
 Campus Commander sends invitation emails. The selected delivery method requires configured email delivery.
+[Campus Commander sends email through the connected Google Workspace](#email-delivery-through-google-workspace--2026-10-05).
 Manual sharing of a copyable invitation link is outside this agreed workflow.
 Email transport, provider configuration, and invitation content remain open. [Undelivered invitations stay pending](#invitation-delivery-failures--2026-10-05).
 Email delivery does not determine recipient authentication. The next decision defines access activation.
@@ -221,6 +222,27 @@ Platform Admin can correct the cause and use Resend, or revoke the invitation.
 Assignments configured for that invitee stay in place while the invitation remains pending.
 Campus Commander does not cancel an invitation because of a delivery failure.
 Failure detection, status wording, and other notification remain open.
+
+### Email delivery through Google Workspace — 2026-10-05
+
+The owner answered "Through Google Workspace" to the question:
+
+> How should Campus Commander send its email (invitations and one-time sign-in codes)?
+
+1. SMTP server. Platform Admin enters SMTP server details on a Settings page. It does not depend on the Google connection.
+2. Through Google Workspace. Send through the connected Workspace with the Gmail API. This requires a Gmail send permission, which can send as any user in the domain.
+3. Either, admin chooses. Support both. Platform Admin selects one on the email settings page.
+
+Campus Commander sends invitation emails and email sign-in codes through the connected Google Workspace.
+It uses the Gmail API through the existing domain-wide delegation connection.
+This requires the `https://www.googleapis.com/auth/gmail.send` scope in the delegation configuration.
+That scope permits sending as any user in the domain. Campus Commander sends only its own invitation and sign-in email.
+SMTP configuration is outside the agreed workflow.
+
+Invitation sending and email sign-in codes depend on a connected Workspace with that scope.
+The [current read-only test authorization](../portfolio/phase-3-google-credentials.md#standing-test-authorization--2026-09-17) does not include this scope or sending email.
+Live sending tests require the scope configuration and separate owner authorization.
+The sender mailbox, sender name, and behavior without the scope remain open.
 
 ### Pending invitation actions — 2026-09-18
 
@@ -735,7 +757,7 @@ No access-request workflow is permitted.
 - An external consultant without a Google account accepts through an allowed sign-in method.
 - Platform Admin resends a pending invitation from Platform Users. Campus Commander sends another invitation email.
 - The mail server rejects one invitation email. Platform Users shows that invitation as pending with a delivery-failed status.
-- Platform Admin corrects the email configuration and resends that invitation.
+- Platform Admin corrects the cause and resends that invitation.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
 - Platform Admin removes email-code sign-in from a consultant signed in through an email code. That session ends at once.
@@ -785,7 +807,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method controls, validation message presentation, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
-5. Email configuration and invitation content.
+5. Sender mailbox, behavior without the Gmail send scope, and invitation content.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
