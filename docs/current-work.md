@@ -22,6 +22,7 @@ Removing an allowed sign-in method immediately ends that platform user's session
 Every platform user keeps at least one allowed sign-in method. Removal of the last method is blocked.
 Invitation acceptance requires verification of the invited email address through an allowed method.
 The invitation link opens a sign-in page with the invitee's allowed methods. Signing in accepts the invitation.
+Expired or revoked links show one generic message without sign-in options.
 Platform Admin updates a changed email address. The platform user verifies the new address before the change takes effect.
 Saving the change ends sessions under the former address. The former address cannot sign in.
 Platform Admin restores lost sign-in access. A server operator restores a Platform Admin when no Platform Admin can sign in.

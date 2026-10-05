@@ -467,7 +467,24 @@ The page shows only the sign-in methods allowed for that invitee.
 Signing in through an allowed method verifies the invited address and accepts the invitation in one step.
 No separate Accept button exists.
 Access then activates under the [access activation rule](#access-activation--2026-09-17).
-The destination after acceptance and the messages for expired or revoked links remain open.
+The destination after acceptance remains open. [Expired or revoked links show one generic message](#invalid-invitation-links--2026-10-05).
+
+### Invalid invitation links — 2026-10-05
+
+The owner answered "One generic message" to the question:
+
+> What should someone see when they open an expired or revoked invitation link?
+
+1. One generic message. "This invitation is no longer valid. Contact your administrator." It does not reveal whether the invitation expired or was revoked. It shows no sign-in options.
+2. Specific messages. Expired links ask the person to request a resend. Revoked links state that the invitation was cancelled.
+
+An expired or revoked invitation link shows one message:
+
+> This invitation is no longer valid. Contact your administrator.
+
+The page does not reveal whether the invitation expired or was revoked.
+The page shows no sign-in options.
+The behavior of a link for an already accepted invitation remains open.
 
 ### Access activation — 2026-09-17
 
@@ -995,6 +1012,7 @@ No access-request workflow is permitted.
 - Platform Admin later invites the same address again. Platform Admin selects sign-in methods for the new invitation.
 - That invitee had a pending Librarians and Smith Elementary assignment. Revocation lists and removes it.
 - An invitation expires after seven days without a resend. The recipient cannot use it to activate access.
+- The recipient opens the expired link and sees: "This invitation is no longer valid. Contact your administrator."
 - Platform Admin resends an expired invitation. The recipient receives another email and has seven days to accept.
 - Platform Admin resends an invitation two days before expiry. The recipient now has seven days from that resend.
 - An invited person accepts a valid invitation and verifies their identity. Access activates without another administrator confirmation.
@@ -1038,7 +1056,7 @@ Next decisions:
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. Remaining action coverage, dependencies, catalog, and scope behavior.
 3. Sign-in method controls and validation message presentation.
-4. The recipient's destination after acceptance and messages for expired or revoked links.
+4. The recipient's destination after acceptance and links for already accepted invitations.
 5. Sender name and invitation content.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
