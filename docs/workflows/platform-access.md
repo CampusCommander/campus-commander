@@ -248,7 +248,7 @@ The owner answered "1" to the question:
 Resend gives the recipient seven days from the resend to accept the invitation.
 It replaces the original expiration time with that new deadline.
 Resend does not activate access. The recipient must still accept and verify the invited email address.
-Resend also applies to expired invitations, as confirmed below. Invitations after revocation remain open.
+Resend also applies to expired invitations, as confirmed below. [A revoked address requires a new invitation](#invitations-after-revocation--2026-10-05).
 
 ### Resend expired invitations — 2026-09-18
 
@@ -264,6 +264,23 @@ Campus Commander sends another invitation email with a fresh seven-day validity 
 The administrator does not repeat the add-person process.
 The recipient must still accept the invitation and verify the invited email address before access activates.
 This decision does not authorize resending revoked invitations.
+
+### Invitations after revocation — 2026-10-05
+
+The owner answered "New invitation" to the question:
+
+> After Platform Admin revokes a pending invitation, how can that same email address be invited again?
+
+1. New invitation. The revoked invitation stays revoked. Platform Admin invites the address again through the normal invite flow and selects sign-in methods again.
+2. Resend reactivates it. Resend applies to revoked invitations like expired ones. It keeps the original sign-in method selection.
+3. Cannot be re-invited. A revoked address is blocked from future invitations.
+
+A revoked invitation stays revoked. Resend does not apply to it.
+Platform Admin can invite the same address again through the normal invitation process.
+Platform Admin selects allowed sign-in methods again for the new invitation.
+The new invitation has its own seven-day validity period.
+Revocation does not block future invitations to that address.
+The effect of revocation on assignments configured for the pending invitee remains open.
 
 ### Access activation — 2026-09-17
 
@@ -667,7 +684,8 @@ Every platform user keeps at least one allowed method. Removal of the last allow
 Invitations have a seven-day validity period. Expired or revoked invitations cannot activate access.
 Resend starts a fresh seven-day validity period for pending or expired invitations.
 Invalid recipient addresses block sending until Platform Admin corrects or removes them.
-Delivery failures and invitations after revocation remain open.
+A revoked invitation stays revoked. Platform Admin sends a new invitation to invite that address again.
+Delivery failures remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
 
@@ -687,6 +705,7 @@ No access-request workflow is permitted.
 - Platform Admin cannot remove provider sign-in when it is the consultant's last allowed method.
 - A recipient using a different verified email address cannot accept the invitation.
 - Platform Admin revokes a pending invitation. The recipient cannot accept it to activate access.
+- Platform Admin later invites the same address again. Platform Admin selects sign-in methods for the new invitation.
 - An invitation expires after seven days without a resend. The recipient cannot use it to activate access.
 - Platform Admin resends an expired invitation. The recipient receives another email and has seven days to accept.
 - Platform Admin resends an invitation two days before expiry. The recipient now has seven days from that resend.
@@ -727,7 +746,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method controls, validation message presentation, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
-5. Email configuration, invitation content, invitations after revocation, and delivery failure handling.
+5. Email configuration, invitation content, and delivery failure handling.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
