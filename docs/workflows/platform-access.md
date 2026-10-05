@@ -641,6 +641,21 @@ Google custom schemas apply to the whole domain. OrgUnit collections do not limi
 A role with User Schema Manage grants domain-wide schema control in any assignment that uses it.
 The presentation of this domain-wide permission within scoped assignments remains open.
 
+### Group access deferred — 2026-10-05
+
+The owner answered "Decide with groups work" to the question:
+
+> How should access to Google groups work, given that groups do not belong to OrgUnits?
+
+1. Decide with groups work. Leave group access out of this workflow. Settle it when the groups workflow (G21) starts.
+2. Domain-wide, like schemas. Group permissions apply to every group in the domain. OrgUnit collections do not limit them.
+3. Scoped by members. A group is in scope when its members fall inside the assignment's OrgUnit collection.
+
+Group access is outside this workflow.
+The [groups workflow](../workflow-gaps.md#remaining-product-and-interaction-gaps) (G21) defines group permissions and their scope.
+This workflow defines no group permissions. OrgUnit collections do not establish group scope.
+The development order places groups after devices, Google users, and OUs.
+
 ### Resource access — 2026-09-17
 
 The owner stated:
@@ -654,7 +669,7 @@ It does not establish a separate school entity or authorize school creation.
 The descendant-selection decision below defines the control for each selected OrgUnit.
 The initial workflow has no collection exclusion rules, as confirmed below. Descendant scope follows the current hierarchy.
 The collection and access-assignment decision below defines named reusable collections and their relationship to roles.
-Ordinary group access and the detailed platform permission catalog require separate definitions.
+[Group access is deferred to the groups workflow](#group-access-deferred--2026-10-05). The detailed platform permission catalog requires separate definition.
 Asset Super Admin provides full asset access as confirmed above. Ordinary role assignments remain scoped by OrgUnit collections.
 
 ### Include descendants — 2026-09-17
@@ -965,12 +980,13 @@ Authentication details and scope behavior remain open.
 
 Exclude Google account creation, school creation, and automatic access through an access request.
 OrgUnit collection exclusions are outside the initial workflow.
+Group access is outside this workflow. G21 defines it.
 Do not change application code until the owner authorizes implementation.
 
 Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
-2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
+2. Remaining action coverage, dependencies, catalog, and scope behavior.
 3. Sign-in method controls and validation message presentation.
 4. Identity verification and remaining recipient steps.
 5. Sender name and invitation content.
