@@ -124,7 +124,7 @@ If the administrator permits both methods, either method is available to that pl
 
 This is a platform-user setting. Installation-wide identity-provider configuration remains a separate Provider settings concern.
 Initial methods are selected separately for each recipient before sending, as confirmed below.
-Exact provider-selection controls and effects of method changes on active sessions remain open.
+Exact provider-selection controls remain open. [Removed methods end their active sessions](#removed-sign-in-methods--2026-10-05).
 The invited-email verification rule is confirmed below. Recovery interactions remain open.
 
 ### Sign-in selection before sending — 2026-09-18
@@ -142,6 +142,23 @@ A single shared selection for all recipients does not replace this individual se
 Different recipients can have different allowed methods within the same invitation operation.
 These choices belong to Platform Users. Provider configuration remains on its separate Settings page.
 Exact controls and the Figma composition remain open.
+
+### Removed sign-in methods — 2026-10-05
+
+The owner answered "End it now" to the question:
+
+> If Platform Admin removes a sign-in method from a platform user who is currently signed in through that method, what happens to their session?
+
+1. End it now. Sessions created through the removed method end at once. The person must sign in again through a method that is still allowed.
+2. Keep until it expires. The current session continues. The change applies the next time the person signs in.
+
+Removing an allowed sign-in method immediately ends that platform user's sessions created through that method.
+The platform user signs in again through a method that remains allowed.
+Sessions created through a method that remains allowed continue.
+
+For example, Platform Admin removes email-code sign-in from a consultant who signed in through an email code.
+That session ends at once. The consultant signs in again through provider sign-in.
+The effect of removing every allowed method from a platform user remains open.
 
 ### Invited email verification — 2026-09-17
 
@@ -629,6 +646,7 @@ Platform Admin and Asset Super Admin have fixed definitions and cannot be delete
 
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
+Removing an allowed method immediately ends that platform user's sessions created through it.
 Invitations have a seven-day validity period. Expired or revoked invitations cannot activate access.
 Resend starts a fresh seven-day validity period for pending or expired invitations.
 Invalid recipient addresses block sending until Platform Admin corrects or removes them.
@@ -647,6 +665,8 @@ No access-request workflow is permitted.
 - Platform Admin resends a pending invitation from Platform Users. Campus Commander sends another invitation email.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
+- Platform Admin removes email-code sign-in from a consultant signed in through an email code. That session ends at once.
+- The consultant signs in again through provider sign-in.
 - A recipient using a different verified email address cannot accept the invitation.
 - Platform Admin revokes a pending invitation. The recipient cannot accept it to activate access.
 - An invitation expires after seven days without a resend. The recipient cannot use it to activate access.

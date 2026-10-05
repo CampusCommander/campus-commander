@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-09-18.
+Updated: 2026-10-05.
 
 ## Authorized now
 
@@ -18,6 +18,7 @@ Invalid addresses block sending for that selection until Platform Admin corrects
 External invitees do not need Google accounts.
 Support configured identity providers and emailed one-time sign-in codes for external invitees.
 Platform Admin selects allowed sign-in methods separately for every recipient before sending invitations.
+Removing an allowed sign-in method immediately ends that platform user's sessions created through it.
 Invitation acceptance requires verification of the invited email address through an allowed method.
 
 Campus Commander sends invitation emails.
