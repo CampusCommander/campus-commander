@@ -10,8 +10,10 @@ import {
   type CredentialCipher,
   loadCredentialCipher,
   GoogleConnectionProvider,
+  GoogleDeviceReader,
   type GoogleReadRequest,
 } from '@campus/google-connection';
+import { DeviceSync, type DeviceSyncRequest } from './device-sync';
 
 function secret(reference: SecretReference): Buffer {
   const path =
@@ -29,7 +31,8 @@ export class GoogleWorker {
   private pool?: Pool;
   private config?: DeploymentConfig;
 
-  async read(input: GoogleReadRequest, signal: AbortSignal) {
+  /** Load the credential key and database pool once per process. */
+  private resources(): { pool: Pool; cipher: CredentialCipher } {
     let cipher: CredentialCipher;
     try {
       const path = process.env['CC_CONFIG_FILE'];
@@ -81,7 +84,20 @@ export class GoogleWorker {
         throw new Error('connection-store-unavailable');
       }
     }
-    return new GoogleConnectionProvider(this.pool, cipher).read(input, signal);
+    return { pool: this.pool, cipher };
+  }
+
+  async read(input: GoogleReadRequest, signal: AbortSignal) {
+    const { pool, cipher } = this.resources();
+    return new GoogleConnectionProvider(pool, cipher).read(input, signal);
+  }
+
+  async syncDevices(input: DeviceSyncRequest, signal: AbortSignal) {
+    const { pool, cipher } = this.resources();
+    return new DeviceSync(pool, cipher, new GoogleDeviceReader()).run(
+      input,
+      signal,
+    );
   }
 
   async close() {

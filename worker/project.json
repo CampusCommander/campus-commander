@@ -32,6 +32,13 @@
       "options": {
         "command": "node deployment/images/build.mjs worker"
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "options": {
+        "command": "node --import ./libs/application-contracts/test-register.mjs --test worker/src/*.test.mjs"
+      }
     }
   },
   "tags": []

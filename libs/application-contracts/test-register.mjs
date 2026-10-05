@@ -8,6 +8,12 @@ registerHooks({
         context,
       );
     }
+    if (specifier === '@campus/google-connection') {
+      return nextResolve(
+        new URL('../google-connection/src/index.ts', import.meta.url).href,
+        context,
+      );
+    }
     try {
       return nextResolve(specifier, context);
     } catch (error) {

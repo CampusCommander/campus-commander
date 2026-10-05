@@ -8,6 +8,7 @@ import { createServer as createSecureServer } from 'node:https';
 import {
   handleSyntheticDispatch,
   handleGoogleDispatch,
+  handleDeviceSyncDispatch,
   readDispatchSecret,
 } from './dispatch';
 import { GoogleWorker } from './google-connection';
@@ -59,6 +60,15 @@ const handleRequest: RequestListener = async (request, response) => {
 
   if (
     await handleGoogleDispatch(
+      request,
+      response,
+      { secret: dispatchSecret, signal: stopping.signal },
+      google,
+    )
+  )
+    return;
+  if (
+    await handleDeviceSyncDispatch(
       request,
       response,
       { secret: dispatchSecret, signal: stopping.signal },
