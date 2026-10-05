@@ -255,7 +255,7 @@ The owner answered "1" to these options:
 Campus Commander sends invitation emails. The selected delivery method requires configured email delivery.
 [Campus Commander sends email through the connected Google Workspace](#email-delivery-through-google-workspace--2026-10-05).
 Manual sharing of a copyable invitation link is outside this agreed workflow.
-Email transport, provider configuration, and invitation content remain open. [Undelivered invitations stay pending](#invitation-delivery-failures--2026-10-05).
+Provider configuration remains open. [Invitation content is a fixed standard message](#invitation-content--2026-10-05). [Undelivered invitations stay pending](#invitation-delivery-failures--2026-10-05).
 Email delivery does not determine recipient authentication. The next decision defines access activation.
 It supersedes the historical implementation's copyable invitation without SMTP as the intended delivery workflow.
 
@@ -325,7 +325,7 @@ The owner answered "Platform Settings" to the question:
 Platform Admin selects the sender mailbox on Settings > Platform Settings.
 Provider settings keeps the Google connection and its scopes. It does not hold the sender mailbox.
 No separate Email page exists in the agreed workflow.
-Platform Settings also holds the [sender name](#sender-name--2026-10-05). Placement of invitation content remains open.
+Platform Settings also holds the [sender name](#sender-name--2026-10-05). [Invitation content is not editable](#invitation-content--2026-10-05).
 
 ### Sender name — 2026-10-05
 
@@ -340,6 +340,20 @@ Platform Admin enters the sender name on Settings > Platform Settings, next to t
 Campus Commander uses that name on every invitation email and email sign-in code.
 For example, recipients see email from "Springfield District IT".
 Whether email setup requires a sender name remains open.
+
+### Invitation content — 2026-10-05
+
+The owner answered "Fixed standard message" to the question:
+
+> What should the invitation email contain?
+
+1. Fixed standard message. Campus Commander writes it. Nobody edits it.
+2. Standard plus personal note. Platform Admin adds an optional note when sending.
+3. Admin-edited template. Platform Admin edits the whole template on Platform Settings.
+
+Campus Commander sends a fixed standard invitation message. Nobody edits it.
+The message names the inviting Platform Admin, describes Campus Commander, and contains the link and expiry date.
+No personal note or template setting exists.
 
 ### Sending without email setup — 2026-10-05
 
@@ -1085,7 +1099,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, and scope behavior.
 3. Sign-in method controls and validation message presentation.
 4. The recipient's destination after acceptance.
-5. Invitation content and whether email setup requires a sender name.
+5. Whether email setup requires a sender name.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
