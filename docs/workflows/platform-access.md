@@ -289,7 +289,23 @@ Email setup requires the Gmail send scope on Provider settings and a sender mail
 Platform Users explains that email is not set up and names each missing item.
 Campus Commander creates no invitations while sending is blocked.
 The [delivery-failed status](#invitation-delivery-failures--2026-10-05) applies to failures after a send attempt, not to missing setup.
-The effect of missing email setup on email sign-in codes remains open.
+[Email sign-in codes show a sign-in message without email setup](#email-sign-in-codes-without-email-setup--2026-10-05).
+
+### Email sign-in codes without email setup — 2026-10-05
+
+The owner answered "Sign-in message only" to the question:
+
+> If email stops working (scope removed or no sender mailbox), people allowed only email sign-in codes cannot sign in. What should happen?
+
+1. Message plus admin warning. The sign-in page says that codes are unavailable. Platform Admin also sees a warning with the number of affected platform users.
+2. Sign-in message only. The sign-in page says that codes are unavailable and directs the person to an administrator.
+
+Without email setup, Campus Commander cannot send email sign-in codes.
+The sign-in page tells the platform user that codes are unavailable and directs them to an administrator.
+A platform user allowed only email sign-in codes cannot sign in until email setup is complete.
+A platform user also allowed provider sign-in can still sign in through that provider.
+Campus Commander shows administrators no separate warning about affected platform users.
+The exact message wording remains open.
 
 ### Pending invitation actions — 2026-09-18
 
@@ -806,6 +822,7 @@ No access-request workflow is permitted.
 - The mail server rejects one invitation email. Platform Users shows that invitation as pending with a delivery-failed status.
 - Platform Admin corrects the cause and resends that invitation.
 - Before Platform Admin selects a sender mailbox, Platform Users blocks sending and names the missing mailbox.
+- Email setup stops working. A consultant allowed only email codes sees that codes are unavailable and contacts an administrator.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
 - Platform Admin removes email-code sign-in from a consultant signed in through an email code. That session ends at once.
@@ -855,7 +872,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method controls, validation message presentation, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
-5. Sender name, email sign-in codes without email setup, and invitation content.
+5. Sender name and invitation content.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
