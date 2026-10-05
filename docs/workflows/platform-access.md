@@ -656,6 +656,22 @@ The [groups workflow](../workflow-gaps.md#remaining-product-and-interaction-gaps
 This workflow defines no group permissions. OrgUnit collections do not establish group scope.
 The development order places groups after devices, Google users, and OUs.
 
+### Device OrgUnit moves — 2026-10-05
+
+The owner answered "Source and destination" to the question:
+
+> To move a device from one OrgUnit to another, where does the platform user need Device Write?
+
+1. Source and destination. The person needs Device Write in both the current OrgUnit and the target OrgUnit. The OU picker shows only valid destinations.
+2. Source only. Device Write in the current OrgUnit is enough. The person can move the device out of their own scope.
+
+Moving a device requires Device Write for the device's current OrgUnit and for the destination OrgUnit.
+A platform user cannot move a device out of their writable scope.
+A platform user cannot move a device into an OrgUnit outside their writable scope.
+The OU picker offers only destinations where the platform user has Device Write.
+A bulk move also requires Device Bulk Actions and applies this rule to every selected device.
+The rule for Google user OrgUnit moves remains open.
+
 ### Resource access — 2026-09-17
 
 The owner stated:
@@ -894,6 +910,7 @@ Roles use granular permissions, including the owner's initial device and Google-
 Bulk operations require both Bulk Actions and the action-specific permission within the applicable scope.
 Write, Deprovision, and Bulk Actions include the entity's Read permission within the same scope.
 User Schema Manage covers domain-wide schema definitions only. Custom attribute values require User Write.
+A device move requires Device Write for the current and destination OrgUnits.
 The remaining catalog, other permission dependencies, exact controls, and scope behavior remain open.
 
 Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
@@ -961,6 +978,7 @@ No access-request workflow is permitted.
 - Platform Admin selects Device Write for a role. The role editor shows Device Read as included.
 - An assignment whose role includes User Schema Manage can edit schema definitions for the whole domain.
 - That assignment cannot change custom attribute values without User Write for the user's scope.
+- A platform user with Device Write for Smith Elementary only cannot move a device to Jones Middle.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
 - To omit Administration, Platform Admin selects the required sibling branches instead of including their ancestor with all descendants.
 - Platform Admin adds an OrgUnit to a collection. Include descendants starts off, so the entry includes only that OrgUnit.
