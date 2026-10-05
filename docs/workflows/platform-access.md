@@ -484,7 +484,21 @@ An expired or revoked invitation link shows one message:
 
 The page does not reveal whether the invitation expired or was revoked.
 The page shows no sign-in options.
-The behavior of a link for an already accepted invitation remains open.
+[A link for an already accepted invitation opens the normal sign-in page](#accepted-invitation-links--2026-10-05).
+
+### Accepted invitation links — 2026-10-05
+
+The owner answered "Normal sign-in page" to the question:
+
+> What happens if someone opens an invitation link after the invitation was already accepted?
+
+1. Normal sign-in page. The link works like the regular sign-in page with that person's allowed methods. Sign-in still requires their verified identity.
+2. Generic invalid message. Show the "no longer valid" message. The person signs in through the regular sign-in page.
+
+A link for an already accepted invitation opens the normal sign-in page.
+The page shows the allowed sign-in methods of that platform user.
+Sign-in still requires an allowed method and the platform user's verified email address.
+The link grants no access by itself.
 
 ### Access activation — 2026-09-17
 
@@ -1056,7 +1070,7 @@ Next decisions:
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. Remaining action coverage, dependencies, catalog, and scope behavior.
 3. Sign-in method controls and validation message presentation.
-4. The recipient's destination after acceptance and links for already accepted invitations.
+4. The recipient's destination after acceptance.
 5. Sender name and invitation content.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
