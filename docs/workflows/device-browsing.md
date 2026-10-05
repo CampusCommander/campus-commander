@@ -83,6 +83,9 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - The inventory becomes stale 24 hours after its last publication, or when the latest sync fails.
 - A sync that no worker starts within two minutes ends as interrupted. Refresh all then becomes available again.
 - The first visit shows no devices until an administrator runs Refresh all.
+- A Columns menu in the filter row shows or hides Annotated location and Notes. Figma has no column control.
+- Without a Google connection, Devices directs the administrator to the Google connection page.
+- The OrgUnit filter lists the OrgUnits of the published inventory and their ancestors.
 
 ## States
 
@@ -118,6 +121,7 @@ Inspected on 2026-10-05 in [Figma page 09](https://www.figma.com/design/lqZx6qpW
 
 Deviations from the frames: no School column, no selection column or footer selection controls, and no Bulk Actions or Update device.
 The battery panel names Google's classification instead of a district policy.
+The battery coverage page (`105:146`) is excluded. Device details list the recent reports that Google returns.
 
 ## Exclusions
 

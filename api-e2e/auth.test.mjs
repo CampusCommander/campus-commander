@@ -6,6 +6,7 @@ import { qualifyPhase3RouteSecurity } from './phase3-route-security.mjs';
 import { qualifyGoogleLifecycleApi } from './google-lifecycle.mjs';
 import { qualifySchoolReferencesApi } from './school-references.mjs';
 import { qualifyDevicesApi } from './devices-api.mjs';
+import { qualifyDevicesBrowser } from './devices-browser.mjs';
 import { qualifyGoogleHealth } from './google-health.mjs';
 import { qualifyCustomerSettings } from './customer-settings.mjs';
 import { qualifyGoogleWorker } from './google-connection-worker.mjs';
@@ -2373,6 +2374,16 @@ test(
           browser,
           publicOrigin,
           directory,
+          evidenceDirectory,
+          setSubject: (value) => {
+            subject = value;
+          },
+        });
+      if (applicationPhase === 3)
+        await qualifyDevicesBrowser({
+          browser,
+          auditAccessibility,
+          publicOrigin,
           evidenceDirectory,
           setSubject: (value) => {
             subject = value;

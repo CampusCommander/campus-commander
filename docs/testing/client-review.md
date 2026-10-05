@@ -24,6 +24,8 @@ The **Development review** notice identifies the simulated Google environment on
 - **Your account:** Follow the task links. Change the theme and collapse the navigation.
 - **Google connection:** Select the generated sample service-account file printed in the terminal.
   Enter `administrator@fixture.invalid` as the delegated email. Check the credentials and confirm the simulated customer.
+- **Devices:** Select **Refresh inventory**, add a filter, open a device, and use **Next device** and **Back to devices**.
+  The simulated customer has 450 devices with all battery classes.
 - **Customer settings:** Save a customer display name and inspect the setup progress.
 - **Schools:** Refresh Google units and choose which units belong to each school.
 - **Platform invitations:** Create an invitation and inspect its status.
