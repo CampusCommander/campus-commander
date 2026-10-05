@@ -93,6 +93,13 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
 
     const first = await request();
     assert.equal(first.state.status, 'running');
+    const unclaimed = (
+      await migrator.query(
+        "SELECT sync_expires_at-sync_started_at<=interval '2 minutes' AS short FROM cc.device_sync_state WHERE customer_id=$1",
+        [customer],
+      )
+    ).rows[0];
+    assert.equal(unclaimed.short, true, 'An unclaimed sync expires quickly.');
     await assert.rejects(request(), detail('device-sync-running'));
     const attempt = randomUUID();
     const claimed = await claim(first.id, attempt);

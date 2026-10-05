@@ -111,6 +111,7 @@ BEGIN
   IF p_id IS NULL OR p_correlation IS NULL THEN
     RAISE EXCEPTION 'The sync identifier is required.' USING ERRCODE='22023';
   END IF;
+  -- An unclaimed sync expires quickly. A worker claim extends the lease while pages stage.
   INSERT INTO cc.device_sync_state(customer_id) VALUES(p_customer) ON CONFLICT(customer_id) DO NOTHING;
   SELECT * INTO prior FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
   IF prior.sync_id IS NOT NULL AND prior.sync_expires_at>now_at THEN
@@ -120,7 +121,7 @@ BEGIN
     failure=CASE WHEN prior.sync_id IS NOT NULL THEN 'interrupted' ELSE failure END,
     checked_at=CASE WHEN prior.sync_id IS NOT NULL THEN prior.sync_expires_at ELSE checked_at END,
     sync_id=p_id,sync_actor=p_actor,sync_generation=p_generation,sync_attempt=NULL,
-    sync_started_at=now_at,sync_expires_at=now_at+interval '15 minutes',correlation_id=p_correlation
+    sync_started_at=now_at,sync_expires_at=now_at+interval '2 minutes',correlation_id=p_correlation
   WHERE customer_id=p_customer;
   RETURN cc.device_sync_projection(p_customer);
 END;
