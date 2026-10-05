@@ -80,6 +80,9 @@ No district threshold setting exists. The design text "District policy: Replace 
 
 Excel export, cell range selection, and clipboard copy are not part of this slice.
 
+**Paging.** The owner asked for paging in the device grid.
+The grid pages through the server-side row model. Back to devices returns to the page and row of the opened device.
+
 **Filtering.** The owner chose to keep the chip filter row and add AG Grid column filters.
 The column filters include set filters for Battery and OrgUnit and the Filters side bar.
 Chips and column filters stay in sync and drive one server query.
@@ -95,6 +98,7 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - The inventory becomes stale 24 hours after its last publication, or when the latest sync fails.
 - A sync that no worker starts within two minutes ends as interrupted. Refresh all then becomes available again.
 - The first visit shows no devices until an administrator runs Refresh all.
+- Pages hold 100 devices by default. The page size selector offers 50, 100, and 250.
 - A Columns menu in the filter row shows or hides Annotated location and Notes. Figma has no column control.
 - Without a Google connection, Devices directs the administrator to the Google connection page.
 - The OrgUnit filter lists the OrgUnits of the published inventory and their ancestors.
