@@ -294,7 +294,7 @@ SMTP configuration is outside the agreed workflow.
 Invitation sending and email sign-in codes depend on a connected Workspace with that scope.
 The [current read-only test authorization](../portfolio/phase-3-google-credentials.md#standing-test-authorization--2026-09-17) does not include this scope or sending email.
 Live sending tests require the scope configuration and separate owner authorization.
-[Platform Admin selects the sender mailbox](#sender-mailbox--2026-10-05). [Missing email setup blocks invitation sending](#sending-without-email-setup--2026-10-05). The sender name remains open.
+[Platform Admin selects the sender mailbox](#sender-mailbox--2026-10-05). [Missing email setup blocks invitation sending](#sending-without-email-setup--2026-10-05). [Platform Admin sets the sender name](#sender-name--2026-10-05).
 
 ### Sender mailbox — 2026-10-05
 
@@ -310,7 +310,7 @@ Platform Admin selects one sender mailbox in the connected domain.
 Campus Commander sends every invitation email and email sign-in code from that mailbox.
 The sender mailbox is separate from the delegated administrator account of the Google connection.
 Invitations do not come from the address of the inviting Platform Admin.
-[Platform Settings holds this selection](#sender-mailbox-placement--2026-10-05). The sender name remains open. [Invitation sending stays blocked until selection](#sending-without-email-setup--2026-10-05).
+[Platform Settings holds this selection](#sender-mailbox-placement--2026-10-05). [Platform Admin sets the sender name](#sender-name--2026-10-05). [Invitation sending stays blocked until selection](#sending-without-email-setup--2026-10-05).
 
 ### Sender mailbox placement — 2026-10-05
 
@@ -325,7 +325,21 @@ The owner answered "Platform Settings" to the question:
 Platform Admin selects the sender mailbox on Settings > Platform Settings.
 Provider settings keeps the Google connection and its scopes. It does not hold the sender mailbox.
 No separate Email page exists in the agreed workflow.
-Placement of the sender name and invitation content remains open.
+Platform Settings also holds the [sender name](#sender-name--2026-10-05). Placement of invitation content remains open.
+
+### Sender name — 2026-10-05
+
+The owner answered "Admin sets it" to the question:
+
+> What sender name should Campus Commander's emails show (invitations and sign-in codes)?
+
+1. Admin sets it. Platform Admin enters the sender name on Platform Settings, next to the sender mailbox.
+2. Always "Campus Commander". A fixed name with no setting.
+
+Platform Admin enters the sender name on Settings > Platform Settings, next to the sender mailbox.
+Campus Commander uses that name on every invitation email and email sign-in code.
+For example, recipients see email from "Springfield District IT".
+Whether email setup requires a sender name remains open.
 
 ### Sending without email setup — 2026-10-05
 
@@ -1071,7 +1085,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, and scope behavior.
 3. Sign-in method controls and validation message presentation.
 4. The recipient's destination after acceptance.
-5. Sender name and invitation content.
+5. Invitation content and whether email setup requires a sender name.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 

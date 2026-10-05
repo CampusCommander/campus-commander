@@ -30,6 +30,7 @@ Platform Admin restores lost sign-in access. A server operator restores a Platfo
 Campus Commander sends invitation emails.
 It sends invitations and email sign-in codes through the connected Google Workspace with the Gmail send scope.
 Platform Admin selects one sender mailbox in the connected domain for that email on Settings > Platform Settings.
+Platform Admin also sets the sender name on Platform Settings.
 Missing email setup blocks invitation sending. Platform Users names each missing item.
 Without email setup, the sign-in page tells email-code users that codes are unavailable. Administrators receive no separate warning.
 Platform Admin can resend or revoke pending invitations from Settings > Platform Users.
@@ -76,7 +77,7 @@ Group access is outside this workflow. The groups workflow (G21) defines it.
 A device move requires Device Write for the current and destination OrgUnits.
 A Google user move requires User Write for the current and destination OrgUnits.
 
-Sign-in method controls, role details, OrgUnit scope behavior, the sender name, and exact screen compositions remain open.
+Sign-in method controls, role details, OrgUnit scope behavior, invitation content, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
 Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.
