@@ -24,6 +24,7 @@ Invitation acceptance requires verification of the invited email address through
 
 Campus Commander sends invitation emails.
 It sends invitations and email sign-in codes through the connected Google Workspace with the Gmail send scope.
+Platform Admin selects one sender mailbox in the connected domain for that email.
 Platform Admin can resend or revoke pending invitations from Settings > Platform Users.
 Invitations remain valid for seven days. Resend starts a fresh seven-day period for pending or expired invitations.
 Expired or revoked invitations cannot activate access.
@@ -63,7 +64,7 @@ The permission list is explicitly non-exhaustive.
 Bulk Actions grants access to the dropdown button. Action-specific permissions determine which features are enabled within it.
 Bulk operations require both permissions within the applicable scope. Other action coverage and dependencies remain open.
 
-Sign-in method controls, identity-change recovery, role details, OrgUnit scope behavior, the sender mailbox, and exact screen compositions remain open.
+Sign-in method controls, identity-change recovery, role details, OrgUnit scope behavior, sender mailbox placement, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
 Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.

@@ -242,7 +242,23 @@ SMTP configuration is outside the agreed workflow.
 Invitation sending and email sign-in codes depend on a connected Workspace with that scope.
 The [current read-only test authorization](../portfolio/phase-3-google-credentials.md#standing-test-authorization--2026-09-17) does not include this scope or sending email.
 Live sending tests require the scope configuration and separate owner authorization.
-The sender mailbox, sender name, and behavior without the scope remain open.
+[Platform Admin selects the sender mailbox](#sender-mailbox--2026-10-05). The sender name and behavior without the scope remain open.
+
+### Sender mailbox — 2026-10-05
+
+The owner answered "Admin-chosen mailbox" to the question:
+
+> Which Workspace mailbox should Campus Commander send its email from?
+
+1. Admin-chosen mailbox. Platform Admin selects one address in the domain. Every invitation and sign-in code comes from that address.
+2. Inviting admin's address. Each invitation comes from the Platform Admin who sent it. Sign-in codes still need a separate fixed address.
+3. Connection's admin account. Use the delegated administrator account of the Google connection.
+
+Platform Admin selects one sender mailbox in the connected domain.
+Campus Commander sends every invitation email and email sign-in code from that mailbox.
+The sender mailbox is separate from the delegated administrator account of the Google connection.
+Invitations do not come from the address of the inviting Platform Admin.
+The Settings page for this selection, sender name, and the state before selection remain open.
 
 ### Pending invitation actions — 2026-09-18
 
@@ -807,7 +823,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method controls, validation message presentation, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
-5. Sender mailbox, behavior without the Gmail send scope, and invitation content.
+5. Sender mailbox placement in Settings, behavior without the Gmail send scope, and invitation content.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
