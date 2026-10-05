@@ -35,7 +35,7 @@ export class GoogleConnectionError extends Error {
   }
 }
 
-function failure(
+export function failure(
   error: unknown,
   stage: 'token' | 'read' = 'read',
 ): GoogleConnectionError {
@@ -182,7 +182,11 @@ function domainObservation(
 }
 
 /** Bound every SDK request, including signed token exchange and introspection. */
-function boundClient(client: OAuth2Client, signal: AbortSignal) {
+function boundClient(
+  client: OAuth2Client,
+  signal: AbortSignal,
+  limit = responseLimit,
+) {
   const request = client.transporter.request.bind(client.transporter);
   client.transporter.request = (options) => {
     const url = new URL(options?.url ?? '');
@@ -191,9 +195,13 @@ function boundClient(client: OAuth2Client, signal: AbortSignal) {
         ['/token', '/tokeninfo'].includes(url.pathname)) ||
       (url.origin === 'https://admin.googleapis.com' &&
         (url.pathname === '/admin/directory/v1/customers/my_customer' ||
-          /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/(?:domains|orgunits)$/.test(
+          /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/(?:domains|orgunits|devices\/chromeos)$/.test(
             url.pathname,
-          )));
+          ))) ||
+      (url.origin === 'https://chromemanagement.googleapis.com' &&
+        /^\/v1\/customers\/C[A-Za-z0-9]{4,31}\/telemetry\/devices$/.test(
+          url.pathname,
+        ));
     if (!allowed) throw new GoogleConnectionError('request-failed');
     return request({
       ...options,
@@ -202,17 +210,18 @@ function boundClient(client: OAuth2Client, signal: AbortSignal) {
       retry: false,
       retryConfig: { retry: 0 },
       maxRedirects: 0,
-      maxContentLength: responseLimit,
-      size: responseLimit,
+      maxContentLength: limit,
+      size: limit,
     });
   };
 }
 
 /** Obtain one exact-scope token without changing the shared customer token profile. */
-async function scopedClient(
+export async function scopedClient(
   credential: DelegatedCredential,
   scope: string,
   signal: AbortSignal,
+  limit = responseLimit,
 ): Promise<OAuth2Client> {
   try {
     const issuer = new JWT({
@@ -240,7 +249,7 @@ async function scopedClient(
       access_token: token,
       expiry_date: info.expiry_date,
     });
-    boundClient(client, signal);
+    boundClient(client, signal, limit);
     return client;
   } catch (error) {
     throw failure(error, 'token');

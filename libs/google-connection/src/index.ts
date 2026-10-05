@@ -17,6 +17,7 @@ export {
 } from './lib/provider';
 
 export { GoogleConnectionProvider, GoogleStoreError } from './lib/coordinator';
+export { GoogleDeviceReader } from './lib/devices';
 export type {
   GoogleConnectionDatabase,
   GoogleReadRequest,
