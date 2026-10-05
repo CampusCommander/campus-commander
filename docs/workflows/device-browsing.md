@@ -72,6 +72,18 @@ Schools have no defined entity. Revisit the column after that definition exists.
 
 No district threshold setting exists. The design text "District policy: Replace soon below 80%" changes to name Google as the source.
 
+**Grid features.** The owner chose these LibreGrid features on top of the server-side row model:
+
+- Column tools: the column menu and the Columns side bar for showing, hiding, reordering, pinning, and resizing columns.
+- Server-side selection with a status bar, including Select All across the filtered set.
+- Server-side grouping by OrgUnit, model, or battery class, with counts per group.
+
+Excel export, cell range selection, and clipboard copy are not part of this slice.
+
+**Filtering.** The owner chose to keep the chip filter row and add AG Grid column filters.
+The column filters include set filters for Battery and OrgUnit and the Filters side bar.
+Chips and column filters stay in sync and drive one server query.
+
 ## Implementation defaults — 2026-10-05
 
 These defaults are engineering choices, not owner decisions. Change them when the owner asks.
@@ -126,7 +138,8 @@ The battery coverage page (`105:146`) is excluded. Device details list the recen
 ## Exclusions
 
 - School column and any school entity.
-- Row selection, Select All, Show All Selected, Refresh selected, and Bulk Actions. They arrive with the first device action.
+- Refresh selected and Bulk Actions. They arrive with the first device action. Selection itself is in scope.
+- Excel export, cell range selection, and clipboard copy.
 - In-grid editors, Update device, commands, status changes, and CSV.
 - Saved filters and personal grid preferences ([G12](../workflow-gaps.md#remaining-product-and-interaction-gaps)).
 - Access-assignment enforcement and district battery thresholds.
