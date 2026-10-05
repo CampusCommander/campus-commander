@@ -71,7 +71,7 @@ The owner answered "1" to the question:
 If recipient review finds an invalid email address, sending is blocked for the selected recipients.
 Platform Admin must correct or remove each invalid address before sending any invitations in that selection.
 The application does not send only to the valid addresses while invalid addresses remain in the selection.
-This rule concerns validation before sending. Delivery failures after sending remain a separate unresolved behavior.
+This rule concerns validation before sending. [Undelivered invitations stay pending](#invitation-delivery-failures--2026-10-05).
 Exact validation message presentation remains a design requirement.
 
 ### External invitees without Google accounts — 2026-09-17
@@ -202,9 +202,25 @@ The owner answered "1" to these options:
 
 Campus Commander sends invitation emails. The selected delivery method requires configured email delivery.
 Manual sharing of a copyable invitation link is outside this agreed workflow.
-Email transport, provider configuration, invitation content, and delivery failure handling remain open.
+Email transport, provider configuration, and invitation content remain open. [Undelivered invitations stay pending](#invitation-delivery-failures--2026-10-05).
 Email delivery does not determine recipient authentication. The next decision defines access activation.
 It supersedes the historical implementation's copyable invitation without SMTP as the intended delivery workflow.
+
+### Invitation delivery failures — 2026-10-05
+
+The owner answered "Stays pending, flagged" to the question:
+
+> If Campus Commander cannot deliver an invitation email (for example, the mail server rejects it), what happens to that invitation?
+
+1. Stays pending, flagged. The invitation stays pending with a delivery-failed status on Platform Users. Platform Admin can fix the cause and resend, or revoke. Assignments configured in advance stay in place.
+2. Cancelled automatically. Campus Commander cancels the invitation and notifies Platform Admin, who sends a new invitation.
+
+An undelivered invitation stays pending.
+Platform Users shows a delivery-failed status for that invitation.
+Platform Admin can correct the cause and use Resend, or revoke the invitation.
+Assignments configured for that invitee stay in place while the invitation remains pending.
+Campus Commander does not cancel an invitation because of a delivery failure.
+Failure detection, status wording, and other notification remain open.
 
 ### Pending invitation actions — 2026-09-18
 
@@ -219,7 +235,7 @@ Platform Admin can resend or revoke a pending invitation from Settings > Platfor
 Resend sends another invitation email to the invited address without requiring the administrator to repeat the invitation process.
 Revoke prevents acceptance of that invitation. It cannot activate platform access after revocation.
 These actions concern pending invitations. They do not define suspension or removal of an active platform user.
-The invitation validity period is seven days. Resend restarts that period, as confirmed below. Delivery failure handling remains open.
+The invitation validity period is seven days. Resend restarts that period, as confirmed below. [Undelivered invitations stay pending](#invitation-delivery-failures--2026-10-05).
 
 ### Invitation validity period — 2026-09-18
 
@@ -705,7 +721,7 @@ Resend starts a fresh seven-day validity period for pending or expired invitatio
 Invalid recipient addresses block sending until Platform Admin corrects or removes them.
 A revoked invitation stays revoked. Platform Admin sends a new invitation to invite that address again.
 Revocation removes the assignments configured for that invitee. A new invitation starts with no assignments.
-Delivery failures remain open.
+An undelivered invitation stays pending with a delivery-failed status on Platform Users.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
 
@@ -718,6 +734,8 @@ No access-request workflow is permitted.
 - Before sending together, Platform Admin permits provider sign-in for one recipient and email codes for the other.
 - An external consultant without a Google account accepts through an allowed sign-in method.
 - Platform Admin resends a pending invitation from Platform Users. Campus Commander sends another invitation email.
+- The mail server rejects one invitation email. Platform Users shows that invitation as pending with a delivery-failed status.
+- Platform Admin corrects the email configuration and resends that invitation.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
 - Platform Admin removes email-code sign-in from a consultant signed in through an email code. That session ends at once.
@@ -767,7 +785,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method controls, validation message presentation, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
-5. Email configuration, invitation content, and delivery failure handling.
+5. Email configuration and invitation content.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 

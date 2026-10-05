@@ -28,6 +28,7 @@ Invitations remain valid for seven days. Resend starts a fresh seven-day period 
 Expired or revoked invitations cannot activate access.
 A revoked invitation stays revoked. Platform Admin sends a new invitation to invite that address again.
 Revocation removes the assignments configured for that invitee. A new invitation starts with no assignments.
+An undelivered invitation stays pending with a delivery-failed status. Platform Admin can resend or revoke it.
 Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
 Administrators can configure pending invitees' assignments on Access Assignments. They take effect after acceptance and identity verification.
 
