@@ -72,6 +72,17 @@ export const routes: Routes = [
           import('./devices/devices').then((m) => m.DevicesPage),
       },
       {
+        path: 'devices/:deviceId',
+        title: 'Device details · Campus Commander',
+        canActivate: [
+          () =>
+            devicesReadable(inject(AuthStore)) ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () =>
+          import('./devices/device-detail').then((m) => m.DeviceDetailPage),
+      },
+      {
         path: 'schools',
         title: 'Schools · Campus Commander',
         canActivate: [
