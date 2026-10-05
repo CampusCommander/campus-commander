@@ -583,7 +583,7 @@ This replaces "Device Deprecate" in the permission labels. The original quotatio
 The owner explicitly confirmed that the list is non-exhaustive.
 Define additional permissions as their workflows require them. Do not require the entire catalog before progress.
 
-User Schema Manage is confirmed as a distinct permission. Its schema-definition and field-value boundaries remain open.
+User Schema Manage is confirmed as a distinct permission. [It covers custom schema definitions only](#user-schema-manage-coverage--2026-10-05).
 These permissions concern managed Google resources. Platform administration permissions remain a separate part of the catalog.
 
 ### Bulk Actions permission — 2026-09-17
@@ -624,6 +624,22 @@ Read remains included while any permission that includes it remains selected.
 The included Read applies within the same access assignment scope.
 Included Read does not grant any other action permission.
 The Read dependency of User Schema Manage remains open.
+
+### User Schema Manage coverage — 2026-10-05
+
+The owner answered "Definitions only" to the question:
+
+> What does User Schema Manage cover?
+
+1. Definitions only. Create, edit, and delete custom attribute definitions. Changing custom attribute values on users still requires User Write within that user's scope. Schemas apply to the whole domain, so OrgUnit collections do not limit this permission.
+2. Definitions and values. Covers schema definitions and custom attribute values on users, without User Write.
+
+User Schema Manage permits creating, editing, and deleting Google Workspace custom user schema definitions.
+It does not permit changing custom attribute values on Google users.
+Changing a user's custom attribute values requires User Write within the scope that contains that user.
+Google custom schemas apply to the whole domain. OrgUnit collections do not limit User Schema Manage.
+A role with User Schema Manage grants domain-wide schema control in any assignment that uses it.
+The presentation of this domain-wide permission within scoped assignments remains open.
 
 ### Resource access — 2026-09-17
 
@@ -862,6 +878,7 @@ Deletion is blocked while assignments reference a role or OrgUnit collection. Re
 Roles use granular permissions, including the owner's initial device and Google-user examples.
 Bulk operations require both Bulk Actions and the action-specific permission within the applicable scope.
 Write, Deprovision, and Bulk Actions include the entity's Read permission within the same scope.
+User Schema Manage covers domain-wide schema definitions only. Custom attribute values require User Write.
 The remaining catalog, other permission dependencies, exact controls, and scope behavior remain open.
 
 Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
@@ -927,6 +944,8 @@ No access-request workflow is permitted.
 - Device Bulk Actions enables access to the dropdown. Device Deprovision additionally permits its deprovision feature.
 - Device Bulk Actions without Device Deprovision does not permit bulk deprovisioning.
 - Platform Admin selects Device Write for a role. The role editor shows Device Read as included.
+- A Librarians assignment with User Schema Manage can edit schema definitions for the whole domain.
+- That assignment cannot change custom attribute values without User Write for the user's scope.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
 - To omit Administration, Platform Admin selects the required sibling branches instead of including their ancestor with all descendants.
 - Platform Admin adds an OrgUnit to a collection. Include descendants starts off, so the entry includes only that OrgUnit.
