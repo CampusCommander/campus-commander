@@ -16,14 +16,16 @@ const columns = {
   annotatedLocation: 'd.annotated_location',
   notes: 'd.notes',
 } as const;
+/** A failed telemetry read in the published sync makes every battery unavailable. */
+const batteryStatus =
+  "CASE WHEN s.telemetry_failure IS NOT NULL THEN 'unavailable' ELSE d.battery_status END";
 const batteryOrder =
-  "CASE d.battery_status WHEN 'reported' THEN CASE d.battery_health WHEN 'replace-now' THEN 0 WHEN 'replace-soon' THEN 1 ELSE 2 END WHEN 'no-report' THEN 3 ELSE 4 END";
+  "CASE WHEN s.telemetry_failure IS NOT NULL THEN 4 WHEN d.battery_status='reported' THEN CASE d.battery_health WHEN 'replace-now' THEN 0 WHEN 'replace-soon' THEN 1 ELSE 2 END WHEN d.battery_status='no-report' THEN 3 ELSE 4 END";
 const healthValues = new Set(['normal', 'replace-soon', 'replace-now']);
 const from =
   'FROM cc.device_sync_state s JOIN cc.devices d ON d.sync_id=s.current_sync_id';
 
-export const deviceColumns =
-  'd.device_id,d.serial_number,d.model,d.asset_tag,d.org_unit_path,d.last_contact,d.annotated_location,d.notes,d.battery_status,d.battery_health,d.battery_capacity_percent,d.battery_reported_at';
+export const deviceColumns = `d.device_id,d.serial_number,d.model,d.asset_tag,d.org_unit_path,d.last_contact,d.annotated_location,d.notes,${batteryStatus} AS battery_status,d.battery_health,d.battery_capacity_percent,d.battery_reported_at`;
 
 export interface SqlStatement {
   text: string;
@@ -62,10 +64,10 @@ function deviceWhere(
       const parts: string[] = [];
       if (health.length)
         parts.push(
-          `(d.battery_status='reported' AND d.battery_health=ANY(${add(health)}::text[]))`,
+          `(s.telemetry_failure IS NULL AND d.battery_status='reported' AND d.battery_health=ANY(${add(health)}::text[]))`,
         );
       if (missing.length)
-        parts.push(`d.battery_status=ANY(${add(missing)}::text[])`);
+        parts.push(`${batteryStatus}=ANY(${add(missing)}::text[])`);
       clauses.push(`(${parts.join(' OR ')})`);
     } else if (predicate.field === 'lastContact') {
       clauses.push(
@@ -116,7 +118,7 @@ export function deviceDetailSql(
   deviceId: string,
 ): SqlStatement {
   return {
-    text: `SELECT ${deviceColumns},d.battery_reports,s.observed_at ${from} WHERE s.customer_id=$1 AND d.device_id=$2`,
+    text: `SELECT ${deviceColumns},CASE WHEN s.telemetry_failure IS NOT NULL THEN '[]'::jsonb ELSE d.battery_reports END AS battery_reports,s.observed_at ${from} WHERE s.customer_id=$1 AND d.device_id=$2`,
     values: [customerId, deviceId],
   };
 }

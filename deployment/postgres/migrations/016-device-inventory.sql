@@ -1,4 +1,5 @@
 -- Device inventory publishes one complete sync per customer. Reads never take connection locks.
+-- Publication only switches the current sync. Reads derive unavailable battery data from telemetry_failure.
 INSERT INTO cc.application_actions(action,scope_kinds) VALUES('devices:read',ARRAY['platform','district']);
 
 CREATE TABLE cc.device_sync_state (
@@ -225,11 +226,6 @@ BEGIN
   END IF;
   IF p_failure IS NULL THEN
     PERFORM cc.google_current_generation(p_customer,pending.sync_generation);
-    IF p_telemetry_failure IS NOT NULL THEN
-      UPDATE cc.devices SET battery_status='unavailable',battery_health=NULL,battery_capacity_percent=NULL,
-        battery_reported_at=NULL,battery_reports='[]'::jsonb
-      WHERE sync_id=p_id;
-    END IF;
     UPDATE cc.device_sync_state SET current_sync_id=p_id,generation=pending.sync_generation,observed_at=now_at,
       device_count=(SELECT count(*) FROM cc.devices WHERE sync_id=p_id),telemetry_failure=p_telemetry_failure,failure=NULL
     WHERE customer_id=p_customer;

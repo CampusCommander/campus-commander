@@ -78,9 +78,10 @@ test('battery filters combine Google classes and missing data with OR', () => {
       },
     ],
   });
-  assert.match(
-    rows.text,
-    /\(\(d\.battery_status='reported' AND d\.battery_health=ANY\(\$2::text\[\]\)\) OR d\.battery_status=ANY\(\$3::text\[\]\)\)/,
+  assert.ok(
+    rows.text.includes(
+      "((s.telemetry_failure IS NULL AND d.battery_status='reported' AND d.battery_health=ANY($2::text[])) OR CASE WHEN s.telemetry_failure IS NOT NULL THEN 'unavailable' ELSE d.battery_status END=ANY($3::text[]))",
+    ),
   );
   assert.deepEqual(rows.values.slice(1, 3), [['replace-soon'], ['no-report']]);
 });
@@ -103,7 +104,7 @@ test('empty, date, and battery sorts use fixed expressions', () => {
   const battery = query({ sort: { field: 'battery', direction: 'desc' } });
   assert.match(
     battery.rows.text,
-    /ORDER BY CASE d\.battery_status .* END DESC NULLS LAST,d\.device_id DESC/,
+    /ORDER BY CASE WHEN s\.telemetry_failure .* END DESC NULLS LAST,d\.device_id DESC/,
   );
 });
 
@@ -149,4 +150,30 @@ test('rows map database values to the device contract', () => {
   });
   assert.equal(detail.observedAt, '2026-10-05T12:05:00.000Z');
   assert.equal(detail.batteryReports.length, 1);
+});
+
+test('a failed telemetry read makes every battery unavailable at read time', () => {
+  const effective =
+    "CASE WHEN s.telemetry_failure IS NOT NULL THEN 'unavailable' ELSE d.battery_status END";
+  const { rows } = query({});
+  assert.ok(rows.text.includes(`${effective} AS battery_status`));
+  const filtered = query({
+    predicates: [
+      {
+        field: 'battery',
+        operator: 'is',
+        values: ['replace-soon', 'unavailable'],
+      },
+    ],
+  });
+  assert.ok(
+    filtered.rows.text.includes(
+      `((s.telemetry_failure IS NULL AND d.battery_status='reported' AND d.battery_health=ANY($2::text[])) OR ${effective}=ANY($3::text[]))`,
+    ),
+  );
+  const sorted = query({ sort: { field: 'battery', direction: 'asc' } });
+  assert.match(
+    sorted.rows.text,
+    /ORDER BY CASE WHEN s\.telemetry_failure IS NOT NULL THEN 4 /,
+  );
 });

@@ -174,9 +174,10 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     assert.equal(unavailable.status, 'ready');
     assert.equal(unavailable.telemetryFailure, 'permission-denied');
     rows = await published();
+    // Publication never rewrites staged rows. Reads derive unavailable data from telemetryFailure.
     assert.deepEqual(
       rows.map((row) => row.battery_status),
-      ['unavailable'],
+      ['no-report'],
     );
     assert.equal(await purge(), 2);
 
