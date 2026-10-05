@@ -569,7 +569,8 @@ The owner named these initial permissions:
 | Google users | User Read, User Write, User Schema Manage, User Bulk Actions |
 
 These are distinct permission choices. A single broad "Manage devices" or "Manage users" permission does not replace them.
-The list is illustrative, not a complete catalog. Exact action coverage and dependencies require definition before dependent implementation.
+The list is illustrative, not a complete catalog. Exact action coverage and other dependencies require definition before dependent implementation.
+[Write, Deprovision, and Bulk Actions include the entity's Read permission](#included-read-permission--2026-10-05).
 Do not assume Write includes Deprovision, schema management, or bulk actions.
 Bulk Actions and action-specific permissions work together as confirmed below.
 
@@ -605,6 +606,24 @@ The permission requirements apply to authorization, not only to the visual state
 [GRID-06](../ui/patterns.md#entity-grid) records the reusable UI rule.
 Existing GRID-01 guidance keeps supported menu items visible and disables unavailable actions with an explanation.
 The exact button state without Bulk Actions permission remains a design detail to resolve against Figma.
+
+### Included Read permission — 2026-10-05
+
+The owner answered "Include Read automatically" to the question:
+
+> Should Device Write, Device Deprovision, and Device Bulk Actions (and the matching User permissions) depend on the Read permission for the same entity?
+
+1. Require Read explicitly. A role cannot be saved with those permissions unless it also has Read.
+2. Include Read automatically. Selecting any of those permissions also grants Read. The role editor shows Read as included.
+3. Keep them independent. A role can have Write without Read.
+
+Device Write, Device Deprovision, and Device Bulk Actions each include Device Read.
+User Write and User Bulk Actions each include User Read.
+The role editor shows the included Read permission when one of these permissions is selected.
+Read remains included while any permission that includes it remains selected.
+The included Read applies within the same access assignment scope.
+Included Read does not grant any other action permission.
+The Read dependency of User Schema Manage remains open.
 
 ### Resource access — 2026-09-17
 
@@ -842,6 +861,7 @@ Saved role and collection changes automatically apply to every assignment using 
 Deletion is blocked while assignments reference a role or OrgUnit collection. Resolve those references on Access Assignments first.
 Roles use granular permissions, including the owner's initial device and Google-user examples.
 Bulk operations require both Bulk Actions and the action-specific permission within the applicable scope.
+Write, Deprovision, and Bulk Actions include the entity's Read permission within the same scope.
 The remaining catalog, other permission dependencies, exact controls, and scope behavior remain open.
 
 Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
@@ -906,6 +926,7 @@ No access-request workflow is permitted.
 - Outside the overlap, a read assignment does not gain editing permission from the other assignment.
 - Device Bulk Actions enables access to the dropdown. Device Deprovision additionally permits its deprovision feature.
 - Device Bulk Actions without Device Deprovision does not permit bulk deprovisioning.
+- Platform Admin selects Device Write for a role. The role editor shows Device Read as included.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
 - To omit Administration, Platform Admin selects the required sibling branches instead of including their ancestor with all descendants.
 - Platform Admin adds an OrgUnit to a collection. Include descendants starts off, so the entry includes only that OrgUnit.

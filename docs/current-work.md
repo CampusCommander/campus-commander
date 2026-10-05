@@ -67,7 +67,8 @@ The owner named distinct read, write, bulk-action, device-deprovisioning, and us
 The permission list is explicitly non-exhaustive.
 
 Bulk Actions grants access to the dropdown button. Action-specific permissions determine which features are enabled within it.
-Bulk operations require both permissions within the applicable scope. Other action coverage and dependencies remain open.
+Bulk operations require both permissions within the applicable scope.
+Write, Deprovision, and Bulk Actions include the entity's Read permission. Other action coverage and dependencies remain open.
 
 Sign-in method controls, role details, OrgUnit scope behavior, the sender name, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
