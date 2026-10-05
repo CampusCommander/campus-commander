@@ -4,85 +4,28 @@ Updated: 2026-10-05.
 
 ## Authorized now
 
-The documentation reset was committed and pushed as `a19acd0` on `codex/documentation-scope-reset`.
-Do not repeat the documentation audit.
+Build one active workflow: [browse ChromeOS devices](workflows/device-browsing.md).
+Source: development order steps 2 and 3 below, and owner decisions on 2026-10-05.
+The owner authorized implementation on 2026-10-05, after the workflow record.
 
-Resolve one active workflow: [add a platform user and assign access](workflows/platform-access.md).
-Source: the owner's platform-access discussion on 2026-09-17 through 2026-09-18.
-Ask one focused question at a time. Record answers in the workflow and update the relevant gap entries.
+The slice reads data only. It covers the device grid, typed filters, device details, battery health, and the designed states.
+Battery health uses Google's classification. The School column, selection, Bulk Actions, and every device change are excluded.
+Inspect the [linked Figma frames](workflows/device-browsing.md#design) before implementing each screen.
+Use focused `codex/` branches. Do not merge without owner authorization.
 
-The owner confirmed directory selection, invitations outside the Workspace, and no access requests.
-Platform Admin selects one or more people in a searchable Google directory grid and sends their invitations together.
-For external invitees, Platform Admin enters or pastes one or more email addresses and reviews the recipients before sending.
-Invalid addresses block sending for that selection until Platform Admin corrects or removes them.
-External invitees do not need Google accounts.
-Support configured identity providers and emailed one-time sign-in codes for external invitees.
-Platform Admin selects allowed sign-in methods separately for every recipient before sending invitations.
-Removing an allowed sign-in method immediately ends that platform user's sessions created through it.
-Every platform user keeps at least one allowed sign-in method. Removal of the last method is blocked.
-Invitation acceptance requires verification of the invited email address through an allowed method.
-The invitation link opens a sign-in page with the invitee's allowed methods. Signing in accepts the invitation.
-Expired or revoked links show one generic message without sign-in options. Accepted invitation links open the normal sign-in page.
-Platform Admin updates a changed email address. The platform user verifies the new address before the change takes effect.
-Saving the change ends sessions under the former address. The former address cannot sign in.
-Platform Admin restores lost sign-in access. A server operator restores a Platform Admin when no Platform Admin can sign in.
+## Recorded, not active
 
-Campus Commander sends invitation emails.
-It sends invitations and email sign-in codes through the connected Google Workspace with the Gmail send scope.
-Platform Admin selects one sender mailbox in the connected domain for that email on Settings > Platform Settings.
-Platform Admin also sets the sender name on Platform Settings. Invitation email uses a fixed standard message.
-Missing email setup blocks invitation sending. Platform Users names each missing item.
-Without email setup, the sign-in page tells email-code users that codes are unavailable. Administrators receive no separate warning.
-Platform Admin can resend or revoke pending invitations from Settings > Platform Users.
-Invitations remain valid for seven days. Resend starts a fresh seven-day period for pending or expired invitations.
-Expired or revoked invitations cannot activate access.
-A revoked invitation stays revoked. Platform Admin sends a new invitation to invite that address again.
-Revocation removes the assignments configured for that invitee. A new invitation starts with no assignments.
-An undelivered invitation stays pending with a delivery-failed status. Platform Admin can resend or revoke it.
-Access activates after invitation acceptance and identity verification, without a second administrator confirmation.
-Administrators can configure pending invitees' assignments on Access Assignments. They take effect after acceptance and identity verification.
+[Add a platform user and assign access](workflows/platform-access.md) holds the owner's access decisions through 2026-10-05.
+The workflow file is the only description of those decisions. Do not restate them here.
+The remaining items are screen compositions and control details. Settle them against Figma when that workflow is built.
+Implementation of platform access is not authorized.
 
-Administrators assign granular permissions through reusable roles, without individual permission exceptions.
-Named OrgUnit collections define resource scope and represent schools for access administration.
-Administrators control "Include descendants" separately for each selected OrgUnit.
-It defaults to off for each OrgUnit added to a collection.
-Initial collections have no exclusion rules. Platform Admin selects the required OrgUnits and optional descendants.
+On 2026-10-05, the owner warned against designing "curtains for a dog house."
+Ask the owner only about decisions that are expensive to change or that block the next buildable step.
+Choose sensible defaults for other details during implementation and record them in the workflow.
 
-Enabled descendant scopes follow the current Google hierarchy, including new or moved-in descendants and excluding moved-out descendants.
-
-An ordinary asset access assignment associates a platform user with a role and an OrgUnit collection.
-A platform user can have multiple access assignments, each with its own role-and-collection pairing.
-Within overlapping scopes, permissions combine and most permissive wins.
-Saved role and collection changes automatically apply to every assignment using them.
-Deletion is blocked while assignments reference a role or collection. Platform Admin must change or remove those assignments first.
-
-Asset Super Admin is a special built-in role representing full managed Google resource access.
-Platform Admin has full asset access through that distinct role and can assign any role to any platform user.
-Platform administration and asset administration remain explicit, separate responsibilities.
-Platform Admin and Asset Super Admin have fixed, undeletable definitions. Platform Admin manages who holds them.
-Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.
-Delegated access administration is outside the initial workflow.
-
-The owner also established [settings organization and layout rules](ui/rules.md#ui-11--settings-organization-and-visible-work).
-Platform Users, Platform Roles and Permissions, OrgUnit Collections, and Access Assignments each have their own Settings page.
-Access Assignments uses a grid of platform user, role, and OrgUnit collection.
-The owner named distinct read, write, bulk-action, device-deprovisioning, and user-schema permissions in the [workflow](workflows/platform-access.md#granular-permissions--2026-09-17).
-The permission list is explicitly non-exhaustive.
-
-Bulk Actions grants access to the dropdown button. Action-specific permissions determine which features are enabled within it.
-Bulk operations require both permissions within the applicable scope.
-Write, Deprovision, and Bulk Actions include the entity's Read permission. Other action coverage and dependencies remain open.
-User Schema Manage covers domain-wide schema definitions only. Custom attribute values require User Write.
-Group access is outside this workflow. The groups workflow (G21) defines it.
-A device move requires Device Write for the current and destination OrgUnits.
-A Google user move requires User Write for the current and destination OrgUnits.
-
-Sign-in method controls, role details, OrgUnit scope behavior, and exact screen compositions remain open.
-Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
-
-Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.
+The documentation reset was committed and pushed as `a19acd0`. Do not repeat the documentation audit.
 Do not require resolution of all 27 gaps before progress.
-Application implementation remains paused until the owner authorizes it.
 Exclude feature removal, broad qualification suites, branch merges, Jira synchronization, and deferred infrastructure work.
 Existing code remains available for inspection. Its existence does not settle product choices.
 
@@ -96,7 +39,7 @@ Existing code remains available for inspection. Its existence does not settle pr
 - Reuse the approved Easton read-only fixture within the [recorded boundary](portfolio/phase-3-google-credentials.md#standing-test-authorization--2026-09-17).
 - Do not require an Education domain or populated collections for ordinary API plumbing.
 - Keep real credentials out of the simulated client-review environment.
-- Do not merge branches or remove existing application features during this documentation task.
+- Do not merge branches or remove existing application features without owner authorization.
 
 ## Development order after the reset
 
@@ -104,8 +47,8 @@ This order replaces execution by historical phase checklist. It does not silentl
 
 1. Resolve the access and navigation decisions in G01–G07 before changing those workflows.
 2. Use the existing administrator access and connection to build the first usable device browsing workflow.
-3. Demonstrate device filtering, selection, and details against the linked Figma designs.
-4. Add one agreed device edit through preview, confirmation, a job, and visible results.
+3. Demonstrate device filtering, battery health, and details against the linked Figma designs.
+4. Add selection and one agreed device edit through preview, confirmation, a job, and visible results.
 5. Expand device actions and CSV workflows after resolving their specific open decisions.
 6. Reuse the working interaction patterns for Google users, OUs, and groups, in that order.
 7. Define Fleet Status and reports before implementing them.
@@ -116,7 +59,7 @@ Read-only device work does not depend on school creation, invitations, or comple
 Device-specific Google scopes and method support still require verification before real provider access.
 The existing test authorization does not include device writes.
 
-This is an ordering decision for future work, not an instruction to start application implementation now.
+Steps 2 and 3 are active, as the owner authorized on 2026-10-05. Later steps require their own authorization.
 Keep one workflow active. Finish its usable result before expanding the feature surface.
 
 ## How to choose and finish a task
