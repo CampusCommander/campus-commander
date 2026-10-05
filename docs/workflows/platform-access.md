@@ -158,7 +158,23 @@ Sessions created through a method that remains allowed continue.
 
 For example, Platform Admin removes email-code sign-in from a consultant who signed in through an email code.
 That session ends at once. The consultant signs in again through provider sign-in.
-The effect of removing every allowed method from a platform user remains open.
+Every platform user keeps at least one allowed method, as confirmed below.
+
+### At least one sign-in method — 2026-10-05
+
+The owner answered "Block it" to the question:
+
+> Can Platform Admin remove every allowed sign-in method from a platform user?
+
+1. Block it. Every platform user keeps at least one allowed method. To stop access, Platform Admin uses the separate disable or remove action.
+2. Allow it. Their sessions end, and they cannot sign in until a method is added back. Their account and access assignments stay in place.
+
+Every platform user keeps at least one allowed sign-in method.
+Campus Commander blocks removal of a platform user's last allowed method.
+Platform Admin can replace that method by adding another allowed method first.
+To stop a platform user's access, Platform Admin uses the separate disable or remove action.
+That action belongs to the [remove access workflow](../workflow-gaps.md#decisions-needed-for-access-and-setup) (G08), which remains open.
+The blocked-removal presentation remains a design requirement.
 
 ### Invited email verification — 2026-09-17
 
@@ -647,6 +663,7 @@ Platform Admin and Asset Super Admin have fixed definitions and cannot be delete
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
 Removing an allowed method immediately ends that platform user's sessions created through it.
+Every platform user keeps at least one allowed method. Removal of the last allowed method is blocked.
 Invitations have a seven-day validity period. Expired or revoked invitations cannot activate access.
 Resend starts a fresh seven-day validity period for pending or expired invitations.
 Invalid recipient addresses block sending until Platform Admin corrects or removes them.
@@ -667,6 +684,7 @@ No access-request workflow is permitted.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
 - Platform Admin removes email-code sign-in from a consultant signed in through an email code. That session ends at once.
 - The consultant signs in again through provider sign-in.
+- Platform Admin cannot remove provider sign-in when it is the consultant's last allowed method.
 - A recipient using a different verified email address cannot accept the invitation.
 - Platform Admin revokes a pending invitation. The recipient cannot accept it to activate access.
 - An invitation expires after seven days without a resend. The recipient cannot use it to activate access.

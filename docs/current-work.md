@@ -19,6 +19,7 @@ External invitees do not need Google accounts.
 Support configured identity providers and emailed one-time sign-in codes for external invitees.
 Platform Admin selects allowed sign-in methods separately for every recipient before sending invitations.
 Removing an allowed sign-in method immediately ends that platform user's sessions created through it.
+Every platform user keeps at least one allowed sign-in method. Removal of the last method is blocked.
 Invitation acceptance requires verification of the invited email address through an allowed method.
 
 Campus Commander sends invitation emails.
