@@ -453,6 +453,22 @@ Removed assignments do not change the referenced roles or OrgUnit collections.
 This decision applies to revocation. It does not define assignments for expired invitations.
 The exact list presentation remains a design requirement.
 
+### Opening the invitation link — 2026-10-05
+
+The owner answered "Straight to sign-in" to the question:
+
+> When an invitee opens the link in their invitation email, what should they see?
+
+1. Straight to sign-in. A page names Campus Commander and shows only the sign-in methods allowed for that invitee. Signing in verifies the invited address and accepts the invitation in one step.
+2. Accept button first. A page shows the invitation details and an Accept button. The invitee then signs in and verifies.
+
+The invitation link opens a sign-in page that names Campus Commander.
+The page shows only the sign-in methods allowed for that invitee.
+Signing in through an allowed method verifies the invited address and accepts the invitation in one step.
+No separate Accept button exists.
+Access then activates under the [access activation rule](#access-activation--2026-09-17).
+The destination after acceptance and the messages for expired or revoked links remain open.
+
 ### Access activation — 2026-09-17
 
 The owner answered "1" to the question:
@@ -906,7 +922,8 @@ While the invitation is pending, an administrator can configure assignments on t
 The recipient accepts a valid invitation and verifies their identity. Access activates immediately without another administrator confirmation.
 Previously configured assignments take effect after acceptance and identity verification.
 
-The exact entry controls, identity verification steps, success presentation, and return path remain open.
+The invitation link [opens a sign-in page with the invitee's allowed methods](#opening-the-invitation-link--2026-10-05). Signing in accepts the invitation.
+The exact entry controls, success presentation, and return path remain open.
 
 ## Permissions and failures
 
@@ -953,6 +970,7 @@ No access-request workflow is permitted.
 
 - Platform Admin selects three staff members in the searchable Google directory grid and sends their invitations together.
 - Each selected staff member must accept and verify their invited email address before their own access activates.
+- A staff member opens the invitation link and sees provider sign-in only. Signing in accepts the invitation.
 - Platform Admin pastes two external email addresses and reviews the recipients.
 - If one address is invalid, no invitations in that selection are sent until it is corrected or removed.
 - Before sending together, Platform Admin permits provider sign-in for one recipient and email codes for the other.
@@ -1020,7 +1038,7 @@ Next decisions:
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. Remaining action coverage, dependencies, catalog, and scope behavior.
 3. Sign-in method controls and validation message presentation.
-4. Identity verification and remaining recipient steps.
+4. The recipient's destination after acceptance and messages for expired or revoked links.
 5. Sender name and invitation content.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
