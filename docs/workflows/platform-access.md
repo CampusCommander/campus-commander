@@ -944,7 +944,7 @@ No access-request workflow is permitted.
 - Device Bulk Actions enables access to the dropdown. Device Deprovision additionally permits its deprovision feature.
 - Device Bulk Actions without Device Deprovision does not permit bulk deprovisioning.
 - Platform Admin selects Device Write for a role. The role editor shows Device Read as included.
-- A Librarians assignment with User Schema Manage can edit schema definitions for the whole domain.
+- An assignment whose role includes User Schema Manage can edit schema definitions for the whole domain.
 - That assignment cannot change custom attribute values without User Write for the user's scope.
 - An administrator scopes resource access to one OrgUnit or a collection of OrgUnits.
 - To omit Administration, Platform Admin selects the required sibling branches instead of including their ancestor with all descendants.
