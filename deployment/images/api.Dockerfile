@@ -33,7 +33,7 @@ COPY --from=build --chown=node:node /workspace/deployment/bootstrap/access.mjs /
 COPY --from=build --chown=node:node /workspace/deployment/bootstrap/application-edge.mjs ./deployment/bootstrap/
 COPY --from=build --chown=node:node /workspace/deployment/bootstrap/application-access.mjs /workspace/deployment/bootstrap/application-access-cli.mjs ./deployment/bootstrap/
 COPY --from=build --chown=node:node /workspace/deployment/kestra/render-config.mjs ./deployment/kestra/
-COPY --from=build --chown=node:node /workspace/deployment/kestra/phase2-connection.yaml ./deployment/kestra/
+COPY --from=build --chown=node:node /workspace/deployment/kestra/phase2-connection.yaml /workspace/deployment/kestra/device-sync.yaml ./deployment/kestra/
 COPY --from=build --chown=node:node /workspace/deployment/postgres/index.mjs /workspace/deployment/postgres/cli.mjs /workspace/deployment/postgres/secrets.mjs ./deployment/postgres/
 COPY --from=build --chown=node:node /workspace/deployment/postgres/migrations ./deployment/postgres/migrations
 COPY --from=build --chown=node:node /workspace/deployment/redis/runtime.mjs /workspace/deployment/redis/probe.mjs ./deployment/redis/
