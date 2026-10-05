@@ -112,6 +112,7 @@ export async function loadMigrations() {
       '013-school-definitions',
       '014-school-grants',
       '015-restore-revalidation',
+      '016-device-inventory',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -244,6 +245,18 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.read_google_candidate(uuid,integer,uuid,text),
         cc.confirm_google_customer(uuid,integer,uuid,text,text,jsonb,uuid),
         cc.read_google_connection(uuid,integer) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '016-device-inventory')) {
+      await client.query(`GRANT SELECT ON cc.devices, cc.device_sync_state TO ${role};
+        GRANT EXECUTE ON FUNCTION cc.device_reader(uuid,integer),
+        cc.read_device_sync(uuid,integer),
+        cc.request_device_sync(uuid,integer,text,integer,uuid,uuid),
+        cc.abandon_device_sync(uuid,integer,text,uuid,text),
+        cc.claim_device_sync(text,uuid,uuid),
+        cc.stage_devices(text,uuid,uuid,jsonb),
+        cc.stage_device_batteries(text,uuid,uuid,jsonb),
+        cc.finish_device_sync(text,uuid,uuid,text,text),
+        cc.purge_device_syncs(text,integer) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

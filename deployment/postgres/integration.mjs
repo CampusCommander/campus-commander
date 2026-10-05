@@ -1,4 +1,5 @@
 import { qualifySchoolReferences } from './school-references.integration.mjs';
+import { qualifyDeviceInventory } from './device-inventory.integration.mjs';
 import { qualifyRestoredAccess } from './restore-access.integration.mjs';
 import { qualifyGoogleLifecycle } from './google-lifecycle.integration.mjs';
 import { qualifyGoogleHealth } from './google-health.integration.mjs';
@@ -421,7 +422,14 @@ try {
       [principalId],
     )
   ).rows;
-  assert.equal(grants.length, 11);
+  assert.equal(
+    grants.length,
+    (
+      await runtime.query(
+        'SELECT count(*)::integer AS n FROM cc.application_actions',
+      )
+    ).rows[0].n,
+  );
   assert.ok(grants.every(({ scope }) => scope.kind === 'platform'));
   const afterConfirmation = (
     await runtime.query('SELECT * FROM cc.application_principals WHERE id=$1', [
@@ -532,6 +540,13 @@ try {
       runtime,
       migrator: migrators[0],
       connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyDeviceInventory({
+      runtime,
+      migrator: migrators[0],
       issuer,
     })),
   );
