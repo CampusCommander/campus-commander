@@ -25,6 +25,7 @@ Invitation acceptance requires verification of the invited email address through
 Campus Commander sends invitation emails.
 It sends invitations and email sign-in codes through the connected Google Workspace with the Gmail send scope.
 Platform Admin selects one sender mailbox in the connected domain for that email on Settings > Platform Settings.
+Missing email setup blocks invitation sending. Platform Users names each missing item.
 Platform Admin can resend or revoke pending invitations from Settings > Platform Users.
 Invitations remain valid for seven days. Resend starts a fresh seven-day period for pending or expired invitations.
 Expired or revoked invitations cannot activate access.

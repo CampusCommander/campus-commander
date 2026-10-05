@@ -242,7 +242,7 @@ SMTP configuration is outside the agreed workflow.
 Invitation sending and email sign-in codes depend on a connected Workspace with that scope.
 The [current read-only test authorization](../portfolio/phase-3-google-credentials.md#standing-test-authorization--2026-09-17) does not include this scope or sending email.
 Live sending tests require the scope configuration and separate owner authorization.
-[Platform Admin selects the sender mailbox](#sender-mailbox--2026-10-05). The sender name and behavior without the scope remain open.
+[Platform Admin selects the sender mailbox](#sender-mailbox--2026-10-05). [Missing email setup blocks invitation sending](#sending-without-email-setup--2026-10-05). The sender name remains open.
 
 ### Sender mailbox — 2026-10-05
 
@@ -258,7 +258,7 @@ Platform Admin selects one sender mailbox in the connected domain.
 Campus Commander sends every invitation email and email sign-in code from that mailbox.
 The sender mailbox is separate from the delegated administrator account of the Google connection.
 Invitations do not come from the address of the inviting Platform Admin.
-[Platform Settings holds this selection](#sender-mailbox-placement--2026-10-05). The sender name and the state before selection remain open.
+[Platform Settings holds this selection](#sender-mailbox-placement--2026-10-05). The sender name remains open. [Invitation sending stays blocked until selection](#sending-without-email-setup--2026-10-05).
 
 ### Sender mailbox placement — 2026-10-05
 
@@ -274,6 +274,22 @@ Platform Admin selects the sender mailbox on Settings > Platform Settings.
 Provider settings keeps the Google connection and its scopes. It does not hold the sender mailbox.
 No separate Email page exists in the agreed workflow.
 Placement of the sender name and invitation content remains open.
+
+### Sending without email setup — 2026-10-05
+
+The owner answered "Block sending" to the question:
+
+> If email is not ready (no Gmail send scope, or no sender mailbox selected), what happens when Platform Admin tries to send invitations?
+
+1. Block sending. Platform Users explains that email is not set up and names the missing item. No invitations are created until email works.
+2. Create them as failed. The invitations appear as pending with a delivery-failed status. Platform Admin resends them once email works.
+
+Campus Commander blocks invitation sending until email setup is complete.
+Email setup requires the Gmail send scope on Provider settings and a sender mailbox on Platform Settings.
+Platform Users explains that email is not set up and names each missing item.
+Campus Commander creates no invitations while sending is blocked.
+The [delivery-failed status](#invitation-delivery-failures--2026-10-05) applies to failures after a send attempt, not to missing setup.
+The effect of missing email setup on email sign-in codes remains open.
 
 ### Pending invitation actions — 2026-09-18
 
@@ -789,6 +805,7 @@ No access-request workflow is permitted.
 - Platform Admin resends a pending invitation from Platform Users. Campus Commander sends another invitation email.
 - The mail server rejects one invitation email. Platform Users shows that invitation as pending with a delivery-failed status.
 - Platform Admin corrects the cause and resends that invitation.
+- Before Platform Admin selects a sender mailbox, Platform Users blocks sending and names the missing mailbox.
 - The consultant accepts the invitation and verifies identity through a sign-in method allowed by the administrator.
 - A platform user restricted to provider sign-in cannot sign in through an email code.
 - Platform Admin removes email-code sign-in from a consultant signed in through an email code. That session ends at once.
@@ -838,7 +855,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method controls, validation message presentation, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
-5. Sender name, behavior without the Gmail send scope, and invitation content.
+5. Sender name, email sign-in codes without email setup, and invitation content.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
