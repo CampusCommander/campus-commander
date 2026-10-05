@@ -76,7 +76,10 @@ No district threshold setting exists. The design text "District policy: Replace 
 
 Implement the designed loading, empty, offline, and stale states.
 A filter with no matches shows the no-matches state with Clear filters.
-A device without battery data shows the reason when it is known: policy off, unsupported device, or no report yet.
+A device without battery data shows "No battery report".
+That message names two common causes: the `ReportDevicePowerStatus` policy is off, or the device has no battery.
+Google withholds battery data in both cases, so Campus Commander cannot tell them apart.
+A failed telemetry read shows battery data as unavailable for every device.
 Follow [DETAIL-02](../ui/patterns.md#entity-detail). Missing reports are not healthy readings.
 
 ## Examples
@@ -84,7 +87,7 @@ Follow [DETAIL-02](../ui/patterns.md#entity-detail). Missing reports are not hea
 - The administrator filters "Asset tag starts with HS-04" and "Battery is Replace soon". The footer shows six matching devices.
 - The administrator opens C0A1-7F2D. The panel shows "Replace soon" and 78% of design capacity, classified by Google.
 - Next device opens C0A1-7F31, the next row in the filtered order.
-- A device without the power-status policy shows that battery reporting is off.
+- A device without battery reports shows "No battery report" and names the power-status policy as a common cause.
 - A sync fails. The grid keeps the previous inventory and shows the stale state with its observation time.
 
 ## Design
@@ -119,7 +122,7 @@ Demonstrate in the simulated review environment:
 1. Browse the device grid and show and hide the optional columns.
 2. Apply and remove a filter of each visible field type, then clear all filters.
 3. Open details, use Next device, and return with filters and position intact.
-4. Show each battery class and the no-report reasons.
+4. Show each battery class, a device without reports, and unavailable telemetry.
 5. Show the loading, empty, no-matches, offline, and stale states.
 
 Run lint, tests, and builds for the affected Nx projects. Add API tests for the query contract and an end-to-end test for the main flow.

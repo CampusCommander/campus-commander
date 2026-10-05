@@ -12,6 +12,7 @@ export const actionSchema = z.enum([
   'schools:read',
   'schools:manage',
   'security-events:read',
+  'devices:read',
 ]);
 export type Action = z.infer<typeof actionSchema>;
 
@@ -38,6 +39,7 @@ export const actionScopeKinds: Readonly<
   'schools:read': ['platform', 'district', 'school'],
   'schools:manage': ['platform', 'district'],
   'security-events:read': ['platform', 'district', 'school'],
+  'devices:read': ['platform', 'district'],
 };
 
 export const grantSchema = z

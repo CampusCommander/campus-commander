@@ -18,3 +18,4 @@ export {
 } from './lib/google-connection';
 
 export * from './lib/school-scopes';
+export * from './lib/devices';

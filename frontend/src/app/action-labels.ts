@@ -12,4 +12,5 @@ export const actionLabels: Record<Action, string> = {
   'schools:read': 'View schools',
   'schools:manage': 'Manage schools',
   'security-events:read': 'View security events',
+  'devices:read': 'View devices',
 };
