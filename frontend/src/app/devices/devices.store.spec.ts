@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { AuthStore } from '../auth.store';
@@ -23,7 +24,19 @@ const page = {
   observedAt: '2026-10-05T12:00:00.000Z',
 };
 
-function setup(request: ReturnType<typeof vi.fn>) {
+const sessionFor = (id: string) => ({
+  identity: {
+    id,
+    permissionVersion: 1,
+    grants: [{ action: 'devices:read', scope: { kind: 'platform' } }],
+  },
+  csrfToken: 'session',
+});
+
+function setup(
+  request: ReturnType<typeof vi.fn>,
+  session = signal(sessionFor('actor')),
+) {
   TestBed.configureTestingModule({
     providers: [
       {
@@ -31,14 +44,7 @@ function setup(request: ReturnType<typeof vi.fn>) {
         useValue: {
           request,
           metadata: () => ({ phase: 3 }),
-          session: () => ({
-            identity: {
-              id: 'actor',
-              permissionVersion: 1,
-              grants: [{ action: 'devices:read', scope: { kind: 'platform' } }],
-            },
-            csrfToken: 'session',
-          }),
+          session,
           interrupted: () => false,
         },
       },
@@ -126,9 +132,70 @@ it('follows a refresh that is already running', async () => {
 
 it('changing filters reloads the grid and forgets the row position', () => {
   const store = setup(vi.fn());
-  store.position.set(4);
+  store.position.set({ index: 4, deviceId: 'd4' });
   const before = store.revision();
   store.setPredicates([{ field: 'notes', operator: 'isEmpty' }]);
   expect(store.revision()).toBe(before + 1);
+  expect(store.position()).toBeNull();
+});
+
+it('resumes following a running refresh after Reconnect', async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ sync: state('running') }, { status: 201 }),
+    )
+    .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    .mockResolvedValueOnce(Response.json({ sync: state('running') }))
+    .mockResolvedValueOnce(Response.json({ sync: state('ready') }));
+  const store = setup(request);
+  await store.refreshAll();
+  expect(store.offline()).toBe(true);
+  expect(store.sync()?.status).toBe('running');
+  const before = store.revision();
+  await store.reconnect();
+  expect(store.sync()?.status).toBe('ready');
+  expect(store.revision()).toBe(before + 1);
+});
+
+it('stops following a refresh when the session ends', async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ sync: state('running') }, { status: 201 }),
+    )
+    .mockResolvedValue(
+      Response.json({ code: 'access-changed' }, { status: 401 }),
+    );
+  const store = setup(request);
+  await store.refreshAll();
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
+it('ignores counts from a query whose filters changed meanwhile', async () => {
+  let finish: (response: Response) => void = () => undefined;
+  const request = vi.fn().mockImplementationOnce(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const store = setup(request);
+  const pending = store.rows(0, 100);
+  store.setPredicates([{ field: 'notes', operator: 'isEmpty' }]);
+  finish(Response.json({ page }));
+  await pending;
+  expect(store.page()).toBeNull();
+});
+
+it('clears browsing state when a different person signs in', () => {
+  const session = signal(sessionFor('actor'));
+  const store = setup(vi.fn(), session);
+  TestBed.tick();
+  store.setPredicates([{ field: 'notes', operator: 'isEmpty' }]);
+  store.position.set({ index: 2, deviceId: 'd2' });
+  session.set(sessionFor('someone-else'));
+  TestBed.tick();
+  expect(store.predicates()).toEqual([]);
   expect(store.position()).toBeNull();
 });

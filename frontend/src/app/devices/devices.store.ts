@@ -1,4 +1,11 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import {
+  Injectable,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import {
   deviceDetailSchema,
   deviceOrgUnitsSchema,
@@ -44,8 +51,8 @@ export class DevicesStore {
   readonly error = signal('');
   /** Increments when the grid must reload from the first block. */
   readonly revision = signal(0);
-  /** Row index of the last opened device in the current filtered order. */
-  readonly position = signal<number | null>(null);
+  /** Row index and ID of the last opened device in the current filtered order. */
+  readonly position = signal<{ index: number; deviceId: string } | null>(null);
   readonly optionalColumns = signal<Record<OptionalDeviceColumn, boolean>>({
     annotatedLocation: false,
     notes: false,
@@ -53,6 +60,35 @@ export class DevicesStore {
   readonly refreshing = computed(() => this.sync()?.status === 'running');
   readonly readable = computed(() => devicesReadable(this.auth));
   private polling = false;
+  /** Increments on sign-in by another person. A running poll stops when it changes. */
+  private epoch = 0;
+  private identity: string | null = null;
+
+  constructor() {
+    effect(() => {
+      const identity = this.auth.session()?.identity.id ?? null;
+      untracked(() => {
+        if (identity === null) return;
+        if (this.identity !== null && identity !== this.identity) this.reset();
+        this.identity = identity;
+      });
+    });
+  }
+
+  /** Browsing state belongs to one person. Another sign-in starts clean. */
+  private reset(): void {
+    this.epoch++;
+    this.sync.set(null);
+    this.syncLoaded.set(false);
+    this.predicates.set([]);
+    this.sort.set({ field: 'serialNumber', direction: 'asc' });
+    this.page.set(null);
+    this.orgUnits.set([]);
+    this.offline.set(false);
+    this.error.set('');
+    this.position.set(null);
+    this.revision.update((value) => value + 1);
+  }
 
   private async call(path: string, body?: unknown): Promise<Response | null> {
     try {
@@ -70,18 +106,20 @@ export class DevicesStore {
     if (this.refreshing()) await this.poll();
   }
 
-  async loadSync(): Promise<void> {
+  /** Returns false when the status could not be read, so callers stop polling. */
+  async loadSync(): Promise<boolean> {
     const response = await this.call('/api/devices/sync');
-    if (!response) return;
+    if (!response) return false;
     if (!response.ok) {
       this.error.set('Device inventory status is unavailable.');
-      return;
+      return false;
     }
     this.error.set('');
     this.sync.set(
       deviceSyncStateSchema.nullable().parse((await response.json()).sync),
     );
     this.syncLoaded.set(true);
+    return true;
   }
 
   async refreshAll(): Promise<void> {
@@ -107,24 +145,26 @@ export class DevicesStore {
   private async poll(): Promise<void> {
     if (this.polling) return;
     this.polling = true;
+    const epoch = this.epoch;
     try {
       while (this.sync()?.status === 'running') {
         await new Promise((resolve) => setTimeout(resolve, this.pollInterval));
-        await this.loadSync();
-        if (this.offline()) return;
+        if (epoch !== this.epoch || !(await this.loadSync())) return;
       }
-      this.revision.update((value) => value + 1);
+      if (epoch === this.epoch) this.revision.update((value) => value + 1);
     } finally {
       this.polling = false;
     }
   }
 
   async reconnect(): Promise<void> {
-    await this.loadSync();
-    if (!this.offline()) this.revision.update((value) => value + 1);
+    if (!(await this.loadSync())) return;
+    if (this.refreshing()) await this.poll();
+    else this.revision.update((value) => value + 1);
   }
 
   async rows(offset: number, limit: number): Promise<DevicePage | null> {
+    const revision = this.revision();
     const response = await this.call('/api/devices/query', {
       predicates: this.predicates(),
       sort: this.sort(),
@@ -133,6 +173,8 @@ export class DevicesStore {
     });
     if (!response?.ok) return null;
     const page = devicePageSchema.parse((await response.json()).page);
+    // A response for filters that changed meanwhile must not replace the counts.
+    if (revision !== this.revision()) return page;
     this.page.set({
       matching: page.matching,
       total: page.total,

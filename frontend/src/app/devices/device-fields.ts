@@ -146,7 +146,11 @@ export function orgUnitOptions(
       const parts = path.split('/').filter(Boolean);
       return {
         path,
-        label: parts.at(-1) ?? 'All organization units',
+        // Repeated names such as Students need their full path during search.
+        label:
+          lower && parts.length
+            ? path
+            : (parts.at(-1) ?? 'All organization units'),
         depth: parts.length,
       };
     });

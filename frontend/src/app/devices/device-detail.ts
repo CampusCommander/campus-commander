@@ -31,10 +31,17 @@ export class DeviceDetailPage {
   protected readonly status = signal<
     'loading' | 'ready' | 'missing' | 'offline'
   >('loading');
+  protected readonly busy = signal(false);
   protected readonly hasNext = computed(() => {
     const position = this.store.position();
     const page = this.store.page();
-    return position !== null && page !== null && position + 1 < page.matching;
+    // Browser history can show another device than the remembered row.
+    return (
+      position !== null &&
+      position.deviceId === this.deviceId() &&
+      page !== null &&
+      position.index + 1 < page.matching
+    );
   });
   protected readonly relative = relativeTime;
 
@@ -46,9 +53,12 @@ export class DeviceDetailPage {
   }
 
   private async load(id: string): Promise<void> {
-    this.status.set('loading');
+    // Keep the current device visible while the next one loads, so focus stays on Next device.
+    if (!this.device()) this.status.set('loading');
+    this.busy.set(true);
     const device = await this.store.device(id);
     if (this.deviceId() !== id) return;
+    this.busy.set(false);
     this.device.set(device);
     this.status.set(
       device ? 'ready' : this.store.offline() ? 'offline' : 'missing',
@@ -62,9 +72,12 @@ export class DeviceDetailPage {
   protected async next(): Promise<void> {
     const position = this.store.position();
     if (position === null) return;
-    const row = await this.store.neighbor(position + 1);
+    const row = await this.store.neighbor(position.index + 1);
     if (!row) return;
-    this.store.position.set(position + 1);
+    this.store.position.set({
+      index: position.index + 1,
+      deviceId: row.deviceId,
+    });
     await this.router.navigate(['/devices', row.deviceId]);
   }
 

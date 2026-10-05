@@ -1,4 +1,8 @@
-import type { ColDef } from 'ag-grid-community';
+import type {
+  CellKeyDownEvent,
+  ColDef,
+  FullWidthCellKeyDownEvent,
+} from 'ag-grid-community';
 import type { DeviceRow } from '@campus/application-contracts';
 import {
   DEVICE_FIELDS,
@@ -61,4 +65,20 @@ export function deviceColumnDefs(
       }),
     ),
   ];
+}
+
+/** Enter or Space on a focused details cell opens the device (UI-09 keyboard access). */
+export function detailsKeyHandler(
+  onDetails: (row: DeviceRow, index: number) => void,
+) {
+  return (
+    event: CellKeyDownEvent<DeviceRow> | FullWidthCellKeyDownEvent<DeviceRow>,
+  ): void => {
+    const keyboard = event.event as KeyboardEvent | null | undefined;
+    if (!('column' in event) || event.column.getColId() !== 'details') return;
+    if (keyboard?.key !== 'Enter' && keyboard?.key !== ' ') return;
+    if (!event.data || event.rowIndex === null) return;
+    keyboard.preventDefault();
+    onDetails(event.data, event.rowIndex);
+  };
 }

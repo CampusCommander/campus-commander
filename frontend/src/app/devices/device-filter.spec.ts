@@ -40,6 +40,7 @@ function setup(orgUnits: DeviceOrgUnit[] = []) {
     type('[role="combobox"]', text);
   };
   return {
+    fixture,
     element,
     applied,
     closed: () => closed,
@@ -156,4 +157,12 @@ it('closes on Escape without applying', () => {
   expect(closed()).toBe(1);
   expect(element.querySelector('[role="combobox"]')).toBeNull();
   expect(element.querySelector('.add-filter')).not.toBeNull();
+});
+
+it('moves focus into the editor after choosing a field', async () => {
+  const { element, click, start, fixture } = setup();
+  start('model');
+  click(element.querySelectorAll('[role="option"]')[0]);
+  await fixture.whenStable();
+  expect(document.activeElement).toBe(element.querySelector('.editor select'));
 });

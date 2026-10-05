@@ -59,6 +59,9 @@ export class DeviceFilter {
   private readonly trigger =
     viewChild<ElementRef<HTMLButtonElement>>('trigger');
   private readonly entry = viewChild<ElementRef<HTMLInputElement>>('entry');
+  private readonly editor = viewChild<ElementRef<HTMLElement>>('editor');
+  /** True while the editor changes an existing chip. */
+  private editingChip = false;
   protected readonly id = `device-filter-${++nextId}`;
   protected readonly entering = signal(false);
   protected readonly text = signal('');
@@ -138,7 +141,17 @@ export class DeviceFilter {
   constructor() {
     effect(() => {
       const predicate = this.editing();
-      if (predicate) untracked(() => this.open(predicate));
+      untracked(() => {
+        if (predicate) {
+          this.editingChip = true;
+          this.open(predicate);
+        } else if (this.editingChip) {
+          // The page cleared or removed the chip under edit. Close without applying.
+          this.editingChip = false;
+          this.entering.set(false);
+          this.field.set(null);
+        }
+      });
     });
   }
 
@@ -191,6 +204,13 @@ export class DeviceFilter {
     this.value.set('');
     this.battery.set([]);
     this.unitSearch.set('');
+    afterNextRender(
+      () =>
+        this.editor()
+          ?.nativeElement.querySelector<HTMLElement>('select, input')
+          ?.focus(),
+      { injector: this.injector },
+    );
   }
 
   private open(predicate: DevicePredicate): void {
@@ -219,11 +239,15 @@ export class DeviceFilter {
   }
 
   protected close(): void {
+    const editedChip = this.editingChip;
+    this.editingChip = false;
     this.entering.set(false);
     this.field.set(null);
     this.closed.emit();
-    afterNextRender(() => this.trigger()?.nativeElement.focus(), {
-      injector: this.injector,
-    });
+    // After a chip edit the page returns focus to that chip (GRID-04).
+    if (!editedChip)
+      afterNextRender(() => this.trigger()?.nativeElement.focus(), {
+        injector: this.injector,
+      });
   }
 }

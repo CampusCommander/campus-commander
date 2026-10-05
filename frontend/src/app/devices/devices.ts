@@ -1,11 +1,15 @@
 import {
   Component,
+  ElementRef,
+  Injector,
   OnInit,
+  afterNextRender,
   computed,
   effect,
   inject,
   signal,
   untracked,
+  viewChildren,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -38,6 +42,8 @@ import {
 export class DevicesPage implements OnInit {
   protected readonly store = inject(DevicesStore);
   private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
+  private readonly chips = viewChildren<ElementRef<HTMLButtonElement>>('chip');
   protected readonly sync = this.store.sync;
   protected readonly range = signal<DeviceRange | null>(null);
   protected readonly editingIndex = signal<number | null>(null);
@@ -96,20 +102,33 @@ export class DevicesPage implements OnInit {
   protected apply(predicate: DevicePredicate): void {
     const index = this.editingIndex();
     const predicates = [...this.store.predicates()];
-    if (index === null) predicates.push(predicate);
+    if (index === null || index >= predicates.length)
+      predicates.push(predicate);
     else predicates[index] = predicate;
-    this.editingIndex.set(null);
+    // The editor emits closed next. editorClosed() clears the index and restores focus.
     this.store.setPredicates(predicates);
   }
 
   protected remove(index: number): void {
+    this.editingIndex.set(null);
     this.store.setPredicates(
       this.store.predicates().filter((_, position) => position !== index),
     );
   }
 
   protected clear(): void {
+    this.editingIndex.set(null);
     this.store.setPredicates([]);
+  }
+
+  /** After a chip edit closes, focus returns to that chip (GRID-04). */
+  protected editorClosed(): void {
+    const index = this.editingIndex();
+    this.editingIndex.set(null);
+    if (index === null) return;
+    afterNextRender(() => this.chips()[index]?.nativeElement.focus(), {
+      injector: this.injector,
+    });
   }
 
   protected toggleColumn(column: OptionalDeviceColumn): void {
@@ -120,7 +139,10 @@ export class DevicesPage implements OnInit {
   }
 
   protected open(event: { row: DeviceRow; index: number }): void {
-    this.store.position.set(event.index);
+    this.store.position.set({
+      index: event.index,
+      deviceId: event.row.deviceId,
+    });
     void this.router.navigate(['/devices', event.row.deviceId]);
   }
 }

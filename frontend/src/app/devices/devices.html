@@ -72,6 +72,7 @@
       <span class="chip">
         <button
           type="button"
+          #chip
           class="chip-body"
           (click)="editingIndex.set($index)"
         >
@@ -93,7 +94,7 @@
         [orgUnits]="store.orgUnits()"
         [editing]="editing()"
         (applied)="apply($event)"
-        (closed)="editingIndex.set(null)"
+        (closed)="editorClosed()"
       />
       }
       <button
@@ -169,7 +170,8 @@
       [load]="load"
       [revision]="store.revision()"
       [optionalColumns]="store.optionalColumns()"
-      [focusIndex]="store.position()"
+      [focusIndex]="store.position()?.index ?? null"
+      [sort]="store.sort()"
       (details)="open($event)"
       (rangeChange)="range.set($event)"
     />

@@ -1,4 +1,5 @@
 import type {
+  GridState,
   IServerSideDatasource,
   IServerSideGetRowsParams,
 } from 'ag-grid-community';
@@ -31,8 +32,14 @@ export function sortFromModel(
 }
 
 /** Adapt LibreGrid block requests to the device query endpoint (GRID-01). */
+/** Seed the grid header sort from the store, so returning to the grid keeps the order. */
+export function initialSortState(sort: DeviceSort): GridState {
+  return { sort: { sortModel: [{ colId: sort.field, sort: sort.direction }] } };
+}
+
 export function deviceDatasource(
   load: DeviceLoader,
+  onLoaded?: (page: DevicePage) => void,
 ): IServerSideDatasource<DeviceRow> {
   return {
     getRows(params: IServerSideGetRowsParams<DeviceRow>) {
@@ -42,10 +49,11 @@ export function deviceDatasource(
         Math.max(1, (params.request.endRow ?? offset + 100) - offset),
       );
       load(offset, limit, sortFromModel(params.request.sortModel)).then(
-        (page) =>
-          page
-            ? params.success({ rowData: page.rows, rowCount: page.matching })
-            : params.fail(),
+        (page) => {
+          if (!page) return params.fail();
+          params.success({ rowData: page.rows, rowCount: page.matching });
+          onLoaded?.(page);
+        },
         () => params.fail(),
       );
     },

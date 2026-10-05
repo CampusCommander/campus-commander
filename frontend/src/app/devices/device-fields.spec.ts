@@ -115,3 +115,14 @@ describe('device fields', () => {
     expect(telemetryFailureText(null)).toBeNull();
   });
 });
+
+it('shows full paths while searching organization units', () => {
+  const units = [
+    { path: '/School A/Students', devices: 3 },
+    { path: '/School B/Students', devices: 1 },
+  ];
+  expect(orgUnitOptions(units, 'students').map((unit) => unit.label)).toEqual([
+    '/School A/Students',
+    '/School B/Students',
+  ]);
+});

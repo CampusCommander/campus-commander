@@ -40,19 +40,31 @@ const device = (extra: Partial<DeviceDetail> = {}): DeviceDetail => ({
 async function setup(options: {
   detail: DeviceDetail | null;
   position?: number | null;
+  positionDevice?: string;
+  nextPending?: boolean;
   matching?: number;
   offline?: boolean;
 }) {
   const store = {
-    device: vi.fn().mockResolvedValue(options.detail),
-    neighbor: vi
-      .fn()
-      .mockResolvedValue({
-        ...device(),
-        deviceId: 'synthetic-device-2',
-        serialNumber: 'C0A1-0002',
-      }),
-    position: signal<number | null>(options.position ?? null),
+    device: options.nextPending
+      ? vi
+          .fn()
+          .mockResolvedValueOnce(options.detail)
+          .mockReturnValueOnce(new Promise(() => undefined))
+      : vi.fn().mockResolvedValue(options.detail),
+    neighbor: vi.fn().mockResolvedValue({
+      ...device(),
+      deviceId: 'synthetic-device-2',
+      serialNumber: 'C0A1-0002',
+    }),
+    position: signal<{ index: number; deviceId: string } | null>(
+      options.position === undefined || options.position === null
+        ? null
+        : {
+            index: options.position,
+            deviceId: options.positionDevice ?? 'synthetic-device-1',
+          },
+    ),
     page: signal(
       options.matching === undefined
         ? null
@@ -77,7 +89,7 @@ async function setup(options: {
     [...element.querySelectorAll('button')].find(
       (candidate) => candidate.textContent?.trim() === name,
     );
-  return { store, element, navigate, button };
+  return { store, element, navigate, button, fixture };
 }
 
 it('shows the Google battery class, capacity, and recent reports', async () => {
@@ -119,7 +131,10 @@ it('opens the next device in the filtered order', async () => {
   button('Next device')!.click();
   await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
   expect(store.neighbor).toHaveBeenCalledWith(1);
-  expect(store.position()).toBe(1);
+  expect(store.position()).toEqual({
+    index: 1,
+    deviceId: 'synthetic-device-2',
+  });
   expect(navigate).toHaveBeenCalledWith(['/devices', 'synthetic-device-2']);
 });
 
@@ -143,4 +158,32 @@ it('shows not found for a missing device', async () => {
   expect(element.querySelector('h1')?.textContent?.trim()).toBe(
     'Device not found',
   );
+});
+
+it('disables Next device when the remembered row belongs to another device', async () => {
+  const { button } = await setup({
+    detail: device(),
+    position: 0,
+    positionDevice: 'synthetic-device-9',
+    matching: 2,
+  });
+  expect(button('Next device')!.disabled).toBe(true);
+});
+
+it('keeps the details and Next device in place while the next device loads', async () => {
+  const { element, button, fixture } = await setup({
+    detail: device(),
+    position: 0,
+    matching: 3,
+    nextPending: true,
+  });
+  fixture.componentRef.setInput('deviceId', 'synthetic-device-2');
+  fixture.detectChanges();
+  await Promise.resolve();
+  fixture.detectChanges();
+  expect(element.textContent).not.toContain('Loading device details');
+  expect(button('Next device')).toBeDefined();
+  expect(
+    element.querySelector('.device-detail')?.getAttribute('aria-busy'),
+  ).toBe('true');
 });

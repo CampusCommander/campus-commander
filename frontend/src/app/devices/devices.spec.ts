@@ -19,6 +19,7 @@ class GridStub {
   readonly revision = input(0);
   readonly optionalColumns = input<unknown>();
   readonly focusIndex = input<number | null>(null);
+  readonly sort = input<unknown>();
   readonly details = output<unknown>();
   readonly rangeChange = output<unknown>();
 }
@@ -51,6 +52,7 @@ function setup(options: {
     page: signal(options.page ?? null),
     orgUnits: signal([]),
     offline: signal(options.offline ?? false),
+    sort: signal({ field: 'serialNumber', direction: 'asc' }),
     error: signal(''),
     revision: signal(0),
     position: signal<number | null>(null),
@@ -78,7 +80,13 @@ function setup(options: {
     [...element.querySelectorAll('button')].find(
       (candidate) => candidate.textContent?.trim() === name,
     );
-  return { store, element, button, render: () => fixture.detectChanges() };
+  return {
+    store,
+    element,
+    button,
+    fixture,
+    render: () => fixture.detectChanges(),
+  };
 }
 
 it('offers Refresh inventory before the first sync', () => {
@@ -157,5 +165,40 @@ it('shows no matches when filters exclude every device', () => {
   expect(element.textContent).toContain('No devices match these filters');
   expect(element.textContent).toContain(
     'Check the serial or asset tag, or clear the current filters.',
+  );
+});
+
+const twoChips: DevicePredicate[] = [
+  { field: 'assetTag', operator: 'startsWith', value: 'HS-04' },
+  { field: 'model', operator: 'contains', value: 'Lenovo' },
+];
+
+it('closes the chip editor when filters are cleared', () => {
+  const { element, button, render } = setup({
+    sync: ready(),
+    predicates: twoChips,
+    page: { matching: 10, total: 450, observedAt: '2026-10-05T12:00:00.000Z' },
+  });
+  button('Model contains: Lenovo')!.click();
+  render();
+  expect(element.querySelector('[role="dialog"]')).not.toBeNull();
+  button('Clear filters')!.click();
+  render();
+  expect(element.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it('returns focus to the chip after cancelling its edit', async () => {
+  const { button, render, fixture } = setup({
+    sync: ready(),
+    predicates: twoChips,
+    page: { matching: 10, total: 450, observedAt: '2026-10-05T12:00:00.000Z' },
+  });
+  button('Model contains: Lenovo')!.click();
+  render();
+  button('Cancel')!.click();
+  render();
+  await fixture.whenStable();
+  expect(document.activeElement?.textContent?.trim()).toBe(
+    'Model contains: Lenovo',
   );
 });

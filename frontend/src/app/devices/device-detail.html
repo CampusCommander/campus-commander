@@ -1,4 +1,4 @@
-<div class="device-detail">
+<div class="device-detail" [attr.aria-busy]="busy()">
   @switch (status()) { @case ('loading') {
   <p role="status">Loading device details…</p>
   } @case ('offline') {

@@ -53,9 +53,39 @@ export async function qualifyDevicesBrowser({
       page.getByText('96 matching devices · 450 in district'),
     ).toBeVisible();
 
+    // Back to devices keeps the header sort and scrolls back to the opened row.
+    const assetHeader = page.getByRole('columnheader', { name: 'Asset tag' });
+    await assetHeader.click();
+    await assetHeader.click();
+    await expect(assetHeader).toHaveAttribute('aria-sort', 'descending');
+    await page.getByRole('gridcell').first().hover();
+    await page.mouse.wheel(0, 20_000);
     await page
       .getByRole('button', { name: 'Open details for C0A1-0001' })
       .click();
+    await expect(
+      page.getByRole('heading', { name: 'C0A1-0001', level: 1 }),
+    ).toBeVisible();
+    await page.getByRole('link', { name: 'Back to devices' }).click();
+    await expect(
+      page.getByRole('columnheader', { name: 'Asset tag' }),
+    ).toHaveAttribute('aria-sort', 'descending');
+    await expect(
+      page.getByRole('button', { name: 'Open details for C0A1-0001' }),
+    ).toBeInViewport();
+
+    // Keyboard users open details from the focused details cell (UI-09).
+    await page.getByRole('columnheader', { name: 'Serial' }).click();
+    await expect(
+      page.getByRole('columnheader', { name: 'Serial' }),
+    ).toHaveAttribute('aria-sort', 'ascending');
+    await page.getByRole('gridcell').first().hover();
+    await page.mouse.wheel(0, -20_000);
+    await page
+      .getByRole('gridcell', { name: 'C0A1-0001', exact: true })
+      .click();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Enter');
     await expect(
       page.getByRole('heading', { name: 'C0A1-0001', level: 1 }),
     ).toBeVisible();
@@ -86,6 +116,8 @@ export async function qualifyDevicesBrowser({
     ).toBeDisabled();
     return [
       'devices page refreshes a stale inventory and shows counts: pass',
+      'Back to devices keeps the header sort and scrolls to the opened row: pass',
+      'keyboard Enter on the details cell opens device details: pass',
       'typed asset tag filter narrows the grid and keeps its chip after details: pass',
       'device details show Google battery health and follow the filtered order: pass',
       'deep-linked device without battery reports names the power-status policy: pass',

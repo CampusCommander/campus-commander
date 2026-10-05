@@ -1,8 +1,15 @@
-import type { IServerSideGetRowsParams } from 'ag-grid-community';
+import type {
+  CellKeyDownEvent,
+  IServerSideGetRowsParams,
+} from 'ag-grid-community';
 import { vi } from 'vitest';
 import type { DeviceRow } from '@campus/application-contracts';
-import { deviceColumnDefs } from './device-columns';
-import { deviceDatasource, sortFromModel } from './device-datasource';
+import { detailsKeyHandler, deviceColumnDefs } from './device-columns';
+import {
+  deviceDatasource,
+  initialSortState,
+  sortFromModel,
+} from './device-datasource';
 
 const row: DeviceRow = {
   deviceId: 'synthetic-device-1',
@@ -97,4 +104,48 @@ it('falls back to serial order for columns without a query field', () => {
     field: 'serialNumber',
     direction: 'asc',
   });
+});
+
+it('starts the grid with the stored sort', () => {
+  expect(initialSortState({ field: 'assetTag', direction: 'desc' })).toEqual({
+    sort: { sortModel: [{ colId: 'assetTag', sort: 'desc' }] },
+  });
+});
+
+it('reports each loaded page after the grid receives its rows', async () => {
+  const order: string[] = [];
+  deviceDatasource(
+    vi.fn().mockResolvedValue({
+      rows: [row],
+      matching: 96,
+      total: 450,
+      observedAt: null,
+    }),
+    (page) => order.push(`loaded ${page.matching}`),
+  ).getRows({
+    request: { startRow: 0, endRow: 100, sortModel: [] },
+    success: () => order.push('success'),
+    fail: vi.fn(),
+  } as unknown as IServerSideGetRowsParams<DeviceRow>);
+  await vi.waitFor(() => expect(order).toEqual(['success', 'loaded 96']));
+});
+
+it('opens details with Enter or Space on the details cell', () => {
+  const onDetails = vi.fn();
+  const handler = detailsKeyHandler(onDetails);
+  const press = (colId: string, key: string) =>
+    handler({
+      column: { getColId: () => colId },
+      data: row,
+      rowIndex: 3,
+      event: new KeyboardEvent('keydown', { key }),
+    } as unknown as CellKeyDownEvent<DeviceRow>);
+  press('details', 'Enter');
+  press('details', ' ');
+  press('serialNumber', 'Enter');
+  press('details', 'a');
+  expect(onDetails.mock.calls).toEqual([
+    [row, 3],
+    [row, 3],
+  ]);
 });

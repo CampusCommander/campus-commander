@@ -1,4 +1,11 @@
-import { Component, effect, input, output, untracked } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  effect,
+  input,
+  output,
+  untracked,
+} from '@angular/core';
 import { AgGridAngular } from 'ag-grid-angular';
 import {
   AllCommunityModule,
@@ -9,9 +16,14 @@ import {
   type GridReadyEvent,
 } from 'ag-grid-community';
 import { ServerSideRowModelModule } from '@libregrid/server-side-row-model';
-import type { DeviceRow } from '@campus/application-contracts';
-import { deviceColumnDefs } from './device-columns';
-import { deviceDatasource, type DeviceLoader } from './device-datasource';
+import type { DevicePage, DeviceRow } from '@campus/application-contracts';
+import { detailsKeyHandler, deviceColumnDefs } from './device-columns';
+import {
+  deviceDatasource,
+  initialSortState,
+  type DeviceLoader,
+  type DeviceSort,
+} from './device-datasource';
 import type { OptionalDeviceColumn } from './devices.store';
 
 ModuleRegistry.registerModules([AllCommunityModule, ServerSideRowModelModule]);
@@ -56,7 +68,7 @@ export interface DeviceRange {
     }
   `,
 })
-export class DeviceGrid {
+export class DeviceGrid implements OnInit {
   readonly load = input.required<DeviceLoader>();
   readonly revision = input(0);
   readonly optionalColumns = input<Record<OptionalDeviceColumn, boolean>>({
@@ -65,27 +77,17 @@ export class DeviceGrid {
   });
   /** Row to scroll into view after the first block loads, such as after Back to devices. */
   readonly focusIndex = input<number | null>(null);
+  /** Header sort to show when the grid opens. The store keeps it across navigation. */
+  readonly sort = input<DeviceSort>({
+    field: 'serialNumber',
+    direction: 'asc',
+  });
   readonly details = output<{ row: DeviceRow; index: number }>();
   readonly rangeChange = output<DeviceRange | null>();
 
   private api: GridApi<DeviceRow> | null = null;
   private focused = false;
-  protected readonly options: GridOptions<DeviceRow> = {
-    theme: themeQuartz.withParams({
-      accentColor: 'var(--cc-accent)',
-      backgroundColor: 'var(--cc-surface-card)',
-      headerBackgroundColor: 'var(--cc-surface-app)',
-      borderColor: 'var(--cc-border)',
-      foregroundColor: 'var(--cc-text-primary)',
-    }),
-    columnDefs: deviceColumnDefs((row, index) =>
-      this.details.emit({ row, index }),
-    ),
-    getRowId: ({ data }) => data.deviceId,
-    rowModelType: 'serverSide',
-    cacheBlockSize: 100,
-    maxBlocksInCache: 20,
-  };
+  protected options!: GridOptions<DeviceRow>;
 
   constructor() {
     effect(() => {
@@ -98,6 +100,27 @@ export class DeviceGrid {
     });
   }
 
+  ngOnInit(): void {
+    const open = (row: DeviceRow, index: number) =>
+      this.details.emit({ row, index });
+    this.options = {
+      theme: themeQuartz.withParams({
+        accentColor: 'var(--cc-accent)',
+        backgroundColor: 'var(--cc-surface-card)',
+        headerBackgroundColor: 'var(--cc-surface-app)',
+        borderColor: 'var(--cc-border)',
+        foregroundColor: 'var(--cc-text-primary)',
+      }),
+      columnDefs: deviceColumnDefs(open),
+      onCellKeyDown: detailsKeyHandler(open),
+      initialState: initialSortState(this.sort()),
+      getRowId: ({ data }) => data.deviceId,
+      rowModelType: 'serverSide',
+      cacheBlockSize: 100,
+      maxBlocksInCache: 20,
+    };
+  }
+
   protected ready(event: GridReadyEvent<DeviceRow>): void {
     this.api = event.api;
     this.applyColumns(this.optionalColumns());
@@ -108,8 +131,9 @@ export class DeviceGrid {
   private reload(): void {
     this.api?.setGridOption(
       'serverSideDatasource',
-      deviceDatasource((offset, limit, sort) =>
-        this.load()(offset, limit, sort),
+      deviceDatasource(
+        (offset, limit, sort) => this.load()(offset, limit, sort),
+        (page) => this.restore(page),
       ),
     );
   }
@@ -122,17 +146,15 @@ export class DeviceGrid {
     this.api?.setColumnsVisible(['notes'], columns.notes);
   }
 
-  protected updated(): void {
+  /** Scroll the remembered row into view once the server reports enough rows. */
+  private restore(page: DevicePage): void {
     const index = this.focusIndex();
-    if (
-      !this.focused &&
-      index !== null &&
-      this.api &&
-      this.api.getDisplayedRowCount() > 0
-    ) {
-      this.focused = true;
-      this.api.ensureIndexVisible(index, 'middle');
-    }
+    if (this.focused || index === null || page.matching <= index) return;
+    this.focused = true;
+    setTimeout(() => this.api?.ensureIndexVisible(index, 'middle'));
+  }
+
+  protected updated(): void {
     this.emitRange();
   }
 
