@@ -280,7 +280,25 @@ Platform Admin can invite the same address again through the normal invitation p
 Platform Admin selects allowed sign-in methods again for the new invitation.
 The new invitation has its own seven-day validity period.
 Revocation does not block future invitations to that address.
-The effect of revocation on assignments configured for the pending invitee remains open.
+[Revocation removes assignments configured for the pending invitee](#assignments-after-revocation--2026-10-05).
+
+### Assignments after revocation — 2026-10-05
+
+The owner answered "Remove them with it" to the question:
+
+> When Platform Admin revokes a pending invitation, what happens to the access assignments already set up for that invitee?
+
+1. Remove them with it. Revoke lists the affected assignments and removes them with the invitation. A later new invitation starts with no assignments.
+2. Keep them, inactive. They stay on Access Assignments and grant nothing. They take effect if the address accepts a later invitation.
+3. Block the revoke. Platform Admin must remove the assignments on Access Assignments first.
+
+Revoking a pending invitation removes the access assignments configured for that invitee.
+Before revocation completes, Campus Commander lists the assignments that it removes.
+Revocation does not wait for Platform Admin to remove those assignments on Access Assignments.
+A later invitation to the same address starts with no assignments.
+Removed assignments do not change the referenced roles or OrgUnit collections.
+This decision applies to revocation. It does not define assignments for expired invitations.
+The exact list presentation remains a design requirement.
 
 ### Access activation — 2026-09-17
 
@@ -312,6 +330,7 @@ These assignments grant no access before invitation acceptance and identity veri
 After acceptance and identity verification, the assignments take effect without a second administrator confirmation.
 This permits advance assignment. It does not require assignments before acceptance.
 Platform Users continues to handle invitations. Assignment management remains on its separate page.
+[Revoking the invitation removes these assignments](#assignments-after-revocation--2026-10-05).
 
 ### Permission assignment — 2026-09-17
 
@@ -685,6 +704,7 @@ Invitations have a seven-day validity period. Expired or revoked invitations can
 Resend starts a fresh seven-day validity period for pending or expired invitations.
 Invalid recipient addresses block sending until Platform Admin corrects or removes them.
 A revoked invitation stays revoked. Platform Admin sends a new invitation to invite that address again.
+Revocation removes the assignments configured for that invitee. A new invitation starts with no assignments.
 Delivery failures remain open.
 Retain application authorization and credential protection.
 No access-request workflow is permitted.
@@ -706,6 +726,7 @@ No access-request workflow is permitted.
 - A recipient using a different verified email address cannot accept the invitation.
 - Platform Admin revokes a pending invitation. The recipient cannot accept it to activate access.
 - Platform Admin later invites the same address again. Platform Admin selects sign-in methods for the new invitation.
+- That invitee had a pending Librarians and Smith Elementary assignment. Revocation lists and removes it.
 - An invitation expires after seven days without a resend. The recipient cannot use it to activate access.
 - Platform Admin resends an expired invitation. The recipient receives another email and has seven days to accept.
 - Platform Admin resends an invitation two days before expiry. The recipient now has seven days from that resend.
