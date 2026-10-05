@@ -17,8 +17,10 @@ const credential = {
     private_key_id: 'fixture',
   },
 };
-const deviceScope = 'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly';
-const telemetryScope = 'https://www.googleapis.com/auth/chrome.management.telemetry.readonly';
+const deviceScope =
+  'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly';
+const telemetryScope =
+  'https://www.googleapis.com/auth/chrome.management.telemetry.readonly';
 
 function stub(t, pages) {
   const calls = [];
@@ -66,10 +68,17 @@ test('device pages follow page tokens and normalize fields', async (t) => {
     { chromeosdevices: [{ deviceId: 'd2', orgUnitPath: '/' }] },
   ]);
   const pages = await collect(
-    new GoogleDeviceReader().devicePages(credential, 'C0123456', AbortSignal.timeout(5000)),
+    new GoogleDeviceReader().devicePages(
+      credential,
+      'C0123456',
+      AbortSignal.timeout(5000),
+    ),
   );
   assert.deepEqual(scopes, [deviceScope]);
-  assert.equal(calls[0].url, 'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/devices/chromeos');
+  assert.equal(
+    calls[0].url,
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/devices/chromeos',
+  );
   assert.equal(calls[0].params.maxResults, 300);
   assert.equal(calls[0].params.projection, 'FULL');
   assert.equal(calls[0].params.pageToken, undefined);
@@ -100,7 +109,9 @@ test('device pages follow page tokens and normalize fields', async (t) => {
 
 test('battery pages use the latest classified report and design capacity', async (t) => {
   const reports = Array.from({ length: 32 }, (_, index) => ({
-    reportTime: new Date(Date.UTC(2026, 8, 1) + index * 86_400_000).toISOString(),
+    reportTime: new Date(
+      Date.UTC(2026, 8, 1) + index * 86_400_000,
+    ).toISOString(),
     fullChargeCapacity: String(4000 - index * 10),
     batteryHealth: 'BATTERY_REPLACE_SOON',
   }));
@@ -117,7 +128,11 @@ test('battery pages use the latest classified report and design capacity', async
           deviceId: 'd3',
           batteryInfo: [{ designCapacity: '5000' }],
           batteryStatusReport: [
-            { reportTime: '2026-09-05T13:50:00Z', fullChargeCapacity: '3900', batteryHealth: 'BATTERY_HEALTH_UNSPECIFIED' },
+            {
+              reportTime: '2026-09-05T13:50:00Z',
+              fullChargeCapacity: '3900',
+              batteryHealth: 'BATTERY_HEALTH_UNSPECIFIED',
+            },
           ],
         },
         { serialNumber: 'no-device-id' },
@@ -125,11 +140,21 @@ test('battery pages use the latest classified report and design capacity', async
     },
   ]);
   const [page] = await collect(
-    new GoogleDeviceReader().batteryPages(credential, 'C0123456', AbortSignal.timeout(5000)),
+    new GoogleDeviceReader().batteryPages(
+      credential,
+      'C0123456',
+      AbortSignal.timeout(5000),
+    ),
   );
   assert.deepEqual(scopes, [telemetryScope]);
-  assert.equal(calls[0].url, 'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices');
-  assert.equal(calls[0].params.readMask, 'deviceId,batteryInfo,batteryStatusReport');
+  assert.equal(
+    calls[0].url,
+    'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices',
+  );
+  assert.equal(
+    calls[0].params.readMask,
+    'deviceId,batteryInfo,batteryStatusReport',
+  );
   assert.equal(page.length, 3);
   assert.deepEqual(page[0].battery, {
     status: 'reported',
@@ -139,23 +164,72 @@ test('battery pages use the latest classified report and design capacity', async
   });
   assert.equal(page[0].reports.length, 30);
   assert.equal(page[0].reports[0].reportedAt, reports[31].reportTime);
-  assert.deepEqual(page[1], { deviceId: 'd2', battery: { status: 'no-report' }, reports: [] });
+  assert.deepEqual(page[1], {
+    deviceId: 'd2',
+    battery: { status: 'no-report' },
+    reports: [],
+  });
   assert.deepEqual(page[2].battery, { status: 'no-report' });
   assert.equal(page[2].reports[0].capacityPercent, 78);
 });
 
 test('provider failures keep their classified codes', async (t) => {
-  stub(t, [{ response: { status: 403, data: { error: { errors: [{ reason: 'forbidden' }] } } } }]);
+  stub(t, [
+    {
+      response: {
+        status: 403,
+        data: { error: { errors: [{ reason: 'forbidden' }] } },
+      },
+    },
+  ]);
   await assert.rejects(
-    collect(new GoogleDeviceReader().devicePages(credential, 'C0123456', AbortSignal.timeout(5000))),
+    collect(
+      new GoogleDeviceReader().devicePages(
+        credential,
+        'C0123456',
+        AbortSignal.timeout(5000),
+      ),
+    ),
     { name: 'GoogleConnectionError', code: 'permission-denied' },
   );
 });
 
 test('malformed pages fail as invalid responses', async (t) => {
-  stub(t, [{ chromeosdevices: [{ deviceId: 'd1', orgUnitPath: 'missing-slash' }] }]);
+  stub(t, [
+    { chromeosdevices: [{ deviceId: 'd1', orgUnitPath: 'missing-slash' }] },
+  ]);
   await assert.rejects(
-    collect(new GoogleDeviceReader().devicePages(credential, 'C0123456', AbortSignal.timeout(5000))),
+    collect(
+      new GoogleDeviceReader().devicePages(
+        credential,
+        'C0123456',
+        AbortSignal.timeout(5000),
+      ),
+    ),
     { name: 'GoogleConnectionError', code: 'invalid-response' },
   );
+});
+
+test('device pages allow long notes across a full page', async (t) => {
+  t.mock.method(JWT.prototype, 'getAccessToken', async () => ({
+    token: 'private-fixture-token',
+  }));
+  t.mock.method(JWT.prototype, 'getTokenInfo', async function () {
+    return { scopes: [...this.scopes], expiry_date: Date.now() + 3_500_000 };
+  });
+  const transporter = Object.getPrototypeOf(new OAuth2Client().transporter);
+  const limits = [];
+  t.mock.method(transporter, 'request', async (options) => {
+    limits.push(options.maxContentLength);
+    return { data: { chromeosdevices: [] }, status: 200, headers: {} };
+  });
+  await collect(
+    new GoogleDeviceReader().devicePages(
+      credential,
+      'C0123456',
+      AbortSignal.timeout(5000),
+    ),
+  );
+  assert.equal(limits.length, 1);
+  assert.ok(limits[0] >= 4 * 1024 * 1024, `limit ${limits[0]}`);
 });

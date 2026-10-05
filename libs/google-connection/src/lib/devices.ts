@@ -14,6 +14,8 @@ import { GoogleConnectionError, failure, scopedClient } from './provider';
 
 const directory = 'https://admin.googleapis.com/admin/directory/v1';
 const management = 'https://chromemanagement.googleapis.com/v1';
+/** A full page of 300 devices with long notes exceeds the default 256 KB limit. */
+const devicePageLimit = 4 * 1024 * 1024;
 const telemetryLimit = 8 * 1024 * 1024;
 const maximumPages = 10_000;
 const reportLimit = 30;
@@ -120,10 +122,17 @@ export function batteryObservation(
       const reportedAt = instant(report.reportTime);
       if (!reportedAt) return [];
       const health =
-        report.batteryHealth && Object.hasOwn(healthByGoogle, report.batteryHealth)
+        report.batteryHealth &&
+        Object.hasOwn(healthByGoogle, report.batteryHealth)
           ? healthByGoogle[report.batteryHealth]
           : null;
-      return [{ reportedAt, health, capacityPercent: percent(report.fullChargeCapacity) }];
+      return [
+        {
+          reportedAt,
+          health,
+          capacityPercent: percent(report.fullChargeCapacity),
+        },
+      ];
     })
     .sort((a, b) => Date.parse(b.reportedAt) - Date.parse(a.reportedAt))
     .slice(0, reportLimit);
@@ -149,7 +158,10 @@ export class GoogleDeviceReader {
     scope: string,
     signal: AbortSignal,
     limit: number | undefined,
-    load: (client: OAuth2Client, pageToken: string | undefined) => Promise<{
+    load: (
+      client: OAuth2Client,
+      pageToken: string | undefined,
+    ) => Promise<{
       items: T[];
       nextPageToken: string | undefined;
     }>,
@@ -185,7 +197,7 @@ export class GoogleDeviceReader {
       credential,
       scopeFor('device-inventory'),
       signal,
-      undefined,
+      devicePageLimit,
       async (client, pageToken) => {
         const data = devicePage.parse(
           (
