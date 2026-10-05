@@ -72,6 +72,18 @@ Schools have no defined entity. Revisit the column after that definition exists.
 
 No district threshold setting exists. The design text "District policy: Replace soon below 80%" changes to name Google as the source.
 
+## Implementation defaults — 2026-10-05
+
+These defaults are engineering choices, not owner decisions. Change them when the owner asks.
+
+- The inventory lists every device that Google returns, including deprovisioned devices.
+- Text filters ignore letter case. "Contains" and "starts with" treat `%`, `_`, and `\` as ordinary characters.
+- A "before" date filter excludes the given time. An "after" filter includes it.
+- Date filters exclude devices without a contact time.
+- The inventory becomes stale 24 hours after its last publication, or when the latest sync fails.
+- A sync that no worker starts within two minutes ends as interrupted. Refresh all then becomes available again.
+- The first visit shows no devices until an administrator runs Refresh all.
+
 ## States
 
 Implement the designed loading, empty, offline, and stale states.
