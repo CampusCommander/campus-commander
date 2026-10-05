@@ -23,6 +23,7 @@ Every platform user keeps at least one allowed sign-in method. Removal of the la
 Invitation acceptance requires verification of the invited email address through an allowed method.
 Platform Admin updates a changed email address. The platform user verifies the new address before the change takes effect.
 Saving the change ends sessions under the former address. The former address cannot sign in.
+Platform Admin restores lost sign-in access. A server operator restores a Platform Admin when no Platform Admin can sign in.
 
 Campus Commander sends invitation emails.
 It sends invitations and email sign-in codes through the connected Google Workspace with the Gmail send scope.
@@ -68,7 +69,7 @@ The permission list is explicitly non-exhaustive.
 Bulk Actions grants access to the dropdown button. Action-specific permissions determine which features are enabled within it.
 Bulk operations require both permissions within the applicable scope. Other action coverage and dependencies remain open.
 
-Sign-in method controls, account recovery, role details, OrgUnit scope behavior, the sender name, and exact screen compositions remain open.
+Sign-in method controls, role details, OrgUnit scope behavior, the sender name, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
 
 Completion: record the agreed interaction, permissions, resource access, interface placement, and remaining design requirements.

@@ -106,7 +106,7 @@ The provider examples do not establish the complete provider catalog.
 These methods authenticate invited platform users. They do not allow self-registration or access requests.
 Invitation acceptance and identity verification still precede immediate access activation.
 Administrators control allowed methods for each platform user, as confirmed below. Invitation acceptance requires verification of the invited email address, as confirmed below.
-Provider configuration, email-code delivery failures, and recovery interactions remain open.
+Provider configuration and email-code delivery failures remain open. [Account recovery](#account-recovery--2026-10-05) is confirmed below.
 
 ### Allowed sign-in methods per platform user — 2026-09-17
 
@@ -125,7 +125,7 @@ If the administrator permits both methods, either method is available to that pl
 This is a platform-user setting. Installation-wide identity-provider configuration remains a separate Provider settings concern.
 Initial methods are selected separately for each recipient before sending, as confirmed below.
 Exact provider-selection controls remain open. [Removed methods end their active sessions](#removed-sign-in-methods--2026-10-05).
-The invited-email verification rule is confirmed below. Recovery interactions remain open.
+The invited-email verification rule is confirmed below. [Account recovery](#account-recovery--2026-10-05) is confirmed below.
 
 ### Sign-in selection before sending — 2026-09-18
 
@@ -190,7 +190,7 @@ An unverified email assertion does not satisfy this requirement.
 
 For example, an invitation to `mSmith@school.edu` cannot be accepted using a different verified address.
 A forwarded invitation does not transfer eligibility to its recipient's own address.
-This rule defines invitation acceptance. [Platform Admin updates a changed email address](#email-address-changes--2026-10-05). Account recovery remains open.
+This rule defines invitation acceptance. [Platform Admin updates a changed email address](#email-address-changes--2026-10-05). [Platform Admin restores lost sign-in access](#account-recovery--2026-10-05).
 
 ### Email address changes — 2026-10-05
 
@@ -224,6 +224,25 @@ Campus Commander ends that platform user's sessions under the former address.
 The next sign-in uses the new address through an allowed sign-in method.
 That sign-in verifies the new address and completes the change.
 The former address cannot sign in or verify while the change waits for verification.
+
+### Account recovery — 2026-10-05
+
+The owner answered "Admin restores; operator fallback" to the question:
+
+> If a platform user cannot sign in through any allowed method (for example, they lost access to their mailbox or provider account), how do they get back in?
+
+1. Admin restores; operator fallback. No self-service recovery. Platform Admin changes the address or sign-in methods on Platform Users. If the only Platform Admin is locked out, a server operator uses the existing operator-credential recovery.
+2. Admin restores only. No server-side fallback. Losing the only Platform Admin requires a fresh installation or another Platform Admin.
+3. Require two Platform Admins. Each Platform Admin can recover the other. No operator fallback.
+
+Campus Commander provides no self-service account recovery.
+A platform user who cannot sign in contacts a Platform Admin.
+Platform Admin restores access on Settings > Platform Users by changing the email address or allowed sign-in methods.
+Those changes follow the [email address change](#email-address-changes--2026-10-05) and [sign-in method](#allowed-sign-in-methods-per-platform-user--2026-09-17) rules.
+If no Platform Admin can sign in, a server operator restores a Platform Admin through operator-credential recovery.
+The [access runbook](../../deployment/bootstrap/APPLICATION-ACCESS.md#revoke-and-recover-access) describes the existing operator recovery mechanism.
+Campus Commander does not require a second Platform Admin.
+The sign-in page message for a person who cannot sign in remains open with [G09](../workflow-gaps.md#decisions-needed-for-access-and-setup).
 
 ### Invitation delivery — 2026-09-17
 
@@ -834,6 +853,8 @@ External invitees do not need Google accounts. Configured identity providers and
 Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
 Platform Admin updates a changed email address. The platform user verifies the new address before the change takes effect.
 Saving the change ends sessions under the former address. The former address cannot sign in.
+Platform Admin restores lost sign-in access. No self-service account recovery exists.
+A server operator restores a Platform Admin when no Platform Admin can sign in.
 Removing an allowed method immediately ends that platform user's sessions created through it.
 Every platform user keeps at least one allowed method. Removal of the last allowed method is blocked.
 Invitations have a seven-day validity period. Expired or revoked invitations cannot activate access.
@@ -867,6 +888,8 @@ No access-request workflow is permitted.
 - Google Workspace renames `mSmith@school.edu` to `mJones@school.edu`. Platform Admin updates the address on Platform Users.
 - The session under `mSmith@school.edu` ends when Platform Admin saves the change.
 - The platform user verifies `mJones@school.edu`. The same sign-in methods and assignments continue.
+- A consultant loses access to their mailbox. Platform Admin allows provider sign-in for that consultant.
+- The only Platform Admin cannot sign in. A server operator restores that Platform Admin through operator-credential recovery.
 - Platform Admin revokes a pending invitation. The recipient cannot accept it to activate access.
 - Platform Admin later invites the same address again. Platform Admin selects sign-in methods for the new invitation.
 - That invitee had a pending Librarians and Smith Elementary assignment. Revocation lists and removes it.
@@ -908,7 +931,7 @@ Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
-3. Sign-in method controls, validation message presentation, and account recovery.
+3. Sign-in method controls and validation message presentation.
 4. Identity verification and remaining recipient steps.
 5. Sender name and invitation content.
 
