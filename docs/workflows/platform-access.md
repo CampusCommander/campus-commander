@@ -190,7 +190,25 @@ An unverified email assertion does not satisfy this requirement.
 
 For example, an invitation to `mSmith@school.edu` cannot be accepted using a different verified address.
 A forwarded invitation does not transfer eligibility to its recipient's own address.
-This rule defines invitation acceptance. Later identity changes and account recovery still need their applicable workflow rules.
+This rule defines invitation acceptance. [Platform Admin updates a changed email address](#email-address-changes--2026-10-05). Account recovery remains open.
+
+### Email address changes — 2026-10-05
+
+The owner answered "Admin updates it" to the question:
+
+> When a platform user's email address changes (for example, a rename in Google Workspace after a name change), how do they keep their access?
+
+1. Admin updates it. Platform Admin changes the address on Platform Users. The person verifies the new address before it takes effect. Sign-in methods and access assignments stay the same.
+2. Follow Google for directory users. A rename in Google carries over automatically. External users still need an administrator update and verification.
+3. Invite the new address. Treat the new address as a new person, recreate the assignments, and remove the old platform user.
+
+Platform Admin changes a platform user's email address on Settings > Platform Users.
+The platform user verifies the new address through an allowed sign-in method before the change takes effect.
+Verification follows the [invited email verification rule](#invited-email-verification--2026-09-17) for the new address.
+The platform user keeps the same allowed sign-in methods and access assignments.
+This rule applies to directory-selected and external platform users.
+Campus Commander does not follow Google Workspace renames automatically.
+Access through the former address before verification remains open.
 
 ### Invitation delivery — 2026-09-17
 
@@ -799,6 +817,7 @@ Platform Admin and Asset Super Admin have fixed definitions and cannot be delete
 
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
+Platform Admin updates a changed email address. The platform user verifies the new address before the change takes effect.
 Removing an allowed method immediately ends that platform user's sessions created through it.
 Every platform user keeps at least one allowed method. Removal of the last allowed method is blocked.
 Invitations have a seven-day validity period. Expired or revoked invitations cannot activate access.
@@ -829,6 +848,8 @@ No access-request workflow is permitted.
 - The consultant signs in again through provider sign-in.
 - Platform Admin cannot remove provider sign-in when it is the consultant's last allowed method.
 - A recipient using a different verified email address cannot accept the invitation.
+- Google Workspace renames `mSmith@school.edu` to `mJones@school.edu`. Platform Admin updates the address on Platform Users.
+- The platform user verifies `mJones@school.edu`. The same sign-in methods and assignments continue.
 - Platform Admin revokes a pending invitation. The recipient cannot accept it to activate access.
 - Platform Admin later invites the same address again. Platform Admin selects sign-in methods for the new invitation.
 - That invitee had a pending Librarians and Smith Elementary assignment. Revocation lists and removes it.
@@ -870,7 +891,7 @@ Next decisions:
 
 1. Remaining page interactions and Figma compositions within the confirmed separate Settings pages.
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
-3. Sign-in method controls, validation message presentation, and identity-change recovery.
+3. Sign-in method controls, validation message presentation, and account recovery.
 4. Identity verification and remaining recipient steps.
 5. Sender name and invitation content.
 
