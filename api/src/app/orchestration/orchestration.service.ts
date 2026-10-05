@@ -50,12 +50,13 @@ export class OrchestrationService {
     return true;
   }
 
-  async check(correlationId: string) {
+  /** Create or update one repository flow before each execution. */
+  private async deployFlow(file: string, id: string) {
     const flow = await readFile(
-      resolve(process.cwd(), 'deployment/kestra/phase2-connection.yaml'),
+      resolve(process.cwd(), 'deployment/kestra', file),
       'utf8',
     );
-    const flowPath = '/api/v1/main/flows/campus.application/phase2_connection';
+    const flowPath = `/api/v1/main/flows/campus.application/${id}`;
     let exists = true;
     try {
       await this.request(flowPath);
@@ -70,27 +71,54 @@ export class OrchestrationService {
       flow,
       'application/x-yaml',
     );
+  }
+
+  /** Start one execution. Inputs are validated identifiers without line breaks. */
+  private async execute(id: string, inputs: Record<string, string>) {
     const boundary = `cc-${randomUUID()}`;
-    const marker = 'campus-commander-phase-2';
     const body =
-      Object.entries({ correlationId, marker })
+      Object.entries(inputs)
         .map(
           ([name, value]) =>
             `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
         )
         .join('') + `--${boundary}--\r\n`;
-    const execution = z
+    return z
       .object({ id: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/) })
       .parse(
         JSON.parse(
           await this.request(
-            '/api/v1/main/executions/campus.application/phase2_connection',
+            `/api/v1/main/executions/campus.application/${id}`,
             'POST',
             body,
             `multipart/form-data; boundary=${boundary}`,
           ),
         ),
-      );
+      ).id;
+  }
+
+  async startDeviceSync(input: {
+    customerId: string;
+    syncId: string;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        syncId: z.uuid(),
+        correlationId: z.uuid(),
+      })
+      .parse(input);
+    await this.deployFlow('device-sync.yaml', 'device_sync');
+    return this.execute('device_sync', values);
+  }
+
+  async check(correlationId: string) {
+    await this.deployFlow('phase2-connection.yaml', 'phase2_connection');
+    const marker = 'campus-commander-phase-2';
+    const execution = {
+      id: await this.execute('phase2_connection', { correlationId, marker }),
+    };
     const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       const result = z

@@ -70,6 +70,13 @@
       "options": {
         "command": "node deployment/images/build.mjs api"
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "options": {
+        "command": "node --import ./libs/application-contracts/test-register.mjs --test api/src/app/devices/*.test.mjs"
+      }
     }
   },
   "tags": []

@@ -13,9 +13,10 @@ import type { StartupRuntime } from './startup-runtime.contract';
 import { AuthModule } from './auth/auth.module';
 import { ConfigurationModule } from './configuration/configuration.module';
 import { DiagnosticsModule } from './diagnostics/diagnostics.module';
+import { DevicesModule } from './devices/devices.module';
 
 @Module({
-  imports: [ConfigurationModule, AuthModule, DiagnosticsModule],
+  imports: [ConfigurationModule, AuthModule, DiagnosticsModule, DevicesModule],
   controllers: [AppController, BootstrapController, HealthController],
 })
 export class AppModule {
