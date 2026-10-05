@@ -12,6 +12,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { AuthStore } from '../auth.store';
 import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
+import { DevicesStore } from '../devices/devices.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
 import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
 import { schoolsReadable } from '../schools/schools.store';
@@ -34,6 +35,7 @@ export class Shell implements OnInit {
   protected readonly schoolsReadable = () => schoolsReadable(this.auth);
   protected readonly customer = inject(CustomerStore);
   protected readonly connection = inject(ConnectionStore);
+  protected readonly devices = inject(DevicesStore);
   protected readonly router = inject(Router);
   protected readonly diagnostics = inject(DiagnosticsStore);
   protected readonly googleHealth = inject(GoogleHealthStore);

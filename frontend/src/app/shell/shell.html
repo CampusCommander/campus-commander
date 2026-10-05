@@ -27,6 +27,16 @@
         >{{ customer.customerId }}</span
       >
     </p>
+    } @if (devices.readable()) {
+    <a
+      routerLink="/devices"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Devices"
+    >
+      <mat-icon fontSet="material-symbols-outlined">laptop_chromebook</mat-icon
+      ><span class="nav-label">Devices</span>
+    </a>
     } @if (connection.readable()) {
     <a
       routerLink="/google-connection"

@@ -1,0 +1,201 @@
+<div class="devices">
+  <header class="page-header">
+    <h1>Devices</h1>
+    <p class="subtitle">ChromeOS inventory</p>
+  </header>
+
+  @if (store.offline()) {
+  <section class="banner" aria-labelledby="devices-offline-title">
+    <h2 id="devices-offline-title">Cannot reach Campus Commander</h2>
+    <p>Cached inventory remains visible.</p>
+    <button mat-stroked-button type="button" (click)="reconnect()">
+      Reconnect
+    </button>
+  </section>
+  } @else if (published() && sync()?.stale) {
+  <section class="banner" aria-labelledby="devices-stale-title">
+    <h2 id="devices-stale-title">Inventory observation is stale</h2>
+    <p>
+      {{ failureText() || 'The inventory is more than 24 hours old.' }} Current
+      data stays visible during refresh.
+    </p>
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="store.refreshing()"
+      (click)="refresh()"
+    >
+      Refresh inventory
+    </button>
+  </section>
+  } @if (published() && telemetryText(); as text) {
+  <section class="banner info" aria-labelledby="devices-battery-title">
+    <h2 id="devices-battery-title">Battery data is unavailable</h2>
+    <p>{{ text }}</p>
+  </section>
+  } @if (store.error()) {
+  <p class="error" role="alert">{{ store.error() }}</p>
+  } @if (!store.syncLoaded()) { @if (!store.offline()) {
+  <p role="status">Loading device inventory…</p>
+  } } @else if (!sync()) {
+  <section class="card" aria-labelledby="devices-connect-title">
+    <h2 id="devices-connect-title">Connect Google Workspace</h2>
+    <p>Devices come from the connected Google Workspace customer.</p>
+    <a mat-flat-button routerLink="/google-connection"
+      >Open Google connection</a
+    >
+  </section>
+  } @else if (!published()) {
+  <section
+    class="card"
+    aria-labelledby="devices-first-title"
+    aria-live="polite"
+  >
+    @if (store.refreshing()) {
+    <h2 id="devices-first-title">Reading devices from Google Workspace</h2>
+    <p>The inventory appears here when the refresh finishes.</p>
+    } @else {
+    <h2 id="devices-first-title">No device inventory yet</h2>
+    <p>
+      {{ sync()?.status === 'failed' ? failureText() : 'Refresh inventory to
+      read ChromeOS devices from Google Workspace.' }}
+    </p>
+    <button mat-flat-button type="button" (click)="refresh()">
+      Refresh inventory
+    </button>
+    }
+  </section>
+  } @else {
+  <div class="filter-row">
+    <div class="filters">
+      @for (predicate of store.predicates(); track $index) {
+      <span class="chip">
+        <button
+          type="button"
+          class="chip-body"
+          (click)="editingIndex.set($index)"
+        >
+          {{ label(predicate) }}
+        </button>
+        <button
+          type="button"
+          class="chip-remove"
+          [attr.aria-label]="'Remove filter ' + label(predicate)"
+          (click)="remove($index)"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >close</span
+          >
+        </button>
+      </span>
+      } @if (store.predicates().length < 20 || editing()) {
+      <app-device-filter
+        [orgUnits]="store.orgUnits()"
+        [editing]="editing()"
+        (applied)="apply($event)"
+        (closed)="editingIndex.set(null)"
+      />
+      }
+      <button
+        mat-button
+        type="button"
+        [disabled]="!store.predicates().length"
+        (click)="clear()"
+      >
+        Clear filters
+      </button>
+    </div>
+    <div class="actions">
+      <button mat-button type="button" [matMenuTriggerFor]="columnsMenu">
+        Columns
+      </button>
+      <mat-menu #columnsMenu="matMenu">
+        <button
+          mat-menu-item
+          type="button"
+          role="menuitemcheckbox"
+          [attr.aria-checked]="store.optionalColumns().annotatedLocation"
+          (click)="toggleColumn('annotatedLocation')"
+        >
+          {{ store.optionalColumns().annotatedLocation ? 'Hide' : 'Show' }}
+          Annotated location
+        </button>
+        <button
+          mat-menu-item
+          type="button"
+          role="menuitemcheckbox"
+          [attr.aria-checked]="store.optionalColumns().notes"
+          (click)="toggleColumn('notes')"
+        >
+          {{ store.optionalColumns().notes ? 'Hide' : 'Show' }} Notes
+        </button>
+      </mat-menu>
+      <button
+        mat-button
+        type="button"
+        [matMenuTriggerFor]="refreshMenu"
+        [disabled]="store.refreshing()"
+      >
+        {{ store.refreshing() ? 'Refreshing…' : 'Refresh' }}
+      </button>
+      <mat-menu #refreshMenu="matMenu">
+        <button mat-menu-item type="button" (click)="refresh()">
+          Refresh all
+        </button>
+      </mat-menu>
+    </div>
+  </div>
+  @if (store.refreshing()) {
+  <p class="visually-hidden" role="status">Refreshing device inventory.</p>
+  }
+
+  <div class="grid-region">
+    @if (noMatches()) {
+    <div class="grid-message" role="status">
+      <h2>No devices match these filters</h2>
+      <p>Check the serial or asset tag, or clear the current filters.</p>
+      <button mat-flat-button type="button" (click)="clear()">
+        Clear filters
+      </button>
+    </div>
+    } @else if (emptyInventory()) {
+    <div class="grid-message" role="status">
+      <h2>No devices in this inventory</h2>
+      <p>Google Workspace returned no ChromeOS devices for this customer.</p>
+    </div>
+    }
+    <app-device-grid
+      [class.hidden]="noMatches() || emptyInventory()"
+      [load]="load"
+      [revision]="store.revision()"
+      [optionalColumns]="store.optionalColumns()"
+      [focusIndex]="store.position()"
+      (details)="open($event)"
+      (rangeChange)="range.set($event)"
+    />
+  </div>
+
+  <footer class="grid-footer" aria-live="polite">
+    @if (store.page(); as page) {
+    <p>
+      {{ count(page.matching) }} matching devices · {{ count(page.total) }} in
+      district
+    </p>
+    <p class="freshness">
+      @if (store.offline()) { Cached inventory: {{ page.observedAt | date: 'MMM
+      d, h:mm a' }} · Connection unavailable } @else if (sync()?.stale) { Stale
+      inventory · Last complete observation {{ page.observedAt | date: 'MMM d,
+      h:mm a' }} · Refresh required } @else { Inventory observed {{
+      page.observedAt | date: 'MMM d, h:mm a' }} }
+    </p>
+    @if (range(); as visible) {
+    <p class="rows">
+      Rows {{ count(visible.first + 1) }}–{{ count(visible.last + 1) }} of {{
+      count(page.matching) }}
+    </p>
+    } } @else {
+    <p>Loading devices…</p>
+    }
+  </footer>
+  }
+</div>

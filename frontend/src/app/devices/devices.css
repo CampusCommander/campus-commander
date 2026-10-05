@@ -1,0 +1,108 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+.devices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-md);
+}
+.page-header h1 {
+  margin-block-end: 0;
+}
+.subtitle {
+  margin-block-start: var(--cc-space-xs);
+  color: var(--cc-text-secondary);
+}
+.banner {
+  padding: var(--cc-card-padding);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+}
+.banner h2 {
+  margin-block-start: 0;
+  font-size: 16px;
+}
+.banner.info {
+  border-inline-start: 4px solid var(--cc-status-info);
+}
+.error {
+  color: var(--cc-status-error-text);
+}
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-sm);
+}
+.filters,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-sm);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-card);
+}
+.chip-body,
+.chip-remove {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--cc-text-primary);
+  cursor: pointer;
+}
+.chip-body {
+  padding-inline: var(--cc-space-md) var(--cc-space-xs);
+}
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  padding-inline: var(--cc-space-xs) var(--cc-space-sm);
+}
+.chip-remove .material-symbols-outlined {
+  font-size: 16px;
+}
+.grid-region {
+  position: relative;
+  height: max(420px, calc(100vh - 360px));
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+}
+.grid-region app-device-grid.hidden {
+  visibility: hidden;
+}
+.grid-message {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 56px;
+  inset-inline: var(--cc-space-lg);
+}
+.grid-message h2 {
+  font-size: 16px;
+}
+.grid-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--cc-space-sm);
+  color: var(--cc-text-secondary);
+}
+.grid-footer p {
+  margin: 0;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
