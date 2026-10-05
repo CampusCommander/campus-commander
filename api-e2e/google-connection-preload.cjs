@@ -3,11 +3,81 @@ const { join } = require('node:path');
 const { createRequire } = require('node:module');
 const requireApplication = createRequire(`${process.cwd()}/package.json`);
 const { JWT } = requireApplication('google-auth-library');
+const models = [
+  'Lenovo 100e Gen 4',
+  'Acer Chromebook 311',
+  'HP Chromebook 11 G9',
+  'Lenovo 300e Gen 3',
+  'Acer Chromebook Spin 511',
+];
+const capacities = [4600, 3900, 3600];
+const healthFor = (capacity) =>
+  capacity / 5000 > 0.8
+    ? 'BATTERY_HEALTH_NORMAL'
+    : capacity / 5000 >= 0.75
+      ? 'BATTERY_REPLACE_SOON'
+      : 'BATTERY_REPLACE_NOW';
+const fleet = Array.from({ length: 450 }, (_, index) => ({
+  deviceId: `synthetic-device-${index}`,
+  serialNumber: `C0A1-${index.toString(16).toUpperCase().padStart(4, '0')}`,
+  model: models[index % models.length],
+  ...(index % 25 === 0
+    ? {}
+    : { annotatedAssetId: `HS-${String(400 + index).padStart(4, '0')}` }),
+  orgUnitPath: ['/School A', '/School B', '/'][index % 3],
+  lastSync: new Date(Date.UTC(2026, 9, 5, 16) - index * 60_000).toISOString(),
+  ...(index % 4 === 0 ? { annotatedLocation: 'Science wing' } : {}),
+  ...(index === 0 ? { notes: 'Review battery during support visit' } : {}),
+  status: 'ACTIVE',
+  capacity: index % 10 === 9 ? null : capacities[index % 3],
+}));
+const telemetry = ({ deviceId, capacity }) =>
+  capacity === null
+    ? { deviceId }
+    : {
+        deviceId,
+        batteryInfo: [{ designCapacity: '5000' }],
+        batteryStatusReport: [0, 1, 2].map((day) => ({
+          reportTime: new Date(
+            Date.UTC(2026, 9, 5 - day, 13, 50),
+          ).toISOString(),
+          fullChargeCapacity: String(capacity + day * 10),
+          batteryHealth: healthFor(capacity + day * 10),
+        })),
+      };
+const pageOf = (options, url, size) => {
+  const start = Number(
+    options.params?.pageToken ?? url.searchParams.get('pageToken') ?? 0,
+  );
+  const items = fleet.slice(start, start + size);
+  return {
+    items,
+    next: start + size < fleet.length ? String(start + size) : undefined,
+  };
+};
+const forbidden = (options) => ({
+  response: {
+    config: options,
+    status: 403,
+    data: {
+      error: {
+        errors: [{ reason: 'forbidden' }],
+        privateDiagnostic: 'synthetic-private-provider-diagnostic',
+      },
+    },
+  },
+});
 const prototype = Object.getPrototypeOf(new JWT().transporter);
 const original = prototype.request;
 prototype.request = async function (options) {
   const url = new URL(options.url);
-  if (!['oauth2.googleapis.com', 'admin.googleapis.com'].includes(url.hostname))
+  if (
+    ![
+      'oauth2.googleapis.com',
+      'admin.googleapis.com',
+      'chromemanagement.googleapis.com',
+    ].includes(url.hostname)
+  )
     return original.call(this, options);
   let fault = '';
   try {
@@ -44,7 +114,11 @@ prototype.request = async function (options) {
           ? 'synthetic-customer-token'
           : scope.endsWith('orgunit.readonly')
             ? 'synthetic-ou-token'
-            : 'synthetic-domain-token',
+            : scope.endsWith('device.chromeos.readonly')
+              ? 'synthetic-device-token'
+              : scope.endsWith('telemetry.readonly')
+                ? 'synthetic-telemetry-token'
+                : 'synthetic-domain-token',
       expires_in: 3600,
       token_type: 'Bearer',
     };
@@ -59,7 +133,11 @@ prototype.request = async function (options) {
             ? 'https://www.googleapis.com/auth/admin.directory.domain.readonly'
             : authorization === 'Bearer synthetic-ou-token'
               ? 'https://www.googleapis.com/auth/admin.directory.orgunit.readonly'
-              : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
+              : authorization === 'Bearer synthetic-device-token'
+                ? 'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly'
+                : authorization === 'Bearer synthetic-telemetry-token'
+                  ? 'https://www.googleapis.com/auth/chrome.management.telemetry.readonly'
+                  : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
       expires_in: 3500,
     };
   } else if (url.pathname.endsWith('/my_customer'))
@@ -157,6 +235,31 @@ prototype.request = async function (options) {
           parentOrgUnitId: fault === 'ou-invalid' ? 'missing' : 'root',
         },
       ],
+    };
+  } else if (
+    url.pathname === '/admin/directory/v1/customer/C0123456/devices/chromeos'
+  ) {
+    if (fault === 'device-privilege-denied') throw forbidden(options);
+    const { items, next } = pageOf(options, url, 300);
+    data = {
+      chromeosdevices: items.map(
+        ({ capacity: _capacity, ...device }) => device,
+      ),
+      ...(next ? { nextPageToken: next } : {}),
+    };
+  } else if (
+    url.hostname === 'chromemanagement.googleapis.com' &&
+    url.pathname === '/v1/customers/C0123456/telemetry/devices'
+  ) {
+    if (fault === 'telemetry-privilege-denied') throw forbidden(options);
+    const { items, next } = pageOf(
+      options,
+      url,
+      Number(options.params?.pageSize ?? 100),
+    );
+    data = {
+      devices: items.map(telemetry),
+      ...(next ? { nextPageToken: next } : {}),
     };
   } else throw new Error('Unexpected synthetic Google endpoint.');
   return { data, status: 200 };

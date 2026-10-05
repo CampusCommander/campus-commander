@@ -66,6 +66,8 @@ const schoolRead = new RegExp(
 const schoolWrite = new RegExp(
   `^/api/schools/reviews(?:/${schoolIdPath}/confirm)?$`,
 );
+const deviceRead = /^\/api\/devices\/[A-Za-z0-9_-]{1,128}$/;
+const deviceWrite = /^\/api\/devices\/(?:sync|query)$/;
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
@@ -102,6 +104,7 @@ export async function proxyApplication(
         connectionRead.test(pathname) ||
         customerRead.test(pathname) ||
         pathname === '/api/schools/references' ||
+        deviceRead.test(pathname) ||
         schoolRead.test(pathname)));
   const writable =
     postRoutes.has(pathname) ||
@@ -112,6 +115,7 @@ export async function proxyApplication(
         connectionWrite.test(pathname) ||
         pathname === '/api/customer/settings' ||
         pathname === '/api/schools/references/refresh' ||
+        deviceWrite.test(pathname) ||
         schoolWrite.test(pathname)));
   const api = readable || writable;
   const page =

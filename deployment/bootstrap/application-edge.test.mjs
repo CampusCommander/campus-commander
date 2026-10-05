@@ -146,6 +146,10 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', `/api/platform-users/${id}/receipts`, 'api'],
       ['POST', `/api/platform-users/${id}/review`, 'api'],
       ['POST', `/api/platform-users/${id}/access`, 'api'],
+      ['GET', '/api/devices/sync', 'api'],
+      ['POST', '/api/devices/sync', 'api'],
+      ['POST', '/api/devices/query', 'api'],
+      ['GET', '/api/devices/synthetic-device-1', 'api'],
     ];
     for (const [method, path, expected] of routes) {
       const response = await fetch(`${origin(edge)}${path}`, { method });
@@ -155,6 +159,10 @@ test('application routes require Phase 3 and exact methods and paths', async () 
     }
     for (const [method, path, status] of [
       ['POST', '/api/schools', 405],
+      ['GET', '/api/devices', 404],
+      ['GET', '/api/devices/a/b', 404],
+      ['GET', `/api/devices/${'x'.repeat(129)}`, 404],
+      ['POST', '/api/devices/synthetic-device-1', 405],
       ['GET', '/api/schools/reviews', 405],
       ['POST', `/api/schools/${id}`, 405],
       ['GET', `/api/schools/reviews/${id}/confirm`, 405],
