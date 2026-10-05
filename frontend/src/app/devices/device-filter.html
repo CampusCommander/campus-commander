@@ -1,0 +1,160 @@
+@if (field(); as current) {
+<section
+  class="editor card"
+  role="dialog"
+  [attr.aria-labelledby]="id + '-title'"
+  (keydown.escape)="close()"
+>
+  <h2 [id]="id + '-title'">{{ current.label }}</h2>
+  @switch (current.kind) { @case ('battery') {
+  <fieldset>
+    <legend>Battery health</legend>
+    @for (option of batteryOptions; track option[0]) {
+    <label class="check"
+      ><input
+        type="checkbox"
+        [checked]="battery().includes(option[0])"
+        (change)="toggleBattery(option[0], $any($event.target).checked)"
+      />{{ option[1] }}</label
+    >
+    }
+  </fieldset>
+  } @case ('orgUnit') {
+  <label class="field"
+    >Operator
+    <select
+      [value]="operator()"
+      (change)="operator.set($any($event.target).value)"
+    >
+      @for (item of orgUnitOperators; track item.id) {
+      <option [value]="item.id">{{ item.label }}</option>
+      }
+    </select></label
+  >
+  <label class="field"
+    >Find an organization unit
+    <input
+      type="search"
+      [value]="unitSearch()"
+      (input)="unitSearch.set($any($event.target).value)"
+  /></label>
+  <div class="units" role="radiogroup" aria-label="Organization unit">
+    @for (unit of units(); track unit.path) {
+    <label class="unit" [style.padding-inline-start.px]="unit.depth * 16"
+      ><input
+        type="radio"
+        [name]="id + '-unit'"
+        [checked]="value() === unit.path"
+        (change)="value.set(unit.path)"
+      />{{ unit.label }}</label
+    >
+    } @empty {
+    <p>No organization units match.</p>
+    }
+  </div>
+  @if (operator() === 'within') {
+  <p class="hint">Includes descendant organization units.</p>
+  } } @case ('date') {
+  <label class="field"
+    >Operator
+    <select
+      [value]="operator()"
+      (change)="operator.set($any($event.target).value)"
+    >
+      @for (item of dateOperators; track item.id) {
+      <option [value]="item.id">{{ item.label }}</option>
+      }
+    </select></label
+  >
+  <label class="field"
+    >Date
+    <input
+      type="date"
+      [value]="value()"
+      (input)="value.set($any($event.target).value)"
+  /></label>
+  } @default {
+  <label class="field"
+    >Operator
+    <select
+      [value]="operator()"
+      (change)="operator.set($any($event.target).value)"
+    >
+      @for (item of textOperators; track item.id) {
+      <option [value]="item.id">{{ item.label }}</option>
+      }
+    </select></label
+  >
+  @if (operator() !== 'isEmpty') {
+  <label class="field"
+    >Value
+    <input
+      type="text"
+      maxlength="256"
+      [value]="value()"
+      (input)="value.set($any($event.target).value)"
+  /></label>
+  } } }
+  <div class="editor-actions">
+    <button mat-button type="button" (click)="close()">Cancel</button>
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="!draft()"
+      (click)="apply()"
+    >
+      Apply
+    </button>
+  </div>
+</section>
+} @else if (entering()) {
+<div class="entry">
+  <input
+    #entry
+    type="text"
+    role="combobox"
+    aria-label="Filter field"
+    aria-autocomplete="list"
+    [attr.aria-expanded]="suggestions().length > 0"
+    [attr.aria-controls]="id + '-list'"
+    [attr.aria-activedescendant]="activeId()"
+    [value]="text()"
+    (input)="typed($any($event.target).value)"
+    (keydown)="keydown($event)"
+  />
+  <div
+    class="suggestions card"
+    [id]="id + '-list'"
+    role="listbox"
+    aria-label="Filter suggestions"
+  >
+    @for (group of groups(); track group.name) {
+    <div role="group" [attr.aria-label]="group.name">
+      <p class="group-label" aria-hidden="true">{{ group.name }}</p>
+      @for (choice of group.items; track choice.id) {
+      <div
+        role="option"
+        [id]="choice.id"
+        [attr.aria-selected]="choice.id === activeId()"
+        [class.active]="choice.id === activeId()"
+        tabindex="-1"
+        (mousedown)="$event.preventDefault()"
+        (click)="choose(choice)"
+        (keydown.enter)="choose(choice)"
+      >
+        {{ choice.label }}
+      </div>
+      }
+    </div>
+    }
+  </div>
+  <p class="visually-hidden" aria-live="polite">
+    {{ suggestions().length }} suggestions
+  </p>
+</div>
+} @else {
+<button #trigger type="button" class="add-filter" (click)="start()">
+  <span class="material-symbols-outlined" aria-hidden="true">add</span>
+  Add a filter
+</button>
+}
