@@ -22,6 +22,7 @@ Removing an allowed sign-in method immediately ends that platform user's session
 Every platform user keeps at least one allowed sign-in method. Removal of the last method is blocked.
 Invitation acceptance requires verification of the invited email address through an allowed method.
 Platform Admin updates a changed email address. The platform user verifies the new address before the change takes effect.
+Saving the change ends sessions under the former address. The former address cannot sign in.
 
 Campus Commander sends invitation emails.
 It sends invitations and email sign-in codes through the connected Google Workspace with the Gmail send scope.

@@ -208,7 +208,22 @@ Verification follows the [invited email verification rule](#invited-email-verifi
 The platform user keeps the same allowed sign-in methods and access assignments.
 This rule applies to directory-selected and external platform users.
 Campus Commander does not follow Google Workspace renames automatically.
-Access through the former address before verification remains open.
+[The former address stops working when the change is saved](#former-address-after-a-change--2026-10-05).
+
+### Former address after a change — 2026-10-05
+
+The owner answered "Old address stops now" to the question:
+
+> After Platform Admin changes someone's address, but before they verify the new one, can they still sign in with the old address?
+
+1. Old address stops now. Sessions under the old address end at once. The next sign-in uses the new address and completes verification.
+2. Old address works until verified. The person keeps signing in with the old address until they verify the new one.
+
+When Platform Admin saves an email address change, the former address stops working at once.
+Campus Commander ends that platform user's sessions under the former address.
+The next sign-in uses the new address through an allowed sign-in method.
+That sign-in verifies the new address and completes the change.
+The former address cannot sign in or verify while the change waits for verification.
 
 ### Invitation delivery — 2026-09-17
 
@@ -818,6 +833,7 @@ Platform Admin and Asset Super Admin have fixed definitions and cannot be delete
 External invitees do not need Google accounts. Configured identity providers and email sign-in codes are supported.
 Administrators select allowed methods per platform user. Invitation acceptance requires verification of the invited email address.
 Platform Admin updates a changed email address. The platform user verifies the new address before the change takes effect.
+Saving the change ends sessions under the former address. The former address cannot sign in.
 Removing an allowed method immediately ends that platform user's sessions created through it.
 Every platform user keeps at least one allowed method. Removal of the last allowed method is blocked.
 Invitations have a seven-day validity period. Expired or revoked invitations cannot activate access.
@@ -849,6 +865,7 @@ No access-request workflow is permitted.
 - Platform Admin cannot remove provider sign-in when it is the consultant's last allowed method.
 - A recipient using a different verified email address cannot accept the invitation.
 - Google Workspace renames `mSmith@school.edu` to `mJones@school.edu`. Platform Admin updates the address on Platform Users.
+- The session under `mSmith@school.edu` ends when Platform Admin saves the change.
 - The platform user verifies `mJones@school.edu`. The same sign-in methods and assignments continue.
 - Platform Admin revokes a pending invitation. The recipient cannot accept it to activate access.
 - Platform Admin later invites the same address again. Platform Admin selects sign-in methods for the new invitation.
