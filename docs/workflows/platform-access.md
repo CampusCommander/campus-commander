@@ -670,7 +670,20 @@ A platform user cannot move a device out of their writable scope.
 A platform user cannot move a device into an OrgUnit outside their writable scope.
 The OU picker offers only destinations where the platform user has Device Write.
 A bulk move also requires Device Bulk Actions and applies this rule to every selected device.
-The rule for Google user OrgUnit moves remains open.
+[Google user moves follow the same rule](#google-user-orgunit-moves--2026-10-05).
+
+### Google user OrgUnit moves — 2026-10-05
+
+The owner answered "Same rule" to the question:
+
+> Should moving a Google user between OrgUnits follow the same rule, with User Write needed in both the current and destination OrgUnits?
+
+1. Same rule. User Write is needed in both OrgUnits. The OU picker shows only valid destinations. Bulk moves also need User Bulk Actions.
+2. Different rule for users. The owner describes different handling.
+
+Moving a Google user requires User Write for the user's current OrgUnit and for the destination OrgUnit.
+The OU picker offers only destinations where the platform user has User Write.
+A bulk move also requires User Bulk Actions and applies this rule to every selected Google user.
 
 ### Resource access — 2026-09-17
 
@@ -911,6 +924,7 @@ Bulk operations require both Bulk Actions and the action-specific permission wit
 Write, Deprovision, and Bulk Actions include the entity's Read permission within the same scope.
 User Schema Manage covers domain-wide schema definitions only. Custom attribute values require User Write.
 A device move requires Device Write for the current and destination OrgUnits.
+A Google user move requires User Write for the current and destination OrgUnits.
 The remaining catalog, other permission dependencies, exact controls, and scope behavior remain open.
 
 Only Platform Admin manages platform users, roles, OrgUnit collections, and access assignments in the initial workflow.

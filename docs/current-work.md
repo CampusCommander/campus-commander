@@ -72,6 +72,7 @@ Write, Deprovision, and Bulk Actions include the entity's Read permission. Other
 User Schema Manage covers domain-wide schema definitions only. Custom attribute values require User Write.
 Group access is outside this workflow. The groups workflow (G21) defines it.
 A device move requires Device Write for the current and destination OrgUnits.
+A Google user move requires User Write for the current and destination OrgUnits.
 
 Sign-in method controls, role details, OrgUnit scope behavior, the sender name, and exact screen compositions remain open.
 Design: missing, as recorded in the [Figma map](portfolio/prototype-map.md).
