@@ -10,9 +10,11 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import {
+  deviceOrgUnitsSchema,
   devicePageSchema,
   deviceSyncStateSchema,
   type DeviceDetail,
+  type DeviceOrgUnit,
   type DevicePage,
   type DeviceQuery,
   type DeviceSyncState,
@@ -25,6 +27,7 @@ import {
   deviceDetailSql,
   devicePageSql,
   deviceRow,
+  deviceOrgUnitsSql,
 } from './device-query';
 
 const conflicts = ['device-sync-running', 'connection-changed'];
@@ -167,6 +170,23 @@ export class DevicesService {
         });
       },
       { rows: [], matching: 0, total: 0, observedAt: null },
+    );
+  }
+
+  async orgUnits(session: SessionResponse): Promise<DeviceOrgUnit[]> {
+    return this.read(
+      session,
+      async (client, customerId) => {
+        const sql = deviceOrgUnitsSql(customerId);
+        const rows = (await client.query(sql.text, sql.values)).rows;
+        return deviceOrgUnitsSchema.parse(
+          rows.map((row) => ({
+            path: row['org_unit_path'],
+            devices: row['devices'],
+          })),
+        );
+      },
+      [],
     );
   }
 

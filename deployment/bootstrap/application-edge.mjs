@@ -37,6 +37,7 @@ const phase3Pages = new Set([
   '/google-connection',
   '/customer-settings',
   '/schools',
+  '/devices',
 ]);
 const invitationReads = new Set([
   '/api/auth/invitations',
@@ -67,6 +68,7 @@ const schoolWrite = new RegExp(
   `^/api/schools/reviews(?:/${schoolIdPath}/confirm)?$`,
 );
 const deviceRead = /^\/api\/devices\/[A-Za-z0-9_-]{1,128}$/;
+const devicePage = /^\/devices\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite = /^\/api\/devices\/(?:sync|query)$/;
 const finish = (response, status, message) => {
   response.writeHead(status, {
@@ -119,7 +121,8 @@ export async function proxyApplication(
         schoolWrite.test(pathname)));
   const api = readable || writable;
   const page =
-    pages.has(pathname) || (phase === 3 && phase3Pages.has(pathname));
+    pages.has(pathname) ||
+    (phase === 3 && (phase3Pages.has(pathname) || devicePage.test(pathname)));
   if (!api && !page && !assets.test(pathname))
     return finish(response, 404, 'Route unavailable.\n');
   const methodAllowed =

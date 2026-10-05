@@ -65,6 +65,12 @@ export class DevicesController {
     return { page: await this.devices.page(request.session, input) };
   }
 
+  @Get('org-units')
+  async orgUnits(@Req() request: AuthenticatedRequest) {
+    await this.current(request);
+    return { orgUnits: await this.devices.orgUnits(request.session) };
+  }
+
   @Get(':deviceId')
   async device(
     @Req() request: AuthenticatedRequest,

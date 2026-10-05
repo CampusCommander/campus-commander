@@ -6,6 +6,7 @@ import {
   devicePageSql,
   deviceRow,
   escapeLike,
+  deviceOrgUnitsSql,
 } from './device-query.ts';
 
 const query = (value) =>
@@ -176,4 +177,17 @@ test('a failed telemetry read makes every battery unavailable at read time', () 
     sorted.rows.text,
     /ORDER BY CASE WHEN s\.telemetry_failure IS NOT NULL THEN 4 /,
   );
+});
+
+test('organization units come from the published inventory in path order', () => {
+  const sql = deviceOrgUnitsSql('C0123456');
+  assert.match(
+    sql.text,
+    /FROM cc\.device_sync_state s JOIN cc\.devices d ON d\.sync_id=s\.current_sync_id/,
+  );
+  assert.match(
+    sql.text,
+    /GROUP BY d\.org_unit_path ORDER BY d\.org_unit_path LIMIT 10000$/,
+  );
+  assert.deepEqual(sql.values, ['C0123456']);
 });

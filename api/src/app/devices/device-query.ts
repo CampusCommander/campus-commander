@@ -155,3 +155,10 @@ export function deviceDetail(row: Record<string, unknown>): DeviceDetail {
     batteryReports: row['battery_reports'],
   });
 }
+
+export function deviceOrgUnitsSql(customerId: string): SqlStatement {
+  return {
+    text: `SELECT d.org_unit_path,count(*)::integer AS devices ${from} WHERE s.customer_id=$1 GROUP BY d.org_unit_path ORDER BY d.org_unit_path LIMIT 10000`,
+    values: [customerId],
+  };
+}

@@ -1,12 +1,19 @@
 import * as z from 'zod';
-import { googleCustomerIdSchema, googleFailureSchema } from './google-connection';
+import {
+  googleCustomerIdSchema,
+  googleFailureSchema,
+} from './google-connection';
 
 const timestamp = z.iso.datetime({ offset: true });
 const deviceId = z.string().min(1).max(128);
 const orgUnitPath = z.string().min(1).max(4096).startsWith('/');
 const percent = z.number().int().min(0).max(200);
 
-export const batteryHealthSchema = z.enum(['normal', 'replace-soon', 'replace-now']);
+export const batteryHealthSchema = z.enum([
+  'normal',
+  'replace-soon',
+  'replace-now',
+]);
 export type BatteryHealth = z.infer<typeof batteryHealthSchema>;
 
 export const batteryReportSchema = z.strictObject({
@@ -105,7 +112,10 @@ export const devicePredicateSchema = z.union([
     operator: z.enum(['contains', 'startsWith', 'equals']),
     value: filterText,
   }),
-  z.strictObject({ field: deviceTextFieldSchema, operator: z.literal('isEmpty') }),
+  z.strictObject({
+    field: deviceTextFieldSchema,
+    operator: z.literal('isEmpty'),
+  }),
   z.strictObject({
     field: z.literal('orgUnitPath'),
     operator: z.enum(['equals', 'within']),
@@ -164,3 +174,10 @@ export const deviceSyncStateSchema = z.strictObject({
   stale: z.boolean(),
 });
 export type DeviceSyncState = z.infer<typeof deviceSyncStateSchema>;
+
+export const deviceOrgUnitSchema = z.strictObject({
+  path: orgUnitPath,
+  devices: z.number().int().min(0),
+});
+export type DeviceOrgUnit = z.infer<typeof deviceOrgUnitSchema>;
+export const deviceOrgUnitsSchema = z.array(deviceOrgUnitSchema).max(10000);

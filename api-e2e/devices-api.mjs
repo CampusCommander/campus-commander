@@ -68,6 +68,13 @@ export async function qualifyDevicesApi({
     assert.equal(first.rows.length, 100);
     assert.equal(first.rows[0].serialNumber, 'C0A1-0000');
     assert.equal(JSON.stringify(first).includes('envelope'), false);
+    const units = await api.get(`${root}/org-units`);
+    assert.equal(units.status(), 200, await units.text());
+    assert.deepEqual((await units.json()).orgUnits, [
+      { path: '/', devices: 150 },
+      { path: '/School A', devices: 150 },
+      { path: '/School B', devices: 150 },
+    ]);
     assert.equal(
       (
         await query({
