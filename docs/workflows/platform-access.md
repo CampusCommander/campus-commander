@@ -258,7 +258,22 @@ Platform Admin selects one sender mailbox in the connected domain.
 Campus Commander sends every invitation email and email sign-in code from that mailbox.
 The sender mailbox is separate from the delegated administrator account of the Google connection.
 Invitations do not come from the address of the inviting Platform Admin.
-The Settings page for this selection, sender name, and the state before selection remain open.
+[Platform Settings holds this selection](#sender-mailbox-placement--2026-10-05). The sender name and the state before selection remain open.
+
+### Sender mailbox placement — 2026-10-05
+
+The owner answered "Platform Settings" to the question:
+
+> Which Settings page should hold the sender mailbox setting?
+
+1. Its own Email page. A separate Settings > Email page that later also holds the sender name and invitation content.
+2. Provider settings. Place it with the Google connection, which carries the Gmail send scope.
+3. Platform Settings. Treat it as general platform configuration, alongside the platform display name.
+
+Platform Admin selects the sender mailbox on Settings > Platform Settings.
+Provider settings keeps the Google connection and its scopes. It does not hold the sender mailbox.
+No separate Email page exists in the agreed workflow.
+Placement of the sender name and invitation content remains open.
 
 ### Pending invitation actions — 2026-09-18
 
@@ -823,7 +838,7 @@ Next decisions:
 2. Remaining action coverage, dependencies, catalog, scope behavior, and ordinary group access.
 3. Sign-in method controls, validation message presentation, and identity-change recovery.
 4. Identity verification and remaining recipient steps.
-5. Sender mailbox placement in Settings, behavior without the Gmail send scope, and invitation content.
+5. Sender name, behavior without the Gmail send scope, and invitation content.
 
 Resolve only decisions needed for this workflow. Other gaps remain attached to their own tasks.
 
