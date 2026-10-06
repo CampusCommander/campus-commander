@@ -43,6 +43,7 @@ async function setup(options: {
   positionDevice?: string;
   nextPending?: boolean;
   matching?: number;
+  count?: number;
   offline?: boolean;
 }) {
   const store = {
@@ -57,12 +58,17 @@ async function setup(options: {
       deviceId: 'synthetic-device-2',
       serialNumber: 'C0A1-0002',
     }),
-    position: signal<{ index: number; deviceId: string } | null>(
+    position: signal<{
+      index: number;
+      deviceId: string;
+      count?: number;
+    } | null>(
       options.position === undefined || options.position === null
         ? null
         : {
             index: options.position,
             deviceId: options.positionDevice ?? 'synthetic-device-1',
+            ...(options.count === undefined ? {} : { count: options.count }),
           },
     ),
     page: signal(
@@ -186,4 +192,30 @@ it('keeps the details and Next device in place while the next device loads', asy
   expect(
     element.querySelector('.device-detail')?.getAttribute('aria-busy'),
   ).toBe('true');
+});
+
+it('stops Next device at the last device of its group', async () => {
+  const { button } = await setup({
+    detail: device(),
+    position: 134,
+    count: 135,
+    matching: 450,
+  });
+  expect(button('Next device')!.disabled).toBe(true);
+});
+
+it('keeps the group size when moving to the next device', async () => {
+  const { store, navigate, button } = await setup({
+    detail: device(),
+    position: 0,
+    count: 135,
+    matching: 450,
+  });
+  button('Next device')!.click();
+  await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
+  expect(store.position()).toEqual({
+    index: 1,
+    deviceId: 'synthetic-device-2',
+    count: 135,
+  });
 });

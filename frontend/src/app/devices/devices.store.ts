@@ -84,7 +84,12 @@ export class DevicesStore {
   /** Increments when the grid must reload from the first block. */
   readonly revision = signal(0);
   /** Row index and ID of the last opened device in the current filtered order. */
-  readonly position = signal<{ index: number; deviceId: string } | null>(null);
+  readonly position = signal<{
+    index: number;
+    deviceId: string;
+    /** Rows that Next device can walk. Set for a device opened inside a group. */
+    count?: number;
+  } | null>(null);
   readonly refreshing = computed(() => this.sync()?.status === 'running');
   readonly readable = computed(() => devicesReadable(this.auth));
   private polling = false;

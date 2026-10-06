@@ -375,12 +375,17 @@ it('groups by organization unit, model, and battery with counts', () => {
 });
 
 it('finds a grouped device by its index inside the group', () => {
-  const parent = { group: true, __lgrSsrmRoute: ['replace-soon'] };
+  const parent = {
+    group: true,
+    __lgrSsrmRoute: ['replace-soon'],
+    data: { key: 'replace-soon', devices: 135 },
+  };
+  // Next device walks the group, so it needs the group's size.
   expect(
     detailsTarget({ rowIndex: 40, sourceRowIndex: 7, parent } as never),
-  ).toEqual({ index: 7, route: ['replace-soon'] });
+  ).toEqual({ index: 7, route: ['replace-soon'], count: 135 });
   expect(
     detailsTarget({ rowIndex: 40, sourceRowIndex: 40, parent: null } as never),
-  ).toEqual({ index: 40, route: null });
+  ).toEqual({ index: 40, route: null, count: null });
   expect(detailsTarget({ rowIndex: null, parent: null } as never)).toBeNull();
 });

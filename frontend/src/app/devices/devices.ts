@@ -154,6 +154,7 @@ export class DevicesPage implements OnInit {
     row: DeviceRow;
     index: number;
     route: string[] | null;
+    count: number | null;
   }): void {
     // Next device follows the opened device's group.
     const view = this.store.view();
@@ -165,6 +166,7 @@ export class DevicesPage implements OnInit {
     this.store.position.set({
       index: event.index,
       deviceId: event.row.deviceId,
+      ...(event.count === null ? {} : { count: event.count }),
     });
     void this.router.navigate(['/devices', event.row.deviceId]);
   }

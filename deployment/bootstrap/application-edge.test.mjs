@@ -215,6 +215,21 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ).status,
       413,
     );
+    // Device selection and query bodies carry ID batches, group routes, and set filters.
+    for (const [size, status] of [
+      [65536, 200],
+      [98305, 413],
+    ])
+      assert.equal(
+        (
+          await fetch(`${origin(edge)}/api/devices/selection/resolve`, {
+            method: 'POST',
+            body: 'x'.repeat(size),
+          })
+        ).status,
+        status,
+        `${size} bytes`,
+      );
     phase = 2;
     for (const [method, path] of routes) {
       assert.equal(

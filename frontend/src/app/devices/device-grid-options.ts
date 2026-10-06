@@ -142,11 +142,21 @@ export function showRow(
   api.ensureIndexVisible(index, 'middle');
 }
 
-/** Where a device sits for Next device: its group and its index there, or its index in the flat grid. */
+/**
+ * Where a device sits for Next device: its group, its index there, and the group's size,
+ * or its index in the flat grid.
+ */
 export function detailsTarget(
   node: Pick<IRowNode, 'rowIndex' | 'sourceRowIndex' | 'parent'>,
-): { index: number; route: string[] | null } | null {
-  const route = node.parent?.group ? (getSsrmRoute(node.parent) ?? null) : null;
+): { index: number; route: string[] | null; count: number | null } | null {
+  const parent = node.parent;
+  const route = parent?.group ? (getSsrmRoute(parent) ?? null) : null;
   const index = route ? node.sourceRowIndex : node.rowIndex;
-  return index === null || index < 0 ? null : { index, route };
+  if (index === null || index < 0) return null;
+  const devices = (parent?.data as { devices?: unknown } | undefined)?.devices;
+  return {
+    index,
+    route,
+    count: route && typeof devices === 'number' ? devices : null,
+  };
 }

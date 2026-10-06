@@ -139,8 +139,10 @@ export async function proxyApplication(
       for await (const chunk of request) {
         size += chunk.length;
         const limit =
-          phase === 3 && principalWrite.test(pathname)
-            ? 98304
+          phase === 3 &&
+          (principalWrite.test(pathname) || deviceWrite.test(pathname))
+            ? // Device bodies carry ID batches, group routes, and set filters.
+              98304
             : phase === 3 &&
                 [
                   '/api/google-connection/candidates',

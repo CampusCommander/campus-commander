@@ -195,3 +195,56 @@ it('reports selected groups to LibreGrid and the status bar', async () => {
     'Selected groups: /School A › Replace soon',
   );
 });
+
+const deviceIds = (count: number) =>
+  Array.from(
+    { length: count },
+    (_, index) =>
+      `${String(index).padStart(8, '0')}-4c1e-4b8e-9a51-2b7f0f6d8a10`,
+  );
+const bodySizes = (call: ReturnType<typeof vi.fn>) =>
+  call.mock.calls.map(
+    ([, body]) => new TextEncoder().encode(JSON.stringify(body)).length,
+  );
+
+it('keeps each selection change inside the edge body limit', async () => {
+  const call = vi
+    .fn()
+    .mockImplementation(async () => Response.json({ selection: spec }));
+  const provider = new DeviceSelectionProvider(call);
+  const ids = deviceIds(2500);
+  await provider.applyOps({
+    gridId: 'devices',
+    tabId,
+    ops: [{ op: 'select', ids }],
+  });
+  expect(Math.max(...bodySizes(call))).toBeLessThanOrEqual(65536);
+  expect(
+    call.mock.calls.flatMap(([, body]) =>
+      body.ops.flatMap((op: { ids: string[] }) => op.ids),
+    ),
+  ).toEqual(ids);
+});
+
+it('keeps each resolve request inside the edge body limit', async () => {
+  const call = vi
+    .fn()
+    .mockImplementation(async () => Response.json({ selected: {} }));
+  const provider = new DeviceSelectionProvider(call, context);
+  const rowIds = deviceIds(2000);
+  const groupRoutes = Array.from(
+    { length: 1500 },
+    (_, index) => `/District/High schools/School ${index}`,
+  );
+  await provider.resolveSelected({
+    gridId: 'devices',
+    tabId,
+    rowIds,
+    groupRoutes,
+  });
+  expect(Math.max(...bodySizes(call))).toBeLessThanOrEqual(65536);
+  expect(call.mock.calls.flatMap(([, body]) => body.rowIds)).toEqual(rowIds);
+  expect(call.mock.calls.flatMap(([, body]) => body.groupRoutes)).toEqual(
+    groupRoutes,
+  );
+});

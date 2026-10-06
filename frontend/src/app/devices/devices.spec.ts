@@ -32,6 +32,7 @@ class GridStub {
     row: DeviceRow;
     index: number;
     route: string[] | null;
+    count: number | null;
   }>();
   readonly filtersChange = output<unknown>();
 }
@@ -288,10 +289,11 @@ it('follows the group of the opened device for Next device', () => {
     row: { deviceId: 'd7' } as DeviceRow,
     index: 4,
     route: ['replace-soon'],
+    count: 135,
   });
   expect(store.view()).toMatchObject({
     group: { by: ['battery'], keys: ['replace-soon'] },
   });
-  expect(store.position()).toEqual({ index: 4, deviceId: 'd7' });
+  expect(store.position()).toEqual({ index: 4, deviceId: 'd7', count: 135 });
   expect(navigate).toHaveBeenCalledWith(['/devices', 'd7']);
 });

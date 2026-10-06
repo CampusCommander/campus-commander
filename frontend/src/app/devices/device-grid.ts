@@ -154,6 +154,7 @@ export class DeviceGrid implements OnInit {
     row: DeviceRow;
     index: number;
     route: string[] | null;
+    count: number | null;
   }>();
 
   private api: GridApi<DeviceRow> | null = null;

@@ -40,7 +40,8 @@ export class DeviceDetailPage {
       position !== null &&
       position.deviceId === this.deviceId() &&
       page !== null &&
-      position.index + 1 < page.matching
+      // A device opened inside a group walks that group.
+      position.index + 1 < (position.count ?? page.matching)
     );
   });
   protected readonly relative = relativeTime;
@@ -75,6 +76,7 @@ export class DeviceDetailPage {
     const row = await this.store.neighbor(position.index + 1);
     if (!row) return;
     this.store.position.set({
+      ...position,
       index: position.index + 1,
       deviceId: row.deviceId,
     });

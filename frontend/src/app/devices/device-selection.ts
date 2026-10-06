@@ -24,6 +24,29 @@ export const DEVICE_GRID_ID = 'devices' as const;
 const tabStorageKey = 'cc.devices.selection-tab';
 const idBatch = 2000;
 const opBatch = 100;
+/** The edge accepts 96 KiB device bodies. Lists and operation groups stay well inside that. */
+const listBudget = 28 * 1024;
+const opsBudget = 56 * 1024;
+const encoder = new TextEncoder();
+
+/** Split a list in order, so each part serializes within the budget and holds at most `most` items. */
+function sized<T>(items: readonly T[], budget: number, most: number): T[][] {
+  const parts: T[][] = [];
+  let part: T[] = [];
+  let size = 2;
+  for (const item of items) {
+    const itemSize = encoder.encode(JSON.stringify(item)).length + 1;
+    if (part.length && (size + itemSize > budget || part.length >= most)) {
+      parts.push(part);
+      part = [];
+      size = 2;
+    }
+    part.push(item);
+    size += itemSize;
+  }
+  if (part.length) parts.push(part);
+  return parts;
+}
 
 function browserSession(): Pick<Storage, 'getItem' | 'setItem'> | null {
   try {
@@ -76,8 +99,8 @@ function deviceOps(
     case 'select':
     case 'deselect': {
       const batches: DeviceSelectionOp[] = [];
-      for (let start = 0; start < op.ids.length; start += idBatch)
-        batches.push({ op: op.op, ids: op.ids.slice(start, start + idBatch) });
+      for (const ids of sized(op.ids, listBudget, idBatch))
+        batches.push({ op: op.op, ids });
       return batches;
     }
     case 'selectGroup':
@@ -140,13 +163,8 @@ export class DeviceSelectionProvider implements ServerSideSelectionProvider {
   }): Promise<void> {
     const context = this.context();
     const ops = params.ops.flatMap((op) => deviceOps(op, context));
-    for (let start = 0; start < ops.length; start += opBatch)
-      this.keep(
-        await this.post('/ops', {
-          ...key(params),
-          ops: ops.slice(start, start + opBatch),
-        }),
-      );
+    for (const part of sized(ops, opsBudget, opBatch))
+      this.keep(await this.post('/ops', { ...key(params), ops: part }));
   }
 
   async resolveSelected(params: {
@@ -157,13 +175,15 @@ export class DeviceSelectionProvider implements ServerSideSelectionProvider {
   }): Promise<Record<string, boolean>> {
     const context = this.context();
     const selected: Record<string, boolean> = {};
-    // The first request also carries the group routes, so groups resolve without device rows.
-    const batches = Math.max(1, Math.ceil(params.rowIds.length / idBatch));
+    const rows = sized(params.rowIds, listBudget, idBatch);
+    const routes = sized(params.groupRoutes, listBudget, idBatch);
+    // Groups resolve without device rows, so at least one request goes out.
+    const batches = Math.max(1, rows.length, routes.length);
     for (let batch = 0; batch < batches; batch++) {
       const body = await this.post('/resolve', {
         ...key(params),
-        rowIds: params.rowIds.slice(batch * idBatch, (batch + 1) * idBatch),
-        groupRoutes: batch === 0 ? params.groupRoutes : [],
+        rowIds: rows[batch] ?? [],
+        groupRoutes: routes[batch] ?? [],
         ...context,
       });
       Object.assign(
