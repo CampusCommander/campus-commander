@@ -57,7 +57,7 @@ export const batteryObservationSchema = z.strictObject({
 });
 export type BatteryObservation = z.infer<typeof batteryObservationSchema>;
 
-const rowShape = {
+const recordShape = {
   deviceId,
   serialNumber: z.string().max(256),
   model: z.string().max(256).nullable(),
@@ -67,13 +67,24 @@ const rowShape = {
   annotatedLocation: z.string().max(4096).nullable(),
   notes: z.string().max(4096).nullable(),
   battery: deviceBatterySchema,
+  /** When Campus Commander last read this device from Google. */
+  lastEntitySync: timestamp,
 };
-export const deviceRowSchema = z.strictObject(rowShape);
+/** One device as Redis stores it. Readers add `stale` at read time. */
+export const deviceRecordSchema = z.strictObject(recordShape);
+export type DeviceRecord = z.infer<typeof deviceRecordSchema>;
+
+export const deviceRowSchema = z.strictObject({
+  ...recordShape,
+  stale: z.boolean(),
+});
 export type DeviceRow = z.infer<typeof deviceRowSchema>;
 
 export const deviceDetailSchema = z.strictObject({
-  ...rowShape,
-  observedAt: timestamp,
+  ...recordShape,
+  stale: z.boolean(),
+  /** Set when Google no longer returns the device. The row stays in the database. */
+  removedAt: timestamp.nullable(),
   batteryReports: z.array(batteryReportSchema).max(30),
 });
 export type DeviceDetail = z.infer<typeof deviceDetailSchema>;
@@ -254,6 +265,8 @@ export const devicePageSchema = z.strictObject({
   matching: z.number().int().min(0),
   total: z.number().int().min(0),
   observedAt: timestamp.nullable(),
+  /** The refresh job this page started for its stale devices, when one started. */
+  refreshJobId: z.uuid().nullable(),
 });
 export type DevicePage = z.infer<typeof devicePageSchema>;
 

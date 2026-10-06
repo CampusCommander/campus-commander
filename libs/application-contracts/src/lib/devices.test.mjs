@@ -10,6 +10,8 @@ import {
   deviceSelectionKeySchema,
   deviceGroupQuerySchema,
   deviceGroupingSchema,
+  deviceDetailSchema,
+  devicePageSchema,
 } from './devices.ts';
 import {
   actionSchema,
@@ -26,6 +28,8 @@ const row = {
   lastContact: null,
   annotatedLocation: null,
   notes: null,
+  lastEntitySync: '2026-10-05T12:00:00.000Z',
+  stale: false,
 };
 
 test('device queries default to the first serial page', () => {
@@ -285,4 +289,22 @@ test('group selection operations carry the filters and grouped fields', () => {
     false,
   );
   assert.equal(ok({ op: 'selectGroup', ...scope, route: [] }), false);
+});
+
+test('rows carry freshness and details carry removal', () => {
+  const parsed = deviceRowSchema.parse({ ...row, battery: { status: 'no-report' } });
+  assert.equal(parsed.stale, false);
+  assert.equal(deviceRowSchema.safeParse({ ...row, battery: { status: 'no-report' }, stale: undefined }).success, false);
+  const detail = deviceDetailSchema.parse({
+    ...row,
+    battery: { status: 'no-report' },
+    removedAt: null,
+    batteryReports: [],
+  });
+  assert.equal(detail.removedAt, null);
+  assert.equal('observedAt' in detail, false);
+  assert.equal(
+    devicePageSchema.parse({ rows: [], matching: 0, total: 0, observedAt: null, refreshJobId: null }).refreshJobId,
+    null,
+  );
 });
