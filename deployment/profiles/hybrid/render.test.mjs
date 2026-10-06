@@ -136,9 +136,22 @@ test('renders one district-bound worker fragment for each host', () => {
       'workers-certificate',
       'workers-private-key',
       'campus-database-password',
+      'redis-password',
       'district-ca',
     ]),
   );
+});
+
+test('each worker host fragment mounts the Redis password and CA', () => {
+  for (const hostIndex of [0, 1]) {
+    const worker = renderWorkerHost(config, release, {
+      hostIndex,
+      bindAddress: `10.20.30.${41 + hostIndex}`,
+    });
+    const files = mounted(worker, 'workers');
+    assert.ok(files.has('redis-password'));
+    assert.ok(files.has('district-ca'));
+  }
 });
 
 test('removes an externally owned Kestra workload', () => {

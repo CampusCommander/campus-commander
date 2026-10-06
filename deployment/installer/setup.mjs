@@ -1117,6 +1117,9 @@ export async function runSetup(
       references.map((ref) => refPath(join(root, 'private'), ref)),
     ))
       output(path);
+    output(
+      `Each worker host requires network access to the Redis endpoint ${config.services.redis.endpoint.url}.`,
+    );
 
     const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
     for (let i = 0; i < config.host.workerHosts; i++) {

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { GoogleConnectionError } from '@campus/google-connection';
 import { DeviceSync, DeviceSyncError } from './device-sync.ts';
-import { EntityCacheError } from './entity-cache.ts';
+import { EntityCacheError, noEntityCache } from './entity-cache.ts';
 
 const customerId = 'C0123456';
 const request = { customerId, syncId: randomUUID(), correlationId: randomUUID() };
@@ -187,4 +187,23 @@ test('shutdown stops the Redis fill', async () => {
   assert.deepEqual(result, state);
   assert.equal(names(db.calls).filter((name) => name === 'page_device_records').length, 1);
   assert.ok(names(redis.calls).includes('publish'));
+});
+
+test('the no-op cache lets a full sync publish without Redis', async () => {
+  const db = database();
+  const result = await new DeviceSync(db, cipher, reader(), noEntityCache).run(
+    request,
+    AbortSignal.timeout(5000),
+  );
+  assert.deepEqual(result, state);
+  assert.deepEqual(names(db.calls), [
+    'claim_device_sync',
+    'stage_devices',
+    'stage_device_batteries',
+    'finish_device_sync',
+    'page_device_records',
+    'page_device_records',
+  ]);
+  for (const method of ['setRecords', 'remove', 'removeMembers', 'increment', 'publish', 'close'])
+    assert.equal(await noEntityCache[method]('key', []), undefined);
 });

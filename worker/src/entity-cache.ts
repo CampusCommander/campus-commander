@@ -21,6 +21,16 @@ export interface EntityCache {
   close(): Promise<void>;
 }
 
+/** A cache that writes nothing. A full sync uses it when the Redis configuration or secret is missing. */
+export const noEntityCache: EntityCache = {
+  setRecords: async () => undefined,
+  remove: async () => undefined,
+  removeMembers: async () => undefined,
+  increment: async () => undefined,
+  publish: async () => undefined,
+  close: async () => undefined,
+};
+
 const chunk = 500;
 
 export class WorkerRedis implements EntityCache {

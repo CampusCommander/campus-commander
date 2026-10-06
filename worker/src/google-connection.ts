@@ -15,7 +15,7 @@ import {
 } from '@campus/google-connection';
 import type { EntitySyncBatchRequest } from '@campus/application-contracts';
 import { DeviceSync, type DeviceSyncRequest } from './device-sync';
-import { WorkerRedis } from './entity-cache';
+import { WorkerRedis, noEntityCache, type EntityCache } from './entity-cache';
 import { EntitySyncBatch } from './entity-sync';
 
 function secret(reference: SecretReference): Buffer {
@@ -117,16 +117,22 @@ export class GoogleWorker {
     return new GoogleConnectionProvider(pool, cipher).read(input, signal);
   }
 
+  /** Postgres publishes a full sync. A missing Redis configuration or secret only skips the cache fill. */
   async syncDevices(input: DeviceSyncRequest, signal: AbortSignal) {
     const { pool, cipher } = this.resources();
-    return new DeviceSync(
-      pool,
-      cipher,
-      new GoogleDeviceReader(),
-      this.cache(),
-    ).run(input, signal);
+    let cache: EntityCache;
+    try {
+      cache = this.cache();
+    } catch {
+      cache = noEntityCache;
+    }
+    return new DeviceSync(pool, cipher, new GoogleDeviceReader(), cache).run(
+      input,
+      signal,
+    );
   }
 
+  /** An entity batch requires Redis. A missing cache answers 503 so Kestra retries the batch. */
   async syncEntityBatch(input: EntitySyncBatchRequest, signal: AbortSignal) {
     const { pool, cipher } = this.resources();
     return new EntitySyncBatch(pool, cipher, new GoogleDeviceReader(), this.cache()).run(input, signal);

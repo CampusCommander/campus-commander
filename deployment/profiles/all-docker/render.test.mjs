@@ -125,14 +125,25 @@ test('stages private files per service without inheriting the installer identity
     initializer.command[2].includes('/staged/api-secrets/postgres-migrator'),
     false,
   );
-  assert.equal(
-    initializer.command[2].includes('/staged/workers-secrets/redis-password'),
-    false,
-  );
   assert.deepEqual(compose.services['database-migrate'].volumes, [
     'database-migrate-secrets:/run/secrets:ro',
     'database-migrate-config:/run/config:ro',
   ]);
+});
+
+test('the worker mounts the Redis password', () => {
+  const compose = renderAllDocker(config, release);
+  const initializer = compose.services['volume-permissions'];
+  assert.ok(
+    initializer.command[2].includes(
+      "cp '/run/secrets/redis-password' '/staged/workers-secrets/redis-password'",
+    ),
+  );
+  assert.ok(
+    compose.services.workers.volumes.includes(
+      'workers-secrets:/run/secrets:ro',
+    ),
+  );
 });
 
 test('private source mounts reject missing daemon paths instead of creating directories', () => {

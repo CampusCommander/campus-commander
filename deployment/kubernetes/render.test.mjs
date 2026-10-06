@@ -194,6 +194,42 @@ test('external dependencies omit local workloads and receive explicit network pa
   );
 });
 
+test('worker pods mount the Redis password and CA and reach Redis', () => {
+  const list = render();
+  const pod = workload(list, 'workers').spec.template.spec;
+  const projected = pod.volumes.flatMap(
+    (volume) =>
+      volume.secret?.items.map(
+        (item) => `${volume.secret.secretName}/${item.key}`,
+      ) ?? [],
+  );
+  for (const ref of [
+    profile.services.redis.passwordSecretRef,
+    profile.services.redis.endpoint.tls.caSecretRef,
+  ])
+    assert.ok(projected.includes(`${ref.name}/${ref.key}`));
+  const policy = (name) =>
+    list.items.find(
+      (item) => item.kind === 'NetworkPolicy' && item.metadata.name === name,
+    );
+  assert.ok(
+    policy('workers-egress').spec.egress.some((rule) =>
+      rule.to.some(
+        (peer) =>
+          peer.podSelector?.matchLabels['app.kubernetes.io/name'] === 'redis',
+      ),
+    ),
+  );
+  assert.ok(
+    policy('redis-ingress').spec.ingress.some((rule) =>
+      rule.from.some(
+        (peer) =>
+          peer.podSelector?.matchLabels['app.kubernetes.io/name'] === 'workers',
+      ),
+    ),
+  );
+});
+
 test('TLS probes preserve certificate verification and edge egress reaches only frontend and API', () => {
   const list = render();
   for (const key of ['frontend', 'api', 'workers', 'edge'])

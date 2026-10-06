@@ -479,6 +479,8 @@ export function renderKubernetes(input, operatorInput) {
         config.googleConnection,
         config.services.applicationDatabase.endpoint,
         config.services.applicationDatabase.passwordSecretRef,
+        config.services.redis.endpoint,
+        config.services.redis.passwordSecretRef,
       ]);
     if (key === 'edge')
       refs = collectRefs([
@@ -917,7 +919,7 @@ export function renderKubernetes(input, operatorInput) {
       'redis',
       'kestra',
     ],
-    workers: ['applicationDatabase'],
+    workers: ['applicationDatabase', 'redis'],
     kestra: ['kestraDatabase', 'workers'],
     'database-prepare': ['applicationDatabase', 'kestraDatabase'],
   };

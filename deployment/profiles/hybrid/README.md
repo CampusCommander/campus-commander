@@ -42,6 +42,7 @@ CC_WORKER_BIND_ADDRESSES=10.20.30.41,10.20.30.42 npm exec nx -- run deployment:h
 The renderer writes one `docker-compose.worker-N.yml` file for each worker host. Each address must name a non-loopback district interface.
 
 Install the controller file on the application host. Install each worker file and the same protected runtime profile on its declared host.
+Each worker host requires network access to the Redis endpoint.
 
 Configure district DNS for the worker endpoint across all worker addresses. Permit its port only from Kestra and authorized diagnostics.
 

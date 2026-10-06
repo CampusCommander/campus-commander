@@ -116,8 +116,13 @@ export function renderAllDocker(
     redisPassword: services.redis.passwordSecretRef,
     kestraAuth: services.kestra.authSecretRef,
   };
+  const redisCa =
+    services.redis.endpoint.tls.mode === 'private-ca'
+      ? [services.redis.endpoint.tls.caSecretRef]
+      : [];
   const secretReferences = [
     ...Object.values(refs),
+    ...redisCa,
     ...(config.applicationAuth ? [config.applicationAuth.clientSecretRef] : []),
     ...(config.googleConnection
       ? [
@@ -442,6 +447,8 @@ export function renderAllDocker(
         secrets: [
           mountedSecret(refs.dispatch),
           mountedSecret(refs.appPassword),
+          mountedSecret(refs.redisPassword),
+          ...redisCa.map(mountedSecret),
           ...(config.googleConnection
             ? [
                 config.googleConnection.encryptionKeySecretRef,

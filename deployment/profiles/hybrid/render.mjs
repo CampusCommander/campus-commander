@@ -563,7 +563,9 @@ export function renderWorkerHost(input, release, { hostIndex, bindAddress }) {
     config.services.workers.serverTls.certificateSecretRef,
     config.services.workers.serverTls.privateKeySecretRef,
     config.services.applicationDatabase.passwordSecretRef,
+    config.services.redis.passwordSecretRef,
     caReference(config.services.applicationDatabase),
+    caReference(config.services.redis),
     caReference(config.services.workers),
   );
   const preflight = storagePreflight(config.images, config, false);
