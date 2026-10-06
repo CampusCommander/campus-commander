@@ -386,7 +386,10 @@ export class GoogleDeviceReader {
     return { devices, missing };
   }
 
-  /** One telemetry read per device, four at a time. A device without telemetry has no report. */
+  /**
+   * One telemetry read per device, four at a time. A device without telemetry has no report.
+   * The first other failure stops new reads and surfaces after the reads in flight settle.
+   */
   async batteryBatch(
     credential: DelegatedCredential,
     customerId: string,
@@ -427,12 +430,22 @@ export class GoogleDeviceReader {
         throw failure(error);
       }
     };
+    // The first hard failure stops new reads. Reads already in flight settle before it surfaces.
+    const stop: { error?: GoogleConnectionError } = {};
     await Promise.all(
       Array.from({ length: Math.min(telemetryConcurrency, queue.length) }, async () => {
-        for (let id = queue.shift(); id !== undefined; id = queue.shift())
-          await readOne(id);
+        while (!stop.error) {
+          const id = queue.shift();
+          if (id === undefined) return;
+          try {
+            await readOne(id);
+          } catch (error) {
+            stop.error ??= failure(error);
+          }
+        }
       }),
     );
+    if (stop.error) throw stop.error;
     return results.sort((a, b) => a.deviceId.localeCompare(b.deviceId));
   }
 }

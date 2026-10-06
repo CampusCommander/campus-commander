@@ -77,7 +77,8 @@ async function defaultSleep(milliseconds: number, signal: AbortSignal) {
 
 /**
  * One Kestra batch: read the slice, fetch from Google, upsert, cache, signal, record.
- * Quota errors retry inside the worker. Every other Google error fails the batch once.
+ * Quota errors retry inside the worker. Every other Directory error fails the batch once.
+ * Every other telemetry error keeps the stored battery fields and the batch succeeds.
  */
 export class EntitySyncBatch {
   private readonly database: DeviceSyncDatabase;
@@ -166,19 +167,31 @@ export class EntitySyncBatch {
         ),
       );
       const present = read.devices.map((device) => device.deviceId);
-      const batteries = await this.untilQuotaClears(signal, () =>
-        this.reader.batteryBatch(credential, input.customerId, present, signal),
-      );
+      let batteries: BatteryObservation[] | null = null;
+      try {
+        batteries = await this.untilQuotaClears(signal, () =>
+          this.reader.batteryBatch(credential, input.customerId, present, signal),
+        );
+      } catch (error) {
+        // A telemetry failure keeps the stored battery fields. The Directory data still lands.
+        if (
+          signal.aborted ||
+          !(error instanceof GoogleConnectionError) ||
+          error.code === 'quota'
+        )
+          throw error;
+      }
       const syncedAt = new Date().toISOString();
       await this.call('SELECT cc.upsert_devices($1,$2,$3) AS result', [
         input.customerId,
         JSON.stringify(read.devices),
         syncedAt,
       ]);
-      await this.call('SELECT cc.upsert_device_batteries($1,$2) AS result', [
-        input.customerId,
-        JSON.stringify(batteries),
-      ]);
+      if (batteries)
+        await this.call('SELECT cc.upsert_device_batteries($1,$2) AS result', [
+          input.customerId,
+          JSON.stringify(batteries),
+        ]);
       await this.call('SELECT cc.soft_delete_devices($1,$2) AS result', [
         input.customerId,
         JSON.stringify(read.missing),

@@ -347,3 +347,60 @@ test('a failed job-finished publish does not fail the batch', async () => {
   ).run({ ...request, batch: 1 }, AbortSignal.timeout(5000));
   assert.ok(result.job.finishedAt);
 });
+
+test('a telemetry failure keeps the batch devices and skips the battery upsert', async () => {
+  const db = database();
+  const redis = cache();
+  const result = await new EntitySyncBatch(
+    db,
+    cipher,
+    reader({
+      devices: [{ devices: [device('d1'), device('d3')], missing: ['d2'] }],
+      batteries: [new GoogleConnectionError('permission-denied')],
+    }),
+    redis,
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  assert.deepEqual(names(db.calls), [
+    'read_entity_sync_batch',
+    'upsert_devices',
+    'soft_delete_devices',
+    'read_device_records',
+    'finish_entity_sync_batch',
+  ]);
+  assert.deepEqual(db.calls.at(-1).values, [customerId, jobId, 0, null]);
+  assert.deepEqual(names(redis.calls), [
+    'setRecords',
+    'remove',
+    'removeMembers',
+    'publish',
+  ]);
+  assert.equal(JSON.parse(redis.calls[3].args[1]).type, 'entity-batch');
+  assert.equal(result.failure, null);
+  assert.deepEqual(result.updated, ['d1', 'd3']);
+  assert.deepEqual(result.removed, ['d2']);
+});
+
+test('a quota answer from telemetry still retries and writes batteries', async () => {
+  const db = database();
+  const source = reader({
+    batteries: [
+      new GoogleConnectionError('quota'),
+      [{ deviceId: 'd1', battery: { status: 'no-report' }, reports: [] }],
+    ],
+  });
+  const result = await new EntitySyncBatch(
+    db,
+    cipher,
+    source,
+    cache(),
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  assert.equal(result.failure, null);
+  assert.equal(
+    names(source.calls).filter((name) => name === 'batteryBatch').length,
+    2,
+  );
+  const upsert = db.calls.find((call) => call.name === 'upsert_device_batteries');
+  assert.deepEqual(JSON.parse(upsert.values[1]).map((b) => b.deviceId), ['d1']);
+});

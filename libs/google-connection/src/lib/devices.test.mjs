@@ -349,3 +349,16 @@ test('batteryBatch reads one telemetry record per device and treats 404 as no re
     [['d1', 'reported'], ['d2', 'no-report']],
   );
 });
+
+test('batteryBatch stops issuing reads after the first hard failure', async (t) => {
+  const forbidden = new Error('forbidden');
+  forbidden.response = { status: 403, data: { error: { errors: [{ reason: 'forbidden' }] } } };
+  const ids = Array.from({ length: 8 }, (_, index) => `d${index + 1}`);
+  const { calls } = stub(t, [forbidden, ...ids.slice(1).map((deviceId) => ({ deviceId }))]);
+  await assert.rejects(
+    new GoogleDeviceReader().batteryBatch(credential, 'C0123456', ids, AbortSignal.timeout(5000)),
+    { name: 'GoogleConnectionError', code: 'permission-denied' },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(calls.length, 4, 'Only the reads already in flight finish.');
+});
