@@ -48,12 +48,7 @@ function deviceWhere(
   const clauses = ['s.customer_id=$1'];
   for (const predicate of predicates) {
     if (predicate.field === 'orgUnitPath') {
-      if (predicate.operator === 'equals')
-        clauses.push(`d.org_unit_path=${add(predicate.value)}`);
-      else if (predicate.value !== '/')
-        clauses.push(
-          `(d.org_unit_path=${add(predicate.value)} OR d.org_unit_path LIKE ${add(`${escapeLike(predicate.value)}/%`)})`,
-        );
+      clauses.push(`d.org_unit_path=ANY(${add(predicate.values)}::text[])`);
     } else if (predicate.field === 'battery') {
       const health = predicate.values.filter((value) =>
         healthValues.has(value),
@@ -68,7 +63,7 @@ function deviceWhere(
         );
       if (missing.length)
         parts.push(`${batteryStatus}=ANY(${add(missing)}::text[])`);
-      clauses.push(`(${parts.join(' OR ')})`);
+      clauses.push(parts.length ? `(${parts.join(' OR ')})` : 'FALSE');
     } else if (predicate.field === 'lastContact') {
       clauses.push(
         `d.last_contact ${predicate.operator === 'before' ? '<' : '>='} ${add(predicate.value)}::timestamptz`,

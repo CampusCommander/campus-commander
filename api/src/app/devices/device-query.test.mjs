@@ -42,31 +42,32 @@ test('filter values never enter the SQL text', () => {
   const { rows, count } = query({
     predicates: [
       { field: 'serialNumber', operator: 'equals', value: hostile },
-      { field: 'orgUnitPath', operator: 'within', value: `/${hostile}` },
+      { field: 'orgUnitPath', operator: 'in', values: [`/${hostile}`] },
     ],
   });
   assert.equal(rows.text.includes('DROP'), false);
   assert.equal(count.text.includes('DROP'), false);
 });
 
-test('organization unit scope includes descendants and treats root as everything', () => {
-  const school = query({
+test('organization unit filters match the chosen paths exactly', () => {
+  const { rows } = query({
     predicates: [
-      { field: 'orgUnitPath', operator: 'within', value: '/School A' },
+      { field: 'orgUnitPath', operator: 'in', values: ['/School A', '/'] },
     ],
   });
-  assert.match(
-    school.rows.text,
-    /\(d\.org_unit_path=\$2 OR d\.org_unit_path LIKE \$3\)/,
-  );
-  assert.deepEqual(school.rows.values.slice(1, 3), [
-    '/School A',
-    '/School A/%',
-  ]);
-  const root = query({
-    predicates: [{ field: 'orgUnitPath', operator: 'within', value: '/' }],
+  assert.match(rows.text, /AND d\.org_unit_path=ANY\(\$2::text\[\]\) ORDER BY/);
+  assert.deepEqual(rows.values[1], ['/School A', '/']);
+});
+
+test('an empty set filter matches no devices', () => {
+  const battery = query({
+    predicates: [{ field: 'battery', operator: 'is', values: [] }],
   });
-  assert.deepEqual(root.rows.values, ['C0123456', 0, 100]);
+  assert.match(battery.rows.text, /WHERE s\.customer_id=\$1 AND FALSE ORDER BY/);
+  const units = query({
+    predicates: [{ field: 'orgUnitPath', operator: 'in', values: [] }],
+  });
+  assert.deepEqual(units.rows.values[1], []);
 });
 
 test('battery filters combine Google classes and missing data with OR', () => {

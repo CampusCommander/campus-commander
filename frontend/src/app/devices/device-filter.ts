@@ -21,7 +21,6 @@ import {
 import {
   BATTERY_LABELS,
   DATE_OPERATORS,
-  ORG_UNIT_OPERATORS,
   TEXT_OPERATORS,
   dateInputToIso,
   dateInputValue,
@@ -29,6 +28,8 @@ import {
   orgUnitOptions,
   shortcutLabel,
   suggestions,
+  unitCheck,
+  withUnit,
   type BatteryFilterValue,
   type DeviceField,
 } from './device-fields';
@@ -70,10 +71,10 @@ export class DeviceFilter {
   protected readonly operator = signal('contains');
   protected readonly value = signal('');
   protected readonly battery = signal<readonly BatteryFilterValue[]>([]);
+  protected readonly unitValues = signal<readonly string[]>([]);
   protected readonly unitSearch = signal('');
   protected readonly textOperators = TEXT_OPERATORS;
   protected readonly dateOperators = DATE_OPERATORS;
-  protected readonly orgUnitOperators = ORG_UNIT_OPERATORS;
   protected readonly batteryOptions = Object.entries(BATTERY_LABELS) as [
     BatteryFilterValue,
     string,
@@ -121,21 +122,27 @@ export class DeviceFilter {
     const candidate =
       field.kind === 'battery'
         ? { field: field.id, operator: 'is', values: this.battery() }
-        : field.kind === 'date'
-          ? {
-              field: field.id,
-              operator: this.operator(),
-              value: dateInputToIso(this.value()),
-            }
-          : this.operator() === 'isEmpty'
-            ? { field: field.id, operator: 'isEmpty' }
-            : {
+        : field.kind === 'orgUnit'
+          ? { field: field.id, operator: 'in', values: this.unitValues() }
+          : field.kind === 'date'
+            ? {
                 field: field.id,
                 operator: this.operator(),
-                value: this.value(),
-              };
+                value: dateInputToIso(this.value()),
+              }
+            : this.operator() === 'isEmpty'
+              ? { field: field.id, operator: 'isEmpty' }
+              : {
+                  field: field.id,
+                  operator: this.operator(),
+                  value: this.value(),
+                };
     const parsed = devicePredicateSchema.safeParse(candidate);
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) return null;
+    // Only grid set filters may be empty. A chip needs at least one value.
+    return 'values' in parsed.data && parsed.data.values.length === 0
+      ? null
+      : parsed.data;
   });
 
   constructor() {
@@ -196,13 +203,14 @@ export class DeviceFilter {
     this.field.set(field);
     this.operator.set(
       field.kind === 'orgUnit'
-        ? 'within'
+        ? 'in'
         : field.kind === 'date'
           ? 'before'
           : 'contains',
     );
     this.value.set('');
     this.battery.set([]);
+    this.unitValues.set([]);
     this.unitSearch.set('');
     afterNextRender(
       () =>
@@ -218,6 +226,8 @@ export class DeviceFilter {
     this.openField(fieldFor(predicate.field));
     this.operator.set(predicate.operator);
     if (predicate.field === 'battery') this.battery.set(predicate.values);
+    else if (predicate.field === 'orgUnitPath')
+      this.unitValues.set(predicate.values);
     else if (predicate.field === 'lastContact')
       this.value.set(dateInputValue(predicate.value));
     else if ('value' in predicate) this.value.set(predicate.value);
@@ -228,6 +238,16 @@ export class DeviceFilter {
       checked
         ? [...values.filter((item) => item !== value), value]
         : values.filter((item) => item !== value),
+    );
+  }
+
+  protected unitState(path: string) {
+    return unitCheck(this.unitValues(), this.orgUnits(), path);
+  }
+
+  protected chooseUnit(path: string, checked: boolean): void {
+    this.unitValues.set(
+      withUnit(this.unitValues(), this.orgUnits(), path, checked),
     );
   }
 

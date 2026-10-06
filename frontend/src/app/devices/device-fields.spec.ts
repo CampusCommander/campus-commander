@@ -10,6 +10,9 @@ import {
   suggestions,
   syncFailureText,
   telemetryFailureText,
+  unitCheck,
+  unitsWithin,
+  withUnit,
 } from './device-fields';
 
 describe('device fields', () => {
@@ -26,9 +29,18 @@ describe('device fields', () => {
         'Serial is: C0A1',
       ],
       [
-        { field: 'orgUnitPath', operator: 'within', value: '/School A' },
-        'Organization unit is within: /School A',
+        { field: 'orgUnitPath', operator: 'in', values: ['/School A'] },
+        'Organization unit · /School A',
       ],
+      [
+        {
+          field: 'orgUnitPath',
+          operator: 'in',
+          values: ['/A', '/B', '/C', '/D'],
+        },
+        'Organization unit · 4 units',
+      ],
+      [{ field: 'battery', operator: 'is', values: [] }, 'Battery · none'],
       [
         {
           field: 'battery',
@@ -124,5 +136,27 @@ it('shows full paths while searching organization units', () => {
   expect(orgUnitOptions(units, 'students').map((unit) => unit.label)).toEqual([
     '/School A/Students',
     '/School B/Students',
+  ]);
+});
+
+it('selects an organization unit together with the units inside it', () => {
+  const units = [
+    { path: '/', devices: 2 },
+    { path: '/School A', devices: 5 },
+    { path: '/School A/Library', devices: 3 },
+    { path: '/School AB', devices: 1 },
+  ];
+  expect(unitsWithin(units, '/School A')).toEqual([
+    '/School A',
+    '/School A/Library',
+  ]);
+  expect(unitsWithin(units, '/')).toHaveLength(4);
+  const chosen = withUnit([], units, '/School A', true);
+  expect(chosen).toEqual(['/School A', '/School A/Library']);
+  expect(unitCheck(chosen, units, '/School A')).toBe('checked');
+  expect(unitCheck(chosen, units, '/')).toBe('mixed');
+  expect(unitCheck(chosen, units, '/School AB')).toBe('unchecked');
+  expect(withUnit(chosen, units, '/School A/Library', false)).toEqual([
+    '/School A',
   ]);
 });

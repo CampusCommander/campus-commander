@@ -59,11 +59,6 @@ export const DATE_OPERATORS = [
   { id: 'before', label: 'Before' },
   { id: 'after', label: 'On or after' },
 ] as const;
-export const ORG_UNIT_OPERATORS = [
-  { id: 'within', label: 'Is within' },
-  { id: 'equals', label: 'Is' },
-] as const;
-
 export const BATTERY_LABELS: Readonly<Record<BatteryFilterValue, string>> = {
   normal: 'Normal',
   'replace-soon': 'Replace soon',
@@ -89,9 +84,19 @@ function day(iso: string): string {
 export function chipLabel(predicate: DevicePredicate): string {
   const label = fieldFor(predicate.field).label;
   if (predicate.field === 'battery')
-    return `${label} · ${predicate.values.map((value) => BATTERY_LABELS[value]).join(', ')}`;
+    return `${label} · ${
+      predicate.values.length
+        ? predicate.values.map((value) => BATTERY_LABELS[value]).join(', ')
+        : 'none'
+    }`;
   if (predicate.field === 'orgUnitPath')
-    return `${label} ${predicate.operator === 'within' ? 'is within' : 'is'}: ${predicate.value}`;
+    return `${label} · ${
+      predicate.values.length === 0
+        ? 'none'
+        : predicate.values.length <= 3
+          ? predicate.values.join(', ')
+          : `${predicate.values.length} units`
+    }`;
   if (predicate.field === 'lastContact')
     return `${label} ${predicate.operator === 'before' ? 'before' : 'on or after'}: ${day(predicate.value)}`;
   if (predicate.operator === 'isEmpty') return `${label} is empty`;
@@ -154,6 +159,48 @@ export function orgUnitOptions(
         depth: parts.length,
       };
     });
+}
+
+/** Organization units with devices at or below a path. The root contains every unit. */
+export function unitsWithin(
+  units: readonly DeviceOrgUnit[],
+  path: string,
+): string[] {
+  return units
+    .map((unit) => unit.path)
+    .filter(
+      (candidate) =>
+        path === '/' || candidate === path || candidate.startsWith(`${path}/`),
+    );
+}
+
+export type UnitCheck = 'checked' | 'mixed' | 'unchecked';
+
+export function unitCheck(
+  selected: readonly string[],
+  units: readonly DeviceOrgUnit[],
+  path: string,
+): UnitCheck {
+  const inside = unitsWithin(units, path);
+  const chosen = inside.filter((candidate) =>
+    selected.includes(candidate),
+  ).length;
+  if (chosen === 0) return 'unchecked';
+  return chosen === inside.length ? 'checked' : 'mixed';
+}
+
+/** Choosing a unit chooses the units inside it, so the filter covers the subtree. */
+export function withUnit(
+  selected: readonly string[],
+  units: readonly DeviceOrgUnit[],
+  path: string,
+  checked: boolean,
+): string[] {
+  const inside = new Set(unitsWithin(units, path));
+  const rest = selected.filter((candidate) => !inside.has(candidate));
+  return (checked ? [...rest, ...inside] : rest).sort((a, b) =>
+    a.localeCompare(b),
+  );
 }
 
 export function batteryText(battery: DeviceBattery): string {

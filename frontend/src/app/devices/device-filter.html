@@ -22,40 +22,29 @@
   </fieldset>
   } @case ('orgUnit') {
   <label class="field"
-    >Operator
-    <select
-      [value]="operator()"
-      (change)="operator.set($any($event.target).value)"
-    >
-      @for (item of orgUnitOperators; track item.id) {
-      <option [value]="item.id">{{ item.label }}</option>
-      }
-    </select></label
-  >
-  <label class="field"
     >Find an organization unit
     <input
       type="search"
       [value]="unitSearch()"
       (input)="unitSearch.set($any($event.target).value)"
   /></label>
-  <div class="units" role="radiogroup" aria-label="Organization unit">
+  <fieldset class="units">
+    <legend>Organization units</legend>
     @for (unit of units(); track unit.path) {
     <label class="unit" [style.padding-inline-start.px]="unit.depth * 16"
       ><input
-        type="radio"
-        [name]="id + '-unit'"
-        [checked]="value() === unit.path"
-        (change)="value.set(unit.path)"
+        type="checkbox"
+        [checked]="unitState(unit.path) === 'checked'"
+        [indeterminate]="unitState(unit.path) === 'mixed'"
+        (change)="chooseUnit(unit.path, $any($event.target).checked)"
       />{{ unit.label }}</label
     >
     } @empty {
     <p>No organization units match.</p>
     }
-  </div>
-  @if (operator() === 'within') {
-  <p class="hint">Includes descendant organization units.</p>
-  } } @case ('date') {
+  </fieldset>
+  <p class="hint">Choosing a unit includes the units inside it.</p>
+  } @case ('date') {
   <label class="field"
     >Operator
     <select

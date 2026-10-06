@@ -118,13 +118,13 @@ export const devicePredicateSchema = z.union([
   }),
   z.strictObject({
     field: z.literal('orgUnitPath'),
-    operator: z.enum(['equals', 'within']),
-    value: orgUnitPath,
+    operator: z.literal('in'),
+    values: z.array(orgUnitPath).max(1000),
   }),
   z.strictObject({
     field: z.literal('battery'),
     operator: z.literal('is'),
-    values: z.array(batteryFilterValueSchema).min(1).max(5),
+    values: z.array(batteryFilterValueSchema).max(5),
   }),
   z.strictObject({
     field: z.literal('lastContact'),

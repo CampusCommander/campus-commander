@@ -99,7 +99,7 @@ export async function qualifyDevicesApi({
       (
         await query({
           predicates: [
-            { field: 'orgUnitPath', operator: 'within', value: '/School A' },
+            { field: 'orgUnitPath', operator: 'in', values: ['/School A'] },
           ],
         })
       ).matching,

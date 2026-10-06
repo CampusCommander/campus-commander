@@ -126,23 +126,42 @@ it('applies the chosen battery classes', () => {
   ]);
 });
 
-it('applies an organization unit including its descendants', () => {
+it('applies an organization unit with the units inside it', () => {
   const { element, applied, click, button, start } = setup([
+    { path: '/School A', devices: 5 },
     { path: '/School A/Library', devices: 3 },
+    { path: '/School B', devices: 4 },
   ]);
   start('organ');
   click(element.querySelectorAll('[role="option"]')[0]);
   const labels = [...element.querySelectorAll('.unit')].map((unit) =>
     unit.textContent?.trim(),
   );
-  expect(labels).toEqual(['All organization units', 'School A', 'Library']);
-  expect(element.textContent).toContain(
-    'Includes descendant organization units.',
-  );
-  click(element.querySelectorAll('.unit input')[1]);
+  expect(labels).toEqual([
+    'All organization units',
+    'School A',
+    'Library',
+    'School B',
+  ]);
+  const boxes = () => [
+    ...element.querySelectorAll<HTMLInputElement>('.unit input'),
+  ];
+  expect(button('Apply').disabled).toBe(true);
+  click(boxes()[1]);
+  expect(boxes().map((box) => box.checked)).toEqual([
+    false,
+    true,
+    true,
+    false,
+  ]);
+  expect(boxes()[0].indeterminate).toBe(true);
   click(button('Apply'));
   expect(applied).toEqual([
-    { field: 'orgUnitPath', operator: 'within', value: '/School A' },
+    {
+      field: 'orgUnitPath',
+      operator: 'in',
+      values: ['/School A', '/School A/Library'],
+    },
   ]);
 });
 

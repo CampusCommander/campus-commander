@@ -52,14 +52,20 @@ test('predicates accept only the operators of their field type', () => {
     ok({ field: 'battery', operator: 'is', values: ['replace-soon'] }),
     true,
   );
-  assert.equal(ok({ field: 'battery', operator: 'is', values: [] }), false);
+  // An empty set filter is valid. It matches no devices.
+  assert.equal(ok({ field: 'battery', operator: 'is', values: [] }), true);
   assert.equal(
-    ok({ field: 'orgUnitPath', operator: 'within', value: 'School A' }),
+    ok({ field: 'orgUnitPath', operator: 'in', values: ['School A'] }),
     false,
   );
   assert.equal(
-    ok({ field: 'orgUnitPath', operator: 'within', value: '/School A' }),
+    ok({ field: 'orgUnitPath', operator: 'in', values: ['/School A', '/'] }),
     true,
+  );
+  assert.equal(ok({ field: 'orgUnitPath', operator: 'in', values: [] }), true);
+  assert.equal(
+    ok({ field: 'orgUnitPath', operator: 'within', value: '/School A' }),
+    false,
   );
   assert.equal(
     ok({
