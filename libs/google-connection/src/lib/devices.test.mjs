@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
 import { JWT, OAuth2Client } from 'google-auth-library';
-import { GoogleDeviceReader } from './devices.ts';
+import { GoogleDeviceReader, parseBatchResponse } from './devices.ts';
 
 const { privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -22,6 +22,8 @@ const deviceScope =
 const telemetryScope =
   'https://www.googleapis.com/auth/chrome.management.telemetry.readonly';
 
+const multipart = { 'content-type': 'multipart/mixed; boundary=batch_response' };
+
 function stub(t, pages) {
   const calls = [];
   const scopes = [];
@@ -36,6 +38,8 @@ function stub(t, pages) {
     calls.push(options);
     const next = pages.shift();
     if (next instanceof Error || (next && next.response)) throw next;
+    if (next && next.__multipart)
+      return { data: next.body, headers: multipart, status: 200 };
     return { data: next };
   });
   return { calls, scopes };
@@ -232,4 +236,117 @@ test('device pages allow long notes across a full page', async (t) => {
   );
   assert.equal(limits.length, 1);
   assert.ok(limits[0] >= 4 * 1024 * 1024, `limit ${limits[0]}`);
+});
+
+const part = (id, status, body) =>
+  [
+    `--batch_response`,
+    'Content-Type: application/http',
+    `Content-ID: <response-item-${id}>`,
+    '',
+    `HTTP/1.1 ${status} ${status === 200 ? 'OK' : 'Error'}`,
+    'Content-Type: application/json; charset=UTF-8',
+    '',
+    JSON.stringify(body),
+    '',
+  ].join('\r\n');
+const batchBody = (parts) => `${parts.join('\r\n')}\r\n--batch_response--\r\n`;
+
+test('parseBatchResponse splits parts by content id and status', () => {
+  const parsed = parseBatchResponse(
+    multipart['content-type'],
+    batchBody([part('d1', 200, { deviceId: 'd1' }), part('d2', 404, { error: { code: 404 } })]),
+  );
+  assert.deepEqual(parsed, [
+    { contentId: 'd1', status: 200, body: { deviceId: 'd1' } },
+    { contentId: 'd2', status: 404, body: { error: { code: 404 } } },
+  ]);
+});
+
+test('deviceBatch reads each device once and reports missing devices', async (t) => {
+  const { calls, scopes } = stub(t, [
+    {
+      __multipart: true,
+      body: batchBody([
+        part('d1', 200, { deviceId: 'd1', serialNumber: 'C0A1-7F2D', orgUnitPath: '/School A' }),
+        part('d2', 404, { error: { code: 404, message: 'Resource Not Found' } }),
+      ]),
+    },
+  ]);
+  const result = await new GoogleDeviceReader().deviceBatch(
+    credential,
+    'C0123456',
+    ['d1', 'd2'],
+    AbortSignal.timeout(5000),
+  );
+  assert.deepEqual(scopes, [deviceScope]);
+  assert.equal(calls[0].url, 'https://www.googleapis.com/batch/admin/directory_v1');
+  assert.equal(calls[0].method, 'POST');
+  assert.match(calls[0].headers['content-type'], /^multipart\/mixed; boundary=/);
+  assert.match(calls[0].body, /GET \/admin\/directory\/v1\/customer\/C0123456\/devices\/chromeos\/d1\?projection=FULL/);
+  assert.match(calls[0].body, /Content-ID: <item-d2>/);
+  assert.deepEqual(result.devices.map((device) => device.serialNumber), ['C0A1-7F2D']);
+  assert.deepEqual(result.missing, ['d2']);
+});
+
+test('deviceBatch maps a quota part to a quota failure', async (t) => {
+  stub(t, [
+    {
+      __multipart: true,
+      body: batchBody([
+        part('d1', 403, { error: { code: 403, errors: [{ reason: 'userRateLimitExceeded' }] } }),
+      ]),
+    },
+  ]);
+  await assert.rejects(
+    new GoogleDeviceReader().deviceBatch(credential, 'C0123456', ['d1'], AbortSignal.timeout(5000)),
+    (error) => error.code === 'quota',
+  );
+});
+
+test('deviceBatch fails the batch on any other part error', async (t) => {
+  // failure() maps a plain 403 to permission-denied. If it maps differently, assert that code.
+  stub(t, [
+    {
+      __multipart: true,
+      body: batchBody([part('d1', 403, { error: { code: 403, errors: [{ reason: 'forbidden' }] } })]),
+    },
+  ]);
+  await assert.rejects(
+    new GoogleDeviceReader().deviceBatch(credential, 'C0123456', ['d1'], AbortSignal.timeout(5000)),
+    (error) => error.code === 'permission-denied',
+  );
+});
+
+test('batteryBatch reads one telemetry record per device and treats 404 as no report', async (t) => {
+  const missing = new Error('not found');
+  missing.response = { status: 404, data: { error: { code: 404 } } };
+  const { calls, scopes } = stub(t, [
+    {
+      deviceId: 'd1',
+      batteryInfo: [{ designCapacity: '5000' }],
+      batteryStatusReport: [
+        { reportTime: '2026-10-05T13:50:00.000Z', fullChargeCapacity: '3900', batteryHealth: 'BATTERY_REPLACE_SOON' },
+      ],
+    },
+    missing,
+  ]);
+  const result = await new GoogleDeviceReader().batteryBatch(
+    credential,
+    'C0123456',
+    ['d1', 'd2'],
+    AbortSignal.timeout(5000),
+  );
+  assert.deepEqual(scopes, [telemetryScope]);
+  assert.deepEqual(
+    calls.map((call) => call.url).sort(),
+    [
+      'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/d1',
+      'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/d2',
+    ],
+  );
+  assert.deepEqual(
+    result.map((observation) => [observation.deviceId, observation.battery.status]),
+    [['d1', 'reported'], ['d2', 'no-report']],
+  );
 });
