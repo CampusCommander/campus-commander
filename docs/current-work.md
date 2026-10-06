@@ -9,7 +9,7 @@ Source: development order steps 2 and 3 below, and owner decisions on 2026-10-05
 The owner authorized implementation on 2026-10-05, after the workflow record.
 
 The slice reads data only. It covers the device grid, typed filters, device details, battery health, and the designed states.
-Battery health uses Google's classification. The owner added grid tools, paging, and server-side selection on 2026-10-05.
+Battery health uses Google's classification. The owner added grid tools, paging, server-side selection, and grouping on 2026-10-05.
 The School column, Bulk Actions, and every device change are excluded.
 Inspect the [linked Figma frames](workflows/device-browsing.md#design) before implementing each screen.
 Use focused `codex/` branches. Do not merge without owner authorization.

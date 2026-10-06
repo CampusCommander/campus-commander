@@ -208,6 +208,47 @@ export async function qualifyDevicesBrowser({
       page.getByRole('columnheader', { name: 'Model', exact: true }),
     ).toHaveCount(0);
     await auditAccessibility(page, 'devices-columns');
+    // Group by battery class from the column menu (grouping decision).
+    await page.getByRole('tab', { name: 'Columns' }).click();
+    const groupBy = async (name) => {
+      const header = page.getByRole('columnheader', { name: 'Battery' });
+      await header.hover();
+      await header.locator('.ag-header-cell-menu-button').click();
+      await page.getByRole('menuitem', { name }).click();
+    };
+    await groupBy('Group by Battery');
+    const replaceSoonGroup = page.getByRole('button', {
+      name: 'Replace soon (135)',
+    });
+    await expect(replaceSoonGroup).toBeVisible();
+    await auditAccessibility(page, 'devices-groups');
+    await page
+      .getByRole('row', { name: /Replace soon \(135\)/ })
+      .getByRole('checkbox')
+      .check();
+    await expect(page.getByText('Total Selected: 135')).toBeVisible();
+    await expect(page.getByText('Selected groups: Replace soon')).toBeVisible();
+    // LibreGrid opens a group from its toggle, a double-click, or Enter.
+    await replaceSoonGroup.press('Enter');
+    await page
+      .getByRole('button', { name: 'Open details for C0A1-0001' })
+      .click();
+    await page.getByRole('button', { name: 'Next device' }).click();
+    await expect(
+      page.getByRole('heading', { name: 'C0A1-0004', level: 1 }),
+    ).toBeVisible();
+    await page.getByRole('link', { name: 'Back to devices' }).click();
+    await expect(
+      page.getByRole('button', { name: 'Replace soon (135)' }),
+    ).toBeVisible();
+    // No group holds more than 1,000 devices, so the limit note stays hidden.
+    await expect(page.getByText('Open groups list their first')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Deselect All' }).click();
+    await expect(page.getByText('Total Selected: 0')).toBeVisible();
+    await groupBy('Stop grouping by Battery');
+    await expect(
+      page.getByText('450 matching devices · 450 in district'),
+    ).toBeVisible();
 
     await page.goto(`${publicOrigin}/devices/synthetic-device-9`);
     await expect(
@@ -228,6 +269,7 @@ export async function qualifyDevicesBrowser({
       'Back to devices returns to the page of the opened device: pass',
       'Back to devices keeps Show All Selected and the opened row: pass',
       'the Columns side bar shows and hides columns: pass',
+      'the grid groups by battery class with counts and selects whole groups: pass',
       'deep-linked device without battery reports names the power-status policy: pass',
     ];
   } finally {

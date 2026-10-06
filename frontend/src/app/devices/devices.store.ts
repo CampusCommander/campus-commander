@@ -206,7 +206,12 @@ export class DevicesStore {
     });
     if (!response?.ok) return null;
     const page = devicePageSchema.parse((await response.json()).page);
-    if (view.group?.by.length && page.rows.length < page.matching)
+    // Only a whole open group loads at the group limit. Next device loads one row.
+    if (
+      view.group?.by.length &&
+      limit === GROUP_LIMIT &&
+      page.rows.length < page.matching
+    )
       this.groupLimit.set(true);
     this.keepCounts(view, revision, page);
     return page;

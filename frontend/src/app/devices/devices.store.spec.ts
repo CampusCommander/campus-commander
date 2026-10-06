@@ -313,3 +313,18 @@ it('describes the grid to the selection provider', async () => {
     by: ['orgUnitPath'],
   });
 });
+
+it('does not report the group limit for Next device inside a group', async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValue(Response.json({ page: { ...page, matching: 135 } }));
+  const store = setup(request);
+  store.view.set({
+    predicates: [],
+    sort: { field: 'serialNumber', direction: 'asc' },
+    selection: null,
+    group: { by: ['battery'], keys: ['replace-soon'] },
+  });
+  await store.neighbor(4);
+  expect(store.groupLimit()).toBe(false);
+});

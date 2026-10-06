@@ -27,6 +27,7 @@ Each column header has a filter. The Filters side bar lists the same filters.
 The Columns side bar shows, hides, orders, and pins columns.
 The checkbox column selects devices. Select All in the status bar selects every device that matches the filters.
 The status bar shows the matching count, the district total, the inventory observation time, and the selection.
+The column menu and the Columns side bar group the grid by organization unit, model, or battery class. Each group row shows its device count.
 
 Device details show the serial, model, asset tag, OrgUnit path, and inventory observation time.
 They show annotated location and notes as read-only values, and the last device contact.
@@ -114,6 +115,10 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - An expired selection shows as empty. The expired-selection state from SELECT-01 arrives with the first device action.
 - The selection footer uses the LibreGrid labels: Select All, Deselect All, Show All Selected, and Show All Records.
 - The edge content security policy allows `data:` images, because AG Grid draws its icons with them. Scripts stay same-origin.
+- Groups nest up to three levels, each field once. Group keys are exact OrgUnit paths, model names, and battery classes. Devices without a model form the group "No model".
+- An open group lists up to 1,000 devices, and a grouped level lists up to 1,000 groups. The status bar says when a group holds more.
+- While the grid is grouped, checking any row selects or deselects its whole group, as LibreGrid defines. A selected group keeps the filters that were active.
+- Next device from a device inside a group follows that group's order. Back to devices restores the grouping, filters, sort, and page. Open groups close.
 
 ## States
 
@@ -172,6 +177,7 @@ Demonstrate in the simulated review environment:
 6. Filter from a column header and see the matching chip. Show and hide a column from the Columns side bar.
 7. Select All under a filter, change the filters, and use Show All Selected.
 8. Move to a later page, open a device there, and return to that page.
+9. Group by each of the three fields, open a group, select it, and use Next device inside it.
 
 Run lint, tests, and builds for the affected Nx projects. Add API tests for the query contract and an end-to-end test for the main flow.
 Run the live read-only check after the owner configures the scopes.
