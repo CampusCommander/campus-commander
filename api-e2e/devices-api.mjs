@@ -307,38 +307,27 @@ export async function qualifyDevicesApi({
         null,
         'The in-flight set stops a second dispatch.',
       );
-      let refreshed;
-      for (let attempt = 0; attempt < 120; attempt++) {
-        refreshed = await query({
+      const bySerial = (serialNumber) =>
+        query({
           predicates: [
-            { field: 'serialNumber', operator: 'equals', value: 'C0A1-0000' },
+            { field: 'serialNumber', operator: 'equals', value: serialNumber },
           ],
         });
-        if (refreshed.rows[0]?.stale === false) break;
+      let refreshed;
+      let gone;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        refreshed = await bySerial('C0A1-0000');
+        gone = await bySerial('C0A1-0003');
+        if (refreshed.rows[0]?.stale === false && gone.matching === 0) break;
         await setTimeout(500);
       }
-      assert.equal(
-        refreshed.rows[0].stale,
-        false,
-        'The batch refreshed the device.',
+      assert.ok(
+        refreshed.rows[0]?.stale === false && gone.matching === 0,
+        'Batch did not refresh C0A1-0000 and remove C0A1-0003 within 60 s.',
       );
       const removed = await api.get(`${root}/synthetic-device-3`);
       assert.equal(removed.status(), 200);
       assert.ok((await removed.json()).device.removedAt);
-      assert.equal(
-        (
-          await query({
-            predicates: [
-              {
-                field: 'serialNumber',
-                operator: 'equals',
-                value: 'C0A1-0003',
-              },
-            ],
-          })
-        ).matching,
-        0,
-      );
       await rm(faultPath, { force: true });
       const restored = await run();
       assert.equal(
