@@ -49,6 +49,7 @@ const claimSchema = z.strictObject({
 const leaseErrors = [
   'device-sync-changed',
   'device-sync-claimed',
+  'entity-sync-changed',
   'credential-changed',
   'connection-disconnected',
   'restore-revalidation-required',
@@ -65,6 +66,23 @@ export class DeviceSyncError extends Error {
 }
 
 /** Run one claimed sync. Publication replaces the inventory only after every device page stages. */
+/** Run one cc.* function. Known lease details keep their code. Everything else is a store failure. */
+export async function callStore(
+  database: DeviceSyncDatabase,
+  sql: string,
+  values: unknown[],
+): Promise<unknown> {
+  try {
+    return (await database.query(sql, values)).rows[0]?.['result'];
+  } catch (error) {
+    const detail = z.object({ detail: z.string().optional() }).safeParse(error);
+    const code = detail.success ? detail.data.detail : undefined;
+    throw new DeviceSyncError(
+      code && leaseErrors.includes(code) ? code : 'store-unavailable',
+    );
+  }
+}
+
 export class DeviceSync {
   private readonly database: DeviceSyncDatabase;
   private readonly cipher: Pick<CredentialCipher, 'open'>;
@@ -80,18 +98,8 @@ export class DeviceSync {
     this.reader = reader;
   }
 
-  private async call(sql: string, values: unknown[]): Promise<unknown> {
-    try {
-      return (await this.database.query(sql, values)).rows[0]?.['result'];
-    } catch (error) {
-      const detail = z
-        .object({ detail: z.string().optional() })
-        .safeParse(error);
-      const code = detail.success ? detail.data.detail : undefined;
-      throw new DeviceSyncError(
-        code && leaseErrors.includes(code) ? code : 'store-unavailable',
-      );
-    }
+  private call(sql: string, values: unknown[]): Promise<unknown> {
+    return callStore(this.database, sql, values);
   }
 
   async run(

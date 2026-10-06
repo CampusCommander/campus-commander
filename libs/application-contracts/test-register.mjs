@@ -20,7 +20,8 @@ registerHooks({
       if (
         error.code === 'ERR_MODULE_NOT_FOUND' &&
         specifier.startsWith('.') &&
-        context.parentURL?.includes('/libs/')
+        (context.parentURL?.includes('/libs/') ||
+          context.parentURL?.includes('/worker/src/'))
       ) {
         return nextResolve(`${specifier}.ts`, context);
       }
