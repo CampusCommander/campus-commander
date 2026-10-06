@@ -13,7 +13,10 @@ import {
   GoogleDeviceReader,
   type GoogleReadRequest,
 } from '@campus/google-connection';
+import type { EntitySyncBatchRequest } from '@campus/application-contracts';
 import { DeviceSync, type DeviceSyncRequest } from './device-sync';
+import { WorkerRedis } from './entity-cache';
+import { EntitySyncBatch } from './entity-sync';
 
 function secret(reference: SecretReference): Buffer {
   const path =
@@ -30,6 +33,28 @@ function secret(reference: SecretReference): Buffer {
 export class GoogleWorker {
   private pool?: Pool;
   private config?: DeploymentConfig;
+  private redis?: WorkerRedis;
+
+  /** Redis for records, in-flight IDs, and events. The worker user shares the application password. */
+  private cache(): WorkerRedis {
+    if (this.redis) return this.redis;
+    const config = this.config;
+    if (!config) throw new Error('connection-store-unavailable');
+    const service = config.services.redis;
+    const transport = service.endpoint.tls;
+    this.redis = new WorkerRedis({
+      url: service.endpoint.url,
+      password: secret(service.passwordSecretRef).toString('utf8').replace(/\r?\n$/, ''),
+      tls:
+        transport.mode === 'disabled'
+          ? null
+          : {
+              servername: new URL(service.endpoint.url).hostname,
+              ...(transport.mode === 'private-ca' ? { ca: secret(transport.caSecretRef) } : {}),
+            },
+    });
+    return this.redis;
+  }
 
   /** Load the credential key and database pool once per process. */
   private resources(): { pool: Pool; cipher: CredentialCipher } {
@@ -94,13 +119,20 @@ export class GoogleWorker {
 
   async syncDevices(input: DeviceSyncRequest, signal: AbortSignal) {
     const { pool, cipher } = this.resources();
-    return new DeviceSync(pool, cipher, new GoogleDeviceReader()).run(
-      input,
-      signal,
-    );
+    return new DeviceSync(
+      pool,
+      cipher,
+      new GoogleDeviceReader(),
+      this.cache(),
+    ).run(input, signal);
+  }
+
+  async syncEntityBatch(input: EntitySyncBatchRequest, signal: AbortSignal) {
+    const { pool, cipher } = this.resources();
+    return new EntitySyncBatch(pool, cipher, new GoogleDeviceReader(), this.cache()).run(input, signal);
   }
 
   async close() {
-    await this.pool?.end();
+    await Promise.all([this.pool?.end(), this.redis?.close()]);
   }
 }

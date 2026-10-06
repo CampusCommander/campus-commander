@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
+  ENTITY_CACHE_SECONDS,
   deviceSyncStateSchema,
+  entityEventsChannel,
+  entityKey,
+  queryGenerationKey,
   googleCustomerIdSchema,
   type BatteryObservation,
   type DeviceObservation,
@@ -13,6 +17,7 @@ import {
   type CredentialCipher,
   type DelegatedCredential,
 } from '@campus/google-connection';
+import type { EntityCache } from './entity-cache';
 
 export interface DeviceSyncDatabase {
   query(
@@ -54,7 +59,6 @@ const leaseErrors = [
   'connection-disconnected',
   'restore-revalidation-required',
 ];
-const purgeBatch = 5000;
 
 export class DeviceSyncError extends Error {
   readonly code: string;
@@ -65,7 +69,6 @@ export class DeviceSyncError extends Error {
   }
 }
 
-/** Run one claimed sync. Publication replaces the inventory only after every device page stages. */
 /** Run one cc.* function. Known lease details keep their code. Everything else is a store failure. */
 export async function callStore(
   database: DeviceSyncDatabase,
@@ -83,19 +86,23 @@ export async function callStore(
   }
 }
 
+/** Run one claimed full sync. Publication soft-deletes untouched devices, fills Redis, and signals. */
 export class DeviceSync {
   private readonly database: DeviceSyncDatabase;
   private readonly cipher: Pick<CredentialCipher, 'open'>;
   private readonly reader: DeviceReader;
+  private readonly cache: EntityCache;
 
   constructor(
     database: DeviceSyncDatabase,
     cipher: Pick<CredentialCipher, 'open'>,
     reader: DeviceReader,
+    cache: EntityCache,
   ) {
     this.database = database;
     this.cipher = cipher;
     this.reader = reader;
+    this.cache = cache;
   }
 
   private call(sql: string, values: unknown[]): Promise<unknown> {
@@ -157,13 +164,36 @@ export class DeviceSync {
         [...lease, failure, telemetryFailure],
       ),
     );
-    for (let removed = purgeBatch; removed === purgeBatch && !signal.aborted; )
-      removed = Number(
-        await this.call('SELECT cc.purge_device_syncs($1,$2) AS result', [
-          input.customerId,
-          purgeBatch,
-        ]),
-      );
+    if (failure === null) {
+      const recordPage = z.array(z.object({ deviceId: z.string() }).passthrough());
+      for (let after = ''; ; ) {
+        const records = recordPage.parse(
+          await this.call('SELECT cc.page_device_records($1,$2,$3) AS result', [
+            input.customerId,
+            after,
+            1000,
+          ]),
+        );
+        if (records.length === 0) break;
+        await this.cache.setRecords(
+          records.map((record) => {
+            const cached: Record<string, unknown> = { ...record };
+            delete cached['removedAt'];
+            return {
+              key: entityKey('device', input.customerId, record.deviceId),
+              value: JSON.stringify(cached),
+            };
+          }),
+          ENTITY_CACHE_SECONDS.device,
+        );
+        after = records[records.length - 1].deviceId;
+      }
+      await this.cache.increment(queryGenerationKey('device', input.customerId));
+    }
+    await this.cache.publish(
+      entityEventsChannel(input.customerId),
+      JSON.stringify({ type: 'full-sync', sync: state }),
+    );
     return state;
   }
 }

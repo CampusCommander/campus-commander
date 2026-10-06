@@ -4,8 +4,12 @@ import {
   GoogleStoreError,
   CredentialError,
 } from '@campus/google-connection';
-import { googleCustomerIdSchema } from '@campus/application-contracts';
+import {
+  entitySyncBatchRequestSchema,
+  googleCustomerIdSchema,
+} from '@campus/application-contracts';
 import type { GoogleWorker } from './google-connection';
+import { EntityCacheError } from './entity-cache';
 import { DeviceSyncError, deviceSyncRequestSchema } from './device-sync';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -187,6 +191,39 @@ export async function handleDeviceSyncDispatch(
     else if (error instanceof DeviceSyncError)
       respond(response, 409, { error: error.code });
     else respond(response, 503, { error: 'device-sync-unavailable' });
+  }
+  return true;
+}
+
+const entitySyncDispatchSchema = entitySyncBatchRequestSchema.extend({
+  executionId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+});
+
+export async function handleEntitySyncDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (request.method !== 'POST' || request.url !== '/dispatch/entity-sync-batch')
+    return false;
+  if (rejected(request, response, context)) return true;
+  try {
+    const { executionId, ...input } = entitySyncDispatchSchema.parse(await readJson(request));
+    const result = await google.syncEntityBatch(input, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status: result.failure === null ? 'completed' : 'failed',
+      failure: result.failure,
+      job: result.job,
+    });
+  } catch (error) {
+    if (error instanceof DispatchError) respond(response, error.statusCode, { error: error.code });
+    else if (error instanceof z.ZodError) respond(response, 400, { error: 'invalid-payload' });
+    else if (error instanceof DeviceSyncError) respond(response, 409, { error: error.code });
+    else if (error instanceof EntityCacheError) respond(response, 503, { error: error.code });
+    else respond(response, 503, { error: 'entity-sync-unavailable' });
   }
   return true;
 }

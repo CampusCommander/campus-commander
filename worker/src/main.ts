@@ -9,6 +9,7 @@ import {
   handleSyntheticDispatch,
   handleGoogleDispatch,
   handleDeviceSyncDispatch,
+  handleEntitySyncDispatch,
   readDispatchSecret,
 } from './dispatch';
 import { GoogleWorker } from './google-connection';
@@ -69,6 +70,15 @@ const handleRequest: RequestListener = async (request, response) => {
     return;
   if (
     await handleDeviceSyncDispatch(
+      request,
+      response,
+      { secret: dispatchSecret, signal: stopping.signal },
+      google,
+    )
+  )
+    return;
+  if (
+    await handleEntitySyncDispatch(
       request,
       response,
       { secret: dispatchSecret, signal: stopping.signal },
