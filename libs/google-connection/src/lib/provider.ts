@@ -181,6 +181,25 @@ function domainObservation(
   });
 }
 
+/** The only Google URLs the application may call. Token exchange, customer reads, and device reads. */
+export function googleRequestAllowed(url: URL): boolean {
+  return (
+    (url.origin === 'https://oauth2.googleapis.com' &&
+      ['/token', '/tokeninfo'].includes(url.pathname)) ||
+    (url.origin === 'https://admin.googleapis.com' &&
+      (url.pathname === '/admin/directory/v1/customers/my_customer' ||
+        /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/(?:domains|orgunits|devices\/chromeos)$/.test(
+          url.pathname,
+        ))) ||
+    (url.origin === 'https://www.googleapis.com' &&
+      url.pathname === '/batch/admin/directory_v1') ||
+    (url.origin === 'https://chromemanagement.googleapis.com' &&
+      /^\/v1\/customers\/C[A-Za-z0-9]{4,31}\/telemetry\/devices(?:\/[A-Za-z0-9_-]{1,128})?$/.test(
+        url.pathname,
+      ))
+  );
+}
+
 /** Bound every SDK request, including signed token exchange and introspection. */
 function boundClient(
   client: OAuth2Client,
@@ -190,18 +209,7 @@ function boundClient(
   const request = client.transporter.request.bind(client.transporter);
   client.transporter.request = (options) => {
     const url = new URL(options?.url ?? '');
-    const allowed =
-      (url.origin === 'https://oauth2.googleapis.com' &&
-        ['/token', '/tokeninfo'].includes(url.pathname)) ||
-      (url.origin === 'https://admin.googleapis.com' &&
-        (url.pathname === '/admin/directory/v1/customers/my_customer' ||
-          /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/(?:domains|orgunits|devices\/chromeos)$/.test(
-            url.pathname,
-          ))) ||
-      (url.origin === 'https://chromemanagement.googleapis.com' &&
-        /^\/v1\/customers\/C[A-Za-z0-9]{4,31}\/telemetry\/devices$/.test(
-          url.pathname,
-        ));
+    const allowed = googleRequestAllowed(url);
     if (!allowed) throw new GoogleConnectionError('request-failed');
     return request({
       ...options,
