@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deviceQuerySchema } from '@campus/application-contracts';
+import {
+  deviceGroupQuerySchema,
+  deviceQuerySchema,
+} from '@campus/application-contracts';
 import {
   deviceDetail,
   devicePageSql,
   deviceRow,
   escapeLike,
+  deviceGroupsSql,
   deviceOrgUnitsSql,
   matchingAmongSql,
   selectedAmongSql,
@@ -265,4 +269,54 @@ test('membership checks bind the device IDs after the customer', () => {
     ),
   );
   assert.deepEqual(matching.values, ['C0123456', ['d1'], '%Lenovo%']);
+});
+
+const batteryKey =
+  "CASE WHEN s.telemetry_failure IS NOT NULL THEN 'unavailable' WHEN d.battery_status='reported' THEN d.battery_health ELSE d.battery_status END";
+
+test('open groups narrow the device rows with exact keys', () => {
+  const { rows, count } = query({
+    group: { by: ['battery', 'model'], keys: ['replace-soon', ''] },
+  });
+  assert.ok(
+    rows.text.includes(
+      `WHERE s.customer_id=$1 AND ${batteryKey}=$2 AND coalesce(d.model,'')=$3 ORDER BY`,
+    ),
+  );
+  assert.deepEqual(rows.values, ['C0123456', 'replace-soon', '', 0, 100]);
+  assert.deepEqual(count.values, ['C0123456', 'replace-soon', '']);
+});
+
+test('a group level lists its keys with device counts', () => {
+  const { groups, count } = deviceGroupsSql(
+    'C0123456',
+    deviceGroupQuerySchema.parse({
+      predicates: [{ field: 'notes', operator: 'isEmpty' }],
+      group: { by: ['orgUnitPath', 'model'], keys: ['/School A'] },
+      limit: 1000,
+    }),
+  );
+  assert.equal(
+    groups.text,
+    "SELECT coalesce(d.model,'') AS key,count(*)::integer AS devices FROM cc.device_sync_state s JOIN cc.devices d ON d.sync_id=s.current_sync_id WHERE s.customer_id=$1 AND (d.notes IS NULL OR d.notes='') AND d.org_unit_path=$2 GROUP BY 1 ORDER BY key ASC OFFSET $3 LIMIT $4",
+  );
+  assert.deepEqual(groups.values, ['C0123456', '/School A', 0, 1000]);
+  assert.ok(
+    count.text.startsWith(
+      "SELECT count(DISTINCT coalesce(d.model,''))::integer AS groups,count(*)::integer AS matching FROM",
+    ),
+  );
+  assert.deepEqual(count.values, ['C0123456', '/School A']);
+});
+
+test('battery groups follow the battery filter order', () => {
+  const { groups } = deviceGroupsSql(
+    'C0123456',
+    deviceGroupQuerySchema.parse({ group: { by: ['battery'], keys: [] } }),
+  );
+  assert.ok(
+    groups.text.includes(
+      `GROUP BY 1 ORDER BY array_position(ARRAY['normal','replace-soon','replace-now','no-report','unavailable']::text[],${batteryKey}) OFFSET`,
+    ),
+  );
 });

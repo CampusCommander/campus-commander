@@ -2,6 +2,8 @@ import {
   deviceDetailSchema,
   deviceRowSchema,
   type DeviceDetail,
+  type DeviceGroupField,
+  type DeviceGrouping,
   type DevicePredicate,
   type DeviceQuery,
   type DeviceRow,
@@ -23,6 +25,19 @@ const batteryStatus =
 const batteryOrder =
   "CASE WHEN s.telemetry_failure IS NOT NULL THEN 4 WHEN d.battery_status='reported' THEN CASE d.battery_health WHEN 'replace-now' THEN 0 WHEN 'replace-soon' THEN 1 ELSE 2 END WHEN d.battery_status='no-report' THEN 3 ELSE 4 END";
 const healthValues = new Set(['normal', 'replace-soon', 'replace-now']);
+/** Group keys equal the filter values, so a group converts to filters exactly. */
+const groupKeys: Record<DeviceGroupField, string> = {
+  orgUnitPath: 'd.org_unit_path',
+  model: "coalesce(d.model,'')",
+  battery:
+    "CASE WHEN s.telemetry_failure IS NOT NULL THEN 'unavailable' WHEN d.battery_status='reported' THEN d.battery_health ELSE d.battery_status END",
+};
+const groupOrder: Record<DeviceGroupField, string> = {
+  orgUnitPath: 'key ASC',
+  model: 'key ASC',
+  // PostgreSQL rejects an output alias inside an ORDER BY expression.
+  battery: `array_position(ARRAY['normal','replace-soon','replace-now','no-report','unavailable']::text[],${groupKeys.battery})`,
+};
 const from =
   'FROM cc.device_sync_state s JOIN cc.devices d ON d.sync_id=s.current_sync_id';
 
@@ -93,6 +108,15 @@ function predicateClauses(
   return clauses;
 }
 
+/** Devices inside an open group: each grouped level equals its key. */
+function groupClauses(
+  by: readonly DeviceGroupField[],
+  keys: readonly string[],
+  add: Add,
+): string[] {
+  return keys.map((key, level) => `${groupKeys[by[level]]}=${add(key)}`);
+}
+
 /** Selected devices: any filter term or explicit addition, minus exceptions. */
 function selectedClause(state: SelectionState, add: Add): string {
   const parts = state.terms.map((term) => {
@@ -112,9 +136,14 @@ function deviceWhere(
   predicates: readonly DevicePredicate[],
   values: unknown[],
   selection: SelectionState | null = null,
+  group: DeviceGrouping | null = null,
 ): string {
   const add = adder(values);
-  const clauses = ['s.customer_id=$1', ...predicateClauses(predicates, add)];
+  const clauses = [
+    's.customer_id=$1',
+    ...predicateClauses(predicates, add),
+    ...(group ? groupClauses(group.by, group.keys, add) : []),
+  ];
   if (selection) clauses.push(selectedClause(selection, add));
   return clauses.join(' AND ');
 }
@@ -125,7 +154,7 @@ export function devicePageSql(
   selection: SelectionState | null = null,
 ): { rows: SqlStatement; count: SqlStatement } {
   const values: unknown[] = [customerId];
-  const where = deviceWhere(query.predicates, values, selection);
+  const where = deviceWhere(query.predicates, values, selection, query.group);
   const order =
     query.sort.field === 'battery' ? batteryOrder : columns[query.sort.field];
   const direction = query.sort.direction === 'desc' ? 'DESC' : 'ASC';
@@ -228,5 +257,27 @@ export function matchingAmongSql(
   return {
     text: `SELECT d.device_id ${from} WHERE ${where} AND d.device_id=ANY($2::text[])`,
     values,
+  };
+}
+
+/** One grouped level: each key with its device count, plus the number of keys and devices. */
+export function deviceGroupsSql(
+  customerId: string,
+  query: DeviceQuery,
+  selection: SelectionState | null = null,
+): { groups: SqlStatement; count: SqlStatement } {
+  const values: unknown[] = [customerId];
+  const where = deviceWhere(query.predicates, values, selection, query.group);
+  const field = query.group.by[query.group.keys.length];
+  const key = groupKeys[field];
+  return {
+    groups: {
+      text: `SELECT ${key} AS key,count(*)::integer AS devices ${from} WHERE ${where} GROUP BY 1 ORDER BY ${groupOrder[field]} OFFSET $${values.length + 1} LIMIT $${values.length + 2}`,
+      values: [...values, query.offset, query.limit],
+    },
+    count: {
+      text: `SELECT count(DISTINCT ${key})::integer AS groups,count(*)::integer AS matching ${from} WHERE ${where}`,
+      values: [...values],
+    },
   };
 }

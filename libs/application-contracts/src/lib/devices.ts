@@ -181,6 +181,29 @@ export const deviceSelectionSpecSchema = z.strictObject({
 });
 export type DeviceSelectionSpec = z.infer<typeof deviceSelectionSpecSchema>;
 
+export const deviceGroupFieldSchema = z.enum([
+  'orgUnitPath',
+  'model',
+  'battery',
+]);
+export type DeviceGroupField = z.infer<typeof deviceGroupFieldSchema>;
+/** Group keys are filter values: an OrgUnit path, a model (empty for none), or a battery filter value. */
+const groupKey = z.string().max(4096);
+
+/** The grouped fields, outermost first, and the keys of the open group. */
+export const deviceGroupingSchema = z
+  .strictObject({
+    by: z.array(deviceGroupFieldSchema).max(3),
+    keys: z.array(groupKey).max(3),
+  })
+  .refine((group) => new Set(group.by).size === group.by.length, {
+    message: 'Group by each field once.',
+  })
+  .refine((group) => group.keys.length <= group.by.length, {
+    message: 'Each group key needs a grouped field.',
+  });
+export type DeviceGrouping = z.infer<typeof deviceGroupingSchema>;
+
 export const deviceQuerySchema = z.strictObject({
   predicates: z.array(devicePredicateSchema).max(20).default([]),
   sort: z
@@ -190,19 +213,39 @@ export const deviceQuerySchema = z.strictObject({
     })
     .default({ field: 'serialNumber', direction: 'asc' }),
   offset: z.number().int().min(0).max(1_000_000).default(0),
-  limit: z.number().int().min(1).max(200).default(100),
+  limit: z.number().int().min(1).max(1000).default(100),
   /** Show All Selected limits the query to this tab's selection. */
   selection: deviceSelectionKeySchema.nullable().default(null),
+  /** Open group keys narrow the rows. LibreGrid loads an open group in one request. */
+  group: deviceGroupingSchema.default({ by: [], keys: [] }),
 });
 export type DeviceQuery = z.output<typeof deviceQuerySchema>;
 
 export const devicePageSchema = z.strictObject({
-  rows: z.array(deviceRowSchema).max(200),
+  rows: z.array(deviceRowSchema).max(1000),
   matching: z.number().int().min(0),
   total: z.number().int().min(0),
   observedAt: timestamp.nullable(),
 });
 export type DevicePage = z.infer<typeof devicePageSchema>;
+
+/** A group request opens the next grouped level. */
+export const deviceGroupQuerySchema = deviceQuerySchema.refine(
+  (query) => query.group.keys.length < query.group.by.length,
+  { message: 'A group request needs an unopened grouped level.' },
+);
+
+export const deviceGroupPageSchema = z.strictObject({
+  groups: z
+    .array(z.strictObject({ key: groupKey, devices: z.number().int().min(0) }))
+    .max(1000),
+  groupCount: z.number().int().min(0),
+  /** Devices in all groups of this level. */
+  matching: z.number().int().min(0),
+  total: z.number().int().min(0),
+  observedAt: timestamp.nullable(),
+});
+export type DeviceGroupPage = z.infer<typeof deviceGroupPageSchema>;
 
 export const deviceSyncFailureSchema = z.union([
   googleFailureSchema,

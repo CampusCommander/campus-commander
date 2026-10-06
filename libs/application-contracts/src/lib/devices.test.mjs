@@ -8,6 +8,8 @@ import {
   deviceOrgUnitsSchema,
   deviceSelectionChangeSchema,
   deviceSelectionKeySchema,
+  deviceGroupQuerySchema,
+  deviceGroupingSchema,
 } from './devices.ts';
 import {
   actionSchema,
@@ -33,6 +35,7 @@ test('device queries default to the first serial page', () => {
     offset: 0,
     limit: 100,
     selection: null,
+    group: { by: [], keys: [] },
   });
 });
 
@@ -82,7 +85,7 @@ test('predicates accept only the operators of their field type', () => {
 });
 
 test('queries bound page size, predicate count, and unknown keys', () => {
-  assert.equal(deviceQuerySchema.safeParse({ limit: 201 }).success, false);
+  assert.equal(deviceQuerySchema.safeParse({ limit: 1001 }).success, false);
   assert.equal(
     deviceQuerySchema.safeParse({
       predicates: Array(21).fill({
@@ -230,4 +233,32 @@ test('selection changes accept the four row operations within bounds', () => {
   assert.equal(ok([{ op: 'select', ids: [] }]), false);
   assert.equal(ok([{ op: 'select', ids: Array(2001).fill('d') }]), false);
   assert.equal(ok([{ op: 'selectGroup', route: ['/School A'] }]), false);
+});
+
+test('grouping names each field once and keys only grouped levels', () => {
+  const ok = (value) => deviceGroupingSchema.safeParse(value).success;
+  assert.equal(
+    ok({ by: ['orgUnitPath', 'battery'], keys: ['/School A'] }),
+    true,
+  );
+  assert.equal(ok({ by: ['model'], keys: [''] }), true);
+  assert.equal(ok({ by: ['model', 'model'], keys: [] }), false);
+  assert.equal(ok({ by: ['serialNumber'], keys: [] }), false);
+  assert.equal(ok({ by: ['model'], keys: ['a', 'b'] }), false);
+  assert.equal(
+    ok({ by: ['orgUnitPath', 'model', 'battery', 'model'], keys: [] }),
+    false,
+  );
+});
+
+test('group requests need an unopened level', () => {
+  const ok = (group) => deviceGroupQuerySchema.safeParse({ group }).success;
+  assert.equal(ok({ by: ['battery'], keys: [] }), true);
+  assert.equal(ok({ by: ['battery'], keys: ['normal'] }), false);
+  assert.equal(ok({ by: [], keys: [] }), false);
+  assert.equal(
+    deviceQuerySchema.safeParse({ limit: 1000 }).success &&
+      !deviceQuerySchema.safeParse({ limit: 1001 }).success,
+    true,
+  );
 });
