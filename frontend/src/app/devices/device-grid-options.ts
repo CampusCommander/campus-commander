@@ -1,5 +1,6 @@
 import type {
   GridApi,
+  IRowNode,
   GridOptions,
   IStatusPanelComp,
   IStatusPanelParams,
@@ -9,7 +10,9 @@ import type {
   SsrmSelectionService,
 } from '@libregrid/server-side-selection';
 import { ColumnsToolPanel } from '@libregrid/columns-tool-panel';
+import { getSsrmRoute } from '@libregrid/server-side-row-model';
 import type { DeviceRow } from '@campus/application-contracts';
+import { deviceGroupColumn } from './device-columns';
 import { DEVICE_GRID_ID } from './device-selection';
 
 /**
@@ -67,10 +70,9 @@ export function deviceGridFeatures(
           minWidth: 220,
           maxWidth: 380,
           toolPanel: ColumnsToolPanel,
-          // Pivot, aggregation, and row grouping are outside this slice.
+          // Pivot and aggregation are outside this slice.
           toolPanelParams: {
             suppressPivotMode: true,
-            suppressRowGroups: true,
             suppressValues: true,
             suppressPivots: true,
           },
@@ -104,6 +106,14 @@ export function deviceGridFeatures(
       // AG Grid passes this through, but its selection column type omits it.
       ...({ suppressColumnsToolPanel: true } as object),
     },
+    autoGroupColumnDef: deviceGroupColumn,
+    // LibreGrid offers grouping items only to menus that ask for them.
+    getColumnMenuItems: (params) => [
+      ...params.defaultItems,
+      'separator',
+      'rowGroup',
+      'rowUnGroup',
+    ],
     ssrmSelection: {
       provider: features.provider,
       gridId: DEVICE_GRID_ID,
@@ -130,4 +140,13 @@ export function showRow(
   const page = Math.floor(index / api.paginationGetPageSize());
   if (page !== api.paginationGetCurrentPage()) api.paginationGoToPage(page);
   api.ensureIndexVisible(index, 'middle');
+}
+
+/** Where a device sits for Next device: its group and its index there, or its index in the flat grid. */
+export function detailsTarget(
+  node: Pick<IRowNode, 'rowIndex' | 'sourceRowIndex' | 'parent'>,
+): { index: number; route: string[] | null } | null {
+  const route = node.parent?.group ? (getSsrmRoute(node.parent) ?? null) : null;
+  const index = route ? node.sourceRowIndex : node.rowIndex;
+  return index === null || index < 0 ? null : { index, route };
 }

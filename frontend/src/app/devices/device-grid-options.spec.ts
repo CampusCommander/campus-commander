@@ -33,13 +33,16 @@ it('pages, shows column tools and the status bar, and selects on the server', ()
       id: 'columns',
       toolPanelParams: {
         suppressPivotMode: true,
-        suppressRowGroups: true,
         suppressValues: true,
         suppressPivots: true,
       },
     },
     'filters',
   ]);
+  expect(
+    options.getColumnMenuItems?.({ defaultItems: ['sortAscending'] } as never),
+  ).toEqual(['sortAscending', 'separator', 'rowGroup', 'rowUnGroup']);
+  expect(options.autoGroupColumnDef?.headerName).toBe('Group');
   expect(options.selectionColumnDef).toMatchObject({
     pinned: 'left',
     suppressColumnsToolPanel: true,

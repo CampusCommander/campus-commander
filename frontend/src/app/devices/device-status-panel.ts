@@ -31,6 +31,12 @@ import { selectionScope } from './device-selection';
       @if (scope(); as text) {
         <p>{{ text }}</p>
       }
+      @if (store.groupLimit()) {
+        <p>
+          Open groups list their first 1,000 devices. Add a filter to see the
+          rest.
+        </p>
+      }
     </div>
   `,
   styles: `

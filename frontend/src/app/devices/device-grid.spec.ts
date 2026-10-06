@@ -4,8 +4,15 @@ import type {
 } from 'ag-grid-community';
 import { vi } from 'vitest';
 import type { DeviceRow } from '@campus/application-contracts';
-import { detailsKeyHandler, deviceColumnDefs } from './device-columns';
 import {
+  detailsKeyHandler,
+  deviceColumnDefs,
+  DeviceGroupCell,
+  deviceGroupColumn,
+} from './device-columns';
+import { detailsTarget } from './device-grid-options';
+import {
+  GROUP_LIMIT,
   defaultGridState,
   deviceDatasource,
   savedGridState,
@@ -46,6 +53,8 @@ it('orders columns after the details icon and hides optional fields', () => {
     'notes',
   ]);
   expect(columns[0].pinned).toBe('left');
+  // GRID-03: the details icon stays right after the checkbox, before a group column.
+  expect(columns[0].lockPosition).toBe('left');
   expect(
     columns.filter((column) => column.hide).map((column) => column.colId),
   ).toEqual(['annotatedLocation', 'notes']);
@@ -170,17 +179,19 @@ it('reports each loaded page after the grid receives its rows', async () => {
 it('opens details with Enter and leaves Space to row selection', () => {
   const onDetails = vi.fn();
   const handler = detailsKeyHandler(onDetails);
-  const press = (colId: string, key: string) =>
+  const node = { rowIndex: 3, group: false };
+  const press = (colId: string, key: string, target = node) =>
     handler({
       column: { getColId: () => colId },
       data: row,
-      rowIndex: 3,
+      node: target,
       event: new KeyboardEvent('keydown', { key }),
     } as unknown as CellKeyDownEvent<DeviceRow>);
   press('details', 'Enter');
   press('details', ' ');
   press('serialNumber', 'Enter');
-  expect(onDetails.mock.calls).toEqual([[row, 3]]);
+  press('details', 'Enter', { rowIndex: 0, group: true });
+  expect(onDetails.mock.calls).toEqual([[row, node]]);
 });
 
 it('gives each data column the filter of its field type', () => {
@@ -245,4 +256,131 @@ it('limits the query to the selection while Show All Selected is on', async () =
   } as unknown as IServerSideGetRowsParams<DeviceRow>);
   await vi.waitFor(() => expect(load).toHaveBeenCalled());
   expect(load.mock.calls[0][2].selection).toEqual(key);
+});
+
+const groupPage = {
+  groups: [
+    { key: 'normal', devices: 300 },
+    { key: 'replace-soon', devices: 135 },
+  ],
+  groupCount: 2,
+  matching: 435,
+  total: 450,
+  observedAt: null,
+};
+
+it('loads one grouped level with its device counts', async () => {
+  const load = vi.fn();
+  const loadGroups = vi.fn().mockResolvedValue(groupPage);
+  const success = vi.fn();
+  deviceDatasource(load, undefined, undefined, loadGroups).getRows({
+    request: {
+      sortModel: [],
+      filterModel: {},
+      rowGroupCols: [{ id: 'battery', displayName: 'Battery' }],
+      groupKeys: [],
+    },
+    api: { getGridOption: () => false },
+    success,
+    fail: vi.fn(),
+  } as unknown as IServerSideGetRowsParams<DeviceRow>);
+  await vi.waitFor(() => expect(success).toHaveBeenCalled());
+  expect(loadGroups).toHaveBeenCalledWith({
+    predicates: [],
+    sort: { field: 'serialNumber', direction: 'asc' },
+    selection: null,
+    group: { by: ['battery'], keys: [] },
+  });
+  expect(success).toHaveBeenCalledWith({
+    rowData: groupPage.groups,
+    rowCount: 2,
+  });
+  expect(load).not.toHaveBeenCalled();
+});
+
+it('loads an open group in one request up to the group limit', async () => {
+  const load = vi.fn().mockResolvedValue({
+    rows: [row],
+    matching: 135,
+    total: 450,
+    observedAt: null,
+  });
+  deviceDatasource(load, undefined, undefined, vi.fn()).getRows({
+    request: {
+      sortModel: [],
+      filterModel: {},
+      rowGroupCols: [{ id: 'battery', displayName: 'Battery' }],
+      groupKeys: ['replace-soon'],
+    },
+    api: { getGridOption: () => false },
+    success: vi.fn(),
+    fail: vi.fn(),
+  } as unknown as IServerSideGetRowsParams<DeviceRow>);
+  await vi.waitFor(() => expect(load).toHaveBeenCalled());
+  expect(load.mock.calls[0].slice(0, 2)).toEqual([0, GROUP_LIMIT]);
+  expect(load.mock.calls[0][2].group).toEqual({
+    by: ['battery'],
+    keys: ['replace-soon'],
+  });
+});
+
+it('fails a grouped level that the device query cannot group', () => {
+  const fail = vi.fn();
+  deviceDatasource(vi.fn(), undefined, undefined, vi.fn()).getRows({
+    request: {
+      sortModel: [],
+      filterModel: {},
+      rowGroupCols: [{ id: 'serialNumber', displayName: 'Serial' }],
+      groupKeys: [],
+    },
+    api: { getGridOption: () => false },
+    success: vi.fn(),
+    fail,
+  } as unknown as IServerSideGetRowsParams<DeviceRow>);
+  expect(fail).toHaveBeenCalled();
+});
+
+it('groups by organization unit, model, and battery with counts', () => {
+  const columns = deviceColumnDefs(() => undefined);
+  expect(
+    columns
+      .filter((column) => column.enableRowGroup)
+      .map((column) => column.colId),
+  ).toEqual(['model', 'orgUnitPath', 'battery']);
+  const battery = columns.find((column) => column.colId === 'battery')!;
+  const groupNode = { group: true, field: 'battery' };
+  const groupRow = { key: 'replace-soon', devices: 1350 };
+  expect(
+    (battery.valueGetter as Getter)({
+      data: groupRow,
+      node: groupNode,
+    } as never),
+  ).toBe('');
+  // AG Grid formats group values with the grouped column, so the cell builds its own label.
+  expect(deviceGroupColumn.cellRenderer).toBe(DeviceGroupCell);
+  const cell = new DeviceGroupCell();
+  cell.init({
+    node: {
+      ...groupNode,
+      key: 'replace-soon',
+      expanded: false,
+      childrenAfterGroup: [],
+      addEventListener: () => undefined,
+    },
+    data: groupRow,
+    value: 'replace-soon',
+    api: { getGridOption: () => 'serverSide' },
+  } as never);
+  expect(cell.getGui().textContent).toBe('Replace soon (1,350)');
+});
+
+it('finds a grouped device by its index inside the group', () => {
+  const parent = { group: true, __lgrSsrmRoute: ['replace-soon'] };
+  expect(
+    detailsTarget({ rowIndex: 40, sourceRowIndex: 7, parent } as never),
+  ).toEqual({ index: 7, route: ['replace-soon'] });
+  expect(
+    detailsTarget({ rowIndex: 40, sourceRowIndex: 40, parent: null } as never),
+  ).toEqual({ index: 40, route: null });
+  expect(detailsTarget({ rowIndex: null, parent: null } as never)).toBeNull();
 });

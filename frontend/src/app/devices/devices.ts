@@ -80,6 +80,14 @@ export class DevicesPage implements OnInit {
     this.store.setView(view);
     return this.store.rows(offset, limit);
   };
+  protected readonly loadGroups = (view: DeviceView) => {
+    this.store.setView(view);
+    return this.store.groups(view);
+  };
+  /** A grouped grid cannot scroll back to a row inside a closed group. */
+  protected readonly grouped = computed(
+    () => !!this.store.view().group?.by.length,
+  );
   protected readonly saveState = (state: GridState, selectedView: boolean) => {
     this.store.gridState.set(state);
     this.store.selectedView.set(selectedView);
@@ -142,7 +150,18 @@ export class DevicesPage implements OnInit {
     });
   }
 
-  protected open(event: { row: DeviceRow; index: number }): void {
+  protected open(event: {
+    row: DeviceRow;
+    index: number;
+    route: string[] | null;
+  }): void {
+    // Next device follows the opened device's group.
+    const view = this.store.view();
+    if (event.route)
+      this.store.view.set({
+        ...view,
+        group: { by: view.group?.by ?? [], keys: event.route },
+      });
     this.store.position.set({
       index: event.index,
       deviceId: event.row.deviceId,

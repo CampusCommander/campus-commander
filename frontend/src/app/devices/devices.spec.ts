@@ -1,10 +1,11 @@
 import { Component, computed, input, output, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
   DevicePredicate,
+  DeviceRow,
   DeviceSyncState,
 } from '@campus/application-contracts';
 import { DeviceFilter } from './device-filter';
@@ -18,6 +19,7 @@ import { DevicesStore } from './devices.store';
 })
 class GridStub {
   readonly load = input<unknown>();
+  readonly loadGroups = input<unknown>();
   readonly revision = input(0);
   readonly focusIndex = input<number | null>(null);
   readonly state = input<unknown>();
@@ -26,7 +28,11 @@ class GridStub {
   readonly orgUnits = input<unknown>();
   readonly selection = input<unknown>();
   readonly selectedView = input(false);
-  readonly details = output<unknown>();
+  readonly details = output<{
+    row: DeviceRow;
+    index: number;
+    route: string[] | null;
+  }>();
   readonly filtersChange = output<unknown>();
 }
 
@@ -260,4 +266,32 @@ it('keeps the grid state and the selected view when the grid closes', () => {
   save({ pagination: { page: 1, pageSize: 100 } }, true);
   expect(store.gridState()).toEqual({ pagination: { page: 1, pageSize: 100 } });
   expect(store.selectedView()).toBe(true);
+});
+
+it('follows the group of the opened device for Next device', () => {
+  const { store, fixture } = setup({
+    sync: ready(),
+    page: { matching: 450, total: 450, observedAt: '2026-10-05T12:00:00.000Z' },
+  });
+  const navigate = vi
+    .spyOn(TestBed.inject(Router), 'navigate')
+    .mockResolvedValue(true);
+  store.view.set({
+    predicates: [],
+    sort: { field: 'serialNumber', direction: 'asc' },
+    selection: null,
+    group: { by: ['battery'], keys: [] },
+  } as never);
+  const grid = fixture.debugElement.query(By.directive(GridStub))
+    .componentInstance as GridStub;
+  grid.details.emit({
+    row: { deviceId: 'd7' } as DeviceRow,
+    index: 4,
+    route: ['replace-soon'],
+  });
+  expect(store.view()).toMatchObject({
+    group: { by: ['battery'], keys: ['replace-soon'] },
+  });
+  expect(store.position()).toEqual({ index: 4, deviceId: 'd7' });
+  expect(navigate).toHaveBeenCalledWith(['/devices', 'd7']);
 });

@@ -21,6 +21,7 @@ import {
   type GridOptions,
   type GridReadyEvent,
   type GridState,
+  type IRowNode,
 } from 'ag-grid-community';
 import { ServerSideRowModelModule } from '@libregrid/server-side-row-model';
 import {
@@ -28,6 +29,7 @@ import {
   type ServerSideSelectionProvider,
   type SsrmSelectionService,
 } from '@libregrid/server-side-selection';
+import { RowGroupingModule } from '@libregrid/row-grouping';
 import { SetFilterModule } from '@libregrid/set-filter';
 import { ColumnMenuModule } from '@libregrid/menu';
 import { SideBarModule } from '@libregrid/side-bar';
@@ -45,19 +47,25 @@ import {
   defaultGridState,
   deviceDatasource,
   savedGridState,
+  type DeviceGroupLoader,
   type DeviceLoader,
 } from './device-datasource';
 import {
   filterModelUpdate,
   predicatesFromFilterModel,
 } from './device-filter-model';
-import { deviceGridFeatures, showRow } from './device-grid-options';
+import {
+  detailsTarget,
+  deviceGridFeatures,
+  showRow,
+} from './device-grid-options';
 import { DEVICE_GRID_ID } from './device-selection';
 import { DeviceStatusPanel } from './device-status-panel';
 
 ModuleRegistry.registerModules([
   AllCommunityModule,
   ServerSideRowModelModule,
+  RowGroupingModule,
   ServerSideSelectionModule,
   SetFilterModule,
   ColumnMenuModule,
@@ -113,6 +121,7 @@ ModuleRegistry.registerModules([
 })
 export class DeviceGrid implements OnInit {
   readonly load = input.required<DeviceLoader>();
+  readonly loadGroups = input.required<DeviceGroupLoader>();
   readonly revision = input(0);
   /** Row to scroll into view after the first block loads, such as after Back to devices. */
   readonly focusIndex = input<number | null>(null);
@@ -141,7 +150,11 @@ export class DeviceGrid implements OnInit {
   private readonly environment = inject(EnvironmentInjector);
   private readonly application = inject(ApplicationRef);
   private readonly destroyRef = inject(DestroyRef);
-  readonly details = output<{ row: DeviceRow; index: number }>();
+  readonly details = output<{
+    row: DeviceRow;
+    index: number;
+    route: string[] | null;
+  }>();
 
   private api: GridApi<DeviceRow> | null = null;
   private focused = false;
@@ -168,8 +181,10 @@ export class DeviceGrid implements OnInit {
     });
     this.application.attachView(status.hostView);
     this.destroyRef.onDestroy(() => status.destroy());
-    const open = (row: DeviceRow, index: number) =>
-      this.details.emit({ row, index });
+    const open = (row: DeviceRow, node: IRowNode<DeviceRow>) => {
+      const target = detailsTarget(node);
+      if (target) this.details.emit({ row, ...target });
+    };
     this.options = {
       theme: themeQuartz.withParams({
         accentColor: 'var(--cc-accent)',
@@ -184,6 +199,9 @@ export class DeviceGrid implements OnInit {
       onCellKeyDown: detailsKeyHandler(open),
       initialState: this.state() ?? defaultGridState(),
       onFilterChanged: () => this.filtersChanged(),
+      // LibreGrid refreshes only existing group stores when grouping changes.
+      // A new datasource makes it switch between paged rows and groups.
+      onColumnRowGroupChanged: () => this.reload(),
       onGridPreDestroyed: ({ state, api }) =>
         this.saveState()(
           savedGridState(state),
@@ -220,6 +238,7 @@ export class DeviceGrid implements OnInit {
         (offset, limit, view) => this.load()(offset, limit, view),
         (page) => this.restore(page),
         { gridId: DEVICE_GRID_ID, tabId: this.selection().tabId },
+        (view) => this.loadGroups()(view),
       ),
     );
   }

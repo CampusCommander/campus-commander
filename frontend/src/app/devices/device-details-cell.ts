@@ -1,28 +1,30 @@
 import { Component, computed, signal } from '@angular/core';
 import type { ICellRendererAngularComp } from 'ag-grid-angular';
-import type { ICellRendererParams } from 'ag-grid-community';
+import type { ICellRendererParams, IRowNode } from 'ag-grid-community';
 import type { DeviceRow } from '@campus/application-contracts';
 
 export interface DeviceDetailsCellParams
   extends ICellRendererParams<DeviceRow> {
-  onDetails(row: DeviceRow, index: number): void;
+  onDetails(row: DeviceRow, node: IRowNode<DeviceRow>): void;
 }
 
 /** GRID-03 details icon. Selection and editing stay separate from detail navigation. */
 @Component({
   selector: 'app-device-details-cell',
   template: `
-    <button
-      type="button"
-      class="details-action"
-      [attr.aria-label]="label()"
-      [attr.title]="label()"
-      (click)="activate()"
-    >
-      <span class="material-symbols-outlined" aria-hidden="true"
-        >visibility</span
+    @if (!group()) {
+      <button
+        type="button"
+        class="details-action"
+        [attr.aria-label]="label()"
+        [attr.title]="label()"
+        (click)="activate()"
       >
-    </button>
+        <span class="material-symbols-outlined" aria-hidden="true"
+          >visibility</span
+        >
+      </button>
+    }
   `,
   styles: `
     .details-action {
@@ -41,6 +43,8 @@ export interface DeviceDetailsCellParams
 })
 export class DeviceDetailsCell implements ICellRendererAngularComp {
   private readonly params = signal<DeviceDetailsCellParams | null>(null);
+  /** Group rows have no device to open. */
+  protected readonly group = computed(() => !!this.params()?.node.group);
   protected readonly label = computed(() => {
     const data = this.params()?.data;
     return data
@@ -59,7 +63,7 @@ export class DeviceDetailsCell implements ICellRendererAngularComp {
 
   protected activate(): void {
     const params = this.params();
-    if (params?.data && params.node.rowIndex !== null)
-      params.onDetails(params.data, params.node.rowIndex);
+    if (params?.data && !params.node.group)
+      params.onDetails(params.data, params.node);
   }
 }

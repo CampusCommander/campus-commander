@@ -10,6 +10,7 @@ function setup(
   const store = {
     page: signal(page),
     offline: signal(false),
+    groupLimit: signal(false),
     sync: signal({ stale: false }),
     selection: { spec: signal<DeviceSelectionSpec | null>(null) },
   };
@@ -71,5 +72,14 @@ it('shows what Select All captured', () => {
   render();
   expect(element.textContent).toContain(
     'Selected by filter: Asset tag starts with: HS-04 · 1 excluded',
+  );
+});
+
+it('says when an open group lists only its first devices', () => {
+  const { store, element, render } = setup(null);
+  store.groupLimit.set(true);
+  render();
+  expect(element.textContent).toContain(
+    'Open groups list their first 1,000 devices. Add a filter to see the rest.',
   );
 });

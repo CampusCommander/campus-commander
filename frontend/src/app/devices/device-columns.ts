@@ -1,19 +1,26 @@
 import type {
+  AutoGroupColumnDef,
   CellKeyDownEvent,
   ColDef,
   FullWidthCellKeyDownEvent,
   IFilterOptionDef,
+  IRowNode,
 } from 'ag-grid-community';
-import type { DeviceRow } from '@campus/application-contracts';
+import type {
+  DeviceGroupField,
+  DeviceRow,
+} from '@campus/application-contracts';
 import {
   BATTERY_LABELS,
   DEVICE_FIELDS,
   batteryText,
+  groupLabel,
   relativeTime,
   type BatteryFilterValue,
   type DeviceField,
   type DeviceSortField,
 } from './device-fields';
+import { GroupCellRenderer } from '@libregrid/row-grouping';
 import { DeviceDetailsCell } from './device-details-cell';
 import { orgUnitTreePath } from './device-filter-model';
 
@@ -37,6 +44,55 @@ function value(row: DeviceRow, field: DeviceSortField, now: number): string {
       return row.notes ?? '';
   }
 }
+
+const groupable = new Set<string>(['orgUnitPath', 'model', 'battery']);
+
+/** Group rows carry the key and device count from the group request. */
+interface DeviceGroupRow {
+  key: string;
+  devices: number;
+}
+
+type GroupCellParams = Parameters<GroupCellRenderer['init']>[0];
+
+/** A group row's label and device count, such as "Replace soon (135)". */
+function groupText(params: GroupCellParams): unknown {
+  const { node, data } = params;
+  if (!node?.group || !data || !node.field) return params.value;
+  const group = data as unknown as DeviceGroupRow;
+  return `${groupLabel(node.field as DeviceGroupField, group.key)} (${group.devices.toLocaleString('en-US')})`;
+}
+const labelled = (params: GroupCellParams): GroupCellParams => ({
+  ...params,
+  value: groupText(params),
+});
+
+/**
+ * LibreGrid's group cell shows the raw group key, and AG Grid formats group values
+ * with the grouped column. This cell shows the group's label and device count.
+ */
+export class DeviceGroupCell extends GroupCellRenderer {
+  override init(params: GroupCellParams): void {
+    super.init(labelled(params));
+  }
+
+  override refresh(params: GroupCellParams): boolean {
+    return super.refresh(labelled(params));
+  }
+}
+
+/** The group column shows each group's label and device count. */
+export const deviceGroupColumn: AutoGroupColumnDef<DeviceRow> = {
+  headerName: 'Group',
+  minWidth: 260,
+  // Pinned with the checkbox, so a group row's label and checkbox share one row element.
+  pinned: 'left',
+  sortable: false,
+  filter: false,
+  cellRenderer: DeviceGroupCell,
+  // The label carries the server count. Loaded children would undercount.
+  cellRendererParams: { suppressCount: true },
+};
 
 const filterButtons = { buttons: ['apply', 'reset'], closeOnApply: true };
 /** The device query applies these filters. Rows the grid holds already match. */
@@ -111,7 +167,7 @@ function columnFilter(
 
 /** Every data column is read-only in this slice (GRID-05). */
 export function deviceColumnDefs(
-  onDetails: (row: DeviceRow, index: number) => void,
+  onDetails: (row: DeviceRow, node: IRowNode<DeviceRow>) => void,
   options: {
     orgUnits?: () => readonly string[];
     now?: () => number;
@@ -130,6 +186,8 @@ export function deviceColumnDefs(
       pinned: 'left',
       lockVisible: true,
       suppressMovable: true,
+      // GRID-03: the details icon stays right after the checkbox, before a group column.
+      lockPosition: 'left',
       sortable: false,
       resizable: false,
       cellRenderer: DeviceDetailsCell,
@@ -143,7 +201,9 @@ export function deviceColumnDefs(
       (field): ColDef<DeviceRow> => ({
         colId: field.id,
         headerName: field.label,
-        valueGetter: ({ data }) => (data ? value(data, field.id, now()) : ''),
+        valueGetter: ({ data, node }) =>
+          data && !node?.group ? value(data, field.id, now()) : '',
+        enableRowGroup: groupable.has(field.id),
         sortable: true,
         ...columnFilter(field, orgUnits),
         hide: field.optional,
@@ -155,7 +215,7 @@ export function deviceColumnDefs(
 
 /** Enter on a focused details cell opens the device. Space toggles row selection (UI-09). */
 export function detailsKeyHandler(
-  onDetails: (row: DeviceRow, index: number) => void,
+  onDetails: (row: DeviceRow, node: IRowNode<DeviceRow>) => void,
 ) {
   return (
     event: CellKeyDownEvent<DeviceRow> | FullWidthCellKeyDownEvent<DeviceRow>,
@@ -163,8 +223,8 @@ export function detailsKeyHandler(
     const keyboard = event.event as KeyboardEvent | null | undefined;
     if (!('column' in event) || event.column.getColId() !== 'details') return;
     if (keyboard?.key !== 'Enter') return;
-    if (!event.data || event.rowIndex === null) return;
+    if (!event.data || event.node.group) return;
     keyboard.preventDefault();
-    onDetails(event.data, event.rowIndex);
+    onDetails(event.data, event.node);
   };
 }

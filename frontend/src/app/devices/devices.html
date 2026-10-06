@@ -144,8 +144,9 @@
     <app-device-grid
       [class.hidden]="noMatches() || emptyInventory()"
       [load]="load"
+      [loadGroups]="loadGroups"
       [revision]="store.revision()"
-      [focusIndex]="store.position()?.index ?? null"
+      [focusIndex]="grouped() ? null : (store.position()?.index ?? null)"
       [state]="store.gridState()"
       [saveState]="saveState"
       [selectedView]="store.selectedView()"
