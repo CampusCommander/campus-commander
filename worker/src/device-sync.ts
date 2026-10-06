@@ -165,35 +165,44 @@ export class DeviceSync {
       ),
     );
     if (failure === null) {
-      const recordPage = z.array(z.object({ deviceId: z.string() }).passthrough());
-      for (let after = ''; ; ) {
-        const records = recordPage.parse(
-          await this.call('SELECT cc.page_device_records($1,$2,$3) AS result', [
-            input.customerId,
-            after,
-            1000,
-          ]),
-        );
-        if (records.length === 0) break;
-        await this.cache.setRecords(
-          records.map((record) => {
-            const cached: Record<string, unknown> = { ...record };
-            delete cached['removedAt'];
-            return {
-              key: entityKey('device', input.customerId, record.deviceId),
-              value: JSON.stringify(cached),
-            };
-          }),
-          ENTITY_CACHE_SECONDS.device,
-        );
-        after = records[records.length - 1].deviceId;
+      try {
+        // Postgres has published. Redis work must not fail the sync.
+        const recordPage = z.array(z.object({ deviceId: z.string() }).passthrough());
+        for (let after = ''; !signal.aborted; ) {
+          const records = recordPage.parse(
+            await this.call('SELECT cc.page_device_records($1,$2,$3) AS result', [
+              input.customerId,
+              after,
+              1000,
+            ]),
+          );
+          if (records.length === 0) break;
+          await this.cache.setRecords(
+            records.map((record) => {
+              const cached: Record<string, unknown> = { ...record };
+              delete cached['removedAt'];
+              return {
+                key: entityKey('device', input.customerId, record.deviceId),
+                value: JSON.stringify(cached),
+              };
+            }),
+            ENTITY_CACHE_SECONDS.device,
+          );
+          after = records[records.length - 1].deviceId;
+        }
+        await this.cache.increment(queryGenerationKey('device', input.customerId));
+      } catch {
+        // The next read fills the cache. Plan B reconciles the generation on its next full sync.
       }
-      await this.cache.increment(queryGenerationKey('device', input.customerId));
     }
-    await this.cache.publish(
-      entityEventsChannel(input.customerId),
-      JSON.stringify({ type: 'full-sync', sync: state }),
-    );
+    try {
+      await this.cache.publish(
+        entityEventsChannel(input.customerId),
+        JSON.stringify({ type: 'full-sync', sync: state }),
+      );
+    } catch {
+      // The client still polls the sync state.
+    }
     return state;
   }
 }

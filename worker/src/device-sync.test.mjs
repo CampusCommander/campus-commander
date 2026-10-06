@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { GoogleConnectionError } from '@campus/google-connection';
 import { DeviceSync, DeviceSyncError } from './device-sync.ts';
+import { EntityCacheError } from './entity-cache.ts';
 
 const customerId = 'C0123456';
 const request = { customerId, syncId: randomUUID(), correlationId: randomUUID() };
@@ -30,7 +31,7 @@ const device = (deviceId) => ({
   status: null,
 });
 
-function database({ fail = {} } = {}) {
+function database({ fail = {}, onPage = () => undefined } = {}) {
   const calls = [];
   return {
     calls,
@@ -41,6 +42,7 @@ function database({ fail = {} } = {}) {
       if (name === 'claim_device_sync')
         return { rows: [{ result: { generation: 1, credentialId: randomUUID(), envelope: { sealed: true } } }] };
       if (name === 'finish_device_sync') return { rows: [{ result: state }] };
+      if (name === 'page_device_records') onPage();
       if (name === 'page_device_records')
         return { rows: [{ result: values[1] === '' ? [record('d1'), record('d2')] : [] }] };
       return { rows: [{ result: 1 }] };
@@ -162,4 +164,27 @@ test('a lost lease stops staging and never publishes', async () => {
     (error) => error instanceof DeviceSyncError && error.code === 'device-sync-changed',
   );
   assert.equal(names(db.calls).includes('finish_device_sync'), false);
+});
+
+test('a Redis fault after publication does not fail the sync', async () => {
+  const db = database();
+  const redis = cache();
+  redis.setRecords = async (...args) => {
+    redis.calls.push({ name: 'setRecords', args });
+    throw new EntityCacheError();
+  };
+  const result = await new DeviceSync(db, cipher, reader(), redis).run(request, AbortSignal.timeout(5000));
+  assert.deepEqual(result, state);
+  assert.ok(names(db.calls).includes('finish_device_sync'));
+  assert.deepEqual(names(redis.calls), ['setRecords', 'publish']);
+});
+
+test('shutdown stops the Redis fill', async () => {
+  const controller = new AbortController();
+  const db = database({ onPage: () => controller.abort() });
+  const redis = cache();
+  const result = await new DeviceSync(db, cipher, reader(), redis).run(request, controller.signal);
+  assert.deepEqual(result, state);
+  assert.equal(names(db.calls).filter((name) => name === 'page_device_records').length, 1);
+  assert.ok(names(redis.calls).includes('publish'));
 });
