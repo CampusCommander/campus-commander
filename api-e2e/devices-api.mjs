@@ -13,6 +13,7 @@ export async function qualifyDevicesApi({
   evidenceDirectory,
   setSubject,
   migrator,
+  redis,
 }) {
   const context = await evidenceSecurity.newContext(browser, {
     ignoreHTTPSErrors: true,
@@ -328,6 +329,45 @@ export async function qualifyDevicesApi({
       const removed = await api.get(`${root}/synthetic-device-3`);
       assert.equal(removed.status(), 200);
       assert.ok((await removed.json()).device.removedAt);
+
+      // The job finishes only after the worker wrote Redis and freed its claims.
+      let job;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        job = (
+          await migrator.query(
+            "SELECT j.finished_at, j.batch_count, (SELECT count(*) FROM cc.entity_sync_batches b WHERE b.job_id=j.job_id AND b.status='completed') AS completed, (SELECT count(*) FROM cc.entity_sync_batches b WHERE b.job_id=j.job_id AND b.status='failed') AS failed FROM cc.entity_sync_jobs j WHERE j.job_id=$1",
+            [stalePage.refreshJobId],
+          )
+        ).rows[0];
+        if (job?.finished_at) break;
+        await setTimeout(500);
+      }
+      assert.ok(
+        job?.finished_at,
+        'The refresh job did not finish within 60 s.',
+      );
+      assert.equal(Number(job.completed), job.batch_count);
+      assert.equal(Number(job.failed), 0);
+
+      const customerKey = (prefix) => `${prefix}:device:C0123456`;
+      const entity = (id) => `${customerKey('cc:entity')}:${id}`;
+      // Redis deletes a sorted set with its last member. The default ACL reads EXISTS, not ZCARD.
+      assert.equal(
+        await redis.exists(customerKey('cc:entity-inflight')),
+        0,
+        'The worker freed every in-flight claim.',
+      );
+      const cached = JSON.parse(await redis.get(entity('synthetic-device-0')));
+      assert.equal(cached.deviceId, 'synthetic-device-0');
+      assert.equal(typeof cached.lastEntitySync, 'string');
+      assert.ok(
+        Date.parse(cached.lastEntitySync) > Date.parse(ready.observedAt),
+        'The batch, not the first full sync, wrote the cached record.',
+      );
+      assert.equal('stale' in cached, false);
+      assert.equal('removedAt' in cached, false);
+      assert.equal(await redis.get(entity('synthetic-device-3')), null);
+
       await rm(faultPath, { force: true });
       const restored = await run();
       assert.equal(
@@ -335,6 +375,11 @@ export async function qualifyDevicesApi({
         450,
         'A full sync returns the device.',
       );
+      assert.equal((await bySerial('C0A1-0003')).matching, 1);
+      const generation = await redis.get(customerKey('cc:query-gen'));
+      assert.match(generation ?? '', /^\d+$/);
+      assert.ok(Number(generation) >= 1);
+      assert.equal(await redis.exists(entity('synthetic-device-3')), 1);
     }
 
     await fault('telemetry-privilege-denied');
@@ -369,6 +414,7 @@ export async function qualifyDevicesApi({
       ...(migrator
         ? [
             'stale devices refresh through one Kestra batch and a removed device leaves the grid: pass',
+            'the refresh job finishes and the worker fills and prunes Redis: pass',
           ]
         : []),
     ];

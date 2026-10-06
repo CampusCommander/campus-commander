@@ -2374,6 +2374,7 @@ test(
           browser,
           publicOrigin,
           migrator,
+          redis,
           directory,
           evidenceDirectory,
           setSubject: (value) => {
