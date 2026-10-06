@@ -25,6 +25,7 @@ class GridStub {
   readonly predicates = input<unknown>();
   readonly orgUnits = input<unknown>();
   readonly selection = input<unknown>();
+  readonly selectedView = input(false);
   readonly details = output<unknown>();
   readonly filtersChange = output<unknown>();
 }
@@ -60,6 +61,7 @@ function setup(options: {
       selection: null as unknown,
     }),
     gridState: signal(null),
+    selectedView: signal(false),
     setView: vi.fn(),
     page: signal(options.page ?? null),
     orgUnits: signal([]),
@@ -242,4 +244,20 @@ it('keeps the grid visible while Show All Selected finds nothing', () => {
   expect(
     element.querySelector('app-device-grid')?.classList.contains('hidden'),
   ).toBe(false);
+});
+
+it('keeps the grid state and the selected view when the grid closes', () => {
+  const { store, fixture } = setup({
+    sync: ready(),
+    page: { matching: 28, total: 450, observedAt: '2026-10-05T12:00:00.000Z' },
+  });
+  const grid = fixture.debugElement.query(By.directive(GridStub))
+    .componentInstance as GridStub;
+  const save = grid.saveState() as (
+    state: object,
+    selectedView: boolean,
+  ) => void;
+  save({ pagination: { page: 1, pageSize: 100 } }, true);
+  expect(store.gridState()).toEqual({ pagination: { page: 1, pageSize: 100 } });
+  expect(store.selectedView()).toBe(true);
 });

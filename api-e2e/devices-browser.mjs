@@ -150,6 +150,19 @@ export async function qualifyDevicesBrowser({
       page.getByText('28 matching devices · 450 in district'),
     ).toBeVisible();
     await auditAccessibility(page, 'devices-selection');
+    // Back to devices keeps the selected view and the opened row.
+    const firstSelected = page
+      .getByRole('button', { name: /^Open details for / })
+      .first();
+    const selectedName = await firstSelected.getAttribute('aria-label');
+    await firstSelected.click();
+    await page.getByRole('link', { name: 'Back to devices' }).click();
+    await expect(
+      page.getByText('28 matching devices · 450 in district'),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: selectedName, exact: true }),
+    ).toBeInViewport();
     await page.getByRole('button', { name: 'Show All Records' }).click();
     await expect(
       page.getByText('96 matching devices · 450 in district'),
@@ -167,17 +180,20 @@ export async function qualifyDevicesBrowser({
     await expect(summary).toHaveText(/1\s*to\s*100\s*of\s*450/);
     await page.getByRole('button', { name: 'Next Page' }).click();
     await expect(summary).toHaveText(/101\s*to\s*200\s*of\s*450/);
+    // Serials are hexadecimal. C0A1-00C7 is row 200, the last row of page 2.
+    await page.getByRole('gridcell').first().hover();
+    await page.mouse.wheel(0, 20_000);
     await page
-      .getByRole('button', { name: 'Open details for C0A1-0064' })
+      .getByRole('button', { name: 'Open details for C0A1-00C7' })
       .click();
     await page.getByRole('button', { name: 'Next device' }).click();
     await expect(
-      page.getByRole('heading', { name: 'C0A1-0065', level: 1 }),
+      page.getByRole('heading', { name: 'C0A1-00C8', level: 1 }),
     ).toBeVisible();
     await page.getByRole('link', { name: 'Back to devices' }).click();
-    await expect(summary).toHaveText(/101\s*to\s*200\s*of\s*450/);
+    await expect(summary).toHaveText(/201\s*to\s*300\s*of\s*450/);
     await expect(
-      page.getByRole('button', { name: 'Open details for C0A1-0065' }),
+      page.getByRole('button', { name: 'Open details for C0A1-00C8' }),
     ).toBeInViewport();
 
     // The Columns side bar shows and hides columns (column tools decision).
@@ -210,6 +226,7 @@ export async function qualifyDevicesBrowser({
       'Select All captures the filtered devices and survives filter changes: pass',
       'Show All Selected limits the grid to selected devices: pass',
       'Back to devices returns to the page of the opened device: pass',
+      'Back to devices keeps Show All Selected and the opened row: pass',
       'the Columns side bar shows and hides columns: pass',
       'deep-linked device without battery reports names the power-status policy: pass',
     ];

@@ -148,6 +148,7 @@
       [focusIndex]="store.position()?.index ?? null"
       [state]="store.gridState()"
       [saveState]="saveState"
+      [selectedView]="store.selectedView()"
       [predicates]="store.predicates()"
       [orgUnits]="store.orgUnits()"
       (filtersChange)="store.setPredicates($event)"

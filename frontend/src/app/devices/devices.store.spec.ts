@@ -238,10 +238,12 @@ it('clears browsing state when a different person signs in', () => {
   store.setPredicates([{ field: 'notes', operator: 'isEmpty' }]);
   store.position.set({ index: 2, deviceId: 'd2' });
   store.gridState.set({ pagination: { page: 3, pageSize: 100 } });
+  store.selectedView.set(true);
   session.set(sessionFor('someone-else'));
   TestBed.tick();
   expect(store.predicates()).toEqual([]);
   expect(store.position()).toBeNull();
   expect(store.gridState()).toBeNull();
+  expect(store.selectedView()).toBe(false);
   expect(store.view().predicates).toEqual([]);
 });

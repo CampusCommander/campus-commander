@@ -80,8 +80,10 @@ export class DevicesPage implements OnInit {
     this.store.setView(view);
     return this.store.rows(offset, limit);
   };
-  protected readonly saveState = (state: GridState) =>
+  protected readonly saveState = (state: GridState, selectedView: boolean) => {
     this.store.gridState.set(state);
+    this.store.selectedView.set(selectedView);
+  };
 
   constructor() {
     effect(() => {

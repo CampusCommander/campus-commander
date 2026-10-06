@@ -26,6 +26,7 @@ import { ServerSideRowModelModule } from '@libregrid/server-side-row-model';
 import {
   ServerSideSelectionModule,
   type ServerSideSelectionProvider,
+  type SsrmSelectionService,
 } from '@libregrid/server-side-selection';
 import { SetFilterModule } from '@libregrid/set-filter';
 import { ColumnMenuModule } from '@libregrid/menu';
@@ -118,7 +119,11 @@ export class DeviceGrid implements OnInit {
   /** Saved grid state to open with, such as after Back to devices. */
   readonly state = input<GridState | null>(null);
   /** Receives the grid state when the grid closes. */
-  readonly saveState = input<(state: GridState) => void>(() => undefined);
+  readonly saveState = input<(state: GridState, selectedView: boolean) => void>(
+    () => undefined,
+  );
+  /** Show All Selected was on when the grid last closed. */
+  readonly selectedView = input(false);
   /** The chips. The grid shows them as column filters. */
   readonly predicates = input<DevicePredicate[]>([]);
   /** Organization units for the OrgUnit set filter. */
@@ -179,8 +184,13 @@ export class DeviceGrid implements OnInit {
       onCellKeyDown: detailsKeyHandler(open),
       initialState: this.state() ?? defaultGridState(),
       onFilterChanged: () => this.filtersChanged(),
-      onGridPreDestroyed: ({ state }) =>
-        this.saveState()(savedGridState(state)),
+      onGridPreDestroyed: ({ state, api }) =>
+        this.saveState()(
+          savedGridState(state),
+          api.getGridOption('ssrmSelectionViewActive') === true,
+        ),
+      // The first load already shows the selection, so the opened row keeps its place.
+      ssrmSelectionViewActive: this.selectedView(),
       getRowId: ({ data }) => data.deviceId,
       rowModelType: 'serverSide',
       cacheBlockSize: 100,
@@ -191,7 +201,7 @@ export class DeviceGrid implements OnInit {
         tabId: this.selection().tabId,
         footer: this.footer,
         status: this.status,
-        onSelectionReady: () => this.selectionReady(),
+        onSelectionReady: (service) => this.selectionReady(service),
       }),
     };
   }
@@ -240,7 +250,15 @@ export class DeviceGrid implements OnInit {
   }
 
   /** The selection footer makes the status bar taller and the body shorter. Show the row again. */
-  private selectionReady(): void {
+  private selectionReady(service: SsrmSelectionService): void {
+    if (this.selectedView() && !service.isViewActive()) {
+      service.enterViewMode();
+      // An empty or expired selection cannot hold the view. Show all records instead.
+      if (!service.isViewActive()) {
+        this.api?.setGridOption('ssrmSelectionViewActive', false);
+        this.api?.refreshServerSide();
+      }
+    }
     this.reveal();
     this.pendingRow = null;
   }

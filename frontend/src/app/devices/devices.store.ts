@@ -55,6 +55,8 @@ export class DevicesStore {
   readonly view = signal<DeviceView>(defaultView());
   /** Grid columns, filters, sort, and page, kept while device details are open. */
   readonly gridState = signal<GridState | null>(null);
+  /** Show All Selected was on when the grid closed. Back to devices reopens it. */
+  readonly selectedView = signal(false);
   readonly selection = new DeviceSelectionProvider((path, body) =>
     this.call(path, body),
   );
@@ -93,6 +95,7 @@ export class DevicesStore {
     this.predicates.set([]);
     this.view.set(defaultView());
     this.gridState.set(null);
+    this.selectedView.set(false);
     this.selection.spec.set(null);
     this.page.set(null);
     this.orgUnits.set([]);

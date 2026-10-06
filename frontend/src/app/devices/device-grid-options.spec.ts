@@ -69,12 +69,12 @@ it('pages, shows column tools and the status bar, and selects on the server', ()
     tabId,
   });
   const attachFooter = vi.fn();
-  options.ssrmSelection?.onReady?.({
-    attachFooter,
-  } as unknown as SsrmSelectionService);
+  const service = { attachFooter } as unknown as SsrmSelectionService;
+  options.ssrmSelection?.onReady?.(service);
   expect(attachFooter).toHaveBeenCalledWith(footer);
   // The footer changes the status bar height, so the grid re-reveals its row.
-  expect(onSelectionReady).toHaveBeenCalled();
+  // The grid also re-enters Show All Selected through the service.
+  expect(onSelectionReady).toHaveBeenCalledWith(service);
 });
 
 it('opens the page that holds a remembered row', () => {
