@@ -354,8 +354,14 @@ BEGIN
   IF connection.customer_id IS DISTINCT FROM p_customer OR connection.active IS NOT TRUE THEN
     RAISE EXCEPTION 'The Google connection changed.' USING DETAIL='connection-changed';
   END IF;
-  IF p_job IS NULL OR p_correlation IS NULL OR jsonb_typeof(p_ids) IS DISTINCT FROM 'array' THEN
+  IF p_job IS NULL OR p_correlation IS NULL OR jsonb_typeof(p_ids) IS DISTINCT FROM 'array' OR
+    p_batch_size IS NULL OR p_batch_size NOT BETWEEN 1 AND 1000 THEN
     RAISE EXCEPTION 'The job is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Device IDs travel into Google request paths. Only plain identifiers enter a job.
+  IF jsonb_array_length(p_ids)=0 OR EXISTS(SELECT 1 FROM jsonb_array_elements(p_ids) e
+      WHERE jsonb_typeof(e.value)<>'string' OR (e.value#>>'{}')!~'^[A-Za-z0-9_-]{1,128}$') THEN
+    RAISE EXCEPTION 'The job IDs are invalid.' USING ERRCODE='22023';
   END IF;
   INSERT INTO cc.entity_sync_jobs(job_id,customer_id,entity_type,generation,ids,batch_size,batch_count,requested_by,correlation_id)
   VALUES(p_job,p_customer,p_type,connection.generation,p_ids,p_batch_size,
@@ -420,6 +426,7 @@ BEGIN
 END;
 $$;
 
+-- A job that stays unfinished for two hours ends as interrupted. Finished jobs leave after one day.
 CREATE FUNCTION cc.purge_entity_sync_jobs(p_customer text,p_limit integer) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE removed integer;
@@ -427,6 +434,8 @@ BEGIN
   IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 10000 THEN
     RAISE EXCEPTION 'The purge limit is invalid.' USING ERRCODE='22023';
   END IF;
+  UPDATE cc.entity_sync_jobs SET failure=COALESCE(failure,'interrupted'),finished_at=clock_timestamp()
+  WHERE customer_id=p_customer AND finished_at IS NULL AND created_at<clock_timestamp()-interval '2 hours';
   DELETE FROM cc.entity_sync_jobs WHERE job_id IN (
     SELECT job_id FROM cc.entity_sync_jobs
     WHERE customer_id=p_customer AND finished_at<clock_timestamp()-interval '1 day'

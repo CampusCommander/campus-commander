@@ -214,6 +214,45 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     );
     assert.equal(await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [customer, 100]), 1);
 
+    // A job that no batch finishes ends as interrupted after two hours. The purge reaps it a day later.
+    const stuckId = randomUUID();
+    await result('SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result', [
+      reader, customer, 'device', '["d1"]', 100, stuckId, randomUUID(),
+    ]);
+    const stuck = async () =>
+      (await migrator.query('SELECT failure,finished_at FROM cc.entity_sync_jobs WHERE job_id=$1', [stuckId])).rows[0];
+    await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [customer, 100]);
+    assert.equal((await stuck()).finished_at, null, 'A young unfinished job stays open.');
+    await migrator.query(
+      "UPDATE cc.entity_sync_jobs SET created_at=created_at-interval '3 hours' WHERE job_id=$1",
+      [stuckId],
+    );
+    await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [customer, 100]);
+    assert.equal((await stuck()).failure, 'interrupted');
+    assert.ok((await stuck()).finished_at instanceof Date);
+    await migrator.query(
+      "UPDATE cc.entity_sync_jobs SET finished_at=finished_at-interval '2 days' WHERE job_id=$1",
+      [stuckId],
+    );
+    assert.equal(await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [customer, 100]), 1);
+    assert.equal(await stuck(), undefined);
+
+    // Job creation accepts only plain device identifiers and a bounded batch size.
+    const create = (ids, size = 100) =>
+      result('SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result', [
+        reader, customer, 'device', JSON.stringify(ids), size, randomUUID(), randomUUID(),
+      ]);
+    for (const [ids, size] of [
+      [['d1', 'd>2'], 100],
+      [['d1\r'], 100],
+      [[], 100],
+      [[1], 100],
+      [['x'.repeat(129)], 100],
+      [['d1'], 0],
+      [['d1'], 1001],
+    ])
+      await assert.rejects(create(ids, size), (error) => error.code === '22023');
+
     // Expired leases still report interruption.
     const lost = await request();
     const lostAttempt = randomUUID();
@@ -240,6 +279,7 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       'one worker attempt claims a device sync and duplicate dispatch is rejected: pass',
       'a full sync soft-deletes devices Google no longer returns and a failed sync removes nothing: pass',
       'entity sync jobs slice IDs into batches and count each batch once: pass',
+      'the purge ends jobs unfinished after two hours and rejects unsafe job IDs: pass',
       'upserts stamp last_entity_sync and clear removed_at: pass',
       'expired leases report interruption and reject late publication: pass',
     ];

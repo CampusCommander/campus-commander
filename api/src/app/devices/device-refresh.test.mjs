@@ -16,7 +16,11 @@ const job = (ids) => ({
   finishedAt: null,
 });
 
-function fakes({ added = (members) => members, startFails = false } = {}) {
+function fakes({
+  added = (members) => members,
+  startFails = false,
+  purgeFails = false,
+} = {}) {
   const calls = [];
   const cache = {
     async addMembers(key, members, seconds) {
@@ -37,6 +41,9 @@ function fakes({ added = (members) => members, startFails = false } = {}) {
   const store = async (sql, values) => {
     const name = /cc\.(\w+)/.exec(sql)[1];
     calls.push({ name, values });
+    if (name === 'purge_entity_sync_jobs' && purgeFails)
+      throw new Error('store down');
+    if (name === 'purge_entity_sync_jobs') return 0;
     if (name === 'create_entity_sync_job') return job(JSON.parse(values[4]));
     return job([]);
   };
@@ -50,13 +57,18 @@ test('stale IDs create one job and start the flow with its batch count', async (
   assert.equal(jobId, '33333333-3333-4333-8333-333333333333');
   assert.deepEqual(
     calls.map((call) => call.name),
-    ['addMembers', 'create_entity_sync_job', 'startEntitySync'],
+    [
+      'purge_entity_sync_jobs',
+      'addMembers',
+      'create_entity_sync_job',
+      'startEntitySync',
+    ],
   );
-  assert.equal(calls[0].key, 'cc:entity-inflight:device:C0123456');
-  assert.equal(calls[0].seconds, 120);
-  assert.equal(calls[1].values[3], 'device');
-  assert.equal(calls[1].values[5], 100);
-  assert.equal(calls[2].input.batchCount, 3);
+  assert.equal(calls[1].key, 'cc:entity-inflight:device:C0123456');
+  assert.equal(calls[1].seconds, 120);
+  assert.equal(calls[2].values[3], 'device');
+  assert.equal(calls[2].values[5], 100);
+  assert.equal(calls[3].input.batchCount, 3);
 });
 
 test('overlapping stale queries dispatch each device once', async () => {
@@ -64,7 +76,7 @@ test('overlapping stale queries dispatch each device once', async () => {
     added: (members) => members.filter((id) => id === 'd9'),
   });
   await refresh.dispatch(actor, 'C0123456', ['d1', 'd9'], correlation);
-  assert.deepEqual(JSON.parse(calls[1].values[4]), ['d9']);
+  assert.deepEqual(JSON.parse(calls[2].values[4]), ['d9']);
 });
 
 test('nothing new means no job', async () => {
@@ -75,7 +87,7 @@ test('nothing new means no job', async () => {
   );
   assert.deepEqual(
     calls.map((call) => call.name),
-    ['addMembers'],
+    ['purge_entity_sync_jobs', 'addMembers'],
   );
 });
 
@@ -88,11 +100,36 @@ test('a failed flow start abandons the job and frees the IDs', async () => {
   assert.deepEqual(
     calls.map((call) => call.name),
     [
+      'purge_entity_sync_jobs',
       'addMembers',
       'create_entity_sync_job',
       'startEntitySync',
       'abandon_entity_sync_job',
       'removeMembers',
+    ],
+  );
+});
+
+test('dispatch purges old jobs for the customer before it claims IDs', async () => {
+  const { calls, refresh } = fakes();
+  await refresh.dispatch(actor, 'C0123456', ['d1'], correlation);
+  assert.equal(calls[0].name, 'purge_entity_sync_jobs');
+  assert.deepEqual(calls[0].values, ['C0123456', 100]);
+});
+
+test('a purge failure does not stop the job', async () => {
+  const { calls, refresh } = fakes({ purgeFails: true });
+  assert.equal(
+    await refresh.dispatch(actor, 'C0123456', ['d1'], correlation),
+    '33333333-3333-4333-8333-333333333333',
+  );
+  assert.deepEqual(
+    calls.map((call) => call.name),
+    [
+      'purge_entity_sync_jobs',
+      'addMembers',
+      'create_entity_sync_job',
+      'startEntitySync',
     ],
   );
 });
