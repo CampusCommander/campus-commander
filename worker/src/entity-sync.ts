@@ -158,6 +158,14 @@ export class EntitySyncBatch {
         customerId: input.customerId,
         generation: batch.generation,
       });
+      // Postgres stamps freshness before the Directory read. A slow batch cannot claim newer data.
+      const clock = await this.call('SELECT clock_timestamp() AS result', []);
+      const stamp = new Date(
+        clock instanceof Date || typeof clock === 'string' ? clock : Number.NaN,
+      );
+      if (Number.isNaN(stamp.getTime()))
+        throw new DeviceSyncError('store-unavailable');
+      const syncedAt = stamp.toISOString();
       const read = await this.untilQuotaClears(signal, () =>
         this.reader.deviceBatch(
           credential,
@@ -181,7 +189,6 @@ export class EntitySyncBatch {
         )
           throw error;
       }
-      const syncedAt = new Date().toISOString();
       await this.call('SELECT cc.upsert_devices($1,$2,$3) AS result', [
         input.customerId,
         JSON.stringify(read.devices),

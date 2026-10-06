@@ -46,13 +46,15 @@ const record = (deviceId) => ({
   removedAt: null,
 });
 
+const clock = new Date('2026-10-06T11:59:59.123Z');
 function database({ fail = {}, finish = job() } = {}) {
   const calls = [];
   return {
     calls,
     async query(sql, values) {
-      const name = /cc\.(\w+)/.exec(sql)[1];
+      const name = (/cc\.(\w+)/.exec(sql) ?? /(\w+)\(\)/.exec(sql))[1];
       calls.push({ name, values });
+      if (name === 'clock_timestamp') return { rows: [{ result: clock }] };
       if (fail[name])
         throw Object.assign(new Error(name), {
           code: 'P0001',
@@ -134,6 +136,7 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
   ).run(request, AbortSignal.timeout(5000));
   assert.deepEqual(names(db.calls), [
     'read_entity_sync_batch',
+    'clock_timestamp',
     'upsert_devices',
     'upsert_device_batteries',
     'soft_delete_devices',
@@ -141,12 +144,12 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
     'finish_entity_sync_batch',
   ]);
   assert.deepEqual(
-    JSON.parse(db.calls[1].values[1]).map((d) => d.deviceId),
+    JSON.parse(db.calls[2].values[1]).map((d) => d.deviceId),
     ['d1', 'd3'],
   );
-  assert.match(db.calls[1].values[2], /^\d{4}-\d{2}-\d{2}T/);
-  assert.deepEqual(JSON.parse(db.calls[3].values[1]), ['d2']);
-  assert.deepEqual(db.calls[5].values, [customerId, jobId, 0, null]);
+  assert.equal(db.calls[2].values[2], clock.toISOString());
+  assert.deepEqual(JSON.parse(db.calls[4].values[1]), ['d2']);
+  assert.deepEqual(db.calls[6].values, [customerId, jobId, 0, null]);
   assert.deepEqual(names(redis.calls), [
     'setRecords',
     'remove',
@@ -268,9 +271,10 @@ test('any other Google error fails the batch and frees the in-flight IDs', async
   ).run(request, AbortSignal.timeout(5000));
   assert.deepEqual(names(db.calls), [
     'read_entity_sync_batch',
+    'clock_timestamp',
     'finish_entity_sync_batch',
   ]);
-  assert.deepEqual(db.calls[1].values, [
+  assert.deepEqual(db.calls[2].values, [
     customerId,
     jobId,
     0,
@@ -363,6 +367,7 @@ test('a telemetry failure keeps the batch devices and skips the battery upsert',
   ).run(request, AbortSignal.timeout(5000));
   assert.deepEqual(names(db.calls), [
     'read_entity_sync_batch',
+    'clock_timestamp',
     'upsert_devices',
     'soft_delete_devices',
     'read_device_records',
@@ -403,4 +408,26 @@ test('a quota answer from telemetry still retries and writes batteries', async (
   );
   const upsert = db.calls.find((call) => call.name === 'upsert_device_batteries');
   assert.deepEqual(JSON.parse(upsert.values[1]).map((b) => b.deviceId), ['d1']);
+});
+
+test('the freshness stamp comes from Postgres before the Directory read', async () => {
+  const db = database();
+  const source = reader();
+  const deviceBatch = source.deviceBatch;
+  source.deviceBatch = async (...args) => {
+    db.calls.push({ name: 'deviceBatch', values: [] });
+    return deviceBatch(...args);
+  };
+  await new EntitySyncBatch(db, cipher, source, cache(), noSleep).run(
+    request,
+    AbortSignal.timeout(5000),
+  );
+  assert.deepEqual(names(db.calls).slice(0, 4), [
+    'read_entity_sync_batch',
+    'clock_timestamp',
+    'deviceBatch',
+    'upsert_devices',
+  ]);
+  const upsert = db.calls.find((call) => call.name === 'upsert_devices');
+  assert.equal(upsert.values[2], clock.toISOString());
 });
