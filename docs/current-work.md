@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-05.
+Updated: 2026-10-06.
 
 ## Authorized now
 
@@ -10,6 +10,8 @@ The owner authorized implementation on 2026-10-05, after the workflow record.
 
 The slice reads data only. It covers the device grid, typed filters, device details, battery health, and the designed states.
 Battery health uses Google's classification. The owner added grid tools, paging, server-side selection, and grouping on 2026-10-05.
+On 2026-10-06 the owner authorized per-device freshness as infrastructure under this workflow, on branch `codex/entity-cache`.
+The [entity cache record](superpowers/specs/2026-10-06-entity-cache-decisions.md) holds the confirmed decisions. It is not a new workflow.
 The School column, Bulk Actions, and every device change are excluded.
 Inspect the [linked Figma frames](workflows/device-browsing.md#design) before implementing each screen.
 Use focused `codex/` branches. Do not merge without owner authorization.

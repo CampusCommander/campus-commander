@@ -1,6 +1,6 @@
 # Browse ChromeOS devices
 
-Status: owner-confirmed scope, 2026-10-05. Implementation authorized.
+Status: owner-confirmed scope, 2026-10-05. Implementation authorized. Per-device freshness added 2026-10-06.
 Source: [development order](../current-work.md#development-order-after-the-reset) steps 2 and 3, and the owner decisions below.
 Design: Figma page 09. See [Design](#design) for the exact frames.
 Replaces: none.
@@ -21,15 +21,15 @@ The eye icon in each row opens that device's details.
 The filter row follows [GRID-04](../ui/patterns.md#entity-grid).
 The administrator selects Add a filter, chooses a field or shortcut, and applies a typed value.
 Each applied filter appears as a chip. Clear filters removes all chips.
-The Refresh menu contains Refresh all. It runs a new device sync and keeps the active filters.
+The Refresh menu contains Refresh all. It runs a full device sync and keeps the active filters.
 The grid pages through the devices. The paging bar shows the row range and the page size.
 Each column header has a filter. The Filters side bar lists the same filters.
 The Columns side bar shows, hides, orders, and pins columns.
 The checkbox column selects devices. Select All in the status bar selects every device that matches the filters.
-The status bar shows the matching count, the district total, the inventory observation time, and the selection.
+The status bar shows the matching count, the district total, the last full sync time, and the selection.
 The column menu and the Columns side bar group the grid by organization unit, model, or battery class. Each group row shows its device count.
 
-Device details show the serial, model, asset tag, OrgUnit path, and inventory observation time.
+Device details show the serial, model, asset tag, OrgUnit path, and the time Campus Commander last read the device from Google.
 They show annotated location and notes as read-only values, and the last device contact.
 The battery panel shows the Google health class and the percentage of design capacity.
 It names Google as the classification source. It shows the latest report time and the recent reports that Google provides.
@@ -47,9 +47,12 @@ Inventory fields are `deviceId`, `serialNumber`, `model`, `annotatedAssetId`, `o
 Battery percentage is `fullChargeCapacity` divided by `designCapacity`.
 Google reports battery data only when the `ReportDevicePowerStatus` device policy is on.
 
-Campus Commander syncs the complete device inventory and battery reports into its own database.
+Campus Commander keeps one row per device in its own database, with the time it last read that device from Google.
 The grid, filters, and counts query that database through the server-side row model in [GRID-01](../ui/patterns.md#entity-grid).
-Each completed sync replaces the previous one. A failed sync leaves the previous inventory in place and shows the stale state.
+Redis holds short-lived query results and the rows that a sync refreshed. The [entity cache record](../superpowers/specs/2026-10-06-entity-cache-decisions.md) defines both caches.
+A device is stale 24 hours after its last read. A query that returns stale devices starts a background refresh of every stale device it matched.
+The server pushes a signal when refreshed rows land, and the grid updates those rows in place.
+Refresh all reads the complete inventory. A failed full sync leaves every row in place and shows the stale state.
 Collection leases, staging generations, and write overlays from the [architecture](../portfolio/03-architecture.md#synchronization-and-effective-reads) wait until device writes exist.
 
 The existing administrator sees every device.
@@ -92,6 +95,21 @@ The grid pages through the server-side row model. Back to devices returns to the
 The column filters include set filters for Battery and OrgUnit and the Filters side bar.
 Chips and column filters stay in sync and drive one server query.
 
+## Owner decisions — 2026-10-06
+
+**Per-device freshness.** The owner replaced the whole-inventory snapshot with one row per device and a per-row last read time.
+The owner confirmed the decisions D1 through D15 in the [entity cache record](../superpowers/specs/2026-10-06-entity-cache-decisions.md) in one interview.
+This work is infrastructure under this workflow. It is not a new workflow. Development continues on `codex/entity-cache`.
+
+- A stale device is one that Campus Commander read from Google more than 24 hours ago.
+- A grid query refreshes every stale device it matched, in parallel batches through Kestra.
+- The stale banner shows "Refreshing N of M devices" while a refresh runs and disappears when the last batch lands.
+- A stale row shows its Last contact cell muted with the tooltip "Refreshing from Google".
+- The server pushes refresh signals over Server-Sent Events. The 2 second status poll is removed.
+- Google returning 404 for one device marks that device removed. Removed devices stay in the database.
+- A full sync marks every device that Google no longer returns as removed, when every batch of that sync succeeded.
+- Nothing is deleted from the database.
+
 ## Implementation defaults — 2026-10-05
 
 These defaults are engineering choices, not owner decisions. Change them when the owner asks.
@@ -100,7 +118,8 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - Text filters ignore letter case. "Contains" and "starts with" treat `%`, `_`, and `\` as ordinary characters.
 - A "before" date filter excludes the given time. An "after" filter includes it.
 - Date filters exclude devices without a contact time.
-- The inventory becomes stale 24 hours after its last publication, or when the latest sync fails.
+- A device becomes stale 24 hours after Campus Commander last read it. The threshold is a code constant per entity type.
+- Query results stay cached for 5 minutes. A completed full sync makes the cached results unreachable.
 - A sync that no worker starts within two minutes ends as interrupted. Refresh all then becomes available again.
 - The first visit shows no devices until an administrator runs Refresh all.
 - Pages hold 100 devices by default. The page size selector offers 50, 100, and 250.
@@ -136,7 +155,8 @@ Follow [DETAIL-02](../ui/patterns.md#entity-detail). Missing reports are not hea
 - The administrator opens C0A1-7F2D. The panel shows "Replace soon" and 78% of design capacity, classified by Google.
 - Next device opens C0A1-7F31, the next row in the filtered order.
 - A device without battery reports shows "No battery report" and names the power-status policy as a common cause.
-- A sync fails. The grid keeps the previous inventory and shows the stale state with its observation time.
+- A full sync fails. The grid keeps every row and shows the stale state.
+- The administrator opens Devices after a day away. Stale rows show muted contact times, the banner reads "Refreshing 1 of 12 devices", and rows refresh in place as batches land.
 
 ## Design
 

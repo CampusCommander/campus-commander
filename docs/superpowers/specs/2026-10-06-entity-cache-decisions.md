@@ -1,11 +1,12 @@
 # Entity cache decision record
 
-Status: owner-confirmed decisions, authorization pending (see Open items)
-Source: owner interview with Claude on 2026-10-06, questions Q1 through Q16b
+Status: owner-confirmed. Implementation authorized 2026-10-06 as infrastructure under [device browsing](../../workflows/device-browsing.md).
+Source: owner interview with Claude on 2026-10-06, questions Q1 through Q17
+Branch: `codex/entity-cache`
 Design: existing stale frames in [device browsing](../../workflows/device-browsing.md#design), to be re-inspected before Q11 implementation
 Replaces: the collection-level snapshot model in `deployment/postgres/migrations/016-device-inventory.sql`
 
-This record captures the decisions reached in one interview. It does not authorize implementation by itself.
+This record captures the decisions reached in one interview. The owner authorized implementation on 2026-10-06.
 The open items at the end must close before any code changes.
 
 ## Purpose
@@ -59,7 +60,12 @@ A Kestra flow splits the ID list into batches and runs batches in parallel.
 Each batch runner uses the Google batch endpoint.
 The ID list travels in a `cc.entity_sync_jobs` row. Kestra receives the job ID. Batches pull their slice by job ID and batch index.
 
-Facts to verify before implementation: the Directory batch endpoint is `/batch/admin/directory_v1`, inner calls still count against quota, and Chrome Management telemetry support for HTTP batch is unconfirmed.
+Verified 2026-10-06 against Google documentation:
+
+- Directory API batch endpoint: `https://www.googleapis.com/batch/admin/directory_v1`. Limit: 1,000 calls per batch request.
+- "A set of n requests batched together counts toward your usage limit as n requests, not as one request." Default quota: 2,400 queries per minute per user per project.
+- Chrome Management API: `customers.telemetry.devices.get` exists at `GET /v1/{name=customers/*/telemetry/devices/*}`.
+  Its discovery document declares `batchPath: batch`, so `https://chromemanagement.googleapis.com/batch` exists. Google does not document it or its quota on the REST reference. Treat the per-call quota as unknown and keep batch sizes small for telemetry.
 
 ### D6. Server-Sent Events over WebSocket (Q6)
 
@@ -130,9 +136,7 @@ Nothing is ever hard-deleted. Freshness only advances. A device row never carrie
 
 ## Open items
 
-- Q17 authorization: confirm this work is authorized as infrastructure under the active device browsing workflow, not a new workflow.
-- Q17 recording: on authorization, update `docs/workflows/device-browsing.md` (freshness rule, banner and row behavior, soft delete, Refresh all) and `docs/current-work.md` (one paragraph with date).
-- Q17 branch: `codex/devices-ui` holds finished grid work. Claude proposed `codex/entity-cache` branched from it. The owner has not chosen.
-- Verify the Google batch endpoint facts in D5 against Google documentation.
+- Q17 closed 2026-10-06: authorized under device browsing, recorded in the workflow and current work, branch `codex/entity-cache`.
+- Google batch facts verified 2026-10-06. See D5.
 - Write the implementation plan with the writing-plans skill before any code, in this order:
   migration, worker job and Kestra flow, API caches and `by-ids` and SSE, grid store and UI, docs and evidence.
