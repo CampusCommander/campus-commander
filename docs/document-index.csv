@@ -551,3 +551,4 @@ docs/workflows/platform-access.md,Canonical workflow,Add a platform user and ass
 libs/README.md,Entry point or library reference,Shared libraries,Entry point or implementation reference,Structure and source/status scan,
 libs/application-contracts/README.md,Entry point or library reference,Application contracts,Entry point or implementation reference,Structure and source/status scan,
 libs/google-connection/README.md,Entry point or library reference,Google connection server library,Entry point or implementation reference,Structure and source/status scan,
+docs/superpowers/specs/2026-10-06-entity-cache-decisions.md,Design record,Entity Cache Decision Record,Owner-confirmed decisions for per-entity freshness and the Redis and SSE refresh path; authorization pending,"Interview recorded, 2026-10-06","Purpose; Current state the decisions replace; Decisions D1 through D15; Open items"
