@@ -39,9 +39,9 @@ const groupOrder: Record<DeviceGroupField, string> = {
   battery: `array_position(ARRAY['normal','replace-soon','replace-now','no-report','unavailable']::text[],${groupKeys.battery})`,
 };
 const from =
-  'FROM cc.device_sync_state s JOIN cc.devices d ON d.sync_id=s.current_sync_id';
+  'FROM cc.device_sync_state s JOIN cc.devices d ON d.customer_id=s.customer_id';
 
-export const deviceColumns = `d.device_id,d.serial_number,d.model,d.asset_tag,d.org_unit_path,d.last_contact,d.annotated_location,d.notes,${batteryStatus} AS battery_status,d.battery_health,d.battery_capacity_percent,d.battery_reported_at`;
+export const deviceColumns = `d.device_id,d.serial_number,d.model,d.asset_tag,d.org_unit_path,d.last_contact,d.annotated_location,d.notes,${batteryStatus} AS battery_status,d.battery_health,d.battery_capacity_percent,d.battery_reported_at,d.last_entity_sync`;
 
 export interface SqlStatement {
   text: string;
@@ -148,6 +148,7 @@ function deviceWhere(
   const add = adder(values);
   const clauses = [
     's.customer_id=$1',
+    'd.removed_at IS NULL',
     ...predicateClauses(predicates, add),
     ...(group ? groupClauses(group.by, group.keys, add) : []),
   ];
@@ -177,12 +178,28 @@ export function devicePageSql(
   };
 }
 
+/** Every stale device in the result set, not only the page. The API refreshes them all. */
+export function staleIdsSql(
+  customerId: string,
+  query: DeviceQuery,
+  selection: SelectionState | null,
+  cutoff: Date,
+): SqlStatement {
+  const values: unknown[] = [customerId];
+  const where = deviceWhere(query.predicates, values, selection, query.group);
+  values.push(cutoff.toISOString());
+  return {
+    text: `SELECT d.device_id ${from} WHERE ${where} AND d.last_entity_sync<$${values.length}::timestamptz ORDER BY d.device_id LIMIT 100000`,
+    values,
+  };
+}
+
 export function deviceDetailSql(
   customerId: string,
   deviceId: string,
 ): SqlStatement {
   return {
-    text: `SELECT ${deviceColumns},CASE WHEN s.telemetry_failure IS NOT NULL THEN '[]'::jsonb ELSE d.battery_reports END AS battery_reports,s.observed_at ${from} WHERE s.customer_id=$1 AND d.device_id=$2`,
+    text: `SELECT ${deviceColumns},CASE WHEN s.telemetry_failure IS NOT NULL THEN '[]'::jsonb ELSE d.battery_reports END AS battery_reports,d.removed_at ${from} WHERE s.customer_id=$1 AND d.device_id=$2`,
     values: [customerId, deviceId],
   };
 }
@@ -190,7 +207,11 @@ export function deviceDetailSql(
 const iso = (value: unknown) =>
   value instanceof Date ? value.toISOString() : (value ?? null);
 
-export function deviceRow(row: Record<string, unknown>): DeviceRow {
+export function deviceRow(
+  row: Record<string, unknown>,
+  cutoff: number,
+): DeviceRow {
+  const lastEntitySync = iso(row['last_entity_sync']);
   return deviceRowSchema.parse({
     deviceId: row['device_id'],
     serialNumber: row['serial_number'],
@@ -209,20 +230,26 @@ export function deviceRow(row: Record<string, unknown>): DeviceRow {
             reportedAt: iso(row['battery_reported_at']),
           }
         : { status: row['battery_status'] },
+    lastEntitySync,
+    stale:
+      typeof lastEntitySync === 'string' && Date.parse(lastEntitySync) < cutoff,
   });
 }
 
-export function deviceDetail(row: Record<string, unknown>): DeviceDetail {
+export function deviceDetail(
+  row: Record<string, unknown>,
+  cutoff: number,
+): DeviceDetail {
   return deviceDetailSchema.parse({
-    ...deviceRow(row),
-    observedAt: iso(row['observed_at']),
+    ...deviceRow(row, cutoff),
+    removedAt: iso(row['removed_at']),
     batteryReports: row['battery_reports'],
   });
 }
 
 export function deviceOrgUnitsSql(customerId: string): SqlStatement {
   return {
-    text: `SELECT d.org_unit_path,count(*)::integer AS devices ${from} WHERE s.customer_id=$1 GROUP BY d.org_unit_path ORDER BY d.org_unit_path LIMIT 10000`,
+    text: `SELECT d.org_unit_path,count(*)::integer AS devices ${from} WHERE s.customer_id=$1 AND d.removed_at IS NULL GROUP BY d.org_unit_path ORDER BY d.org_unit_path LIMIT 10000`,
     values: [customerId],
   };
 }

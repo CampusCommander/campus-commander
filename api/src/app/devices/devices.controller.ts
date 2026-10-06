@@ -68,7 +68,13 @@ export class DevicesController {
   async query(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
     const input = deviceQuerySchema.parse(body);
     await this.current(request);
-    return { page: await this.devices.page(request.session, input) };
+    return {
+      page: await this.devices.page(
+        request.session,
+        input,
+        request.correlationId,
+      ),
+    };
   }
 
   @Post('groups')

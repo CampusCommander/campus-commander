@@ -11,6 +11,7 @@ import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import {
   deviceGroupPageSchema,
+  freshnessCutoff,
   deviceOrgUnitsSchema,
   devicePageSchema,
   deviceSyncStateSchema,
@@ -54,7 +55,9 @@ import {
   selectedAmongSql,
   selectedInSql,
   selectionCountSql,
+  staleIdsSql,
 } from './device-query';
+import { DeviceRefresh } from './device-refresh';
 
 const conflicts = ['device-sync-running', 'connection-changed'];
 
@@ -76,13 +79,19 @@ function translate(error: unknown): never {
 
 @Injectable()
 export class DevicesService {
+  private readonly refresh: DeviceRefresh;
+
   constructor(
     private readonly database: DatabaseService,
     private readonly orchestration: OrchestrationService,
     private readonly cache: CacheService,
-  ) {}
+  ) {
+    this.refresh = new DeviceRefresh(cache, orchestration, (sql, values) =>
+      this.result(sql, values),
+    );
+  }
 
-  private actor(session: SessionResponse) {
+  private actor(session: SessionResponse): [string, number] {
     return [session.identity.id, session.identity.permissionVersion];
   }
 
@@ -189,8 +198,10 @@ export class DevicesService {
   async page(
     session: SessionResponse,
     query: DeviceQuery,
+    correlationId: string,
   ): Promise<DevicePage> {
-    return this.read(
+    const cutoff = freshnessCutoff('device');
+    const read = await this.read(
       session,
       async (client, customerId) => {
         const inventory = await this.inventory(client, customerId);
@@ -201,14 +212,38 @@ export class DevicesService {
         const matching = (await client.query(sql.count.text, sql.count.values))
           .rows[0]?.['matching'];
         const rows = (await client.query(sql.rows.text, sql.rows.values)).rows;
-        return devicePageSchema.parse({
-          rows: rows.map(deviceRow),
-          matching: matching ?? 0,
-          ...inventory,
-        });
+        const stale = await this.deviceIds(
+          client,
+          staleIdsSql(customerId, query, selection, cutoff),
+        );
+        return {
+          customerId,
+          stale,
+          page: {
+            rows: rows.map((row) => deviceRow(row, cutoff.getTime())),
+            matching: matching ?? 0,
+            ...inventory,
+          },
+        };
       },
-      { rows: [], matching: 0, total: 0, observedAt: null },
+      null,
     );
+    if (!read)
+      return {
+        rows: [],
+        matching: 0,
+        total: 0,
+        observedAt: null,
+        refreshJobId: null,
+      };
+    // The flow starts after the read transaction closes, so the page never waits on Kestra inside Postgres.
+    const refreshJobId = await this.refresh.dispatch(
+      this.actor(session),
+      read.customerId,
+      read.stale,
+      correlationId,
+    );
+    return devicePageSchema.parse({ ...read.page, refreshJobId });
   }
 
   async groups(
@@ -267,7 +302,9 @@ export class DevicesService {
       async (client, customerId) => {
         const sql = deviceDetailSql(customerId, deviceId);
         const row = (await client.query(sql.text, sql.values)).rows[0];
-        return row ? deviceDetail(row) : null;
+        return row
+          ? deviceDetail(row, freshnessCutoff('device').getTime())
+          : null;
       },
       null,
     );
