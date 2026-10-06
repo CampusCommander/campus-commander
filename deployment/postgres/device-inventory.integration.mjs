@@ -152,7 +152,8 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [customer, jobId, 2]),
       detail('entity-sync-changed'),
     );
-    const syncedAt = '2026-10-06T09:00:00.000Z';
+    const syncedAt = new Date(Date.now() + 60_000).toISOString();
+    const olderAt = new Date(Date.now() - 60_000).toISOString();
     assert.equal(
       await result('SELECT cc.upsert_devices($1,$2,$3) AS result', [
         customer, JSON.stringify([device('d2', { model: 'Acer' })]), syncedAt,
@@ -162,6 +163,14 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     const d2 = (await rows()).find((row) => row.device_id === 'd2');
     assert.equal(d2.removed_at, null, 'An upsert clears removed_at.');
     assert.equal(d2.last_entity_sync.toISOString(), syncedAt);
+    assert.equal(
+      await result('SELECT cc.upsert_devices($1,$2,$3) AS result', [
+        customer, JSON.stringify([device('d2', { model: 'Older' })]), olderAt,
+      ]),
+      0,
+      'An older read cannot overwrite a newer row.',
+    );
+    assert.equal((await rows()).find((row) => row.device_id === 'd2').model, 'Acer');
     assert.equal(
       await result('SELECT cc.soft_delete_devices($1,$2) AS result', [customer, JSON.stringify(['d3', 'missing'])]),
       1,

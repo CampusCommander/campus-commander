@@ -203,7 +203,7 @@ $$;
 
 -- One device as the API and Redis carry it. Battery reads as unavailable after a telemetry failure.
 CREATE FUNCTION cc.device_record(d cc.devices,p_telemetry_failure text) RETURNS jsonb
-LANGUAGE sql IMMUTABLE AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT jsonb_build_object('deviceId',d.device_id,'serialNumber',d.serial_number,'model',d.model,'assetTag',d.asset_tag,
     'orgUnitPath',d.org_unit_path,'lastContact',d.last_contact,'annotatedLocation',d.annotated_location,'notes',d.notes,
     'battery',CASE WHEN p_telemetry_failure IS NOT NULL THEN jsonb_build_object('status','unavailable')
@@ -231,7 +231,8 @@ BEGIN
   ON CONFLICT(customer_id,device_id) DO UPDATE SET serial_number=EXCLUDED.serial_number,model=EXCLUDED.model,
     asset_tag=EXCLUDED.asset_tag,org_unit_path=EXCLUDED.org_unit_path,last_contact=EXCLUDED.last_contact,
     annotated_location=EXCLUDED.annotated_location,notes=EXCLUDED.notes,status=EXCLUDED.status,
-    last_entity_sync=EXCLUDED.last_entity_sync,removed_at=NULL;
+    last_entity_sync=EXCLUDED.last_entity_sync,removed_at=NULL
+  WHERE cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync;
   GET DIAGNOSTICS written=ROW_COUNT;
   RETURN written;
 END;
