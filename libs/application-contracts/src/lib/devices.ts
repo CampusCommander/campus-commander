@@ -134,6 +134,53 @@ export const devicePredicateSchema = z.union([
 ]);
 export type DevicePredicate = z.infer<typeof devicePredicateSchema>;
 
+const selectionIds = z.array(deviceId).min(1).max(2000);
+const selectionKeyShape = {
+  gridId: z.literal('devices'),
+  tabId: z.uuid(),
+};
+/** One browser tab's selection in one grid. The API scopes it to the signed-in person. */
+export const deviceSelectionKeySchema = z.strictObject(selectionKeyShape);
+export type DeviceSelectionKey = z.infer<typeof deviceSelectionKeySchema>;
+
+export const deviceSelectionOpSchema = z.discriminatedUnion('op', [
+  z.strictObject({
+    op: z.literal('selectAll'),
+    predicates: z.array(devicePredicateSchema).max(20),
+  }),
+  z.strictObject({ op: z.literal('deselectAll') }),
+  z.strictObject({ op: z.literal('select'), ids: selectionIds }),
+  z.strictObject({ op: z.literal('deselect'), ids: selectionIds }),
+]);
+export type DeviceSelectionOp = z.infer<typeof deviceSelectionOpSchema>;
+
+export const deviceSelectionChangeSchema = z.strictObject({
+  ...selectionKeyShape,
+  ops: z.array(deviceSelectionOpSchema).min(1).max(100),
+});
+
+export const deviceSelectionResolveSchema = z.strictObject({
+  ...selectionKeyShape,
+  rowIds: z.array(deviceId).max(2000),
+  groupRoutes: z.array(z.string().max(8192)).max(2000),
+});
+
+/** What Select All captured and the API's count. Device IDs stay on the server. */
+export const deviceSelectionSpecSchema = z.strictObject({
+  terms: z
+    .array(
+      z.strictObject({
+        type: z.literal('all'),
+        predicates: z.array(devicePredicateSchema).max(20),
+      }),
+    )
+    .max(50),
+  added: z.number().int().min(0),
+  excluded: z.number().int().min(0),
+  selectedCount: z.number().int().min(0),
+});
+export type DeviceSelectionSpec = z.infer<typeof deviceSelectionSpecSchema>;
+
 export const deviceQuerySchema = z.strictObject({
   predicates: z.array(devicePredicateSchema).max(20).default([]),
   sort: z
@@ -144,6 +191,8 @@ export const deviceQuerySchema = z.strictObject({
     .default({ field: 'serialNumber', direction: 'asc' }),
   offset: z.number().int().min(0).max(1_000_000).default(0),
   limit: z.number().int().min(1).max(200).default(100),
+  /** Show All Selected limits the query to this tab's selection. */
+  selection: deviceSelectionKeySchema.nullable().default(null),
 });
 export type DeviceQuery = z.output<typeof deviceQuerySchema>;
 

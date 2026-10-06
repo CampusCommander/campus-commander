@@ -6,6 +6,8 @@ import {
   deviceRowSchema,
   deviceSyncStateSchema,
   deviceOrgUnitsSchema,
+  deviceSelectionChangeSchema,
+  deviceSelectionKeySchema,
 } from './devices.ts';
 import {
   actionSchema,
@@ -30,6 +32,7 @@ test('device queries default to the first serial page', () => {
     sort: { field: 'serialNumber', direction: 'asc' },
     offset: 0,
     limit: 100,
+    selection: null,
   });
 });
 
@@ -187,4 +190,44 @@ test('organization unit lists carry a path and a device count', () => {
     deviceOrgUnitsSchema.safeParse([{ path: '/', devices: -1 }]).success,
     false,
   );
+});
+
+const tabId = '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10';
+
+test('selection keys name the device grid and a tab UUID', () => {
+  const key = { gridId: 'devices', tabId };
+  assert.equal(deviceSelectionKeySchema.safeParse(key).success, true);
+  assert.equal(
+    deviceSelectionKeySchema.safeParse({ ...key, gridId: 'users' }).success,
+    false,
+  );
+  assert.equal(
+    deviceSelectionKeySchema.safeParse({ ...key, tabId: 'tab-1' }).success,
+    false,
+  );
+  assert.deepEqual(deviceQuerySchema.parse({ selection: key }).selection, key);
+});
+
+test('selection changes accept the four row operations within bounds', () => {
+  const ok = (ops) =>
+    deviceSelectionChangeSchema.safeParse({ gridId: 'devices', tabId, ops })
+      .success;
+  assert.equal(
+    ok([
+      {
+        op: 'selectAll',
+        predicates: [
+          { field: 'assetTag', operator: 'startsWith', value: 'HS-04' },
+        ],
+      },
+      { op: 'deselect', ids: ['d1'] },
+      { op: 'select', ids: ['d2'] },
+      { op: 'deselectAll' },
+    ]),
+    true,
+  );
+  assert.equal(ok([]), false);
+  assert.equal(ok([{ op: 'select', ids: [] }]), false);
+  assert.equal(ok([{ op: 'select', ids: Array(2001).fill('d') }]), false);
+  assert.equal(ok([{ op: 'selectGroup', route: ['/School A'] }]), false);
 });

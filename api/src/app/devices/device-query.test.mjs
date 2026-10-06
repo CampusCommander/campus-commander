@@ -7,6 +7,9 @@ import {
   deviceRow,
   escapeLike,
   deviceOrgUnitsSql,
+  matchingAmongSql,
+  selectedAmongSql,
+  selectionCountSql,
 } from './device-query.ts';
 
 const query = (value) =>
@@ -191,4 +194,70 @@ test('organization units come from the published inventory in path order', () =>
     /GROUP BY d\.org_unit_path ORDER BY d\.org_unit_path LIMIT 10000$/,
   );
   assert.deepEqual(sql.values, ['C0123456']);
+});
+
+const selection = {
+  terms: [[{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }]],
+  additions: ['d9'],
+  exceptions: ['d1'],
+};
+
+test('a selection holds its filter terms and additions minus exceptions', () => {
+  const sql = selectionCountSql('C0123456', selection);
+  assert.ok(sql.text.startsWith('SELECT count(*)::integer AS selected FROM'));
+  assert.ok(
+    sql.text.endsWith(
+      'WHERE s.customer_id=$1 AND (((d.asset_tag ILIKE $2) OR d.device_id=ANY($3::text[])) AND NOT d.device_id=ANY($4::text[]))',
+    ),
+  );
+  assert.deepEqual(sql.values, ['C0123456', 'HS-04%', ['d9'], ['d1']]);
+});
+
+test('an empty selection holds nothing and an unfiltered term holds everything', () => {
+  const empty = { terms: [], additions: [], exceptions: [] };
+  assert.match(selectionCountSql('C0123456', empty).text, /AND FALSE$/);
+  assert.match(
+    selectionCountSql('C0123456', { ...empty, terms: [[]] }).text,
+    /AND \(TRUE\)$/,
+  );
+});
+
+test('the selected view intersects the selection with the active filters', () => {
+  const { count } = devicePageSql(
+    'C0123456',
+    deviceQuerySchema.parse({
+      predicates: [{ field: 'model', operator: 'contains', value: 'Lenovo' }],
+    }),
+    selection,
+  );
+  assert.ok(
+    count.text.endsWith(
+      'WHERE s.customer_id=$1 AND d.model ILIKE $2 AND (((d.asset_tag ILIKE $3) OR d.device_id=ANY($4::text[])) AND NOT d.device_id=ANY($5::text[]))',
+    ),
+  );
+  assert.deepEqual(count.values, [
+    'C0123456',
+    '%Lenovo%',
+    'HS-04%',
+    ['d9'],
+    ['d1'],
+  ]);
+});
+
+test('membership checks bind the device IDs after the customer', () => {
+  const among = selectedAmongSql('C0123456', selection, ['d1', 'd2']);
+  assert.ok(among.text.startsWith('SELECT d.device_id FROM cc.device_sync_state s'));
+  assert.ok(among.text.endsWith('AND d.device_id=ANY($2::text[])'));
+  assert.deepEqual(among.values.slice(0, 2), ['C0123456', ['d1', 'd2']]);
+  const matching = matchingAmongSql(
+    'C0123456',
+    [{ field: 'model', operator: 'contains', value: 'Lenovo' }],
+    ['d1'],
+  );
+  assert.ok(
+    matching.text.endsWith(
+      'WHERE s.customer_id=$1 AND d.model ILIKE $3 AND d.device_id=ANY($2::text[])',
+    ),
+  );
+  assert.deepEqual(matching.values, ['C0123456', ['d1'], '%Lenovo%']);
 });

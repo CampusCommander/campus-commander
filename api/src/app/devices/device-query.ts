@@ -6,6 +6,7 @@ import {
   type DeviceQuery,
   type DeviceRow,
 } from '@campus/application-contracts';
+import type { SelectionState } from './device-selection';
 
 const columns = {
   serialNumber: 'd.serial_number',
@@ -36,16 +37,21 @@ export function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
-/** Field names map to fixed columns. Values travel only as parameters. */
-function deviceWhere(
-  predicates: readonly DevicePredicate[],
-  values: unknown[],
-): string {
-  const add = (value: unknown) => {
+type Add = (value: unknown) => string;
+
+function adder(values: unknown[]): Add {
+  return (value) => {
     values.push(value);
     return `$${values.length}`;
   };
-  const clauses = ['s.customer_id=$1'];
+}
+
+/** Field names map to fixed columns. Values travel only as parameters. */
+function predicateClauses(
+  predicates: readonly DevicePredicate[],
+  add: Add,
+): string[] {
+  const clauses: string[] = [];
   for (const predicate of predicates) {
     if (predicate.field === 'orgUnitPath') {
       clauses.push(`d.org_unit_path=ANY(${add(predicate.values)}::text[])`);
@@ -84,15 +90,42 @@ function deviceWhere(
         );
     }
   }
+  return clauses;
+}
+
+/** Selected devices: any filter term or explicit addition, minus exceptions. */
+function selectedClause(state: SelectionState, add: Add): string {
+  const parts = state.terms.map((term) => {
+    const clauses = predicateClauses(term, add);
+    return clauses.length ? `(${clauses.join(' AND ')})` : 'TRUE';
+  });
+  if (state.additions.length)
+    parts.push(`d.device_id=ANY(${add(state.additions)}::text[])`);
+  if (!parts.length) return 'FALSE';
+  const chosen = `(${parts.join(' OR ')})`;
+  return state.exceptions.length
+    ? `(${chosen} AND NOT d.device_id=ANY(${add(state.exceptions)}::text[]))`
+    : chosen;
+}
+
+function deviceWhere(
+  predicates: readonly DevicePredicate[],
+  values: unknown[],
+  selection: SelectionState | null = null,
+): string {
+  const add = adder(values);
+  const clauses = ['s.customer_id=$1', ...predicateClauses(predicates, add)];
+  if (selection) clauses.push(selectedClause(selection, add));
   return clauses.join(' AND ');
 }
 
 export function devicePageSql(
   customerId: string,
   query: DeviceQuery,
+  selection: SelectionState | null = null,
 ): { rows: SqlStatement; count: SqlStatement } {
   const values: unknown[] = [customerId];
-  const where = deviceWhere(query.predicates, values);
+  const where = deviceWhere(query.predicates, values, selection);
   const order =
     query.sort.field === 'battery' ? batteryOrder : columns[query.sort.field];
   const direction = query.sort.direction === 'desc' ? 'DESC' : 'ASC';
@@ -155,5 +188,45 @@ export function deviceOrgUnitsSql(customerId: string): SqlStatement {
   return {
     text: `SELECT d.org_unit_path,count(*)::integer AS devices ${from} WHERE s.customer_id=$1 GROUP BY d.org_unit_path ORDER BY d.org_unit_path LIMIT 10000`,
     values: [customerId],
+  };
+}
+
+export function selectionCountSql(
+  customerId: string,
+  selection: SelectionState,
+): SqlStatement {
+  const values: unknown[] = [customerId];
+  const where = deviceWhere([], values, selection);
+  return {
+    text: `SELECT count(*)::integer AS selected ${from} WHERE ${where}`,
+    values,
+  };
+}
+
+/** Which of the given devices the selection holds. */
+export function selectedAmongSql(
+  customerId: string,
+  selection: SelectionState,
+  ids: readonly string[],
+): SqlStatement {
+  const values: unknown[] = [customerId, ids];
+  const where = deviceWhere([], values, selection);
+  return {
+    text: `SELECT d.device_id ${from} WHERE ${where} AND d.device_id=ANY($2::text[])`,
+    values,
+  };
+}
+
+/** Which of the given devices match a filter. Select All clears these exceptions. */
+export function matchingAmongSql(
+  customerId: string,
+  predicates: readonly DevicePredicate[],
+  ids: readonly string[],
+): SqlStatement {
+  const values: unknown[] = [customerId, ids];
+  const where = deviceWhere(predicates, values);
+  return {
+    text: `SELECT d.device_id ${from} WHERE ${where} AND d.device_id=ANY($2::text[])`,
+    values,
   };
 }
