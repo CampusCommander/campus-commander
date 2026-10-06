@@ -12,6 +12,7 @@ export async function qualifyDevicesApi({
   directory,
   evidenceDirectory,
   setSubject,
+  migrator,
 }) {
   const context = await evidenceSecurity.newContext(browser, {
     ignoreHTTPSErrors: true,
@@ -69,6 +70,12 @@ export async function qualifyDevicesApi({
     assert.equal(first.rows.length, 100);
     assert.equal(first.rows[0].serialNumber, 'C0A1-0000');
     assert.equal(JSON.stringify(first).includes('envelope'), false);
+    assert.equal(first.refreshJobId, null);
+    assert.equal(first.rows[0].stale, false);
+    assert.match(first.rows[0].lastEntitySync, /^\d{4}-\d{2}-\d{2}T/);
+    const detail0 = await api.get(`${root}/synthetic-device-0`);
+    assert.equal(detail0.status(), 200, await detail0.text());
+    assert.equal((await detail0.json()).device.removedAt, null);
     const units = await api.get(`${root}/org-units`);
     assert.equal(units.status(), 200, await units.text());
     assert.deepEqual((await units.json()).orgUnits, [
@@ -273,6 +280,74 @@ export async function qualifyDevicesApi({
     );
     assert.equal((await api.get(`${root}/missing-device`)).status(), 404);
 
+    if (migrator) {
+      await migrator.query(
+        "UPDATE cc.devices SET last_entity_sync=now()-interval '2 days' WHERE device_id IN ('synthetic-device-0','synthetic-device-1','synthetic-device-3')",
+      );
+      await fault('device-removed');
+      const stalePage = await query({
+        predicates: [
+          {
+            field: 'orgUnitPath',
+            operator: 'in',
+            values: ['/School A', '/School B', '/'],
+          },
+        ],
+        limit: 5,
+      });
+      assert.ok(stalePage.refreshJobId, 'Stale rows start a refresh job.');
+      assert.equal(
+        stalePage.rows.find((row) => row.deviceId === 'synthetic-device-0')
+          .stale,
+        true,
+      );
+      const again = await query({ limit: 5 });
+      assert.equal(
+        again.refreshJobId,
+        null,
+        'The in-flight set stops a second dispatch.',
+      );
+      let refreshed;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        refreshed = await query({
+          predicates: [
+            { field: 'serialNumber', operator: 'equals', value: 'C0A1-0000' },
+          ],
+        });
+        if (refreshed.rows[0]?.stale === false) break;
+        await setTimeout(500);
+      }
+      assert.equal(
+        refreshed.rows[0].stale,
+        false,
+        'The batch refreshed the device.',
+      );
+      const removed = await api.get(`${root}/synthetic-device-3`);
+      assert.equal(removed.status(), 200);
+      assert.ok((await removed.json()).device.removedAt);
+      assert.equal(
+        (
+          await query({
+            predicates: [
+              {
+                field: 'serialNumber',
+                operator: 'equals',
+                value: 'C0A1-0003',
+              },
+            ],
+          })
+        ).matching,
+        0,
+      );
+      await rm(faultPath, { force: true });
+      const restored = await run();
+      assert.equal(
+        restored.deviceCount,
+        450,
+        'A full sync returns the device.',
+      );
+    }
+
     await fault('telemetry-privilege-denied');
     const blind = await run();
     assert.equal(blind.status, 'ready');
@@ -302,6 +377,11 @@ export async function qualifyDevicesApi({
       'device details include Google battery class, capacity, and recent reports: pass',
       'telemetry denial publishes devices with unavailable battery data: pass',
       'inventory denial keeps the published devices and marks them stale: pass',
+      ...(migrator
+        ? [
+            'stale devices refresh through one Kestra batch and a removed device leaves the grid: pass',
+          ]
+        : []),
     ];
   } finally {
     await rm(faultPath, { force: true });

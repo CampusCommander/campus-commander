@@ -17,6 +17,7 @@ const healthFor = (capacity) =>
     : capacity / 5000 >= 0.75
       ? 'BATTERY_REPLACE_SOON'
       : 'BATTERY_REPLACE_NOW';
+let quotaCalls = 0;
 const fleet = Array.from({ length: 450 }, (_, index) => ({
   deviceId: `synthetic-device-${index}`,
   serialNumber: `C0A1-${index.toString(16).toUpperCase().padStart(4, '0')}`,
@@ -75,6 +76,7 @@ prototype.request = async function (options) {
     ![
       'oauth2.googleapis.com',
       'admin.googleapis.com',
+      'www.googleapis.com',
       'chromemanagement.googleapis.com',
     ].includes(url.hostname)
   )
@@ -261,6 +263,68 @@ prototype.request = async function (options) {
       devices: items.map(telemetry),
       ...(next ? { nextPageToken: next } : {}),
     };
+  } else if (
+    url.hostname === 'www.googleapis.com' &&
+    url.pathname === '/batch/admin/directory_v1'
+  ) {
+    if (fault === 'device-privilege-denied') throw forbidden(options);
+    quotaCalls += 1;
+    const ids = [
+      ...String(options.body ?? options.data).matchAll(
+        /GET \/admin\/directory\/v1\/customer\/C0123456\/devices\/chromeos\/([A-Za-z0-9_-]+)/g,
+      ),
+    ].map((match) => decodeURIComponent(match[1]));
+    const parts = ids.map((id) => {
+      const found = fleet.find((device) => device.deviceId === id);
+      const removed = fault === 'device-removed' && id === 'synthetic-device-3';
+      const quota = fault === 'device-quota' && quotaCalls === 1;
+      const status = quota ? 429 : found && !removed ? 200 : 404;
+      const body =
+        status === 200
+          ? (({ capacity: _capacity, ...device }) => device)(found)
+          : {
+              error: {
+                code: status,
+                message:
+                  status === 429
+                    ? 'Rate Limit Exceeded'
+                    : 'Resource Not Found: deviceId',
+              },
+            };
+      return [
+        '--batch_synthetic',
+        'Content-Type: application/http',
+        `Content-ID: <response-item-${id}>`,
+        '',
+        `HTTP/1.1 ${status} ${status === 200 ? 'OK' : 'Error'}`,
+        'Content-Type: application/json; charset=UTF-8',
+        '',
+        JSON.stringify(body),
+        '',
+      ].join('\r\n');
+    });
+    return {
+      data: `${parts.join('\r\n')}\r\n--batch_synthetic--\r\n`,
+      status: 200,
+      headers: { 'content-type': 'multipart/mixed; boundary=batch_synthetic' },
+    };
+  } else if (
+    url.hostname === 'chromemanagement.googleapis.com' &&
+    url.pathname.startsWith('/v1/customers/C0123456/telemetry/devices/')
+  ) {
+    if (fault === 'telemetry-privilege-denied') throw forbidden(options);
+    const id = decodeURIComponent(url.pathname.split('/').at(-1));
+    const found = fleet.find((device) => device.deviceId === id);
+    if (!found) {
+      const missing = new Error('not found');
+      missing.response = {
+        config: options,
+        status: 404,
+        data: { error: { code: 404 } },
+      };
+      throw missing;
+    }
+    data = telemetry(found);
   } else throw new Error('Unexpected synthetic Google endpoint.');
   return { data, status: 200 };
 };

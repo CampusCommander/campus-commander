@@ -2373,6 +2373,7 @@ test(
         await qualifyDevicesApi({
           browser,
           publicOrigin,
+          migrator,
           directory,
           evidenceDirectory,
           setSubject: (value) => {
