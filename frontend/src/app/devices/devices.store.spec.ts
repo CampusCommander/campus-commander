@@ -247,3 +247,69 @@ it('clears browsing state when a different person signs in', () => {
   expect(store.selectedView()).toBe(false);
   expect(store.view().predicates).toEqual([]);
 });
+
+const groupBody = {
+  groups: [{ key: '/School A', devices: 150 }],
+  groupCount: 2,
+  matching: 450,
+  total: 450,
+  observedAt: page.observedAt,
+};
+
+it('only the outermost grouped query reports counts and the group limit', async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ groups: groupBody }))
+    .mockResolvedValueOnce(
+      Response.json({ page: { ...page, matching: 150, rows: [] } }),
+    );
+  const store = setup(request);
+  const root = {
+    predicates: [],
+    sort: { field: 'serialNumber' as const, direction: 'asc' as const },
+    selection: null,
+    group: { by: ['orgUnitPath' as const], keys: [] },
+  };
+  store.setView(root);
+  await store.groups(root);
+  expect(request).toHaveBeenCalledWith('/api/devices/groups', {
+    ...root,
+    offset: 0,
+    limit: 1000,
+  });
+  expect(store.page()?.matching).toBe(450);
+  expect(store.groupLimit()).toBe(true);
+  store.setView({
+    ...root,
+    group: { by: ['orgUnitPath'], keys: ['/School A'] },
+  });
+  await store.rows(0, 1000);
+  expect(store.page()?.matching).toBe(450);
+});
+
+it('describes the grid to the selection provider', async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValue(Response.json({ selected: { '/School A': true } }));
+  const store = setup(request);
+  store.setView({
+    predicates: [{ field: 'notes', operator: 'isEmpty' }],
+    sort: { field: 'serialNumber', direction: 'asc' },
+    selection: null,
+    group: { by: ['orgUnitPath'], keys: [] },
+  });
+  await store.selection.resolveSelected({
+    gridId: 'devices',
+    tabId: store.selectionTab,
+    rowIds: [],
+    groupRoutes: ['/School A'],
+  });
+  expect(request).toHaveBeenCalledWith('/api/devices/selection/resolve', {
+    gridId: 'devices',
+    tabId: store.selectionTab,
+    rowIds: [],
+    groupRoutes: ['/School A'],
+    predicates: [{ field: 'notes', operator: 'isEmpty' }],
+    by: ['orgUnitPath'],
+  });
+});

@@ -9,10 +9,12 @@ import {
 import {
   deviceDetailSchema,
   deviceOrgUnitsSchema,
+  deviceGroupPageSchema,
   devicePageSchema,
   deviceSyncStateSchema,
   type DeviceDetail,
   type DeviceOrgUnit,
+  type DeviceGroupPage,
   type DevicePage,
   type DevicePredicate,
   type DeviceRow,
@@ -20,7 +22,7 @@ import {
 } from '@campus/application-contracts';
 import type { GridState } from 'ag-grid-community';
 import { AuthStore } from '../auth.store';
-import type { DeviceView } from './device-datasource';
+import { GROUP_LIMIT, type DeviceView } from './device-datasource';
 import { samePredicates } from './device-filter-model';
 import {
   DeviceSelectionProvider,
@@ -42,6 +44,12 @@ const defaultView = (): DeviceView => ({
   selection: null,
 });
 
+/** Only the outermost query reports counts. Open groups and Next device leave them alone. */
+const countsKey = (view: DeviceView): string | null =>
+  view.group?.keys.length
+    ? null
+    : JSON.stringify([view.predicates, view.selection, view.group?.by ?? []]);
+
 /** Browsing state survives navigation between the grid and device details. */
 @Injectable({ providedIn: 'root' })
 export class DevicesStore {
@@ -57,11 +65,19 @@ export class DevicesStore {
   readonly gridState = signal<GridState | null>(null);
   /** Show All Selected was on when the grid closed. Back to devices reopens it. */
   readonly selectedView = signal(false);
-  readonly selection = new DeviceSelectionProvider((path, body) =>
-    this.call(path, body),
+  readonly selection = new DeviceSelectionProvider(
+    (path, body) => this.call(path, body),
+    () => ({
+      predicates: this.view().predicates,
+      by: this.view().group?.by ?? [],
+    }),
   );
   readonly selectionTab = deviceSelectionTab();
   readonly page = signal<Omit<DevicePage, 'rows'> | null>(null);
+  /** True when an open group or a grouped level holds more than the grid lists. */
+  readonly groupLimit = signal(false);
+  /** The outermost query whose counts the status bar shows. */
+  private counted = countsKey(defaultView());
   readonly orgUnits = signal<DeviceOrgUnit[]>([]);
   readonly offline = signal(false);
   readonly error = signal('');
@@ -96,6 +112,8 @@ export class DevicesStore {
     this.view.set(defaultView());
     this.gridState.set(null);
     this.selectedView.set(false);
+    this.groupLimit.set(false);
+    this.counted = countsKey(defaultView());
     this.selection.spec.set(null);
     this.page.set(null);
     this.orgUnits.set([]);
@@ -188,14 +206,40 @@ export class DevicesStore {
     });
     if (!response?.ok) return null;
     const page = devicePageSchema.parse((await response.json()).page);
-    // A response for a query that changed meanwhile must not replace the counts.
-    if (view !== this.view() || revision !== this.revision()) return page;
-    this.page.set({
-      matching: page.matching,
-      total: page.total,
-      observedAt: page.observedAt,
-    });
+    if (view.group?.by.length && page.rows.length < page.matching)
+      this.groupLimit.set(true);
+    this.keepCounts(view, revision, page);
     return page;
+  }
+
+  async groups(view: DeviceView): Promise<DeviceGroupPage | null> {
+    const revision = this.revision();
+    const response = await this.call('/api/devices/groups', {
+      ...view,
+      offset: 0,
+      limit: GROUP_LIMIT,
+    });
+    if (!response?.ok) return null;
+    const page = deviceGroupPageSchema.parse((await response.json()).groups);
+    if (page.groups.length < page.groupCount) this.groupLimit.set(true);
+    this.keepCounts(view, revision, page);
+    return page;
+  }
+
+  /** A response for a query that changed meanwhile must not replace the counts. */
+  private keepCounts(
+    view: DeviceView,
+    revision: number,
+    counts: Omit<DevicePage, 'rows'>,
+  ): void {
+    const key = countsKey(view);
+    if (key === null || key !== this.counted || revision !== this.revision())
+      return;
+    this.page.set({
+      matching: counts.matching,
+      total: counts.total,
+      observedAt: counts.observedAt,
+    });
   }
 
   async neighbor(index: number): Promise<DeviceRow | null> {
@@ -229,5 +273,9 @@ export class DevicesStore {
     if (JSON.stringify(view) === JSON.stringify(this.view())) return;
     this.view.set(view);
     this.position.set(null);
+    const key = countsKey(view);
+    if (key === null || key === this.counted) return;
+    this.counted = key;
+    this.groupLimit.set(false);
   }
 }

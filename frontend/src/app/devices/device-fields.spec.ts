@@ -4,6 +4,7 @@ import {
   chipLabel,
   dateInputToIso,
   dateInputValue,
+  groupLabel,
   orgUnitOptions,
   relativeTime,
   shortcutLabel,
@@ -159,4 +160,13 @@ it('selects an organization unit together with the units inside it', () => {
   expect(withUnit(chosen, units, '/School A/Library', false)).toEqual([
     '/School A',
   ]);
+});
+
+it('labels group keys the way the filters read', () => {
+  expect(groupLabel('orgUnitPath', '/School A/Library')).toBe(
+    '/School A/Library',
+  );
+  expect(groupLabel('model', '')).toBe('No model');
+  expect(groupLabel('model', 'Lenovo 100e')).toBe('Lenovo 100e');
+  expect(groupLabel('battery', 'replace-soon')).toBe('Replace soon');
 });

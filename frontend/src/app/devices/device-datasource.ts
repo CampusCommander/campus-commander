@@ -4,12 +4,16 @@ import type {
   IServerSideDatasource,
   IServerSideGetRowsParams,
 } from 'ag-grid-community';
-import type {
-  DevicePage,
-  DevicePredicate,
-  DeviceQuery,
-  DeviceRow,
-  DeviceSelectionKey,
+import {
+  deviceGroupFieldSchema,
+  type DeviceGroupField,
+  type DeviceGroupPage,
+  type DeviceGrouping,
+  type DevicePage,
+  type DevicePredicate,
+  type DeviceQuery,
+  type DeviceRow,
+  type DeviceSelectionKey,
 } from '@campus/application-contracts';
 import { DEVICE_FIELDS } from './device-fields';
 import { predicatesFromFilterModel } from './device-filter-model';
@@ -20,12 +24,19 @@ export interface DeviceView {
   predicates: DevicePredicate[];
   sort: DeviceSort;
   selection: DeviceSelectionKey | null;
+  /** Grouped fields and the keys of the open group. Absent while the grid is flat. */
+  group?: DeviceGrouping;
 }
 export type DeviceLoader = (
   offset: number,
   limit: number,
   view: DeviceView,
 ) => Promise<DevicePage | null>;
+/** LibreGrid loads an open group in one request, so each request lists at most this many groups or devices. */
+export const GROUP_LIMIT = 1000;
+export type DeviceGroupLoader = (
+  view: DeviceView,
+) => Promise<DeviceGroupPage | null>;
 
 const defaultSort: DeviceSort = { field: 'serialNumber', direction: 'asc' };
 
@@ -61,23 +72,24 @@ export function deviceDatasource(
   load: DeviceLoader,
   onLoaded?: (page: DevicePage) => void,
   selection?: DeviceSelectionKey,
+  loadGroups?: DeviceGroupLoader,
 ): IServerSideDatasource<DeviceRow> {
   return {
     getRows(params: IServerSideGetRowsParams<DeviceRow>) {
-      const offset = params.request.startRow ?? 0;
-      const limit = Math.min(
-        200,
-        Math.max(1, (params.request.endRow ?? offset + 100) - offset),
-      );
       let predicates: DevicePredicate[];
+      let by: DeviceGroupField[];
       try {
         predicates = predicatesFromFilterModel(
           params.request.filterModel as FilterModel | null,
+        );
+        by = (params.request.rowGroupCols ?? []).map((column) =>
+          deviceGroupFieldSchema.parse(column.id),
         );
       } catch {
         params.fail();
         return;
       }
+      const keys = params.request.groupKeys ?? [];
       const view: DeviceView = {
         predicates,
         sort: sortFromModel(params.request.sortModel),
@@ -86,7 +98,30 @@ export function deviceDatasource(
           selection && params.api.getGridOption('ssrmSelectionViewActive')
             ? selection
             : null,
+        ...(by.length ? { group: { by, keys } } : {}),
       };
+      if (by.length && keys.length < by.length) {
+        if (!loadGroups) return params.fail();
+        loadGroups(view).then(
+          (page) => {
+            if (!page) return params.fail();
+            // LibreGrid reads each group row's key and keeps the record for the group column.
+            params.success({
+              rowData: page.groups as unknown as DeviceRow[],
+              rowCount: page.groupCount,
+            });
+          },
+          () => params.fail(),
+        );
+        return;
+      }
+      const offset = params.request.startRow ?? 0;
+      const limit = by.length
+        ? GROUP_LIMIT
+        : Math.min(
+            200,
+            Math.max(1, (params.request.endRow ?? offset + 100) - offset),
+          );
       load(offset, limit, view).then(
         (page) => {
           if (!page) return params.fail();

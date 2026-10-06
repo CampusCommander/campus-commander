@@ -1,6 +1,7 @@
 import {
   batteryFilterValueSchema,
   type DeviceBattery,
+  type DeviceGroupField,
   type DeviceOrgUnit,
   type DevicePredicate,
   type DeviceQuery,
@@ -277,4 +278,12 @@ export function telemetryFailureText(
   return accessFailures.has(failure)
     ? 'Google denied battery telemetry access. Add the telemetry scope to the delegation client in the Google Admin Console.'
     : 'Campus Commander could not read battery telemetry during the last refresh.';
+}
+
+/** A group key as the filters read it. */
+export function groupLabel(field: DeviceGroupField, key: string): string {
+  if (field === 'model') return key || 'No model';
+  if (field === 'battery')
+    return BATTERY_LABELS[key as BatteryFilterValue] ?? key;
+  return key;
 }

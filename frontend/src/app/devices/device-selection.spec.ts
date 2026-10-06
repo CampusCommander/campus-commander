@@ -131,3 +131,67 @@ it('describes what Select All captured', () => {
     }),
   ).toBe('Selected by filter: All devices · 2 added');
 });
+
+const context = () => ({
+  predicates: spec.terms[0].predicates,
+  by: ['battery' as const],
+});
+
+it('sends group selections with the grid filters and grouped fields', async () => {
+  const call = vi.fn().mockResolvedValue(Response.json({ selection: spec }));
+  const provider = new DeviceSelectionProvider(call, context);
+  await provider.applyOps({
+    gridId: 'devices',
+    tabId,
+    ops: [{ op: 'selectGroup', route: ['replace-soon'] }],
+  });
+  expect(call.mock.calls[0][1].ops).toEqual([
+    {
+      op: 'selectGroup',
+      predicates: spec.terms[0].predicates,
+      by: ['battery'],
+      route: ['replace-soon'],
+    },
+  ]);
+});
+
+it('resolves group rows even when no device rows are loaded', async () => {
+  const call = vi
+    .fn()
+    .mockResolvedValue(Response.json({ selected: { 'replace-soon': true } }));
+  const provider = new DeviceSelectionProvider(call, context);
+  expect(
+    await provider.resolveSelected({
+      gridId: 'devices',
+      tabId,
+      rowIds: [],
+      groupRoutes: ['replace-soon'],
+    }),
+  ).toEqual({ 'replace-soon': true });
+  expect(call.mock.calls[0][1].by).toEqual(['battery']);
+});
+
+it('reports selected groups to LibreGrid and the status bar', async () => {
+  const grouped: DeviceSelectionSpec = {
+    terms: [],
+    groups: [
+      {
+        predicates: [],
+        by: ['orgUnitPath', 'battery'],
+        route: ['/School A', 'replace-soon'],
+      },
+    ],
+    added: 0,
+    excluded: 0,
+    selectedCount: 12,
+  };
+  const provider = new DeviceSelectionProvider(
+    vi.fn().mockResolvedValue(Response.json({ selection: grouped })),
+  );
+  expect((await provider.getSpec({ gridId: 'devices', tabId })).terms).toEqual([
+    { type: 'group', route: ['/School A', 'replace-soon'] },
+  ]);
+  expect(selectionScope(grouped)).toBe(
+    'Selected groups: /School A › Replace soon',
+  );
+});

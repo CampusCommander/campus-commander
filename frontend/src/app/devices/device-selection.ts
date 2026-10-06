@@ -8,11 +8,13 @@ import type {
 import {
   deviceSelectionKeySchema,
   deviceSelectionSpecSchema,
+  type DeviceGroupField,
+  type DevicePredicate,
   type DeviceSelectionKey,
   type DeviceSelectionOp,
   type DeviceSelectionSpec,
 } from '@campus/application-contracts';
-import { chipLabel } from './device-fields';
+import { chipLabel, groupLabel } from './device-fields';
 import {
   filterModelFromPredicates,
   predicatesFromFilterModel,
@@ -53,7 +55,17 @@ function key(params: { gridId: string; tabId: string }): DeviceSelectionKey {
   });
 }
 
-function deviceOps(op: SelectionOp): DeviceSelectionOp[] {
+/** The grid's filters and grouped fields. Group operations and group routes need both. */
+export interface SelectionContext {
+  predicates: DevicePredicate[];
+  by: DeviceGroupField[];
+}
+const flat = (): SelectionContext => ({ predicates: [], by: [] });
+
+function deviceOps(
+  op: SelectionOp,
+  context: SelectionContext,
+): DeviceSelectionOp[] {
   switch (op.op) {
     case 'selectAll':
       return [
@@ -68,8 +80,9 @@ function deviceOps(op: SelectionOp): DeviceSelectionOp[] {
         batches.push({ op: op.op, ids: op.ids.slice(start, start + idBatch) });
       return batches;
     }
-    default:
-      throw new Error('Grouped selection is not available for devices.');
+    case 'selectGroup':
+    case 'deselectGroup':
+      return [{ op: op.op, ...context, route: op.route }];
   }
 }
 
@@ -83,6 +96,7 @@ export class DeviceSelectionProvider implements ServerSideSelectionProvider {
       path: string,
       body: unknown,
     ) => Promise<Response | null>,
+    private readonly context: () => SelectionContext = flat,
   ) {}
 
   private async post(path: string, body: unknown): Promise<unknown> {
@@ -105,10 +119,16 @@ export class DeviceSelectionProvider implements ServerSideSelectionProvider {
   }): Promise<SelectionSpec> {
     const spec = this.keep(await this.post('', key(params)));
     return {
-      terms: spec.terms.map((term) => ({
-        type: 'all' as const,
-        filter: filterModelFromPredicates(term.predicates),
-      })),
+      terms: [
+        ...spec.terms.map((term) => ({
+          type: 'all' as const,
+          filter: filterModelFromPredicates(term.predicates),
+        })),
+        ...spec.groups.map((group) => ({
+          type: 'group' as const,
+          route: group.route,
+        })),
+      ],
       selectedCount: spec.selectedCount,
     };
   }
@@ -118,7 +138,8 @@ export class DeviceSelectionProvider implements ServerSideSelectionProvider {
     tabId: string;
     ops: SelectionOp[];
   }): Promise<void> {
-    const ops = params.ops.flatMap(deviceOps);
+    const context = this.context();
+    const ops = params.ops.flatMap((op) => deviceOps(op, context));
     for (let start = 0; start < ops.length; start += opBatch)
       this.keep(
         await this.post('/ops', {
@@ -134,12 +155,16 @@ export class DeviceSelectionProvider implements ServerSideSelectionProvider {
     rowIds: string[];
     groupRoutes: string[];
   }): Promise<Record<string, boolean>> {
+    const context = this.context();
     const selected: Record<string, boolean> = {};
-    for (let start = 0; start < params.rowIds.length; start += idBatch) {
+    // The first request also carries the group routes, so groups resolve without device rows.
+    const batches = Math.max(1, Math.ceil(params.rowIds.length / idBatch));
+    for (let batch = 0; batch < batches; batch++) {
       const body = await this.post('/resolve', {
         ...key(params),
-        rowIds: params.rowIds.slice(start, start + idBatch),
-        groupRoutes: [],
+        rowIds: params.rowIds.slice(batch * idBatch, (batch + 1) * idBatch),
+        groupRoutes: batch === 0 ? params.groupRoutes : [],
+        ...context,
       });
       Object.assign(
         selected,
@@ -152,9 +177,9 @@ export class DeviceSelectionProvider implements ServerSideSelectionProvider {
   }
 }
 
-/** What Select All captured, with explicit changes (SELECT-01). */
+/** What Select All and group selection captured, with explicit changes (SELECT-01). */
 export function selectionScope(spec: DeviceSelectionSpec | null): string {
-  if (!spec?.terms.length) return '';
+  if (!spec || (!spec.terms.length && !spec.groups.length)) return '';
   const terms = spec.terms
     .map((term) =>
       term.predicates.length
@@ -162,8 +187,16 @@ export function selectionScope(spec: DeviceSelectionSpec | null): string {
         : 'All devices',
     )
     .join('; ');
+  const groups = spec.groups
+    .map((group) =>
+      group.route
+        .map((routeKey, level) => groupLabel(group.by[level], routeKey))
+        .join(' › '),
+    )
+    .join('; ');
   return [
-    `Selected by filter: ${terms}`,
+    ...(terms ? [`Selected by filter: ${terms}`] : []),
+    ...(groups ? [`Selected groups: ${groups}`] : []),
     ...(spec.added ? [`${spec.added} added`] : []),
     ...(spec.excluded ? [`${spec.excluded} excluded`] : []),
   ].join(' · ');
