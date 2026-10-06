@@ -9,10 +9,13 @@ import {
 } from './runtime.mjs';
 
 test('the worker user is limited to entity keys, the generation, in-flight sets, and events', () => {
-  assert.match(applicationRedisAcl, /\+sadd \+srem/);
+  assert.equal(
+    applicationRedisAcl,
+    '~cc:* &cc:* -@all +ping +get +getdel +set +del +exists +expire +ttl +eval +zadd +zrem +zremrangebyscore +time',
+  );
   assert.equal(
     workerRedisAcl,
-    '~cc:entity:* ~cc:query-gen:* ~cc:entity-inflight:* &cc:entity-events:* -@all +ping +set +del +publish +incr +srem +multi +exec',
+    '~cc:entity:* ~cc:query-gen:* ~cc:entity-inflight:* &cc:entity-events:* -@all +ping +set +del +publish +incr +zadd +zrem +multi +exec',
   );
 });
 

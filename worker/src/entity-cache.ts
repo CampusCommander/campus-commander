@@ -16,6 +16,8 @@ export interface EntityCache {
   ): Promise<void>;
   remove(keys: string[]): Promise<void>;
   removeMembers(key: string, members: string[]): Promise<void>;
+  /** Move the expiry of members that still hold a claim to `seconds` from now. */
+  extendMembers(key: string, members: readonly string[], seconds: number): Promise<void>;
   increment(key: string): Promise<void>;
   publish(channel: string, message: string): Promise<void>;
   close(): Promise<void>;
@@ -26,6 +28,7 @@ export const noEntityCache: EntityCache = {
   setRecords: async () => undefined,
   remove: async () => undefined,
   removeMembers: async () => undefined,
+  extendMembers: async () => undefined,
   increment: async () => undefined,
   publish: async () => undefined,
   close: async () => undefined,
@@ -105,7 +108,21 @@ export class WorkerRedis implements EntityCache {
   }
 
   async removeMembers(key: string, members: string[]) {
-    if (members.length) await this.run((client) => client.sRem(key, members));
+    if (members.length) await this.run((client) => client.zRem(key, members));
+  }
+
+  async extendMembers(key: string, members: readonly string[], seconds: number) {
+    const score = Date.now() + seconds * 1000;
+    for (let start = 0; start < members.length; start += chunk) {
+      const slice = members.slice(start, start + chunk);
+      await this.run((client) =>
+        client.zAdd(
+          key,
+          slice.map((value) => ({ score, value })),
+          { condition: 'XX', CH: true },
+        ),
+      );
+    }
   }
 
   async increment(key: string) {

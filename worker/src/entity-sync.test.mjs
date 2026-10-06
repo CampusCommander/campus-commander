@@ -93,6 +93,7 @@ function cache() {
     setRecords: note('setRecords'),
     remove: note('remove'),
     removeMembers: note('removeMembers'),
+    extendMembers: note('extendMembers'),
     increment: note('increment'),
     publish: note('publish'),
     close: async () => undefined,
@@ -430,4 +431,48 @@ test('the freshness stamp comes from Postgres before the Directory read', async 
   ]);
   const upsert = db.calls.find((call) => call.name === 'upsert_devices');
   assert.equal(upsert.values[2], clock.toISOString());
+});
+
+test('a quota sleep extends the batch claim on its in-flight IDs', async () => {
+  const redis = cache();
+  const waits = [];
+  await new EntitySyncBatch(
+    database(),
+    cipher,
+    reader({
+      devices: [new GoogleConnectionError('quota')],
+      batteries: [new GoogleConnectionError('quota')],
+    }),
+    redis,
+    { backoff: () => 0, sleep: async () => void waits.push(redis.calls.length) },
+  ).run(request, AbortSignal.timeout(5000));
+  const extended = redis.calls.filter((call) => call.name === 'extendMembers');
+  assert.equal(extended.length, 2);
+  for (const call of extended)
+    assert.deepEqual(call.args, [
+      'cc:entity-inflight:device:C0123456',
+      ['d1', 'd2', 'd3'],
+      120,
+    ]);
+  assert.deepEqual(
+    waits.map((count) => redis.calls[count - 1].name),
+    ['extendMembers', 'extendMembers'],
+    'Each extension precedes its sleep.',
+  );
+});
+
+test('a failed claim extension does not stop the quota retry', async () => {
+  const redis = cache();
+  redis.extendMembers = async () => {
+    throw new EntityCacheError();
+  };
+  const result = await new EntitySyncBatch(
+    database(),
+    cipher,
+    reader({ devices: [new GoogleConnectionError('quota')] }),
+    redis,
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  assert.equal(result.failure, null);
+  assert.deepEqual(result.updated, ['d1', 'd2', 'd3']);
 });

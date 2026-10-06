@@ -1,5 +1,9 @@
 id: entity_sync
 namespace: campus.application
+# Two refresh jobs run at a time. Later jobs wait in the queue.
+concurrency:
+  limit: 2
+  behavior: QUEUE
 inputs:
   - id: customerId
     type: STRING

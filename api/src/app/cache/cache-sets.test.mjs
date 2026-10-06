@@ -8,8 +8,21 @@ test('addMembers chunks members so one EVAL stays small', () => {
   assert.deepEqual(chunks.map((chunk) => chunk.length), [1000, 1000, 300]);
 });
 
-test('the add script returns only newly added members and refreshes the expiry', () => {
-  assert.match(addMembersScript, /SADD/);
-  assert.match(addMembersScript, /EXPIRE/);
-  assert.match(addMembersScript, /ARGV\[1\]/);
+test('the claim script gives each member its own expiry score from the Redis clock', () => {
+  assert.doesNotMatch(addMembersScript, /SADD/);
+  assert.match(addMembersScript, /redis\.call\('TIME'\)/);
+  assert.match(
+    addMembersScript,
+    /redis\.call\('ZREMRANGEBYSCORE',KEYS\[1\],'-inf',now\)/,
+  );
+  assert.match(
+    addMembersScript,
+    /for i=2,#ARGV do if redis\.call\('ZADD',KEYS\[1\],'NX',now\+tonumber\(ARGV\[1\]\)\*1000,ARGV\[i\]\)==1/,
+  );
+  assert.match(addMembersScript, /redis\.call\('EXPIRE',KEYS\[1\],3600\)/);
+  assert.ok(
+    addMembersScript.indexOf('ZREMRANGEBYSCORE') <
+      addMembersScript.indexOf('ZADD'),
+    'Expired members leave before new claims.',
+  );
 });

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   ENTITY_CACHE_SECONDS,
+  ENTITY_INFLIGHT_SECONDS,
   entityEventsChannel,
   entityKey,
   entitySyncBatchRequestSchema,
@@ -111,9 +112,13 @@ export class EntitySyncBatch {
     return callStore(this.database, sql, values);
   }
 
-  /** Retry only quota answers. A shutdown signal ends the wait with worker-stopping. */
+  /**
+   * Retry only quota answers. A shutdown signal ends the wait with worker-stopping.
+   * Each wait first extends the claim on the batch IDs, so a retrying batch keeps them.
+   */
   private async untilQuotaClears<T>(
     signal: AbortSignal,
+    claim: { key: string; ids: readonly string[] },
     read: () => Promise<T>,
   ): Promise<T> {
     const backoff = this.options.backoff ?? defaultBackoff;
@@ -124,6 +129,9 @@ export class EntitySyncBatch {
       } catch (error) {
         if (!(error instanceof GoogleConnectionError) || error.code !== 'quota')
           throw error;
+        await this.cache
+          .extendMembers(claim.key, claim.ids, ENTITY_INFLIGHT_SECONDS)
+          .catch(() => undefined);
         await sleep(backoff(attempt), signal);
       }
     }
@@ -149,6 +157,7 @@ export class EntitySyncBatch {
       ]),
     );
     const inflight = inflightKey('device', input.customerId);
+    const claim = { key: inflight, ids: batch.ids };
     let updated: string[] = [];
     let removed: string[] = [];
     let failure: string | null = null;
@@ -166,7 +175,7 @@ export class EntitySyncBatch {
       if (Number.isNaN(stamp.getTime()))
         throw new DeviceSyncError('store-unavailable');
       const syncedAt = stamp.toISOString();
-      const read = await this.untilQuotaClears(signal, () =>
+      const read = await this.untilQuotaClears(signal, claim, () =>
         this.reader.deviceBatch(
           credential,
           input.customerId,
@@ -177,7 +186,7 @@ export class EntitySyncBatch {
       const present = read.devices.map((device) => device.deviceId);
       let batteries: BatteryObservation[] | null = null;
       try {
-        batteries = await this.untilQuotaClears(signal, () =>
+        batteries = await this.untilQuotaClears(signal, claim, () =>
           this.reader.batteryBatch(credential, input.customerId, present, signal),
         );
       } catch (error) {

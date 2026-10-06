@@ -73,6 +73,7 @@ function cache() {
     setRecords: note('setRecords'),
     remove: note('remove'),
     removeMembers: note('removeMembers'),
+    extendMembers: note('extendMembers'),
     increment: note('increment'),
     publish: note('publish'),
     close: async () => undefined,
@@ -204,6 +205,6 @@ test('the no-op cache lets a full sync publish without Redis', async () => {
     'page_device_records',
     'page_device_records',
   ]);
-  for (const method of ['setRecords', 'remove', 'removeMembers', 'increment', 'publish', 'close'])
+  for (const method of ['setRecords', 'remove', 'removeMembers', 'extendMembers', 'increment', 'publish', 'close'])
     assert.equal(await noEntityCache[method]('key', []), undefined);
 });

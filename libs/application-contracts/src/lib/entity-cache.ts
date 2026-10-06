@@ -19,7 +19,10 @@ export const ENTITY_CACHE_SECONDS: Readonly<Record<EntityType, number>> = {
 };
 /** Devices per Kestra batch. The Directory batch endpoint allows 1,000. */
 export const ENTITY_SYNC_BATCH_SIZE = 100;
-/** Seconds an ID waits in the in-flight set when no batch removes it. */
+/**
+ * Seconds that each device ID stays claimed after its last refresh claim.
+ * A batch that retries a quota answer extends the claim by this amount.
+ */
 export const ENTITY_INFLIGHT_SECONDS = 120;
 
 export function freshnessCutoff(type: EntityType, now = Date.now()): Date {

@@ -145,7 +145,7 @@ export class CacheService implements OnApplicationShutdown {
   async expire(key: string, seconds: number) {
     return this.execute((client) => client.expire(key, seconds));
   }
-  /** Add members to a set with an expiry. Returns the members that were not already present. */
+  /** Claim members for `seconds` each. Returns the members that held no live claim. */
   async addMembers(key: string, members: readonly string[], seconds: number): Promise<string[]> {
     const added: string[] = [];
     for (const chunk of memberChunks(members)) {
@@ -161,7 +161,7 @@ export class CacheService implements OnApplicationShutdown {
   }
   async removeMembers(key: string, members: readonly string[]): Promise<void> {
     for (const chunk of memberChunks(members))
-      await this.execute((client) => client.sRem(key, [...chunk]));
+      await this.execute((client) => client.zRem(key, [...chunk]));
   }
   async onApplicationShutdown() {
     if (this.client?.isOpen) this.client.destroy();

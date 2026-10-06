@@ -138,7 +138,8 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - An open group lists up to 1,000 devices, and a grouped level lists up to 1,000 groups. The status bar says when a group holds more.
 - While the grid is grouped, checking any row selects or deselects its whole group, as LibreGrid defines. A selected group keeps the filters that were active.
 - Next device from a device inside a group follows that group's order. Back to devices restores the grouping, filters, sort, and page. Open groups close.
-- A refresh job holds 100 devices per batch. Kestra runs four batches at a time. The in-flight set expires after two minutes.
+- A refresh job holds 100 devices per batch. Kestra runs four batches at a time and two refresh jobs at a time.
+- Each device ID stays claimed for two minutes after its last refresh claim. A batch that retries a quota answer extends the claim.
 - The grid and counts exclude removed devices. Device details still open a removed device and name the removal time.
 - A refresh that cannot start leaves the page as it is. The next query tries again.
 - The status bar and group counts still show the last full sync time. Device details show the device's own last Google read.

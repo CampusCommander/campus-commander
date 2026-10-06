@@ -9,8 +9,8 @@ import type { CacheService } from '../cache/cache.service';
 import type { OrchestrationService } from '../orchestration/orchestration.service';
 
 /**
- * Start one refresh job for stale devices. The in-flight set keeps overlapping
- * queries from dispatching the same device twice within two minutes.
+ * Start one refresh job for stale devices. Each device ID stays claimed for two minutes
+ * after its last claim, so overlapping queries do not dispatch it twice.
  */
 export class DeviceRefresh {
   // Explicit fields: Node's type-stripping test runner rejects parameter properties.
