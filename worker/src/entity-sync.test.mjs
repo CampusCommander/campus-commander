@@ -4,6 +4,7 @@ import test from 'node:test';
 import { GoogleConnectionError } from '@campus/google-connection';
 import { EntitySyncBatch } from './entity-sync.ts';
 import { DeviceSyncError } from './device-sync.ts';
+import { EntityCacheError } from './entity-cache.ts';
 
 const customerId = 'C0123456';
 const jobId = randomUUID();
@@ -293,4 +294,56 @@ test('a changed job stops before Google access', async () => {
       error instanceof DeviceSyncError && error.code === 'entity-sync-changed',
   );
   assert.deepEqual(names(db.calls), ['read_entity_sync_batch']);
+});
+
+test('a cache fault propagates so Kestra retries the runner', async () => {
+  const db = database();
+  const redis = cache();
+  redis.setRecords = async () => {
+    throw new EntityCacheError();
+  };
+  await assert.rejects(
+    new EntitySyncBatch(db, cipher, reader(), redis, noSleep).run(
+      request,
+      AbortSignal.timeout(5000),
+    ),
+    (error) => error instanceof EntityCacheError,
+  );
+  assert.ok(!names(db.calls).includes('finish_entity_sync_batch'));
+});
+
+test('shutdown during a Google read surfaces worker-stopping', async () => {
+  const stopping = new AbortController();
+  const source = reader();
+  source.deviceBatch = async () => {
+    stopping.abort();
+    throw new GoogleConnectionError('network-failure');
+  };
+  await assert.rejects(
+    new EntitySyncBatch(database(), cipher, source, cache(), noSleep).run(
+      request,
+      stopping.signal,
+    ),
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'worker-stopping',
+  );
+});
+
+test('a failed job-finished publish does not fail the batch', async () => {
+  const finished = job({
+    completedBatches: 2,
+    finishedAt: '2026-10-06T12:01:00.000Z',
+  });
+  const redis = cache();
+  redis.publish = async (_channel, message) => {
+    if (message.includes('"job-finished"')) throw new EntityCacheError();
+  };
+  const result = await new EntitySyncBatch(
+    database({ finish: finished }),
+    cipher,
+    reader(),
+    redis,
+    noSleep,
+  ).run({ ...request, batch: 1 }, AbortSignal.timeout(5000));
+  assert.ok(result.job.finishedAt);
 });

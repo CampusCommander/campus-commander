@@ -18,7 +18,7 @@ import {
   type CredentialCipher,
   type DelegatedCredential,
 } from '@campus/google-connection';
-import type { EntityCache } from './entity-cache';
+import { EntityCacheError, type EntityCache } from './entity-cache';
 import {
   DeviceSyncError,
   callStore,
@@ -206,7 +206,9 @@ export class EntitySyncBatch {
         removed.map((id) => entityKey('device', input.customerId, id)),
       );
     } catch (error) {
-      if (error instanceof DeviceSyncError) throw error;
+      if (error instanceof DeviceSyncError || error instanceof EntityCacheError)
+        throw error;
+      if (signal.aborted) throw new DeviceSyncError('worker-stopping');
       failure =
         error instanceof GoogleConnectionError
           ? error.code
@@ -233,7 +235,11 @@ export class EntitySyncBatch {
       ),
     );
     if (job.finishedAt)
-      await this.publish(input.customerId, { type: 'job-finished', job });
+      try {
+        await this.publish(input.customerId, { type: 'job-finished', job });
+      } catch {
+        /* The finish is recorded. Plan B reconciles on reconnect. */
+      }
     return { job, updated, removed, failure };
   }
 }
