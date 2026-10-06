@@ -105,6 +105,7 @@ Record the composition change in the device browsing workflow and re-inspect the
 ### D12. One SSE stream, poll retired (Q12)
 
 The stream carries `entity-batch`, `full-sync` (`{syncId, status, failure?}`), and `job-finished` (`{jobId, completed, failed, failure?}`).
+As built, `full-sync` nests the sync state as `{ sync }`, `job-finished` nests the job as `{ job }`, and `entity-batch` also carries `removedIds`.
 The 2 second poll is removed. The store opens one `EventSource` on Devices mount and closes it on leave.
 On reconnect the store refetches `GET /api/devices/sync` once and `by-ids` for rows still tagged stale.
 

@@ -49,9 +49,10 @@ Google reports battery data only when the `ReportDevicePowerStatus` device polic
 
 Campus Commander keeps one row per device in its own database, with the time it last read that device from Google.
 The grid, filters, and counts query that database through the server-side row model in [GRID-01](../ui/patterns.md#entity-grid).
-Redis holds short-lived query results and the rows that a sync refreshed. The [entity cache record](../superpowers/specs/2026-10-06-entity-cache-decisions.md) defines both caches.
-A device is stale 24 hours after its last read. A query that returns stale devices starts a background refresh of every stale device it matched.
-The server pushes a signal when refreshed rows land, and the grid updates those rows in place.
+Redis holds the device records that a sync refreshed. The [entity cache record](../superpowers/specs/2026-10-06-entity-cache-decisions.md) defines this cache.
+A device is stale 24 hours after its last read. A query that returns stale devices starts a background refresh job for every stale device it matched.
+The grid reads Postgres. The page polls the sync state.
+The next plan adds a server push signal and cached query results. The grid then updates refreshed rows in place.
 Refresh all reads the complete inventory. A failed full sync leaves every row in place and shows the stale state.
 Collection leases, staging generations, and write overlays from the [architecture](../portfolio/03-architecture.md#synchronization-and-effective-reads) wait until device writes exist.
 
@@ -106,8 +107,9 @@ This work is infrastructure under this workflow. It is not a new workflow. Devel
 - The stale banner shows "Refreshing N of M devices" while a refresh runs and disappears when the last batch lands.
 - A stale row shows its Last contact cell muted with the tooltip "Refreshing from Google".
 - The server pushes refresh signals over Server-Sent Events. The 2 second status poll is removed.
+  The next plan delivers this decision. Until then the page polls the sync state.
 - Google returning 404 for one device marks that device removed. Removed devices stay in the database.
-- A full sync marks every device that Google no longer returns as removed, when every batch of that sync succeeded.
+- A full sync marks every device that Google no longer returns as removed, when that sync succeeds.
 - Nothing is deleted from the database.
 
 ## Implementation defaults — 2026-10-05
@@ -119,7 +121,7 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - A "before" date filter excludes the given time. An "after" filter includes it.
 - Date filters exclude devices without a contact time.
 - A device becomes stale 24 hours after Campus Commander last read it. The threshold is a code constant per entity type.
-- Query results stay cached for 5 minutes. A completed full sync makes the cached results unreachable.
+- The next plan caches query results for 5 minutes. A completed full sync then makes the cached results unreachable.
 - A sync that no worker starts within two minutes ends as interrupted. Refresh all then becomes available again.
 - The first visit shows no devices until an administrator runs Refresh all.
 - Pages hold 100 devices by default. The page size selector offers 50, 100, and 250.

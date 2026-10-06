@@ -71,3 +71,27 @@ test('events are a discriminated union', () => {
   );
   assert.equal(entityEventSchema.safeParse({ type: 'other' }).success, false);
 });
+
+test('the Redis record schema accepts cc.device_record output without removedAt and rejects stale', async () => {
+  const { deviceRecordSchema } = await import('./devices.ts');
+  const record = {
+    deviceId: 'synthetic-device-0',
+    serialNumber: 'C0A1-0000',
+    model: 'Lenovo 100e Gen 4',
+    assetTag: 'HS-0400',
+    orgUnitPath: '/School A',
+    lastContact: '2026-10-05T12:00:00+00:00',
+    annotatedLocation: null,
+    notes: null,
+    battery: {
+      status: 'reported',
+      health: 'replace-soon',
+      capacityPercent: 78,
+      reportedAt: '2026-10-05T13:50:00+00:00',
+    },
+    lastEntitySync: '2026-10-06T12:00:00.123456+00:00',
+  };
+  assert.deepEqual(deviceRecordSchema.parse(record), record);
+  assert.equal(deviceRecordSchema.safeParse({ ...record, stale: false }).success, false);
+  assert.equal(deviceRecordSchema.safeParse({ ...record, removedAt: null }).success, false);
+});
