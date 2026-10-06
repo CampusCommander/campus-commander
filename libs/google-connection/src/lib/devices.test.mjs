@@ -305,7 +305,6 @@ test('deviceBatch maps a quota part to a quota failure', async (t) => {
 });
 
 test('deviceBatch fails the batch on any other part error', async (t) => {
-  // failure() maps a plain 403 to permission-denied. If it maps differently, assert that code.
   stub(t, [
     {
       __multipart: true,

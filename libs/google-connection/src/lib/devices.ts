@@ -84,6 +84,8 @@ const directoryPath = '/admin/directory/v1';
 const deviceFields =
   'deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,notes,status';
 const batchLimit = 1000;
+/** 1,000 devices with full notes and locations stay under this. */
+const batchResponseLimit = 16 * 1024 * 1024;
 const telemetryConcurrency = 4;
 const quotaReasons = new Set([
   'quotaExceeded',
@@ -334,7 +336,7 @@ export class GoogleDeviceReader {
       credential,
       scopeFor('device-inventory'),
       signal,
-      devicePageLimit,
+      batchResponseLimit,
     );
     const boundary = `batch_cc_${Math.random().toString(36).slice(2)}`;
     const body =
