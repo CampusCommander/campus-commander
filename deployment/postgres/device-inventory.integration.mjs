@@ -118,6 +118,12 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     assert.deepEqual(current.map((row) => [row.device_id, row.removed_at !== null]), [
       ['d1', false], ['d2', true], ['d3', false],
     ]);
+    const lastRemoved = (after = '') =>
+      result('SELECT cc.page_last_removed_device_ids($1,$2,$3) AS result', [customer, after, 1000]);
+    assert.deepEqual(await lastRemoved(), ['d2'], 'The last full sync names the devices it removed.');
+    assert.deepEqual(await lastRemoved('d2'), []);
+    await fullSync([device('d1'), device('d3')]);
+    assert.deepEqual(await lastRemoved(), [], 'A sync that removes nothing names no devices.');
 
     // A failed full sync removes nothing and keeps the publication.
     const failed = await fullSync([device('d1')], 'provider-unavailable');
@@ -278,6 +284,7 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       'device inventory reads require current devices:read authority: pass',
       'one worker attempt claims a device sync and duplicate dispatch is rejected: pass',
       'a full sync soft-deletes devices Google no longer returns and a failed sync removes nothing: pass',
+      'the last full sync names the devices it removed: pass',
       'entity sync jobs slice IDs into batches and count each batch once: pass',
       'the purge ends jobs unfinished after two hours and rejects unsafe job IDs: pass',
       'upserts stamp last_entity_sync and clear removed_at: pass',

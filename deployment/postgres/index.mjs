@@ -259,6 +259,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.soft_delete_devices(text,jsonb),
         cc.read_device_records(text,jsonb),
         cc.page_device_records(text,text,integer),
+        cc.page_last_removed_device_ids(text,text,integer),
         cc.stage_devices(text,uuid,uuid,jsonb),
         cc.stage_device_batteries(text,uuid,uuid,jsonb),
         cc.finish_device_sync(text,uuid,uuid,text,text),

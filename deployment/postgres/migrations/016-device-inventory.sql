@@ -291,6 +291,16 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
     ORDER BY d.device_id LIMIT LEAST(GREATEST(p_limit,1),1000)) page;
 $$;
 
+-- Devices that the last finished full sync removed, after p_after in device_id order.
+CREATE FUNCTION cc.page_last_removed_device_ids(p_customer text,p_after text,p_limit integer) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+  SELECT COALESCE(jsonb_agg(device_id ORDER BY device_id),'[]'::jsonb) FROM (
+    SELECT d.device_id FROM cc.devices d
+    WHERE d.customer_id=p_customer AND d.device_id>COALESCE(p_after,'')
+      AND d.removed_at=(SELECT s.checked_at FROM cc.device_sync_state s WHERE s.customer_id=p_customer)
+    ORDER BY d.device_id LIMIT LEAST(GREATEST(p_limit,1),1000)) page;
+$$;
+
 CREATE FUNCTION cc.stage_devices(p_customer text,p_id uuid,p_attempt uuid,p_devices jsonb) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 BEGIN
@@ -452,6 +462,7 @@ REVOKE ALL ON FUNCTION cc.device_reader(uuid,integer),cc.device_sync_projection(
   cc.device_sync_lease(text,uuid,uuid),cc.device_record(cc.devices,text),
   cc.upsert_devices(text,jsonb,timestamptz),cc.upsert_device_batteries(text,jsonb),cc.soft_delete_devices(text,jsonb),
   cc.read_device_records(text,jsonb),cc.page_device_records(text,text,integer),
+  cc.page_last_removed_device_ids(text,text,integer),
   cc.stage_devices(text,uuid,uuid,jsonb),cc.stage_device_batteries(text,uuid,uuid,jsonb),
   cc.finish_device_sync(text,uuid,uuid,text,text),cc.entity_sync_job_projection(cc.entity_sync_jobs),
   cc.create_entity_sync_job(uuid,integer,text,text,jsonb,integer,uuid,uuid),

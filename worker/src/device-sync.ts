@@ -167,6 +167,21 @@ export class DeviceSync {
     if (failure === null) {
       try {
         // Postgres has published. Redis work must not fail the sync.
+        // Records of the devices this sync removed leave Redis first.
+        const removedPage = z.array(z.string());
+        for (let after = ''; !signal.aborted; ) {
+          const ids = removedPage.parse(
+            await this.call(
+              'SELECT cc.page_last_removed_device_ids($1,$2,$3) AS result',
+              [input.customerId, after, 1000],
+            ),
+          );
+          if (ids.length === 0) break;
+          await this.cache.remove(
+            ids.map((id) => entityKey('device', input.customerId, id)),
+          );
+          after = ids[ids.length - 1];
+        }
         const recordPage = z.array(z.object({ deviceId: z.string() }).passthrough());
         for (let after = ''; !signal.aborted; ) {
           const records = recordPage.parse(

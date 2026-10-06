@@ -31,7 +31,7 @@ const device = (deviceId) => ({
   status: null,
 });
 
-function database({ fail = {}, onPage = () => undefined } = {}) {
+function database({ fail = {}, onPage = () => undefined, removed = [] } = {}) {
   const calls = [];
   return {
     calls,
@@ -42,6 +42,8 @@ function database({ fail = {}, onPage = () => undefined } = {}) {
       if (name === 'claim_device_sync')
         return { rows: [{ result: { generation: 1, credentialId: randomUUID(), envelope: { sealed: true } } }] };
       if (name === 'finish_device_sync') return { rows: [{ result: state }] };
+      if (name === 'page_last_removed_device_ids')
+        return { rows: [{ result: values[1] === '' ? removed : [] }] };
       if (name === 'page_device_records') onPage();
       if (name === 'page_device_records')
         return { rows: [{ result: values[1] === '' ? [record('d1'), record('d2')] : [] }] };
@@ -108,11 +110,12 @@ test('stages every page, publishes, fills Redis, and bumps the query generation'
     'stage_devices',
     'stage_device_batteries',
     'finish_device_sync',
+    'page_last_removed_device_ids',
     'page_device_records',
     'page_device_records',
   ]);
-  assert.deepEqual(db.calls[4].values, [customerId, '', 1000]);
-  assert.deepEqual(db.calls[5].values, [customerId, 'd2', 1000]);
+  assert.deepEqual(db.calls[5].values, [customerId, '', 1000]);
+  assert.deepEqual(db.calls[6].values, [customerId, 'd2', 1000]);
   assert.deepEqual(names(redis.calls), ['setRecords', 'increment', 'publish']);
   assert.deepEqual(redis.calls[0].args[0].map((entry) => entry.key), [
     'cc:entity:device:C0123456:d1',
@@ -202,9 +205,37 @@ test('the no-op cache lets a full sync publish without Redis', async () => {
     'stage_devices',
     'stage_device_batteries',
     'finish_device_sync',
+    'page_last_removed_device_ids',
     'page_device_records',
     'page_device_records',
   ]);
   for (const method of ['setRecords', 'remove', 'removeMembers', 'extendMembers', 'increment', 'publish', 'close'])
     assert.equal(await noEntityCache[method]('key', []), undefined);
+});
+
+test('a full sync deletes the cached records of the devices it removed', async () => {
+  const db = database({ removed: ['r1', 'r2'] });
+  const redis = cache();
+  await new DeviceSync(db, cipher, reader(), redis).run(request, AbortSignal.timeout(5000));
+  const pages = db.calls.filter((call) => call.name === 'page_last_removed_device_ids');
+  assert.deepEqual(
+    pages.map((call) => call.values),
+    [
+      [customerId, '', 1000],
+      [customerId, 'r2', 1000],
+    ],
+  );
+  assert.deepEqual(names(redis.calls), ['remove', 'setRecords', 'increment', 'publish']);
+  assert.deepEqual(redis.calls[0].args[0], [
+    'cc:entity:device:C0123456:r1',
+    'cc:entity:device:C0123456:r2',
+  ]);
+});
+
+test('a failed removed-device read does not fail the sync', async () => {
+  const db = database({ fail: { page_last_removed_device_ids: 'store-down' } });
+  const redis = cache();
+  const result = await new DeviceSync(db, cipher, reader(), redis).run(request, AbortSignal.timeout(5000));
+  assert.deepEqual(result, state);
+  assert.deepEqual(names(redis.calls), ['publish']);
 });
