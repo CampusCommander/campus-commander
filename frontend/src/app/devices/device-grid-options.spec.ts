@@ -13,7 +13,14 @@ it('pages, shows column tools and the status bar, and selects on the server', ()
     applyOps: vi.fn(),
     resolveSelected: vi.fn(),
   };
-  const options = deviceGridFeatures({ provider, tabId, footer, status });
+  const onSelectionReady = vi.fn();
+  const options = deviceGridFeatures({
+    provider,
+    tabId,
+    footer,
+    status,
+    onSelectionReady,
+  });
   expect(options.pagination).toBe(true);
   expect(options.paginationPageSize).toBe(100);
   expect(options.paginationPageSizeSelector).toEqual([50, 100, 250]);
@@ -66,6 +73,8 @@ it('pages, shows column tools and the status bar, and selects on the server', ()
     attachFooter,
   } as unknown as SsrmSelectionService);
   expect(attachFooter).toHaveBeenCalledWith(footer);
+  // The footer changes the status bar height, so the grid re-reveals its row.
+  expect(onSelectionReady).toHaveBeenCalled();
 });
 
 it('opens the page that holds a remembered row', () => {

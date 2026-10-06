@@ -44,6 +44,8 @@ export interface DeviceGridFeatures {
   footer: HTMLElement;
   /** Holds the counts and freshness (GRID-01). */
   status: HTMLElement;
+  /** Runs after the selection footer joins the status bar. */
+  onSelectionReady?: () => void;
 }
 
 /** Paging, column tools, the status bar, and server-side selection. */
@@ -106,8 +108,10 @@ export function deviceGridFeatures(
       provider: features.provider,
       gridId: DEVICE_GRID_ID,
       tabId: features.tabId,
-      onReady: (service: SsrmSelectionService) =>
-        service.attachFooter(features.footer),
+      onReady: (service: SsrmSelectionService) => {
+        service.attachFooter(features.footer);
+        features.onSelectionReady?.();
+      },
     },
   };
 }

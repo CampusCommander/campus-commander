@@ -22,7 +22,11 @@ The filter row follows [GRID-04](../ui/patterns.md#entity-grid).
 The administrator selects Add a filter, chooses a field or shortcut, and applies a typed value.
 Each applied filter appears as a chip. Clear filters removes all chips.
 The Refresh menu contains Refresh all. It runs a new device sync and keeps the active filters.
-The footer shows the matching count, the district total, the inventory observation time, and the row range.
+The grid pages through the devices. The paging bar shows the row range and the page size.
+Each column header has a filter. The Filters side bar lists the same filters.
+The Columns side bar shows, hides, orders, and pins columns.
+The checkbox column selects devices. Select All in the status bar selects every device that matches the filters.
+The status bar shows the matching count, the district total, the inventory observation time, and the selection.
 
 Device details show the serial, model, asset tag, OrgUnit path, and inventory observation time.
 They show annotated location and notes as read-only values, and the last device contact.
@@ -99,9 +103,17 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - A sync that no worker starts within two minutes ends as interrupted. Refresh all then becomes available again.
 - The first visit shows no devices until an administrator runs Refresh all.
 - Pages hold 100 devices by default. The page size selector offers 50, 100, and 250.
-- A Columns menu in the filter row shows or hides Annotated location and Notes. Figma has no column control.
 - Without a Google connection, Devices directs the administrator to the Google connection page.
-- The OrgUnit filter lists the OrgUnits of the published inventory and their ancestors.
+- The Columns side bar shows or hides Annotated location and Notes. It replaces the Columns menu in the filter row.
+- Each field has one filter. A chip for a field that already has a column filter replaces that filter.
+- The OrgUnit set filter lists the OrgUnits that hold devices as a tree. Choosing a unit in the filter row includes the units inside it.
+- An empty set filter matches no devices.
+- Enter on the details cell opens device details. Space toggles the row's selection.
+- A selection belongs to one person and one browser tab. It survives reloads of that tab and expires 12 hours after its last change.
+- The status bar names the filters that Select All captured and counts the devices added or excluded since.
+- An expired selection shows as empty. The expired-selection state from SELECT-01 arrives with the first device action.
+- The selection footer uses the LibreGrid labels: Select All, Deselect All, Show All Selected, and Show All Records.
+- The edge content security policy allows `data:` images, because AG Grid draws its icons with them. Scripts stay same-origin.
 
 ## States
 
@@ -135,7 +147,7 @@ Inspected on 2026-10-05 in [Figma page 09](https://www.figma.com/design/lqZx6qpW
 | Loading, empty, offline, stale | `107:317`, `107:447`, `108:173`, `108:605` |
 | Telemetry state | `105:146` |
 
-Deviations from the frames: no School column, no selection column or footer selection controls, and no Bulk Actions or Update device.
+Deviations from the frames: no School column, no Bulk Actions, and no Update device.
 The battery panel names Google's classification instead of a district policy.
 The battery coverage page (`105:146`) is excluded. Device details list the recent reports that Google returns.
 
@@ -157,6 +169,9 @@ Demonstrate in the simulated review environment:
 3. Open details, use Next device, and return with filters and position intact.
 4. Show each battery class, a device without reports, and unavailable telemetry.
 5. Show the loading, empty, no-matches, offline, and stale states.
+6. Filter from a column header and see the matching chip. Show and hide a column from the Columns side bar.
+7. Select All under a filter, change the filters, and use Show All Selected.
+8. Move to a later page, open a device there, and return to that page.
 
 Run lint, tests, and builds for the affected Nx projects. Add API tests for the query contract and an end-to-end test for the main flow.
 Run the live read-only check after the owner configures the scopes.

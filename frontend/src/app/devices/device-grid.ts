@@ -97,7 +97,7 @@ ModuleRegistry.registerModules([
       color: var(--cc-text-primary);
     }
     :host ::ng-deep .lgr-ssrm-selection-footer button {
-      color: var(--cc-accent);
+      color: var(--cc-text-link);
       font: inherit;
     }
     :host ::ng-deep .device-details-header .ag-header-cell-text {
@@ -140,6 +140,8 @@ export class DeviceGrid implements OnInit {
 
   private api: GridApi<DeviceRow> | null = null;
   private focused = false;
+  /** The remembered row while the status bar may still change height. */
+  private pendingRow: number | null = null;
   protected options!: GridOptions<DeviceRow>;
 
   constructor() {
@@ -189,6 +191,7 @@ export class DeviceGrid implements OnInit {
         tabId: this.selection().tabId,
         footer: this.footer,
         status: this.status,
+        onSelectionReady: () => this.selectionReady(),
       }),
     };
   }
@@ -232,7 +235,23 @@ export class DeviceGrid implements OnInit {
     const index = this.focusIndex();
     if (this.focused || index === null || page.matching <= index) return;
     this.focused = true;
+    this.pendingRow = index;
+    this.reveal();
+  }
+
+  /** The selection footer makes the status bar taller and the body shorter. Show the row again. */
+  private selectionReady(): void {
+    this.reveal();
+    this.pendingRow = null;
+  }
+
+  private reveal(): void {
     const api = this.api;
-    if (api) setTimeout(() => showRow(api, index));
+    const index = this.pendingRow;
+    if (!api || index === null) return;
+    // AG Grid measures the body in a resize observer, so wait two frames.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => showRow(api, index)),
+    );
   }
 }
