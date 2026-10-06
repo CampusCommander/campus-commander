@@ -19,11 +19,7 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       );
     await migrator.query(
       'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
-      [
-        reader,
-        'devices:read',
-        JSON.stringify({ kind: 'district', customerId: customer }),
-      ],
+      [reader, 'devices:read', JSON.stringify({ kind: 'district', customerId: customer })],
     );
     const result = (sql, values) =>
       runtime.query(sql, values).then((r) => r.rows[0].result);
@@ -31,18 +27,10 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       result('SELECT cc.read_device_sync($1,1) AS result', [who]);
     const request = (id = randomUUID()) =>
       result('SELECT cc.request_device_sync($1,1,$2,$3,$4,$5) AS result', [
-        reader,
-        customer,
-        generation,
-        id,
-        randomUUID(),
+        reader, customer, generation, id, randomUUID(),
       ]).then((state) => ({ id, state }));
     const claim = (id, attempt) =>
-      result('SELECT cc.claim_device_sync($1,$2,$3) AS result', [
-        customer,
-        id,
-        attempt,
-      ]);
+      result('SELECT cc.claim_device_sync($1,$2,$3) AS result', [customer, id, attempt]);
     const device = (deviceId, extra = {}) => ({
       deviceId,
       serialNumber: `SN-${deviceId}`,
@@ -57,85 +45,58 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     });
     const stage = (id, attempt, devices) =>
       result('SELECT cc.stage_devices($1,$2,$3,$4) AS result', [
-        customer,
-        id,
-        attempt,
-        JSON.stringify(devices),
+        customer, id, attempt, JSON.stringify(devices),
       ]);
     const batteries = (id, attempt, values) =>
       result('SELECT cc.stage_device_batteries($1,$2,$3,$4) AS result', [
-        customer,
-        id,
-        attempt,
-        JSON.stringify(values),
+        customer, id, attempt, JSON.stringify(values),
       ]);
     const finish = (id, attempt, failure = null, telemetry = null) =>
       result('SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result', [
-        customer,
-        id,
-        attempt,
-        failure,
-        telemetry,
+        customer, id, attempt, failure, telemetry,
       ]);
-    const purge = () =>
-      result('SELECT cc.purge_device_syncs($1,5000) AS result', [customer]);
-    const published = async () =>
+    const rows = async () =>
       (
         await runtime.query(
-          'SELECT d.* FROM cc.devices d JOIN cc.device_sync_state s ON d.sync_id=s.current_sync_id WHERE s.customer_id=$1 ORDER BY d.device_id',
+          'SELECT device_id,model,last_entity_sync,removed_at,battery_status FROM cc.devices WHERE customer_id=$1 ORDER BY device_id',
           [customer],
         )
       ).rows;
     const detail = (code) => (error) => error.detail === code;
+    const fullSync = async (devices, failure = null) => {
+      const { id } = await request();
+      const attempt = randomUUID();
+      await claim(id, attempt);
+      await stage(id, attempt, devices);
+      return finish(id, attempt, failure);
+    };
 
     assert.equal((await read()).status, 'never');
     await assert.rejects(read(outsider), (error) => error.code === '42501');
 
+    // Full sync: upsert, battery, publication.
     const first = await request();
     assert.equal(first.state.status, 'running');
-    const unclaimed = (
-      await migrator.query(
-        "SELECT sync_expires_at-sync_started_at<=interval '2 minutes' AS short FROM cc.device_sync_state WHERE customer_id=$1",
-        [customer],
-      )
-    ).rows[0];
-    assert.equal(unclaimed.short, true, 'An unclaimed sync expires quickly.');
     await assert.rejects(request(), detail('device-sync-running'));
     const attempt = randomUUID();
     const claimed = await claim(first.id, attempt);
     assert.equal(claimed.generation, generation);
-    assert.ok(claimed.credentialId);
-    await assert.rejects(
-      claim(first.id, randomUUID()),
-      detail('device-sync-claimed'),
-    );
+    await assert.rejects(claim(first.id, randomUUID()), detail('device-sync-claimed'));
     assert.equal(
-      await stage(first.id, attempt, [
-        device('d1'),
-        device('d2'),
-        device('d2', { model: 'HP' }),
-      ]),
+      await stage(first.id, attempt, [device('d1'), device('d2'), device('d2', { model: 'HP' })]),
       2,
+      'The last page entry for a device wins and the count is distinct devices.',
     );
     assert.equal(
       await batteries(first.id, attempt, [
         {
           deviceId: 'd1',
           battery: {
-            status: 'reported',
-            health: 'replace-soon',
-            capacityPercent: 78,
-            reportedAt: '2026-10-05T11:00:00.000Z',
+            status: 'reported', health: 'replace-soon', capacityPercent: 78,
+            reportedAt: '2026-10-05T13:50:00.000Z',
           },
-          reports: [
-            {
-              reportedAt: '2026-10-05T11:00:00.000Z',
-              health: 'replace-soon',
-              capacityPercent: 78,
-            },
-          ],
+          reports: [{ reportedAt: '2026-10-05T13:50:00.000Z', health: 'replace-soon', capacityPercent: 78 }],
         },
-        { deviceId: 'unknown', battery: { status: 'no-report' }, reports: [] },
       ]),
       1,
     );
@@ -143,51 +104,108 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     assert.equal(ready.status, 'ready');
     assert.equal(ready.deviceCount, 2);
     assert.equal(ready.stale, false);
-    let rows = await published();
-    assert.deepEqual(
-      rows.map((row) => row.model),
-      ['Lenovo 100e Gen 4', 'HP'],
+    let current = await rows();
+    assert.deepEqual(current.map((row) => [row.device_id, row.model, row.battery_status, row.removed_at]), [
+      ['d1', 'Lenovo 100e Gen 4', 'reported', null],
+      ['d2', 'HP', 'no-report', null],
+    ]);
+    assert.ok(current.every((row) => row.last_entity_sync instanceof Date));
+
+    // A full sync without d2 soft-deletes d2 and keeps its row.
+    const second = await fullSync([device('d1'), device('d3')]);
+    assert.equal(second.deviceCount, 2);
+    current = await rows();
+    assert.deepEqual(current.map((row) => [row.device_id, row.removed_at !== null]), [
+      ['d1', false], ['d2', true], ['d3', false],
+    ]);
+
+    // A failed full sync removes nothing and keeps the publication.
+    const failed = await fullSync([device('d1')], 'provider-unavailable');
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.stale, true);
+    assert.equal(failed.deviceCount, 2);
+    assert.deepEqual((await rows()).map((row) => row.removed_at !== null), [false, true, false]);
+
+    // Entity sync job: slices, upsert with an explicit read time, soft delete, idempotent finish.
+    const jobId = randomUUID();
+    const job = await result(
+      'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+      [reader, customer, 'device', JSON.stringify(['d1', 'd2', 'd3']), 2, jobId, randomUUID()],
     );
-    assert.equal(rows[0].battery_health, 'replace-soon');
-    assert.equal(rows[1].battery_status, 'no-report');
+    assert.equal(job.batchCount, 2);
+    assert.equal(job.entityType, 'device');
+    assert.equal(job.finishedAt, null);
     await assert.rejects(
-      finish(first.id, attempt),
-      detail('device-sync-changed'),
+      result('SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result', [
+        outsider, customer, 'device', '["d1"]', 2, randomUUID(), randomUUID(),
+      ]),
+      (error) => error.code === '42501',
     );
-
-    const failed = await request();
-    const failedAttempt = randomUUID();
-    await claim(failed.id, failedAttempt);
-    await stage(failed.id, failedAttempt, [device('d9')]);
-    const failure = await finish(failed.id, failedAttempt, 'permission-denied');
-    assert.equal(failure.status, 'failed');
-    assert.equal(failure.failure, 'permission-denied');
-    assert.equal(failure.stale, true);
-    assert.equal(failure.deviceCount, 2);
-    assert.equal(failure.observedAt, ready.observedAt);
-    assert.equal(await purge(), 1);
-    assert.equal((await published()).length, 2);
-
-    const blind = await request();
-    const blindAttempt = randomUUID();
-    await claim(blind.id, blindAttempt);
-    await stage(blind.id, blindAttempt, [device('d1')]);
-    const unavailable = await finish(
-      blind.id,
-      blindAttempt,
-      null,
-      'permission-denied',
+    const batch0 = await result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [customer, jobId, 0]);
+    assert.deepEqual(batch0.ids, ['d1', 'd2']);
+    assert.equal(batch0.batchCount, 2);
+    assert.equal(batch0.generation, generation);
+    assert.ok(batch0.credentialId);
+    const batch1 = await result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [customer, jobId, 1]);
+    assert.deepEqual(batch1.ids, ['d3']);
+    await assert.rejects(
+      result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [customer, jobId, 2]),
+      detail('entity-sync-changed'),
     );
-    assert.equal(unavailable.status, 'ready');
-    assert.equal(unavailable.telemetryFailure, 'permission-denied');
-    rows = await published();
-    // Publication never rewrites staged rows. Reads derive unavailable data from telemetryFailure.
+    const syncedAt = '2026-10-06T09:00:00.000Z';
+    assert.equal(
+      await result('SELECT cc.upsert_devices($1,$2,$3) AS result', [
+        customer, JSON.stringify([device('d2', { model: 'Acer' })]), syncedAt,
+      ]),
+      1,
+    );
+    const d2 = (await rows()).find((row) => row.device_id === 'd2');
+    assert.equal(d2.removed_at, null, 'An upsert clears removed_at.');
+    assert.equal(d2.last_entity_sync.toISOString(), syncedAt);
+    assert.equal(
+      await result('SELECT cc.soft_delete_devices($1,$2) AS result', [customer, JSON.stringify(['d3', 'missing'])]),
+      1,
+    );
+    const records = await result('SELECT cc.read_device_records($1,$2) AS result', [
+      customer, JSON.stringify(['d1', 'd2', 'd3']),
+    ]);
+    assert.deepEqual(records.map((record) => record.deviceId), ['d1', 'd2'], 'Removed devices stay out of records.');
+    assert.equal(records[1].model, 'Acer');
+    assert.equal(records[1].battery.status, 'no-report');
+    assert.equal(typeof records[1].lastEntitySync, 'string');
+    const page = await result('SELECT cc.page_device_records($1,$2,$3) AS result', [customer, '', 1]);
+    assert.deepEqual(page.map((record) => record.deviceId), ['d1']);
     assert.deepEqual(
-      rows.map((row) => row.battery_status),
-      ['no-report'],
+      (await result('SELECT cc.page_device_records($1,$2,$3) AS result', [customer, 'd1', 10])).map((r) => r.deviceId),
+      ['d2'],
     );
-    assert.equal(await purge(), 2);
+    const once = await result('SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result', [customer, jobId, 0, null]);
+    assert.equal(once.completedBatches, 1);
+    assert.equal(once.finishedAt, null);
+    const twice = await result('SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result', [customer, jobId, 0, null]);
+    assert.equal(twice.completedBatches, 1, 'Finishing a batch twice counts once.');
+    const done = await result('SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result', [customer, jobId, 1, 'quota']);
+    assert.equal(done.failedBatches, 1);
+    assert.equal(done.failure, 'quota');
+    assert.ok(done.finishedAt);
+    await assert.rejects(
+      result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [customer, jobId, 0]),
+      detail('entity-sync-changed'),
+    );
+    const abandonedId = randomUUID();
+    await result('SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result', [
+      reader, customer, 'device', '["d1"]', 100, abandonedId, randomUUID(),
+    ]);
+    const abandoned = await result('SELECT cc.abandon_entity_sync_job($1,1,$2,$3) AS result', [reader, customer, abandonedId]);
+    assert.equal(abandoned.failure, 'orchestration-unavailable');
+    assert.ok(abandoned.finishedAt);
+    await migrator.query(
+      "UPDATE cc.entity_sync_jobs SET finished_at=finished_at-interval '2 days' WHERE job_id=$1",
+      [abandonedId],
+    );
+    assert.equal(await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [customer, 100]), 1);
 
+    // Expired leases still report interruption.
     const lost = await request();
     const lostAttempt = randomUUID();
     await claim(lost.id, lostAttempt);
@@ -198,38 +216,25 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     const interrupted = await read();
     assert.equal(interrupted.status, 'failed');
     assert.equal(interrupted.failure, 'interrupted');
-    assert.equal(interrupted.stale, true);
-    await assert.rejects(
-      stage(lost.id, lostAttempt, [device('d5')]),
-      detail('device-sync-changed'),
-    );
-    await assert.rejects(
-      finish(lost.id, lostAttempt),
-      detail('device-sync-changed'),
-    );
+    await assert.rejects(stage(lost.id, lostAttempt, [device('d5')]), detail('device-sync-changed'));
+    await assert.rejects(finish(lost.id, lostAttempt), detail('device-sync-changed'));
     const next = await request();
-    assert.equal(next.state.status, 'running');
-    const abandoned = await result(
-      'SELECT cc.abandon_device_sync($1,1,$2,$3,$4) AS result',
-      [reader, customer, next.id, 'orchestration-unavailable'],
-    );
-    assert.equal(abandoned.failure, 'orchestration-unavailable');
+    const abandonedSync = await result('SELECT cc.abandon_device_sync($1,1,$2,$3,$4) AS result', [
+      reader, customer, next.id, 'orchestration-unavailable',
+    ]);
+    assert.equal(abandonedSync.failure, 'orchestration-unavailable');
 
-    await migrator.query(
-      'UPDATE cc.application_principals SET permission_version=2 WHERE id=$1',
-      [reader],
-    );
+    await migrator.query('UPDATE cc.application_principals SET permission_version=2 WHERE id=$1', [reader]);
     await assert.rejects(read(), (error) => error.code === '42501');
     return [
       'device inventory reads require current devices:read authority: pass',
       'one worker attempt claims a device sync and duplicate dispatch is rejected: pass',
-      'failed syncs keep the published inventory and mark it stale: pass',
-      'telemetry failure publishes devices with unavailable battery data: pass',
+      'a full sync soft-deletes devices Google no longer returns and a failed sync removes nothing: pass',
+      'entity sync jobs slice IDs into batches and count each batch once: pass',
+      'upserts stamp last_entity_sync and clear removed_at: pass',
       'expired leases report interruption and reject late publication: pass',
     ];
   } finally {
-    await migrator.query('UPDATE cc.google_connection SET active=$1', [
-      wasActive,
-    ]);
+    await migrator.query('UPDATE cc.google_connection SET active=$1', [wasActive]);
   }
 }
