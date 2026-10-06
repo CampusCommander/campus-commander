@@ -14,19 +14,34 @@ import {
   type GridApi,
   type GridOptions,
   type GridReadyEvent,
+  type GridState,
 } from 'ag-grid-community';
 import { ServerSideRowModelModule } from '@libregrid/server-side-row-model';
-import type { DevicePage, DeviceRow } from '@campus/application-contracts';
+import { SetFilterModule } from '@libregrid/set-filter';
+import type {
+  DeviceOrgUnit,
+  DevicePage,
+  DevicePredicate,
+  DeviceRow,
+} from '@campus/application-contracts';
 import { detailsKeyHandler, deviceColumnDefs } from './device-columns';
 import {
+  defaultGridState,
   deviceDatasource,
-  initialSortState,
+  savedGridState,
   type DeviceLoader,
-  type DeviceSort,
 } from './device-datasource';
+import {
+  filterModelUpdate,
+  predicatesFromFilterModel,
+} from './device-filter-model';
 import type { OptionalDeviceColumn } from './devices.store';
 
-ModuleRegistry.registerModules([AllCommunityModule, ServerSideRowModelModule]);
+ModuleRegistry.registerModules([
+  AllCommunityModule,
+  ServerSideRowModelModule,
+  SetFilterModule,
+]);
 
 export interface DeviceRange {
   first: number;
@@ -77,11 +92,15 @@ export class DeviceGrid implements OnInit {
   });
   /** Row to scroll into view after the first block loads, such as after Back to devices. */
   readonly focusIndex = input<number | null>(null);
-  /** Header sort to show when the grid opens. The store keeps it across navigation. */
-  readonly sort = input<DeviceSort>({
-    field: 'serialNumber',
-    direction: 'asc',
-  });
+  /** Saved grid state to open with, such as after Back to devices. */
+  readonly state = input<GridState | null>(null);
+  /** Receives the grid state when the grid closes. */
+  readonly saveState = input<(state: GridState) => void>(() => undefined);
+  /** The chips. The grid shows them as column filters. */
+  readonly predicates = input<DevicePredicate[]>([]);
+  /** Organization units for the OrgUnit set filter. */
+  readonly orgUnits = input<readonly DeviceOrgUnit[]>([]);
+  readonly filtersChange = output<DevicePredicate[]>();
   readonly details = output<{ row: DeviceRow; index: number }>();
   readonly rangeChange = output<DeviceRange | null>();
 
@@ -98,6 +117,10 @@ export class DeviceGrid implements OnInit {
       const columns = this.optionalColumns();
       untracked(() => this.applyColumns(columns));
     });
+    effect(() => {
+      const predicates = this.predicates();
+      untracked(() => this.applyPredicates(predicates));
+    });
   }
 
   ngOnInit(): void {
@@ -111,9 +134,14 @@ export class DeviceGrid implements OnInit {
         borderColor: 'var(--cc-border)',
         foregroundColor: 'var(--cc-text-primary)',
       }),
-      columnDefs: deviceColumnDefs(open),
+      columnDefs: deviceColumnDefs(open, {
+        orgUnits: () => this.orgUnits().map((unit) => unit.path),
+      }),
       onCellKeyDown: detailsKeyHandler(open),
-      initialState: initialSortState(this.sort()),
+      initialState: this.state() ?? defaultGridState(),
+      onFilterChanged: () => this.filtersChanged(),
+      onGridPreDestroyed: ({ state }) =>
+        this.saveState()(savedGridState(state)),
       getRowId: ({ data }) => data.deviceId,
       rowModelType: 'serverSide',
       cacheBlockSize: 100,
@@ -124,6 +152,7 @@ export class DeviceGrid implements OnInit {
   protected ready(event: GridReadyEvent<DeviceRow>): void {
     this.api = event.api;
     this.applyColumns(this.optionalColumns());
+    this.applyPredicates(this.predicates());
     this.reload();
   }
 
@@ -132,7 +161,7 @@ export class DeviceGrid implements OnInit {
     this.api?.setGridOption(
       'serverSideDatasource',
       deviceDatasource(
-        (offset, limit, sort) => this.load()(offset, limit, sort),
+        (offset, limit, view) => this.load()(offset, limit, view),
         (page) => this.restore(page),
       ),
     );
@@ -144,6 +173,22 @@ export class DeviceGrid implements OnInit {
       columns.annotatedLocation,
     );
     this.api?.setColumnsVisible(['notes'], columns.notes);
+  }
+
+  private applyPredicates(predicates: readonly DevicePredicate[]): void {
+    const api = this.api;
+    const next = api && filterModelUpdate(api.getFilterModel(), predicates);
+    if (next) api?.setFilterModel(next);
+  }
+
+  private filtersChanged(): void {
+    const api = this.api;
+    if (!api) return;
+    try {
+      this.filtersChange.emit(predicatesFromFilterModel(api.getFilterModel()));
+    } catch {
+      // The datasource fails the load for a model the query cannot express.
+    }
   }
 
   /** Scroll the remembered row into view once the server reports enough rows. */

@@ -6,8 +6,9 @@ import { vi } from 'vitest';
 import type { DeviceRow } from '@campus/application-contracts';
 import { detailsKeyHandler, deviceColumnDefs } from './device-columns';
 import {
+  defaultGridState,
   deviceDatasource,
-  initialSortState,
+  savedGridState,
   sortFromModel,
 } from './device-datasource';
 
@@ -57,7 +58,7 @@ it('orders columns after the details icon and hides optional fields', () => {
   expect(value('notes')).toBe('');
 });
 
-it('loads grid blocks from the device query with the header sort', async () => {
+it('loads grid blocks with the column filters and the header sort', async () => {
   const load = vi.fn().mockResolvedValue({
     rows: [row],
     matching: 96,
@@ -71,17 +72,40 @@ it('loads grid blocks from the device query with the header sort', async () => {
       startRow: 100,
       endRow: 200,
       sortModel: [{ colId: 'assetTag', sort: 'desc' }],
+      filterModel: {
+        assetTag: { filterType: 'text', type: 'startsWith', filter: 'HS-04' },
+      },
     },
     success,
     fail,
   } as unknown as IServerSideGetRowsParams<DeviceRow>);
   await vi.waitFor(() => expect(success).toHaveBeenCalled());
   expect(load).toHaveBeenCalledWith(100, 100, {
-    field: 'assetTag',
-    direction: 'desc',
+    predicates: [{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }],
+    sort: { field: 'assetTag', direction: 'desc' },
+    selection: null,
   });
   expect(success).toHaveBeenCalledWith({ rowData: [row], rowCount: 96 });
   expect(fail).not.toHaveBeenCalled();
+});
+
+it('fails the block for a filter the device query cannot express', () => {
+  const load = vi.fn();
+  const fail = vi.fn();
+  deviceDatasource(load).getRows({
+    request: {
+      startRow: 0,
+      endRow: 100,
+      sortModel: [],
+      filterModel: {
+        model: { filterType: 'text', type: 'notContains', filter: 'x' },
+      },
+    },
+    success: vi.fn(),
+    fail,
+  } as unknown as IServerSideGetRowsParams<DeviceRow>);
+  expect(fail).toHaveBeenCalled();
+  expect(load).not.toHaveBeenCalled();
 });
 
 it('fails the block when the query fails', async () => {
@@ -105,10 +129,22 @@ it('falls back to serial order for columns without a query field', () => {
   });
 });
 
-it('starts the grid with the stored sort', () => {
-  expect(initialSortState({ field: 'assetTag', direction: 'desc' })).toEqual({
-    sort: { sortModel: [{ colId: 'assetTag', sort: 'desc' }] },
+it('starts in serial order and saves grid state without row selection', () => {
+  expect(defaultGridState()).toEqual({
+    sort: { sortModel: [{ colId: 'serialNumber', sort: 'asc' }] },
   });
+  const sort = { sortModel: [{ colId: 'assetTag', sort: 'desc' as const }] };
+  const filter = {
+    filterModel: { notes: { filterType: 'text', type: 'blank' } },
+  };
+  expect(
+    savedGridState({
+      sort,
+      filter,
+      rowSelection: ['d1'],
+      pagination: { page: 2, pageSize: 100 },
+    }),
+  ).toEqual({ sort, filter, pagination: { page: 2, pageSize: 100 } });
 });
 
 it('reports each loaded page after the grid receives its rows', async () => {

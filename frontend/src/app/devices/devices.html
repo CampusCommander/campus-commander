@@ -171,7 +171,11 @@
       [revision]="store.revision()"
       [optionalColumns]="store.optionalColumns()"
       [focusIndex]="store.position()?.index ?? null"
-      [sort]="store.sort()"
+      [state]="store.gridState()"
+      [saveState]="saveState"
+      [predicates]="store.predicates()"
+      [orgUnits]="store.orgUnits()"
+      (filtersChange)="store.setPredicates($event)"
       (details)="open($event)"
       (rangeChange)="range.set($event)"
     />

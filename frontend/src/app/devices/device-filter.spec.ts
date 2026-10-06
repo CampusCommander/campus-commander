@@ -148,12 +148,7 @@ it('applies an organization unit with the units inside it', () => {
   ];
   expect(button('Apply').disabled).toBe(true);
   click(boxes()[1]);
-  expect(boxes().map((box) => box.checked)).toEqual([
-    false,
-    true,
-    true,
-    false,
-  ]);
+  expect(boxes().map((box) => box.checked)).toEqual([false, true, true, false]);
   expect(boxes()[0].indeterminate).toBe(true);
   click(button('Apply'));
   expect(applied).toEqual([

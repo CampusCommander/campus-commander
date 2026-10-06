@@ -19,7 +19,8 @@ import type { DevicePredicate, DeviceRow } from '@campus/application-contracts';
 import { DevicesStore, type OptionalDeviceColumn } from './devices.store';
 import { DeviceGrid, type DeviceRange } from './device-grid';
 import { DeviceFilter } from './device-filter';
-import type { DeviceSort } from './device-datasource';
+import type { DeviceView } from './device-datasource';
+import type { GridState } from 'ag-grid-community';
 import {
   chipLabel,
   syncFailureText,
@@ -70,11 +71,13 @@ export class DevicesPage implements OnInit {
   protected readonly load = (
     offset: number,
     limit: number,
-    sort: DeviceSort,
+    view: DeviceView,
   ) => {
-    this.store.setSort(sort);
+    this.store.setView(view);
     return this.store.rows(offset, limit);
   };
+  protected readonly saveState = (state: GridState) =>
+    this.store.gridState.set(state);
 
   constructor() {
     effect(() => {
@@ -99,14 +102,20 @@ export class DevicesPage implements OnInit {
     void this.store.reconnect();
   }
 
+  /** One filter per field. A chip for a filtered field replaces that filter. */
   protected apply(predicate: DevicePredicate): void {
     const index = this.editingIndex();
-    const predicates = [...this.store.predicates()];
-    if (index === null || index >= predicates.length)
-      predicates.push(predicate);
-    else predicates[index] = predicate;
+    const current = this.store.predicates();
+    const at =
+      index !== null && index < current.length
+        ? index
+        : current.findIndex((item) => item.field === predicate.field);
     // The editor emits closed next. editorClosed() clears the index and restores focus.
-    this.store.setPredicates(predicates);
+    this.store.setPredicates(
+      at === -1
+        ? [...current, predicate]
+        : current.map((item, position) => (position === at ? predicate : item)),
+    );
   }
 
   protected remove(index: number): void {

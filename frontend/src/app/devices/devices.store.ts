@@ -15,11 +15,17 @@ import {
   type DeviceOrgUnit,
   type DevicePage,
   type DevicePredicate,
-  type DeviceQuery,
   type DeviceRow,
   type DeviceSyncState,
 } from '@campus/application-contracts';
+import type { GridState } from 'ag-grid-community';
 import { AuthStore } from '../auth.store';
+import type { DeviceView } from './device-datasource';
+import { samePredicates } from './device-filter-model';
+import {
+  DeviceSelectionProvider,
+  deviceSelectionTab,
+} from './device-selection';
 
 export type OptionalDeviceColumn = 'annotatedLocation' | 'notes';
 
@@ -32,6 +38,12 @@ export function devicesReadable(auth: InstanceType<typeof AuthStore>): boolean {
   );
 }
 
+const defaultView = (): DeviceView => ({
+  predicates: [],
+  sort: { field: 'serialNumber', direction: 'asc' },
+  selection: null,
+});
+
 /** Browsing state survives navigation between the grid and device details. */
 @Injectable({ providedIn: 'root' })
 export class DevicesStore {
@@ -41,10 +53,14 @@ export class DevicesStore {
   readonly sync = signal<DeviceSyncState | null>(null);
   readonly syncLoaded = signal(false);
   readonly predicates = signal<DevicePredicate[]>([]);
-  readonly sort = signal<DeviceQuery['sort']>({
-    field: 'serialNumber',
-    direction: 'asc',
-  });
+  /** The query the grid last ran. Next device follows it. */
+  readonly view = signal<DeviceView>(defaultView());
+  /** Grid columns, filters, sort, and page, kept while device details are open. */
+  readonly gridState = signal<GridState | null>(null);
+  readonly selection = new DeviceSelectionProvider((path, body) =>
+    this.call(path, body),
+  );
+  readonly selectionTab = deviceSelectionTab();
   readonly page = signal<Omit<DevicePage, 'rows'> | null>(null);
   readonly orgUnits = signal<DeviceOrgUnit[]>([]);
   readonly offline = signal(false);
@@ -81,7 +97,9 @@ export class DevicesStore {
     this.sync.set(null);
     this.syncLoaded.set(false);
     this.predicates.set([]);
-    this.sort.set({ field: 'serialNumber', direction: 'asc' });
+    this.view.set(defaultView());
+    this.gridState.set(null);
+    this.selection.spec.set(null);
     this.page.set(null);
     this.orgUnits.set([]);
     this.offline.set(false);
@@ -164,17 +182,17 @@ export class DevicesStore {
   }
 
   async rows(offset: number, limit: number): Promise<DevicePage | null> {
+    const view = this.view();
     const revision = this.revision();
     const response = await this.call('/api/devices/query', {
-      predicates: this.predicates(),
-      sort: this.sort(),
+      ...view,
       offset,
       limit,
     });
     if (!response?.ok) return null;
     const page = devicePageSchema.parse((await response.json()).page);
-    // A response for filters that changed meanwhile must not replace the counts.
-    if (revision !== this.revision()) return page;
+    // A response for a query that changed meanwhile must not replace the counts.
+    if (view !== this.view() || revision !== this.revision()) return page;
     this.page.set({
       matching: page.matching,
       total: page.total,
@@ -202,18 +220,17 @@ export class DevicesStore {
     );
   }
 
+  /** Chips and column filters both land here. The grid applies them and reloads itself. */
   setPredicates(predicates: DevicePredicate[]): void {
+    if (samePredicates(predicates, this.predicates())) return;
     this.predicates.set(predicates);
     this.position.set(null);
-    this.revision.update((value) => value + 1);
   }
 
-  /** The grid calls this when a header sort changes. The grid reloads itself. */
-  setSort(sort: DeviceQuery['sort']): void {
-    const current = this.sort();
-    if (current.field === sort.field && current.direction === sort.direction)
-      return;
-    this.sort.set(sort);
+  /** The grid reports each query it runs. A different query forgets the opened row. */
+  setView(view: DeviceView): void {
+    if (JSON.stringify(view) === JSON.stringify(this.view())) return;
+    this.view.set(view);
     this.position.set(null);
   }
 }

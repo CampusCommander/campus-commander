@@ -58,16 +58,18 @@ function setup(
 it('queries rows with the active filters and sort and keeps the counts', async () => {
   const request = vi.fn().mockResolvedValue(Response.json({ page }));
   const store = setup(request);
-  store.setPredicates([
-    { field: 'assetTag', operator: 'startsWith', value: 'HS-04' },
-  ]);
-  store.setSort({ field: 'assetTag', direction: 'desc' });
+  store.setView({
+    predicates: [{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }],
+    sort: { field: 'assetTag', direction: 'desc' },
+    selection: null,
+  });
   await store.rows(100, 100);
   expect(request).toHaveBeenCalledWith('/api/devices/query', {
     predicates: [{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }],
     sort: { field: 'assetTag', direction: 'desc' },
     offset: 100,
     limit: 100,
+    selection: null,
   });
   expect(store.page()).toEqual({
     matching: 96,
@@ -130,13 +132,50 @@ it('follows a refresh that is already running', async () => {
   expect(store.error()).toBe('');
 });
 
-it('changing filters reloads the grid and forgets the row position', () => {
+it('changing filters forgets the row position and leaves reloads to the grid', () => {
   const store = setup(vi.fn());
   store.position.set({ index: 4, deviceId: 'd4' });
   const before = store.revision();
   store.setPredicates([{ field: 'notes', operator: 'isEmpty' }]);
-  expect(store.revision()).toBe(before + 1);
+  expect(store.revision()).toBe(before);
   expect(store.position()).toBeNull();
+  store.position.set({ index: 4, deviceId: 'd4' });
+  store.setPredicates([{ field: 'notes', operator: 'isEmpty' }]);
+  expect(store.position()).toEqual({ index: 4, deviceId: 'd4' });
+});
+
+it('a different grid query forgets the opened row and the same query keeps it', () => {
+  const store = setup(vi.fn());
+  const view = {
+    predicates: [],
+    sort: { field: 'serialNumber' as const, direction: 'asc' as const },
+    selection: null,
+  };
+  store.position.set({ index: 4, deviceId: 'd4' });
+  store.setView({ ...view });
+  expect(store.position()).not.toBeNull();
+  store.setView({
+    ...view,
+    selection: { gridId: 'devices', tabId: store.selectionTab },
+  });
+  expect(store.position()).toBeNull();
+});
+
+it('sends selection requests through the signed-in connection', async () => {
+  const request = vi.fn().mockResolvedValue(
+    Response.json({
+      selection: { terms: [], added: 0, excluded: 0, selectedCount: 0 },
+    }),
+  );
+  const store = setup(request);
+  await store.selection.getSpec({
+    gridId: 'devices',
+    tabId: store.selectionTab,
+  });
+  expect(request).toHaveBeenCalledWith('/api/devices/selection', {
+    gridId: 'devices',
+    tabId: store.selectionTab,
+  });
 });
 
 it('resumes following a running refresh after Reconnect', async () => {
@@ -182,7 +221,11 @@ it('ignores counts from a query whose filters changed meanwhile', async () => {
   );
   const store = setup(request);
   const pending = store.rows(0, 100);
-  store.setPredicates([{ field: 'notes', operator: 'isEmpty' }]);
+  store.setView({
+    predicates: [{ field: 'notes', operator: 'isEmpty' }],
+    sort: { field: 'serialNumber', direction: 'asc' },
+    selection: null,
+  });
   finish(Response.json({ page }));
   await pending;
   expect(store.page()).toBeNull();
@@ -194,8 +237,11 @@ it('clears browsing state when a different person signs in', () => {
   TestBed.tick();
   store.setPredicates([{ field: 'notes', operator: 'isEmpty' }]);
   store.position.set({ index: 2, deviceId: 'd2' });
+  store.gridState.set({ pagination: { page: 3, pageSize: 100 } });
   session.set(sessionFor('someone-else'));
   TestBed.tick();
   expect(store.predicates()).toEqual([]);
   expect(store.position()).toBeNull();
+  expect(store.gridState()).toBeNull();
+  expect(store.view().predicates).toEqual([]);
 });

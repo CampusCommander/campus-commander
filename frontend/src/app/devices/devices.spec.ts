@@ -1,11 +1,13 @@
 import { Component, computed, input, output, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
   DevicePredicate,
   DeviceSyncState,
 } from '@campus/application-contracts';
+import { DeviceFilter } from './device-filter';
 import { DeviceGrid } from './device-grid';
 import { DevicesPage } from './devices';
 import { DevicesStore } from './devices.store';
@@ -19,9 +21,13 @@ class GridStub {
   readonly revision = input(0);
   readonly optionalColumns = input<unknown>();
   readonly focusIndex = input<number | null>(null);
-  readonly sort = input<unknown>();
+  readonly state = input<unknown>();
+  readonly saveState = input<unknown>();
+  readonly predicates = input<unknown>();
+  readonly orgUnits = input<unknown>();
   readonly details = output<unknown>();
   readonly rangeChange = output<unknown>();
+  readonly filtersChange = output<unknown>();
 }
 
 const ready = (extra: Partial<DeviceSyncState> = {}): DeviceSyncState => ({
@@ -49,10 +55,16 @@ function setup(options: {
     sync,
     syncLoaded: signal(true),
     predicates: signal(options.predicates ?? []),
+    view: signal({
+      predicates: options.predicates ?? [],
+      sort: { field: 'serialNumber', direction: 'asc' },
+      selection: null as unknown,
+    }),
+    gridState: signal(null),
+    setView: vi.fn(),
     page: signal(options.page ?? null),
     orgUnits: signal([]),
     offline: signal(options.offline ?? false),
-    sort: signal({ field: 'serialNumber', direction: 'asc' }),
     error: signal(''),
     revision: signal(0),
     position: signal<number | null>(null),
@@ -62,7 +74,6 @@ function setup(options: {
     refreshAll: vi.fn().mockResolvedValue(undefined),
     reconnect: vi.fn().mockResolvedValue(undefined),
     setPredicates: vi.fn(),
-    setSort: vi.fn(),
     rows: vi.fn(),
     loadOrgUnits: vi.fn().mockResolvedValue(undefined),
   };
@@ -201,4 +212,32 @@ it('returns focus to the chip after cancelling its edit', async () => {
   expect(document.activeElement?.textContent?.trim()).toBe(
     'Model contains: Lenovo',
   );
+});
+
+it('replaces the filter of a field that already has one', () => {
+  const { store, fixture } = setup({
+    sync: ready(),
+    predicates: twoChips,
+    page: { matching: 10, total: 450, observedAt: '2026-10-05T12:00:00.000Z' },
+  });
+  const filter = fixture.debugElement.query(By.directive(DeviceFilter))
+    .componentInstance as DeviceFilter;
+  filter.applied.emit({ field: 'model', operator: 'contains', value: 'Dell' });
+  expect(store.setPredicates).toHaveBeenCalledWith([
+    twoChips[0],
+    { field: 'model', operator: 'contains', value: 'Dell' },
+  ]);
+});
+
+it('takes filters from the grid column filters', () => {
+  const { store, fixture } = setup({
+    sync: ready(),
+    page: { matching: 10, total: 450, observedAt: '2026-10-05T12:00:00.000Z' },
+  });
+  const grid = fixture.debugElement.query(By.directive(GridStub))
+    .componentInstance as GridStub;
+  grid.filtersChange.emit([{ field: 'notes', operator: 'isEmpty' }]);
+  expect(store.setPredicates).toHaveBeenCalledWith([
+    { field: 'notes', operator: 'isEmpty' },
+  ]);
 });
