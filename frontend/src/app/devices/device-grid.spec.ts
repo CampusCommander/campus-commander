@@ -30,10 +30,9 @@ const row: DeviceRow = {
 type Getter = (params: { data: DeviceRow }) => unknown;
 
 it('orders columns after the details icon and hides optional fields', () => {
-  const columns = deviceColumnDefs(
-    () => undefined,
-    () => Date.parse('2026-10-05T12:00:00Z'),
-  );
+  const columns = deviceColumnDefs(() => undefined, {
+    now: () => Date.parse('2026-10-05T12:00:00Z'),
+  });
   expect(columns.map((column) => column.colId)).toEqual([
     'details',
     'serialNumber',
@@ -130,7 +129,7 @@ it('reports each loaded page after the grid receives its rows', async () => {
   await vi.waitFor(() => expect(order).toEqual(['success', 'loaded 96']));
 });
 
-it('opens details with Enter or Space on the details cell', () => {
+it('opens details with Enter and leaves Space to row selection', () => {
   const onDetails = vi.fn();
   const handler = detailsKeyHandler(onDetails);
   const press = (colId: string, key: string) =>
@@ -143,9 +142,45 @@ it('opens details with Enter or Space on the details cell', () => {
   press('details', 'Enter');
   press('details', ' ');
   press('serialNumber', 'Enter');
-  press('details', 'a');
-  expect(onDetails.mock.calls).toEqual([
-    [row, 3],
-    [row, 3],
+  expect(onDetails.mock.calls).toEqual([[row, 3]]);
+});
+
+it('gives each data column the filter of its field type', () => {
+  const columns = deviceColumnDefs(() => undefined, {
+    orgUnits: () => ['/', '/School A'],
+  });
+  const column = (id: string) =>
+    columns.find((candidate) => candidate.colId === id)!;
+  expect(column('details').filter).toBe(false);
+  expect(column('assetTag').filter).toBe('agTextColumnFilter');
+  expect(column('assetTag').filterParams.filterOptions).toEqual([
+    'contains',
+    'startsWith',
+    'equals',
+    'blank',
   ]);
+  expect(
+    column('lastContact').filterParams.filterOptions.map(
+      (option: { displayKey: string }) => option.displayKey,
+    ),
+  ).toEqual(['before', 'after']);
+  expect(column('battery').filter).toBe('agSetColumnFilter');
+  expect(column('battery').filterParams.values).toEqual([
+    'normal',
+    'replace-soon',
+    'replace-now',
+    'no-report',
+    'unavailable',
+  ]);
+  expect(
+    column('battery').filterParams.valueFormatter({ value: 'no-report' }),
+  ).toBe('No battery report');
+  const units: string[][] = [];
+  column('orgUnitPath').filterParams.values({
+    success: (values: string[]) => units.push(values),
+  });
+  expect(units).toEqual([['/', '/School A']]);
+  expect(
+    column('orgUnitPath').filterParams.treeListPathGetter('/School A'),
+  ).toEqual(['/', 'School A']);
 });
