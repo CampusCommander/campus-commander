@@ -54,7 +54,7 @@ export async function qualifyDevicesApi({
     assert.equal((await api.post(`${root}/sync`, { data: {} })).status(), 403);
     assert.equal(
       (
-        await api.post(`${root}/query`, { headers, data: { limit: 500 } })
+        await api.post(`${root}/query`, { headers, data: { limit: 1001 } })
       ).status(),
       400,
     );
@@ -136,6 +136,7 @@ export async function qualifyDevicesApi({
       ).selection,
       {
         terms: [{ type: 'all', predicates: hs04 }],
+        groups: [],
         added: 0,
         excluded: 0,
         selectedCount: 96,
@@ -189,6 +190,72 @@ export async function qualifyDevicesApi({
         .selectedCount,
       0,
     );
+    const groups = async (data) => {
+      const response = await api.post(`${root}/groups`, { headers, data });
+      assert.equal(response.status(), 200, await response.text());
+      return (await response.json()).groups;
+    };
+    const battery = await groups({ group: { by: ['battery'], keys: [] } });
+    assert.equal(battery.matching, 450);
+    assert.equal(battery.groupCount, battery.groups.length);
+    assert.equal(
+      battery.groups.reduce((sum, group) => sum + group.devices, 0),
+      450,
+    );
+    assert.equal(
+      battery.groups.find((group) => group.key === 'replace-soon')?.devices,
+      135,
+    );
+    assert.equal(battery.groups[0].key, 'normal');
+    const schoolA = await groups({
+      group: { by: ['orgUnitPath', 'model'], keys: ['/School A'] },
+    });
+    assert.equal(schoolA.matching, 150);
+    assert.equal(
+      (
+        await query({
+          group: { by: ['battery'], keys: ['replace-soon'] },
+          limit: 1000,
+        })
+      ).rows.length,
+      135,
+    );
+    // While grouped, LibreGrid selects whole groups under the active filters.
+    const grouped = {
+      predicates: hs04,
+      by: ['battery'],
+      route: ['replace-soon'],
+    };
+    assert.equal(
+      (
+        await select('/ops', {
+          ...tab,
+          ops: [{ op: 'selectGroup', ...grouped }],
+        })
+      ).selection.selectedCount,
+      29,
+    );
+    assert.deepEqual(
+      (
+        await select('/resolve', {
+          ...tab,
+          rowIds: [],
+          groupRoutes: ['replace-soon', 'normal', 'no|such'],
+          predicates: hs04,
+          by: ['battery'],
+        })
+      ).selected,
+      { 'replace-soon': true, normal: false, 'no|such': false },
+    );
+    assert.equal(
+      (
+        await select('/ops', {
+          ...tab,
+          ops: [{ op: 'deselectGroup', ...grouped }],
+        })
+      ).selection.selectedCount,
+      0,
+    );
     const detail = await (await api.get(`${root}/synthetic-device-1`)).json();
     assert.deepEqual(
       {
@@ -231,6 +298,7 @@ export async function qualifyDevicesApi({
       'device sync runs through Kestra and the worker and publishes 450 simulated devices: pass',
       'device filters match asset tag, battery class, and organization unit counts: pass',
       'device selection keeps Select All terms, row exceptions, and per-tab isolation: pass',
+      'device groups count devices and select whole groups: pass',
       'device details include Google battery class, capacity, and recent reports: pass',
       'telemetry denial publishes devices with unavailable battery data: pass',
       'inventory denial keeps the published devices and marks them stale: pass',

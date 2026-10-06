@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import {
+  deviceGroupQuerySchema,
   deviceQuerySchema,
   deviceSelectionChangeSchema,
   deviceSelectionKeySchema,
@@ -70,6 +71,14 @@ export class DevicesController {
     return { page: await this.devices.page(request.session, input) };
   }
 
+  @Post('groups')
+  @HttpCode(200)
+  async groups(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    const input = deviceGroupQuerySchema.parse(body);
+    await this.current(request);
+    return { groups: await this.devices.groups(request.session, input) };
+  }
+
   @Post('selection')
   @HttpCode(200)
   async selection(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
@@ -108,6 +117,9 @@ export class DevicesController {
         request.session,
         { gridId: input.gridId, tabId: input.tabId },
         input.rowIds,
+        input.groupRoutes,
+        input.predicates,
+        input.by,
       ),
     };
   }

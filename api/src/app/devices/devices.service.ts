@@ -10,10 +10,14 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import {
+  deviceGroupPageSchema,
   deviceOrgUnitsSchema,
   devicePageSchema,
   deviceSyncStateSchema,
   type DeviceDetail,
+  type DeviceGroupField,
+  type DeviceGroupPage,
+  type DeviceGrouping,
   type DeviceOrgUnit,
   type DevicePage,
   type DevicePredicate,
@@ -41,11 +45,14 @@ import { OrchestrationService } from '../orchestration/orchestration.service';
 import {
   deviceDetail,
   deviceDetailSql,
+  deviceGroupsSql,
   devicePageSql,
+  groupSelectionSql,
   deviceRow,
   deviceOrgUnitsSql,
   matchingAmongSql,
   selectedAmongSql,
+  selectedInSql,
   selectionCountSql,
 } from './device-query';
 
@@ -162,6 +169,23 @@ export class DevicesService {
     }
   }
 
+  /** The district total and observation time of the published inventory. */
+  private async inventory(client: PoolClient, customerId: string) {
+    const state = (
+      await client.query(
+        'SELECT device_count,observed_at FROM cc.device_sync_state WHERE customer_id=$1',
+        [customerId],
+      )
+    ).rows[0];
+    return {
+      total: state?.['device_count'] ?? 0,
+      observedAt:
+        state?.['observed_at'] instanceof Date
+          ? state['observed_at'].toISOString()
+          : null,
+    };
+  }
+
   async page(
     session: SessionResponse,
     query: DeviceQuery,
@@ -169,12 +193,7 @@ export class DevicesService {
     return this.read(
       session,
       async (client, customerId) => {
-        const state = (
-          await client.query(
-            'SELECT device_count,observed_at FROM cc.device_sync_state WHERE customer_id=$1',
-            [customerId],
-          )
-        ).rows[0];
+        const inventory = await this.inventory(client, customerId);
         const selection = query.selection
           ? await this.storedSelection(session, query.selection)
           : null;
@@ -185,14 +204,40 @@ export class DevicesService {
         return devicePageSchema.parse({
           rows: rows.map(deviceRow),
           matching: matching ?? 0,
-          total: state?.['device_count'] ?? 0,
-          observedAt:
-            state?.['observed_at'] instanceof Date
-              ? state['observed_at'].toISOString()
-              : null,
+          ...inventory,
         });
       },
       { rows: [], matching: 0, total: 0, observedAt: null },
+    );
+  }
+
+  async groups(
+    session: SessionResponse,
+    query: DeviceQuery,
+  ): Promise<DeviceGroupPage> {
+    return this.read(
+      session,
+      async (client, customerId) => {
+        const inventory = await this.inventory(client, customerId);
+        const selection = query.selection
+          ? await this.storedSelection(session, query.selection)
+          : null;
+        const sql = deviceGroupsSql(customerId, query, selection);
+        const counts = (await client.query(sql.count.text, sql.count.values))
+          .rows[0];
+        const rows = (await client.query(sql.groups.text, sql.groups.values))
+          .rows;
+        return deviceGroupPageSchema.parse({
+          groups: rows.map((row) => ({
+            key: row['key'],
+            devices: row['devices'],
+          })),
+          groupCount: counts?.['groups'] ?? 0,
+          matching: counts?.['matching'] ?? 0,
+          ...inventory,
+        });
+      },
+      { groups: [], groupCount: 0, matching: 0, total: 0, observedAt: null },
     );
   }
 
@@ -284,14 +329,30 @@ export class DevicesService {
     return this.read(
       session,
       async (client, customerId) => {
-        const matching = (predicates: DevicePredicate[], ids: string[]) =>
-          this.deviceIds(client, matchingAmongSql(customerId, predicates, ids));
+        const matching = (
+          predicates: DevicePredicate[],
+          ids: string[],
+          group?: DeviceGrouping,
+        ) =>
+          this.deviceIds(
+            client,
+            matchingAmongSql(customerId, predicates, ids, group ?? null),
+          );
+        const selectedIn = (
+          state: SelectionState,
+          predicates: DevicePredicate[],
+          group: DeviceGrouping,
+        ) =>
+          this.deviceIds(
+            client,
+            selectedInSql(customerId, state, predicates, group),
+          );
         let state: SelectionState;
         try {
           state = await changeSelection(
             this.cache,
             selectionStorageKey(session.identity.id, key),
-            (current) => applySelectionOps(current, ops, matching),
+            (current) => applySelectionOps(current, ops, matching, selectedIn),
           );
         } catch (error) {
           if (error instanceof SelectionTooLargeError)
@@ -309,11 +370,14 @@ export class DevicesService {
     );
   }
 
-  /** Grouped rows wait for server-side grouping. Their routes resolve as unselected. */
+  /** Rows resolve by device ID. Group rows resolve by their joined route under the grid's filters. */
   async resolveSelection(
     session: SessionResponse,
     key: DeviceSelectionKey,
     rowIds: string[],
+    groupRoutes: string[],
+    predicates: DevicePredicate[],
+    by: DeviceGroupField[],
   ): Promise<Record<string, boolean>> {
     return this.read(
       session,
@@ -325,7 +389,24 @@ export class DevicesService {
             selectedAmongSql(customerId, state, rowIds),
           ),
         );
-        return Object.fromEntries(rowIds.map((id) => [id, chosen.has(id)]));
+        const selected: Record<string, boolean> = Object.fromEntries(
+          rowIds.map((id) => [id, chosen.has(id)]),
+        );
+        for (const route of groupRoutes) selected[route] = false;
+        if (groupRoutes.length)
+          for (let depth = 1; depth <= by.length; depth++) {
+            const sql = groupSelectionSql(
+              customerId,
+              state,
+              predicates,
+              by.slice(0, depth),
+              groupRoutes,
+            );
+            for (const row of (await client.query(sql.text, sql.values)).rows)
+              if (row['selected'] === true)
+                selected[String(row['route'])] = true;
+          }
+        return selected;
       },
       {},
     );
