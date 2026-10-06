@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
-  ENTITY_CACHE_SECONDS,
   deviceSyncStateSchema,
   entityEventsChannel,
   entityKey,
@@ -17,7 +16,7 @@ import {
   type CredentialCipher,
   type DelegatedCredential,
 } from '@campus/google-connection';
-import type { EntityCache } from './entity-cache';
+import { recordSeconds, type EntityCache } from './entity-cache';
 
 export interface DeviceSyncDatabase {
   query(
@@ -182,7 +181,9 @@ export class DeviceSync {
           );
           after = ids[ids.length - 1];
         }
-        const recordPage = z.array(z.object({ deviceId: z.string() }).passthrough());
+        const recordPage = z.array(
+          z.object({ deviceId: z.string(), lastEntitySync: z.string() }).passthrough(),
+        );
         for (let after = ''; !signal.aborted; ) {
           const records = recordPage.parse(
             await this.call('SELECT cc.page_device_records($1,$2,$3) AS result', [
@@ -199,9 +200,9 @@ export class DeviceSync {
               return {
                 key: entityKey('device', input.customerId, record.deviceId),
                 value: JSON.stringify(cached),
+                seconds: recordSeconds(record.lastEntitySync),
               };
             }),
-            ENTITY_CACHE_SECONDS.device,
           );
           after = records[records.length - 1].deviceId;
         }

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { GoogleConnectionError } from '@campus/google-connection';
 import { DeviceSync, DeviceSyncError } from './device-sync.ts';
-import { EntityCacheError, noEntityCache } from './entity-cache.ts';
+import { EntityCacheError, noEntityCache, recordSeconds } from './entity-cache.ts';
 
 const customerId = 'C0123456';
 const request = { customerId, syncId: randomUUID(), correlationId: randomUUID() };
@@ -61,7 +61,8 @@ const record = (deviceId) => ({
   annotatedLocation: null,
   notes: null,
   battery: { status: 'no-report' },
-  lastEntitySync: '2026-10-06T12:00:00.000Z',
+  // One hour old, so Redis keeps the record for the 23 hours it stays fresh.
+  lastEntitySync: new Date(Date.now() - 3_600_000).toISOString(),
   removedAt: null,
 });
 function cache() {
@@ -121,6 +122,8 @@ test('stages every page, publishes, fills Redis, and bumps the query generation'
     'cc:entity:device:C0123456:d1',
     'cc:entity:device:C0123456:d2',
   ]);
+  assert.deepEqual(redis.calls[0].args[0].map((entry) => entry.seconds), [82800, 82800]);
+  assert.equal(redis.calls[0].args.length, 1);
   assert.deepEqual(redis.calls[1].args, ['cc:query-gen:device:C0123456']);
   assert.deepEqual(JSON.parse(redis.calls[2].args[1]), { type: 'full-sync', sync: state });
 });
@@ -238,4 +241,13 @@ test('a failed removed-device read does not fail the sync', async () => {
   const result = await new DeviceSync(db, cipher, reader(), redis).run(request, AbortSignal.timeout(5000));
   assert.deepEqual(result, state);
   assert.deepEqual(names(redis.calls), ['publish']);
+});
+
+test('record expiry follows the freshness that remains', () => {
+  const now = Date.parse('2026-10-06T12:00:00.000Z');
+  assert.equal(recordSeconds('2026-10-06T11:00:00.000Z', now), 82800);
+  assert.equal(recordSeconds('2026-10-06T10:59:59.500000+00:00', now), 82800);
+  assert.equal(recordSeconds('2026-10-04T12:00:00.000Z', now), 1, 'A stale record expires at once.');
+  assert.equal(recordSeconds('2026-10-07T12:00:00.000Z', now), 86400, 'A future stamp keeps the full threshold.');
+  assert.equal(recordSeconds('not a time', now), 1);
 });

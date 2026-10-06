@@ -42,7 +42,8 @@ const record = (deviceId) => ({
   annotatedLocation: null,
   notes: null,
   battery: { status: 'no-report' },
-  lastEntitySync: '2026-10-06T12:00:00.000Z',
+  // One hour old, so Redis keeps the record for the 23 hours it stays fresh.
+  lastEntitySync: new Date(Date.now() - 3_600_000).toISOString(),
   removedAt: null,
 });
 
@@ -161,7 +162,12 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
     redis.calls[0].args[0].map((entry) => entry.key),
     ['cc:entity:device:C0123456:d1', 'cc:entity:device:C0123456:d3'],
   );
-  assert.equal(redis.calls[0].args[1], 86400);
+  assert.deepEqual(
+    redis.calls[0].args[0].map((entry) => entry.seconds),
+    [82800, 82800],
+    'A record one hour old stays cached for 23 hours.',
+  );
+  assert.equal(redis.calls[0].args.length, 1);
   assert.equal(
     JSON.parse(redis.calls[0].args[0][0].value).stale,
     undefined,

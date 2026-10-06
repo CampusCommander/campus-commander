@@ -214,8 +214,42 @@ export function batteryObservation(
   });
 }
 
+const quotaBackoff = (attempt: number) =>
+  Math.min(60_000, 1_000 * 2 ** attempt) + Math.floor(Math.random() * 500);
+
+/** Wait for a quota backoff. An abort ends the wait with the quota failure. */
+async function quotaSleep(milliseconds: number, signal: AbortSignal) {
+  if (signal.aborted) throw new GoogleConnectionError('quota');
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort);
+      resolve();
+    }, milliseconds);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(new GoogleConnectionError('quota'));
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    timer.unref();
+  });
+}
+
+export interface GoogleDeviceReaderOptions {
+  sleep?(milliseconds: number, signal: AbortSignal): Promise<void>;
+  backoff?(attempt: number): number;
+}
+
 /** Read device inventory and battery telemetry with one exact-scope token per capability. */
 export class GoogleDeviceReader {
+  private readonly sleep: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+  private readonly backoff: (attempt: number) => number;
+
+  constructor(options: GoogleDeviceReaderOptions = {}) {
+    this.sleep = options.sleep ?? quotaSleep;
+    this.backoff = options.backoff ?? quotaBackoff;
+  }
+
+  /** Follow page tokens. A quota answer retries the same page until it succeeds or the signal aborts. */
   private async *pages<T>(
     credential: DelegatedCredential,
     scope: string,
@@ -233,15 +267,21 @@ export class GoogleDeviceReader {
     let issuedAt = Date.now();
     let pageToken: string | undefined;
     for (let page = 0; page < maximumPages; page++) {
-      if (Date.now() - issuedAt > tokenRenewalMilliseconds) {
-        client = await scopedClient(credential, scope, signal, limit);
-        issuedAt = Date.now();
-      }
       let result;
-      try {
-        result = await load(client, pageToken);
-      } catch (error) {
-        throw failure(error);
+      for (let attempt = 0; ; attempt++) {
+        if (Date.now() - issuedAt > tokenRenewalMilliseconds) {
+          client = await scopedClient(credential, scope, signal, limit);
+          issuedAt = Date.now();
+        }
+        try {
+          result = await load(client, pageToken);
+          break;
+        } catch (error) {
+          const classified = failure(error);
+          if (classified.code !== 'quota') throw classified;
+          await this.sleep(this.backoff(attempt), signal);
+          if (signal.aborted) throw new GoogleConnectionError('quota');
+        }
       }
       yield result.items;
       if (!result.nextPageToken) return;

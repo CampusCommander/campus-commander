@@ -362,3 +362,85 @@ test('batteryBatch stops issuing reads after the first hard failure', async (t) 
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(calls.length, 4, 'Only the reads already in flight finish.');
 });
+
+const quotaAnswer = () =>
+  Object.assign(new Error('quota'), {
+    response: { status: 429, data: { error: { errors: [{ reason: 'rateLimitExceeded' }] } } },
+  });
+
+test('a quota answer retries the same page until Google answers', async (t) => {
+  const { calls } = stub(t, [
+    { nextPageToken: 'page-2', chromeosdevices: [{ deviceId: 'd1', orgUnitPath: '/' }] },
+    quotaAnswer(),
+    quotaAnswer(),
+    { chromeosdevices: [{ deviceId: 'd2', orgUnitPath: '/' }] },
+  ]);
+  const waits = [];
+  const pages = await collect(
+    new GoogleDeviceReader({
+      backoff: (attempt) => attempt * 10,
+      sleep: async (milliseconds) => void waits.push(milliseconds),
+    }).devicePages(credential, 'C0123456', AbortSignal.timeout(5000)),
+  );
+  assert.deepEqual(
+    pages.map((page) => page.map((device) => device.deviceId)),
+    [['d1'], ['d2']],
+  );
+  assert.deepEqual(waits, [0, 10]);
+  assert.deepEqual(
+    calls.slice(1).map((call) => call.params.pageToken),
+    ['page-2', 'page-2', 'page-2'],
+  );
+});
+
+test('an abort during a quota wait rejects with quota', async (t) => {
+  stub(t, [quotaAnswer()]);
+  const stopping = new AbortController();
+  await assert.rejects(
+    collect(
+      new GoogleDeviceReader({
+        backoff: () => 60_000,
+        sleep: async () => stopping.abort(),
+      }).devicePages(credential, 'C0123456', stopping.signal),
+    ),
+    { name: 'GoogleConnectionError', code: 'quota' },
+  );
+});
+
+test('the default quota wait ends when the signal aborts', async (t) => {
+  stub(t, [quotaAnswer()]);
+  const stopping = new AbortController();
+  const started = Date.now();
+  setTimeout(() => stopping.abort(), 20);
+  await assert.rejects(
+    collect(
+      new GoogleDeviceReader({ backoff: () => 60_000 }).devicePages(
+        credential,
+        'C0123456',
+        stopping.signal,
+      ),
+    ),
+    { name: 'GoogleConnectionError', code: 'quota' },
+  );
+  assert.ok(Date.now() - started < 5_000);
+});
+
+test('other page failures do not retry', async (t) => {
+  const forbidden = Object.assign(new Error('forbidden'), {
+    response: { status: 403, data: { error: { errors: [{ reason: 'forbidden' }] } } },
+  });
+  const { calls } = stub(t, [forbidden]);
+  let slept = false;
+  await assert.rejects(
+    collect(
+      new GoogleDeviceReader({
+        sleep: async () => {
+          slept = true;
+        },
+      }).devicePages(credential, 'C0123456', AbortSignal.timeout(5000)),
+    ),
+    { name: 'GoogleConnectionError', code: 'permission-denied' },
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(slept, false);
+});

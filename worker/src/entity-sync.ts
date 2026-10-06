@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import {
-  ENTITY_CACHE_SECONDS,
   ENTITY_INFLIGHT_SECONDS,
   entityEventsChannel,
   entityKey,
@@ -19,7 +18,11 @@ import {
   type CredentialCipher,
   type DelegatedCredential,
 } from '@campus/google-connection';
-import { EntityCacheError, type EntityCache } from './entity-cache';
+import {
+  EntityCacheError,
+  recordSeconds,
+  type EntityCache,
+} from './entity-cache';
 import {
   DeviceSyncError,
   callStore,
@@ -55,7 +58,9 @@ const batchSchema = z.strictObject({
   batchCount: z.number().int().min(1),
   ids: z.array(z.string().min(1).max(128)).max(1000),
 });
-const recordsSchema = z.array(z.object({ deviceId: z.string() }).passthrough());
+const recordsSchema = z.array(
+  z.object({ deviceId: z.string(), lastEntitySync: z.string() }).passthrough(),
+);
 
 const defaultBackoff = (attempt: number) =>
   Math.min(60_000, 1_000 * 2 ** attempt) + Math.floor(Math.random() * 500);
@@ -227,9 +232,9 @@ export class EntitySyncBatch {
           return {
             key: entityKey('device', input.customerId, record.deviceId),
             value: JSON.stringify(cached),
+            seconds: recordSeconds(record.lastEntitySync),
           };
         }),
-        ENTITY_CACHE_SECONDS.device,
       );
       await this.cache.remove(
         removed.map((id) => entityKey('device', input.customerId, id)),

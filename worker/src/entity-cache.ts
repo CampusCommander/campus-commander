@@ -1,4 +1,5 @@
 import { createClient } from 'redis';
+import { ENTITY_CACHE_SECONDS } from '@campus/application-contracts';
 
 export class EntityCacheError extends Error {
   readonly code = 'cache-unavailable';
@@ -10,9 +11,9 @@ export class EntityCacheError extends Error {
 
 /** The worker's view of Redis: records, in-flight IDs, the query generation, and events. */
 export interface EntityCache {
+  /** Each entry expires after its own `seconds`. */
   setRecords(
-    entries: { key: string; value: string }[],
-    seconds: number,
+    entries: { key: string; value: string; seconds: number }[],
   ): Promise<void>;
   remove(keys: string[]): Promise<void>;
   removeMembers(key: string, members: string[]): Promise<void>;
@@ -21,6 +22,17 @@ export interface EntityCache {
   increment(key: string): Promise<void>;
   publish(channel: string, message: string): Promise<void>;
   close(): Promise<void>;
+}
+
+/**
+ * Seconds that a device record stays fresh after `lastEntitySync`. A Redis hit is fresh by construction.
+ * A stale or unreadable stamp gets one second. A future stamp gets the full threshold.
+ */
+export function recordSeconds(lastEntitySync: string, now = Date.now()): number {
+  const threshold = ENTITY_CACHE_SECONDS.device;
+  const age = Math.floor((now - Date.parse(lastEntitySync)) / 1000);
+  if (!Number.isFinite(age)) return 1;
+  return Math.max(1, Math.min(threshold, threshold - age));
 }
 
 /** A cache that writes nothing. A full sync uses it when the Redis configuration or secret is missing. */
@@ -92,12 +104,12 @@ export class WorkerRedis implements EntityCache {
     }
   }
 
-  async setRecords(entries: { key: string; value: string }[], seconds: number) {
+  async setRecords(entries: { key: string; value: string; seconds: number }[]) {
     for (let start = 0; start < entries.length; start += chunk) {
       await this.run(async (client) => {
         const multi = client.multi();
         for (const entry of entries.slice(start, start + chunk))
-          multi.set(entry.key, entry.value, { EX: seconds });
+          multi.set(entry.key, entry.value, { EX: entry.seconds });
         await multi.exec();
       });
     }
