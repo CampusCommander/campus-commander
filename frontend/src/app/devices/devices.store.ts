@@ -73,7 +73,9 @@ export class DevicesStore {
     }),
   );
   readonly selectionTab = deviceSelectionTab();
-  readonly page = signal<Omit<DevicePage, 'rows'> | null>(null);
+  readonly page = signal<Omit<DevicePage, 'rows' | 'refreshJobId'> | null>(
+    null,
+  );
   /** True when an open group or a grouped level holds more than the grid lists. */
   readonly groupLimit = signal(false);
   /** The outermost query whose counts the status bar shows. */
@@ -240,7 +242,7 @@ export class DevicesStore {
   private keepCounts(
     view: DeviceView,
     revision: number,
-    counts: Omit<DevicePage, 'rows'>,
+    counts: Omit<DevicePage, 'rows' | 'refreshJobId'>,
   ): void {
     const key = countsKey(view);
     if (key === null || key !== this.counted || revision !== this.revision())

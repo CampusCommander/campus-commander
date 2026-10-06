@@ -22,6 +22,8 @@ import {
 const row: DeviceRow = {
   deviceId: 'synthetic-device-1',
   serialNumber: 'C0A1-0001',
+  lastEntitySync: '2026-10-05T12:00:00.000Z',
+  stale: false,
   model: 'Lenovo 100e Gen 4',
   assetTag: 'HS-0401',
   orgUnitPath: '/School A',
@@ -73,6 +75,7 @@ it('loads grid blocks with the column filters and the header sort', async () => 
     matching: 96,
     total: 450,
     observedAt: null,
+    refreshJobId: null,
   });
   const success = vi.fn();
   const fail = vi.fn();
@@ -166,6 +169,7 @@ it('reports each loaded page after the grid receives its rows', async () => {
       matching: 96,
       total: 450,
       observedAt: null,
+      refreshJobId: null,
     }),
     (page) => order.push(`loaded ${page.matching}`),
   ).getRows({
@@ -241,6 +245,7 @@ it('limits the query to the selection while Show All Selected is on', async () =
     matching: 0,
     total: 450,
     observedAt: null,
+    refreshJobId: null,
   });
   const key = {
     gridId: 'devices' as const,
@@ -304,6 +309,7 @@ it('loads an open group in one request up to the group limit', async () => {
     matching: 135,
     total: 450,
     observedAt: null,
+    refreshJobId: null,
   });
   deviceDatasource(load, undefined, undefined, vi.fn()).getRows({
     request: {

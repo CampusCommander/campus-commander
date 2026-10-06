@@ -37,8 +37,14 @@
       <h2 id="device-identity-title">{{ identity(current) }}</h2>
       <p>{{ current.orgUnitPath }}</p>
       <p class="secondary">
-        Inventory observed {{ current.observedAt | date: 'MMM d, h:mm a' }}
+        Read from Google {{ current.lastEntitySync | date: 'MMM d, h:mm a' }}
       </p>
+      @if (current.removedAt) {
+      <p class="secondary">
+        Google no longer returns this device (since
+        {{ current.removedAt | date: 'MMM d, h:mm a' }}).
+      </p>
+      }
       <dl class="annotations">
         <div class="annotation">
           <dt>Annotated location</dt>

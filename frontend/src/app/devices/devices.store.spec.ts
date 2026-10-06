@@ -22,6 +22,7 @@ const page = {
   matching: 96,
   total: 450,
   observedAt: '2026-10-05T12:00:00.000Z',
+  refreshJobId: null,
 };
 
 const sessionFor = (id: string) => ({

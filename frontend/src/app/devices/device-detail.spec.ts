@@ -21,7 +21,9 @@ const device = (extra: Partial<DeviceDetail> = {}): DeviceDetail => ({
     capacityPercent: 78,
     reportedAt: '2026-10-05T13:50:00.000Z',
   },
-  observedAt: '2026-10-05T14:00:00.000Z',
+  lastEntitySync: '2026-10-05T14:00:00.000Z',
+  stale: false,
+  removedAt: null,
   batteryReports: [
     {
       reportedAt: '2026-10-05T13:50:00.000Z',
@@ -111,6 +113,14 @@ it('shows the Google battery class, capacity, and recent reports', async () => {
     ),
   ).toHaveLength(2);
   expect(element.textContent).toContain('No capacity');
+  expect(element.textContent).toContain('Read from Google');
+});
+
+it('names a removed device', async () => {
+  const { element } = await setup({
+    detail: device({ removedAt: '2026-10-06T01:00:00.000Z' }),
+  });
+  expect(element.textContent).toContain('Google no longer returns this device');
 });
 
 it('names the power-status policy when Google sent no battery report', async () => {
