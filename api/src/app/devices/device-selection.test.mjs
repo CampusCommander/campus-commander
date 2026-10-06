@@ -21,8 +21,16 @@ test('select and deselect move devices between additions and exceptions', async 
     [{ op: 'select', ids: ['d1', 'd2'] }],
     none,
   );
-  assert.deepEqual(state, { terms: [], additions: ['d1', 'd2'], exceptions: [] });
-  state = await applySelectionOps(state, [{ op: 'deselect', ids: ['d1'] }], none);
+  assert.deepEqual(state, {
+    terms: [],
+    additions: ['d1', 'd2'],
+    exceptions: [],
+  });
+  state = await applySelectionOps(
+    state,
+    [{ op: 'deselect', ids: ['d1'] }],
+    none,
+  );
   assert.deepEqual(state, { terms: [], additions: ['d2'], exceptions: [] });
 });
 
@@ -54,7 +62,11 @@ test('deselecting under a filter term records an exception', async () => {
     ],
     none,
   );
-  assert.deepEqual(state, { terms: [hs04], additions: ['d2'], exceptions: ['d1'] });
+  assert.deepEqual(state, {
+    terms: [hs04],
+    additions: ['d2'],
+    exceptions: ['d1'],
+  });
   assert.deepEqual(
     await applySelectionOps(state, [{ op: 'deselectAll' }], none),
     emptySelection(),
@@ -78,14 +90,17 @@ test('a selection beyond its bounds is refused', async () => {
 test('selections belong to one person, grid, and tab', () => {
   assert.equal(
     selectionStorageKey('person-1', { gridId: 'devices', tabId: 't1' }),
-    'device-selection:person-1:devices:t1',
+    'cc:device-selection:person-1:devices:t1',
   );
 });
 
 test('a missing or unreadable stored selection reads as empty', () => {
   assert.deepEqual(parseSelection(null), emptySelection());
   assert.deepEqual(parseSelection('{bad'), emptySelection());
-  assert.deepEqual(parseSelection(JSON.stringify({ terms: 'x' })), emptySelection());
+  assert.deepEqual(
+    parseSelection(JSON.stringify({ terms: 'x' })),
+    emptySelection(),
+  );
 });
 
 test('a concurrent change makes the write retry from the newer value', async () => {
@@ -120,7 +135,10 @@ test('a selection that keeps changing underneath reports busy', async () => {
 
 test('the spec reports terms and counts without device IDs', () => {
   assert.deepEqual(
-    selectionSpec({ terms: [hs04], additions: ['d2'], exceptions: ['d1', 'd3'] }, 95),
+    selectionSpec(
+      { terms: [hs04], additions: ['d2'], exceptions: ['d1', 'd3'] },
+      95,
+    ),
     {
       terms: [{ type: 'all', predicates: hs04 }],
       added: 1,

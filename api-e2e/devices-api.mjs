@@ -1,6 +1,7 @@
 import { evidenceSecurity } from './evidence-security.mjs';
 import { qualificationSignIn } from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
@@ -105,6 +106,89 @@ export async function qualifyDevicesApi({
       ).matching,
       150,
     );
+    const select = async (path, data) => {
+      const response = await api.post(`${root}/selection${path}`, {
+        headers,
+        data,
+      });
+      assert.equal(response.status(), 200, await response.text());
+      return response.json();
+    };
+    const tab = { gridId: 'devices', tabId: randomUUID() };
+    const hs04 = [
+      { field: 'assetTag', operator: 'startsWith', value: 'HS-04' },
+    ];
+    assert.equal((await select('', tab)).selection.selectedCount, 0);
+    assert.equal(
+      (
+        await api.post(`${root}/selection/ops`, {
+          data: { ...tab, ops: [{ op: 'deselectAll' }] },
+        })
+      ).status(),
+      403,
+    );
+    assert.deepEqual(
+      (
+        await select('/ops', {
+          ...tab,
+          ops: [{ op: 'selectAll', predicates: hs04 }],
+        })
+      ).selection,
+      {
+        terms: [{ type: 'all', predicates: hs04 }],
+        added: 0,
+        excluded: 0,
+        selectedCount: 96,
+      },
+    );
+    const changed = await select('/ops', {
+      ...tab,
+      ops: [
+        { op: 'deselect', ids: ['synthetic-device-1'] },
+        { op: 'select', ids: ['synthetic-device-0'] },
+      ],
+    });
+    assert.equal(changed.selection.selectedCount, 96);
+    assert.deepEqual(
+      (
+        await select('/resolve', {
+          ...tab,
+          rowIds: [
+            'synthetic-device-0',
+            'synthetic-device-1',
+            'synthetic-device-2',
+          ],
+          groupRoutes: [],
+        })
+      ).selected,
+      {
+        'synthetic-device-0': true,
+        'synthetic-device-1': false,
+        'synthetic-device-2': true,
+      },
+    );
+    // HS-04 holds 29 Replace soon devices. Device 1 is one of them and is deselected.
+    assert.equal(
+      (
+        await query({
+          selection: tab,
+          predicates: [
+            { field: 'battery', operator: 'is', values: ['replace-soon'] },
+          ],
+        })
+      ).matching,
+      28,
+    );
+    assert.equal(
+      (await select('', { gridId: 'devices', tabId: randomUUID() })).selection
+        .selectedCount,
+      0,
+    );
+    assert.equal(
+      (await select('/ops', { ...tab, ops: [{ op: 'deselectAll' }] })).selection
+        .selectedCount,
+      0,
+    );
     const detail = await (await api.get(`${root}/synthetic-device-1`)).json();
     assert.deepEqual(
       {
@@ -146,6 +230,7 @@ export async function qualifyDevicesApi({
     return [
       'device sync runs through Kestra and the worker and publishes 450 simulated devices: pass',
       'device filters match asset tag, battery class, and organization unit counts: pass',
+      'device selection keeps Select All terms, row exceptions, and per-tab isolation: pass',
       'device details include Google battery class, capacity, and recent reports: pass',
       'telemetry denial publishes devices with unavailable battery data: pass',
       'inventory denial keeps the published devices and marks them stale: pass',

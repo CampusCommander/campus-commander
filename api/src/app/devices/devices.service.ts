@@ -16,10 +16,26 @@ import {
   type DeviceDetail,
   type DeviceOrgUnit,
   type DevicePage,
+  type DevicePredicate,
   type DeviceQuery,
+  type DeviceSelectionKey,
+  type DeviceSelectionOp,
+  type DeviceSelectionSpec,
   type DeviceSyncState,
   type SessionResponse,
 } from '@campus/application-contracts';
+import { CacheService } from '../cache/cache.service';
+import {
+  SelectionBusyError,
+  SelectionTooLargeError,
+  applySelectionOps,
+  changeSelection,
+  emptySelection,
+  parseSelection,
+  selectionSpec,
+  selectionStorageKey,
+  type SelectionState,
+} from './device-selection';
 import { DatabaseService } from '../database/database.service';
 import { OrchestrationService } from '../orchestration/orchestration.service';
 import {
@@ -28,6 +44,9 @@ import {
   devicePageSql,
   deviceRow,
   deviceOrgUnitsSql,
+  matchingAmongSql,
+  selectedAmongSql,
+  selectionCountSql,
 } from './device-query';
 
 const conflicts = ['device-sync-running', 'connection-changed'];
@@ -53,6 +72,7 @@ export class DevicesService {
   constructor(
     private readonly database: DatabaseService,
     private readonly orchestration: OrchestrationService,
+    private readonly cache: CacheService,
   ) {}
 
   private actor(session: SessionResponse) {
@@ -155,7 +175,10 @@ export class DevicesService {
             [customerId],
           )
         ).rows[0];
-        const sql = devicePageSql(customerId, query);
+        const selection = query.selection
+          ? await this.storedSelection(session, query.selection)
+          : null;
+        const sql = devicePageSql(customerId, query, selection);
         const matching = (await client.query(sql.count.text, sql.count.values))
           .rows[0]?.['matching'];
         const rows = (await client.query(sql.rows.text, sql.rows.values)).rows;
@@ -205,5 +228,106 @@ export class DevicesService {
     );
     if (!found) throw new NotFoundException({ reason: 'device-not-found' });
     return found;
+  }
+
+  private async storedSelection(
+    session: SessionResponse,
+    key: DeviceSelectionKey,
+  ): Promise<SelectionState> {
+    return parseSelection(
+      await this.cache.get(selectionStorageKey(session.identity.id, key)),
+    );
+  }
+
+  private async selectedCount(
+    client: PoolClient,
+    customerId: string,
+    state: SelectionState,
+  ): Promise<number> {
+    const sql = selectionCountSql(customerId, state);
+    return (
+      (await client.query(sql.text, sql.values)).rows[0]?.['selected'] ?? 0
+    );
+  }
+
+  private async deviceIds(
+    client: PoolClient,
+    sql: { text: string; values: unknown[] },
+  ) {
+    return (await client.query(sql.text, sql.values)).rows.map((row) =>
+      String(row['device_id']),
+    );
+  }
+
+  async selection(
+    session: SessionResponse,
+    key: DeviceSelectionKey,
+  ): Promise<DeviceSelectionSpec> {
+    return this.read(
+      session,
+      async (client, customerId) => {
+        const state = await this.storedSelection(session, key);
+        return selectionSpec(
+          state,
+          await this.selectedCount(client, customerId, state),
+        );
+      },
+      selectionSpec(emptySelection(), 0),
+    );
+  }
+
+  async changeSelection(
+    session: SessionResponse,
+    key: DeviceSelectionKey,
+    ops: DeviceSelectionOp[],
+  ): Promise<DeviceSelectionSpec> {
+    return this.read(
+      session,
+      async (client, customerId) => {
+        const matching = (predicates: DevicePredicate[], ids: string[]) =>
+          this.deviceIds(client, matchingAmongSql(customerId, predicates, ids));
+        let state: SelectionState;
+        try {
+          state = await changeSelection(
+            this.cache,
+            selectionStorageKey(session.identity.id, key),
+            (current) => applySelectionOps(current, ops, matching),
+          );
+        } catch (error) {
+          if (error instanceof SelectionTooLargeError)
+            throw new ConflictException({ reason: 'selection-too-large' });
+          if (error instanceof SelectionBusyError)
+            throw new ConflictException({ reason: 'selection-busy' });
+          throw error;
+        }
+        return selectionSpec(
+          state,
+          await this.selectedCount(client, customerId, state),
+        );
+      },
+      selectionSpec(emptySelection(), 0),
+    );
+  }
+
+  /** Grouped rows wait for server-side grouping. Their routes resolve as unselected. */
+  async resolveSelection(
+    session: SessionResponse,
+    key: DeviceSelectionKey,
+    rowIds: string[],
+  ): Promise<Record<string, boolean>> {
+    return this.read(
+      session,
+      async (client, customerId) => {
+        const state = await this.storedSelection(session, key);
+        const chosen = new Set(
+          await this.deviceIds(
+            client,
+            selectedAmongSql(customerId, state, rowIds),
+          ),
+        );
+        return Object.fromEntries(rowIds.map((id) => [id, chosen.has(id)]));
+      },
+      {},
+    );
   }
 }

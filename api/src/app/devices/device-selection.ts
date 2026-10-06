@@ -31,7 +31,8 @@ export function selectionStorageKey(
   identityId: string,
   key: DeviceSelectionKey,
 ): string {
-  return `device-selection:${identityId}:${key.gridId}:${key.tabId}`;
+  // The application Redis user may only touch cc:* keys.
+  return `cc:device-selection:${identityId}:${key.gridId}:${key.tabId}`;
 }
 
 /** A missing, expired, or unreadable selection is empty. */
@@ -60,10 +61,7 @@ const sameTerm = (
 export async function applySelectionOps(
   state: SelectionState,
   ops: readonly DeviceSelectionOp[],
-  matching: (
-    predicates: DevicePredicate[],
-    ids: string[],
-  ) => Promise<string[]>,
+  matching: (predicates: DevicePredicate[], ids: string[]) => Promise<string[]>,
 ): Promise<SelectionState> {
   let { terms, additions, exceptions } = state;
   for (const op of ops) {

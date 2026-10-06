@@ -66,7 +66,10 @@ test('an empty set filter matches no devices', () => {
   const battery = query({
     predicates: [{ field: 'battery', operator: 'is', values: [] }],
   });
-  assert.match(battery.rows.text, /WHERE s\.customer_id=\$1 AND FALSE ORDER BY/);
+  assert.match(
+    battery.rows.text,
+    /WHERE s\.customer_id=\$1 AND FALSE ORDER BY/,
+  );
   const units = query({
     predicates: [{ field: 'orgUnitPath', operator: 'in', values: [] }],
   });
@@ -246,7 +249,9 @@ test('the selected view intersects the selection with the active filters', () =>
 
 test('membership checks bind the device IDs after the customer', () => {
   const among = selectedAmongSql('C0123456', selection, ['d1', 'd2']);
-  assert.ok(among.text.startsWith('SELECT d.device_id FROM cc.device_sync_state s'));
+  assert.ok(
+    among.text.startsWith('SELECT d.device_id FROM cc.device_sync_state s'),
+  );
   assert.ok(among.text.endsWith('AND d.device_id=ANY($2::text[])'));
   assert.deepEqual(among.values.slice(0, 2), ['C0123456', ['d1', 'd2']]);
   const matching = matchingAmongSql(

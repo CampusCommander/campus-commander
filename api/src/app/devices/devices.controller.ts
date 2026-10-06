@@ -10,7 +10,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { z } from 'zod';
-import { deviceQuerySchema } from '@campus/application-contracts';
+import {
+  deviceQuerySchema,
+  deviceSelectionChangeSchema,
+  deviceSelectionKeySchema,
+  deviceSelectionResolveSchema,
+} from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { DevicesService } from './devices.service';
@@ -63,6 +68,48 @@ export class DevicesController {
     const input = deviceQuerySchema.parse(body);
     await this.current(request);
     return { page: await this.devices.page(request.session, input) };
+  }
+
+  @Post('selection')
+  @HttpCode(200)
+  async selection(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    const key = deviceSelectionKeySchema.parse(body);
+    await this.current(request);
+    return { selection: await this.devices.selection(request.session, key) };
+  }
+
+  @Post('selection/ops')
+  @HttpCode(200)
+  async changeSelection(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: unknown,
+  ) {
+    const input = deviceSelectionChangeSchema.parse(body);
+    await this.current(request);
+    return {
+      selection: await this.devices.changeSelection(
+        request.session,
+        { gridId: input.gridId, tabId: input.tabId },
+        input.ops,
+      ),
+    };
+  }
+
+  @Post('selection/resolve')
+  @HttpCode(200)
+  async resolveSelection(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: unknown,
+  ) {
+    const input = deviceSelectionResolveSchema.parse(body);
+    await this.current(request);
+    return {
+      selected: await this.devices.resolveSelection(
+        request.session,
+        { gridId: input.gridId, tabId: input.tabId },
+        input.rowIds,
+      ),
+    };
   }
 
   @Get('org-units')

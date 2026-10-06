@@ -118,6 +118,29 @@ export class CacheService implements OnApplicationShutdown {
       ),
     );
   }
+  /** Write only if the value still equals `expected`. A null `expected` requires an absent key. */
+  async swap(
+    key: string,
+    expected: string | null,
+    value: string,
+    seconds: number,
+  ): Promise<boolean> {
+    const result = await this.execute((client) =>
+      client.eval(
+        "local current=redis.call('GET',KEYS[1]); if (ARGV[1]=='absent' and current==false) or (ARGV[1]=='equal' and current==ARGV[2]) then redis.call('SET',KEYS[1],ARGV[3],'EX',tonumber(ARGV[4])); return 1 end return 0",
+        {
+          keys: [key],
+          arguments: [
+            expected === null ? 'absent' : 'equal',
+            expected ?? '',
+            value,
+            String(seconds),
+          ],
+        },
+      ),
+    );
+    return result === 1;
+  }
   async expire(key: string, seconds: number) {
     return this.execute((client) => client.expire(key, seconds));
   }
