@@ -134,53 +134,6 @@ export const devicePredicateSchema = z.union([
 ]);
 export type DevicePredicate = z.infer<typeof devicePredicateSchema>;
 
-const selectionIds = z.array(deviceId).min(1).max(2000);
-const selectionKeyShape = {
-  gridId: z.literal('devices'),
-  tabId: z.uuid(),
-};
-/** One browser tab's selection in one grid. The API scopes it to the signed-in person. */
-export const deviceSelectionKeySchema = z.strictObject(selectionKeyShape);
-export type DeviceSelectionKey = z.infer<typeof deviceSelectionKeySchema>;
-
-export const deviceSelectionOpSchema = z.discriminatedUnion('op', [
-  z.strictObject({
-    op: z.literal('selectAll'),
-    predicates: z.array(devicePredicateSchema).max(20),
-  }),
-  z.strictObject({ op: z.literal('deselectAll') }),
-  z.strictObject({ op: z.literal('select'), ids: selectionIds }),
-  z.strictObject({ op: z.literal('deselect'), ids: selectionIds }),
-]);
-export type DeviceSelectionOp = z.infer<typeof deviceSelectionOpSchema>;
-
-export const deviceSelectionChangeSchema = z.strictObject({
-  ...selectionKeyShape,
-  ops: z.array(deviceSelectionOpSchema).min(1).max(100),
-});
-
-export const deviceSelectionResolveSchema = z.strictObject({
-  ...selectionKeyShape,
-  rowIds: z.array(deviceId).max(2000),
-  groupRoutes: z.array(z.string().max(8192)).max(2000),
-});
-
-/** What Select All captured and the API's count. Device IDs stay on the server. */
-export const deviceSelectionSpecSchema = z.strictObject({
-  terms: z
-    .array(
-      z.strictObject({
-        type: z.literal('all'),
-        predicates: z.array(devicePredicateSchema).max(20),
-      }),
-    )
-    .max(50),
-  added: z.number().int().min(0),
-  excluded: z.number().int().min(0),
-  selectedCount: z.number().int().min(0),
-});
-export type DeviceSelectionSpec = z.infer<typeof deviceSelectionSpecSchema>;
-
 export const deviceGroupFieldSchema = z.enum([
   'orgUnitPath',
   'model',
@@ -203,6 +156,81 @@ export const deviceGroupingSchema = z
     message: 'Each group key needs a grouped field.',
   });
 export type DeviceGrouping = z.infer<typeof deviceGroupingSchema>;
+
+const selectionIds = z.array(deviceId).min(1).max(2000);
+const selectionKeyShape = {
+  gridId: z.literal('devices'),
+  tabId: z.uuid(),
+};
+const groupScopeShape = {
+  predicates: z.array(devicePredicateSchema).max(20),
+  by: z.array(deviceGroupFieldSchema).min(1).max(3),
+  route: z.array(groupKey).min(1).max(3),
+};
+const routeFits = (scope: { by: string[]; route: string[] }) =>
+  scope.route.length <= scope.by.length &&
+  new Set(scope.by).size === scope.by.length;
+const routeMessage = {
+  message: 'A group route needs one grouped field per key.',
+};
+
+/** A group as the grid showed it: the active filters, the grouped fields, and the group's keys. */
+export const deviceGroupScopeSchema = z
+  .strictObject(groupScopeShape)
+  .refine(routeFits, routeMessage);
+export type DeviceGroupScope = z.infer<typeof deviceGroupScopeSchema>;
+
+/** One browser tab's selection in one grid. The API scopes it to the signed-in person. */
+export const deviceSelectionKeySchema = z.strictObject(selectionKeyShape);
+export type DeviceSelectionKey = z.infer<typeof deviceSelectionKeySchema>;
+
+export const deviceSelectionOpSchema = z.discriminatedUnion('op', [
+  z.strictObject({
+    op: z.literal('selectAll'),
+    predicates: z.array(devicePredicateSchema).max(20),
+  }),
+  z.strictObject({ op: z.literal('deselectAll') }),
+  z.strictObject({ op: z.literal('select'), ids: selectionIds }),
+  z.strictObject({ op: z.literal('deselect'), ids: selectionIds }),
+  z
+    .strictObject({ op: z.literal('selectGroup'), ...groupScopeShape })
+    .refine(routeFits, routeMessage),
+  z
+    .strictObject({ op: z.literal('deselectGroup'), ...groupScopeShape })
+    .refine(routeFits, routeMessage),
+]);
+export type DeviceSelectionOp = z.infer<typeof deviceSelectionOpSchema>;
+
+export const deviceSelectionChangeSchema = z.strictObject({
+  ...selectionKeyShape,
+  ops: z.array(deviceSelectionOpSchema).min(1).max(100),
+});
+
+export const deviceSelectionResolveSchema = z.strictObject({
+  ...selectionKeyShape,
+  rowIds: z.array(deviceId).max(2000),
+  groupRoutes: z.array(z.string().max(8192)).max(2000),
+  /** The grid's filters and grouped fields, for the group rows in `groupRoutes`. */
+  predicates: z.array(devicePredicateSchema).max(20).default([]),
+  by: z.array(deviceGroupFieldSchema).max(3).default([]),
+});
+
+/** What Select All captured and the API's count. Device IDs stay on the server. */
+export const deviceSelectionSpecSchema = z.strictObject({
+  terms: z
+    .array(
+      z.strictObject({
+        type: z.literal('all'),
+        predicates: z.array(devicePredicateSchema).max(20),
+      }),
+    )
+    .max(50),
+  groups: z.array(deviceGroupScopeSchema).max(50).default([]),
+  added: z.number().int().min(0),
+  excluded: z.number().int().min(0),
+  selectedCount: z.number().int().min(0),
+});
+export type DeviceSelectionSpec = z.infer<typeof deviceSelectionSpecSchema>;
 
 export const deviceQuerySchema = z.strictObject({
   predicates: z.array(devicePredicateSchema).max(20).default([]),

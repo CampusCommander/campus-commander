@@ -16,6 +16,7 @@ const spec: DeviceSelectionSpec = {
       ],
     },
   ],
+  groups: [],
   added: 0,
   excluded: 1,
   selectedCount: 95,
@@ -123,6 +124,7 @@ it('describes what Select All captured', () => {
   expect(
     selectionScope({
       terms: [{ type: 'all', predicates: [] }],
+      groups: [],
       added: 2,
       excluded: 0,
       selectedCount: 450,

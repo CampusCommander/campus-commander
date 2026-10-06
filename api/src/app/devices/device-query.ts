@@ -117,12 +117,19 @@ function groupClauses(
   return keys.map((key, level) => `${groupKeys[by[level]]}=${add(key)}`);
 }
 
-/** Selected devices: any filter term or explicit addition, minus exceptions. */
+/** Selected devices: any filter term, group term, or explicit addition, minus exceptions. */
 function selectedClause(state: SelectionState, add: Add): string {
-  const parts = state.terms.map((term) => {
-    const clauses = predicateClauses(term, add);
-    return clauses.length ? `(${clauses.join(' AND ')})` : 'TRUE';
-  });
+  const all = (clauses: string[]) =>
+    clauses.length ? `(${clauses.join(' AND ')})` : 'TRUE';
+  const parts = [
+    ...state.terms.map((term) => all(predicateClauses(term, add))),
+    ...state.groups.map((group) =>
+      all([
+        ...predicateClauses(group.predicates, add),
+        ...groupClauses(group.by, group.route, add),
+      ]),
+    ),
+  ];
   if (state.additions.length)
     parts.push(`d.device_id=ANY(${add(state.additions)}::text[])`);
   if (!parts.length) return 'FALSE';
@@ -246,14 +253,15 @@ export function selectedAmongSql(
   };
 }
 
-/** Which of the given devices match a filter. Select All clears these exceptions. */
+/** Which of the given devices match a filter, inside a group when one is given. */
 export function matchingAmongSql(
   customerId: string,
   predicates: readonly DevicePredicate[],
   ids: readonly string[],
+  group: DeviceGrouping | null = null,
 ): SqlStatement {
   const values: unknown[] = [customerId, ids];
-  const where = deviceWhere(predicates, values);
+  const where = deviceWhere(predicates, values, null, group);
   return {
     text: `SELECT d.device_id ${from} WHERE ${where} AND d.device_id=ANY($2::text[])`,
     values,
@@ -279,5 +287,39 @@ export function deviceGroupsSql(
       text: `SELECT count(DISTINCT ${key})::integer AS groups,count(*)::integer AS matching ${from} WHERE ${where}`,
       values: [...values],
     },
+  };
+}
+
+/** The selected devices inside a filtered group. Deselecting the group excepts them. */
+export function selectedInSql(
+  customerId: string,
+  selection: SelectionState,
+  predicates: readonly DevicePredicate[],
+  group: DeviceGrouping,
+): SqlStatement {
+  const values: unknown[] = [customerId];
+  const where = deviceWhere(predicates, values, selection, group);
+  return { text: `SELECT d.device_id ${from} WHERE ${where}`, values };
+}
+
+/**
+ * Whether each listed group is fully selected. LibreGrid joins routes with `|`,
+ * so the statement compares the joined keys instead of splitting the text.
+ */
+export function groupSelectionSql(
+  customerId: string,
+  selection: SelectionState,
+  predicates: readonly DevicePredicate[],
+  by: readonly DeviceGroupField[],
+  routes: readonly string[],
+): SqlStatement {
+  const values: unknown[] = [customerId, routes];
+  const where = deviceWhere(predicates, values);
+  const selected = selectedClause(selection, adder(values));
+  const keys = by.map((field) => groupKeys[field]).join(',');
+  const route = `concat_ws('|',${keys})`;
+  return {
+    text: `SELECT ${route} AS route,bool_and(${selected}) AS selected ${from} WHERE ${where} GROUP BY ${keys} HAVING ${route}=ANY($2::text[])`,
+    values,
   };
 }

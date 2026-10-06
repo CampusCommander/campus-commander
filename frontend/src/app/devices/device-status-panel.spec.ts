@@ -63,6 +63,7 @@ it('shows what Select All captured', () => {
         ],
       },
     ],
+    groups: [],
     added: 0,
     excluded: 1,
     selectedCount: 95,

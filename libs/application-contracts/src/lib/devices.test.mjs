@@ -262,3 +262,27 @@ test('group requests need an unopened level', () => {
     true,
   );
 });
+
+test('group selection operations carry the filters and grouped fields', () => {
+  const ok = (op) =>
+    deviceSelectionChangeSchema.safeParse({
+      gridId: 'devices',
+      tabId,
+      ops: [op],
+    }).success;
+  const scope = {
+    predicates: [],
+    by: ['orgUnitPath', 'model'],
+    route: ['/School A'],
+  };
+  assert.equal(ok({ op: 'selectGroup', ...scope }), true);
+  assert.equal(
+    ok({ op: 'deselectGroup', ...scope, route: ['/School A', ''] }),
+    true,
+  );
+  assert.equal(
+    ok({ op: 'selectGroup', ...scope, route: ['a', 'b', 'c'] }),
+    false,
+  );
+  assert.equal(ok({ op: 'selectGroup', ...scope, route: [] }), false);
+});

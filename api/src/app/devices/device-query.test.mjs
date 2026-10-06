@@ -10,14 +10,23 @@ import {
   deviceRow,
   escapeLike,
   deviceGroupsSql,
+  groupSelectionSql,
   deviceOrgUnitsSql,
   matchingAmongSql,
   selectedAmongSql,
   selectionCountSql,
+  selectedInSql,
 } from './device-query.ts';
 
 const query = (value) =>
   devicePageSql('C0123456', deviceQuerySchema.parse(value));
+
+const batteryKey =
+  "CASE WHEN s.telemetry_failure IS NOT NULL THEN 'unavailable' WHEN d.battery_status='reported' THEN d.battery_health ELSE d.battery_status END";
+
+const hs04Selection = [
+  { field: 'assetTag', operator: 'startsWith', value: 'HS-04' },
+];
 
 test('the default page sorts by serial number with a stable tie-break', () => {
   const { rows, count } = query({});
@@ -205,6 +214,7 @@ test('organization units come from the published inventory in path order', () =>
 
 const selection = {
   terms: [[{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }]],
+  groups: [],
   additions: ['d9'],
   exceptions: ['d1'],
 };
@@ -221,7 +231,7 @@ test('a selection holds its filter terms and additions minus exceptions', () => 
 });
 
 test('an empty selection holds nothing and an unfiltered term holds everything', () => {
-  const empty = { terms: [], additions: [], exceptions: [] };
+  const empty = { terms: [], groups: [], additions: [], exceptions: [] };
   assert.match(selectionCountSql('C0123456', empty).text, /AND FALSE$/);
   assert.match(
     selectionCountSql('C0123456', { ...empty, terms: [[]] }).text,
@@ -271,9 +281,6 @@ test('membership checks bind the device IDs after the customer', () => {
   assert.deepEqual(matching.values, ['C0123456', ['d1'], '%Lenovo%']);
 });
 
-const batteryKey =
-  "CASE WHEN s.telemetry_failure IS NOT NULL THEN 'unavailable' WHEN d.battery_status='reported' THEN d.battery_health ELSE d.battery_status END";
-
 test('open groups narrow the device rows with exact keys', () => {
   const { rows, count } = query({
     group: { by: ['battery', 'model'], keys: ['replace-soon', ''] },
@@ -319,4 +326,64 @@ test('battery groups follow the battery filter order', () => {
       `GROUP BY 1 ORDER BY array_position(ARRAY['normal','replace-soon','replace-now','no-report','unavailable']::text[],${batteryKey}) OFFSET`,
     ),
   );
+});
+
+test('a selected group holds its filtered devices inside the group', () => {
+  const sql = selectionCountSql('C0123456', {
+    terms: [],
+    groups: [
+      { predicates: hs04Selection, by: ['battery'], route: ['replace-soon'] },
+    ],
+    additions: [],
+    exceptions: [],
+  });
+  assert.ok(
+    sql.text.endsWith(
+      `WHERE s.customer_id=$1 AND ((d.asset_tag ILIKE $2 AND ${batteryKey}=$3))`,
+    ),
+  );
+  assert.deepEqual(sql.values, ['C0123456', 'HS-04%', 'replace-soon']);
+});
+
+test('group lookups bind the group after the filters', () => {
+  const matching = matchingAmongSql('C0123456', [], ['d1'], {
+    by: ['orgUnitPath'],
+    keys: ['/School A'],
+  });
+  assert.ok(
+    matching.text.endsWith(
+      'WHERE s.customer_id=$1 AND d.org_unit_path=$3 AND d.device_id=ANY($2::text[])',
+    ),
+  );
+  const selected = selectedInSql(
+    'C0123456',
+    { terms: [[]], groups: [], additions: [], exceptions: ['d1'] },
+    [],
+    { by: ['orgUnitPath'], keys: ['/School A'] },
+  );
+  assert.ok(
+    selected.text.endsWith(
+      'WHERE s.customer_id=$1 AND d.org_unit_path=$2 AND ((TRUE) AND NOT d.device_id=ANY($3::text[]))',
+    ),
+  );
+});
+
+test('group selection matches the joined route text instead of splitting it', () => {
+  const sql = groupSelectionSql(
+    'C0123456',
+    { terms: [], groups: [], additions: ['d9'], exceptions: [] },
+    [],
+    ['battery', 'model'],
+    ['replace-soon|Lenovo | 100e'],
+  );
+  const route = `concat_ws('|',${batteryKey},coalesce(d.model,''))`;
+  assert.equal(
+    sql.text,
+    `SELECT ${route} AS route,bool_and((d.device_id=ANY($3::text[]))) AS selected FROM cc.device_sync_state s JOIN cc.devices d ON d.sync_id=s.current_sync_id WHERE s.customer_id=$1 GROUP BY ${batteryKey},coalesce(d.model,'') HAVING ${route}=ANY($2::text[])`,
+  );
+  assert.deepEqual(sql.values, [
+    'C0123456',
+    ['replace-soon|Lenovo | 100e'],
+    ['d9'],
+  ]);
 });
