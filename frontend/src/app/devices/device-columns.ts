@@ -85,6 +85,8 @@ function columnFilter(
         filter: 'agSetColumnFilter',
         filterParams: {
           values: Object.keys(BATTERY_LABELS),
+          // Keep the order of the chip editor: health classes, then missing data.
+          suppressSorting: true,
           valueFormatter: ({ value }: { value: BatteryFilterValue }) =>
             BATTERY_LABELS[value],
           ...filterButtons,

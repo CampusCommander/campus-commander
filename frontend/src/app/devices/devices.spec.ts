@@ -19,14 +19,13 @@ import { DevicesStore } from './devices.store';
 class GridStub {
   readonly load = input<unknown>();
   readonly revision = input(0);
-  readonly optionalColumns = input<unknown>();
   readonly focusIndex = input<number | null>(null);
   readonly state = input<unknown>();
   readonly saveState = input<unknown>();
   readonly predicates = input<unknown>();
   readonly orgUnits = input<unknown>();
+  readonly selection = input<unknown>();
   readonly details = output<unknown>();
-  readonly rangeChange = output<unknown>();
   readonly filtersChange = output<unknown>();
 }
 
@@ -68,7 +67,8 @@ function setup(options: {
     error: signal(''),
     revision: signal(0),
     position: signal<number | null>(null),
-    optionalColumns: signal({ annotatedLocation: false, notes: false }),
+    selection: { spec: signal(null) },
+    selectionTab: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
     refreshing: computed(() => sync()?.status === 'running'),
     init: vi.fn().mockResolvedValue(undefined),
     refreshAll: vi.fn().mockResolvedValue(undefined),
@@ -148,23 +148,6 @@ it('renders filter chips and clears them', () => {
   expect(store.setPredicates).toHaveBeenCalledWith([]);
 });
 
-it('shows counts and the observation time in the footer', () => {
-  const { element } = setup({
-    sync: ready(),
-    page: {
-      matching: 1234,
-      total: 128431,
-      observedAt: '2026-10-05T12:00:00.000Z',
-    },
-  });
-  expect(element.querySelector('.grid-footer')?.textContent).toContain(
-    '1,234 matching devices · 128,431 in district',
-  );
-  expect(element.querySelector('.grid-footer')?.textContent).toContain(
-    'Inventory observed',
-  );
-});
-
 it('shows no matches when filters exclude every device', () => {
   const { element } = setup({
     sync: ready(),
@@ -240,4 +223,23 @@ it('takes filters from the grid column filters', () => {
   expect(store.setPredicates).toHaveBeenCalledWith([
     { field: 'notes', operator: 'isEmpty' },
   ]);
+});
+
+it('keeps the grid visible while Show All Selected finds nothing', () => {
+  const { store, element, render } = setup({
+    sync: ready(),
+    predicates: twoChips,
+    page: { matching: 0, total: 450, observedAt: '2026-10-05T12:00:00.000Z' },
+  });
+  expect(element.textContent).toContain('No devices match these filters');
+  store.view.set({
+    predicates: twoChips,
+    sort: { field: 'serialNumber', direction: 'asc' },
+    selection: { gridId: 'devices', tabId: 't' },
+  });
+  render();
+  expect(element.textContent).not.toContain('No devices match these filters');
+  expect(
+    element.querySelector('app-device-grid')?.classList.contains('hidden'),
+  ).toBe(false);
 });

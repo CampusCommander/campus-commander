@@ -130,8 +130,10 @@ it('falls back to serial order for columns without a query field', () => {
 });
 
 it('starts in serial order and saves grid state without row selection', () => {
+  // Partial state keeps the column definitions' hidden and pinned columns.
   expect(defaultGridState()).toEqual({
     sort: { sortModel: [{ colId: 'serialNumber', sort: 'asc' }] },
+    partialColumnState: true,
   });
   const sort = { sortModel: [{ colId: 'assetTag', sort: 'desc' as const }] };
   const filter = {
@@ -208,6 +210,7 @@ it('gives each data column the filter of its field type', () => {
     'no-report',
     'unavailable',
   ]);
+  expect(column('battery').filterParams.suppressSorting).toBe(true);
   expect(
     column('battery').filterParams.valueFormatter({ value: 'no-report' }),
   ).toBe('No battery report');
@@ -219,4 +222,27 @@ it('gives each data column the filter of its field type', () => {
   expect(
     column('orgUnitPath').filterParams.treeListPathGetter('/School A'),
   ).toEqual(['/', 'School A']);
+});
+
+it('limits the query to the selection while Show All Selected is on', async () => {
+  const load = vi.fn().mockResolvedValue({
+    rows: [],
+    matching: 0,
+    total: 450,
+    observedAt: null,
+  });
+  const key = {
+    gridId: 'devices' as const,
+    tabId: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  };
+  deviceDatasource(load, undefined, key).getRows({
+    request: { startRow: 0, endRow: 100, sortModel: [], filterModel: {} },
+    api: {
+      getGridOption: (name: string) => name === 'ssrmSelectionViewActive',
+    },
+    success: vi.fn(),
+    fail: vi.fn(),
+  } as unknown as IServerSideGetRowsParams<DeviceRow>);
+  await vi.waitFor(() => expect(load).toHaveBeenCalled());
+  expect(load.mock.calls[0][2].selection).toEqual(key);
 });

@@ -27,8 +27,6 @@ import {
   deviceSelectionTab,
 } from './device-selection';
 
-export type OptionalDeviceColumn = 'annotatedLocation' | 'notes';
-
 export function devicesReadable(auth: InstanceType<typeof AuthStore>): boolean {
   return (
     auth.metadata()?.phase === 3 &&
@@ -69,10 +67,6 @@ export class DevicesStore {
   readonly revision = signal(0);
   /** Row index and ID of the last opened device in the current filtered order. */
   readonly position = signal<{ index: number; deviceId: string } | null>(null);
-  readonly optionalColumns = signal<Record<OptionalDeviceColumn, boolean>>({
-    annotatedLocation: false,
-    notes: false,
-  });
   readonly refreshing = computed(() => this.sync()?.status === 'running');
   readonly readable = computed(() => devicesReadable(this.auth));
   private polling = false;

@@ -11,13 +11,12 @@ import {
   untracked,
   viewChildren,
 } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import type { DevicePredicate, DeviceRow } from '@campus/application-contracts';
-import { DevicesStore, type OptionalDeviceColumn } from './devices.store';
-import { DeviceGrid, type DeviceRange } from './device-grid';
+import { DevicesStore } from './devices.store';
+import { DeviceGrid } from './device-grid';
 import { DeviceFilter } from './device-filter';
 import type { DeviceView } from './device-datasource';
 import type { GridState } from 'ag-grid-community';
@@ -30,7 +29,6 @@ import {
 @Component({
   selector: 'app-devices',
   imports: [
-    DatePipe,
     RouterLink,
     MatButtonModule,
     MatMenuModule,
@@ -46,7 +44,6 @@ export class DevicesPage implements OnInit {
   private readonly injector = inject(Injector);
   private readonly chips = viewChildren<ElementRef<HTMLButtonElement>>('chip');
   protected readonly sync = this.store.sync;
-  protected readonly range = signal<DeviceRange | null>(null);
   protected readonly editingIndex = signal<number | null>(null);
   protected readonly editing = computed(() => {
     const index = this.editingIndex();
@@ -55,8 +52,15 @@ export class DevicesPage implements OnInit {
   protected readonly published = computed(() => !!this.sync()?.observedAt);
   protected readonly noMatches = computed(
     () =>
-      this.store.page()?.matching === 0 && this.store.predicates().length > 0,
+      this.store.page()?.matching === 0 &&
+      this.store.predicates().length > 0 &&
+      // Show All Selected keeps the grid, so its footer can return to all records.
+      !this.store.view().selection,
   );
+  protected readonly selection = {
+    provider: this.store.selection,
+    tabId: this.store.selectionTab,
+  };
   protected readonly emptyInventory = computed(
     () =>
       this.store.page()?.total === 0 && this.store.predicates().length === 0,
@@ -88,10 +92,6 @@ export class DevicesPage implements OnInit {
 
   ngOnInit(): void {
     void this.store.init();
-  }
-
-  protected count(value: number): string {
-    return value.toLocaleString('en-US');
   }
 
   protected refresh(): void {
@@ -138,13 +138,6 @@ export class DevicesPage implements OnInit {
     afterNextRender(() => this.chips()[index]?.nativeElement.focus(), {
       injector: this.injector,
     });
-  }
-
-  protected toggleColumn(column: OptionalDeviceColumn): void {
-    this.store.optionalColumns.update((columns) => ({
-      ...columns,
-      [column]: !columns[column],
-    }));
   }
 
   protected open(event: { row: DeviceRow; index: number }): void {

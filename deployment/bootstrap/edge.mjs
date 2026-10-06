@@ -49,7 +49,8 @@ export async function createBootstrapEdge({
     response.setHeader('referrer-policy', 'no-referrer');
     response.setHeader(
       'content-security-policy',
-      "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+      // AG Grid draws its icons from data: SVG images. Scripts stay same-origin.
+      "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
     );
     const path = request.url || '';
     if (path === '/health/live') return finish(response, 200, 'live\n');

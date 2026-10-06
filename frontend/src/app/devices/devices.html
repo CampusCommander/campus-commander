@@ -107,30 +107,6 @@
       </button>
     </div>
     <div class="actions">
-      <button mat-button type="button" [matMenuTriggerFor]="columnsMenu">
-        Columns
-      </button>
-      <mat-menu #columnsMenu="matMenu">
-        <button
-          mat-menu-item
-          type="button"
-          role="menuitemcheckbox"
-          [attr.aria-checked]="store.optionalColumns().annotatedLocation"
-          (click)="toggleColumn('annotatedLocation')"
-        >
-          {{ store.optionalColumns().annotatedLocation ? 'Hide' : 'Show' }}
-          Annotated location
-        </button>
-        <button
-          mat-menu-item
-          type="button"
-          role="menuitemcheckbox"
-          [attr.aria-checked]="store.optionalColumns().notes"
-          (click)="toggleColumn('notes')"
-        >
-          {{ store.optionalColumns().notes ? 'Hide' : 'Show' }} Notes
-        </button>
-      </mat-menu>
       <button
         mat-button
         type="button"
@@ -169,7 +145,6 @@
       [class.hidden]="noMatches() || emptyInventory()"
       [load]="load"
       [revision]="store.revision()"
-      [optionalColumns]="store.optionalColumns()"
       [focusIndex]="store.position()?.index ?? null"
       [state]="store.gridState()"
       [saveState]="saveState"
@@ -177,31 +152,9 @@
       [orgUnits]="store.orgUnits()"
       (filtersChange)="store.setPredicates($event)"
       (details)="open($event)"
-      (rangeChange)="range.set($event)"
+      [selection]="selection"
     />
   </div>
 
-  <footer class="grid-footer" aria-live="polite">
-    @if (store.page(); as page) {
-    <p>
-      {{ count(page.matching) }} matching devices · {{ count(page.total) }} in
-      district
-    </p>
-    <p class="freshness">
-      @if (store.offline()) { Cached inventory: {{ page.observedAt | date: 'MMM
-      d, h:mm a' }} · Connection unavailable } @else if (sync()?.stale) { Stale
-      inventory · Last complete observation {{ page.observedAt | date: 'MMM d,
-      h:mm a' }} · Refresh required } @else { Inventory observed {{
-      page.observedAt | date: 'MMM d, h:mm a' }} }
-    </p>
-    @if (range(); as visible) {
-    <p class="rows">
-      Rows {{ count(visible.first + 1) }}–{{ count(visible.last + 1) }} of {{
-      count(page.matching) }}
-    </p>
-    } } @else {
-    <p>Loading devices…</p>
-    }
-  </footer>
   }
 </div>

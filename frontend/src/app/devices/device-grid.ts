@@ -1,7 +1,13 @@
 import {
+  ApplicationRef,
   Component,
+  DestroyRef,
+  EnvironmentInjector,
+  Injector,
   OnInit,
+  createComponent,
   effect,
+  inject,
   input,
   output,
   untracked,
@@ -17,7 +23,16 @@ import {
   type GridState,
 } from 'ag-grid-community';
 import { ServerSideRowModelModule } from '@libregrid/server-side-row-model';
+import {
+  ServerSideSelectionModule,
+  type ServerSideSelectionProvider,
+} from '@libregrid/server-side-selection';
 import { SetFilterModule } from '@libregrid/set-filter';
+import { ColumnMenuModule } from '@libregrid/menu';
+import { SideBarModule } from '@libregrid/side-bar';
+import { ColumnsToolPanelModule } from '@libregrid/columns-tool-panel';
+import { FiltersToolPanelModule } from '@libregrid/filters-tool-panel';
+import { StatusBarModule } from '@libregrid/status-bar';
 import type {
   DeviceOrgUnit,
   DevicePage,
@@ -35,18 +50,21 @@ import {
   filterModelUpdate,
   predicatesFromFilterModel,
 } from './device-filter-model';
-import type { OptionalDeviceColumn } from './devices.store';
+import { deviceGridFeatures, showRow } from './device-grid-options';
+import { DEVICE_GRID_ID } from './device-selection';
+import { DeviceStatusPanel } from './device-status-panel';
 
 ModuleRegistry.registerModules([
   AllCommunityModule,
   ServerSideRowModelModule,
+  ServerSideSelectionModule,
   SetFilterModule,
+  ColumnMenuModule,
+  SideBarModule,
+  ColumnsToolPanelModule,
+  FiltersToolPanelModule,
+  StatusBarModule,
 ]);
-
-export interface DeviceRange {
-  first: number;
-  last: number;
-}
 
 @Component({
   selector: 'app-device-grid',
@@ -56,8 +74,6 @@ export interface DeviceRange {
       class="device-grid"
       [gridOptions]="options"
       (gridReady)="ready($event)"
-      (modelUpdated)="updated()"
-      (bodyScrollEnd)="emitRange()"
     />
   `,
   styles: `
@@ -73,6 +89,17 @@ export interface DeviceRange {
     :host ::ng-deep .device-code {
       font-family: 'Roboto Mono', monospace;
     }
+    :host ::ng-deep .lgr-ssrm-selection-footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--cc-space-md);
+      color: var(--cc-text-primary);
+    }
+    :host ::ng-deep .lgr-ssrm-selection-footer button {
+      color: var(--cc-accent);
+      font: inherit;
+    }
     :host ::ng-deep .device-details-header .ag-header-cell-text {
       position: absolute;
       width: 1px;
@@ -86,10 +113,6 @@ export interface DeviceRange {
 export class DeviceGrid implements OnInit {
   readonly load = input.required<DeviceLoader>();
   readonly revision = input(0);
-  readonly optionalColumns = input<Record<OptionalDeviceColumn, boolean>>({
-    annotatedLocation: false,
-    notes: false,
-  });
   /** Row to scroll into view after the first block loads, such as after Back to devices. */
   readonly focusIndex = input<number | null>(null);
   /** Saved grid state to open with, such as after Back to devices. */
@@ -101,8 +124,19 @@ export class DeviceGrid implements OnInit {
   /** Organization units for the OrgUnit set filter. */
   readonly orgUnits = input<readonly DeviceOrgUnit[]>([]);
   readonly filtersChange = output<DevicePredicate[]>();
+  readonly selection = input.required<{
+    provider: ServerSideSelectionProvider;
+    tabId: string;
+  }>();
+  /** The selection footer lives in the status bar. LibreGrid fills it on ready. */
+  private readonly footer = document.createElement('div');
+  /** Counts and freshness render here, inside the status bar (GRID-01). */
+  private readonly status = document.createElement('div');
+  private readonly injector = inject(Injector);
+  private readonly environment = inject(EnvironmentInjector);
+  private readonly application = inject(ApplicationRef);
+  private readonly destroyRef = inject(DestroyRef);
   readonly details = output<{ row: DeviceRow; index: number }>();
-  readonly rangeChange = output<DeviceRange | null>();
 
   private api: GridApi<DeviceRow> | null = null;
   private focused = false;
@@ -114,16 +148,19 @@ export class DeviceGrid implements OnInit {
       untracked(() => this.reload());
     });
     effect(() => {
-      const columns = this.optionalColumns();
-      untracked(() => this.applyColumns(columns));
-    });
-    effect(() => {
       const predicates = this.predicates();
       untracked(() => this.applyPredicates(predicates));
     });
   }
 
   ngOnInit(): void {
+    const status = createComponent(DeviceStatusPanel, {
+      environmentInjector: this.environment,
+      elementInjector: this.injector,
+      hostElement: this.status,
+    });
+    this.application.attachView(status.hostView);
+    this.destroyRef.onDestroy(() => status.destroy());
     const open = (row: DeviceRow, index: number) =>
       this.details.emit({ row, index });
     this.options = {
@@ -145,13 +182,19 @@ export class DeviceGrid implements OnInit {
       getRowId: ({ data }) => data.deviceId,
       rowModelType: 'serverSide',
       cacheBlockSize: 100,
-      maxBlocksInCache: 20,
+      // A full cache stays within the API's 2,000-ID selection batch.
+      maxBlocksInCache: 10,
+      ...deviceGridFeatures({
+        provider: this.selection().provider,
+        tabId: this.selection().tabId,
+        footer: this.footer,
+        status: this.status,
+      }),
     };
   }
 
   protected ready(event: GridReadyEvent<DeviceRow>): void {
     this.api = event.api;
-    this.applyColumns(this.optionalColumns());
     this.applyPredicates(this.predicates());
     this.reload();
   }
@@ -163,16 +206,9 @@ export class DeviceGrid implements OnInit {
       deviceDatasource(
         (offset, limit, view) => this.load()(offset, limit, view),
         (page) => this.restore(page),
+        { gridId: DEVICE_GRID_ID, tabId: this.selection().tabId },
       ),
     );
-  }
-
-  private applyColumns(columns: Record<OptionalDeviceColumn, boolean>): void {
-    this.api?.setColumnsVisible(
-      ['annotatedLocation'],
-      columns.annotatedLocation,
-    );
-    this.api?.setColumnsVisible(['notes'], columns.notes);
   }
 
   private applyPredicates(predicates: readonly DevicePredicate[]): void {
@@ -196,18 +232,7 @@ export class DeviceGrid implements OnInit {
     const index = this.focusIndex();
     if (this.focused || index === null || page.matching <= index) return;
     this.focused = true;
-    setTimeout(() => this.api?.ensureIndexVisible(index, 'middle'));
-  }
-
-  protected updated(): void {
-    this.emitRange();
-  }
-
-  protected emitRange(): void {
     const api = this.api;
-    if (!api) return;
-    const first = api.getFirstDisplayedRowIndex();
-    const last = api.getLastDisplayedRowIndex();
-    this.rangeChange.emit(first >= 0 && last >= first ? { first, last } : null);
+    if (api) setTimeout(() => showRow(api, index));
   }
 }

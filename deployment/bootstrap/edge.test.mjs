@@ -132,7 +132,13 @@ for (const phase of [1, 2, 3])
         assert.equal(accepted.body.includes(token), false);
         assert.equal(accepted.headers['cache-control'], 'no-store');
       }
-      assert.equal((await request('/health/live')).status, 200);
+      const live = await request('/health/live');
+      assert.equal(live.status, 200);
+      // AG Grid draws its icons from data: SVG images. Scripts stay same-origin.
+      assert.equal(
+        live.headers['content-security-policy'],
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+      );
       assert.equal((await request('/health')).status, 503);
       assert.equal((await request('/api/startup')).status, 401);
       assert.equal((await request('/api/startup', token)).status, 503);

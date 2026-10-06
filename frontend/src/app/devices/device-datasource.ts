@@ -41,13 +41,18 @@ export function sortFromModel(
     : defaultSort;
 }
 
+/** Partial, so columns keep the hidden and pinned settings of their definitions. */
 export function defaultGridState(): GridState {
-  return { sort: { sortModel: [{ colId: 'serialNumber', sort: 'asc' }] } };
+  return {
+    sort: { sortModel: [{ colId: 'serialNumber', sort: 'asc' }] },
+    partialColumnState: true,
+  };
 }
 
 /** The server keeps the selection. Restoring row selection state would fight it. */
 export function savedGridState(state: GridState): GridState {
-  const { rowSelection: _selection, ...rest } = state;
+  const rest = { ...state };
+  delete rest.rowSelection;
   return rest;
 }
 
@@ -55,6 +60,7 @@ export function savedGridState(state: GridState): GridState {
 export function deviceDatasource(
   load: DeviceLoader,
   onLoaded?: (page: DevicePage) => void,
+  selection?: DeviceSelectionKey,
 ): IServerSideDatasource<DeviceRow> {
   return {
     getRows(params: IServerSideGetRowsParams<DeviceRow>) {
@@ -75,7 +81,11 @@ export function deviceDatasource(
       const view: DeviceView = {
         predicates,
         sort: sortFromModel(params.request.sortModel),
-        selection: null,
+        // Show All Selected limits the query to this tab's selection.
+        selection:
+          selection && params.api.getGridOption('ssrmSelectionViewActive')
+            ? selection
+            : null,
       };
       load(offset, limit, view).then(
         (page) => {
