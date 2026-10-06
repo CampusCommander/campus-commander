@@ -113,6 +113,29 @@ export class OrchestrationService {
     return this.execute('device_sync', values);
   }
 
+  async startEntitySync(input: {
+    customerId: string;
+    jobId: string;
+    batchCount: number;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        jobId: z.uuid(),
+        batchCount: z.number().int().min(1).max(1000),
+        correlationId: z.uuid(),
+      })
+      .parse(input);
+    await this.deployFlow('entity-sync.yaml', 'entity_sync');
+    return this.execute('entity_sync', {
+      customerId: values.customerId,
+      jobId: values.jobId,
+      batches: JSON.stringify(Array.from({ length: values.batchCount }, (_, index) => index)),
+      correlationId: values.correlationId,
+    });
+  }
+
   async check(correlationId: string) {
     await this.deployFlow('phase2-connection.yaml', 'phase2_connection');
     const marker = 'campus-commander-phase-2';

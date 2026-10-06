@@ -75,7 +75,7 @@
       "executor": "nx:run-commands",
       "cache": true,
       "options": {
-        "command": "node --import ./libs/application-contracts/test-register.mjs --test api/src/app/devices/*.test.mjs"
+        "command": "node --import ./libs/application-contracts/test-register.mjs --test api/src/app/devices/*.test.mjs api/src/app/cache/*.test.mjs"
       }
     }
   },

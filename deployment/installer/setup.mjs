@@ -1109,6 +1109,8 @@ export async function runSetup(
       worker.serverTls.privateKeySecretRef,
       database.passwordSecretRef,
       database.endpoint.tls.caSecretRef,
+      config.services.redis.passwordSecretRef,
+      config.services.redis.endpoint.tls.caSecretRef,
       worker.endpoint.tls.caSecretRef,
     ].filter(Boolean);
     for (const path of new Set(

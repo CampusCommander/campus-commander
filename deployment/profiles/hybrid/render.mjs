@@ -364,7 +364,9 @@ function renderBase(input, release) {
     services.workers.serverTls.certificateSecretRef,
     services.workers.serverTls.privateKeySecretRef,
     services.applicationDatabase.passwordSecretRef,
+    services.redis.passwordSecretRef,
     caReference(services.applicationDatabase),
+    caReference(services.redis),
     caReference(services.workers),
   );
   compose.services.edge.secrets = secretsFor(

@@ -1,0 +1,43 @@
+id: entity_sync
+namespace: campus.application
+inputs:
+  - id: customerId
+    type: STRING
+  - id: jobId
+    type: STRING
+  - id: batches
+    type: STRING
+  - id: correlationId
+    type: STRING
+tasks:
+  - id: batches
+    type: io.kestra.plugin.core.flow.ForEach
+    values: '{{ inputs.batches }}'
+    concurrencyLimit: 4
+    tasks:
+      - id: dispatch
+        type: io.kestra.plugin.core.http.Request
+        uri: '{{ envs.cc_worker_base_url }}/dispatch/entity-sync-batch'
+        method: POST
+        contentType: application/json
+        headers:
+          Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+        body: |
+          {{ {
+            "executionId": execution.id,
+            "customerId": inputs.customerId,
+            "jobId": inputs.jobId,
+            "batch": taskrun.value,
+            "correlationId": inputs.correlationId
+          } | json }}
+        timeout: PT1H
+        options:
+          timeout:
+            connectTimeout: PT3S
+            readIdleTimeout: PT1H
+        # Only a dead batch runner retries here. Google outcomes return 200 and never retry.
+        retry:
+          type: constant
+          interval: PT5S
+          maxAttempts: 3
+          warningOnRetry: false

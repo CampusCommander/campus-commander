@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { createClient } from 'redis';
 import { ConfigurationService } from '../configuration/configuration.service';
+import { addMembersScript, memberChunks } from './cache-sets';
 
 @Injectable()
 export class CacheService implements OnApplicationShutdown {
@@ -143,6 +144,24 @@ export class CacheService implements OnApplicationShutdown {
   }
   async expire(key: string, seconds: number) {
     return this.execute((client) => client.expire(key, seconds));
+  }
+  /** Add members to a set with an expiry. Returns the members that were not already present. */
+  async addMembers(key: string, members: readonly string[], seconds: number): Promise<string[]> {
+    const added: string[] = [];
+    for (const chunk of memberChunks(members)) {
+      const result = await this.execute((client) =>
+        client.eval(addMembersScript, {
+          keys: [key],
+          arguments: [String(seconds), ...chunk],
+        }),
+      );
+      if (Array.isArray(result)) added.push(...result.map(String));
+    }
+    return added;
+  }
+  async removeMembers(key: string, members: readonly string[]): Promise<void> {
+    for (const chunk of memberChunks(members))
+      await this.execute((client) => client.sRem(key, [...chunk]));
   }
   async onApplicationShutdown() {
     if (this.client?.isOpen) this.client.destroy();
