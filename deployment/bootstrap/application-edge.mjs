@@ -79,6 +79,12 @@ const finish = (response, status, message) => {
   response.end(message);
 };
 
+/**
+ * Upstream idle timeouts in milliseconds. Node applies `timeout` to socket inactivity.
+ * The event stream pings every 25 seconds, so 75 seconds allows two missed pings.
+ */
+export const upstreamTimeouts = { request: 45000, events: 75000 };
+
 /** Proxy only released pages and bounded application requests. */
 export async function proxyApplication(
   request,
@@ -86,6 +92,7 @@ export async function proxyApplication(
   upstreams,
   publicOrigin,
   phase = 2,
+  timeouts = upstreamTimeouts,
 ) {
   const path = request.url ?? '';
   if (
@@ -186,7 +193,8 @@ export async function proxyApplication(
       headers,
       ca: target.ca,
       rejectUnauthorized: true,
-      timeout: 45000,
+      timeout:
+        pathname === '/api/devices/events' ? timeouts.events : timeouts.request,
     },
     (incoming) => {
       const forwarded = {

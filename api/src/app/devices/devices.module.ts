@@ -4,6 +4,7 @@ import { CacheModule } from '../cache/cache.module';
 import { ConfigurationModule } from '../configuration/configuration.module';
 import { DatabaseModule } from '../database/database.module';
 import { OrchestrationModule } from '../orchestration/orchestration.module';
+import { DeviceEventsService } from './device-events.service';
 import { DevicesController } from './devices.controller';
 import { DevicesService } from './devices.service';
 
@@ -16,6 +17,6 @@ import { DevicesService } from './devices.service';
     OrchestrationModule,
   ],
   controllers: [DevicesController],
-  providers: [DevicesService],
+  providers: [DevicesService, DeviceEventsService],
 })
 export class DevicesModule {}

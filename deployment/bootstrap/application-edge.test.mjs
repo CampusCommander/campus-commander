@@ -266,3 +266,75 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       }
   }
 });
+
+test('the device event stream outlives the request timeout while pings flow', async () => {
+  const listen = (server) =>
+    new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = (server) => `http://127.0.0.1:${server.address().port}`;
+  const api = http.createServer((request, response) => {
+    if (!request.url.startsWith('/api/devices/events')) return;
+    response.writeHead(200, { 'content-type': 'text/event-stream' });
+    response.write('retry: 3000\n\n');
+    // A silent stream must end at the edge.
+    if (request.url.endsWith('silent=1')) return;
+    let sent = 0;
+    const timer = setInterval(() => {
+      response.write('event: ping\ndata: {}\n\n');
+      sent += 1;
+      if (sent === 6) {
+        clearInterval(timer);
+        response.end();
+      }
+    }, 50);
+  });
+  const frontend = http.createServer((request, response) =>
+    response.end('frontend'),
+  );
+  let edge;
+  try {
+    await listen(api);
+    await listen(frontend);
+    edge = http.createServer((request, response) =>
+      proxyApplication(
+        request,
+        response,
+        {
+          frontend: { url: new URL(origin(frontend)) },
+          api: { url: new URL(origin(api)) },
+        },
+        origin(edge),
+        3,
+        { request: 120, events: 200 },
+      ),
+    );
+    await listen(edge);
+    const guard = () => ({ signal: AbortSignal.timeout(2000) });
+    const events = await fetch(`${origin(edge)}/api/devices/events`, guard());
+    assert.equal(events.headers.get('content-type'), 'text/event-stream');
+    assert.equal(events.headers.get('cache-control'), 'no-store');
+    const text = await events.text();
+    assert.equal(
+      text.split('event: ping').length - 1,
+      6,
+      'The stream ran past the 120 ms request timeout.',
+    );
+    const silent = await fetch(
+      `${origin(edge)}/api/devices/events?silent=1`,
+      guard(),
+    );
+    const quiet = Date.now();
+    await assert.rejects(silent.text());
+    assert.ok(Date.now() - quiet < 1000, 'The edge ended the silent stream.');
+    // Every other request keeps the request timeout.
+    assert.equal(
+      (await fetch(`${origin(edge)}/api/devices/sync`, guard())).status,
+      502,
+    );
+  } finally {
+    for (const server of [edge, frontend, api])
+      if (server) {
+        server.closeAllConnections();
+        await new Promise((resolve) => server.close(resolve));
+      }
+  }
+});

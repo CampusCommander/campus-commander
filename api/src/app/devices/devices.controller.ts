@@ -7,8 +7,11 @@ import {
   Param,
   Post,
   Req,
+  Res,
+  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { z } from 'zod';
 import {
   deviceByIdsSchema,
@@ -20,6 +23,8 @@ import {
 } from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
+import { DeviceEventsService } from './device-events.service';
+import { streamEvents } from './device-events';
 import { DevicesService } from './devices.service';
 
 const deviceIdSchema = z.string().min(1).max(128);
@@ -30,6 +35,7 @@ export class DevicesController {
   constructor(
     private readonly devices: DevicesService,
     private readonly auth: AuthService,
+    private readonly deviceEvents: DeviceEventsService,
   ) {}
 
   /** Resolve the connected customer, then require devices:read for it. */
@@ -156,6 +162,43 @@ export class DevicesController {
   async orgUnits(@Req() request: AuthenticatedRequest) {
     await this.current(request);
     return { orgUnits: await this.devices.orgUnits(request.session) };
+  }
+
+  /** Server-Sent Events for this customer's device refreshes (D6, D12). */
+  @Get('events')
+  async events(
+    @Req() request: AuthenticatedRequest,
+    @Res() response: Response,
+  ): Promise<void> {
+    const current = await this.current(request);
+    if (!current)
+      throw new ConflictException({ reason: 'connection-required' });
+    const started = await streamEvents(response, {
+      customerId: current.customerId,
+      fanout: this.deviceEvents.fanout,
+      begin: () => {
+        response.writeHead(200, {
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-store',
+          'x-accel-buffering': 'no',
+        });
+      },
+      // A ping goes out only while the session and devices:read still hold for this customer.
+      recheck: async () => {
+        try {
+          request.session = await this.auth.authenticate(
+            request.headers.cookie,
+            'identity:read',
+            request.correlationId,
+          );
+          return (await this.current(request))?.customerId === current.customerId;
+        } catch {
+          return false;
+        }
+      },
+    });
+    if (!started)
+      throw new ServiceUnavailableException({ reason: 'events-unavailable' });
   }
 
   @Get(':deviceId')
