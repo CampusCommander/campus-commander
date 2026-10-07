@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { GoogleConnectionError } from './provider';
 
 /**
  * Google multipart batch service. One call sends many API calls of one resource type.
@@ -539,6 +540,7 @@ class BatchRun<T> {
     failed: new Map(),
   };
   private client: BatchHttpClient | null = null;
+  private mintedAt = 0;
   private round = 0;
   private sequence = 0;
   private fatal: { error: unknown } | null = null;
@@ -596,9 +598,37 @@ class BatchRun<T> {
     return due;
   }
 
+  /** Mint at the start and again 45 minutes after the last mint. A mint failure fails waiting requests. */
   private async ensureClient(): Promise<BatchHttpClient | null> {
-    this.client ??= await this.call.getClient(this.call.signal);
-    return this.client;
+    if (
+      this.client !== null &&
+      this.clock.now() - this.mintedAt < TOKEN_RENEWAL_MS
+    )
+      return this.client;
+    try {
+      this.client = await this.call.getClient(this.call.signal);
+      this.mintedAt = this.clock.now();
+      return this.client;
+    } catch (error) {
+      if (this.call.signal.aborted) return null;
+      const code =
+        error !== null && typeof error === 'object'
+          ? (error as { code?: unknown }).code
+          : undefined;
+      for (const entry of [...this.pending.values()])
+        if (!entry.inFlight)
+          await this.resolveFailure(
+            entry,
+            {
+              kind: 'auth',
+              status: 0,
+              reason: typeof code === 'string' ? code : null,
+              body: null,
+            },
+            false,
+          );
+      return null;
+    }
   }
 
   private launch(entries: Entry<T>[], client: BatchHttpClient): void {
@@ -657,15 +687,60 @@ class BatchRun<T> {
     else {
       // An aborted send leaves its requests pending. The run loop fails them as aborted.
       if (failure !== undefined && this.call.signal.aborted) return;
-      throw (
-        failure ??
-        new BatchServiceError(
-          'outer-rejected',
-          `The batch endpoint answered HTTP ${status}.`,
-        )
-      );
+      await this.outerFailure(entries, status, response, failure);
     }
     await this.reportRound(round, entries.length, status, started);
+  }
+
+  /** B7: classify an outer answer that carries no parts. */
+  private async outerFailure(
+    entries: Entry<T>[],
+    status: number,
+    response: BatchHttpResponse | undefined,
+    failure: unknown,
+  ): Promise<void> {
+    // The request allowlist and service defects are not Google conditions.
+    if (
+      failure instanceof GoogleConnectionError ||
+      failure instanceof BatchServiceError
+    )
+      throw failure;
+    if (status === 0) {
+      const code =
+        failure !== null && typeof failure === 'object'
+          ? (failure as { code?: unknown }).code
+          : undefined;
+      for (const entry of entries)
+        await this.retryOrFail(
+          entry,
+          'transient',
+          0,
+          typeof code === 'string' ? code : 'network',
+          null,
+          undefined,
+        );
+      return;
+    }
+    const body =
+      typeof response?.data === 'string'
+        ? decodeBody(response.data)
+        : (response?.data ?? null);
+    const { kind, reason } = classifyStatus(status, body);
+    if (kind === 'quota' || kind === 'transient') {
+      const retryAfter = headerValue(response?.headers, 'retry-after');
+      for (const entry of entries)
+        await this.retryOrFail(entry, kind, status, reason, body, retryAfter);
+      return;
+    }
+    if (kind === 'auth') {
+      for (const entry of entries)
+        await this.resolveFailure(entry, { kind, status, reason, body }, true);
+      return;
+    }
+    throw new BatchServiceError(
+      'outer-rejected',
+      `The batch endpoint answered HTTP ${status}.`,
+    );
   }
 
   private async resolveParts(
