@@ -804,3 +804,83 @@ describe('reopen after a failed status read', () => {
     expect(store.revision()).toBe(before);
   });
 });
+
+it('recounts when a page that scrolling loads starts a refresh job', async () => {
+  let refreshJobId: string | null = null;
+  let stale = 0;
+  const request = routes({
+    '/api/devices/query': () =>
+      Response.json({ page: { ...page, refreshJobId } }),
+    '/api/devices/freshness': () =>
+      Response.json({ freshness: { stale, refreshing: stale > 0 } }),
+  });
+  const store = setup(request);
+  store.recountDelay = 0;
+  await store.rows(0, 100);
+  await vi.waitFor(() =>
+    expect(store.freshness()).toEqual({ stale: 0, refreshing: false }),
+  );
+  refreshJobId = JOB;
+  stale = 12;
+  await store.rows(100, 100);
+  await vi.waitFor(() =>
+    expect(store.freshness()).toEqual({ stale: 12, refreshing: true }),
+  );
+});
+
+describe('the stale count of a new query', () => {
+  const notes = {
+    predicates: [{ field: 'notes' as const, operator: 'isEmpty' as const }],
+    sort: { field: 'serialNumber' as const, direction: 'asc' as const },
+    selection: null,
+  };
+
+  it('keeps the shown count until the new count arrives and counts at once', async () => {
+    let stale = 12;
+    let hold = Promise.resolve();
+    const request = vi.fn(async (path: string) => {
+      if (path === '/api/devices/query') return Response.json({ page });
+      await hold;
+      return Response.json({ freshness: { stale, refreshing: true } });
+    });
+    // recountDelay stays at 1000 ms. A new query must not wait for it.
+    const store = setup(request);
+    await store.rows(0, 100);
+    await vi.waitFor(() => expect(store.freshness()?.stale).toBe(12), {
+      timeout: 500,
+    });
+    let release: () => void = () => undefined;
+    hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    stale = 3;
+    store.setView(notes);
+    await store.rows(0, 100);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(4), {
+      timeout: 500,
+    });
+    expect(store.freshness()?.stale).toBe(12);
+    release();
+    await vi.waitFor(() => expect(store.freshness()?.stale).toBe(3));
+  });
+
+  it('drops the previous query count when the new count fails', async () => {
+    let available = true;
+    const request = vi.fn(async (path: string) =>
+      path === '/api/devices/query'
+        ? Response.json({ page })
+        : available
+          ? Response.json({ freshness: { stale: 12, refreshing: true } })
+          : Response.json({}, { status: 503 }),
+    );
+    const store = setup(request);
+    store.recountDelay = 0;
+    await store.rows(0, 100);
+    await vi.waitFor(() => expect(store.freshness()?.stale).toBe(12));
+    available = false;
+    store.setView(notes);
+    await store.rows(0, 100);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(store.freshness()).toBeNull());
+  });
+});

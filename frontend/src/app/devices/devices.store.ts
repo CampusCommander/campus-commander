@@ -120,6 +120,8 @@ export class DevicesStore {
   private countedQuery: CountedQuery = { predicates: [], selection: null };
   /** The counts and revision that the last stale count belongs to. */
   private recounted: string | null = null;
+  /** The counted query that `freshness` belongs to. */
+  private freshnessFor: string | null = null;
   readonly orgUnits = signal<DeviceOrgUnit[]>([]);
   readonly offline = signal(false);
   readonly error = signal('');
@@ -184,6 +186,7 @@ export class DevicesStore {
     this.counted = countsKey(defaultView());
     this.countedQuery = { predicates: [], selection: null };
     this.recounted = null;
+    this.freshnessFor = null;
     this.selection.spec.set(null);
     this.page.set(null);
     this.freshness.set(null);
@@ -289,8 +292,11 @@ export class DevicesStore {
     });
     if (!response?.ok) return null;
     const page = devicePageSchema.parse((await response.json()).page);
-    // A new refresh job replaces the cause of the last failed one.
-    if (page.refreshJobId) this.jobFailure.set(null);
+    // A new refresh job replaces the cause of the last failed one. The banner then counts its devices.
+    if (page.refreshJobId) {
+      this.jobFailure.set(null);
+      this.scheduleRecount();
+    }
     // Only a whole open group loads at the group limit. Next device loads one row.
     if (
       view.group?.by.length &&
@@ -330,12 +336,12 @@ export class DevicesStore {
       total: counts.total,
       observedAt: counts.observedAt,
     });
-    // New counts mean a new result set. Its stale count follows once per query and revision.
+    // New counts mean a new result set. Its stale count follows at once, once per query and revision.
+    // The banner keeps the last count until then, so it does not blink.
     const token = `${key}#${revision}`;
     if (token === this.recounted) return;
     this.recounted = token;
-    this.freshness.set(null);
-    this.scheduleRecount();
+    this.scheduleRecount(0);
   }
 
   /** Count the stale devices of the counted query and learn whether a refresh job runs (D11). */
@@ -346,23 +352,28 @@ export class DevicesStore {
       '/api/devices/freshness',
       this.countedQuery,
     );
-    if (!response?.ok || counted !== this.counted || epoch !== this.epoch)
-      return;
+    let freshness: DeviceFreshness | null = null;
     try {
-      this.freshness.set(
-        deviceFreshnessSchema.parse((await response.json()).freshness),
-      );
+      if (response?.ok)
+        freshness = deviceFreshnessSchema.parse(
+          (await response.json()).freshness,
+        );
     } catch {
-      // An unreadable count leaves the banner as it was.
+      // An unreadable count counts as a failed count.
+    }
+    if (counted !== this.counted || epoch !== this.epoch) return;
+    if (freshness) {
+      this.freshness.set(freshness);
+      this.freshnessFor = counted;
+    } else if (this.freshnessFor !== counted) {
+      // A failed count leaves the banner as it was. A count for another query must not stay.
+      this.freshness.set(null);
     }
   }
 
-  private scheduleRecount(): void {
+  private scheduleRecount(delay = this.recountDelay): void {
     clearTimeout(this.recountTimer);
-    this.recountTimer = setTimeout(
-      () => void this.recount(),
-      this.recountDelay,
-    );
+    this.recountTimer = setTimeout(() => void this.recount(), delay);
   }
 
   private openStream(): void {
