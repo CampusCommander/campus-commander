@@ -10,12 +10,14 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import {
+  deviceFreshnessSchema,
   deviceGroupPageSchema,
   freshnessCutoff,
   deviceOrgUnitsSchema,
   devicePageSchema,
   deviceSyncStateSchema,
   type DeviceDetail,
+  type DeviceFreshness,
   type DeviceGroupField,
   type DeviceGroupPage,
   type DeviceGrouping,
@@ -23,6 +25,7 @@ import {
   type DevicePage,
   type DevicePredicate,
   type DeviceQuery,
+  type DeviceRow,
   type DeviceSelectionKey,
   type DeviceSelectionOp,
   type DeviceSelectionSpec,
@@ -50,9 +53,11 @@ import {
   groupSelectionSql,
   deviceOrgUnitsSql,
   matchingAmongSql,
+  refreshingSql,
   selectedAmongSql,
   selectedInSql,
   selectionCountSql,
+  staleCountSql,
 } from './device-query';
 import { DevicePager, type Rows } from './device-pager';
 import { DeviceRefresh } from './device-refresh';
@@ -319,6 +324,48 @@ export class DevicesService {
     );
     if (!found) throw new NotFoundException({ reason: 'device-not-found' });
     return found;
+  }
+
+  /** Rows for device IDs, Redis first and Postgres for misses (D7). Unknown IDs are left out. */
+  async rowsById(
+    session: SessionResponse,
+    deviceIds: readonly string[],
+  ): Promise<DeviceRow[]> {
+    return this.read(
+      session,
+      async (client, customerId) =>
+        (await this.pager.hydrate(customerId, deviceIds, rowsOf(client))).rows,
+      [],
+    );
+  }
+
+  /** Stale devices in a result set, and whether a refresh job runs (D11). */
+  async freshness(
+    session: SessionResponse,
+    query: DeviceQuery,
+  ): Promise<DeviceFreshness> {
+    return this.read(
+      session,
+      async (client, customerId) => {
+        const selection = query.selection
+          ? await this.storedSelection(session, query.selection)
+          : null;
+        const [counted] = await rowsOf(client)(
+          staleCountSql(
+            customerId,
+            query,
+            selection,
+            freshnessCutoff('device'),
+          ),
+        );
+        const [running] = await rowsOf(client)(refreshingSql(customerId));
+        return deviceFreshnessSchema.parse({
+          stale: counted?.['stale'] ?? 0,
+          refreshing: running?.['refreshing'] === true,
+        });
+      },
+      { stale: 0, refreshing: false },
+    );
   }
 
   private async storedSelection(

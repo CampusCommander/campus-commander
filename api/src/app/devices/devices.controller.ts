@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import {
+  deviceByIdsSchema,
   deviceGroupQuerySchema,
   deviceQuerySchema,
   deviceSelectionChangeSchema,
@@ -83,6 +84,27 @@ export class DevicesController {
     const input = deviceGroupQuerySchema.parse(body);
     await this.current(request);
     return { groups: await this.devices.groups(request.session, input) };
+  }
+
+  /** Rows that a refresh signal names. The client sends only the rows its grid holds (D7). */
+  @Post('by-ids')
+  @HttpCode(200)
+  async byIds(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    const input = deviceByIdsSchema.parse(body);
+    await this.current(request);
+    return {
+      rows: await this.devices.rowsById(request.session, input.deviceIds),
+    };
+  }
+
+  @Post('freshness')
+  @HttpCode(200)
+  async freshness(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    const input = deviceQuerySchema.parse(body);
+    await this.current(request);
+    return {
+      freshness: await this.devices.freshness(request.session, input),
+    };
   }
 
   @Post('selection')

@@ -70,7 +70,7 @@ const schoolWrite = new RegExp(
 const deviceRead = /^\/api\/devices\/[A-Za-z0-9_-]{1,128}$/;
 const devicePage = /^\/devices\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
-  /^\/api\/devices\/(?:sync|query|groups|selection(?:\/(?:ops|resolve))?)$/;
+  /^\/api\/devices\/(?:sync|query|groups|by-ids|freshness|selection(?:\/(?:ops|resolve))?)$/;
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',

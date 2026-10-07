@@ -153,6 +153,9 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', '/api/devices/selection', 'api'],
       ['POST', '/api/devices/selection/ops', 'api'],
       ['POST', '/api/devices/selection/resolve', 'api'],
+      ['POST', '/api/devices/by-ids', 'api'],
+      ['POST', '/api/devices/freshness', 'api'],
+      ['GET', '/api/devices/events', 'api'],
       ['GET', '/api/devices/synthetic-device-1', 'api'],
       ['GET', '/api/devices/org-units', 'api'],
       ['GET', '/devices', 'frontend'],
@@ -172,6 +175,8 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', `/api/devices/${'x'.repeat(129)}`, 404],
       ['POST', '/api/devices/synthetic-device-1', 405],
       ['POST', '/api/devices/selection/other', 404],
+      ['POST', '/api/devices/events', 405],
+      ['POST', '/api/devices/by-ids/extra', 404],
       ['GET', '/api/devices/selection/ops', 405],
       ['PUT', '/api/devices/groups', 405],
       ['GET', '/api/schools/reviews', 405],
@@ -229,6 +234,21 @@ test('application routes require Phase 3 and exact methods and paths', async () 
         ).status,
         status,
         `${size} bytes`,
+      );
+    // A by-ids body carries up to 500 device IDs.
+    for (const [size, status] of [
+      [65536, 200],
+      [98305, 413],
+    ])
+      assert.equal(
+        (
+          await fetch(`${origin(edge)}/api/devices/by-ids`, {
+            method: 'POST',
+            body: 'x'.repeat(size),
+          })
+        ).status,
+        status,
+        `by-ids ${size} bytes`,
       );
     phase = 2;
     for (const [method, path] of routes) {
