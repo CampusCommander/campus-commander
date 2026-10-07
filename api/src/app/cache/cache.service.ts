@@ -163,6 +163,45 @@ export class CacheService implements OnApplicationShutdown {
     for (const chunk of memberChunks(members))
       await this.execute((client) => client.zRem(key, [...chunk]));
   }
+  /** Values of many keys, 500 per round trip. A missing key reads as null. */
+  async getMany(keys: readonly string[]): Promise<(string | null)[]> {
+    const values: (string | null)[] = [];
+    for (const chunk of memberChunks(keys, 500)) {
+      const result = await this.execute((client) => client.mGet(chunk));
+      values.push(...result.map((value) => (value === null ? null : String(value))));
+    }
+    return values;
+  }
+  /** The list length and `count` items from `start`, read in one transaction. */
+  async listSlice(
+    key: string,
+    start: number,
+    count: number,
+  ): Promise<{ length: number; ids: string[] }> {
+    const [length, ids] = await this.execute((client) =>
+      client.multi().lLen(key).lRange(key, start, start + count - 1).exec(),
+    );
+    return {
+      length: Number(length),
+      ids: Array.isArray(ids) ? ids.map(String) : [],
+    };
+  }
+  /** Replace a list in one transaction. Large chunks keep the command queue short. */
+  async replaceList(
+    key: string,
+    ids: readonly string[],
+    seconds: number,
+  ): Promise<void> {
+    await this.execute(async (client) => {
+      const multi = client.multi().del(key);
+      for (const chunk of memberChunks(ids, 5000)) multi.rPush(key, chunk);
+      await multi.expire(key, seconds).exec();
+    });
+  }
+  /** A new connection with the same options for pub/sub. Null when Redis is not configured. */
+  subscriber() {
+    return this.client?.duplicate() ?? null;
+  }
   async onApplicationShutdown() {
     if (this.client?.isOpen) this.client.destroy();
   }

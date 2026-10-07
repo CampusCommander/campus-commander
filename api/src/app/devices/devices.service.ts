@@ -47,16 +47,14 @@ import {
   deviceDetail,
   deviceDetailSql,
   deviceGroupsSql,
-  devicePageSql,
   groupSelectionSql,
-  deviceRow,
   deviceOrgUnitsSql,
   matchingAmongSql,
   selectedAmongSql,
   selectedInSql,
   selectionCountSql,
-  staleIdsSql,
 } from './device-query';
+import { DevicePager, type Rows } from './device-pager';
 import { DeviceRefresh } from './device-refresh';
 
 const conflicts = ['device-sync-running', 'connection-changed'];
@@ -77,9 +75,16 @@ function translate(error: unknown): never {
   throw new ServiceUnavailableException({ reason: 'device-store-unavailable' });
 }
 
+/** Run statements on one transaction's client. */
+const rowsOf =
+  (client: PoolClient): Rows =>
+  async (statement) =>
+    (await client.query(statement.text, statement.values)).rows;
+
 @Injectable()
 export class DevicesService {
   private readonly refresh: DeviceRefresh;
+  readonly pager: DevicePager;
 
   constructor(
     private readonly database: DatabaseService,
@@ -89,6 +94,7 @@ export class DevicesService {
     this.refresh = new DeviceRefresh(cache, orchestration, (sql, values) =>
       this.result(sql, values),
     );
+    this.pager = new DevicePager(cache);
   }
 
   private actor(session: SessionResponse): [string, number] {
@@ -160,18 +166,25 @@ export class DevicesService {
   /** Check authority and read in one transaction. The check takes no locks. */
   private async read<T>(
     session: SessionResponse,
-    run: (client: PoolClient, customerId: string) => Promise<T>,
+    run: (
+      client: PoolClient,
+      customerId: string,
+      connectionGeneration: number,
+    ) => Promise<T>,
     empty: T,
   ): Promise<T> {
     try {
       return await this.database.transaction(async (client) => {
-        const customerId = (
+        const reader = (
           await client.query(
-            'SELECT (cc.device_reader($1,$2)).customer_id AS customer_id',
+            'SELECT r.customer_id,r.generation FROM cc.device_reader($1,$2) r',
             this.actor(session),
           )
-        ).rows[0]?.['customer_id'];
-        return typeof customerId === 'string' ? run(client, customerId) : empty;
+        ).rows[0];
+        const customerId = reader?.['customer_id'];
+        return typeof customerId === 'string'
+          ? run(client, customerId, Number(reader['generation']))
+          : empty;
       });
     } catch (error) {
       translate(error);
@@ -200,31 +213,22 @@ export class DevicesService {
     query: DeviceQuery,
     correlationId: string,
   ): Promise<DevicePage> {
-    const cutoff = freshnessCutoff('device');
     const read = await this.read(
       session,
-      async (client, customerId) => {
+      async (client, customerId, connectionGeneration) => {
         const inventory = await this.inventory(client, customerId);
         const selection = query.selection
           ? await this.storedSelection(session, query.selection)
           : null;
-        const sql = devicePageSql(customerId, query, selection);
-        const matching = (await client.query(sql.count.text, sql.count.values))
-          .rows[0]?.['matching'];
-        const rows = (await client.query(sql.rows.text, sql.rows.values)).rows;
-        const stale = await this.deviceIds(
-          client,
-          staleIdsSql(customerId, query, selection, cutoff),
-        );
-        return {
+        const page = await this.pager.page({
           customerId,
-          stale,
-          page: {
-            rows: rows.map((row) => deviceRow(row, cutoff.getTime())),
-            matching: matching ?? 0,
-            ...inventory,
-          },
-        };
+          connectionGeneration,
+          actor: this.actor(session),
+          query,
+          selection,
+          rows: rowsOf(client),
+        });
+        return { customerId, inventory, page };
       },
       null,
     );
@@ -240,10 +244,15 @@ export class DevicesService {
     const refreshJobId = await this.refresh.dispatch(
       this.actor(session),
       read.customerId,
-      read.stale,
+      read.page.stale,
       correlationId,
     );
-    return devicePageSchema.parse({ ...read.page, refreshJobId });
+    return devicePageSchema.parse({
+      rows: read.page.rows,
+      matching: read.page.matching,
+      ...read.inventory,
+      refreshJobId,
+    });
   }
 
   async groups(
