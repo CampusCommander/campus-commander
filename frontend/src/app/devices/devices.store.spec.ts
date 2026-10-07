@@ -2,10 +2,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { AuthStore } from '../auth.store';
-import type {
-  DevicePredicate,
-  DeviceRow,
-} from '@campus/application-contracts';
+import type { DevicePredicate, DeviceRow } from '@campus/application-contracts';
 import { DevicesStore } from './devices.store';
 import type { DeviceEventSource } from './devices.store';
 
@@ -581,4 +578,56 @@ it('reopens a stream that stays silent past the timeout', async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+describe('reconcile after the stream closed', () => {
+  async function dropped(observedAt: string) {
+    let current = state('ready');
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: current }),
+      '/api/devices/by-ids': () =>
+        Response.json({ rows: [rowFor('d1', false)] }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    const { api } = grid([rowFor('d1', true)]);
+    store.gridRows.attach(api);
+    await store.init();
+    opened[0].open();
+    const reads = statusReads(request);
+    const before = store.revision();
+    current = state('ready', { observedAt });
+    opened[0].fail(2);
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    opened[1].open();
+    return { request, store, reads, before };
+  }
+
+  it('reloads the grid when a full sync ended while the stream was closed', async () => {
+    const { request, store, reads, before } = await dropped(
+      '2026-10-06T12:00:00.000Z',
+    );
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    expect(statusReads(request)).toBe(reads + 1);
+  });
+
+  it('refetches stale rows and recounts when the status did not change', async () => {
+    const { request, store, reads, before } = await dropped(
+      '2026-10-05T12:00:00.000Z',
+    );
+    await vi.waitFor(() =>
+      expect(request).toHaveBeenCalledWith('/api/devices/freshness', {
+        predicates: [],
+        selection: null,
+      }),
+    );
+    expect(request).toHaveBeenCalledWith('/api/devices/by-ids', {
+      deviceIds: ['d1'],
+    });
+    expect(store.revision()).toBe(before);
+    expect(statusReads(request)).toBe(reads + 1);
+  });
 });

@@ -141,6 +141,8 @@ export class DevicesStore {
   private watchdog?: ReturnType<typeof setTimeout>;
   private reopenTimer?: ReturnType<typeof setTimeout>;
   private recountTimer?: ReturnType<typeof setTimeout>;
+  /** The status from before the stream dropped. The reopen status read must not hide a full sync that ended meanwhile. */
+  private dropped: { state: DeviceSyncState | null } | null = null;
   /** Increments on sign-in by another person. Late answers for the old person are dropped. */
   private epoch = 0;
   private identity: string | null = null;
@@ -159,6 +161,7 @@ export class DevicesStore {
   /** Browsing state belongs to one person. Another sign-in starts clean. */
   private reset(): void {
     this.epoch++;
+    this.dropped = null;
     this.sync.set(null);
     this.syncLoaded.set(false);
     this.predicates.set([]);
@@ -198,13 +201,20 @@ export class DevicesStore {
     this.streamWanted = true;
     if (this.stream) return;
     this.streamOpened = false;
-    if ((await this.loadSync()) && this.sync() && this.streamWanted && !this.stream)
+    this.dropped = null;
+    if (
+      (await this.loadSync()) &&
+      this.sync() &&
+      this.streamWanted &&
+      !this.stream
+    )
       this.openStream();
   }
 
   /** Devices left: close the stream and drop pending timers. */
   leave(): void {
     this.streamWanted = false;
+    this.dropped = null;
     this.closeStream();
     clearTimeout(this.reopenTimer);
     clearTimeout(this.recountTimer);
@@ -315,7 +325,10 @@ export class DevicesStore {
   async recount(): Promise<void> {
     const counted = this.counted;
     const epoch = this.epoch;
-    const response = await this.call('/api/devices/freshness', this.countedQuery);
+    const response = await this.call(
+      '/api/devices/freshness',
+      this.countedQuery,
+    );
     if (!response?.ok || counted !== this.counted || epoch !== this.epoch)
       return;
     try {
@@ -329,7 +342,10 @@ export class DevicesStore {
 
   private scheduleRecount(): void {
     clearTimeout(this.recountTimer);
-    this.recountTimer = setTimeout(() => void this.recount(), this.recountDelay);
+    this.recountTimer = setTimeout(
+      () => void this.recount(),
+      this.recountDelay,
+    );
   }
 
   private openStream(): void {
@@ -352,7 +368,8 @@ export class DevicesStore {
       stream.addEventListener(name, (message) => {
         if (!current()) return;
         this.watch();
-        if (name !== 'ping') this.onEvent((message as MessageEvent<string>).data);
+        if (name !== 'ping')
+          this.onEvent((message as MessageEvent<string>).data);
       });
   }
 
@@ -372,6 +389,7 @@ export class DevicesStore {
   }
 
   private scheduleReopen(): void {
+    this.dropped ??= { state: this.sync() };
     this.closeStream();
     clearTimeout(this.reopenTimer);
     this.reopenTimer = setTimeout(async () => {
@@ -408,8 +426,11 @@ export class DevicesStore {
 
   /** After a reconnect: one status read, the rows still tagged stale, and the counts (D12). */
   private async reconcile(): Promise<void> {
-    const before = this.sync();
-    if (!(await this.loadSync())) return;
+    // After a drop, the reopen path already read the status once. Compare it with the one from before.
+    const baseline = this.dropped;
+    this.dropped = null;
+    const before = baseline ? baseline.state : this.sync();
+    if (!baseline && !(await this.loadSync())) return;
     const after = this.sync();
     // A full sync that ended meanwhile reloads every row and count.
     if (
@@ -473,7 +494,10 @@ export class DevicesStore {
     const key = countsKey(view);
     if (key === null || key === this.counted) return;
     this.counted = key;
-    this.countedQuery = { predicates: view.predicates, selection: view.selection };
+    this.countedQuery = {
+      predicates: view.predicates,
+      selection: view.selection,
+    };
     this.groupLimit.set(false);
   }
 }
