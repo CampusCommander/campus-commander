@@ -7,23 +7,32 @@ import {
   untracked,
 } from '@angular/core';
 import {
+  DEVICE_BY_IDS_LIMIT,
+  ENTITY_EVENTS_PING_SECONDS,
   deviceDetailSchema,
+  deviceFreshnessSchema,
   deviceOrgUnitsSchema,
   deviceGroupPageSchema,
   devicePageSchema,
+  deviceRowsSchema,
   deviceSyncStateSchema,
+  entityEventSchema,
   type DeviceDetail,
+  type DeviceFreshness,
   type DeviceOrgUnit,
   type DeviceGroupPage,
   type DevicePage,
   type DevicePredicate,
   type DeviceRow,
+  type DeviceSelectionKey,
+  type DeviceSyncFailure,
   type DeviceSyncState,
 } from '@campus/application-contracts';
 import type { GridState } from 'ag-grid-community';
 import { AuthStore } from '../auth.store';
 import { GROUP_LIMIT, type DeviceView } from './device-datasource';
 import { samePredicates } from './device-filter-model';
+import { DeviceRowRefresh } from './device-row-refresh';
 import {
   DeviceSelectionProvider,
   deviceSelectionTab,
@@ -50,12 +59,32 @@ const countsKey = (view: DeviceView): string | null =>
     ? null
     : JSON.stringify([view.predicates, view.selection, view.group?.by ?? []]);
 
+/** The part of EventSource that the store uses. Tests supply a fake. */
+export type DeviceEventSource = Pick<
+  EventSource,
+  'addEventListener' | 'close' | 'readyState'
+>;
+const CLOSED = 2;
+
+/** The query whose stale devices the banner counts: the outermost filters and selection. */
+interface CountedQuery {
+  predicates: DevicePredicate[];
+  selection: DeviceSelectionKey | null;
+}
+
 /** Browsing state survives navigation between the grid and device details. */
 @Injectable({ providedIn: 'root' })
 export class DevicesStore {
   private readonly auth = inject(AuthStore);
-  /** Milliseconds between sync status checks while a refresh runs. */
-  pollInterval = 2000;
+  /** Opens the device event stream. Tests replace it. */
+  eventSource: (url: string) => DeviceEventSource = (url) =>
+    new EventSource(url);
+  /** Milliseconds between a refresh signal and the stale count that it triggers. */
+  recountDelay = 1000;
+  /** Milliseconds before a closed stream reopens. */
+  reopenDelay = 5000;
+  /** Milliseconds without any event, pings included, before the stream counts as dead. */
+  streamTimeout = ENTITY_EVENTS_PING_SECONDS * 2000 + 10_000;
   readonly sync = signal<DeviceSyncState | null>(null);
   readonly syncLoaded = signal(false);
   readonly predicates = signal<DevicePredicate[]>([]);
@@ -76,10 +105,19 @@ export class DevicesStore {
   readonly page = signal<Omit<DevicePage, 'rows' | 'refreshJobId'> | null>(
     null,
   );
+  /** Stale devices in the counted result set, and whether a refresh job runs (D11). */
+  readonly freshness = signal<DeviceFreshness | null>(null);
+  /** The cause of the last refresh job that failed. A new refresh job clears it. */
+  readonly jobFailure = signal<DeviceSyncFailure | null>(null);
+  /** The device rows that the grid holds. The grid attaches itself when ready. */
+  readonly gridRows = new DeviceRowRefresh();
   /** True when an open group or a grouped level holds more than the grid lists. */
   readonly groupLimit = signal(false);
   /** The outermost query whose counts the status bar shows. */
   private counted = countsKey(defaultView());
+  private countedQuery: CountedQuery = { predicates: [], selection: null };
+  /** The counts and revision that the last stale count belongs to. */
+  private recounted: string | null = null;
   readonly orgUnits = signal<DeviceOrgUnit[]>([]);
   readonly offline = signal(false);
   readonly error = signal('');
@@ -92,10 +130,18 @@ export class DevicesStore {
     /** Rows that Next device can walk. Set for a device opened inside a group. */
     count?: number;
   } | null>(null);
+  /** A full sync runs. */
   readonly refreshing = computed(() => this.sync()?.status === 'running');
   readonly readable = computed(() => devicesReadable(this.auth));
-  private polling = false;
-  /** Increments on sign-in by another person. A running poll stops when it changes. */
+  private stream: DeviceEventSource | null = null;
+  /** Devices is mounted. */
+  private streamWanted = false;
+  /** A stream opened once since mount. The next open is a reconnect. */
+  private streamOpened = false;
+  private watchdog?: ReturnType<typeof setTimeout>;
+  private reopenTimer?: ReturnType<typeof setTimeout>;
+  private recountTimer?: ReturnType<typeof setTimeout>;
+  /** Increments on sign-in by another person. Late answers for the old person are dropped. */
   private epoch = 0;
   private identity: string | null = null;
 
@@ -121,13 +167,19 @@ export class DevicesStore {
     this.selectedView.set(false);
     this.groupLimit.set(false);
     this.counted = countsKey(defaultView());
+    this.countedQuery = { predicates: [], selection: null };
+    this.recounted = null;
     this.selection.spec.set(null);
     this.page.set(null);
+    this.freshness.set(null);
+    this.jobFailure.set(null);
     this.orgUnits.set([]);
     this.offline.set(false);
     this.error.set('');
     this.position.set(null);
     this.revision.update((value) => value + 1);
+    // The stream carries the session cookie. A new person needs a new stream.
+    if (this.stream) this.openStream();
   }
 
   private async call(path: string, body?: unknown): Promise<Response | null> {
@@ -141,12 +193,24 @@ export class DevicesStore {
     }
   }
 
+  /** Devices mounted: read the status and open the event stream (D12). */
   async init(): Promise<void> {
-    await this.loadSync();
-    if (this.refreshing()) await this.poll();
+    this.streamWanted = true;
+    if (this.stream) return;
+    this.streamOpened = false;
+    if ((await this.loadSync()) && this.sync() && this.streamWanted && !this.stream)
+      this.openStream();
   }
 
-  /** Returns false when the status could not be read, so callers stop polling. */
+  /** Devices left: close the stream and drop pending timers. */
+  leave(): void {
+    this.streamWanted = false;
+    this.closeStream();
+    clearTimeout(this.reopenTimer);
+    clearTimeout(this.recountTimer);
+  }
+
+  /** Returns false when the status could not be read. */
   async loadSync(): Promise<boolean> {
     const response = await this.call('/api/devices/sync');
     if (!response) return false;
@@ -162,6 +226,7 @@ export class DevicesStore {
     return true;
   }
 
+  /** Start a full sync. The full-sync event reports its end (D12). */
   async refreshAll(): Promise<void> {
     const response = await this.call('/api/devices/sync', {});
     if (!response) return;
@@ -174,33 +239,17 @@ export class DevicesStore {
           ? 'Campus Commander could not start the refresh. Check Diagnostics.'
           : 'The refresh could not start.',
       );
-      return;
     } else {
       this.error.set('');
       this.sync.set(deviceSyncStateSchema.parse(body.sync));
     }
-    await this.poll();
   }
 
-  private async poll(): Promise<void> {
-    if (this.polling) return;
-    this.polling = true;
-    const epoch = this.epoch;
-    try {
-      while (this.sync()?.status === 'running') {
-        await new Promise((resolve) => setTimeout(resolve, this.pollInterval));
-        if (epoch !== this.epoch || !(await this.loadSync())) return;
-      }
-      if (epoch === this.epoch) this.revision.update((value) => value + 1);
-    } finally {
-      this.polling = false;
-    }
-  }
-
+  /** Reconnect after an offline period: reload the status and the grid, and reopen the stream. */
   async reconnect(): Promise<void> {
     if (!(await this.loadSync())) return;
-    if (this.refreshing()) await this.poll();
-    else this.revision.update((value) => value + 1);
+    this.revision.update((value) => value + 1);
+    if (this.streamWanted && !this.stream && this.sync()) this.openStream();
   }
 
   async rows(offset: number, limit: number): Promise<DevicePage | null> {
@@ -213,6 +262,8 @@ export class DevicesStore {
     });
     if (!response?.ok) return null;
     const page = devicePageSchema.parse((await response.json()).page);
+    // A new refresh job replaces the cause of the last failed one.
+    if (page.refreshJobId) this.jobFailure.set(null);
     // Only a whole open group loads at the group limit. Next device loads one row.
     if (
       view.group?.by.length &&
@@ -252,6 +303,140 @@ export class DevicesStore {
       total: counts.total,
       observedAt: counts.observedAt,
     });
+    // New counts mean a new result set. Its stale count follows once per query and revision.
+    const token = `${key}#${revision}`;
+    if (token === this.recounted) return;
+    this.recounted = token;
+    this.freshness.set(null);
+    this.scheduleRecount();
+  }
+
+  /** Count the stale devices of the counted query and learn whether a refresh job runs (D11). */
+  async recount(): Promise<void> {
+    const counted = this.counted;
+    const epoch = this.epoch;
+    const response = await this.call('/api/devices/freshness', this.countedQuery);
+    if (!response?.ok || counted !== this.counted || epoch !== this.epoch)
+      return;
+    try {
+      this.freshness.set(
+        deviceFreshnessSchema.parse((await response.json()).freshness),
+      );
+    } catch {
+      // An unreadable count leaves the banner as it was.
+    }
+  }
+
+  private scheduleRecount(): void {
+    clearTimeout(this.recountTimer);
+    this.recountTimer = setTimeout(() => void this.recount(), this.recountDelay);
+  }
+
+  private openStream(): void {
+    this.closeStream();
+    const stream = this.eventSource('/api/devices/events');
+    this.stream = stream;
+    const epoch = this.epoch;
+    const current = () => this.stream === stream && epoch === this.epoch;
+    stream.addEventListener('open', () => {
+      if (!current()) return;
+      this.watch();
+      if (this.streamOpened) void this.reconcile();
+      this.streamOpened = true;
+    });
+    stream.addEventListener('error', () => {
+      // EventSource retries by itself while CONNECTING. A closed stream reopens after a status read.
+      if (current() && stream.readyState === CLOSED) this.scheduleReopen();
+    });
+    for (const name of ['ping', 'entity-batch', 'job-finished', 'full-sync'])
+      stream.addEventListener(name, (message) => {
+        if (!current()) return;
+        this.watch();
+        if (name !== 'ping') this.onEvent((message as MessageEvent<string>).data);
+      });
+  }
+
+  private closeStream(): void {
+    clearTimeout(this.watchdog);
+    this.stream?.close();
+    this.stream = null;
+  }
+
+  /** A stream without events past the timeout counts as dead. */
+  private watch(): void {
+    clearTimeout(this.watchdog);
+    if (this.streamTimeout > 0)
+      this.watchdog = setTimeout(() => {
+        if (this.streamWanted) this.scheduleReopen();
+      }, this.streamTimeout);
+  }
+
+  private scheduleReopen(): void {
+    this.closeStream();
+    clearTimeout(this.reopenTimer);
+    this.reopenTimer = setTimeout(async () => {
+      if (!this.streamWanted) return;
+      // AuthStore handles an ended session through this status read.
+      if (await this.loadSync()) {
+        if (this.streamWanted && this.sync()) this.openStream();
+      } else if (this.offline()) this.scheduleReopen();
+    }, this.reopenDelay);
+  }
+
+  private onEvent(data: string): void {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      return;
+    }
+    const result = entityEventSchema.safeParse(parsed);
+    if (!result.success) return;
+    const event = result.data;
+    if (event.type === 'entity-batch') {
+      void this.refreshRows([...event.deviceIds, ...event.removedIds]);
+      this.scheduleRecount();
+    } else if (event.type === 'job-finished') {
+      if (event.job.failure) this.jobFailure.set(event.job.failure);
+      this.scheduleRecount();
+    } else {
+      this.sync.set(event.sync);
+      if (event.sync.status !== 'running')
+        this.revision.update((value) => value + 1);
+    }
+  }
+
+  /** After a reconnect: one status read, the rows still tagged stale, and the counts (D12). */
+  private async reconcile(): Promise<void> {
+    const before = this.sync();
+    if (!(await this.loadSync())) return;
+    const after = this.sync();
+    // A full sync that ended meanwhile reloads every row and count.
+    if (
+      (before?.status === 'running' && after?.status !== 'running') ||
+      before?.observedAt !== after?.observedAt
+    ) {
+      this.revision.update((value) => value + 1);
+      return;
+    }
+    await this.refreshRows('stale');
+    await this.recount();
+  }
+
+  /** Refetch held rows among `ids`, or every held row still tagged stale (D7, D12). */
+  private async refreshRows(ids: readonly string[] | 'stale'): Promise<void> {
+    const wanted = new Set(ids === 'stale' ? [] : ids);
+    const held = this.gridRows.held((row) =>
+      ids === 'stale' ? row.stale : wanted.has(row.deviceId),
+    );
+    const epoch = this.epoch;
+    for (let start = 0; start < held.length; start += DEVICE_BY_IDS_LIMIT) {
+      const response = await this.call('/api/devices/by-ids', {
+        deviceIds: held.slice(start, start + DEVICE_BY_IDS_LIMIT),
+      });
+      if (!response?.ok || epoch !== this.epoch) return;
+      this.gridRows.apply(deviceRowsSchema.parse((await response.json()).rows));
+    }
   }
 
   async neighbor(index: number): Promise<DeviceRow | null> {
@@ -288,6 +473,7 @@ export class DevicesStore {
     const key = countsKey(view);
     if (key === null || key === this.counted) return;
     this.counted = key;
+    this.countedQuery = { predicates: view.predicates, selection: view.selection };
     this.groupLimit.set(false);
   }
 }

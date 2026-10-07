@@ -2,6 +2,7 @@ import {
   Component,
   ElementRef,
   Injector,
+  OnDestroy,
   OnInit,
   afterNextRender,
   computed,
@@ -38,7 +39,7 @@ import {
   templateUrl: './devices.html',
   styleUrl: './devices.css',
 })
-export class DevicesPage implements OnInit {
+export class DevicesPage implements OnInit, OnDestroy {
   protected readonly store = inject(DevicesStore);
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);
@@ -102,6 +103,10 @@ export class DevicesPage implements OnInit {
 
   ngOnInit(): void {
     void this.store.init();
+  }
+
+  ngOnDestroy(): void {
+    this.store.leave();
   }
 
   protected refresh(): void {

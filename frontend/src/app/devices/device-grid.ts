@@ -59,6 +59,7 @@ import {
   deviceGridFeatures,
   showRow,
 } from './device-grid-options';
+import type { DeviceRowRefresh } from './device-row-refresh';
 import { DEVICE_GRID_ID } from './device-selection';
 import { DeviceStatusPanel } from './device-status-panel';
 
@@ -142,6 +143,8 @@ export class DeviceGrid implements OnInit {
     provider: ServerSideSelectionProvider;
     tabId: string;
   }>();
+  /** Refresh signals update the rows this grid holds. */
+  readonly rowRefresh = input<DeviceRowRefresh | null>(null);
   /** The selection footer lives in the status bar. LibreGrid fills it on ready. */
   private readonly footer = document.createElement('div');
   /** Counts and freshness render here, inside the status bar (GRID-01). */
@@ -227,6 +230,9 @@ export class DeviceGrid implements OnInit {
 
   protected ready(event: GridReadyEvent<DeviceRow>): void {
     this.api = event.api;
+    const refresh = this.rowRefresh();
+    refresh?.attach(event.api);
+    this.destroyRef.onDestroy(() => refresh?.detach(event.api));
     this.applyPredicates(this.predicates());
     this.reload();
   }

@@ -27,6 +27,7 @@ class GridStub {
   readonly predicates = input<unknown>();
   readonly orgUnits = input<unknown>();
   readonly selection = input<unknown>();
+  readonly rowRefresh = input<unknown>();
   readonly selectedView = input(false);
   readonly details = output<{
     row: DeviceRow;
@@ -80,6 +81,8 @@ function setup(options: {
     selectionTab: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
     refreshing: computed(() => sync()?.status === 'running'),
     init: vi.fn().mockResolvedValue(undefined),
+    leave: vi.fn(),
+    gridRows: {},
     refreshAll: vi.fn().mockResolvedValue(undefined),
     reconnect: vi.fn().mockResolvedValue(undefined),
     setPredicates: vi.fn(),
@@ -296,4 +299,11 @@ it('follows the group of the opened device for Next device', () => {
   });
   expect(store.position()).toEqual({ index: 4, deviceId: 'd7', count: 135 });
   expect(navigate).toHaveBeenCalledWith(['/devices', 'd7']);
+});
+
+it('opens the event stream on mount and closes it on leave', () => {
+  const { store, fixture } = setup({ sync: ready() });
+  expect(store.init).toHaveBeenCalled();
+  fixture.destroy();
+  expect(store.leave).toHaveBeenCalled();
 });
