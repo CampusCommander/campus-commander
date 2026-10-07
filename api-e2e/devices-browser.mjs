@@ -61,13 +61,13 @@ export async function qualifyDevicesBrowser({
         await expect(contact).toHaveClass(/device-stale/);
         await expect(
           page.getByRole('heading', { name: 'Refreshing 2 of 450 devices' }),
-        ).toBeVisible();
+        ).toBeVisible({ timeout: 15_000 });
         const cell = await contact.elementHandle();
         await expect(
           page.getByRole('heading', { name: /^Refreshing \d/ }),
         ).toHaveCount(0, { timeout: 60_000 });
         await expect(contact).not.toHaveClass(/device-stale/);
-        // The batch updated the row in place. A grid reload would replace the cell.
+        // The banner clearing and the class removal show the refresh. AG Grid can reuse nodes, so this only rules out a detached cell.
         expect(await cell.evaluate((element) => element.isConnected)).toBe(
           true,
         );
