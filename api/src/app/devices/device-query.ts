@@ -156,6 +156,14 @@ function deviceWhere(
   return clauses.join(' AND ');
 }
 
+/** The grid order: the sort column with nulls last, then the device ID in the same direction. */
+function orderBy(query: DeviceQuery): string {
+  const order =
+    query.sort.field === 'battery' ? batteryOrder : columns[query.sort.field];
+  const direction = query.sort.direction === 'desc' ? 'DESC' : 'ASC';
+  return `ORDER BY ${order} ${direction} NULLS LAST,d.device_id ${direction}`;
+}
+
 export function devicePageSql(
   customerId: string,
   query: DeviceQuery,
@@ -163,12 +171,9 @@ export function devicePageSql(
 ): { rows: SqlStatement; count: SqlStatement } {
   const values: unknown[] = [customerId];
   const where = deviceWhere(query.predicates, values, selection, query.group);
-  const order =
-    query.sort.field === 'battery' ? batteryOrder : columns[query.sort.field];
-  const direction = query.sort.direction === 'desc' ? 'DESC' : 'ASC';
   return {
     rows: {
-      text: `SELECT ${deviceColumns} ${from} WHERE ${where} ORDER BY ${order} ${direction} NULLS LAST,d.device_id ${direction} OFFSET $${values.length + 1} LIMIT $${values.length + 2}`,
+      text: `SELECT ${deviceColumns} ${from} WHERE ${where} ${orderBy(query)} OFFSET $${values.length + 1} LIMIT $${values.length + 2}`,
       values: [...values, query.offset, query.limit],
     },
     count: {
@@ -191,6 +196,56 @@ export function staleIdsSql(
   return {
     text: `SELECT d.device_id ${from} WHERE ${where} AND d.last_entity_sync<$${values.length}::timestamptz ORDER BY d.device_id LIMIT 100000`,
     values,
+  };
+}
+
+/** Every device ID of a result set in grid order. The query cache stores this list (D2). */
+export function deviceIdsSql(
+  customerId: string,
+  query: DeviceQuery,
+  limit: number,
+): SqlStatement {
+  const values: unknown[] = [customerId];
+  const where = deviceWhere(query.predicates, values, null, query.group);
+  values.push(limit);
+  return {
+    text: `SELECT d.device_id ${from} WHERE ${where} ${orderBy(query)} LIMIT $${values.length}`,
+    values,
+  };
+}
+
+/** Rows for known device IDs, removed devices included. A cached list keeps its devices until it expires. */
+export function deviceRowsByIdSql(
+  customerId: string,
+  ids: readonly string[],
+): SqlStatement {
+  return {
+    text: `SELECT ${deviceColumns},d.removed_at ${from} WHERE s.customer_id=$1 AND d.device_id=ANY($2::text[])`,
+    values: [customerId, ids],
+  };
+}
+
+/** The number of stale devices in a result set. The banner reports it (D11). */
+export function staleCountSql(
+  customerId: string,
+  query: DeviceQuery,
+  selection: SelectionState | null,
+  cutoff: Date,
+): SqlStatement {
+  const values: unknown[] = [customerId];
+  const where = deviceWhere(query.predicates, values, selection, query.group);
+  values.push(cutoff.toISOString());
+  return {
+    text: `SELECT count(*)::integer AS stale ${from} WHERE ${where} AND d.last_entity_sync<$${values.length}::timestamptz`,
+    values,
+  };
+}
+
+/** Whether a refresh job runs for the customer. The job reaper interrupts jobs after two hours. */
+export function refreshingSql(customerId: string): SqlStatement {
+  return {
+    text: "SELECT EXISTS(SELECT 1 FROM cc.entity_sync_jobs WHERE customer_id=$1 AND finished_at IS NULL AND created_at>clock_timestamp()-interval '2 hours') AS refreshing",
+    values: [customerId],
   };
 }
 
@@ -232,7 +287,9 @@ export function deviceRow(
         : { status: row['battery_status'] },
     lastEntitySync,
     stale:
-      typeof lastEntitySync === 'string' && Date.parse(lastEntitySync) < cutoff,
+      !row['removed_at'] &&
+      typeof lastEntitySync === 'string' &&
+      Date.parse(lastEntitySync) < cutoff,
   });
 }
 

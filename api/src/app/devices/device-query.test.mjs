@@ -17,6 +17,10 @@ import {
   selectedAmongSql,
   selectionCountSql,
   selectedInSql,
+  deviceIdsSql,
+  deviceRowsByIdSql,
+  refreshingSql,
+  staleCountSql,
 } from './device-query.ts';
 
 const query = (value) =>
@@ -455,4 +459,96 @@ test('rows report freshness against the cutoff and details report removal', () =
   );
   assert.equal(detail.removedAt, '2026-10-06T01:00:00.000Z');
   assert.equal('observedAt' in detail, false);
+});
+
+test('the cached ID list follows the grid order and binds the limit last', () => {
+  const sql = deviceIdsSql(
+    'C0123456',
+    deviceQuerySchema.parse({
+      predicates: hs04Selection,
+      sort: { field: 'battery', direction: 'desc' },
+      offset: 300,
+      limit: 100,
+    }),
+    100000,
+  );
+  assert.match(
+    sql.text,
+    /^SELECT d\.device_id FROM cc\.device_sync_state s JOIN cc\.devices d ON d\.customer_id=s\.customer_id WHERE s\.customer_id=\$1 AND d\.removed_at IS NULL AND d\.asset_tag ILIKE \$2 ORDER BY CASE .* END DESC NULLS LAST,d\.device_id DESC LIMIT \$3$/,
+  );
+  assert.deepEqual(sql.values, ['C0123456', 'HS-04%', 100000]);
+  assert.doesNotMatch(sql.text, /OFFSET/);
+});
+
+test('an open group narrows the cached ID list', () => {
+  const sql = deviceIdsSql(
+    'C0123456',
+    deviceQuerySchema.parse({ group: { by: ['model'], keys: ['Lenovo 100e'] } }),
+    10,
+  );
+  assert.match(
+    sql.text,
+    /AND coalesce\(d\.model,''\)=\$2 ORDER BY d\.serial_number ASC NULLS LAST,d\.device_id ASC LIMIT \$3$/,
+  );
+  assert.deepEqual(sql.values, ['C0123456', 'Lenovo 100e', 10]);
+});
+
+test('rows by ID include removed devices and bind the IDs as one array', () => {
+  const sql = deviceRowsByIdSql('C0123456', ['d2', 'd1']);
+  assert.match(
+    sql.text,
+    /,d\.removed_at FROM cc\.device_sync_state s JOIN cc\.devices d ON d\.customer_id=s\.customer_id WHERE s\.customer_id=\$1 AND d\.device_id=ANY\(\$2::text\[\]\)$/,
+  );
+  assert.doesNotMatch(sql.text, /removed_at IS NULL/);
+  assert.deepEqual(sql.values, ['C0123456', ['d2', 'd1']]);
+});
+
+test('the stale count covers the whole result set below the cutoff', () => {
+  const cutoff = new Date('2026-10-05T12:00:00.000Z');
+  const sql = staleCountSql(
+    'C0123456',
+    deviceQuerySchema.parse({ predicates: hs04Selection, offset: 300 }),
+    null,
+    cutoff,
+  );
+  assert.match(
+    sql.text,
+    /^SELECT count\(\*\)::integer AS stale FROM cc\.device_sync_state s JOIN cc\.devices d ON d\.customer_id=s\.customer_id WHERE s\.customer_id=\$1 AND d\.removed_at IS NULL AND d\.asset_tag ILIKE \$2 AND d\.last_entity_sync<\$3::timestamptz$/,
+  );
+  assert.deepEqual(sql.values, ['C0123456', 'HS-04%', cutoff.toISOString()]);
+});
+
+test('a refresh counts as running until it finishes or turns two hours old', () => {
+  const sql = refreshingSql('C0123456');
+  assert.match(
+    sql.text,
+    /^SELECT EXISTS\(SELECT 1 FROM cc\.entity_sync_jobs WHERE customer_id=\$1 AND finished_at IS NULL AND created_at>clock_timestamp\(\)-interval '2 hours'\) AS refreshing$/,
+  );
+  assert.deepEqual(sql.values, ['C0123456']);
+});
+
+test('removed devices never read as stale', () => {
+  const cutoff = Date.parse('2026-10-05T12:00:00.000Z');
+  const old = {
+    device_id: 'd1',
+    serial_number: 'S',
+    model: null,
+    asset_tag: null,
+    org_unit_path: '/',
+    last_contact: null,
+    annotated_location: null,
+    notes: null,
+    battery_status: 'no-report',
+    battery_health: null,
+    battery_capacity_percent: null,
+    battery_reported_at: null,
+    last_entity_sync: new Date('2026-10-01T00:00:00.000Z'),
+  };
+  const removed = deviceRow(
+    { ...old, removed_at: new Date('2026-10-04T00:00:00.000Z') },
+    cutoff,
+  );
+  assert.equal(removed.stale, false);
+  assert.equal('removedAt' in removed, false);
+  assert.equal(deviceRow({ ...old, removed_at: null }, cutoff).stale, true);
 });
