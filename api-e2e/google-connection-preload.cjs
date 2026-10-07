@@ -268,6 +268,9 @@ prototype.request = async function (options) {
     url.pathname === '/batch/admin/directory_v1'
   ) {
     if (fault === 'device-privilege-denied') throw forbidden(options);
+    // Holds a refresh batch so the browser check can see the refresh state.
+    if (fault === 'device-delay')
+      await new Promise((resolve) => setTimeout(resolve, 4000));
     quotaCalls += 1;
     const ids = [
       ...String(options.body ?? options.data).matchAll(

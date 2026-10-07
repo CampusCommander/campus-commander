@@ -1,6 +1,8 @@
 import { evidenceSecurity } from './evidence-security.mjs';
 import { qualificationSignIn } from './qualification-sign-in.mjs';
 import { expect } from '@playwright/test';
+import { rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 export async function qualifyDevicesBrowser({
   browser,
@@ -8,6 +10,9 @@ export async function qualifyDevicesBrowser({
   publicOrigin,
   evidenceDirectory,
   setSubject,
+  migrator,
+  redis,
+  directory,
 }) {
   const context = await evidenceSecurity.newContext(browser, {
     ignoreHTTPSErrors: true,
@@ -36,6 +41,40 @@ export async function qualifyDevicesBrowser({
       page.getByRole('heading', { name: 'Inventory observation is stale' }),
     ).toHaveCount(0);
     await auditAccessibility(page, 'devices');
+
+    if (migrator && redis) {
+      // Two devices turn stale: Postgres ages their stamps and Redis drops their records.
+      await migrator.query(
+        "UPDATE cc.devices SET last_entity_sync=now()-interval '2 days' WHERE device_id IN ('synthetic-device-0','synthetic-device-1')",
+      );
+      await redis.del([
+        'cc:entity:device:C0123456:synthetic-device-0',
+        'cc:entity:device:C0123456:synthetic-device-1',
+      ]);
+      const faultPath = join(directory, 'google-health-fault.json');
+      await writeFile(faultPath, JSON.stringify({ mode: 'device-delay' }));
+      try {
+        await page.reload();
+        const contact = page.locator(
+          '[row-id="synthetic-device-0"] [col-id="lastContact"]',
+        );
+        await expect(contact).toHaveClass(/device-stale/);
+        await expect(
+          page.getByRole('heading', { name: 'Refreshing 2 of 450 devices' }),
+        ).toBeVisible();
+        const cell = await contact.elementHandle();
+        await expect(
+          page.getByRole('heading', { name: /^Refreshing \d/ }),
+        ).toHaveCount(0, { timeout: 60_000 });
+        await expect(contact).not.toHaveClass(/device-stale/);
+        // The batch updated the row in place. A grid reload would replace the cell.
+        expect(await cell.evaluate((element) => element.isConnected)).toBe(
+          true,
+        );
+      } finally {
+        await rm(faultPath, { force: true });
+      }
+    }
 
     await page.locator('.add-filter').click();
     await page.getByRole('combobox', { name: 'Filter field' }).fill('asset');
@@ -259,6 +298,7 @@ export async function qualifyDevicesBrowser({
     ).toBeDisabled();
     return [
       'devices page refreshes a stale inventory and shows counts: pass',
+      'stale rows refresh in place over the event stream and the banner reports progress: pass',
       'Back to devices keeps the header sort and scrolls to the opened row: pass',
       'keyboard Enter on the details cell opens device details: pass',
       'typed asset tag filter narrows the grid and keeps its chip after details: pass',

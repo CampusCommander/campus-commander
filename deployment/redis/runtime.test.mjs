@@ -8,10 +8,10 @@ import {
   workerRedisAcl,
 } from './runtime.mjs';
 
-test('the worker user is limited to entity keys, the generation, in-flight sets, and events', () => {
+test('the application and worker users get only the commands they issue', () => {
   assert.equal(
     applicationRedisAcl,
-    '~cc:* &cc:* -@all +ping +get +getdel +set +del +exists +expire +ttl +eval +zadd +zrem +zremrangebyscore +time',
+    '~cc:* &cc:* -@all +ping +get +getdel +mget +set +del +exists +expire +ttl +eval +llen +lrange +rpush +zadd +zrem +zremrangebyscore +time +subscribe +unsubscribe',
   );
   assert.equal(
     workerRedisAcl,
@@ -23,7 +23,10 @@ test('renderRedis gives the worker user the same password hash', async () => {
   const password = Buffer.from('synthetic-credential-marker-32-bytes');
   const hash = createHash('sha256').update(password).digest('hex');
   const config = JSON.parse(
-    await readFile(new URL('../examples/all-docker.json', import.meta.url), 'utf8'),
+    await readFile(
+      new URL('../examples/all-docker.json', import.meta.url),
+      'utf8',
+    ),
   );
   const rendered = renderRedis(config, password);
   assert.ok(rendered.includes(`user worker on #${hash} ${workerRedisAcl}`));

@@ -37,10 +37,10 @@ Back to devices restores the filters and scroll position. Next device follows th
 
 ## Data and access
 
-| Data | Google source | Scope suffix |
-| --- | --- | --- |
-| Device inventory | Directory API `chromeosdevices.list` | `admin.directory.device.chromeos.readonly` |
-| Battery | Chrome Management API `customers.telemetry.devices.list`, `batteryInfo` and `batteryStatusReport` | `chrome.management.telemetry.readonly` |
+| Data             | Google source                                                                                     | Scope suffix                               |
+| ---------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Device inventory | Directory API `chromeosdevices.list`                                                              | `admin.directory.device.chromeos.readonly` |
+| Battery          | Chrome Management API `customers.telemetry.devices.list`, `batteryInfo` and `batteryStatusReport` | `chrome.management.telemetry.readonly`     |
 
 All scopes use the `https://www.googleapis.com/auth/` prefix.
 Inventory fields are `deviceId`, `serialNumber`, `model`, `annotatedAssetId`, `orgUnitPath`, `lastSync`, `annotatedLocation`, and `notes`.
@@ -51,8 +51,9 @@ Campus Commander keeps one row per device in its own database, with the time it 
 The grid, filters, and counts query that database through the server-side row model in [GRID-01](../ui/patterns.md#entity-grid).
 Redis holds the device records that a sync refreshed. The [entity cache record](../superpowers/specs/2026-10-06-entity-cache-decisions.md) defines this cache.
 A device is stale 24 hours after its last read. A query that returns stale devices starts a background refresh job for every stale device it matched.
-The grid reads Postgres. The page polls the sync state.
-The next plan adds a server push signal and cached query results. The grid then updates refreshed rows in place.
+Redis caches the ordered device list of each grid query for 5 minutes.
+Pages read device records from Redis first and from Postgres for the rest.
+The server pushes refresh signals over Server-Sent Events. The grid updates refreshed rows in place.
 Refresh all reads the complete inventory. A failed full sync leaves every row in place and shows the stale state.
 Collection leases, staging generations, and write overlays from the [architecture](../portfolio/03-architecture.md#synchronization-and-effective-reads) wait until device writes exist.
 
@@ -73,11 +74,11 @@ Schools have no defined entity. Revisit the column after that definition exists.
 
 **Google classifies battery health.** The owner chose Google's classification over district thresholds.
 
-| Class | Google definition |
-| --- | --- |
-| Normal | Full charge capacity is above 80% of design capacity. |
+| Class        | Google definition                                      |
+| ------------ | ------------------------------------------------------ |
+| Normal       | Full charge capacity is above 80% of design capacity.  |
 | Replace soon | Full charge capacity is 75% to 80% of design capacity. |
-| Replace now | Full charge capacity is below 75% of design capacity. |
+| Replace now  | Full charge capacity is below 75% of design capacity.  |
 
 No district threshold setting exists. The design text "District policy: Replace soon below 80%" changes to name Google as the source.
 
@@ -107,7 +108,6 @@ This work is infrastructure under this workflow. It is not a new workflow. Devel
 - The stale banner shows "Refreshing N of M devices" while a refresh runs and disappears when the last batch lands.
 - A stale row shows its Last contact cell muted with the tooltip "Refreshing from Google".
 - The server pushes refresh signals over Server-Sent Events. The 2 second status poll is removed.
-  The next plan delivers this decision. Until then the page polls the sync state.
 - Google returning 404 for one device marks that device removed. Removed devices stay in the database.
 - A full sync marks every device that Google no longer returns as removed, when that sync succeeds.
 - Nothing is deleted from the database.
@@ -121,7 +121,7 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - A "before" date filter excludes the given time. An "after" filter includes it.
 - Date filters exclude devices without a contact time.
 - A device becomes stale 24 hours after Campus Commander last read it. The threshold is a code constant per entity type.
-- The next plan caches query results for 5 minutes. A completed full sync then makes the cached results unreachable.
+- Query results stay cached for 5 minutes. A completed full sync makes the cached results unreachable.
 - A sync that no worker starts within two minutes ends as interrupted. Refresh all then becomes available again.
 - The first visit shows no devices until an administrator runs Refresh all.
 - Pages hold 100 devices by default. The page size selector offers 50, 100, and 250.
@@ -145,6 +145,16 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - The grid and counts exclude removed devices. Device details still open a removed device and name the removal time.
 - A refresh that cannot start leaves the page as it is. The next query tries again.
 - The status bar and group counts still show the last full sync time. Device details show the device's own last Google read.
+- The banner's N counts the matching devices that are still stale. M counts the matching devices. N falls as batches land.
+- Without a running refresh, stale devices keep the title "Inventory observation is stale". The text names the stale count and the last failure.
+- A cached page refreshes the stale devices on that page. The query that filled the cache refreshed every stale device it matched.
+- A cached query result belongs to one person and one permission version.
+- Show All Selected and results over 100,000 devices skip the query cache.
+- A device that a refresh removes stays in a cached result until the result expires. It does not show as stale. Its details name the removal.
+- The event stream pings every 25 seconds. The server checks the session before each ping.
+- A browser that receives no event for 60 seconds reconnects. A closed stream reopens after 5 seconds when the status read succeeds.
+- After a reconnect, the page reads the sync status once, refetches rows still marked stale, and recounts stale devices.
+- The edge allows the event stream 75 seconds without data. Other application requests keep 45 seconds.
 
 ## States
 
@@ -169,19 +179,22 @@ Follow [DETAIL-02](../ui/patterns.md#entity-detail). Missing reports are not hea
 
 Inspected on 2026-10-05 in [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2).
 
-| Screen | Node |
-| --- | --- |
-| Inventory | `94:3` |
-| Details | `94:39` |
-| Filter picker and matches | `175:1337`, `175:1562` |
+| Screen                                    | Node                                           |
+| ----------------------------------------- | ---------------------------------------------- |
+| Inventory                                 | `94:3`                                         |
+| Details                                   | `94:39`                                        |
+| Filter picker and matches                 | `175:1337`, `175:1562`                         |
 | Filter editors: text, date, enum, OrgUnit | `176:1503`, `176:1951`, `176:2181`, `176:2636` |
-| Applied and cleared filters | `177:2032` through `177:3280` |
-| Loading, empty, offline, stale | `107:317`, `107:447`, `108:173`, `108:605` |
-| Telemetry state | `105:146` |
+| Applied and cleared filters               | `177:2032` through `177:3280`                  |
+| Loading, empty, offline, stale            | `107:317`, `107:447`, `108:173`, `108:605`     |
+| Telemetry state                           | `105:146`                                      |
 
 Deviations from the frames: no School column, no Bulk Actions, and no Update device.
 The battery panel names Google's classification instead of a district policy.
 The battery coverage page (`105:146`) is excluded. Device details list the recent reports that Google returns.
+
+The stale frame `108:605` was re-inspected on 2026-10-06. It shows the observation banner with Refresh inventory and no row marker.
+D11 changes that composition. The banner reports refresh progress, and stale rows mute the Device contact cell.
 
 ## Exclusions
 

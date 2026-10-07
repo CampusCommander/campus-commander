@@ -282,11 +282,19 @@ export async function qualifyDevicesApi({
     assert.equal((await api.get(`${root}/missing-device`)).status(), 404);
 
     if (migrator) {
+      const customerKey = (prefix) => `${prefix}:device:C0123456`;
+      const entity = (id) => `${customerKey('cc:entity')}:${id}`;
       await migrator.query(
         "UPDATE cc.devices SET last_entity_sync=now()-interval '2 days' WHERE device_id IN ('synthetic-device-0','synthetic-device-1','synthetic-device-3')",
       );
+      // Redis drops a record when it turns stale. Match the new Postgres stamps.
+      await redis.del(
+        ['synthetic-device-0', 'synthetic-device-1', 'synthetic-device-3'].map(
+          entity,
+        ),
+      );
       await fault('device-removed');
-      const stalePage = await query({
+      const staleQuery = {
         predicates: [
           {
             field: 'orgUnitPath',
@@ -295,40 +303,106 @@ export async function qualifyDevicesApi({
           },
         ],
         limit: 5,
-      });
+      };
+      const stalePage = await query(staleQuery);
       assert.ok(stalePage.refreshJobId, 'Stale rows start a refresh job.');
       assert.equal(
         stalePage.rows.find((row) => row.deviceId === 'synthetic-device-0')
           .stale,
         true,
       );
-      const again = await query({ limit: 5 });
+      assert.ok(
+        stalePage.rows.some((row) => row.deviceId === 'synthetic-device-3'),
+        'The first page holds the device that the batch removes.',
+      );
+      const repeat = await query(staleQuery);
+      assert.equal(
+        repeat.refreshJobId,
+        null,
+        'A cached page finds its stale rows already claimed.',
+      );
+      assert.deepEqual(
+        repeat.rows.map((row) => row.deviceId),
+        stalePage.rows.map((row) => row.deviceId),
+      );
+      // No earlier step used this query shape, so it misses the cache.
+      const again = await query({
+        predicates: [
+          { field: 'serialNumber', operator: 'startsWith', value: 'C0A1-000' },
+        ],
+        sort: { field: 'assetTag', direction: 'desc' },
+        limit: 5,
+      });
       assert.equal(
         again.refreshJobId,
         null,
         'The in-flight set stops a second dispatch.',
       );
+      const byIds = async (deviceIds) => {
+        const response = await api.post(`${root}/by-ids`, {
+          headers,
+          data: { deviceIds },
+        });
+        assert.equal(response.status(), 200, await response.text());
+        return (await response.json()).rows;
+      };
+      assert.equal(
+        (
+          await api.post(`${root}/by-ids`, { headers, data: { deviceIds: [] } })
+        ).status(),
+        400,
+      );
+      const removedAt = async () =>
+        (await (await api.get(`${root}/synthetic-device-3`)).json()).device
+          .removedAt;
+      let refreshed;
+      let removed;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        [refreshed] = await byIds(['synthetic-device-0']);
+        removed = await removedAt();
+        if (refreshed?.stale === false && removed) break;
+        await setTimeout(500);
+      }
+      assert.ok(
+        refreshed?.stale === false && removed,
+        'Batch did not refresh C0A1-0000 and remove C0A1-0003 within 60 s.',
+      );
+      assert.equal(refreshed.serialNumber, 'C0A1-0000');
       const bySerial = (serialNumber) =>
         query({
           predicates: [
             { field: 'serialNumber', operator: 'equals', value: serialNumber },
           ],
         });
-      let refreshed;
-      let gone;
-      for (let attempt = 0; attempt < 120; attempt++) {
-        refreshed = await bySerial('C0A1-0000');
-        gone = await bySerial('C0A1-0003');
-        if (refreshed.rows[0]?.stale === false && gone.matching === 0) break;
-        await setTimeout(500);
-      }
-      assert.ok(
-        refreshed.rows[0]?.stale === false && gone.matching === 0,
-        'Batch did not refresh C0A1-0000 and remove C0A1-0003 within 60 s.',
+      // A new query shape leaves the removed device out. Cached lists keep it until they expire.
+      assert.equal(
+        (
+          await query({
+            predicates: [
+              {
+                field: 'serialNumber',
+                operator: 'startsWith',
+                value: 'C0A1-0003',
+              },
+            ],
+          })
+        ).matching,
+        0,
       );
-      const removed = await api.get(`${root}/synthetic-device-3`);
-      assert.equal(removed.status(), 200);
-      assert.ok((await removed.json()).device.removedAt);
+      assert.equal(
+        (await query(staleQuery)).rows.find(
+          (row) => row.deviceId === 'synthetic-device-0',
+        ).stale,
+        false,
+        'A cached page reads the refreshed record.',
+      );
+      // Only a cached ordered list still holds a device that a refresh removed.
+      assert.ok(
+        (await query(staleQuery)).rows.some(
+          (row) => row.deviceId === 'synthetic-device-3',
+        ),
+        'The query cache serves the stored list until it expires.',
+      );
 
       // The job finishes only after the worker wrote Redis and freed its claims.
       let job;
@@ -349,8 +423,16 @@ export async function qualifyDevicesApi({
       assert.equal(Number(job.completed), job.batch_count);
       assert.equal(Number(job.failed), 0);
 
-      const customerKey = (prefix) => `${prefix}:device:C0123456`;
-      const entity = (id) => `${customerKey('cc:entity')}:${id}`;
+      const freshness = await api.post(`${root}/freshness`, {
+        headers,
+        data: staleQuery,
+      });
+      assert.equal(freshness.status(), 200, await freshness.text());
+      assert.deepEqual((await freshness.json()).freshness, {
+        stale: 0,
+        refreshing: false,
+      });
+
       // Redis deletes a sorted set with its last member. The default ACL reads EXISTS, not ZCARD.
       assert.equal(
         await redis.exists(customerKey('cc:entity-inflight')),
@@ -413,7 +495,9 @@ export async function qualifyDevicesApi({
       'inventory denial keeps the published devices and marks them stale: pass',
       ...(migrator
         ? [
-            'stale devices refresh through one Kestra batch and a removed device leaves the grid: pass',
+            'stale devices refresh through one Kestra batch and a removed device leaves new queries: pass',
+            'grid queries cache ordered device lists and cached pages read refreshed records: pass',
+            'by-ids and freshness report refreshed rows and the stale count: pass',
             'the refresh job finishes and the worker fills and prunes Redis: pass',
           ]
         : []),

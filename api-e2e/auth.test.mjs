@@ -2385,6 +2385,9 @@ test(
         await qualifyDevicesBrowser({
           browser,
           auditAccessibility,
+          migrator,
+          redis,
+          directory,
           publicOrigin,
           evidenceDirectory,
           setSubject: (value) => {

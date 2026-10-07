@@ -28,19 +28,21 @@ The client receives a push signal when rows are refreshed and updates them in pl
 
 ### D1. Two Redis caches with different owners (Q1)
 
-| Cache | Key | Value | Writer | TTL |
-| --- | --- | --- | --- | --- |
-| Query | query hash | ordered device ID list | API, on a Postgres miss | 5 minutes |
-| Entity | device ID | full row projection | sync job only | staleness threshold (24 hours for devices) |
+| Cache  | Key        | Value                  | Writer                  | TTL                                        |
+| ------ | ---------- | ---------------------- | ----------------------- | ------------------------------------------ |
+| Query  | query hash | ordered device ID list | API, on a Postgres miss | 5 minutes                                  |
+| Entity | device ID  | full row projection    | sync job only           | staleness threshold (24 hours for devices) |
 
 Read path: query key to Redis. Hit: hydrate IDs from the entity cache, Postgres fills misses.
 Miss: Postgres runs the query, the API writes the ID list, then returns rows. The API never writes the entity cache.
+The application Redis user gains mget, llen, lrange, rpush, subscribe, and unsubscribe, owner-approved 2026-10-07. District-operated Redis must grant the same. The district Redis docs follow-up stays open.
 
 ### D2. The query cache holds the whole ordered result set (Q2)
 
 Key = hash(customer, connection generation, permission version, filter, sort, query generation from D10).
 Value = every matching ID in order, stale and fresh alike. A page is `LRANGE`. Count is `LLEN`.
 The user scrolls one frozen ordering for the TTL. Grouped queries (`POST /api/devices/groups`) are not cached.
+As built, the hash also covers the principal ID. Show All Selected and results over 100,000 devices skip the cache.
 
 ### D3. One mutable row per device replaces snapshots (Q3)
 
@@ -52,6 +54,7 @@ Full sync and get-by-IDs sync use one upsert. Migration 016 is rewritten, not pa
 
 Not only the visible page. Dedupe uses a Redis in-flight set `cc:entity-inflight:{type}:{customer}` with a short TTL.
 The API dispatches only IDs newly added to the set. Refresh all remains the explicit whole-inventory path.
+As built, a page from the query cache dispatches the stale devices on that page.
 
 ### D5. Fetch strategy (Q5)
 
@@ -101,6 +104,7 @@ The existing stale banner is repurposed. It shows when the result set contains s
 While a job runs it reads "Refreshing N of M devices". It disappears when the last batch lands. The single observation time text goes away.
 Stale rows render the Last contact cell muted with the tooltip "Refreshing from Google". No new column.
 Record the composition change in the device browsing workflow and re-inspect the Figma stale frame first.
+As built, POST /api/devices/freshness returns the stale count and whether a refresh job runs. N is that count. M is the matching count.
 
 ### D12. One SSE stream, poll retired (Q12)
 
@@ -125,13 +129,13 @@ No abstract base classes, generic repository, or plugin registry.
 
 Worker logic owns Google outcomes. Kestra retry covers only a dead batch runner.
 
-| Outcome | Get-by-IDs job | Full `.list` sync |
-| --- | --- | --- |
-| 404 for a device | soft-delete that device in the batch, delete its Redis key | not applicable |
-| Quota error (429, quota 403) | back off and retry inside the worker until success | same |
-| Any other error | the batch fails with the existing failure vocabulary | same |
-| End-of-job scan | none | if every batch succeeded: soft-delete rows with `last_entity_sync < sync started_at` |
-| Any batch failed | job finishes `failed`, untouched rows stay stale, next read re-dispatches | sync finishes `failed`, previous rows stay and show stale, no soft-deletes |
+| Outcome                      | Get-by-IDs job                                                            | Full `.list` sync                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 404 for a device             | soft-delete that device in the batch, delete its Redis key                | not applicable                                                                       |
+| Quota error (429, quota 403) | back off and retry inside the worker until success                        | same                                                                                 |
+| Any other error              | the batch fails with the existing failure vocabulary                      | same                                                                                 |
+| End-of-job scan              | none                                                                      | if every batch succeeded: soft-delete rows with `last_entity_sync < sync started_at` |
+| Any batch failed             | job finishes `failed`, untouched rows stay stale, next read re-dispatches | sync finishes `failed`, previous rows stay and show stale, no soft-deletes           |
 
 Nothing is ever hard-deleted. Freshness only advances. A device row never carries a failure state.
 
