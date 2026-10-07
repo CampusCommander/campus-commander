@@ -31,6 +31,8 @@ test('classifyStatus separates success, missing, quota, transient, auth, and rej
     [400, reason('invalid'), 'rejected'],
     [409, reason('duplicate'), 'rejected'],
     [412, null, 'rejected'],
+    [501, null, 'rejected'],
+    [505, null, 'rejected'],
   ];
   for (const [status, body, kind] of cases)
     assert.equal(

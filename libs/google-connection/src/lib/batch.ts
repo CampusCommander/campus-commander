@@ -379,6 +379,8 @@ const QUOTA_REASONS: ReadonlySet<string> = new Set([
   'quotaExceeded',
 ]);
 
+const TRANSIENT_STATUSES: ReadonlySet<number> = new Set([500, 502, 503, 504]);
+
 export type PartKind =
   | 'success'
   | 'not-found'
@@ -418,7 +420,10 @@ export function classifyStatus(
     (status === 403 && reason !== null && QUOTA_REASONS.has(reason))
   )
     return { kind: 'quota', reason };
-  if (status >= 500 || (status === 403 && reason === 'backendError'))
+  if (
+    TRANSIENT_STATUSES.has(status) ||
+    (status === 403 && reason === 'backendError')
+  )
     return { kind: 'transient', reason };
   if (status === 401 || status === 403) return { kind: 'auth', reason };
   return { kind: 'rejected', reason };
