@@ -728,6 +728,7 @@ class BatchRun<T> {
   ): Promise<void> {
     const request = sentRequest(entry);
     const attempts = { ...entry.attempts };
+    const token = nextPageToken(part.body);
     let page: T;
     try {
       page = this.call.parse(part.body, request);
@@ -744,7 +745,6 @@ class BatchRun<T> {
       );
       return;
     }
-    const token = nextPageToken(part.body);
     if (token !== null && entry.pages.length + 1 >= this.options.maxPages) {
       await this.resolveFailure(
         entry,

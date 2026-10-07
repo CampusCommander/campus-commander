@@ -302,6 +302,25 @@ test('a list request follows nextPageToken and keeps every page in order', async
   );
 });
 
+test('a parser that strips the page token does not end paging', async () => {
+  const google = fakeGoogle((part) => ({
+    status: 200,
+    body: part.query.pageToken
+      ? { items: [2] }
+      : { items: [1], nextPageToken: 'p2' },
+  }));
+  const result = await setup().batch.execute(
+    call(google, things('list'), {
+      parse: (body) => {
+        delete body.nextPageToken;
+        return body.items;
+      },
+    }),
+  );
+  assert.deepEqual(result.succeeded.get('list'), [[1], [2]]);
+  assert.equal(google.sent.length, 2);
+});
+
 test('list requests page independently and share batches', async () => {
   const series = {
     long: {
