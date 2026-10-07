@@ -184,12 +184,14 @@ export class DevicesController {
         });
       },
       // A ping goes out only while the session and devices:read still hold for this customer.
+      // The recheck leaves the idle timeout alone. An open tab must not keep an unattended session alive.
       recheck: async () => {
         try {
           request.session = await this.auth.authenticate(
             request.headers.cookie,
             'identity:read',
             request.correlationId,
+            { slide: false },
           );
           return (
             (await this.current(request))?.customerId === current.customerId

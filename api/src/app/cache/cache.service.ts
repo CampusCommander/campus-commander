@@ -150,6 +150,9 @@ export class CacheService implements OnApplicationShutdown {
   async expire(key: string, seconds: number) {
     return this.execute((client) => client.expire(key, seconds));
   }
+  async exists(key: string) {
+    return this.execute((client) => client.exists(key));
+  }
   /** Claim members for `seconds` each. Returns the members that held no live claim. */
   async addMembers(
     key: string,

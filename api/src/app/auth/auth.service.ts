@@ -21,6 +21,7 @@ import { CacheService } from '../cache/cache.service';
 import { EnrollmentService } from './enrollment.service';
 import { InvitationService } from './invitation.service';
 import { AccessChangedException } from './access-changed.errors';
+import { retainSession } from './session-retention';
 
 const sessionSchema = z.strictObject({
   principalId: z.uuid(),
@@ -223,10 +224,15 @@ export class AuthService {
     };
   }
 
+  /**
+   * Check the session cookie, the absolute expiry, the permission version, and the permission.
+   * A request slides the idle timeout. `slide: false` only confirms the session, for the event stream recheck.
+   */
   async authenticate(
     cookie: string | undefined,
     permission: Permission,
     correlationId: string,
+    options: { slide: boolean } = { slide: true },
   ): Promise<SessionResponse> {
     const token = readCookie(cookie, sessionCookie);
     if (!token) throw new UnauthorizedException('Sign in to continue.');
@@ -284,16 +290,11 @@ export class AuthService {
         'This action requires additional permission.',
       );
     }
-    const retained = await this.cache.expire(
-      key('session', token),
-      Math.max(
-        1,
-        Math.min(
-          this.configuration.auth.sessionIdleSeconds,
-          Math.floor((session.expiresAt - Date.now()) / 1000),
-        ),
-      ),
-    );
+    const retained = await retainSession(this.cache, key('session', token), {
+      slide: options.slide,
+      idleSeconds: this.configuration.auth.sessionIdleSeconds,
+      expiresAt: session.expiresAt,
+    });
     if (!retained)
       throw new UnauthorizedException('Your session expired. Sign in again.');
     return {
