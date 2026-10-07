@@ -99,6 +99,9 @@ ModuleRegistry.registerModules([
     :host ::ng-deep .device-code {
       font-family: 'Roboto Mono', monospace;
     }
+    :host ::ng-deep .device-stale {
+      color: var(--cc-text-secondary);
+    }
     :host ::ng-deep .lgr-ssrm-selection-footer {
       display: flex;
       flex-wrap: wrap;

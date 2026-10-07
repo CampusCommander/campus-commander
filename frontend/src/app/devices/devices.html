@@ -12,13 +12,15 @@
       Reconnect
     </button>
   </section>
-  } @else if (published() && sync()?.stale) {
-  <section class="banner" aria-labelledby="devices-stale-title">
-    <h2 id="devices-stale-title">Inventory observation is stale</h2>
-    <p>
-      {{ failureText() || 'The inventory is more than 24 hours old.' }} Current
-      data stays visible during refresh.
-    </p>
+  } @else if (published() && banner()) {
+  <section
+    class="banner"
+    aria-labelledby="devices-stale-title"
+    [attr.aria-live]="banner()!.refreshing ? 'polite' : null"
+  >
+    <h2 id="devices-stale-title">{{ banner()!.title }}</h2>
+    <p>{{ banner()!.body }}</p>
+    @if (!banner()!.refreshing) {
     <button
       mat-stroked-button
       type="button"
@@ -27,6 +29,7 @@
     >
       Refresh inventory
     </button>
+    }
   </section>
   } @if (published() && telemetryText(); as text) {
   <section class="banner info" aria-labelledby="devices-battery-title">

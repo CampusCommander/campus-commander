@@ -19,6 +19,7 @@ import type { DevicePredicate, DeviceRow } from '@campus/application-contracts';
 import { DevicesStore } from './devices.store';
 import { DeviceGrid } from './device-grid';
 import { DeviceFilter } from './device-filter';
+import { freshnessBanner } from './device-freshness';
 import type { DeviceView } from './device-datasource';
 import type { GridState } from 'ag-grid-community';
 import {
@@ -72,6 +73,20 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly telemetryText = computed(() =>
     telemetryFailureText(this.sync()?.telemetryFailure ?? null),
   );
+  /** The stale banner follows the stale rows of the result set, not the age of the last full sync (D11). */
+  protected readonly banner = computed(() => {
+    const freshness = this.store.freshness();
+    const sync = this.sync();
+    const failed = sync?.status === 'failed';
+    return freshnessBanner({
+      stale: freshness?.stale ?? 0,
+      matching: this.store.page()?.matching ?? 0,
+      refreshing: !!freshness?.refreshing || this.store.refreshing(),
+      jobFailure: syncFailureText(this.store.jobFailure()),
+      syncFailure: failed ? this.failureText() : '',
+      syncFailed: failed,
+    });
+  });
   protected readonly label = chipLabel;
   protected readonly load = (
     offset: number,

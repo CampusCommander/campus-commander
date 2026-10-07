@@ -57,6 +57,7 @@ function setup(options: {
   predicates?: DevicePredicate[];
   page?: { matching: number; total: number; observedAt: string | null } | null;
   offline?: boolean;
+  freshness?: { stale: number; refreshing: boolean } | null;
 }) {
   const sync = signal(options.sync);
   const store = {
@@ -83,6 +84,8 @@ function setup(options: {
     init: vi.fn().mockResolvedValue(undefined),
     leave: vi.fn(),
     gridRows: {},
+    freshness: signal(options.freshness ?? null),
+    jobFailure: signal(null),
     refreshAll: vi.fn().mockResolvedValue(undefined),
     reconnect: vi.fn().mockResolvedValue(undefined),
     setPredicates: vi.fn(),
@@ -306,4 +309,45 @@ it('opens the event stream on mount and closes it on leave', () => {
   expect(store.init).toHaveBeenCalled();
   fixture.destroy();
   expect(store.leave).toHaveBeenCalled();
+});
+
+const counted = {
+  matching: 12,
+  total: 450,
+  observedAt: '2026-10-05T12:00:00.000Z',
+};
+
+it('shows refresh progress while stale devices refresh', () => {
+  const { element, button } = setup({
+    sync: ready(),
+    page: counted,
+    freshness: { stale: 1, refreshing: true },
+  });
+  expect(
+    element.querySelector('#devices-stale-title')?.textContent?.trim(),
+  ).toBe('Refreshing 1 of 12 devices');
+  expect(button('Refresh inventory')).toBeUndefined();
+});
+
+it('offers Refresh inventory when stale devices are not refreshing', () => {
+  const { element, button } = setup({
+    sync: ready(),
+    page: counted,
+    freshness: { stale: 3, refreshing: false },
+  });
+  expect(element.textContent).toContain('Inventory observation is stale');
+  expect(element.textContent).toContain(
+    '3 of 12 devices were last read from Google more than 24 hours ago.',
+  );
+  expect(button('Refresh inventory')).toBeDefined();
+});
+
+it('hides the banner when no matching device is stale, even after a day without a full sync', () => {
+  const { element } = setup({
+    sync: ready({ stale: true }),
+    page: counted,
+    freshness: { stale: 0, refreshing: false },
+  });
+  expect(element.textContent).not.toContain('Inventory observation is stale');
+  expect(element.querySelector('#devices-stale-title')).toBeNull();
 });

@@ -165,6 +165,19 @@ function columnFilter(
   }
 }
 
+/** A stale row shows its contact time muted until the refresh lands (D11). */
+const staleContact: Pick<
+  ColDef<DeviceRow>,
+  'cellClassRules' | 'tooltipValueGetter'
+> = {
+  cellClassRules: {
+    'device-stale': ({ data, node }) =>
+      !!data && !node?.group && data.stale === true,
+  },
+  tooltipValueGetter: ({ data, node }) =>
+    data && !node?.group && data.stale ? 'Refreshing from Google' : undefined,
+};
+
 /** Every data column is read-only in this slice (GRID-05). */
 export function deviceColumnDefs(
   onDetails: (row: DeviceRow, node: IRowNode<DeviceRow>) => void,
@@ -208,6 +221,7 @@ export function deviceColumnDefs(
         ...columnFilter(field, orgUnits),
         hide: field.optional,
         cellClass: field.id === 'serialNumber' ? 'device-code' : undefined,
+        ...(field.id === 'lastContact' ? staleContact : {}),
       }),
     ),
   ];
