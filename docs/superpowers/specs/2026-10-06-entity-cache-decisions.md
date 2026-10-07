@@ -136,12 +136,13 @@ Worker logic owns Google outcomes. Kestra retry covers only a dead batch runner.
 | Outcome                      | Get-by-IDs job                                                            | Full `.list` sync                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | 404 for a device             | soft-delete that device in the batch, delete its Redis key                | not applicable                                                                       |
-| Quota error (429, quota 403) | back off and retry inside the worker until success                        | same                                                                                 |
+| Quota error (429, quota 403) | back off and retry each part up to 25 times, then fail the batch          | back off and retry each page up to 25 times, then fail the sync                      |
 | Any other error              | the batch fails with the existing failure vocabulary                      | same                                                                                 |
 | End-of-job scan              | none                                                                      | if every batch succeeded: soft-delete rows with `last_entity_sync < sync started_at` |
 | Any batch failed             | job finishes `failed`, untouched rows stay stale, next read re-dispatches | sync finishes `failed`, previous rows stay and show stale, no soft-deletes           |
 
 Nothing is ever hard-deleted. Freshness only advances. A device row never carries a failure state.
+The quota cap of 25 was corrected on 2026-10-07. See the [batch service record](2026-10-07-google-batch-service-decisions.md), decision B12.
 
 ## Open items
 

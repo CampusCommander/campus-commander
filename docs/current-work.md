@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-06.
+Updated: 2026-10-07.
 
 ## Authorized now
 
@@ -12,6 +12,8 @@ The slice reads data only. It covers the device grid, typed filters, device deta
 Battery health uses Google's classification. The owner added grid tools, paging, server-side selection, and grouping on 2026-10-05.
 On 2026-10-06 the owner authorized per-device freshness as infrastructure under this workflow, on branch `codex/entity-cache`.
 The [entity cache record](superpowers/specs/2026-10-06-entity-cache-decisions.md) holds the confirmed decisions. It is not a new workflow.
+On 2026-10-07 the owner requested a Google batch service for the entity sync job, on branch `codex/batch-service`.
+The [batch service record](superpowers/specs/2026-10-07-google-batch-service-decisions.md) holds the confirmed decisions. It is not a new workflow.
 The School column, Bulk Actions, and every device change are excluded.
 Inspect the [linked Figma frames](workflows/device-browsing.md#design) before implementing each screen.
 Use focused `codex/` branches. Do not merge without owner authorization.
