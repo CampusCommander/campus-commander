@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { AuthStore } from '../auth.store';
@@ -38,7 +38,9 @@ const sessionFor = (id: string) => ({
 
 function setup(
   request: ReturnType<typeof vi.fn>,
-  session = signal(sessionFor('actor')),
+  session: WritableSignal<ReturnType<typeof sessionFor> | null> = signal(
+    sessionFor('actor'),
+  ),
 ) {
   TestBed.configureTestingModule({
     providers: [
@@ -611,7 +613,8 @@ describe('reconcile after the stream closed', () => {
       '2026-10-06T12:00:00.000Z',
     );
     await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
-    expect(statusReads(request)).toBe(reads + 1);
+    // One read before the new stream opens and one after it.
+    expect(statusReads(request)).toBe(reads + 2);
   });
 
   it('refetches stale rows and recounts when the status did not change', async () => {
@@ -628,6 +631,176 @@ describe('reconcile after the stream closed', () => {
       deviceIds: ['d1'],
     });
     expect(store.revision()).toBe(before);
-    expect(statusReads(request)).toBe(reads + 1);
+    expect(statusReads(request)).toBe(reads + 2);
+  });
+
+  it('reloads the grid when a full sync ends between the reopen status read and the open', async () => {
+    let current = state('ready');
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: current }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    current = state('running');
+    opened[0].send('full-sync', { type: 'full-sync', sync: current });
+    opened[0].fail(2);
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    // The full sync ends before the new subscription is active, so its event is lost.
+    current = state('ready', { observedAt: '2026-10-06T12:00:00.000Z' });
+    const before = store.revision();
+    opened[1].open();
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    expect(store.sync()?.status).toBe('ready');
+  });
+});
+
+describe('reopen after a failed status read', () => {
+  /** Answers status reads with `statuses` in turn, then with a ready status. */
+  function statusSequence(statuses: number[]) {
+    return routes({
+      '/api/devices/sync': () => {
+        const status = statuses.shift() ?? 200;
+        return status === 200
+          ? Response.json({ sync: state('ready') })
+          : Response.json({}, { status });
+      },
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+  }
+
+  it('retries after a server error and opens once the status read succeeds', async () => {
+    const request = statusSequence([200, 502, 503]);
+    const store = setup(request);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    opened[0].fail(2);
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    expect(statusReads(request)).toBe(4);
+    expect(store.error()).toBe('');
+  });
+
+  it.each([401, 403])('stays closed after a %i status read', async (status) => {
+    const request = statusSequence([200, status]);
+    const store = setup(request);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    opened[0].fail(2);
+    await vi.waitFor(() => expect(statusReads(request)).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(statusReads(request)).toBe(2);
+    expect(opened).toHaveLength(1);
+  });
+
+  it('backs off up to the cap and starts over after an open', async () => {
+    vi.useFakeTimers();
+    try {
+      let status = 200;
+      const reads: number[] = [];
+      const request = routes({
+        '/api/devices/sync': () => {
+          reads.push(Date.now());
+          return status === 200
+            ? Response.json({ sync: state('ready') })
+            : Response.json({}, { status });
+        },
+        '/api/devices/freshness': () =>
+          Response.json({ freshness: { stale: 0, refreshing: false } }),
+      });
+      const store = setup(request);
+      store.reopenDelay = 1000;
+      store.reopenCap = 4000;
+      const opened = streams(store);
+      await store.init();
+      opened[0].open();
+      status = 503;
+      opened[0].fail(2);
+      await vi.advanceTimersByTimeAsync(11_000);
+      expect(reads.slice(1).map((time, index) => time - reads[index])).toEqual([
+        1000, 2000, 4000, 4000,
+      ]);
+      status = 200;
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(opened).toHaveLength(2);
+      opened[1].open();
+      await vi.advanceTimersByTimeAsync(0);
+      const before = reads.length;
+      opened[1].fail(2);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(reads).toHaveLength(before);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(reads).toHaveLength(before + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reopens the stream when the same person resumes an interrupted session', async () => {
+    let signedIn = true;
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    const request = routes({
+      '/api/devices/sync': () =>
+        signedIn
+          ? Response.json({ sync: state('ready') })
+          : Response.json({ code: 'access-changed' }, { status: 401 }),
+    });
+    const store = setup(request, session);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    TestBed.tick();
+    await store.init();
+    opened[0].open();
+    signedIn = false;
+    opened[0].fail(2);
+    await vi.waitFor(() => expect(statusReads(request)).toBe(2));
+    // AuthStore clears the session on the 401 and restores it on resume.
+    session.set(null);
+    TestBed.tick();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(opened).toHaveLength(1);
+    signedIn = true;
+    session.set(sessionFor('actor'));
+    TestBed.tick();
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+  });
+
+  it('a first stream that closes before it opens leaves no baseline behind', async () => {
+    let current = state('ready');
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: current }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    await store.init();
+    opened[0].fail(2);
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    opened[1].open();
+    current = state('ready', { observedAt: '2026-10-06T12:00:00.000Z' });
+    opened[1].send('full-sync', { type: 'full-sync', sync: current });
+    const before = store.revision();
+    // The browser retries by itself while the stream is CONNECTING.
+    opened[1].fail(0);
+    opened[1].open();
+    await vi.waitFor(() =>
+      expect(request).toHaveBeenCalledWith('/api/devices/freshness', {
+        predicates: [],
+        selection: null,
+      }),
+    );
+    expect(store.revision()).toBe(before);
   });
 });

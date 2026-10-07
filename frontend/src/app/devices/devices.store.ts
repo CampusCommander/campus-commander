@@ -81,8 +81,10 @@ export class DevicesStore {
     new EventSource(url);
   /** Milliseconds between a refresh signal and the stale count that it triggers. */
   recountDelay = 1000;
-  /** Milliseconds before a closed stream reopens. */
+  /** Milliseconds before a closed stream reopens. Each failed attempt doubles the wait. */
   reopenDelay = 5000;
+  /** Milliseconds that the doubled reopen wait never exceeds. */
+  reopenCap = 60_000;
   /** Milliseconds without any event, pings included, before the stream counts as dead. */
   streamTimeout = ENTITY_EVENTS_PING_SECONDS * 2000 + 10_000;
   readonly sync = signal<DeviceSyncState | null>(null);
@@ -140,20 +142,30 @@ export class DevicesStore {
   private streamOpened = false;
   private watchdog?: ReturnType<typeof setTimeout>;
   private reopenTimer?: ReturnType<typeof setTimeout>;
+  /** Failed reopen attempts since the last open. Each one doubles the wait. */
+  private reopenAttempts = 0;
   private recountTimer?: ReturnType<typeof setTimeout>;
-  /** The status from before the stream dropped. The reopen status read must not hide a full sync that ended meanwhile. */
+  /** The status from before the stream dropped. The reconcile after the next open compares against it. */
   private dropped: { state: DeviceSyncState | null } | null = null;
   /** Increments on sign-in by another person. Late answers for the old person are dropped. */
   private epoch = 0;
   private identity: string | null = null;
+  /** The session ended or was interrupted. The same person can resume it. */
+  private away = false;
 
   constructor() {
     effect(() => {
       const identity = this.auth.session()?.identity.id ?? null;
       untracked(() => {
-        if (identity === null) return;
+        if (identity === null) {
+          this.away = this.identity !== null;
+          return;
+        }
+        const resumed = this.away && identity === this.identity;
+        this.away = false;
         if (this.identity !== null && identity !== this.identity) this.reset();
         this.identity = identity;
+        if (resumed) this.resume();
       });
     });
   }
@@ -202,19 +214,14 @@ export class DevicesStore {
     if (this.stream) return;
     this.streamOpened = false;
     this.dropped = null;
-    if (
-      (await this.loadSync()) &&
-      this.sync() &&
-      this.streamWanted &&
-      !this.stream
-    )
-      this.openStream();
+    await this.reopen();
   }
 
   /** Devices left: close the stream and drop pending timers. */
   leave(): void {
     this.streamWanted = false;
     this.dropped = null;
+    this.reopenAttempts = 0;
     this.closeStream();
     clearTimeout(this.reopenTimer);
     clearTimeout(this.recountTimer);
@@ -222,18 +229,25 @@ export class DevicesStore {
 
   /** Returns false when the status could not be read. */
   async loadSync(): Promise<boolean> {
+    return (await this.readSync()) === 'read';
+  }
+
+  /** Read the status. `denied` means a 401 or 403 answer. `failed` means any other failure. */
+  private async readSync(): Promise<'read' | 'denied' | 'failed'> {
     const response = await this.call('/api/devices/sync');
-    if (!response) return false;
+    if (!response) return 'failed';
     if (!response.ok) {
       this.error.set('Device inventory status is unavailable.');
-      return false;
+      return response.status === 401 || response.status === 403
+        ? 'denied'
+        : 'failed';
     }
     this.error.set('');
     this.sync.set(
       deviceSyncStateSchema.nullable().parse((await response.json()).sync),
     );
     this.syncLoaded.set(true);
-    return true;
+    return 'read';
   }
 
   /** Start a full sync. The full-sync event reports its end (D12). */
@@ -259,7 +273,10 @@ export class DevicesStore {
   async reconnect(): Promise<void> {
     if (!(await this.loadSync())) return;
     this.revision.update((value) => value + 1);
-    if (this.streamWanted && !this.stream && this.sync()) this.openStream();
+    if (this.streamWanted && !this.stream && this.sync()) {
+      clearTimeout(this.reopenTimer);
+      this.openStream();
+    }
   }
 
   async rows(offset: number, limit: number): Promise<DevicePage | null> {
@@ -356,8 +373,11 @@ export class DevicesStore {
     const current = () => this.stream === stream && epoch === this.epoch;
     stream.addEventListener('open', () => {
       if (!current()) return;
+      this.reopenAttempts = 0;
       this.watch();
+      // The first open follows a fresh status read. It has no earlier stream to reconcile.
       if (this.streamOpened) void this.reconcile();
+      else this.dropped = null;
       this.streamOpened = true;
     });
     stream.addEventListener('error', () => {
@@ -388,17 +408,37 @@ export class DevicesStore {
       }, this.streamTimeout);
   }
 
+  /** Close the stream and reopen it later. Each failed attempt doubles the wait, up to the cap. */
   private scheduleReopen(): void {
     this.dropped ??= { state: this.sync() };
     this.closeStream();
     clearTimeout(this.reopenTimer);
-    this.reopenTimer = setTimeout(async () => {
-      if (!this.streamWanted) return;
-      // AuthStore handles an ended session through this status read.
-      if (await this.loadSync()) {
-        if (this.streamWanted && this.sync()) this.openStream();
-      } else if (this.offline()) this.scheduleReopen();
-    }, this.reopenDelay);
+    const delay = Math.min(
+      this.reopenDelay * 2 ** this.reopenAttempts,
+      this.reopenCap,
+    );
+    this.reopenAttempts++;
+    this.reopenTimer = setTimeout(() => {
+      if (this.streamWanted) void this.reopen();
+    }, delay);
+  }
+
+  /**
+   * Read the status, then open the stream. AuthStore handles an ended session through this read.
+   * 401 and 403 leave the stream closed. A server error or a network failure tries again later.
+   */
+  private async reopen(): Promise<void> {
+    const result = await this.readSync();
+    if (!this.streamWanted || this.stream) return;
+    if (result === 'failed') this.scheduleReopen();
+    else if (result === 'read' && this.sync()) this.openStream();
+  }
+
+  /** The same person resumed an interrupted session. A stream that a 401 closed opens again. */
+  private resume(): void {
+    if (!this.streamWanted || this.stream) return;
+    clearTimeout(this.reopenTimer);
+    void this.reopen();
   }
 
   private onEvent(data: string): void {
@@ -424,13 +464,18 @@ export class DevicesStore {
     }
   }
 
-  /** After a reconnect: one status read, the rows still tagged stale, and the counts (D12). */
+  /** After a reconnect: a status read after the open, the rows still tagged stale, and the counts (D12). */
   private async reconcile(): Promise<void> {
-    // After a drop, the reopen path already read the status once. Compare it with the one from before.
+    // The reopen read ran before this stream subscribed, so a full sync can end unseen in between.
+    // This read runs after the open. It compares against the status from before the drop.
     const baseline = this.dropped;
     this.dropped = null;
     const before = baseline ? baseline.state : this.sync();
-    if (!baseline && !(await this.loadSync())) return;
+    if (!(await this.loadSync())) {
+      // The next reconnect compares against the same status.
+      this.dropped = { state: before };
+      return;
+    }
     const after = this.sync();
     // A full sync that ended meanwhile reloads every row and count.
     if (
