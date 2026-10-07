@@ -36,8 +36,11 @@ export type {
   BatchFailureKind,
   BatchHttpClient,
   BatchOptions,
+  BatchOutcome,
   BatchRequest,
   BatchResponseEvent,
   BatchResult,
   BatchRoundEvent,
+  BatchServiceErrorCode,
+  GoogleBatchServiceOptions,
 } from './lib/batch';

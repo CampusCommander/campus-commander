@@ -577,3 +577,26 @@ test('bad input rejects before a token is minted, and no requests means no mint'
   assert.deepEqual([empty.succeeded.size, empty.failed.size], [0, 0]);
   assert.equal(google.state.mints, 0);
 });
+
+test('a hook that mutates its event cannot change the results (B11)', async () => {
+  const google = fakeGoogle(
+    perKey({ a: [reason(429, 'rateLimitExceeded'), reason(404, 'notFound')] }),
+  );
+  const frozen = [];
+  const result = await setup().batch.execute(
+    call(google, things('a'), {
+      onResponse: (event) => {
+        frozen.push(Object.isFrozen(event.request));
+        try {
+          event.request.path = '/evil';
+        } catch {
+          // Frozen objects throw in strict mode.
+        }
+        if (event.outcome.failure) event.outcome.failure.kind = 'rejected';
+      },
+    }),
+  );
+  assert.equal(result.failed.get('a').kind, 'not-found');
+  assert.equal(google.sent[1][0].path, '/admin/directory/v1/things/a');
+  assert.deepEqual(frozen, [true, true]);
+});

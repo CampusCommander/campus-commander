@@ -239,8 +239,8 @@ test('device pages allow long notes across a full page', async (t) => {
 const fastBatch = () => new GoogleBatchService({ sleep: async () => undefined, random: () => 0 });
 const signal = () => AbortSignal.timeout(5000);
 
-function stubBatch(t, answer) {
-  const google = fakeGoogle(answer);
+function stubBatch(t, answer, options) {
+  const google = fakeGoogle(answer, options);
   const scopes = [];
   t.mock.method(JWT.prototype, 'getAccessToken', async function () {
     scopes.push(...this.scopes);
@@ -314,6 +314,28 @@ test('deviceBatch fails with quota after 25 quota retries', async (t) => {
     { name: 'GoogleConnectionError', code: 'quota' },
   );
   assert.equal(google.sent.length, 26);
+});
+
+test('deviceBatch maps a malformed batch answer to invalid-response', async (t) => {
+  stubBatch(t, () => quotaPart, {
+    outer: () => ({ status: 200, headers: { 'content-type': 'text/html' }, data: '<html>' }),
+  });
+  await assert.rejects(
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(credential, 'C0123456', ['d1'], signal()),
+    { name: 'GoogleConnectionError', code: 'invalid-response' },
+  );
+});
+
+test('deviceBatch surfaces a shutdown during a quota wait as network-failure', async (t) => {
+  const stopping = new AbortController();
+  stubBatch(t, () => {
+    stopping.abort();
+    return quotaPart;
+  });
+  await assert.rejects(
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(credential, 'C0123456', ['d1'], stopping.signal),
+    { name: 'GoogleConnectionError', code: 'network-failure' },
+  );
 });
 
 test('deviceBatch fails the batch on any other part error', async (t) => {

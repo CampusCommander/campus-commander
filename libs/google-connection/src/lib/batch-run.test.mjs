@@ -194,3 +194,27 @@ test('a mint failure fails every pending request as auth with the mint code', as
   assert.equal(result.failed.size, 2);
   assert.equal(google.sent.length, 0);
 });
+
+test('a transport failure after a 2xx answer names the cause', async () => {
+  const google = fakeGoogle((part) => ok(part.key));
+  await assert.rejects(
+    setup().batch.execute(
+      call(google, [thing('a')], {
+        getClient: async () => ({
+          request: async () => {
+            throw Object.assign(
+              new Error('maxContentLength size of 10 exceeded'),
+              {
+                response: { status: 200, headers: {}, data: '' },
+              },
+            );
+          },
+        }),
+      }),
+    ),
+    (error) =>
+      error.name === 'BatchServiceError' &&
+      error.code === 'malformed-response' &&
+      /maxContentLength/.test(error.message),
+  );
+});

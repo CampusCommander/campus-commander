@@ -135,6 +135,7 @@ export interface BatchCall<T> {
   getClient(signal: AbortSignal): Promise<BatchHttpClient>;
   signal: AbortSignal;
   options?: Partial<BatchOptions>;
+  /** The success `page` is shared with the result. Every other event field is a copy. */
   onResponse?(event: BatchResponseEvent<T>): void | Promise<void>;
   onBatch?(event: BatchRoundEvent): void | Promise<void>;
 }
@@ -509,6 +510,17 @@ function abortableSleep(
   });
 }
 
+/** B11: hooks observe copies, so a mutating hook cannot change a request. */
+function eventRequest(request: BatchRequest): BatchRequest {
+  return Object.freeze({
+    ...request,
+    ...(request.query ? { query: Object.freeze({ ...request.query }) } : {}),
+    ...(request.headers
+      ? { headers: Object.freeze({ ...request.headers }) }
+      : {}),
+  });
+}
+
 function sentRequest<T>(entry: Entry<T>): BatchRequest {
   if (entry.pageToken === null) return entry.request;
   return {
@@ -705,6 +717,12 @@ class BatchRun<T> {
       failure instanceof BatchServiceError
     )
       throw failure;
+    // A transport error such as gaxios's maxContentLength carries the 2xx response it cut short.
+    if (failure !== undefined && status >= 200 && status < 300)
+      throw new BatchServiceError(
+        'malformed-response',
+        `The batch transport failed after HTTP ${status}: ${failure instanceof Error ? failure.message : String(failure)}`,
+      );
     if (status === 0) {
       const code =
         failure !== null && typeof failure === 'object'
@@ -845,7 +863,7 @@ class BatchRun<T> {
     }
     await this.call.onResponse?.({
       id: entry.request.id,
-      request,
+      request: eventRequest(request),
       attempts,
       status: part.status,
       outcome: {
@@ -889,7 +907,7 @@ class BatchRun<T> {
     const attempts = { ...entry.attempts };
     await this.call.onResponse?.({
       id: entry.request.id,
-      request: sentRequest(entry),
+      request: eventRequest(sentRequest(entry)),
       attempts,
       status,
       outcome: {
@@ -911,10 +929,13 @@ class BatchRun<T> {
     if (notify)
       await this.call.onResponse?.({
         id: entry.request.id,
-        request: sentRequest(entry),
-        attempts: final.attempts,
+        request: eventRequest(sentRequest(entry)),
+        attempts: { ...final.attempts },
         status: final.status,
-        outcome: { kind: 'failed', failure: final },
+        outcome: {
+          kind: 'failed',
+          failure: { ...final, attempts: { ...final.attempts } },
+        },
       });
   }
 

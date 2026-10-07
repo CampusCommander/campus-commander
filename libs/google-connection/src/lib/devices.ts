@@ -10,7 +10,12 @@ import {
   type DeviceObservation,
 } from '@campus/application-contracts';
 import type { DelegatedCredential } from './credential';
-import { BATCH_DEFAULTS, GoogleBatchService, type BatchFailure } from './batch';
+import {
+  BATCH_DEFAULTS,
+  BatchServiceError,
+  GoogleBatchService,
+  type BatchFailure,
+} from './batch';
 import { GoogleConnectionError, failure, scopedClient } from './provider';
 
 const directory = 'https://admin.googleapis.com/admin/directory/v1';
@@ -339,31 +344,40 @@ export class GoogleDeviceReader {
     if (ids.length === 0) return { devices: [], missing: [] };
     if (ids.length > batchLimit) throw new GoogleConnectionError('invalid-response');
     const mint: { failure?: GoogleConnectionError } = {};
-    const result = await this.batch.execute({
-      batchUrl: batchEndpoint,
-      requests: ids.map((id) => ({
-        id,
-        method: 'GET' as const,
-        path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(id)}`,
-        query: { projection: 'FULL', fields: deviceFields },
-      })),
-      parse: (body) => deviceObservation(directoryDevice.parse(body)),
-      getClient: async (runSignal) => {
-        try {
-          return await scopedClient(
-            credential,
-            scopeFor('device-inventory'),
-            runSignal,
-            batchResponseLimit,
-          );
-        } catch (error) {
-          mint.failure = failure(error, 'token');
-          throw mint.failure;
-        }
-      },
-      signal,
-      ...(onRound ? { onBatch: onRound } : {}),
-    });
+    let result;
+    try {
+      result = await this.batch.execute({
+        batchUrl: batchEndpoint,
+        requests: ids.map((id) => ({
+          id,
+          method: 'GET' as const,
+          path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(id)}`,
+          query: { projection: 'FULL', fields: deviceFields },
+        })),
+        parse: (body) => deviceObservation(directoryDevice.parse(body)),
+        getClient: async (runSignal) => {
+          try {
+            return await scopedClient(
+              credential,
+              scopeFor('device-inventory'),
+              runSignal,
+              batchResponseLimit,
+            );
+          } catch (error) {
+            mint.failure = failure(error, 'token');
+            throw mint.failure;
+          }
+        },
+        signal,
+        ...(onRound ? { onBatch: onRound } : {}),
+      });
+    } catch (error) {
+      if (error instanceof BatchServiceError)
+        throw new GoogleConnectionError(
+          error.code === 'malformed-response' ? 'invalid-response' : 'request-failed',
+        );
+      throw error;
+    }
     if (mint.failure) throw mint.failure;
     const devices: DeviceObservation[] = [];
     const missing: string[] = [];

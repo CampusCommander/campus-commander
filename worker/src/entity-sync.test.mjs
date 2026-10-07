@@ -366,14 +366,16 @@ test('shutdown during a Google read surfaces worker-stopping', async () => {
     stopping.abort();
     throw new GoogleConnectionError('network-failure');
   };
+  const db = database();
   await assert.rejects(
-    new EntitySyncBatch(database(), cipher, source, cache(), noSleep).run(
+    new EntitySyncBatch(db, cipher, source, cache(), noSleep).run(
       request,
       stopping.signal,
     ),
     (error) =>
       error instanceof DeviceSyncError && error.code === 'worker-stopping',
   );
+  assert.ok(!names(db.calls).includes('finish_entity_sync_batch'));
 });
 
 test('a failed job-finished publish does not fail the batch', async () => {
