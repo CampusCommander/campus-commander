@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 /**
  * Google multipart batch service. One call sends many API calls of one resource type.
  * Each call resolves on its own. Retries and next pages go into later batches.
@@ -461,4 +463,462 @@ export function nextPageToken(body: unknown): string | null {
       ? (body as { nextPageToken?: unknown }).nextPageToken
       : undefined;
   return typeof token === 'string' && token !== '' ? token : null;
+}
+
+export interface GoogleBatchServiceOptions {
+  /** Wait for a delay. Resolve early, without throwing, when the signal aborts. */
+  sleep?(milliseconds: number, signal: AbortSignal): Promise<void>;
+  now?(): number;
+  /** A number from 0 up to 1, for full jitter. */
+  random?(): number;
+}
+
+interface Clock {
+  sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
+  now(): number;
+  random(): number;
+}
+
+/** One caller request while it is unresolved. */
+interface Entry<T> {
+  readonly request: BatchRequest;
+  pageToken: string | null;
+  pages: T[];
+  attempts: BatchAttempts;
+  dueAt: number;
+  inFlight: boolean;
+}
+
+function abortableSleep(
+  milliseconds: number,
+  signal: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, milliseconds);
+    signal.addEventListener('abort', finish, { once: true });
+  });
+}
+
+function sentRequest<T>(entry: Entry<T>): BatchRequest {
+  if (entry.pageToken === null) return entry.request;
+  return {
+    ...entry.request,
+    query: { ...entry.request.query, pageToken: entry.pageToken },
+  };
+}
+
+/** gaxios attaches the HTTP answer to a thrown error as `error.response`. */
+function responseOf(error: unknown): BatchHttpResponse | undefined {
+  const response =
+    error !== null && typeof error === 'object'
+      ? (error as { response?: unknown }).response
+      : undefined;
+  return response !== null && typeof response === 'object'
+    ? (response as BatchHttpResponse)
+    : undefined;
+}
+
+/** The queue and state of one `execute` call. */
+class BatchRun<T> {
+  private readonly call: BatchCall<T>;
+  private readonly options: BatchOptions;
+  private readonly clock: Clock;
+  private readonly pending = new Map<string, Entry<T>>();
+  private readonly inFlight = new Set<Promise<void>>();
+  private readonly result: BatchResult<T> = {
+    succeeded: new Map(),
+    failed: new Map(),
+  };
+  private client: BatchHttpClient | null = null;
+  private round = 0;
+  private sequence = 0;
+  private fatal: { error: unknown } | null = null;
+
+  constructor(call: BatchCall<T>, options: BatchOptions, clock: Clock) {
+    this.call = call;
+    this.options = options;
+    this.clock = clock;
+    const start = clock.now();
+    for (const request of call.requests)
+      this.pending.set(request.id, {
+        request,
+        pageToken: null,
+        pages: [],
+        attempts: { quota: 0, transient: 0 },
+        dueAt: start,
+        inFlight: false,
+      });
+  }
+
+  async run(): Promise<BatchResult<T>> {
+    try {
+      while (this.pending.size > 0 && this.fatal === null) {
+        if (this.call.signal.aborted) {
+          // Requests in flight settle first. Whatever is still pending fails as aborted.
+          await this.settle();
+          this.abortPending();
+          break;
+        }
+        const due = this.dueEntries();
+        if (due.length === 0) {
+          await this.waitForProgress();
+          continue;
+        }
+        const client = await this.ensureClient();
+        if (client !== null) this.launch(due, client);
+      }
+    } finally {
+      await this.settle();
+    }
+    if (this.fatal !== null) throw this.fatal.error;
+    return this.result;
+  }
+
+  /** Requests due now, in caller order, up to one batch. Empty when no send slot is free. */
+  private dueEntries(): Entry<T>[] {
+    if (this.inFlight.size >= this.options.maxInFlight) return [];
+    const now = this.clock.now();
+    const due: Entry<T>[] = [];
+    for (const entry of this.pending.values()) {
+      if (entry.inFlight || entry.dueAt > now) continue;
+      due.push(entry);
+      if (due.length === this.options.batchSize) break;
+    }
+    return due;
+  }
+
+  private async ensureClient(): Promise<BatchHttpClient | null> {
+    this.client ??= await this.call.getClient(this.call.signal);
+    return this.client;
+  }
+
+  private launch(entries: Entry<T>[], client: BatchHttpClient): void {
+    for (const entry of entries) entry.inFlight = true;
+    const task: Promise<void> = this.send(entries, client)
+      .catch((error: unknown) => {
+        this.fatal ??= { error };
+      })
+      .finally(() => {
+        for (const entry of entries) entry.inFlight = false;
+        this.inFlight.delete(task);
+      });
+    this.inFlight.add(task);
+  }
+
+  private async send(
+    entries: Entry<T>[],
+    client: BatchHttpClient,
+  ): Promise<void> {
+    const round = ++this.round;
+    const byContentId = new Map<string, Entry<T>>();
+    const parts = entries.map((entry) => {
+      const contentId = `cc-${++this.sequence}`;
+      byContentId.set(contentId, entry);
+      return { contentId, request: sentRequest(entry) };
+    });
+    const boundary = `batch_${randomUUID()}`;
+    const started = this.clock.now();
+    let response: BatchHttpResponse | undefined;
+    let failure: unknown;
+    try {
+      response = await client.request({
+        url: this.call.batchUrl,
+        method: 'POST',
+        headers: { 'content-type': `multipart/mixed; boundary=${boundary}` },
+        body: buildMultipartBody(parts, boundary),
+        responseType: 'text',
+      });
+    } catch (error) {
+      failure = error;
+      response = responseOf(error);
+    }
+    const status =
+      typeof response?.status === 'number'
+        ? response.status
+        : failure === undefined
+          ? 200
+          : 0;
+    if (
+      failure === undefined &&
+      response !== undefined &&
+      status >= 200 &&
+      status < 300
+    )
+      await this.resolveParts(byContentId, response);
+    else {
+      // An aborted send leaves its requests pending. The run loop fails them as aborted.
+      if (failure !== undefined && this.call.signal.aborted) return;
+      throw (
+        failure ??
+        new BatchServiceError(
+          'outer-rejected',
+          `The batch endpoint answered HTTP ${status}.`,
+        )
+      );
+    }
+    await this.reportRound(round, entries.length, status, started);
+  }
+
+  private async resolveParts(
+    byContentId: Map<string, Entry<T>>,
+    response: BatchHttpResponse,
+  ): Promise<void> {
+    const parts = parseMultipartResponse(
+      headerValue(response.headers, 'content-type') ?? '',
+      String(response.data ?? ''),
+    );
+    const answered = new Set<string>();
+    for (const part of parts) {
+      const entry = byContentId.get(part.contentId);
+      if (entry === undefined || answered.has(part.contentId)) continue;
+      answered.add(part.contentId);
+      await this.resolvePart(entry, part);
+    }
+    for (const [contentId, entry] of byContentId)
+      if (!answered.has(contentId))
+        await this.retryOrFail(
+          entry,
+          'transient',
+          0,
+          'missing-part',
+          null,
+          undefined,
+        );
+  }
+
+  private async resolvePart(
+    entry: Entry<T>,
+    part: BatchPartResponse,
+  ): Promise<void> {
+    const { kind, reason } = classifyStatus(part.status, part.body);
+    if (kind === 'success') {
+      await this.acceptPage(entry, part);
+      return;
+    }
+    if (kind === 'quota' || kind === 'transient') {
+      await this.retryOrFail(
+        entry,
+        kind,
+        part.status,
+        reason,
+        part.body,
+        part.headers['retry-after'],
+      );
+      return;
+    }
+    await this.resolveFailure(
+      entry,
+      { kind, status: part.status, reason, body: part.body },
+      true,
+    );
+  }
+
+  private async acceptPage(
+    entry: Entry<T>,
+    part: BatchPartResponse,
+  ): Promise<void> {
+    const request = sentRequest(entry);
+    const attempts = { ...entry.attempts };
+    let page: T;
+    try {
+      page = this.call.parse(part.body, request);
+    } catch {
+      await this.resolveFailure(
+        entry,
+        {
+          kind: 'invalid-response',
+          status: part.status,
+          reason: 'parse-failed',
+          body: part.body,
+        },
+        true,
+      );
+      return;
+    }
+    const token = nextPageToken(part.body);
+    if (token !== null && entry.pages.length + 1 >= this.options.maxPages) {
+      await this.resolveFailure(
+        entry,
+        {
+          kind: 'invalid-response',
+          status: part.status,
+          reason: 'page-limit',
+          body: null,
+        },
+        true,
+      );
+      return;
+    }
+    entry.pages.push(page);
+    const pageIndex = entry.pages.length - 1;
+    if (token === null) {
+      this.pending.delete(entry.request.id);
+      this.result.succeeded.set(entry.request.id, entry.pages);
+    } else {
+      entry.pageToken = token;
+      entry.attempts = { quota: 0, transient: 0 };
+      entry.dueAt = this.clock.now();
+    }
+    await this.call.onResponse?.({
+      id: entry.request.id,
+      request,
+      attempts,
+      status: part.status,
+      outcome: {
+        kind: 'success',
+        page,
+        pageIndex,
+        hasNextPage: token !== null,
+      },
+    });
+  }
+
+  private async retryOrFail(
+    entry: Entry<T>,
+    kind: 'quota' | 'transient',
+    status: number,
+    reason: string | null,
+    body: unknown,
+    retryAfter: string | undefined,
+  ): Promise<void> {
+    const limit =
+      kind === 'quota'
+        ? this.options.maxQuotaRetries
+        : this.options.maxTransientRetries;
+    const unsafe =
+      kind === 'transient' &&
+      entry.request.method === 'POST' &&
+      !this.options.retryUnsafeWrites;
+    if (unsafe || entry.attempts[kind] >= limit) {
+      await this.resolveFailure(entry, { kind, status, reason, body }, true);
+      return;
+    }
+    entry.attempts[kind] += 1;
+    const hinted = this.options.honorRetryAfter
+      ? retryAfterMs(retryAfter, this.clock.now())
+      : null;
+    const retryInMs =
+      hinted === null
+        ? backoffDelay(entry.attempts[kind], this.options, this.clock.random)
+        : Math.min(hinted, this.options.maxDelayMs);
+    entry.dueAt = this.clock.now() + retryInMs;
+    const attempts = { ...entry.attempts };
+    await this.call.onResponse?.({
+      id: entry.request.id,
+      request: sentRequest(entry),
+      attempts,
+      status,
+      outcome: {
+        kind: 'retry',
+        failure: { kind, status, reason, attempts, body },
+        retryInMs,
+      },
+    });
+  }
+
+  private async resolveFailure(
+    entry: Entry<T>,
+    failure: Omit<BatchFailure, 'attempts'>,
+    notify: boolean,
+  ): Promise<void> {
+    const final: BatchFailure = { ...failure, attempts: { ...entry.attempts } };
+    this.pending.delete(entry.request.id);
+    this.result.failed.set(entry.request.id, final);
+    if (notify)
+      await this.call.onResponse?.({
+        id: entry.request.id,
+        request: sentRequest(entry),
+        attempts: final.attempts,
+        status: final.status,
+        outcome: { kind: 'failed', failure: final },
+      });
+  }
+
+  private async reportRound(
+    round: number,
+    sentCount: number,
+    outerStatus: number,
+    started: number,
+  ): Promise<void> {
+    await this.call.onBatch?.({
+      round,
+      sentCount,
+      outerStatus,
+      durationMs: this.clock.now() - started,
+      pending: this.pending.size,
+    });
+  }
+
+  /** Wait for a send to finish or for the earliest retry to come due. */
+  private async waitForProgress(): Promise<void> {
+    const waits: Promise<unknown>[] = [...this.inFlight];
+    const wake = new AbortController();
+    if (this.inFlight.size < this.options.maxInFlight) {
+      let earliest = Number.POSITIVE_INFINITY;
+      for (const entry of this.pending.values())
+        if (!entry.inFlight && entry.dueAt < earliest) earliest = entry.dueAt;
+      if (earliest !== Number.POSITIVE_INFINITY)
+        waits.push(
+          this.clock.sleep(
+            Math.max(0, earliest - this.clock.now()),
+            AbortSignal.any([this.call.signal, wake.signal]),
+          ),
+        );
+    }
+    if (waits.length === 0) return;
+    try {
+      await Promise.race(waits);
+    } finally {
+      wake.abort();
+    }
+  }
+
+  private abortPending(): void {
+    for (const entry of [...this.pending.values()]) {
+      this.pending.delete(entry.request.id);
+      this.result.failed.set(entry.request.id, {
+        kind: 'aborted',
+        status: 0,
+        reason: null,
+        attempts: { ...entry.attempts },
+        body: null,
+      });
+    }
+  }
+
+  private async settle(): Promise<void> {
+    while (this.inFlight.size > 0) await Promise.allSettled([...this.inFlight]);
+  }
+}
+
+/**
+ * Send Google API calls of one resource type through a multipart batch endpoint.
+ * Every request resolves on its own. Retries and next pages go into later batches.
+ */
+export class GoogleBatchService {
+  private readonly clock: Clock;
+
+  constructor(options: GoogleBatchServiceOptions = {}) {
+    this.clock = {
+      sleep: options.sleep ?? abortableSleep,
+      now: options.now ?? Date.now,
+      random: options.random ?? Math.random,
+    };
+  }
+
+  /** Run until every request resolves. Rejects only on a caller or service defect. */
+  async execute<T>(call: BatchCall<T>): Promise<BatchResult<T>> {
+    validateRequests(call.requests);
+    const options = resolveOptions(call.options);
+    return new BatchRun(call, options, this.clock).run();
+  }
 }
