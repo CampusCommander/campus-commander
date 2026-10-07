@@ -151,7 +151,11 @@ export class CacheService implements OnApplicationShutdown {
     return this.execute((client) => client.expire(key, seconds));
   }
   /** Claim members for `seconds` each. Returns the members that held no live claim. */
-  async addMembers(key: string, members: readonly string[], seconds: number): Promise<string[]> {
+  async addMembers(
+    key: string,
+    members: readonly string[],
+    seconds: number,
+  ): Promise<string[]> {
     const added: string[] = [];
     for (const chunk of memberChunks(members)) {
       const result = await this.execute((client) =>
@@ -173,7 +177,9 @@ export class CacheService implements OnApplicationShutdown {
     const values: (string | null)[] = [];
     for (const chunk of memberChunks(keys, 500)) {
       const result = await this.execute((client) => client.mGet(chunk));
-      values.push(...result.map((value) => (value === null ? null : String(value))));
+      values.push(
+        ...result.map((value) => (value === null ? null : String(value))),
+      );
     }
     return values;
   }

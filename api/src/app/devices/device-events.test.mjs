@@ -69,7 +69,9 @@ test('one subscriber serves every stream and a channel unsubscribes after its la
   const leaveFirst = await fanout.listen('C0123456', collector());
   const leaveSecond = await fanout.listen('C0123456', collector());
   assert.equal(opened.length, 1);
-  assert.deepEqual(opened[0].calls, [['subscribe', 'cc:entity-events:C0123456']]);
+  assert.deepEqual(opened[0].calls, [
+    ['subscribe', 'cc:entity-events:C0123456'],
+  ]);
   await leaveFirst();
   assert.equal(opened[0].calls.length, 1);
   await leaveSecond();
@@ -105,7 +107,11 @@ test('a lost subscriber closes every stream and the next stream reconnects', asy
   assert.equal(opened[0].closed, true);
   assert.equal(opened.length, 2);
   opened[0].lost();
-  assert.equal(second.closed, 0, 'A late end event from the old connection changes nothing.');
+  assert.equal(
+    second.closed,
+    0,
+    'A late end event from the old connection changes nothing.',
+  );
 });
 
 test('a failed subscription rejects the stream and the next stream retries', async () => {

@@ -296,9 +296,19 @@ test('group selection operations carry the filters and grouped fields', () => {
 });
 
 test('rows carry freshness and details carry removal', () => {
-  const parsed = deviceRowSchema.parse({ ...row, battery: { status: 'no-report' } });
+  const parsed = deviceRowSchema.parse({
+    ...row,
+    battery: { status: 'no-report' },
+  });
   assert.equal(parsed.stale, false);
-  assert.equal(deviceRowSchema.safeParse({ ...row, battery: { status: 'no-report' }, stale: undefined }).success, false);
+  assert.equal(
+    deviceRowSchema.safeParse({
+      ...row,
+      battery: { status: 'no-report' },
+      stale: undefined,
+    }).success,
+    false,
+  );
   const detail = deviceDetailSchema.parse({
     ...row,
     battery: { status: 'no-report' },
@@ -308,7 +318,13 @@ test('rows carry freshness and details carry removal', () => {
   assert.equal(detail.removedAt, null);
   assert.equal('observedAt' in detail, false);
   assert.equal(
-    devicePageSchema.parse({ rows: [], matching: 0, total: 0, observedAt: null, refreshJobId: null }).refreshJobId,
+    devicePageSchema.parse({
+      rows: [],
+      matching: 0,
+      total: 0,
+      observedAt: null,
+      refreshJobId: null,
+    }).refreshJobId,
     null,
   );
 });
@@ -316,7 +332,10 @@ test('rows carry freshness and details carry removal', () => {
 test('by-ids takes 1 to 500 device IDs and nothing else', () => {
   assert.equal(DEVICE_BY_IDS_LIMIT, 500);
   assert.equal(deviceByIdsSchema.safeParse({ deviceIds: [] }).success, false);
-  assert.equal(deviceByIdsSchema.safeParse({ deviceIds: ['d1'] }).success, true);
+  assert.equal(
+    deviceByIdsSchema.safeParse({ deviceIds: ['d1'] }).success,
+    true,
+  );
   assert.equal(
     deviceByIdsSchema.safeParse({
       deviceIds: Array.from({ length: 501 }, (_, index) => `d${index}`),

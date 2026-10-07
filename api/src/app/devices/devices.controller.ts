@@ -191,7 +191,9 @@ export class DevicesController {
             'identity:read',
             request.correlationId,
           );
-          return (await this.current(request))?.customerId === current.customerId;
+          return (
+            (await this.current(request))?.customerId === current.customerId
+          );
         } catch {
           return false;
         }

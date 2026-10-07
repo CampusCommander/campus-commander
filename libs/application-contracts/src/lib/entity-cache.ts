@@ -79,7 +79,9 @@ export const entitySyncBatchRequestSchema = z.strictObject({
   batch: z.coerce.number().int().min(0),
   correlationId: z.uuid(),
 });
-export type EntitySyncBatchRequest = z.infer<typeof entitySyncBatchRequestSchema>;
+export type EntitySyncBatchRequest = z.infer<
+  typeof entitySyncBatchRequestSchema
+>;
 
 export const entityEventSchema = z.discriminatedUnion('type', [
   z.strictObject({

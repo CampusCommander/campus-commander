@@ -30,9 +30,18 @@ test('devices are stale 24 hours after their last Google read', () => {
 });
 
 test('redis names carry the entity type and customer', () => {
-  assert.equal(entityKey('device', 'C0123456', 'd1'), 'cc:entity:device:C0123456:d1');
-  assert.equal(queryGenerationKey('device', 'C0123456'), 'cc:query-gen:device:C0123456');
-  assert.equal(inflightKey('device', 'C0123456'), 'cc:entity-inflight:device:C0123456');
+  assert.equal(
+    entityKey('device', 'C0123456', 'd1'),
+    'cc:entity:device:C0123456:d1',
+  );
+  assert.equal(
+    queryGenerationKey('device', 'C0123456'),
+    'cc:query-gen:device:C0123456',
+  );
+  assert.equal(
+    inflightKey('device', 'C0123456'),
+    'cc:entity-inflight:device:C0123456',
+  );
   assert.equal(entityEventsChannel('C0123456'), 'cc:entity-events:C0123456');
 });
 
@@ -44,7 +53,10 @@ test('batch requests coerce the Kestra loop value to a number', () => {
     correlationId: '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6c',
   });
   assert.equal(request.batch, 3);
-  assert.equal(entitySyncBatchRequestSchema.safeParse({ ...request, batch: -1 }).success, false);
+  assert.equal(
+    entitySyncBatchRequestSchema.safeParse({ ...request, batch: -1 }).success,
+    false,
+  );
 });
 
 test('events are a discriminated union', () => {
@@ -60,7 +72,10 @@ test('events are a discriminated union', () => {
     finishedAt: '2026-10-06T12:01:00.000Z',
   };
   assert.deepEqual(entitySyncJobSchema.parse(job), job);
-  assert.equal(entityEventSchema.parse({ type: 'job-finished', job }).type, 'job-finished');
+  assert.equal(
+    entityEventSchema.parse({ type: 'job-finished', job }).type,
+    'job-finished',
+  );
   assert.equal(
     entityEventSchema.parse({
       type: 'entity-batch',
@@ -96,8 +111,14 @@ test('the Redis record schema accepts cc.device_record output without removedAt 
     lastEntitySync: '2026-10-06T12:00:00.123456+00:00',
   };
   assert.deepEqual(deviceRecordSchema.parse(record), record);
-  assert.equal(deviceRecordSchema.safeParse({ ...record, stale: false }).success, false);
-  assert.equal(deviceRecordSchema.safeParse({ ...record, removedAt: null }).success, false);
+  assert.equal(
+    deviceRecordSchema.safeParse({ ...record, stale: false }).success,
+    false,
+  );
+  assert.equal(
+    deviceRecordSchema.safeParse({ ...record, removedAt: null }).success,
+    false,
+  );
 });
 
 test('query cache names carry the query generation and expire after five minutes', () => {

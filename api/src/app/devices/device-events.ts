@@ -14,7 +14,10 @@ export interface EventListener {
 
 /** A dedicated Redis connection in subscriber mode. */
 export interface Subscriber {
-  subscribe(channel: string, onMessage: (message: string) => void): Promise<void>;
+  subscribe(
+    channel: string,
+    onMessage: (message: string) => void,
+  ): Promise<void>;
   unsubscribe(channel: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -55,7 +58,8 @@ export class EventFanout {
         ),
       };
       created.ready.catch(() => {
-        if (this.channels.get(channel) === created) this.channels.delete(channel);
+        if (this.channels.get(channel) === created)
+          this.channels.delete(channel);
       });
       this.channels.set(channel, created);
       entry = created;
@@ -69,7 +73,8 @@ export class EventFanout {
     }
     return async () => {
       const current = this.channels.get(channel);
-      if (!current?.listeners.delete(listener) || current.listeners.size) return;
+      if (!current?.listeners.delete(listener) || current.listeners.size)
+        return;
       this.channels.delete(channel);
       const subscriber = this.subscriber;
       await subscriber
@@ -240,11 +245,14 @@ export async function streamEvents(
   options.begin();
   started = true;
   sink.write('retry: 3000\n\n');
-  timer = setInterval(() => {
-    void options.recheck().then(
-      (allowed) => (allowed ? send(frame('ping', {})) : finish()),
-      () => finish(),
-    );
-  }, options.pingMs ?? ENTITY_EVENTS_PING_SECONDS * 1000);
+  timer = setInterval(
+    () => {
+      void options.recheck().then(
+        (allowed) => (allowed ? send(frame('ping', {})) : finish()),
+        () => finish(),
+      );
+    },
+    options.pingMs ?? ENTITY_EVENTS_PING_SECONDS * 1000,
+  );
   return true;
 }

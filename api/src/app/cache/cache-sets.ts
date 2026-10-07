@@ -21,7 +21,10 @@ export const listSliceScript =
 export const replaceListScript =
   "redis.call('DEL',KEYS[1]) for i=2,#ARGV,1000 do redis.call('RPUSH',KEYS[1],unpack(ARGV,i,math.min(i+999,#ARGV))) end redis.call('EXPIRE',KEYS[1],tonumber(ARGV[1])) return 1";
 
-export function memberChunks(members: readonly string[], size = 1000): string[][] {
+export function memberChunks(
+  members: readonly string[],
+  size = 1000,
+): string[][] {
   const chunks: string[][] = [];
   for (let start = 0; start < members.length; start += size)
     chunks.push(members.slice(start, start + size));

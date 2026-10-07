@@ -47,38 +47,40 @@
 
 ## File map
 
-| File | Responsibility | Task |
-| --- | --- | --- |
-| `libs/application-contracts/src/lib/entity-cache.ts` | Query cache constants and key, ping interval | 1 |
-| `libs/application-contracts/src/lib/devices.ts` | `by-ids` and `freshness` schemas | 1 |
-| `api/src/app/devices/device-query.ts` | SQL for ID lists, rows by ID, stale counts, refresh state | 2 |
-| `libs/application-contracts/test-register.mjs` | Resolve extensionless imports under `api/src` in `node:test` | 3 |
-| `api/src/app/cache/cache.service.ts` | `getMany`, `listSlice`, `replaceList`, `subscriber` | 3 |
-| `api/src/app/devices/device-pager.ts` | Query cache key, hydration, page algorithm (plain) | 3 |
-| `api/src/app/devices/devices.service.ts` | Wire the pager, `rowsById`, `freshness` | 3, 4 |
-| `api/src/app/devices/devices.controller.ts` | `by-ids`, `freshness`, `events` routes | 4, 5 |
-| `deployment/bootstrap/application-edge.mjs` | Route allowances and the event stream timeout | 4, 5 |
-| `api/src/app/devices/device-events.ts` | Redis fanout and the SSE writer (plain) | 5 |
-| `api/src/app/devices/device-events.service.ts` | Nest owner of the subscriber connection | 5 |
-| `frontend/src/app/devices/device-row-refresh.ts` | Held grid rows and in-place updates | 6 |
-| `frontend/src/app/devices/devices.store.ts` | Event stream, row refresh, recount, no poll | 6 |
-| `frontend/src/app/devices/device-freshness.ts` | Banner text and state (pure) | 7 |
-| `frontend/src/app/devices/device-columns.ts` | Muted Device contact cell and tooltip | 7 |
-| `frontend/src/app/devices/devices.ts`, `devices.html` | Banner, mount and leave | 6, 7 |
-| `api-e2e/devices-api.mjs`, `api-e2e/devices-browser.mjs` | End-to-end checks | 8 |
-| `docs/workflows/device-browsing.md`, the spec, `docs/document-index.csv` | Records | 8 |
+| File                                                                     | Responsibility                                               | Task |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------ | ---- |
+| `libs/application-contracts/src/lib/entity-cache.ts`                     | Query cache constants and key, ping interval                 | 1    |
+| `libs/application-contracts/src/lib/devices.ts`                          | `by-ids` and `freshness` schemas                             | 1    |
+| `api/src/app/devices/device-query.ts`                                    | SQL for ID lists, rows by ID, stale counts, refresh state    | 2    |
+| `libs/application-contracts/test-register.mjs`                           | Resolve extensionless imports under `api/src` in `node:test` | 3    |
+| `api/src/app/cache/cache.service.ts`                                     | `getMany`, `listSlice`, `replaceList`, `subscriber`          | 3    |
+| `api/src/app/devices/device-pager.ts`                                    | Query cache key, hydration, page algorithm (plain)           | 3    |
+| `api/src/app/devices/devices.service.ts`                                 | Wire the pager, `rowsById`, `freshness`                      | 3, 4 |
+| `api/src/app/devices/devices.controller.ts`                              | `by-ids`, `freshness`, `events` routes                       | 4, 5 |
+| `deployment/bootstrap/application-edge.mjs`                              | Route allowances and the event stream timeout                | 4, 5 |
+| `api/src/app/devices/device-events.ts`                                   | Redis fanout and the SSE writer (plain)                      | 5    |
+| `api/src/app/devices/device-events.service.ts`                           | Nest owner of the subscriber connection                      | 5    |
+| `frontend/src/app/devices/device-row-refresh.ts`                         | Held grid rows and in-place updates                          | 6    |
+| `frontend/src/app/devices/devices.store.ts`                              | Event stream, row refresh, recount, no poll                  | 6    |
+| `frontend/src/app/devices/device-freshness.ts`                           | Banner text and state (pure)                                 | 7    |
+| `frontend/src/app/devices/device-columns.ts`                             | Muted Device contact cell and tooltip                        | 7    |
+| `frontend/src/app/devices/devices.ts`, `devices.html`                    | Banner, mount and leave                                      | 6, 7 |
+| `api-e2e/devices-api.mjs`, `api-e2e/devices-browser.mjs`                 | End-to-end checks                                            | 8    |
+| `docs/workflows/device-browsing.md`, the spec, `docs/document-index.csv` | Records                                                      | 8    |
 
 ---
 
 ### Task 1: Query cache, by-ids, and freshness contracts
 
 **Files:**
+
 - Modify: `libs/application-contracts/src/lib/entity-cache.ts`
 - Modify: `libs/application-contracts/src/lib/entity-cache.test.mjs`
 - Modify: `libs/application-contracts/src/lib/devices.ts`
 - Modify: `libs/application-contracts/src/lib/devices.test.mjs`
 
 **Interfaces:**
+
 - Consumes: `EntityType`, `deviceRowSchema` (existing).
 - Produces, from `@campus/application-contracts`:
   - `QUERY_CACHE_SECONDS = 300`, `QUERY_CACHE_MAX_IDS = 100_000`, `ENTITY_EVENTS_PING_SECONDS = 25`.
@@ -110,7 +112,10 @@ In `libs/application-contracts/src/lib/devices.test.mjs`, add these names to the
 test('by-ids takes 1 to 500 device IDs and nothing else', () => {
   assert.equal(DEVICE_BY_IDS_LIMIT, 500);
   assert.equal(deviceByIdsSchema.safeParse({ deviceIds: [] }).success, false);
-  assert.equal(deviceByIdsSchema.safeParse({ deviceIds: ['d1'] }).success, true);
+  assert.equal(
+    deviceByIdsSchema.safeParse({ deviceIds: ['d1'] }).success,
+    true,
+  );
   assert.equal(
     deviceByIdsSchema.safeParse({
       deviceIds: Array.from({ length: 501 }, (_, index) => `d${index}`),
@@ -174,7 +179,9 @@ export const DEVICE_BY_IDS_LIMIT = 500;
 export const deviceByIdsSchema = z.strictObject({
   deviceIds: z.array(deviceId).min(1).max(DEVICE_BY_IDS_LIMIT),
 });
-export const deviceRowsSchema = z.array(deviceRowSchema).max(DEVICE_BY_IDS_LIMIT);
+export const deviceRowsSchema = z
+  .array(deviceRowSchema)
+  .max(DEVICE_BY_IDS_LIMIT);
 
 /** Stale devices in one result set, and whether a refresh job runs for the customer (D11). */
 export const deviceFreshnessSchema = z.strictObject({
@@ -201,10 +208,12 @@ git commit -m "feat: add query cache, by-ids, and freshness contracts"
 ### Task 2: SQL for ID lists, rows by ID, stale counts, and refresh state
 
 **Files:**
+
 - Modify: `api/src/app/devices/device-query.ts`
 - Modify: `api/src/app/devices/device-query.test.mjs`
 
 **Interfaces:**
+
 - Consumes: `deviceWhere`, `columns`, `batteryOrder`, `from`, `deviceColumns` (existing, module-private or exported in `device-query.ts`).
 - Produces, from `api/src/app/devices/device-query.ts`:
   - `deviceIdsSql(customerId: string, query: DeviceQuery, limit: number): SqlStatement`. Rows are `{ device_id }` in grid order. Paging is ignored.
@@ -240,7 +249,9 @@ test('the cached ID list follows the grid order and binds the limit last', () =>
 test('an open group narrows the cached ID list', () => {
   const sql = deviceIdsSql(
     'C0123456',
-    deviceQuerySchema.parse({ group: { by: ['model'], keys: ['Lenovo 100e'] } }),
+    deviceQuerySchema.parse({
+      group: { by: ['model'], keys: ['Lenovo 100e'] },
+    }),
     10,
   );
   assert.match(
@@ -430,9 +441,11 @@ git commit -m "feat: add SQL for cached ID lists, rows by ID, and stale counts"
 ```
 
 ---
+
 ### Task 3: Query cache and hydration
 
 **Files:**
+
 - Modify: `libs/application-contracts/test-register.mjs`
 - Modify: `api/src/app/cache/cache.service.ts`
 - Create: `api/src/app/devices/device-pager.ts`
@@ -440,6 +453,7 @@ git commit -m "feat: add SQL for cached ID lists, rows by ID, and stale counts"
 - Modify: `api/src/app/devices/devices.service.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1 `QUERY_CACHE_SECONDS`, `QUERY_CACHE_MAX_IDS`, `queryCacheKey`. Task 2 `deviceIdsSql`, `deviceRowsByIdSql`. Existing `devicePageSql`, `staleIdsSql`, `deviceRow`, `entityKey`, `queryGenerationKey`, `deviceRecordSchema`, `isStale`, `freshnessCutoff`, `memberChunks`.
 - Produces:
   - `CacheService.getMany(keys: readonly string[]): Promise<(string | null)[]>`.
@@ -461,9 +475,9 @@ git commit -m "feat: add SQL for cached ID lists, rows by ID, and stale counts"
 `device-pager.ts` imports `./device-query` without an extension, as webpack expects. In `libs/application-contracts/test-register.mjs`, replace the parent check with:
 
 ```js
-        (context.parentURL?.includes('/libs/') ||
-          context.parentURL?.includes('/worker/src/') ||
-          context.parentURL?.includes('/api/src/'))
+context.parentURL?.includes('/libs/') ||
+  context.parentURL?.includes('/worker/src/') ||
+  context.parentURL?.includes('/api/src/');
 ```
 
 - [ ] **Step 2: Write the failing pager tests**
@@ -553,7 +567,11 @@ function memoryCache({ fail = new Set() } = {}) {
 }
 
 /** A Postgres stand-in that answers each statement by its shape. */
-function database({ ordered = ['d3', 'd1', 'd2'], stale = ['d2'], known = ordered } = {}) {
+function database({
+  ordered = ['d3', 'd1', 'd2'],
+  stale = ['d2'],
+  known = ordered,
+} = {}) {
   const statements = [];
   const rows = async ({ text, values }) => {
     statements.push(text);
@@ -593,7 +611,10 @@ test('a miss stores the whole ordered list for five minutes and pages from it', 
   const read = await new DevicePager(cache).page(
     input(database().rows, { limit: 2 }),
   );
-  assert.deepEqual(read.rows.map((row) => row.deviceId), ['d3', 'd1']);
+  assert.deepEqual(
+    read.rows.map((row) => row.deviceId),
+    ['d3', 'd1'],
+  );
   assert.equal(read.matching, 3);
   assert.deepEqual(read.stale, ['d2']);
   const [[key, stored]] = cache.lists;
@@ -616,21 +637,35 @@ test('a hit pages the cached list, reads Redis first, and dispatches its stale r
     ],
   );
   assert.equal(read.matching, 3);
-  assert.deepEqual(read.stale, ['d2'], 'A device that went stale is dispatched.');
-  assert.equal(db.statements.length, 1, 'Only the Redis miss reaches Postgres.');
+  assert.deepEqual(
+    read.stale,
+    ['d2'],
+    'A device that went stale is dispatched.',
+  );
+  assert.equal(
+    db.statements.length,
+    1,
+    'Only the Redis miss reaches Postgres.',
+  );
   assert.match(db.statements[0], /d\.device_id=ANY\(\$2::text\[\]\)$/);
 });
 
 test('the cache key covers the person, the connection, and the query shape but not paging', () => {
   const base = { actor, connectionGeneration: 4, query: query({ limit: 100 }) };
   const hash = queryHash(base);
-  assert.equal(queryHash({ ...base, query: query({ offset: 500, limit: 50 }) }), hash);
+  assert.equal(
+    queryHash({ ...base, query: query({ offset: 500, limit: 50 }) }),
+    hash,
+  );
   for (const changed of [
     { ...base, actor: ['22222222-2222-4222-8222-222222222222', 3] },
     { ...base, actor: [actor[0], 4] },
     { ...base, connectionGeneration: 5 },
     { ...base, query: query({ sort: { field: 'model', direction: 'asc' } }) },
-    { ...base, query: query({ predicates: [{ field: 'notes', operator: 'isEmpty' }] }) },
+    {
+      ...base,
+      query: query({ predicates: [{ field: 'notes', operator: 'isEmpty' }] }),
+    },
     { ...base, query: query({ group: { by: ['model'], keys: ['X'] } }) },
   ])
     assert.notEqual(queryHash(changed), hash);
@@ -653,11 +688,19 @@ test('a new query generation makes earlier lists unreachable', async () => {
 test('Show All Selected pages through Postgres without the cache', async () => {
   const cache = memoryCache();
   const db = database();
-  const selection = { terms: [], groups: [], additions: ['d1'], exceptions: [] };
+  const selection = {
+    terms: [],
+    groups: [],
+    additions: ['d1'],
+    exceptions: [],
+  };
   const read = await new DevicePager(cache).page(
     input(db.rows, { limit: 2 }, { selection }),
   );
-  assert.deepEqual(read.rows.map((row) => row.deviceId), ['d3', 'd1']);
+  assert.deepEqual(
+    read.rows.map((row) => row.deviceId),
+    ['d3', 'd1'],
+  );
   assert.equal(read.matching, 3);
   assert.deepEqual(read.stale, ['d2']);
   assert.deepEqual(cache.calls, []);
@@ -683,7 +726,10 @@ test('a cached list that names an unknown device is dropped and the page reads P
     input(database({ ordered: ['d1', 'd2'], stale: [] }).rows),
   );
   assert.ok(cache.calls.includes('remove'));
-  assert.deepEqual(read.rows.map((row) => row.deviceId), ['d1', 'd2']);
+  assert.deepEqual(
+    read.rows.map((row) => row.deviceId),
+    ['d1', 'd2'],
+  );
   assert.equal(read.matching, 2);
   assert.deepEqual(cache.lists.get(key).ids, ['d1', 'd2']);
 });
@@ -693,7 +739,10 @@ test('a Redis fault pages through Postgres', async () => {
   const read = await new DevicePager(
     memoryCache({ fail: new Set(['get']) }),
   ).page(input(db.rows, { limit: 2 }));
-  assert.deepEqual(read.rows.map((row) => row.deviceId), ['d3', 'd1']);
+  assert.deepEqual(
+    read.rows.map((row) => row.deviceId),
+    ['d3', 'd1'],
+  );
   assert.equal(read.matching, 3);
   assert.ok(db.statements.some((text) => text.includes(' OFFSET ')));
 });
@@ -709,7 +758,10 @@ test('hydration keeps the requested order and treats unreadable records as misse
     database().rows,
     now,
   );
-  assert.deepEqual(read.rows.map((row) => row.deviceId), ['d2', 'd3', 'd1']);
+  assert.deepEqual(
+    read.rows.map((row) => row.deviceId),
+    ['d2', 'd3', 'd1'],
+  );
   assert.equal(read.rows[1].serialNumber, 'R-d3');
   assert.equal(read.rows[0].serialNumber, 'S-d2');
   assert.deepEqual(read.missing, ['d9']);
@@ -868,7 +920,12 @@ export class DevicePager {
     const matching = Number((await rows(sql.count))[0]?.['matching'] ?? 0);
     const stale = (
       await rows(
-        staleIdsSql(customerId, query, selection, freshnessCutoff('device', now)),
+        staleIdsSql(
+          customerId,
+          query,
+          selection,
+          freshnessCutoff('device', now),
+        ),
       )
     ).map((row) => String(row['device_id']));
     if (!key || matching > QUERY_CACHE_MAX_IDS) {
@@ -903,9 +960,15 @@ export class DevicePager {
   }): Promise<string | null> {
     try {
       const generation =
-        (await this.cache.get(queryGenerationKey('device', input.customerId))) ??
-        '0';
-      return queryCacheKey('device', input.customerId, generation, queryHash(input));
+        (await this.cache.get(
+          queryGenerationKey('device', input.customerId),
+        )) ?? '0';
+      return queryCacheKey(
+        'device',
+        input.customerId,
+        generation,
+        queryHash(input),
+      );
     } catch {
       return null;
     }
@@ -1094,7 +1157,6 @@ const rowsOf =
   }
 ```
 
-
 - [ ] **Step 8: Run the API checks**
 
 Run: `npm exec -- nx run-many -t lint test build -p api --skip-nx-cache`
@@ -1112,12 +1174,14 @@ git commit -m "feat: serve device pages from the Redis query cache"
 ### Task 4: by-ids and freshness endpoints
 
 **Files:**
+
 - Modify: `api/src/app/devices/devices.service.ts`
 - Modify: `api/src/app/devices/devices.controller.ts`
 - Modify: `deployment/bootstrap/application-edge.mjs`
 - Modify: `deployment/bootstrap/application-edge.test.mjs`
 
 **Interfaces:**
+
 - Consumes: Task 1 `deviceByIdsSchema`, `deviceFreshnessSchema`, `DeviceFreshness`. Task 2 `staleCountSql`, `refreshingSql`. Task 3 `DevicesService.pager`, `rowsOf`, and the `read()` callback.
 - Produces:
   - `DevicesService.rowsById(session: SessionResponse, deviceIds: readonly string[]): Promise<DeviceRow[]>`.
@@ -1146,21 +1210,21 @@ Add these entries to the rejected-route list after `['POST', '/api/devices/selec
 After the selection body size loop, add:
 
 ```js
-    // A by-ids body carries up to 500 device IDs.
-    for (const [size, status] of [
-      [65536, 200],
-      [98305, 413],
-    ])
-      assert.equal(
-        (
-          await fetch(`${origin(edge)}/api/devices/by-ids`, {
-            method: 'POST',
-            body: 'x'.repeat(size),
-          })
-        ).status,
-        status,
-        `by-ids ${size} bytes`,
-      );
+// A by-ids body carries up to 500 device IDs.
+for (const [size, status] of [
+  [65536, 200],
+  [98305, 413],
+])
+  assert.equal(
+    (
+      await fetch(`${origin(edge)}/api/devices/by-ids`, {
+        method: 'POST',
+        body: 'x'.repeat(size),
+      })
+    ).status,
+    status,
+    `by-ids ${size} bytes`,
+  );
 ```
 
 - [ ] **Step 2: Run the edge test to verify it fails**
@@ -1270,9 +1334,11 @@ git commit -m "feat: add by-ids and freshness device endpoints"
 ```
 
 ---
+
 ### Task 5: Event stream
 
 **Files:**
+
 - Create: `api/src/app/devices/device-events.ts`
 - Create: `api/src/app/devices/device-events.test.mjs`
 - Create: `api/src/app/devices/device-events.service.ts`
@@ -1282,6 +1348,7 @@ git commit -m "feat: add by-ids and freshness device endpoints"
 - Modify: `deployment/bootstrap/application-edge.test.mjs`
 
 **Interfaces:**
+
 - Consumes: Task 1 `ENTITY_EVENTS_PING_SECONDS`. Task 3 `CacheService.subscriber()`. Existing `entityEventSchema`, `entityEventsChannel`, `EntityEvent`, `AuthService.authenticate(cookie, permission, correlationId)`, `DevicesController.current()`.
 - Produces:
   - From `api/src/app/devices/device-events.ts`:
@@ -1370,7 +1437,9 @@ test('one subscriber serves every stream and a channel unsubscribes after its la
   const leaveFirst = await fanout.listen('C0123456', collector());
   const leaveSecond = await fanout.listen('C0123456', collector());
   assert.equal(opened.length, 1);
-  assert.deepEqual(opened[0].calls, [['subscribe', 'cc:entity-events:C0123456']]);
+  assert.deepEqual(opened[0].calls, [
+    ['subscribe', 'cc:entity-events:C0123456'],
+  ]);
   await leaveFirst();
   assert.equal(opened[0].calls.length, 1);
   await leaveSecond();
@@ -1406,7 +1475,11 @@ test('a lost subscriber closes every stream and the next stream reconnects', asy
   assert.equal(opened[0].closed, true);
   assert.equal(opened.length, 2);
   opened[0].lost();
-  assert.equal(second.closed, 0, 'A late end event from the old connection changes nothing.');
+  assert.equal(
+    second.closed,
+    0,
+    'A late end event from the old connection changes nothing.',
+  );
 });
 
 test('a failed subscription rejects the stream and the next stream retries', async () => {
@@ -1602,7 +1675,10 @@ export interface EventListener {
 
 /** A dedicated Redis connection in subscriber mode. */
 export interface Subscriber {
-  subscribe(channel: string, onMessage: (message: string) => void): Promise<void>;
+  subscribe(
+    channel: string,
+    onMessage: (message: string) => void,
+  ): Promise<void>;
   unsubscribe(channel: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -1643,7 +1719,8 @@ export class EventFanout {
         ),
       };
       created.ready.catch(() => {
-        if (this.channels.get(channel) === created) this.channels.delete(channel);
+        if (this.channels.get(channel) === created)
+          this.channels.delete(channel);
       });
       this.channels.set(channel, created);
       entry = created;
@@ -1657,7 +1734,8 @@ export class EventFanout {
     }
     return async () => {
       const current = this.channels.get(channel);
-      if (!current?.listeners.delete(listener) || current.listeners.size) return;
+      if (!current?.listeners.delete(listener) || current.listeners.size)
+        return;
       this.channels.delete(channel);
       const subscriber = this.subscriber;
       await subscriber
@@ -1772,12 +1850,15 @@ export async function streamEvents(
   options.begin();
   started = true;
   sink.write('retry: 3000\n\n');
-  timer = setInterval(() => {
-    void options.recheck().then(
-      (allowed) => (allowed ? send(frame('ping', {})) : finish()),
-      () => finish(),
-    );
-  }, options.pingMs ?? ENTITY_EVENTS_PING_SECONDS * 1000);
+  timer = setInterval(
+    () => {
+      void options.recheck().then(
+        (allowed) => (allowed ? send(frame('ping', {})) : finish()),
+        () => finish(),
+      );
+    },
+    options.pingMs ?? ENTITY_EVENTS_PING_SECONDS * 1000,
+  );
   return true;
 }
 ```
@@ -1811,7 +1892,9 @@ export class DeviceEventsService implements BeforeApplicationShutdown {
       await client.connect();
       return {
         subscribe: async (channel, onMessage) => {
-          await client.subscribe(channel, (message) => onMessage(String(message)));
+          await client.subscribe(channel, (message) =>
+            onMessage(String(message)),
+          );
         },
         unsubscribe: async (channel) => {
           await client.unsubscribe(channel);
@@ -2013,9 +2096,11 @@ git commit -m "feat: stream device refresh events over Server-Sent Events"
 ```
 
 ---
+
 ### Task 6: Event stream, row refresh, and stale counts in the store
 
 **Files:**
+
 - Create: `frontend/src/app/devices/device-row-refresh.ts`
 - Create: `frontend/src/app/devices/device-row-refresh.spec.ts`
 - Modify: `frontend/src/app/devices/devices.store.ts`
@@ -2026,6 +2111,7 @@ git commit -m "feat: stream device refresh events over Server-Sent Events"
 - Modify: `frontend/src/app/devices/devices.spec.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1 `DEVICE_BY_IDS_LIMIT`, `ENTITY_EVENTS_PING_SECONDS`, `deviceRowsSchema`, `deviceFreshnessSchema`, `DeviceFreshness`. Task 4 `POST /api/devices/by-ids` and `POST /api/devices/freshness`. Task 5 `GET /api/devices/events`. Existing `entityEventSchema`, `DeviceSyncFailure`.
 - Produces:
   - `DeviceRowRefresh` with `attach(api)`, `detach(api)`, `held(test?: (row: DeviceRow) => boolean): string[]`, `apply(rows: readonly DeviceRow[]): void`. `api` is `Pick<GridApi<DeviceRow>, 'forEachNode' | 'getRowNode'>`.
@@ -2707,7 +2793,12 @@ export class DevicesStore {
     this.streamWanted = true;
     if (this.stream) return;
     this.streamOpened = false;
-    if ((await this.loadSync()) && this.sync() && this.streamWanted && !this.stream)
+    if (
+      (await this.loadSync()) &&
+      this.sync() &&
+      this.streamWanted &&
+      !this.stream
+    )
       this.openStream();
   }
 
@@ -2824,7 +2915,10 @@ export class DevicesStore {
   async recount(): Promise<void> {
     const counted = this.counted;
     const epoch = this.epoch;
-    const response = await this.call('/api/devices/freshness', this.countedQuery);
+    const response = await this.call(
+      '/api/devices/freshness',
+      this.countedQuery,
+    );
     if (!response?.ok || counted !== this.counted || epoch !== this.epoch)
       return;
     try {
@@ -2838,7 +2932,10 @@ export class DevicesStore {
 
   private scheduleRecount(): void {
     clearTimeout(this.recountTimer);
-    this.recountTimer = setTimeout(() => void this.recount(), this.recountDelay);
+    this.recountTimer = setTimeout(
+      () => void this.recount(),
+      this.recountDelay,
+    );
   }
 
   private openStream(): void {
@@ -2861,7 +2958,8 @@ export class DevicesStore {
       stream.addEventListener(name, (message) => {
         if (!current()) return;
         this.watch();
-        if (name !== 'ping') this.onEvent((message as MessageEvent<string>).data);
+        if (name !== 'ping')
+          this.onEvent((message as MessageEvent<string>).data);
       });
   }
 
@@ -2982,7 +3080,10 @@ export class DevicesStore {
     const key = countsKey(view);
     if (key === null || key === this.counted) return;
     this.counted = key;
-    this.countedQuery = { predicates: view.predicates, selection: view.selection };
+    this.countedQuery = {
+      predicates: view.predicates,
+      selection: view.selection,
+    };
     this.groupLimit.set(false);
   }
 }
@@ -3060,6 +3161,7 @@ git commit -m "feat: follow device refreshes over the event stream and retire th
 ### Task 7: Refresh banner and muted contact cell
 
 **Files:**
+
 - Create: `frontend/src/app/devices/device-freshness.ts`
 - Create: `frontend/src/app/devices/device-freshness.spec.ts`
 - Create: `frontend/src/app/devices/device-columns.spec.ts`
@@ -3072,6 +3174,7 @@ git commit -m "feat: follow device refreshes over the event stream and retire th
 UI rules: GRID-01 (counts and the last full sync time stay in the footer). The workflow's D11 decision moves refresh progress into the banner.
 
 **Interfaces:**
+
 - Consumes: Task 6 `DevicesStore.freshness`, `DevicesStore.jobFailure`. Existing `syncFailureText`, `DevicesStore.page`, `DevicesStore.refreshing`.
 - Produces:
   - `freshnessBanner(input: { stale: number; matching: number; refreshing: boolean; jobFailure: string; syncFailure: string; syncFailed: boolean }): FreshnessBanner | null`.
@@ -3118,7 +3221,8 @@ it('formats large counts and names a single device', () => {
       ?.title,
   ).toBe('Refreshing 1,200 of 45,000 devices');
   expect(
-    freshnessBanner({ ...base, stale: 1, matching: 1, refreshing: true })?.title,
+    freshnessBanner({ ...base, stale: 1, matching: 1, refreshing: true })
+      ?.title,
   ).toBe('Refreshing 1 of 1 device');
 });
 
@@ -3182,9 +3286,11 @@ const row = (stale: boolean): DeviceRow => ({
 
 const columns = () => deviceColumnDefs(() => undefined);
 const rule = (column: ColDef<DeviceRow>) =>
-  (column.cellClassRules as Record<string, (params: unknown) => boolean> | undefined)?.[
-    'device-stale'
-  ];
+  (
+    column.cellClassRules as
+      | Record<string, (params: unknown) => boolean>
+      | undefined
+  )?.['device-stale'];
 
 it('mutes the contact time of a stale row and explains it', () => {
   const contact = columns().find((column) => column.colId === 'lastContact')!;
@@ -3304,9 +3410,9 @@ In the `DEVICE_FIELDS.map(...)` column object, add after the `cellClass` line:
 In `frontend/src/app/devices/device-grid.ts`, add to the component `styles` after the `.device-code` rule:
 
 ```css
-    :host ::ng-deep .device-stale {
-      color: var(--cc-text-secondary);
-    }
+:host ::ng-deep .device-stale {
+  color: var(--cc-text-secondary);
+}
 ```
 
 - [ ] **Step 6: Run the unit tests to verify they pass**
@@ -3338,9 +3444,9 @@ it('shows refresh progress while stale devices refresh', () => {
     page: counted,
     freshness: { stale: 1, refreshing: true },
   });
-  expect(element.querySelector('#devices-stale-title')?.textContent?.trim()).toBe(
-    'Refreshing 1 of 12 devices',
-  );
+  expect(
+    element.querySelector('#devices-stale-title')?.textContent?.trim(),
+  ).toBe('Refreshing 1 of 12 devices');
   expect(button('Refresh inventory')).toBeUndefined();
 });
 
@@ -3397,25 +3503,25 @@ In `frontend/src/app/devices/devices.ts`, add `import { freshnessBanner } from '
 In `frontend/src/app/devices/devices.html`, replace the block from `} @else if (published() && sync()?.stale) {` through the closing `</section>` of the stale banner with:
 
 ```html
-  } @else if (published() && banner()) {
-  <section
-    class="banner"
-    aria-labelledby="devices-stale-title"
-    [attr.aria-live]="banner()!.refreshing ? 'polite' : null"
+} @else if (published() && banner()) {
+<section
+  class="banner"
+  aria-labelledby="devices-stale-title"
+  [attr.aria-live]="banner()!.refreshing ? 'polite' : null"
+>
+  <h2 id="devices-stale-title">{{ banner()!.title }}</h2>
+  <p>{{ banner()!.body }}</p>
+  @if (!banner()!.refreshing) {
+  <button
+    mat-stroked-button
+    type="button"
+    [disabled]="store.refreshing()"
+    (click)="refresh()"
   >
-    <h2 id="devices-stale-title">{{ banner()!.title }}</h2>
-    <p>{{ banner()!.body }}</p>
-    @if (!banner()!.refreshing) {
-    <button
-      mat-stroked-button
-      type="button"
-      [disabled]="store.refreshing()"
-      (click)="refresh()"
-    >
-      Refresh inventory
-    </button>
-    }
-  </section>
+    Refresh inventory
+  </button>
+  }
+</section>
 ```
 
 The template keeps the telemetry banner, the error, and the rest unchanged.
@@ -3433,9 +3539,11 @@ git commit -m "feat: show refresh progress and mute stale contact times"
 ```
 
 ---
+
 ### Task 8: End-to-end checks, records, and the full run
 
 **Files:**
+
 - Modify: `api-e2e/google-connection-preload.cjs`
 - Modify: `api-e2e/devices-api.mjs`
 - Modify: `api-e2e/devices-browser.mjs`
@@ -3445,6 +3553,7 @@ git commit -m "feat: show refresh progress and mute stale contact times"
 - Modify: `docs/document-index.csv`
 
 **Interfaces:**
+
 - Consumes: every route and UI behavior from Tasks 3 through 7. The e2e harness passes `migrator` (a Postgres client with owner rights), `redis` (a `default` user client), and `directory` (the fixture directory that holds `google-health-fault.json`).
 - Produces: the simulator fault mode `device-delay`, new evidence lines, and the workflow record.
 
@@ -3453,9 +3562,9 @@ git commit -m "feat: show refresh progress and mute stale contact times"
 In `api-e2e/google-connection-preload.cjs`, in the `/batch/admin/directory_v1` branch, add after `if (fault === 'device-privilege-denied') throw forbidden(options);`:
 
 ```js
-    // Holds a refresh batch so the browser check can see the refresh state.
-    if (fault === 'device-delay')
-      await new Promise((resolve) => setTimeout(resolve, 4000));
+// Holds a refresh batch so the browser check can see the refresh state.
+if (fault === 'device-delay')
+  await new Promise((resolve) => setTimeout(resolve, 4000));
 ```
 
 The Google client allows at least 10 seconds per request, so a 4 second hold succeeds.
@@ -3585,15 +3694,15 @@ In `api-e2e/devices-api.mjs`, replace the block from `if (migrator) {` through `
 Below the job check (the loop that waits for `job?.finished_at` and its three assertions), add:
 
 ```js
-      const freshness = await api.post(`${root}/freshness`, {
-        headers,
-        data: staleQuery,
-      });
-      assert.equal(freshness.status(), 200, await freshness.text());
-      assert.deepEqual((await freshness.json()).freshness, {
-        stale: 0,
-        refreshing: false,
-      });
+const freshness = await api.post(`${root}/freshness`, {
+  headers,
+  data: staleQuery,
+});
+assert.equal(freshness.status(), 200, await freshness.text());
+assert.deepEqual((await freshness.json()).freshness, {
+  stale: 0,
+  refreshing: false,
+});
 ```
 
 Delete the two later lines that define `customerKey` and `entity`, because the new block defines them. The Redis assertions after them stay.
@@ -3615,37 +3724,37 @@ In `api-e2e/devices-browser.mjs`:
 3. After `await auditAccessibility(page, 'devices');`, add:
 
 ```js
-    if (migrator && redis) {
-      // Two devices turn stale: Postgres ages their stamps and Redis drops their records.
-      await migrator.query(
-        "UPDATE cc.devices SET last_entity_sync=now()-interval '2 days' WHERE device_id IN ('synthetic-device-0','synthetic-device-1')",
-      );
-      await redis.del([
-        'cc:entity:device:C0123456:synthetic-device-0',
-        'cc:entity:device:C0123456:synthetic-device-1',
-      ]);
-      const faultPath = join(directory, 'google-health-fault.json');
-      await writeFile(faultPath, JSON.stringify({ mode: 'device-delay' }));
-      try {
-        await page.reload();
-        const contact = page.locator(
-          '[row-id="synthetic-device-0"] [col-id="lastContact"]',
-        );
-        await expect(contact).toHaveClass(/device-stale/);
-        await expect(
-          page.getByRole('heading', { name: 'Refreshing 2 of 450 devices' }),
-        ).toBeVisible();
-        const cell = await contact.elementHandle();
-        await expect(
-          page.getByRole('heading', { name: /^Refreshing \d/ }),
-        ).toHaveCount(0, { timeout: 60_000 });
-        await expect(contact).not.toHaveClass(/device-stale/);
-        // The batch updated the row in place. A grid reload would replace the cell.
-        expect(await cell.evaluate((element) => element.isConnected)).toBe(true);
-      } finally {
-        await rm(faultPath, { force: true });
-      }
-    }
+if (migrator && redis) {
+  // Two devices turn stale: Postgres ages their stamps and Redis drops their records.
+  await migrator.query(
+    "UPDATE cc.devices SET last_entity_sync=now()-interval '2 days' WHERE device_id IN ('synthetic-device-0','synthetic-device-1')",
+  );
+  await redis.del([
+    'cc:entity:device:C0123456:synthetic-device-0',
+    'cc:entity:device:C0123456:synthetic-device-1',
+  ]);
+  const faultPath = join(directory, 'google-health-fault.json');
+  await writeFile(faultPath, JSON.stringify({ mode: 'device-delay' }));
+  try {
+    await page.reload();
+    const contact = page.locator(
+      '[row-id="synthetic-device-0"] [col-id="lastContact"]',
+    );
+    await expect(contact).toHaveClass(/device-stale/);
+    await expect(
+      page.getByRole('heading', { name: 'Refreshing 2 of 450 devices' }),
+    ).toBeVisible();
+    const cell = await contact.elementHandle();
+    await expect(
+      page.getByRole('heading', { name: /^Refreshing \d/ }),
+    ).toHaveCount(0, { timeout: 60_000 });
+    await expect(contact).not.toHaveClass(/device-stale/);
+    // The batch updated the row in place. A grid reload would replace the cell.
+    expect(await cell.evaluate((element) => element.isConnected)).toBe(true);
+  } finally {
+    await rm(faultPath, { force: true });
+  }
+}
 ```
 
 4. Add this line to the returned evidence list after the first entry:

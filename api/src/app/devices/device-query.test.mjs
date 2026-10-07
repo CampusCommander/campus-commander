@@ -483,7 +483,9 @@ test('the cached ID list follows the grid order and binds the limit last', () =>
 test('an open group narrows the cached ID list', () => {
   const sql = deviceIdsSql(
     'C0123456',
-    deviceQuerySchema.parse({ group: { by: ['model'], keys: ['Lenovo 100e'] } }),
+    deviceQuerySchema.parse({
+      group: { by: ['model'], keys: ['Lenovo 100e'] },
+    }),
     10,
   );
   assert.match(
