@@ -1,6 +1,6 @@
 # Google batch service decision record
 
-Status: owner-confirmed 2026-10-07. The owner requested the service directly.
+Status: owner-confirmed 2026-10-07. Implemented on `codex/batch-service`. Not merged.
 Source: owner interview with Claude on 2026-10-07, questions Q1 through Q16
 Branch: `codex/batch-service`, from `codex/devices-ui`
 Related: [entity cache record](2026-10-06-entity-cache-decisions.md), decision D15
@@ -170,5 +170,8 @@ The owner stated that quota retries were always meant to stop at 25. The "until 
 
 ## Open items
 
-- Write the implementation plan with the writing-plans skill before any code.
+- Plan: [2026-10-07 Google batch service](../plans/2026-10-07-google-batch-service.md).
+- Live wire evidence: `deployment/evidence/batch-service-live-2026-10-07.json`.
 - No merge without owner authorization.
+- Follow-up: `deviceBatch` fails the whole batch on any non-404 failure, per B12.
+  Per-user OAuth with org unit scoping needs partial success. That change needs an owner decision.

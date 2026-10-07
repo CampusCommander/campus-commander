@@ -1,0 +1,33 @@
+{
+  "recordedAt": "2026-10-07T20:22:58.859Z",
+  "fixture": "approved Easton read-only fixture",
+  "scope": "https://www.googleapis.com/auth/admin.directory.orgunit.readonly",
+  "method": "directory.orgunits.get through https://www.googleapis.com/batch/admin/directory_v1",
+  "ouCount": 2,
+  "rounds": [
+    {
+      "sentCount": 3,
+      "outerStatus": 200,
+      "pending": 0
+    }
+  ],
+  "outcomes": {
+    "ou-1": {
+      "kind": "success",
+      "contentIdMatched": true
+    },
+    "ou-2": {
+      "kind": "success",
+      "contentIdMatched": true
+    },
+    "missing": {
+      "kind": "not-found",
+      "status": 404,
+      "reason": "notFound"
+    }
+  },
+  "durationMs": 736,
+  "limitations": [
+    "Paging is not exercised. No authorized live scope returns page tokens."
+  ]
+}
