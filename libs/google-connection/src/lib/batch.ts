@@ -372,3 +372,88 @@ export function headerValue(
       return value;
   return undefined;
 }
+
+const QUOTA_REASONS: ReadonlySet<string> = new Set([
+  'rateLimitExceeded',
+  'userRateLimitExceeded',
+  'quotaExceeded',
+]);
+
+export type PartKind =
+  | 'success'
+  | 'not-found'
+  | 'quota'
+  | 'transient'
+  | 'auth'
+  | 'rejected';
+
+/** Read `error.errors[0].reason`, or `error.status` from newer Google APIs. */
+export function googleReason(body: unknown): string | null {
+  const error =
+    body !== null && typeof body === 'object'
+      ? (body as { error?: unknown }).error
+      : undefined;
+  if (error === null || typeof error !== 'object') return null;
+  const errors = (error as { errors?: unknown }).errors;
+  const first: unknown = Array.isArray(errors) ? errors[0] : undefined;
+  const reason =
+    first !== null && typeof first === 'object'
+      ? (first as { reason?: unknown }).reason
+      : undefined;
+  if (typeof reason === 'string') return reason;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === 'string' ? status : null;
+}
+
+/** Classify one HTTP answer. B6 in the decision record holds the table. */
+export function classifyStatus(
+  status: number,
+  body: unknown,
+): { kind: PartKind; reason: string | null } {
+  if (status >= 200 && status < 300) return { kind: 'success', reason: null };
+  const reason = googleReason(body);
+  if (status === 404) return { kind: 'not-found', reason };
+  if (
+    status === 429 ||
+    (status === 403 && reason !== null && QUOTA_REASONS.has(reason))
+  )
+    return { kind: 'quota', reason };
+  if (status >= 500 || (status === 403 && reason === 'backendError'))
+    return { kind: 'transient', reason };
+  if (status === 401 || status === 403) return { kind: 'auth', reason };
+  return { kind: 'rejected', reason };
+}
+
+/** Read a Retry-After value in seconds or as an HTTP date. */
+export function retryAfterMs(
+  value: string | undefined,
+  now: number,
+): number | null {
+  if (value === undefined) return null;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1_000;
+  const date = Date.parse(trimmed);
+  return Number.isFinite(date) ? Math.max(0, date - now) : null;
+}
+
+/** Exponential backoff with full jitter. `retry` is 1 for the first retry. */
+export function backoffDelay(
+  retry: number,
+  options: Pick<BatchOptions, 'initialDelayMs' | 'multiplier' | 'maxDelayMs'>,
+  random: () => number,
+): number {
+  const ceiling = Math.min(
+    options.maxDelayMs,
+    options.initialDelayMs * options.multiplier ** (retry - 1),
+  );
+  return Math.floor(random() * ceiling);
+}
+
+/** Read a non-empty `nextPageToken` before the caller parser runs. */
+export function nextPageToken(body: unknown): string | null {
+  const token =
+    body !== null && typeof body === 'object'
+      ? (body as { nextPageToken?: unknown }).nextPageToken
+      : undefined;
+  return typeof token === 'string' && token !== '' ? token : null;
+}
