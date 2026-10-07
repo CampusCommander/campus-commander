@@ -75,6 +75,7 @@ Verified 2026-10-06 against Google documentation:
 `GET /api/devices/events` is an SSE response on the existing controller and session guard.
 The worker publishes to Redis channel `cc:entity-events:{customer}`. Each API instance holds one dedicated subscriber client and fans out to open SSE responses.
 Pub/Sub is fire-and-forget. The client reconciles on reconnect (D12), so lost messages cost only latency.
+As built, each ping first checks the session without extending the idle session lifetime. An open tab never keeps an unattended session alive.
 
 ### D7. One event per completed batch (Q7)
 
@@ -112,6 +113,9 @@ The stream carries `entity-batch`, `full-sync` (`{syncId, status, failure?}`), a
 As built, `full-sync` nests the sync state as `{ sync }`, `job-finished` nests the job as `{ job }`, and `entity-batch` also carries `removedIds`.
 The 2 second poll is removed. The store opens one `EventSource` on Devices mount and closes it on leave.
 On reconnect the store refetches `GET /api/devices/sync` once and `by-ids` for rows still tagged stale.
+As built, a closed stream reopens after a status read. A 401 or 403 answer leaves it closed until the same person resumes the session.
+Other failures retry after 5 seconds, and each failure doubles the wait up to 60 seconds. An open resets the wait.
+The store reads the status again after the new stream opens. A full sync that ends between the two reads still reloads the grid.
 
 ### D13. The worker writes Redis and publishes directly (Q13)
 

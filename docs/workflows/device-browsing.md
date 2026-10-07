@@ -146,14 +146,17 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - A refresh that cannot start leaves the page as it is. The next query tries again.
 - The status bar and group counts still show the last full sync time. Device details show the device's own last Google read.
 - The banner's N counts the matching devices that are still stale. M counts the matching devices. N falls as batches land.
+- A new query counts its stale devices at once. The banner keeps the last count until the new count arrives.
 - Without a running refresh, stale devices keep the title "Inventory observation is stale". The text names the stale count and the last failure.
 - A cached page refreshes the stale devices on that page. The query that filled the cache refreshed every stale device it matched.
 - A cached query result belongs to one person and one permission version.
 - Show All Selected and results over 100,000 devices skip the query cache.
 - A device that a refresh removes stays in a cached result until the result expires. It does not show as stale. Its details name the removal.
-- The event stream pings every 25 seconds. The server checks the session before each ping.
-- A browser that receives no event for 60 seconds reconnects. A closed stream reopens after 5 seconds when the status read succeeds.
-- After a reconnect, the page reads the sync status once, refetches rows still marked stale, and recounts stale devices.
+- The event stream pings every 25 seconds. The server checks the session before each ping. The check does not extend the idle session lifetime.
+- A browser that receives no event for 60 seconds reconnects. A closed stream reopens after a status read.
+- A 401 or 403 status read leaves the stream closed. The stream reopens when the same person resumes the session.
+- Other failed reopens retry after 5 seconds. Each failure doubles the wait, up to 60 seconds.
+- After a reconnect, the page reads the sync status again once the stream opens. It refetches rows still marked stale and recounts stale devices.
 - The edge allows the event stream 75 seconds without data. Other application requests keep 45 seconds.
 
 ## States
