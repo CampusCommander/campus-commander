@@ -103,12 +103,13 @@ function cache() {
 const cipher = {
   open: () => ({ subject: 'fixture@example.invalid', serviceAccount: {} }),
 };
-function reader({ devices = [], batteries = [] } = {}) {
+function reader({ devices = [], batteries = [], rounds = 0 } = {}) {
   const calls = [];
   return {
     calls,
-    async deviceBatch(_credential, _customer, ids) {
+    async deviceBatch(_credential, _customer, ids, _signal, onRound) {
       calls.push({ name: 'deviceBatch', ids });
+      for (let round = 0; round < rounds; round++) await onRound?.();
       const next = devices.shift();
       if (next instanceof Error) throw next;
       return next ?? { devices: ids.map(device), missing: [] };
@@ -215,27 +216,45 @@ test('the last batch publishes job-finished', async () => {
   });
 });
 
-test('quota errors retry until Google answers', async () => {
+test('a Directory quota failure fails the batch without a worker retry', async () => {
   const waits = [];
-  const runner = new EntitySyncBatch(
+  const source = reader({ devices: [new GoogleConnectionError('quota')] });
+  const result = await new EntitySyncBatch(
+    database({ finish: job({ completedBatches: 0, failedBatches: 1, failure: 'quota' }) }),
+    cipher,
+    source,
+    cache(),
+    { backoff: () => 0, sleep: async (ms) => void waits.push(ms) },
+  ).run(request, AbortSignal.timeout(5000));
+  assert.equal(result.failure, 'quota');
+  assert.deepEqual(names(source.calls), ['deviceBatch']);
+  assert.deepEqual(waits, []);
+});
+
+test('telemetry quota errors retry in the worker until Google answers', async () => {
+  const waits = [];
+  const result = await new EntitySyncBatch(
     database(),
     cipher,
     reader({
-      devices: [
-        new GoogleConnectionError('quota'),
-        new GoogleConnectionError('quota'),
-      ],
-      batteries: [new GoogleConnectionError('quota')],
+      batteries: [new GoogleConnectionError('quota'), new GoogleConnectionError('quota')],
     }),
     cache(),
-    {
-      backoff: (attempt) => attempt * 10,
-      sleep: async (ms) => void waits.push(ms),
-    },
-  );
-  const result = await runner.run(request, AbortSignal.timeout(5000));
+    { backoff: (attempt) => attempt * 10, sleep: async (ms) => void waits.push(ms) },
+  ).run(request, AbortSignal.timeout(5000));
   assert.equal(result.failure, null);
-  assert.deepEqual(waits, [0, 10, 0]);
+  assert.deepEqual(waits, [0, 10]);
+});
+
+test('each batch service round extends the claim on the batch IDs', async () => {
+  const redis = cache();
+  await new EntitySyncBatch(database(), cipher, reader({ rounds: 2 }), redis, noSleep).run(
+    request,
+    AbortSignal.timeout(5000),
+  );
+  const extensions = redis.calls.filter((call) => call.name === 'extendMembers');
+  assert.equal(extensions.length, 2);
+  assert.deepEqual(extensions[0].args.slice(1), [['d1', 'd2', 'd3'], 120]);
 });
 
 test('a quota retry stops when the worker shuts down', async () => {
@@ -243,7 +262,7 @@ test('a quota retry stops when the worker shuts down', async () => {
   const runner = new EntitySyncBatch(
     database(),
     cipher,
-    reader({ devices: [new GoogleConnectionError('quota')] }),
+    reader({ batteries: [new GoogleConnectionError('quota')] }),
     cache(),
     {
       backoff: () => 1,
@@ -439,35 +458,31 @@ test('the freshness stamp comes from Postgres before the Directory read', async 
   assert.equal(upsert.values[2], clock.toISOString());
 });
 
-test('a quota sleep extends the batch claim on its in-flight IDs', async () => {
+test('a telemetry quota sleep extends the batch claim on its in-flight IDs', async () => {
   const redis = cache();
   const waits = [];
   await new EntitySyncBatch(
     database(),
     cipher,
-    reader({
-      devices: [new GoogleConnectionError('quota')],
-      batteries: [new GoogleConnectionError('quota')],
-    }),
+    reader({ batteries: [new GoogleConnectionError('quota')] }),
     redis,
     { backoff: () => 0, sleep: async () => void waits.push(redis.calls.length) },
   ).run(request, AbortSignal.timeout(5000));
   const extended = redis.calls.filter((call) => call.name === 'extendMembers');
-  assert.equal(extended.length, 2);
-  for (const call of extended)
-    assert.deepEqual(call.args, [
-      'cc:entity-inflight:device:C0123456',
-      ['d1', 'd2', 'd3'],
-      120,
-    ]);
+  assert.equal(extended.length, 1);
+  assert.deepEqual(extended[0].args, [
+    'cc:entity-inflight:device:C0123456',
+    ['d1', 'd2', 'd3'],
+    120,
+  ]);
   assert.deepEqual(
     waits.map((count) => redis.calls[count - 1].name),
-    ['extendMembers', 'extendMembers'],
-    'Each extension precedes its sleep.',
+    ['extendMembers'],
+    'The extension precedes its sleep.',
   );
 });
 
-test('a failed claim extension does not stop the quota retry', async () => {
+test('a failed claim extension does not stop a quota retry or a batch round', async () => {
   const redis = cache();
   redis.extendMembers = async () => {
     throw new EntityCacheError();
@@ -475,7 +490,7 @@ test('a failed claim extension does not stop the quota retry', async () => {
   const result = await new EntitySyncBatch(
     database(),
     cipher,
-    reader({ devices: [new GoogleConnectionError('quota')] }),
+    reader({ batteries: [new GoogleConnectionError('quota')], rounds: 1 }),
     redis,
     noSleep,
   ).run(request, AbortSignal.timeout(5000));

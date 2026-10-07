@@ -35,6 +35,7 @@ export interface EntityReader {
     customerId: string,
     ids: readonly string[],
     signal: AbortSignal,
+    onRound?: () => Promise<void>,
   ): Promise<{ devices: DeviceObservation[]; missing: string[] }>;
   batteryBatch(
     credential: DelegatedCredential,
@@ -83,7 +84,8 @@ async function defaultSleep(milliseconds: number, signal: AbortSignal) {
 
 /**
  * One Kestra batch: read the slice, fetch from Google, upsert, cache, signal, record.
- * Quota errors retry inside the worker. Every other Directory error fails the batch once.
+ * The batch service retries Directory quota answers per part. Telemetry quota answers retry here.
+ * Every other Directory error fails the batch once.
  * Every other telemetry error keeps the stored battery fields and the batch succeeds.
  */
 export class EntitySyncBatch {
@@ -180,13 +182,18 @@ export class EntitySyncBatch {
       if (Number.isNaN(stamp.getTime()))
         throw new DeviceSyncError('store-unavailable');
       const syncedAt = stamp.toISOString();
-      const read = await this.untilQuotaClears(signal, claim, () =>
-        this.reader.deviceBatch(
-          credential,
-          input.customerId,
-          batch.ids,
-          signal,
-        ),
+      // Each multipart round extends the claim, so a long quota wave keeps the batch IDs.
+      const extendClaim = async () => {
+        await this.cache
+          .extendMembers(claim.key, claim.ids, ENTITY_INFLIGHT_SECONDS)
+          .catch(() => undefined);
+      };
+      const read = await this.reader.deviceBatch(
+        credential,
+        input.customerId,
+        batch.ids,
+        signal,
+        extendClaim,
       );
       const present = read.devices.map((device) => device.deviceId);
       let batteries: BatteryObservation[] | null = null;

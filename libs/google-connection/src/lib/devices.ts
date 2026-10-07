@@ -10,6 +10,7 @@ import {
   type DeviceObservation,
 } from '@campus/application-contracts';
 import type { DelegatedCredential } from './credential';
+import { GoogleBatchService, type BatchFailure } from './batch';
 import { GoogleConnectionError, failure, scopedClient } from './provider';
 
 const directory = 'https://admin.googleapis.com/admin/directory/v1';
@@ -84,64 +85,11 @@ const directoryPath = '/admin/directory/v1';
 const deviceFields =
   'deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,notes,status';
 const batchLimit = 1000;
-/** 1,000 devices with full notes and locations stay under this. */
-const batchResponseLimit = 16 * 1024 * 1024;
+/** 250 devices with full notes and locations stay under this. */
+const batchResponseLimit = 4 * 1024 * 1024;
+const directoryDevice = devicePage.shape.chromeosdevices.unwrap().element;
 const telemetryConcurrency = 4;
-const quotaReasons = new Set([
-  'quotaExceeded',
-  'rateLimitExceeded',
-  'userRateLimitExceeded',
-]);
 const telemetryDevice = telemetryPage.shape.devices.unwrap().element;
-const batchError = z.object({
-  error: z
-    .object({
-      code: z.number().optional(),
-      errors: z.array(z.object({ reason: z.string() })).optional(),
-    })
-    .optional(),
-});
-
-/** Split a multipart/mixed batch response into its HTTP parts. */
-export function parseBatchResponse(
-  contentType: string,
-  body: string,
-): { contentId: string; status: number; body: unknown }[] {
-  const boundary = /boundary="?([^";]+)"?/.exec(contentType)?.[1];
-  if (!boundary) throw new GoogleConnectionError('invalid-response');
-  return body
-    .split(`--${boundary}`)
-    .slice(1)
-    .filter((part) => part.trim() !== '' && part.trim() !== '--')
-    .map((part) => {
-      const normalized = part.replace(/\r\n/g, '\n');
-      const contentId = /Content-ID:\s*<response-(?:item-)?([^>]+)>/i.exec(
-        normalized,
-      )?.[1];
-      const http = normalized.slice(normalized.indexOf('\n\n') + 2);
-      const status = Number(/^HTTP\/1\.1 (\d{3})/.exec(http)?.[1]);
-      const json = http.slice(http.indexOf('\n\n') + 2).trim();
-      if (!contentId || !Number.isFinite(status))
-        throw new GoogleConnectionError('invalid-response');
-      let parsed: unknown = null;
-      if (json) {
-        try {
-          parsed = JSON.parse(json);
-        } catch {
-          throw new GoogleConnectionError('invalid-response');
-        }
-      }
-      return { contentId, status, body: parsed };
-    });
-}
-
-function partFailure(status: number, body: unknown): GoogleConnectionError {
-  const reason = batchError.safeParse(body).data?.error?.errors?.[0]?.reason;
-  if (status === 429 || (status === 403 && quotaReasons.has(reason ?? '')))
-    return new GoogleConnectionError('quota');
-  return failure({ response: { status, data: body } });
-}
-
 function scopeFor(id: 'device-inventory' | 'device-telemetry'): string {
   return GOOGLE_CAPABILITIES.find((capability) => capability.id === id)!.scope;
 }
@@ -234,7 +182,17 @@ async function quotaSleep(milliseconds: number, signal: AbortSignal) {
   });
 }
 
+/** Map a final batch failure to the existing failure vocabulary. */
+function batchFailure(failed: BatchFailure): GoogleConnectionError {
+  if (failed.kind === 'quota') return new GoogleConnectionError('quota');
+  if (failed.kind === 'invalid-response') return new GoogleConnectionError('invalid-response');
+  if (failed.kind === 'aborted' || failed.status === 0)
+    return new GoogleConnectionError('network-failure');
+  return failure({ response: { status: failed.status, data: failed.body } });
+}
+
 export interface GoogleDeviceReaderOptions {
+  batch?: GoogleBatchService;
   sleep?(milliseconds: number, signal: AbortSignal): Promise<void>;
   backoff?(attempt: number): number;
 }
@@ -243,10 +201,12 @@ export interface GoogleDeviceReaderOptions {
 export class GoogleDeviceReader {
   private readonly sleep: (milliseconds: number, signal: AbortSignal) => Promise<void>;
   private readonly backoff: (attempt: number) => number;
+  private readonly batch: GoogleBatchService;
 
   constructor(options: GoogleDeviceReaderOptions = {}) {
     this.sleep = options.sleep ?? quotaSleep;
     this.backoff = options.backoff ?? quotaBackoff;
+    this.batch = options.batch ?? new GoogleBatchService();
   }
 
   /** Follow page tokens. A quota answer retries the same page until it succeeds or the signal aborts. */
@@ -361,67 +321,60 @@ export class GoogleDeviceReader {
     );
   }
 
-  /** One Directory batch request. 404 parts name removed devices. Quota parts abort the whole batch. */
+  /**
+   * Directory reads through the batch service. A 404 names a removed device.
+   * Quota and server errors retry per part. Any other final failure fails the batch.
+   * `onRound` runs after each multipart round, so the caller can extend its claim.
+   */
   async deviceBatch(
     credential: DelegatedCredential,
     customerId: string,
     deviceIds: readonly string[],
     signal: AbortSignal,
+    onRound?: () => Promise<void>,
   ): Promise<{ devices: DeviceObservation[]; missing: string[] }> {
     googleCustomerIdSchema.parse(customerId);
-    if (deviceIds.length === 0) return { devices: [], missing: [] };
-    if (deviceIds.length > batchLimit)
-      throw new GoogleConnectionError('invalid-response');
-    const client = await scopedClient(
-      credential,
-      scopeFor('device-inventory'),
+    const ids = [...new Set(deviceIds)];
+    if (ids.length === 0) return { devices: [], missing: [] };
+    if (ids.length > batchLimit) throw new GoogleConnectionError('invalid-response');
+    const mint: { failure?: GoogleConnectionError } = {};
+    const result = await this.batch.execute({
+      batchUrl: batchEndpoint,
+      requests: ids.map((id) => ({
+        id,
+        method: 'GET' as const,
+        path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(id)}`,
+        query: { projection: 'FULL', fields: deviceFields },
+      })),
+      parse: (body) => deviceObservation(directoryDevice.parse(body)),
+      getClient: async (runSignal) => {
+        try {
+          return await scopedClient(
+            credential,
+            scopeFor('device-inventory'),
+            runSignal,
+            batchResponseLimit,
+          );
+        } catch (error) {
+          mint.failure = failure(error, 'token');
+          throw mint.failure;
+        }
+      },
       signal,
-      batchResponseLimit,
-    );
-    const boundary = `batch_cc_${Math.random().toString(36).slice(2)}`;
-    const body =
-      deviceIds
-        .map(
-          (id) =>
-            `--${boundary}\r\nContent-Type: application/http\r\nContent-ID: <item-${id}>\r\n\r\n` +
-            `GET ${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(id)}?projection=FULL&fields=${deviceFields}\r\n\r\n`,
-        )
-        .join('') + `--${boundary}--\r\n`;
-    let response;
-    try {
-      response = await client.request<string>({
-        url: batchEndpoint,
-        method: 'POST',
-        headers: { 'content-type': `multipart/mixed; boundary=${boundary}` },
-        body,
-        responseType: 'text',
-      });
-    } catch (error) {
-      throw failure(error);
-    }
-    // gaxios 7 exposes a Headers instance. Older stubs and versions expose a plain object.
-    const headers = response.headers as unknown as
-      | { get?: (name: string) => string | null }
-      | Record<string, string | undefined>;
-    const contentType = String(
-      (typeof (headers as { get?: unknown }).get === 'function'
-        ? (headers as { get: (name: string) => string | null }).get('content-type')
-        : (headers as Record<string, string | undefined>)['content-type']) ?? '',
-    );
-    const parts = parseBatchResponse(contentType, String(response.data));
+      ...(onRound ? { onBatch: onRound } : {}),
+    });
+    if (mint.failure) throw mint.failure;
     const devices: DeviceObservation[] = [];
     const missing: string[] = [];
-    for (const part of parts) {
-      if (part.status === 404) missing.push(part.contentId);
-      else if (part.status === 200) {
-        try {
-          devices.push(
-            deviceObservation(devicePage.shape.chromeosdevices.unwrap().element.parse(part.body)),
-          );
-        } catch {
-          throw new GoogleConnectionError('invalid-response');
-        }
-      } else throw partFailure(part.status, part.body);
+    for (const id of ids) {
+      const pages = result.succeeded.get(id);
+      if (pages) {
+        devices.push(...pages);
+        continue;
+      }
+      const failed = result.failed.get(id);
+      if (failed?.kind === 'not-found') missing.push(id);
+      else if (failed) throw batchFailure(failed);
     }
     return { devices, missing };
   }

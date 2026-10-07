@@ -23,3 +23,21 @@ export type {
   GoogleReadRequest,
 } from './lib/coordinator';
 export type { GoogleAccessToken } from './lib/credential';
+export {
+  BATCH_DEFAULTS,
+  BATCH_SIZE_LIMIT,
+  BatchServiceError,
+  GoogleBatchService,
+} from './lib/batch';
+export type {
+  BatchAttempts,
+  BatchCall,
+  BatchFailure,
+  BatchFailureKind,
+  BatchHttpClient,
+  BatchOptions,
+  BatchRequest,
+  BatchResponseEvent,
+  BatchResult,
+  BatchRoundEvent,
+} from './lib/batch';
