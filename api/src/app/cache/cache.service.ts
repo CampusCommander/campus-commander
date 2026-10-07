@@ -5,7 +5,12 @@ import {
 } from '@nestjs/common';
 import { createClient } from 'redis';
 import { ConfigurationService } from '../configuration/configuration.service';
-import { addMembersScript, memberChunks } from './cache-sets';
+import {
+  addMembersScript,
+  listSliceScript,
+  memberChunks,
+  replaceListScript,
+} from './cache-sets';
 
 @Injectable()
 export class CacheService implements OnApplicationShutdown {
@@ -172,31 +177,36 @@ export class CacheService implements OnApplicationShutdown {
     }
     return values;
   }
-  /** The list length and `count` items from `start`, read in one transaction. */
+  /** The list length and `count` items from `start`, read in one script. */
   async listSlice(
     key: string,
     start: number,
     count: number,
   ): Promise<{ length: number; ids: string[] }> {
-    const [length, ids] = await this.execute((client) =>
-      client.multi().lLen(key).lRange(key, start, start + count - 1).exec(),
+    const result = await this.execute((client) =>
+      client.eval(listSliceScript, {
+        keys: [key],
+        arguments: [String(start), String(start + count - 1)],
+      }),
     );
+    const [length, ids] = Array.isArray(result) ? result : [0, []];
     return {
       length: Number(length),
       ids: Array.isArray(ids) ? ids.map(String) : [],
     };
   }
-  /** Replace a list in one transaction. Large chunks keep the command queue short. */
+  /** Replace a list in one script so a full queue never leaves a half-open transaction. */
   async replaceList(
     key: string,
     ids: readonly string[],
     seconds: number,
   ): Promise<void> {
-    await this.execute(async (client) => {
-      const multi = client.multi().del(key);
-      for (const chunk of memberChunks(ids, 5000)) multi.rPush(key, chunk);
-      await multi.expire(key, seconds).exec();
-    });
+    await this.execute((client) =>
+      client.eval(replaceListScript, {
+        keys: [key],
+        arguments: [String(seconds), ...ids],
+      }),
+    );
   }
   /** A new connection with the same options for pub/sub. Null when Redis is not configured. */
   subscriber() {

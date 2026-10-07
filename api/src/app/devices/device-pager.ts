@@ -57,6 +57,33 @@ export function queryHash(input: {
     .digest('base64url');
 }
 
+/** A cache view for one request. After any call rejects, every later call rejects without reaching Redis. */
+function guarded(cache: PagerCache): PagerCache {
+  let fault: unknown;
+  const wrap =
+    <A extends unknown[], R>(call: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      if (fault) throw fault;
+      try {
+        return await call(...args);
+      } catch (error) {
+        fault = error;
+        throw error;
+      }
+    };
+  return {
+    get: wrap((key: string) => cache.get(key)),
+    getMany: wrap((keys: readonly string[]) => cache.getMany(keys)),
+    listSlice: wrap((key: string, start: number, count: number) =>
+      cache.listSlice(key, start, count),
+    ),
+    replaceList: wrap((key: string, ids: readonly string[], seconds: number) =>
+      cache.replaceList(key, ids, seconds),
+    ),
+    remove: wrap((key: string) => cache.remove(key)),
+  };
+}
+
 /**
  * Grid pages through the Redis query cache (D1, D2). A miss reads Postgres and stores the ordered ID list.
  * Rows come from the worker's entity records first and from Postgres for the rest.
@@ -70,17 +97,27 @@ export class DevicePager {
   }
 
   /** Redis first per ID, Postgres for misses (D7, D9). Rows keep the order of `ids`. */
-  async hydrate(
+  hydrate(
     customerId: string,
     ids: readonly string[],
     rows: Rows,
     now = Date.now(),
   ): Promise<{ rows: DeviceRow[]; missing: string[] }> {
+    return this.hydrateWith(this.cache, customerId, ids, rows, now);
+  }
+
+  private async hydrateWith(
+    cache: PagerCache,
+    customerId: string,
+    ids: readonly string[],
+    rows: Rows,
+    now: number,
+  ): Promise<{ rows: DeviceRow[]; missing: string[] }> {
     const unique = [...new Set(ids)];
     const found = new Map<string, DeviceRow>();
     let cached: (string | null)[] = [];
     try {
-      cached = await this.cache.getMany(
+      cached = await cache.getMany(
         unique.map((id) => entityKey('device', customerId, id)),
       );
     } catch {
@@ -123,17 +160,24 @@ export class DevicePager {
   }): Promise<PageRead> {
     const { customerId, query, selection, rows } = input;
     const now = input.now ?? Date.now();
+    // After one Redis fault the request skips Redis so the open transaction never idles on a dead connection.
+    const cache = guarded(this.cache);
     // Show All Selected follows a selection that changes between requests.
-    const key = selection ? null : await this.key(input);
+    const key = selection ? null : await this.key(cache, input);
     if (key) {
-      const hit = await this.cached(customerId, key, query, rows, now);
+      const hit = await this.cached(cache, customerId, key, query, rows, now);
       if (hit) return hit;
     }
     const sql = devicePageSql(customerId, query, selection);
     const matching = Number((await rows(sql.count))[0]?.['matching'] ?? 0);
     const stale = (
       await rows(
-        staleIdsSql(customerId, query, selection, freshnessCutoff('device', now)),
+        staleIdsSql(
+          customerId,
+          query,
+          selection,
+          freshnessCutoff('device', now),
+        ),
       )
     ).map((row) => String(row['device_id']));
     if (!key || matching > QUERY_CACHE_MAX_IDS) {
@@ -148,10 +192,11 @@ export class DevicePager {
       await rows(deviceIdsSql(customerId, query, QUERY_CACHE_MAX_IDS))
     ).map((row) => String(row['device_id']));
     if (ids.length)
-      await this.cache
+      await cache
         .replaceList(key, ids, QUERY_CACHE_SECONDS)
         .catch(() => undefined);
-    const read = await this.hydrate(
+    const read = await this.hydrateWith(
+      cache,
       customerId,
       ids.slice(query.offset, query.offset + query.limit),
       rows,
@@ -160,17 +205,25 @@ export class DevicePager {
     return { rows: read.rows, matching: ids.length, stale };
   }
 
-  private async key(input: {
-    customerId: string;
-    connectionGeneration: number;
-    actor: readonly [string, number];
-    query: DeviceQuery;
-  }): Promise<string | null> {
+  private async key(
+    cache: PagerCache,
+    input: {
+      customerId: string;
+      connectionGeneration: number;
+      actor: readonly [string, number];
+      query: DeviceQuery;
+    },
+  ): Promise<string | null> {
     try {
       const generation =
-        (await this.cache.get(queryGenerationKey('device', input.customerId))) ??
+        (await cache.get(queryGenerationKey('device', input.customerId))) ??
         '0';
-      return queryCacheKey('device', input.customerId, generation, queryHash(input));
+      return queryCacheKey(
+        'device',
+        input.customerId,
+        generation,
+        queryHash(input),
+      );
     } catch {
       return null;
     }
@@ -178,6 +231,7 @@ export class DevicePager {
 
   /** A cached page, or null on a miss. A list that names an unknown device is dropped. */
   private async cached(
+    cache: PagerCache,
     customerId: string,
     key: string,
     query: DeviceQuery,
@@ -186,15 +240,21 @@ export class DevicePager {
   ): Promise<PageRead | null> {
     let slice: { length: number; ids: string[] };
     try {
-      slice = await this.cache.listSlice(key, query.offset, query.limit);
+      slice = await cache.listSlice(key, query.offset, query.limit);
     } catch {
       return null;
     }
     if (slice.length === 0) return null;
-    const read = await this.hydrate(customerId, slice.ids, rows, now);
+    const read = await this.hydrateWith(
+      cache,
+      customerId,
+      slice.ids,
+      rows,
+      now,
+    );
     if (read.missing.length) {
       // LibreGrid shows a loading stub for each row that a block leaves out.
-      await this.cache.remove(key).catch(() => undefined);
+      await cache.remove(key).catch(() => undefined);
       return null;
     }
     return {

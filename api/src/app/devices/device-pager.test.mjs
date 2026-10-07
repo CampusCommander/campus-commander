@@ -248,3 +248,32 @@ test('a Redis fault during hydration reads every device from Postgres', async ()
   ).hydrate(customerId, ['d1'], database().rows, now);
   assert.equal(read.rows[0].serialNumber, 'S-d1');
 });
+
+test('after a listSlice fault the request never calls replaceList or getMany', async () => {
+  const cache = memoryCache({ fail: new Set(['listSlice']) });
+  const read = await new DevicePager(cache).page(
+    input(database().rows, { limit: 2 }),
+  );
+  assert.deepEqual(read.rows.map((row) => row.deviceId), ['d3', 'd1']);
+  assert.equal(cache.calls.includes('replaceList'), false);
+  assert.equal(cache.calls.includes('getMany'), false);
+});
+
+test('a replaceList fault skips getMany and still returns Postgres rows', async () => {
+  const cache = memoryCache({ fail: new Set(['replaceList']) });
+  const read = await new DevicePager(cache).page(
+    input(database().rows, { limit: 2 }),
+  );
+  assert.deepEqual(read.rows.map((row) => row.deviceId), ['d3', 'd1']);
+  assert.equal(read.matching, 3);
+  assert.equal(cache.calls.includes('getMany'), false);
+});
+
+test('the fault guard is per request', async () => {
+  const cache = memoryCache({ fail: new Set(['listSlice']) });
+  const pager = new DevicePager(cache);
+  await pager.page(input(database().rows));
+  const before = cache.calls.filter((name) => name === 'get').length;
+  await pager.page(input(database().rows));
+  assert.equal(cache.calls.filter((name) => name === 'get').length, before + 1);
+});
