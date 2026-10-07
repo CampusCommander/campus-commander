@@ -12,6 +12,10 @@ import {
   deviceGroupingSchema,
   deviceDetailSchema,
   devicePageSchema,
+  DEVICE_BY_IDS_LIMIT,
+  deviceByIdsSchema,
+  deviceFreshnessSchema,
+  deviceRowsSchema,
 } from './devices.ts';
 import {
   actionSchema,
@@ -306,5 +310,33 @@ test('rows carry freshness and details carry removal', () => {
   assert.equal(
     devicePageSchema.parse({ rows: [], matching: 0, total: 0, observedAt: null, refreshJobId: null }).refreshJobId,
     null,
+  );
+});
+
+test('by-ids takes 1 to 500 device IDs and nothing else', () => {
+  assert.equal(DEVICE_BY_IDS_LIMIT, 500);
+  assert.equal(deviceByIdsSchema.safeParse({ deviceIds: [] }).success, false);
+  assert.equal(deviceByIdsSchema.safeParse({ deviceIds: ['d1'] }).success, true);
+  assert.equal(
+    deviceByIdsSchema.safeParse({
+      deviceIds: Array.from({ length: 501 }, (_, index) => `d${index}`),
+    }).success,
+    false,
+  );
+  assert.equal(
+    deviceByIdsSchema.safeParse({ deviceIds: ['d1'], extra: 1 }).success,
+    false,
+  );
+  assert.equal(deviceRowsSchema.safeParse([]).success, true);
+});
+
+test('freshness reports the stale count and whether a refresh runs', () => {
+  assert.deepEqual(
+    deviceFreshnessSchema.parse({ stale: 12, refreshing: true }),
+    { stale: 12, refreshing: true },
+  );
+  assert.equal(
+    deviceFreshnessSchema.safeParse({ stale: -1, refreshing: false }).success,
+    false,
   );
 });

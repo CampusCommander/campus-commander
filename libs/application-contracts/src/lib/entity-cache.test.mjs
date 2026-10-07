@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   ENTITY_FRESHNESS_HOURS,
+  ENTITY_EVENTS_PING_SECONDS,
+  QUERY_CACHE_MAX_IDS,
+  QUERY_CACHE_SECONDS,
   entityEventSchema,
   entityKey,
   entitySyncBatchRequestSchema,
@@ -11,6 +14,7 @@ import {
   isStale,
   queryGenerationKey,
   entityEventsChannel,
+  queryCacheKey,
 } from './entity-cache.ts';
 
 const now = Date.parse('2026-10-06T12:00:00.000Z');
@@ -94,4 +98,14 @@ test('the Redis record schema accepts cc.device_record output without removedAt 
   assert.deepEqual(deviceRecordSchema.parse(record), record);
   assert.equal(deviceRecordSchema.safeParse({ ...record, stale: false }).success, false);
   assert.equal(deviceRecordSchema.safeParse({ ...record, removedAt: null }).success, false);
+});
+
+test('query cache names carry the query generation and expire after five minutes', () => {
+  assert.equal(QUERY_CACHE_SECONDS, 300);
+  assert.equal(QUERY_CACHE_MAX_IDS, 100_000);
+  assert.equal(ENTITY_EVENTS_PING_SECONDS, 25);
+  assert.equal(
+    queryCacheKey('device', 'C0123456', '7', 'abc'),
+    'cc:query:device:C0123456:7:abc',
+  );
 });

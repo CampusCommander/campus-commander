@@ -89,6 +89,20 @@ export const deviceDetailSchema = z.strictObject({
 });
 export type DeviceDetail = z.infer<typeof deviceDetailSchema>;
 
+/** IDs per by-ids request. A grid holds at most 1,000 rows, so the client sends two requests at most. */
+export const DEVICE_BY_IDS_LIMIT = 500;
+export const deviceByIdsSchema = z.strictObject({
+  deviceIds: z.array(deviceId).min(1).max(DEVICE_BY_IDS_LIMIT),
+});
+export const deviceRowsSchema = z.array(deviceRowSchema).max(DEVICE_BY_IDS_LIMIT);
+
+/** Stale devices in one result set, and whether a refresh job runs for the customer (D11). */
+export const deviceFreshnessSchema = z.strictObject({
+  stale: z.number().int().min(0),
+  refreshing: z.boolean(),
+});
+export type DeviceFreshness = z.infer<typeof deviceFreshnessSchema>;
+
 export const deviceTextFieldSchema = z.enum([
   'serialNumber',
   'model',
