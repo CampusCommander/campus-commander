@@ -21,6 +21,7 @@ import { loadQualificationBundle } from '../deployment/release/qualification.mjs
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
 import { qualifyKubernetesWorkerCredentials } from './phase3-kubernetes-worker-fixture.mjs';
 import { qualifyKubernetesNetworkPolicies } from './phase3-kubernetes-network-fixture.mjs';
+import { qualifyKubernetesNativeBackup } from './phase3-kubernetes-backup-fixture.mjs';
 import {
   kubernetesFailureLocations,
   verifyKubernetesCredentialProjection,
@@ -1045,18 +1046,34 @@ test(
           project,
           images,
         });
+        stage = 'native operator cold backup';
+        const nativeBackup = await qualifyKubernetesNativeBackup({
+          root,
+          project,
+          kube,
+          kubeconfig,
+        });
+        await writeFile(
+          join(evidenceDirectory, 'kubernetes-native-backup.json'),
+          JSON.stringify(
+            { ...releaseIdentity, ...harness, ...nativeBackup.report },
+            null,
+            2,
+          ),
+        );
         phase3Evidence = {
           ...releaseIdentity,
           ...harness,
           status: 'passed',
           recordedAt: new Date().toISOString(),
           durationScope:
-            'Extracted installation, repeated resume, public workflows, API replacement, worker rescheduling, stop/resume, uninstall/resume, worker credentials, internal network policies, and owned cluster removal.',
+            'Extracted installation, repeated resume, public workflows, API replacement, worker rescheduling, stop/resume, uninstall/resume, worker credentials, internal network policies, native cold backup, and owned cluster removal.',
           application,
           installedWorkflows: installedWorkflows.report,
           recipientAccessChecks,
           workerCredentials,
           networkPolicyEvidence,
+          nativeBackup: nativeBackup.report,
           credentialKeyProjection: {
             initial: credentialKeyProjection,
             final: finalProjection,

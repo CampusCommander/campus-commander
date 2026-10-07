@@ -217,3 +217,17 @@ It must generate a recovery key, stop writers, create a cold backup, and verify 
 Preservation checks must compare two principals, preferences, nonempty artifact bytes and metadata, audit records, existing secrets, and original migration checksums.
 Target checks must verify exact images, appended migrations, updated installer state, repeated resume, and installed Phase 3 workflows.
 Separate baseline and target identities must remain in the report.
+
+## Native backup qualification increment
+
+The installation fixture now invokes the delivered operator CLI after application, replica, worker, network, and key checks.
+It verifies the bundle identity, generates a protected recovery key, and stops API, workers, and Kestra.
+Shutdown respects the rendered pod grace periods.
+The CLI uses native PostgreSQL tools through temporary loopback forwards with TLS verification.
+Each database connection uses an independent tunnel process to preserve concurrent lock sessions.
+It creates and verifies an encrypted cold backup.
+
+The fixture rejects mismatched release inventories, missing database dumps, and empty identity, audit, or Google credential state.
+The report retains command durations, native execution identity, backup manifest hash, table counts, and storage file counts.
+The fixture removes both database forwards after success or failure.
+This increment still requires hosted execution. It does not establish upgrade, isolated restore, or nonempty artifact preservation.

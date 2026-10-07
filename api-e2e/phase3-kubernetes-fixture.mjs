@@ -128,6 +128,7 @@ export function kubernetesFailureLocations(error) {
     'phase3-kubernetes-fixture.mjs',
     'phase3-kubernetes-worker-fixture.mjs',
     'phase3-kubernetes-network-fixture.mjs',
+    'phase3-kubernetes-backup-fixture.mjs',
   ];
   const locations = [];
   for (const line of String(error?.stack ?? '')

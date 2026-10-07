@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { qualifyKubernetesWorkerCredentials } from './phase3-kubernetes-worker-fixture.mjs';
 import {
+  assertKubernetesBackupContents,
+  qualifyKubernetesNativeBackup,
+} from './phase3-kubernetes-backup-fixture.mjs';
+import {
   configureKubernetesProvider,
   seedKubernetesGoogleCredentialKey,
 } from '../deployment/kubernetes/qualification-provider.mjs';
@@ -45,6 +49,85 @@ const pod = (service, index = 0) => ({
       { name: service, ready: true, imageID: `sha256:${'a'.repeat(64)}` },
     ],
   },
+});
+
+test('native backup rejects another release, missing dumps, and empty protected state', () => {
+  const release = { phase: 3, sourceRevision: 'a'.repeat(40) };
+  const manifest = {
+    schemaVersion: 1,
+    profile: 'kubernetes',
+    release,
+    files: [
+      'configuration.json',
+      'release.json',
+      'application.dump',
+      'kestra.dump',
+    ].map((path) => ({ path, sizeBytes: 128 })),
+    applicationTables: [
+      'application_principals',
+      'security_events',
+      'google_credentials',
+      'google_access_tokens',
+    ].map((name) => ({ schema: 'cc', name, count: '1' })),
+  };
+  const verified = { status: 'verified', files: 4 };
+  assertKubernetesBackupContents(manifest, release, verified);
+  const rejects = (change) => {
+    const candidate = structuredClone(manifest);
+    change(candidate);
+    assert.throws(() =>
+      assertKubernetesBackupContents(candidate, release, verified),
+    );
+  };
+  rejects((candidate) => {
+    candidate.release.sourceRevision = 'b'.repeat(40);
+  });
+  rejects((candidate) => {
+    candidate.files.pop();
+  });
+  rejects((candidate) => {
+    candidate.files[2].sizeBytes = 0;
+  });
+  rejects((candidate) => {
+    candidate.files[3].path = 'application.dump';
+  });
+  for (const index of [0, 1, 2, 3])
+    rejects((candidate) => {
+      candidate.applicationTables[index].count = '0';
+    });
+  assert.throws(() =>
+    assertKubernetesBackupContents(manifest, release, {
+      status: 'verified',
+      files: 3,
+    }),
+  );
+});
+
+test('native backup rejects unrelated ownership before cluster commands', async (t) => {
+  const project = `cc-capacity-kube-${randomBytes(6).toString('hex')}`;
+  const root = await mkdtemp(`/tmp/${project}-`);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let calls = 0;
+  const kube = async () => {
+    calls++;
+  };
+  await assert.rejects(() =>
+    qualifyKubernetesNativeBackup({
+      root,
+      project: 'unrelated',
+      kube,
+      kubeconfig: join(root, 'kubeconfig'),
+    }),
+  );
+  await assert.rejects(() =>
+    qualifyKubernetesNativeBackup({
+      root,
+      project,
+      kube,
+      kubeconfig: '/unrelated/kubeconfig',
+    }),
+  );
+  assert.equal(calls, 0);
 });
 
 test('credential projection rejects unauthorized consumers, writable mounts, and changed bytes', async (t) => {
