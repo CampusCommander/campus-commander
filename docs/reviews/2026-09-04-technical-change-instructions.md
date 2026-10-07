@@ -23,28 +23,28 @@ Do not convert this review into accepted architecture automatically. Record acce
 
 Paths below identify current repository documents. Section titles identify replacement boundaries. Archived source documents remain historical evidence.
 
-| ID | Cut or revise | Location | Insert instead | Acceptance reference |
-|---|---|---|---|---|
-| C01 | Domain equals tenant. One deployment per domain. | `docs/portfolio/01-product-brief.md`, Scale and tenancy. `02-domain-model.md`, identifiers. | One Workspace customer ID, all associated domains, one district configuration. | Sections 4 and 14 |
-| C02 | Identity-only bootstrap plus DWD without signing credentials or refresh tokens | `03-architecture.md`, Google connection model. `05`, decisions 17.5, 17.12, 17.36. `06`, P3.1–P3.3. | Separate app login from offline API authorization. Add tested enterprise credentials. | Section 4 |
-| C03 | Add operation durability within retained Kestra flows | `03`, Services and Jobs pipeline. `06`, P2.1–P2.3. | Kestra steps and independent workers with durable per-operation results and all-settled step aggregation. | Sections 3 and 7 |
-| C04 | Late audit consolidation and filesystem-only artifact references | `03`, Core principle 4 and pipeline phases. `02`, Job and Chunk. | Preserve job files through a job-storage interface. Record intent before dispatch and results during execution. | Sections 7 and 12 |
-| C05 | Redis state without explicit persistence and recovery rules | `03`, stack and signaling. `05`, 17.8 and 17.13. `06`, P5.2. | Retain Redis. Freeze approved manifests durably and recover missed events from PostgreSQL. | Sections 6 and 9 |
-| C06 | Uncoordinated admission during worker backoff | `03`, Quota pacing. `05`, 17.24. `06`, P4.1 and P2.2. | Greedy workers plus owner-controlled Redis holds by job type. Pending jobs sort smallest first. | Section 8 |
-| C07 | Global synchronization lock and one full-result update transaction | `03`, Scheduling and Cache Sync consistency. `05`, 17.14 and 17.26. `06`, P4.1. | Independently staged generations, short publication transaction, write reconciliation. | Section 9 |
-| C08 | One timestamp describes all group and telemetry freshness | `02`, Entity type. `03`, thresholds. `04`, status bar. | Collection coverage and row observation metadata with distinct capability schedules. | Section 9 |
-| C09 | Verify the retained LibreGrid integration | `03`, Grid. `04`, sections 8–10 and 15. `06`, P6.1–P6.2, P5.2. | Keep LibreGrid and validate selection, drafts, accessibility, and large-data behavior. | Section 10 |
-| C10 | Global search deferred while AI is required | `01`, Roadmap and scope. `04`, header and section 13. `06`, P6.3. `07`, B7 and C3. | Cross-entity search, saved filters, defined insight views. Optional local AI later. | Sections 5 and 10 |
-| C11 | Hash without stored baseline and browser-side large export | `02`, Import and export. `04`, component table. `06`, P8.1–P8.3. | Durable export baseline, streaming import/export, field-level merge rules. | Section 11 |
-| C12 | Two roles with all-OU execution authority | `01`, Audience. `05`, 17.7 and 17.35. `06`, P9.1. | Scoped permissions with role presets and execution-time checks. | Section 6 |
-| C13 | Compose as the complete enterprise topology | `01`, Deployment. `03`, Install experience. `06`, P9.2. | One image release, single-host Compose profile, enterprise deployment contract. | Section 13 |
-| C14 | Permanent copies of every working file and 30-day downloads without distinct retention classes | `03`, pipeline and retention. `04`, retention copy. `06`, P2.3, P8.1, P9.3. | Permanent audit intent preserved through archival policy. Separate temporary data and export baselines. | Section 12 |
-| C15 | Trial requires live credentials and production requires complete setup again | `01`, Deployment. `03`, Install experience. `07`, E5. | Local synthetic evaluation and explicit trial promotion. | Section 13 |
-| C16 | Security, restore, and test strategy arrive after the main feature foundation | `06`, dependency graph and suggested order. `05`, open questions 44–63. | Risk-first vertical slices with release evidence. | Section 15 |
-| C17 | Every migration must run forward and backward | `06`, P1.2 acceptance. | Expand/contract schema changes, compatible app rollback, and tested restore for irreversible migrations. | Section 13 |
-| C18 | Settled decisions cannot be revisited. Archives retain competing authority. | `docs/portfolio/README.md`. `03` source declaration. `05`, 17.2–17.3 and usage rules. | One current architecture, superseded decision status, evidence and reconsideration triggers. | Section 15 |
-| C19 | Mouse-primary compact controls and prohibition on grid-card scrolling | `04`, sections 6–7 and 11–12. `05`, G2. | Keyboard-complete grid, accessible target spacing, grid viewport scrolling, optional comfortable density. | Section 10 |
-| C20 | Classroom ownership warning despite Classroom exclusion | `02`, Users and Classroom. `04`, Safety patterns. `06`, P7.2. | Remove the warning until a separately authorized Classroom capability establishes coverage. | Sections 4 and 10 |
+| ID  | Cut or revise                                                                                  | Location                                                                                            | Insert instead                                                                                                  | Acceptance reference |
+| --- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------- |
+| C01 | Domain equals tenant. One deployment per domain.                                               | `docs/portfolio/01-product-brief.md`, Scale and tenancy. `02-domain-model.md`, identifiers.         | One Workspace customer ID, all associated domains, one district configuration.                                  | Sections 4 and 14    |
+| C02 | Identity-only bootstrap plus DWD without signing credentials or refresh tokens                 | `03-architecture.md`, Google connection model. `05`, decisions 17.5, 17.12, 17.36. `06`, P3.1–P3.3. | Separate app login from offline API authorization. Add tested enterprise credentials.                           | Section 4            |
+| C03 | Add operation durability within retained Kestra flows                                          | `03`, Services and Jobs pipeline. `06`, P2.1–P2.3.                                                  | Kestra steps and independent workers with durable per-operation results and all-settled step aggregation.       | Sections 3 and 7     |
+| C04 | Late audit consolidation and filesystem-only artifact references                               | `03`, Core principle 4 and pipeline phases. `02`, Job and Chunk.                                    | Preserve job files through a job-storage interface. Record intent before dispatch and results during execution. | Sections 7 and 12    |
+| C05 | Redis state without explicit persistence and recovery rules                                    | `03`, stack and signaling. `05`, 17.8 and 17.13. `06`, P5.2.                                        | Retain Redis. Freeze approved manifests durably and recover missed events from PostgreSQL.                      | Sections 6 and 9     |
+| C06 | Uncoordinated admission during worker backoff                                                  | `03`, Quota pacing. `05`, 17.24. `06`, P4.1 and P2.2.                                               | Greedy workers plus owner-controlled Redis holds by job type. Pending jobs sort smallest first.                 | Section 8            |
+| C07 | Global synchronization lock and one full-result update transaction                             | `03`, Scheduling and Cache Sync consistency. `05`, 17.14 and 17.26. `06`, P4.1.                     | Independently staged generations, short publication transaction, write reconciliation.                          | Section 9            |
+| C08 | One timestamp describes all group and telemetry freshness                                      | `02`, Entity type. `03`, thresholds. `04`, status bar.                                              | Collection coverage and row observation metadata with distinct capability schedules.                            | Section 9            |
+| C09 | Verify the retained LibreGrid integration                                                      | `03`, Grid. `04`, sections 8–10 and 15. `06`, P6.1–P6.2, P5.2.                                      | Keep LibreGrid and validate selection, drafts, accessibility, and large-data behavior.                          | Section 10           |
+| C10 | Global search deferred while AI is required                                                    | `01`, Roadmap and scope. `04`, header and section 13. `06`, P6.3. `07`, B7 and C3.                  | Cross-entity search, saved filters, defined insight views. Optional local AI later.                             | Sections 5 and 10    |
+| C11 | Hash without stored baseline and browser-side large export                                     | `02`, Import and export. `04`, component table. `06`, P8.1–P8.3.                                    | Durable export baseline, streaming import/export, field-level merge rules.                                      | Section 11           |
+| C12 | Two roles with all-OU execution authority                                                      | `01`, Audience. `05`, 17.7 and 17.35. `06`, P9.1.                                                   | Scoped permissions with role presets and execution-time checks.                                                 | Section 6            |
+| C13 | Compose as the complete enterprise topology                                                    | `01`, Deployment. `03`, Install experience. `06`, P9.2.                                             | One image release, single-host Compose profile, enterprise deployment contract.                                 | Section 13           |
+| C14 | Permanent copies of every working file and 30-day downloads without distinct retention classes | `03`, pipeline and retention. `04`, retention copy. `06`, P2.3, P8.1, P9.3.                         | Permanent audit intent preserved through archival policy. Separate temporary data and export baselines.         | Section 12           |
+| C15 | Trial requires live credentials and production requires complete setup again                   | `01`, Deployment. `03`, Install experience. `07`, E5.                                               | Local synthetic evaluation and explicit trial promotion.                                                        | Section 13           |
+| C16 | Security, restore, and test strategy arrive after the main feature foundation                  | `06`, dependency graph and suggested order. `05`, open questions 44–63.                             | Risk-first vertical slices with release evidence.                                                               | Section 15           |
+| C17 | Every migration must run forward and backward                                                  | `06`, P1.2 acceptance.                                                                              | Expand/contract schema changes, compatible app rollback, and tested restore for irreversible migrations.        | Section 13           |
+| C18 | Settled decisions cannot be revisited. Archives retain competing authority.                    | `docs/portfolio/README.md`. `03` source declaration. `05`, 17.2–17.3 and usage rules.               | One current architecture, superseded decision status, evidence and reconsideration triggers.                    | Section 15           |
+| C19 | Mouse-primary compact controls and prohibition on grid-card scrolling                          | `04`, sections 6–7 and 11–12. `05`, G2.                                                             | Keyboard-complete grid, accessible target spacing, grid viewport scrolling, optional comfortable density.       | Section 10           |
+| C20 | Classroom ownership warning despite Classroom exclusion                                        | `02`, Users and Classroom. `04`, Safety patterns. `06`, P7.2.                                       | Remove the warning until a separately authorized Classroom capability establishes coverage.                     | Sections 4 and 10    |
 
 Also revise the prototype map after accepted interaction changes. Replace its references to archived design authority with the current portfolio. Preserve visual artifacts as references. A prototype click does not prove an API action succeeds.
 
@@ -80,18 +80,18 @@ The small profile includes edge, API, worker, PostgreSQL, Redis, and Kestra. Ser
 
 ### 3.2 Dependency disposition
 
-| Component | Disposition | Specific instruction |
-|---|---|---|
-| Angular and Material | Keep | Pin compatible supported versions. |
-| NgRx Signals and Tailwind | Existing stack | Changes remain separate proposals, outside the accepted orchestration and admission decision. |
-| NestJS / Express | Keep | Keep worker execution outside the API and allocate resources explicitly. |
-| PostgreSQL | Keep | Store durable entities, approved manifests, operation evidence, and outbox events. |
-| Kestra | Keep | Orchestrate steps, parallel batches, retry scheduling, and settlement. |
-| Redis | Keep | Support caching, sessions/selections, internal broadcasts, and admission holds. |
-| AG Grid Community and LibreGrid | Keep | The owner authors LibreGrid and requires its MIT distribution model. |
-| pg-boss / BullMQ / Graphile Worker | Research alternatives | Do not add these as replacements for Kestra under the current decision. |
-| Local model runtime | Proposed optional feature | Keep outside the default installation if the separate AI recommendation is accepted. |
-| Nx / npm | Keep | Use one lockfile and enforce dependency boundaries. |
+| Component                          | Disposition               | Specific instruction                                                                          |
+| ---------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------- |
+| Angular and Material               | Keep                      | Pin compatible supported versions.                                                            |
+| NgRx Signals and Tailwind          | Existing stack            | Changes remain separate proposals, outside the accepted orchestration and admission decision. |
+| NestJS / Express                   | Keep                      | Keep worker execution outside the API and allocate resources explicitly.                      |
+| PostgreSQL                         | Keep                      | Store durable entities, approved manifests, operation evidence, and outbox events.            |
+| Kestra                             | Keep                      | Orchestrate steps, parallel batches, retry scheduling, and settlement.                        |
+| Redis                              | Keep                      | Support caching, sessions/selections, internal broadcasts, and admission holds.               |
+| AG Grid Community and LibreGrid    | Keep                      | The owner authors LibreGrid and requires its MIT distribution model.                          |
+| pg-boss / BullMQ / Graphile Worker | Research alternatives     | Do not add these as replacements for Kestra under the current decision.                       |
+| Local model runtime                | Proposed optional feature | Keep outside the default installation if the separate AI recommendation is accepted.          |
+| Nx / npm                           | Keep                      | Use one lockfile and enforce dependency boundaries.                                           |
 
 The previous recommendation to replace Kestra with PostgreSQL and pg-boss is withdrawn. The comparison understated replacement orchestration work. Redis removal and commercial-grid evaluation are also withdrawn.
 
@@ -150,19 +150,19 @@ Remove `sslip.io` as the production default. Accept a district certificate or su
 
 Create one reviewed capability registry with these fields:
 
-| Field | Purpose |
-|---|---|
-| Capability and action | Product name and precise Google method |
-| OAuth scopes | Minimum scopes for read and write profiles |
-| Google privileges | Required admin permissions and supported credential profiles |
-| License / device requirements | Edition, enrollment, device state, or upgrade prerequisites |
-| Writable fields | Field allowlist and validation rules |
-| API cost | Read, write, verification, native batch, and daily-budget cost |
-| Concurrency semantics | Entity ordering and aggregate limits |
-| Retry class | Read, desired-state update, create, delete, command, or nonrepeatable action |
-| Conditional write support | Verified method-level preconditions, or explicit absence |
-| Result semantics | Accepted, applied, completed, or awaiting device result |
-| Test evidence | Source URL, checked date, sandbox result, and supported version |
+| Field                         | Purpose                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| Capability and action         | Product name and precise Google method                                       |
+| OAuth scopes                  | Minimum scopes for read and write profiles                                   |
+| Google privileges             | Required admin permissions and supported credential profiles                 |
+| License / device requirements | Edition, enrollment, device state, or upgrade prerequisites                  |
+| Writable fields               | Field allowlist and validation rules                                         |
+| API cost                      | Read, write, verification, native batch, and daily-budget cost               |
+| Concurrency semantics         | Entity ordering and aggregate limits                                         |
+| Retry class                   | Read, desired-state update, create, delete, command, or nonrepeatable action |
+| Conditional write support     | Verified method-level preconditions, or explicit absence                     |
+| Result semantics              | Accepted, applied, completed, or awaiting device result                      |
+| Test evidence                 | Source URL, checked date, sandbox result, and supported version              |
 
 Generate wizard scope text and action availability from this registry. Do not retain a fixed eight-scope counter. Telemetry and reports remain separate capabilities. Add Drive and Sheets authorization only when that optional feature exists. Remove the Classroom-ownership warning until an authorized Classroom read establishes coverage.
 
@@ -180,18 +180,18 @@ Store memberships as edges between a group and a member identity. Represent exte
 
 Use separate PostgreSQL schemas or clearly separated table groups for `directory`, `operations`, and `security`. Keep Kestra metadata under its own supported migration process. Keep Kestra internals outside domain queries.
 
-| Table group | Required content |
-|---|---|
-| Customer and domains | Stable customer ID, domains, connection configuration, capability status |
-| Users / devices / groups / OUs | Indexed current attributes, Google identity, observation metadata, deletion state |
-| Memberships | Group/member edge, role, type, direct membership provenance, collection freshness |
-| Sync runs and staging | Generation, pages, completeness, lease epoch, failures, publication state |
-| Write overlays | Confirmed local intent, external acceptance, verification state, conflict information |
-| Selections and previews | Creator, filter version, frozen targets, proposed changes, approval and expiry |
-| Jobs / operations / attempts | Durable state, scheduling, request identity, outcomes, reconciliation |
-| Audit events | Actor, authority, operation, before/after changes, timestamps, evidence links |
-| Exports and baselines | Ownership, stable row identities, schema version, baseline values, expiration |
-| Event outbox and stream | Committed change notifications, replay sequence, retention watermark |
+| Table group                    | Required content                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| Customer and domains           | Stable customer ID, domains, connection configuration, capability status              |
+| Users / devices / groups / OUs | Indexed current attributes, Google identity, observation metadata, deletion state     |
+| Memberships                    | Group/member edge, role, type, direct membership provenance, collection freshness     |
+| Sync runs and staging          | Generation, pages, completeness, lease epoch, failures, publication state             |
+| Write overlays                 | Confirmed local intent, external acceptance, verification state, conflict information |
+| Selections and previews        | Creator, filter version, frozen targets, proposed changes, approval and expiry        |
+| Jobs / operations / attempts   | Durable state, scheduling, request identity, outcomes, reconciliation                 |
+| Audit events                   | Actor, authority, operation, before/after changes, timestamps, evidence links         |
+| Exports and baselines          | Ownership, stable row identities, schema version, baseline values, expiration         |
+| Event outbox and stream        | Committed change notifications, replay sequence, retention watermark                  |
 
 Store commonly searched attributes as typed columns. Use JSONB for bounded provider metadata and custom fields. Promote high-use custom fields into reviewed indexes. Do not index every arbitrary JSON property or store every queryable field only in opaque JSON.
 
@@ -312,16 +312,16 @@ Leases and fencing tokens protect application state from stale workers. Google d
 
 Serialize operations that affect the same entity. Block dependent operations while an earlier outcome remains unknown. For membership changes, lock the group/member edge. For OU structural changes, lock the affected structural scope. Acquire multiple locks in a deterministic order.
 
-| Operation class | Recovery rule |
-|---|---|
-| Read | Retry with bounded randomized backoff. |
-| Set a field to an approved absolute value | Fetch current state. Verify preconditions before repeating. Preserve external changes on other fields. |
-| Append or prepend text | Compute the approved final value once. Never append again from the current value on retry. |
-| Create user or group | Reconcile identity and creation evidence. An existing name alone does not prove this job created it. |
-| Membership add/remove | Read current edge state and classify the desired result. Preserve role-change conflicts. |
-| Delete | Verify absence and audit evidence. Do not infer attribution merely from absence. |
-| Sign-out or password-related action | Classify each action separately. Do not assume repetition has no operational effect. |
-| Device command | Persist the command ID and poll its state. An unknown issuance without a recoverable ID requires operator review. |
+| Operation class                           | Recovery rule                                                                                                     |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Read                                      | Retry with bounded randomized backoff.                                                                            |
+| Set a field to an approved absolute value | Fetch current state. Verify preconditions before repeating. Preserve external changes on other fields.            |
+| Append or prepend text                    | Compute the approved final value once. Never append again from the current value on retry.                        |
+| Create user or group                      | Reconcile identity and creation evidence. An existing name alone does not prove this job created it.              |
+| Membership add/remove                     | Read current edge state and classify the desired result. Preserve role-change conflicts.                          |
+| Delete                                    | Verify absence and audit evidence. Do not infer attribution merely from absence.                                  |
+| Sign-out or password-related action       | Classify each action separately. Do not assume repetition has no operational effect.                              |
+| Device command                            | Persist the command ID and poll its state. An unknown issuance without a recoverable ID requires operator review. |
 
 HTTP batching does not provide ordering or a transaction. Parse each enclosed response. Never place dependent operations in an unordered batch. [Google batching semantics](https://developers.google.com/workspace/admin/directory/v1/guides/batch)
 
@@ -353,10 +353,10 @@ Shared filesystem storage and S3-compatible object storage are the two supported
 Select and qualify at least one shared backend before enabling workers on multiple hosts.
 The detailed interface and publication protocol below remain implementation proposals.
 
-| Backend | Artifact location and worker access | Required qualification |
-|---|---|---|
-| Local filesystem | Persistent volume mounted into each component that reads or writes job files on one host | Permissions, durable writes, restart recovery, and backup |
-| Shared filesystem | District file storage mounted into every participating worker and artifact consumer | Cross-host visibility, rename behavior, durability, mount failure, and access control |
+| Backend                      | Artifact location and worker access                                                                                    | Required qualification                                                                           |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Local filesystem             | Persistent volume mounted into each component that reads or writes job files on one host                               | Permissions, durable writes, restart recovery, and backup                                        |
+| Shared filesystem            | District file storage mounted into every participating worker and artifact consumer                                    | Cross-host visibility, rename behavior, durability, mount failure, and access control            |
 | S3-compatible object storage | District-operated bucket accessed through a configured endpoint. Workers stream or download inputs and upload results. | Upload completion, checksums, read visibility, credentials, interrupted transfers, and retention |
 
 S3 compatibility does not require Amazon hosting. Keep object storage optional for the default installation.
@@ -369,13 +369,13 @@ Resolve each ID through PostgreSQL metadata containing its backend, locator, che
 Keep credentials and temporary download URLs outside durable job payloads.
 Keep backend-specific paths and object keys inside the adapter.
 
-| Proposed operation | Contract |
-|---|---|
-| `stage` | Stream bytes into a unique artifact for one execution attempt. Return its ID, size, and checksum. |
-| `inspect` | Verify artifact existence, identity, transfer completion, and integrity evidence. |
-| `publish` | Mark a verified artifact ready through the application metadata transaction. Repeated identical publication returns the existing result. |
-| `openRead` | Authorize access and stream a published artifact. Reject unpublished or missing artifacts. |
-| `remove` | Delete an artifact only through retention or abandoned-upload cleanup after checking references and active work. |
+| Proposed operation | Contract                                                                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `stage`            | Stream bytes into a unique artifact for one execution attempt. Return its ID, size, and checksum.                                        |
+| `inspect`          | Verify artifact existence, identity, transfer completion, and integrity evidence.                                                        |
+| `publish`          | Mark a verified artifact ready through the application metadata transaction. Repeated identical publication returns the existing result. |
+| `openRead`         | Authorize access and stream a published artifact. Reject unpublished or missing artifacts.                                               |
+| `remove`           | Delete an artifact only through retention or abandoned-upload cleanup after checking references and active work.                         |
 
 Keep publication in the application service. Storage adapters supply transfer and verification operations.
 Do not expose append, filesystem locks, atomic rename, or directory scans as requirements of the common interface.
@@ -446,14 +446,14 @@ Estimate job duration from observed throughput before confirmation. Include live
 
 Examples below use documented nominal rates, no competing traffic, and no retries. They illustrate sustained budget consumption. They are not strict elapsed-time bounds or predictions of Google burst enforcement.
 
-| Work | Simplified bound |
-|---|---|
-| 100,000 single-request writes at 2,400/minute | 41.7 minutes |
-| Same writes plus one live read per target | 83.3 minutes before result verification |
-| 1,000,000 single-request writes | 416.7 minutes, or 6.94 hours |
-| 100,000 user creations at 10/second | 2.78 hours under that method limit |
-| 10,000 Group Settings reads every hour | 240,000 daily requests, above the documented 100,000 default |
-| 50,000 groups with 400 direct members each | 100,000 membership pages at 200/page, excluding group inventory and settings |
+| Work                                          | Simplified bound                                                             |
+| --------------------------------------------- | ---------------------------------------------------------------------------- |
+| 100,000 single-request writes at 2,400/minute | 41.7 minutes                                                                 |
+| Same writes plus one live read per target     | 83.3 minutes before result verification                                      |
+| 1,000,000 single-request writes               | 416.7 minutes, or 6.94 hours                                                 |
+| 100,000 user creations at 10/second           | 2.78 hours under that method limit                                           |
+| 10,000 Group Settings reads every hour        | 240,000 daily requests, above the documented 100,000 default                 |
+| 50,000 groups with 400 direct members each    | 100,000 membership pages at 200/page, excluding group inventory and settings |
 
 Calculate membership requests as the sum of page counts per group. Empty groups still require a request to establish emptiness. Skewed groups and nested membership change the cost. A count of groups alone does not predict sweep duration.
 
@@ -564,14 +564,14 @@ Apply CSV formula-injection protection without corrupting the import contract. P
 
 Let `B` denote baseline, `E` the edited value, and `C` the current live value. Compare canonical field values, not display strings.
 
-| Condition | Result |
-|---|---|
-| `E = B` | No user edit. Keep current value. |
-| `E != B` and `C = B` | Proposed update to `E`. |
-| `E != B` and `C = E` | Already at the requested value. No write. |
-| `E != B`, `C != B`, and `C != E` | Conflict requiring an explicit decision. |
-| Baseline expired or missing | Reject round-trip comparison. Offer a separate new-import workflow. |
-| Unknown stable ID | Report invalid identity. Create only through an explicit create mode. |
+| Condition                        | Result                                                                |
+| -------------------------------- | --------------------------------------------------------------------- |
+| `E = B`                          | No user edit. Keep current value.                                     |
+| `E != B` and `C = B`             | Proposed update to `E`.                                               |
+| `E != B` and `C = E`             | Already at the requested value. No write.                             |
+| `E != B`, `C != B`, and `C != E` | Conflict requiring an explicit decision.                              |
+| Baseline expired or missing      | Reject round-trip comparison. Offer a separate new-import workflow.   |
+| Unknown stable ID                | Report invalid identity. Create only through an explicit create mode. |
 
 Define null, empty, absent, array ordering, date, and whitespace semantics for each field. Reject duplicate identities with conflicting edits. Treat immutable identifiers as metadata, not editable fields.
 
@@ -607,15 +607,15 @@ Document the trust limit: a host administrator controlling data, keys, and backu
 
 These are product defaults for district review, not legal retention advice.
 
-| Data | Proposed default | Required behavior |
-|---|---|---|
-| Mutation and security audit | Permanent logical retention, with archive tiers | Preserve searchable references and integrity evidence. Require an explicit policy change for deletion. |
-| Downloadable results | 30 days | Display expiration and permit authorized regeneration when source evidence remains. |
-| Export baselines and input files | 30 days or the district's shorter approved policy | Expiration ends round-trip comparison. Remove sensitive input on schedule. |
-| Sync staging | Delete abandoned generations after recovery review and bounded grace | Never delete an active or referenced generation. |
-| Queue records | Short operational retention | Preserve history in domain and audit tables before queue cleanup. |
-| Operational logs | 14 days with size caps | Redact secrets and sensitive payloads. Rotate without filling the host. |
-| Battery samples | 30 daily samples plus 24 monthly aggregates initially | Record missing coverage. Validate usefulness and capacity before expansion. |
+| Data                             | Proposed default                                                     | Required behavior                                                                                      |
+| -------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Mutation and security audit      | Permanent logical retention, with archive tiers                      | Preserve searchable references and integrity evidence. Require an explicit policy change for deletion. |
+| Downloadable results             | 30 days                                                              | Display expiration and permit authorized regeneration when source evidence remains.                    |
+| Export baselines and input files | 30 days or the district's shorter approved policy                    | Expiration ends round-trip comparison. Remove sensitive input on schedule.                             |
+| Sync staging                     | Delete abandoned generations after recovery review and bounded grace | Never delete an active or referenced generation.                                                       |
+| Queue records                    | Short operational retention                                          | Preserve history in domain and audit tables before queue cleanup.                                      |
+| Operational logs                 | 14 days with size caps                                               | Redact secrets and sensitive payloads. Rotate without filling the host.                                |
+| Battery samples                  | 30 daily samples plus 24 monthly aggregates initially                | Record missing coverage. Validate usefulness and capacity before expansion.                            |
 
 Keep retention settings versioned and audited. Record legal holds as district-supplied requirements. Expire data in replicas and backups according to the documented backup policy. Do not promise immediate erasure from historical backups.
 
@@ -625,16 +625,16 @@ Expose structured logs and metrics from every process. Correlate request, previe
 
 Required metrics include search latency, pool wait, slow queries, queue age by job type, hold duration, retry reasons, unknown outcomes, and command age. Also record collection lag, overlay age, event backlog, archive delay, disk growth, backup age, and restore verification date.
 
-| Failure | Required product response |
-|---|---|
-| Google outage or exhausted quota | Serve local reads with freshness status. Queue eligible work and show the next attempt. |
-| Expired or revoked credentials | Pause the affected capability and provide the exact reconnect action. |
-| PostgreSQL unavailable | Stop new mutations. Do not report accepted work without a durable receipt. |
-| Artifact storage unavailable | Block artifact-dependent work. Keep unrelated reads available. |
-| Low disk | Warn at a proposed 20% free. Stop new large imports and sweeps at 10% or insufficient reserved capacity. |
-| Audit persistence failure | Stop new external dispatch. Reconcile requests already in flight. |
-| Lost SSE stream | Reconnect and replay or resynchronize. Preserve drafts and selection. |
-| Stale data beyond policy | Display age and coverage. Block sensitive actions that require unavailable live validation. |
+| Failure                          | Required product response                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Google outage or exhausted quota | Serve local reads with freshness status. Queue eligible work and show the next attempt.                  |
+| Expired or revoked credentials   | Pause the affected capability and provide the exact reconnect action.                                    |
+| PostgreSQL unavailable           | Stop new mutations. Do not report accepted work without a durable receipt.                               |
+| Artifact storage unavailable     | Block artifact-dependent work. Keep unrelated reads available.                                           |
+| Low disk                         | Warn at a proposed 20% free. Stop new large imports and sweeps at 10% or insufficient reserved capacity. |
+| Audit persistence failure        | Stop new external dispatch. Reconcile requests already in flight.                                        |
+| Lost SSE stream                  | Reconnect and replay or resynchronize. Preserve drafts and selection.                                    |
+| Stale data beyond policy         | Display age and coverage. Block sensitive actions that require unavailable live validation.              |
 
 Use workload estimates as well as percentage disk thresholds. A large staged import requires reserved capacity before it starts. Keep emergency logging bounded. No design can guarantee new durable writes after all available storage fails.
 
@@ -675,15 +675,15 @@ Keep trial promotion explicit. Remove sample data, verify customer identity, est
 
 Publish the same application images with these supported external interfaces:
 
-| Interface | Contract |
-|---|---|
-| PostgreSQL | Tested major, required extensions, TLS, roles, pool budget, migrations, failover behavior |
+| Interface        | Contract                                                                                                              |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL       | Tested major, required extensions, TLS, roles, pool budget, migrations, failover behavior                             |
 | Artifact storage | Job-storage interface from section 7.6. Qualified shared filesystem or S3-compatible backend for distributed workers. |
-| Identity | OIDC metadata, claims mapping, invitations, revocation, and recovery |
-| Secrets | File or district provider interface, key versioning, rotation, and restore |
-| Ingress | HTTPS, SSE timeout and buffering requirements, request-size limits |
-| Observability | Metrics endpoint and optional OTLP export with redaction |
-| Scheduling | Kestra workers, execution leases, type-specific Redis holds, and size-ordered job admission |
+| Identity         | OIDC metadata, claims mapping, invitations, revocation, and recovery                                                  |
+| Secrets          | File or district provider interface, key versioning, rotation, and restore                                            |
+| Ingress          | HTTPS, SSE timeout and buffering requirements, request-size limits                                                    |
+| Observability    | Metrics endpoint and optional OTLP export with redaction                                                              |
+| Scheduling       | Kestra workers, execution leases, type-specific Redis holds, and size-ordered job admission                           |
 
 Support stateless API replicas and restartable workers. Keep mutable job data out of container filesystems. Elect singleton scheduling and publication responsibilities through tested database coordination. Avoid relying on a host clock for lease ordering.
 
@@ -697,11 +697,11 @@ Use pgBackRest or the district's operated PostgreSQL backup system. Back up data
 
 Proposed objectives:
 
-| Profile | Recovery point target | Recovery time target | Condition |
-|---|---|---|---|
-| Small host | At most 24 hours of local data | Four hours | Daily verified off-host backup and available replacement host |
-| District standard | At most 15 minutes | Two hours | Continuous WAL archive and rehearsed artifact restore |
-| Enterprise | At most five minutes | One hour | District-operated HA, tested failover, and recovery staffing |
+| Profile           | Recovery point target          | Recovery time target | Condition                                                     |
+| ----------------- | ------------------------------ | -------------------- | ------------------------------------------------------------- |
+| Small host        | At most 24 hours of local data | Four hours           | Daily verified off-host backup and available replacement host |
+| District standard | At most 15 minutes             | Two hours            | Continuous WAL archive and rehearsed artifact restore         |
+| Enterprise        | At most five minutes           | One hour             | District-operated HA, tested failover, and recovery staffing  |
 
 These targets require measurement. They do not authorize loss of known mutation evidence. Enterprise deployments requiring zero lost accepted operations need a separately tested synchronous durability and independent-audit design. Replication does not replace backups.
 
@@ -735,26 +735,26 @@ An erase workflow must enumerate volumes, artifact paths, key material, backups,
 
 These fixtures are proposed validation inputs. They are not verified inventories for a named district.
 
-| Dimension | Small | District standard | Metropolitan stress |
-|---|---:|---:|---:|
-| Users | 2,000 | 50,000 | 1,000,000 |
-| ChromeOS devices | 2,000 | 50,000 | 1,000,000 |
-| Groups | 200 | 5,000 | 50,000 |
-| Direct membership edges | 20,000 | 1,000,000 | 20,000,000 |
-| OUs | 50 | 1,000 | 10,000 |
-| Retained audit events | 100,000 | 10,000,000 | 100,000,000 |
-| Concurrent active operators | 3 | 30 | 200 |
-| CSV qualification size | 10,000 rows | 50,000 rows | 1,000,000 rows |
+| Dimension                   |       Small | District standard | Metropolitan stress |
+| --------------------------- | ----------: | ----------------: | ------------------: |
+| Users                       |       2,000 |            50,000 |           1,000,000 |
+| ChromeOS devices            |       2,000 |            50,000 |           1,000,000 |
+| Groups                      |         200 |             5,000 |              50,000 |
+| Direct membership edges     |      20,000 |         1,000,000 |          20,000,000 |
+| OUs                         |          50 |             1,000 |              10,000 |
+| Retained audit events       |     100,000 |        10,000,000 |         100,000,000 |
+| Concurrent active operators |           3 |                30 |                 200 |
+| CSV qualification size      | 10,000 rows |       50,000 rows |      1,000,000 rows |
 
 Include skew: very large groups, deep OUs, repeated surnames, common prefixes, long notes, sparse custom fields, and many suspended users. Include separate domains in one customer account. Populate audit history and membership edges before measuring query latency.
 
 ### 14.2 Initial hardware hypotheses
 
-| Profile | Benchmark starting point | Limitation |
-|---|---|---|
-| Small | Four vCPU, 8 GB RAM, 100 GB SSD, no local model | Validate without dedicated operations staff. Backup storage is additional. |
-| District standard | Eight vCPU, 32 GB RAM, 500 GB SSD | Measure database, API, and worker contention on one host. |
-| Metropolitan | Separate API/worker hosts and PostgreSQL with 16–32 vCPU, 64–128 GB RAM, and 2 TB SSD initially | This is a benchmark allocation, not a procurement specification or HA design. |
+| Profile           | Benchmark starting point                                                                        | Limitation                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Small             | Four vCPU, 8 GB RAM, 100 GB SSD, no local model                                                 | Validate without dedicated operations staff. Backup storage is additional.    |
+| District standard | Eight vCPU, 32 GB RAM, 500 GB SSD                                                               | Measure database, API, and worker contention on one host.                     |
+| Metropolitan      | Separate API/worker hosts and PostgreSQL with 16–32 vCPU, 64–128 GB RAM, and 2 TB SSD initially | This is a benchmark allocation, not a procurement specification or HA design. |
 
 Replace these figures with measured guidance before publishing requirements. Inventory count does not establish audit growth or disk throughput. Include backup, staging generations, indexes, temporary imports, and WAL in the budget.
 
@@ -764,19 +764,19 @@ At 1,000,000 devices, 30 daily battery samples produce 30,000,000 samples. Recor
 
 ### 14.3 Proposed service objectives
 
-| Experience | Proposed target | Measurement boundary |
-|---|---|---|
-| Exact entity lookup | p95 at most 200 ms, p99 at most 500 ms | API response, warm cache, concurrent background work |
-| Supported filtered first page | p95 at most 400 ms, p99 at most 1 second | Up to 100 rows, authorized representative query set |
-| Search visible after typing settles | p95 at most 700 ms | Browser timing including debounce and a declared 50 ms network round trip |
-| Local selection toggle | p95 at most 200 ms | Durable server update, excluding intentional client batching |
-| Confirmed job receipt | p95 at most 500 ms | After preview already exists, through durable acceptance |
-| Twenty-target preview | p95 at most five seconds | Available Google budget and declared network latency |
-| Large preview | Progress within one second | Completion follows measured query and live-check cost |
-| One-row interactive dispatch | Proposed p95 within five seconds | No active type hold, available execution slot, healthy Google, no entity conflict |
-| Grid scrolling | No repeated main-thread stalls above 200 ms | Defined operator laptop and browser, bounded row cache |
-| Browser memory | At most 300 MB steady-state for the tested grid task | Excludes optional model runtime, measure actual browser tooling |
-| Worker crash recovery | Runnable safe work resumes within 60 seconds | Unknown external outcomes remain quarantined |
+| Experience                          | Proposed target                                      | Measurement boundary                                                              |
+| ----------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Exact entity lookup                 | p95 at most 200 ms, p99 at most 500 ms               | API response, warm cache, concurrent background work                              |
+| Supported filtered first page       | p95 at most 400 ms, p99 at most 1 second             | Up to 100 rows, authorized representative query set                               |
+| Search visible after typing settles | p95 at most 700 ms                                   | Browser timing including debounce and a declared 50 ms network round trip         |
+| Local selection toggle              | p95 at most 200 ms                                   | Durable server update, excluding intentional client batching                      |
+| Confirmed job receipt               | p95 at most 500 ms                                   | After preview already exists, through durable acceptance                          |
+| Twenty-target preview               | p95 at most five seconds                             | Available Google budget and declared network latency                              |
+| Large preview                       | Progress within one second                           | Completion follows measured query and live-check cost                             |
+| One-row interactive dispatch        | Proposed p95 within five seconds                     | No active type hold, available execution slot, healthy Google, no entity conflict |
+| Grid scrolling                      | No repeated main-thread stalls above 200 ms          | Defined operator laptop and browser, bounded row cache                            |
+| Browser memory                      | At most 300 MB steady-state for the tested grid task | Excludes optional model runtime, measure actual browser tooling                   |
+| Worker crash recovery               | Runnable safe work resumes within 60 seconds         | Unknown external outcomes remain quarantined                                      |
 
 Report warm and cold results separately. Measure tails and failure rates, not averages alone. List hardware, browser, network, software versions, data distribution, and query mix with every result. Freshness objectives require a quota budget for each capability. Do not assert universal hourly freshness.
 
@@ -786,28 +786,28 @@ Run search while a full inventory generation builds, a large import validates, a
 
 Use a deterministic Google simulator for large loads and fault injection. Use a controlled real Workspace account for protocol, permission, and method semantics. Synthetic tests cannot prove live Google throughput or license availability.
 
-| Test | Pass condition |
-|---|---|
-| Million-target selection with later matching arrivals | Confirmed job contains only frozen approved targets. |
-| Cross-school filter, count, export, and event requests | No unauthorized data or identifier exposure. |
-| Role revoked after approval | Undispatched operations stop before Google access. |
-| Hold owner replaced before cleanup | Earlier owner cannot remove the newer hold. |
-| Owner has concurrent successful and throttled workers | A stale recovery streak cannot clear a renewed hold. |
-| Small and large jobs queue during a hold | Existing jobs continue. New jobs resume smallest first after release. |
-| Hold owner crashes | No cached renewal. The hold expires 300 seconds after its last accepted refresh. |
-| Different active job reports continuing backoff | The job service replaces ownership and resets the TTL. |
-| Success response lost after an unsafe request | Outcome becomes unknown. No automatic unsafe repeat occurs. |
-| Stale worker resumes after lease replacement | Local stale writes fail. External uncertainty enters reconciliation. |
-| Partial native batch failure | Only eligible failed targets retry. Successful targets retain their result. |
-| Sweep loses permission halfway through | Previous generation remains active. No false removals occur. |
-| Write during a sweep | Publication does not erase newer accepted intent. |
-| Database outage during dispatch | No new unaudited requests. In-flight requests reconcile afterward. |
-| Restore yesterday's database | No restored queue automatically repeats external effects. |
-| SSE disconnect and out-of-order transaction completion | Client receives replay or explicit resync without skipped durable changes. |
-| Large import with malformed rows and conflicting edits | Bounded memory, exact classified counts, no unapproved writes. |
-| Key rotation and credential revocation | Reads and writes follow the intended connection state without secret leakage. |
-| Near-full disk during staging and archival | Admission stops safely and existing evidence remains discoverable. |
-| Release upgrade with old queued actions | Approved action semantics remain unchanged or require renewed approval. |
+| Test                                                   | Pass condition                                                                   |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| Million-target selection with later matching arrivals  | Confirmed job contains only frozen approved targets.                             |
+| Cross-school filter, count, export, and event requests | No unauthorized data or identifier exposure.                                     |
+| Role revoked after approval                            | Undispatched operations stop before Google access.                               |
+| Hold owner replaced before cleanup                     | Earlier owner cannot remove the newer hold.                                      |
+| Owner has concurrent successful and throttled workers  | A stale recovery streak cannot clear a renewed hold.                             |
+| Small and large jobs queue during a hold               | Existing jobs continue. New jobs resume smallest first after release.            |
+| Hold owner crashes                                     | No cached renewal. The hold expires 300 seconds after its last accepted refresh. |
+| Different active job reports continuing backoff        | The job service replaces ownership and resets the TTL.                           |
+| Success response lost after an unsafe request          | Outcome becomes unknown. No automatic unsafe repeat occurs.                      |
+| Stale worker resumes after lease replacement           | Local stale writes fail. External uncertainty enters reconciliation.             |
+| Partial native batch failure                           | Only eligible failed targets retry. Successful targets retain their result.      |
+| Sweep loses permission halfway through                 | Previous generation remains active. No false removals occur.                     |
+| Write during a sweep                                   | Publication does not erase newer accepted intent.                                |
+| Database outage during dispatch                        | No new unaudited requests. In-flight requests reconcile afterward.               |
+| Restore yesterday's database                           | No restored queue automatically repeats external effects.                        |
+| SSE disconnect and out-of-order transaction completion | Client receives replay or explicit resync without skipped durable changes.       |
+| Large import with malformed rows and conflicting edits | Bounded memory, exact classified counts, no unapproved writes.                   |
+| Key rotation and credential revocation                 | Reads and writes follow the intended connection state without secret leakage.    |
+| Near-full disk during staging and archival             | Admission stops safely and existing evidence remains discoverable.               |
+| Release upgrade with old queued actions                | Approved action semantics remain unchanged or require renewed approval.          |
 
 Use Vitest for domain rules where it fits the supported Angular/Nx setup. Use real PostgreSQL integration tests for transactions, leases, and migrations. Use Playwright for complete browser workflows. Add a load harness with a versioned scenario definition. Keep tool choices consistent across packages.
 
@@ -817,16 +817,16 @@ Use Vitest for domain rules where it fits the supported Angular/Nx setup. Use re
 
 Replace the current horizontal implementation sequence with the following complete slices. Each slice includes permissions, failure behavior, and installation impact.
 
-| Slice | Replaces or resequences | Deliverable and gate |
-|---|---|---|
-| V0: decisions and experiments | Early assumptions in P0.1, P2.1, P3.1, P4.1, P9.x | Credential proof, capability matrix, queue fault tests, query benchmark, and installation walkthrough. No broad feature implementation. |
-| V1: install and find | P0.1, narrow P1.x, P3.x, P4.1, P5.1, P6.1, P9.1–P9.3 | Install, connect read-only, find users/devices across authorized domains, inspect freshness, back up, and restore. |
-| V2: one safe mutation | P2.x, P5.2, P7.1, narrow P7.2–P7.3 | One device annotation through draft, preview, confirmation, dispatch, verification, and audit. Pass crash tests. |
-| V3: district bulk | Remaining core P2.x and P7.x | Large frozen selection, Redis hold ownership, smallest-first admission, cancellation, and settled results under load. |
-| V4: round-trip data | P8.1–P8.3 | CSV baseline, conflicts, streaming, create policy, and recovery. |
-| V5: broader entity and insight coverage | P10.x, P11.x, report work from P6/P7 | Groups, memberships, OUs, device commands, defined reports, and telemetry where licensed. |
-| V6: enterprise qualification | Expanded P9.2–P9.3 | Replicas, failover, workload identity, scoped staff access, upgrade, and district acceptance. |
-| Later optional work | P6.3, Sheets, Marketplace, widget roadmap | Separate acceptance evidence and support cost before commitment. |
+| Slice                                   | Replaces or resequences                              | Deliverable and gate                                                                                                                    |
+| --------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| V0: decisions and experiments           | Early assumptions in P0.1, P2.1, P3.1, P4.1, P9.x    | Credential proof, capability matrix, queue fault tests, query benchmark, and installation walkthrough. No broad feature implementation. |
+| V1: install and find                    | P0.1, narrow P1.x, P3.x, P4.1, P5.1, P6.1, P9.1–P9.3 | Install, connect read-only, find users/devices across authorized domains, inspect freshness, back up, and restore.                      |
+| V2: one safe mutation                   | P2.x, P5.2, P7.1, narrow P7.2–P7.3                   | One device annotation through draft, preview, confirmation, dispatch, verification, and audit. Pass crash tests.                        |
+| V3: district bulk                       | Remaining core P2.x and P7.x                         | Large frozen selection, Redis hold ownership, smallest-first admission, cancellation, and settled results under load.                   |
+| V4: round-trip data                     | P8.1–P8.3                                            | CSV baseline, conflicts, streaming, create policy, and recovery.                                                                        |
+| V5: broader entity and insight coverage | P10.x, P11.x, report work from P6/P7                 | Groups, memberships, OUs, device commands, defined reports, and telemetry where licensed.                                               |
+| V6: enterprise qualification            | Expanded P9.2–P9.3                                   | Replicas, failover, workload identity, scoped staff access, upgrade, and district acceptance.                                           |
+| Later optional work                     | P6.3, Sheets, Marketplace, widget roadmap            | Separate acceptance evidence and support cost before commitment.                                                                        |
 
 The table describes sequence, not elapsed-time promises. Assign estimates after V0 and team constraints become known. Do not launch independent agents across modules whose contracts remain unsettled.
 
@@ -881,26 +881,26 @@ Do not require every reversible text change to run a district simulation. Apply 
 Documentation integration is complete in the portfolio and root README. Application changes in this section remain unimplemented.
 Future paths are proposed ownership boundaries, not claims that files already exist.
 
-| Current or future path | Required edit |
-|---|---|
-| `README.md` | Replace the stack and layout. Link supported installation profiles and current architecture. Remove unsupported boot claims. |
-| `package.json` and `package-lock.json` | Pin the qualified framework set. Add `pg`, Redis/Kestra integration dependencies, authentication libraries, and required test dependencies. |
-| `nx.json` and ESLint configuration | Enforce contracts, domain, database, provider, API, and UI dependency directions. Keep remote cache optional. |
-| `frontend/` | Keep Angular. Add search, entity grids, durable draft integration, scope display, and job state UX. |
-| `api/` | Keep request validation, permissions, queries, previews, job acceptance, and SSE. Remove planned privileged step callbacks. |
-| Proposed `workers/` | Add Kestra step handlers, Google adapters, hold signals, sync, reconciliation, export, and archival modules. |
-| Proposed `libs/contracts/` | Runtime schemas and shared protocol types without Angular or Nest dependencies. |
-| Proposed `libs/domain/` | Permission rules, filter model, merge rules, operation classification, and state transitions. |
-| Proposed `libs/db/` | SQL repositories, migrations, pool budgets, query plans, and transaction helpers. |
-| Proposed `libs/google/` | Capability registry, credential providers, API wrappers, and method-specific error classification. |
-| Proposed `libs/jobs/` | Kestra integration, job service, 300-second admission holds, recovery aggregation, and operation-result contracts. |
-| Proposed `libs/job-storage/` | Artifact references, streaming adapters, integrity checks, and publication integration from section 7.6. |
-| Existing `libs/` scaffold | Replace Angular component scaffolding with explicit libraries after preserving any accepted design assets. |
-| `docker-compose.yml` | Retain Redis and Kestra. Correct Dockerfile paths, secrets, persistence, and published ports. |
-| Proposed `deploy/` | Release manifest, development overrides, enterprise reference configuration, certificates, and egress guidance. |
-| Proposed `ops/` | Installer, backup/restore, upgrade, health checks, and data-erasure workflows. |
-| `.github/workflows/ci.yml` | Keep reproducible checks. Make cloud distribution optional and define release signing and verification. |
-| `docs/portfolio/01` through `07` and `prototype-map.md` | Apply C01–C20 together. Mark recommendations accepted only with decision evidence. |
+| Current or future path                                  | Required edit                                                                                                                               |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `README.md`                                             | Replace the stack and layout. Link supported installation profiles and current architecture. Remove unsupported boot claims.                |
+| `package.json` and `package-lock.json`                  | Pin the qualified framework set. Add `pg`, Redis/Kestra integration dependencies, authentication libraries, and required test dependencies. |
+| `nx.json` and ESLint configuration                      | Enforce contracts, domain, database, provider, API, and UI dependency directions. Keep remote cache optional.                               |
+| `frontend/`                                             | Keep Angular. Add search, entity grids, durable draft integration, scope display, and job state UX.                                         |
+| `api/`                                                  | Keep request validation, permissions, queries, previews, job acceptance, and SSE. Remove planned privileged step callbacks.                 |
+| Proposed `workers/`                                     | Add Kestra step handlers, Google adapters, hold signals, sync, reconciliation, export, and archival modules.                                |
+| Proposed `libs/contracts/`                              | Runtime schemas and shared protocol types without Angular or Nest dependencies.                                                             |
+| Proposed `libs/domain/`                                 | Permission rules, filter model, merge rules, operation classification, and state transitions.                                               |
+| Proposed `libs/db/`                                     | SQL repositories, migrations, pool budgets, query plans, and transaction helpers.                                                           |
+| Proposed `libs/google/`                                 | Capability registry, credential providers, API wrappers, and method-specific error classification.                                          |
+| Proposed `libs/jobs/`                                   | Kestra integration, job service, 300-second admission holds, recovery aggregation, and operation-result contracts.                          |
+| Proposed `libs/job-storage/`                            | Artifact references, streaming adapters, integrity checks, and publication integration from section 7.6.                                    |
+| Existing `libs/` scaffold                               | Replace Angular component scaffolding with explicit libraries after preserving any accepted design assets.                                  |
+| `docker-compose.yml`                                    | Retain Redis and Kestra. Correct Dockerfile paths, secrets, persistence, and published ports.                                               |
+| Proposed `deploy/`                                      | Release manifest, development overrides, enterprise reference configuration, certificates, and egress guidance.                             |
+| Proposed `ops/`                                         | Installer, backup/restore, upgrade, health checks, and data-erasure workflows.                                                              |
+| `.github/workflows/ci.yml`                              | Keep reproducible checks. Make cloud distribution optional and define release signing and verification.                                     |
+| `docs/portfolio/01` through `07` and `prototype-map.md` | Apply C01–C20 together. Mark recommendations accepted only with decision evidence.                                                          |
 
 The current Compose file exposes PostgreSQL, Redis, and Kestra ports. It embeds static database credentials and references absent `apps/...` Dockerfiles. These are scaffold observations, not deployed vulnerabilities. Replace the file as an installation artifact instead of treating it as a production baseline.
 

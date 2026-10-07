@@ -20,13 +20,13 @@ Kestra's downloaded executable matched its official release checksum:
 Download source: [Kestra 1.3.37 release](https://github.com/kestra-io/kestra/releases/tag/v1.3.37).
 Runtime reference: [Kestra standalone installation](https://kestra.io/docs/installation/standalone-server).
 
-| Service | Endpoint | Data location |
-|---|---|---|
-| PostgreSQL | `127.0.0.1:55439` | `/tmp/campus-v0-lab/pgdata` |
-| Redis | `127.0.0.1:56389` | Ephemeral keys. Persistence disabled in this lab. |
-| Kestra API | `127.0.0.1:58089` | `v0_kestra` database and `/tmp/campus-v0-lab/kestra-storage` |
-| Kestra management | `127.0.0.1:8081` | Internal management endpoint |
-| Synthetic worker | `127.0.0.1:58189` | Runs only during the Kestra probe |
+| Service           | Endpoint          | Data location                                                |
+| ----------------- | ----------------- | ------------------------------------------------------------ |
+| PostgreSQL        | `127.0.0.1:55439` | `/tmp/campus-v0-lab/pgdata`                                  |
+| Redis             | `127.0.0.1:56389` | Ephemeral keys. Persistence disabled in this lab.            |
+| Kestra API        | `127.0.0.1:58089` | `v0_kestra` database and `/tmp/campus-v0-lab/kestra-storage` |
+| Kestra management | `127.0.0.1:8081`  | Internal management endpoint                                 |
+| Synthetic worker  | `127.0.0.1:58189` | Runs only during the Kestra probe                            |
 
 The PostgreSQL scratch cluster used local trust authentication and a private Unix socket directory.
 Use these settings only on a disposable, isolated developer host with synthetic data.
@@ -93,7 +93,7 @@ datasources:
     url: jdbc:postgresql://127.0.0.1:55439/v0_kestra
     driverClassName: org.postgresql.Driver
     username: YOUR_LOCAL_DATABASE_USER
-    password: ""
+    password: ''
 kestra:
   repository:
     type: postgres
@@ -181,11 +181,11 @@ This run observed `-2` at 539.64 seconds. It did not measure the exact expiratio
 
 ## Installation walkthrough still required
 
-| Profile | Prerequisites to verify | Acceptance evidence |
-|---|---|---|
-| Single server | Supported container host, persistent disk, trusted hostname, HTTPS, backup destination | Prebuilt images boot. Sample inventory works. Restart preserves state. |
-| Separate database | Single-server prerequisites plus district PostgreSQL endpoint, credentials, TLS, and migration permissions | Application and workers use the external database. Local defaults remain optional. |
-| Cluster | District Kubernetes operators, shared service endpoints, qualified artifact backend, and Kestra availability plan | Multiple API and worker instances pass fault, authorization, storage, and recovery checks. |
+| Profile           | Prerequisites to verify                                                                                           | Acceptance evidence                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Single server     | Supported container host, persistent disk, trusted hostname, HTTPS, backup destination                            | Prebuilt images boot. Sample inventory works. Restart preserves state.                     |
+| Separate database | Single-server prerequisites plus district PostgreSQL endpoint, credentials, TLS, and migration permissions        | Application and workers use the external database. Local defaults remain optional.         |
+| Cluster           | District Kubernetes operators, shared service endpoints, qualified artifact backend, and Kestra availability plan | Multiple API and worker instances pass fault, authorization, storage, and recovery checks. |
 
 Redis and Kestra need explicit placement in every profile. A separate database does not remove either service.
 Distributed workers require a qualified shared artifact backend before they start.

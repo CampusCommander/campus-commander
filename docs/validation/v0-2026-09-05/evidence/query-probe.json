@@ -3,10 +3,7 @@
   "rows": 1000000,
   "loadMs": 2996.842137,
   "totalRelationBytes": "325214208",
-  "backgroundIterations": [
-    114,
-    114
-  ],
+  "backgroundIterations": [114, 114],
   "results": [
     {
       "name": "exact_serial_scoped",
@@ -200,10 +197,7 @@
                 "Actual Rows": 100,
                 "Actual Loops": 1,
                 "Disabled": false,
-                "Sort Key": [
-                  "(lower(name))",
-                  "id"
-                ],
+                "Sort Key": ["(lower(name))", "id"],
                 "Sort Method": "quicksort",
                 "Sort Space Used": 32,
                 "Sort Space Type": "Memory",
@@ -405,9 +399,7 @@
                 "Actual Rows": 0,
                 "Actual Loops": 1,
                 "Disabled": false,
-                "Sort Key": [
-                  "id"
-                ],
+                "Sort Key": ["id"],
                 "Sort Method": "quicksort",
                 "Sort Space Used": 25,
                 "Sort Space Type": "Memory",

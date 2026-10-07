@@ -12,13 +12,13 @@ GitHub records commits and pull requests for that work.
 
 ## Publication checks
 
-| Check | Result |
-|---|---|
-| Nx project discovery | Pass. Five workspace projects resolve after `.nxignore` excludes disposable validation experiments. |
-| API build | Pass through `npm exec nx run api:build`. |
-| Frontend build | Fail through `npm exec nx run frontend:build`. The frontend remains an unqualified scaffold. |
-| Prepared Jira content | All 17 tasks and 36 links have verified publication records. |
-| Local artifacts | Git ignores agent session state, compiler caches, environment files, and installation secrets. |
+| Check                 | Result                                                                                              |
+| --------------------- | --------------------------------------------------------------------------------------------------- |
+| Nx project discovery  | Pass. Five workspace projects resolve after `.nxignore` excludes disposable validation experiments. |
+| API build             | Pass through `npm exec nx run api:build`.                                                           |
+| Frontend build        | Fail through `npm exec nx run frontend:build`. The frontend remains an unqualified scaffold.        |
+| Prepared Jira content | All 17 tasks and 36 links have verified publication records.                                        |
+| Local artifacts       | Git ignores agent session state, compiler caches, environment files, and installation secrets.      |
 
 The frontend compiler correction belongs to [KAN-6](https://easton-consulting.atlassian.net/browse/KAN-6).
 The existing CI workflow requires Nx Cloud distribution and runs scaffold checks that have not passed qualification.

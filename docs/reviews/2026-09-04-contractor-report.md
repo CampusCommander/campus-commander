@@ -35,18 +35,18 @@ The previous audit checked consistency between documents. Agreement between docu
 
 ## Findings that change the plan
 
-| Priority | Current choice | Contractor finding | Required replacement |
-|---|---|---|---|
-| Blocker | Identity-only OAuth, a client secret, no durable token, and DWD impersonation | The documented credentials do not provide a complete token-minting path. | Choose and test a supported authentication protocol before building the wizard. |
-| Blocker | Retry entire chunks and consolidate audit after execution | A timeout does not establish whether Google applied a change. Repeating work risks duplicate effects. | Record intent before dispatch. Track and reconcile each external operation. |
-| Accepted change | New jobs start while active jobs encounter backoff | Independent admission adds pressure without sharing the throttle signal. | Hold new jobs by type in Redis. Existing jobs continue. Order pending jobs smallest first. |
-| Blocker | Two roles with entity-type scope across every OU | School staff need school-level boundaries. Type-level permission alone grants excessive reach. | Enforce action, OU, group, field, and export permissions throughout the product. |
-| High | Global lock throughout full synchronization | Long sweeps stop unrelated updates. Group membership makes the window especially expensive. | Synchronize collections independently and reconcile concurrent writes explicitly. |
-| High | Shared job files and perpetual duplicate storage | Recovery needs explicit storage ownership and retention rules. | Retain Kestra and Redis. Define shared storage, durable operation results, and artifact retention. |
-| High | One Compose artifact as the entire enterprise deployment story | One host remains one failure domain. Host-local files constrain additional workers. | One application release with a simple host profile and a separate enterprise profile. |
-| High | One deployment per email domain | A Workspace customer account contains multiple domains. | Key tenancy by the stable Workspace customer ID. |
-| Retained constraint | LibreGrid supplies the required grid features | The owner authors LibreGrid for this MIT product. Commercial grid licensing is outside the budget. | Retain LibreGrid and test its selection, editing, accessibility, and performance integration. |
-| High | Global search and insight deferred, local AI required | This ordering deprioritizes the user's central need while increasing setup cost. | Ship cross-entity search and defined reports before optional natural-language features. |
+| Priority            | Current choice                                                                | Contractor finding                                                                                    | Required replacement                                                                               |
+| ------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Blocker             | Identity-only OAuth, a client secret, no durable token, and DWD impersonation | The documented credentials do not provide a complete token-minting path.                              | Choose and test a supported authentication protocol before building the wizard.                    |
+| Blocker             | Retry entire chunks and consolidate audit after execution                     | A timeout does not establish whether Google applied a change. Repeating work risks duplicate effects. | Record intent before dispatch. Track and reconcile each external operation.                        |
+| Accepted change     | New jobs start while active jobs encounter backoff                            | Independent admission adds pressure without sharing the throttle signal.                              | Hold new jobs by type in Redis. Existing jobs continue. Order pending jobs smallest first.         |
+| Blocker             | Two roles with entity-type scope across every OU                              | School staff need school-level boundaries. Type-level permission alone grants excessive reach.        | Enforce action, OU, group, field, and export permissions throughout the product.                   |
+| High                | Global lock throughout full synchronization                                   | Long sweeps stop unrelated updates. Group membership makes the window especially expensive.           | Synchronize collections independently and reconcile concurrent writes explicitly.                  |
+| High                | Shared job files and perpetual duplicate storage                              | Recovery needs explicit storage ownership and retention rules.                                        | Retain Kestra and Redis. Define shared storage, durable operation results, and artifact retention. |
+| High                | One Compose artifact as the entire enterprise deployment story                | One host remains one failure domain. Host-local files constrain additional workers.                   | One application release with a simple host profile and a separate enterprise profile.              |
+| High                | One deployment per email domain                                               | A Workspace customer account contains multiple domains.                                               | Key tenancy by the stable Workspace customer ID.                                                   |
+| Retained constraint | LibreGrid supplies the required grid features                                 | The owner authors LibreGrid for this MIT product. Commercial grid licensing is outside the budget.    | Retain LibreGrid and test its selection, editing, accessibility, and performance integration.      |
+| High                | Global search and insight deferred, local AI required                         | This ordering deprioritizes the user's central need while increasing setup cost.                      | Ship cross-entity search and defined reports before optional natural-language features.            |
 
 The authentication and customer-account findings follow Google's [server-to-server authorization](https://developers.google.com/identity/protocols/oauth2/service-account), [web-server authorization](https://developers.google.com/identity/protocols/oauth2/web-server), and [user-list reference](https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/list). The detailed [Google evidence note](2026-09-04-google-platform-evidence.md) records endpoint constraints and verification limits.
 
@@ -62,19 +62,19 @@ Request batching reduces transport overhead. Each enclosed request still consume
 
 ## Recommended technology choices
 
-| Area | Recommendation | Reason and cost |
-|---|---|---|
-| Frontend | Keep Angular and Angular Material. Use Signals for view state. | Fits the existing team assumption. Virtualization and request discipline matter more than a framework replacement. |
-| Grid | Keep AG Grid Community plus LibreGrid. | Preserves required features and the owner's MIT distribution constraint. |
-| Backend | Keep NestJS. Retain Express initially. | Avoid an adapter migration without measured need. Keep bulk processing in separate workers. |
-| Database | PostgreSQL 18 with SQL-first access through `pg`. | Durable entities, operation records, frozen previews, and audit evidence. |
-| Work dispatch | Retain Kestra and separate worker services. | Preserves steps, parallel batches, retries, and collection of settled results. |
-| Redis | Retain caching, selection/session services, broadcasts, and job admission holds. | The review did not establish sufficient benefit from removing it. |
-| Files | Preserve job files and audit artifacts. Add immediate durable operation results. | Retains the existing workflow while improving recovery evidence. |
-| Search | PostgreSQL indexes, typed filters, and ranked cross-entity lookup. | Avoid a second search service until measured requirements justify one. |
-| AI | Optional later feature with a resource limit and deterministic fallback. | No model download or GPU prerequisite for basic administration. |
-| Packaging | Signed, prebuilt images. Compose for one host. Enterprise deployment contract for existing infrastructure. | Customers install releases instead of building source. |
-| Development | Keep Nx and npm. Use risk-first vertical slices and evidence gates. | Build the smallest complete workflow before expanding entity coverage. |
+| Area          | Recommendation                                                                                             | Reason and cost                                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Frontend      | Keep Angular and Angular Material. Use Signals for view state.                                             | Fits the existing team assumption. Virtualization and request discipline matter more than a framework replacement. |
+| Grid          | Keep AG Grid Community plus LibreGrid.                                                                     | Preserves required features and the owner's MIT distribution constraint.                                           |
+| Backend       | Keep NestJS. Retain Express initially.                                                                     | Avoid an adapter migration without measured need. Keep bulk processing in separate workers.                        |
+| Database      | PostgreSQL 18 with SQL-first access through `pg`.                                                          | Durable entities, operation records, frozen previews, and audit evidence.                                          |
+| Work dispatch | Retain Kestra and separate worker services.                                                                | Preserves steps, parallel batches, retries, and collection of settled results.                                     |
+| Redis         | Retain caching, selection/session services, broadcasts, and job admission holds.                           | The review did not establish sufficient benefit from removing it.                                                  |
+| Files         | Preserve job files and audit artifacts. Add immediate durable operation results.                           | Retains the existing workflow while improving recovery evidence.                                                   |
+| Search        | PostgreSQL indexes, typed filters, and ranked cross-entity lookup.                                         | Avoid a second search service until measured requirements justify one.                                             |
+| AI            | Optional later feature with a resource limit and deterministic fallback.                                   | No model download or GPU prerequisite for basic administration.                                                    |
+| Packaging     | Signed, prebuilt images. Compose for one host. Enterprise deployment contract for existing infrastructure. | Customers install releases instead of building source.                                                             |
+| Development   | Keep Nx and npm. Use risk-first vertical slices and evidence gates.                                        | Build the smallest complete workflow before expanding entity coverage.                                             |
 
 LibreGrid remains part of the selected grid stack. Test its server-side row model and selection with the application's durable preview and draft rules.
 
@@ -129,13 +129,13 @@ Replace visual completion as the primary proof with task completion by represent
 
 ## Approval gates and decision cost
 
-| Gate | Required evidence | Failure response |
-|---|---|---|
-| Google connection | An unattended read after restart, credential renewal, revocation, and account replacement | Reject the credential design before wizard implementation. |
-| Search and grid | Representative queries and edits at three inventory sizes, including a large membership graph | Fix queries and interactions before adding a search engine or replacing frameworks. |
-| Mutation recovery | Fault injection before dispatch, after Google acceptance, and before local result commit | Reject retry behavior that repeats unsafe operations. |
-| Installation and recovery | Unassisted setup study, backup verification, and restore to a clean host | Revise packaging and support scope before claiming easy installation. |
-| Enterprise support | Concurrent workload, database failover, restore, and district permission acceptance | Limit the supported deployment profile until the evidence exists. |
+| Gate                      | Required evidence                                                                             | Failure response                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Google connection         | An unattended read after restart, credential renewal, revocation, and account replacement     | Reject the credential design before wizard implementation.                          |
+| Search and grid           | Representative queries and edits at three inventory sizes, including a large membership graph | Fix queries and interactions before adding a search engine or replacing frameworks. |
+| Mutation recovery         | Fault injection before dispatch, after Google acceptance, and before local result commit      | Reject retry behavior that repeats unsafe operations.                               |
+| Installation and recovery | Unassisted setup study, backup verification, and restore to a clean host                      | Revise packaging and support scope before claiming easy installation.               |
+| Enterprise support        | Concurrent workload, database failover, restore, and district permission acceptance           | Limit the supported deployment profile until the evidence exists.                   |
 
 The retained stack needs measured operating costs. A smaller first release and optional AI reduce initial delivery scope. The main added investment belongs in Google integration tests, database design, operation recovery, and installation usability. These are prerequisites for the product promise. Replacing the frontend framework does not substitute for them.
 

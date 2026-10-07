@@ -18,6 +18,7 @@ between background sync and interactive/bulk-action traffic. Explicitly left ope
 ## Resolution
 
 **Decided 2026-07-22:**
+
 1. **Greedy first-come-first-serve** — workers do not coordinate on a shared rate budget. Whoever hits the API first gets the quota.
 2. **Two-level retry** — NestJS workers handle per-request backoff/retry internally (fine-grained, per-call). Kestra handles flow-level retry (coarse-grained, per-chunk). This gives two levels of retry.
 3. **Per-worker backoff tracking** — each NestJS worker instance maintains its own backoff state, no shared coordination.

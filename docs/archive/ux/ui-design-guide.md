@@ -60,14 +60,14 @@ Standard enterprise layout: a full-height left navigation panel, a header above 
 - Top: the brand wordmark, with the connected Workspace domain name below it in caption size and secondary color. The domain stays visible at all times because the whole app operates on one domain.
 - Items in order, each with a Material Symbol:
 
-| Item | Icon |
-|---|---|
-| Users | `people` |
-| Devices | `laptop_chromebook` |
-| Groups | `group` |
-| Org Units | `account_tree` |
-| Jobs | `history` |
-| Settings | `settings` |
+| Item      | Icon                |
+| --------- | ------------------- |
+| Users     | `people`            |
+| Devices   | `laptop_chromebook` |
+| Groups    | `group`             |
+| Org Units | `account_tree`      |
+| Jobs      | `history`           |
+| Settings  | `settings`          |
 
 - Active item: accent-tinted background, filled icon, 3px accent indicator bar on the left edge.
 - The Org Units tree lives inside the Org Units page (tree pane + detail panel), matching the Google OU picker pattern. It is not a permanent app-level pane.
@@ -100,33 +100,33 @@ Light + dark from day one. Material `light-dark()` tokens define every color. Th
 
 ### Surfaces (neutral scale)
 
-| Token | Light | Dark | Use |
-|---|---|---|---|
-| `surface-app` | `#F8FAFC` | `#121212` | App background behind cards |
-| `surface-card` | `#FFFFFF` | `#1E1E1E` | Cards, grids, panels |
-| `surface-hover` | `#F1F5F9` | `#2A2A2A` | Row hover, menu item hover |
-| `surface-selected` | accent at 8% opacity | accent at 14% opacity | Selected grid rows |
-| `border` | `#E2E8F0` | `#3A3A3A` | Card borders, dividers |
+| Token              | Light                | Dark                  | Use                         |
+| ------------------ | -------------------- | --------------------- | --------------------------- |
+| `surface-app`      | `#F8FAFC`            | `#121212`             | App background behind cards |
+| `surface-card`     | `#FFFFFF`            | `#1E1E1E`             | Cards, grids, panels        |
+| `surface-hover`    | `#F1F5F9`            | `#2A2A2A`             | Row hover, menu item hover  |
+| `surface-selected` | accent at 8% opacity | accent at 14% opacity | Selected grid rows          |
+| `border`           | `#E2E8F0`            | `#3A3A3A`             | Card borders, dividers      |
 
 ### Accent and text
 
-| Token | Light value | Use |
-|---|---|---|
-| `accent` | `#1A73E8` (provisional) | Primary actions, active nav, links, focus rings |
-| `text-primary` | `#202124` | Headings, body text |
-| `text-secondary` | `#5F6368` | Subtitles, metadata, footer |
-| `text-disabled` | `#9AA0A6` | Disabled controls |
+| Token            | Light value             | Use                                             |
+| ---------------- | ----------------------- | ----------------------------------------------- |
+| `accent`         | `#1A73E8` (provisional) | Primary actions, active nav, links, focus rings |
+| `text-primary`   | `#202124`               | Headings, body text                             |
+| `text-secondary` | `#5F6368`               | Subtitles, metadata, footer                     |
+| `text-disabled`  | `#9AA0A6`               | Disabled controls                               |
 
 Dark mode inverts the surfaces and lifts text to `#E8EAED` (primary) and `#9AA0A6` (secondary). The accent stays blue in both modes. The dark-mode contrast check happens during the theming pass.
 
 ### Semantic colors
 
-| Token | Light value | Meaning |
-|---|---|---|
-| `status-success` | `#188038` | Healthy, completed, passing |
-| `status-warning` | `#F9AB00` | Stale data, partial success, battery "Replace Soon" |
-| `status-error` | `#D93025` | Failed, suspended user, battery "Replace Now", failing capability |
-| `status-info` | `#1A73E8` | In progress, scheduled |
+| Token            | Light value | Meaning                                                           |
+| ---------------- | ----------- | ----------------------------------------------------------------- |
+| `status-success` | `#188038`   | Healthy, completed, passing                                       |
+| `status-warning` | `#F9AB00`   | Stale data, partial success, battery "Replace Soon"               |
+| `status-error`   | `#D93025`   | Failed, suspended user, battery "Replace Now", failing capability |
+| `status-info`    | `#1A73E8`   | In progress, scheduled                                            |
 
 Entity state chips use these colors: suspended → error, archived → neutral gray, battery "Replace Soon" → warning, battery "Replace Now" → error, healthy → success. A state chip is a small rounded pill with label text. Color never carries meaning alone: every colored indicator carries a text label (accessibility).
 
@@ -137,12 +137,12 @@ Contrast floor: WCAG AA for all text and interactive elements in both modes.
 - **Face:** Roboto, self-hosted as woff2 files inside the app bundle. No CDN fetch. Installs must work offline (spec requirement), so the fonts ship with the artifact.
 - Weights: 400 (body), 500 (titles, buttons, wordmark), 700 (page titles only).
 
-| Level | Size / line-height | Use |
-|---|---|---|
-| Display | 24px / 32px | Page titles |
-| Title | 16px / 24px | Card titles, dialog titles |
-| Body | 14px / 20px | Default text, grid cells |
-| Caption | 12px / 16px | Metadata, status bar, footer, chips |
+| Level   | Size / line-height | Use                                 |
+| ------- | ------------------ | ----------------------------------- |
+| Display | 24px / 32px        | Page titles                         |
+| Title   | 16px / 24px        | Card titles, dialog titles          |
+| Body    | 14px / 20px        | Default text, grid cells            |
+| Caption | 12px / 16px        | Metadata, status bar, footer, chips |
 
 - Data columns in grids use tabular numerals (`font-variant-numeric: tabular-nums`) so digits align vertically.
 - Identifiers, hashes, and file paths render in the system monospace stack at caption size.
@@ -183,16 +183,16 @@ Org Units page: a tree pane on the left (`@libregrid/tree-data`, Google OU picke
 
 ## 10. Component Conventions
 
-| Need | Component |
-|---|---|
-| Buttons, text fields, dialogs, menus, lists, tabs, tooltips | Angular Material |
+| Need                                                                | Component                                                                                                                               |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Buttons, text fields, dialogs, menus, lists, tabs, tooltips         | Angular Material                                                                                                                        |
 | Grid chrome (column menu, side bar, columns tool panel, status bar) | `@libregrid/menu`, `@libregrid/side-bar`, `@libregrid/columns-tool-panel`, `@libregrid/status-bar` with `@libregrid/material` renderers |
-| Entity grids | `ag-grid-angular` + `@libregrid/server-side-row-model` + `@libregrid/server-side-selection` |
-| Filters | `@libregrid/set-filter`, `@libregrid/multi-filter`, `@libregrid/advanced-filter`, `@libregrid/filters-tool-panel`, `@libregrid/find` |
-| Cell selection and clipboard | `@libregrid/cell-selection`, `@libregrid/clipboard` |
-| Org Units tree | `@libregrid/tree-data` |
-| .xlsx export | `@libregrid/excel-export`. CSV and Sheets export run through the API |
-| Telemetry charts | `@libregrid/integrated-charts`, `@libregrid/sparklines` |
+| Entity grids                                                        | `ag-grid-angular` + `@libregrid/server-side-row-model` + `@libregrid/server-side-selection`                                             |
+| Filters                                                             | `@libregrid/set-filter`, `@libregrid/multi-filter`, `@libregrid/advanced-filter`, `@libregrid/filters-tool-panel`, `@libregrid/find`    |
+| Cell selection and clipboard                                        | `@libregrid/cell-selection`, `@libregrid/clipboard`                                                                                     |
+| Org Units tree                                                      | `@libregrid/tree-data`                                                                                                                  |
+| .xlsx export                                                        | `@libregrid/excel-export`. CSV and Sheets export run through the API                                                                    |
+| Telemetry charts                                                    | `@libregrid/integrated-charts`, `@libregrid/sparklines`                                                                                 |
 
 Conventions:
 
@@ -212,25 +212,25 @@ Conventions:
 
 ## 12. States
 
-| State | Treatment |
-|---|---|
-| Empty entity list | Branded empty state: wordmark, one sentence ("No users match these filters"), one action ("Clear filters") |
-| Loading grid data | Skeleton rows inside the grid card. The chip bar and toolbar stay interactive where safe |
-| Stale data | The freshness indicator turns `status-warning` with the age ("Synced 26h ago"). A "Refresh now" text action sits beside it. The stale flag comes from the API (spec) |
-| Sync in progress | Progress shows in the status bar. Other jobs queue behind the Cache Sync lock (decision 17.15). The UI shows the queued state and never blocks input |
-| Capability failing | An inline banner on the affected page names the specific capability and links to diagnostics. No generic error text |
-| Job running / done / failed | The Jobs page models GCP Console: status chip, duration, brief error, expandable detail (spec). Failure states name the required admin action |
-| Live update (SSE) | Affected rows refresh in place after a `resync` event. No full-grid reload. A subtle row flash marks changed rows |
+| State                       | Treatment                                                                                                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Empty entity list           | Branded empty state: wordmark, one sentence ("No users match these filters"), one action ("Clear filters")                                                           |
+| Loading grid data           | Skeleton rows inside the grid card. The chip bar and toolbar stay interactive where safe                                                                             |
+| Stale data                  | The freshness indicator turns `status-warning` with the age ("Synced 26h ago"). A "Refresh now" text action sits beside it. The stale flag comes from the API (spec) |
+| Sync in progress            | Progress shows in the status bar. Other jobs queue behind the Cache Sync lock (decision 17.15). The UI shows the queued state and never blocks input                 |
+| Capability failing          | An inline banner on the affected page names the specific capability and links to diagnostics. No generic error text                                                  |
+| Job running / done / failed | The Jobs page models GCP Console: status chip, duration, brief error, expandable detail (spec). Failure states name the required admin action                        |
+| Live update (SSE)           | Affected rows refresh in place after a `resync` event. No full-grid reload. A subtle row flash marks changed rows                                                    |
 
 ## 13. Reference Map
 
-| Pattern | Modeled on |
-|---|---|
-| Jobs list and job detail page | Google Cloud Console operation pages (status, duration, brief errors) |
-| Setup wizard copy and layout | GAM7 onboarding (one-click-copy values, direct links, no menu hunting) |
-| Org Units tree with counts | Google Admin Console OU picker |
-| Bulk action preview + confirm | Google Admin Console bulk-edit flows |
-| Overall shell | Standard left-nav / header / content / footer admin console layout |
+| Pattern                       | Modeled on                                                             |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| Jobs list and job detail page | Google Cloud Console operation pages (status, duration, brief errors)  |
+| Setup wizard copy and layout  | GAM7 onboarding (one-click-copy values, direct links, no menu hunting) |
+| Org Units tree with counts    | Google Admin Console OU picker                                         |
+| Bulk action preview + confirm | Google Admin Console bulk-edit flows                                   |
+| Overall shell                 | Standard left-nav / header / content / footer admin console layout     |
 
 ## 14. Open Items
 

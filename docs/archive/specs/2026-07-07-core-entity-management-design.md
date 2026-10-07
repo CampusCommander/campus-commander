@@ -7,6 +7,7 @@
 Campus Commander is a self-hosted, single-tenant web app that gives Google Workspace admins (K-12 school districts) a fast, responsive way to manage Workspace assets in bulk — replacing the slow/limited bulk workflows in Google's own Admin Console. It leans on extensive local caching so search/filter/bulk-select feel instant even at large scale.
 
 This is the first of three specs:
+
 1. **Core entity management** (this doc) — caching, chip-filter/grid UI, NL filtering, inline editing, bulk actions, import/export, over Users/Devices/Groups/OrgUnits.
 2. **NL-driven reporting/status dashboard** — status/stats/health widgets; users can natural-language "vibecode" small custom widgets onto the dashboard. (Not yet designed.)
 3. **Widget gallery** (stretch goal) — sharing/discovering dashboard widgets across deployments. (Not yet designed.)
@@ -62,12 +63,12 @@ Goal: connecting Campus Commander to a district's Workspace domain should requir
 - **Fully automated using that bootstrap identity (no Console visit required):**
   - Pick an existing GCP project or create a new one (Cloud Resource Manager API).
   - Detect which required APIs are enabled and enable any that are missing (Service Usage API): Admin SDK, Groups Settings API, Chrome Management API.
-  - Link an *existing* billing account if the admin already has one (Cloud Billing API: `billingAccounts.list` + `projects.updateBillingInfo`). Creating a **brand-new** billing account is not possible via API — attaching a first payment method is PCI-gated and Console-only — so this is the one billing-related manual step, and only applies to a district with no existing GCP billing account at all. Called out now since Workspace/Cloud APIs moving toward paid tiers is a plausible near-future forcing function.
+  - Link an _existing_ billing account if the admin already has one (Cloud Billing API: `billingAccounts.list` + `projects.updateBillingInfo`). Creating a **brand-new** billing account is not possible via API — attaching a first payment method is PCI-gated and Console-only — so this is the one billing-related manual step, and only applies to a district with no existing GCP billing account at all. Called out now since Workspace/Cloud APIs moving toward paid tiers is a plausible near-future forcing function.
   - Create the service account and its key. The generated JSON key is held server-side directly — it never has to be downloaded to or handled from the admin's local filesystem.
   - Create the dedicated non-human service-admin Workspace user (e.g. `campus-commander-admin@district.org`) and a custom admin role bundling exactly the User management / Group management / Device management / Org unit management privileges — not full Super Admin, and not impersonation of any real staffer's personal account. Rationale: bounds blast radius if the service account key ever leaks, survives staff turnover, and keeps every Campus Commander-driven change cleanly attributable in Google's own admin audit log, distinct from a human admin's direct console changes. This is the account the service account impersonates (the `sub` claim) on every subsequent API call.
 - **Irreducibly manual — Google security gates with no API path:**
   1. A Super Admin clicking **Authorize** on the domain-wide delegation page (`admin.google.com/ac/owl/domainwidedelegation`), pasting the Client ID and scope list the wizard generated. The wizard presents these as one-click-copy values next to a direct link to that page — this "clean copy/paste, direct link, no menu hunting" pattern is deliberately modeled on GAM7's onboarding flow, which does the same thing (confirmed no URL-parameter prefill trick exists even there — don't design around one).
-  2. If the district has **multi-party approval** enabled (a Workspace security feature, off by default, available with 2+ super admins: authorizing a DWD client ID requires a *second* super admin's sign-off under Security → Multi-party approval before it takes effect) — a second human's action, not just backend propagation. The waiting-screen copy should mention this explicitly as a possible cause of a long wait, distinct from Google's own propagation delay.
+  2. If the district has **multi-party approval** enabled (a Workspace security feature, off by default, available with 2+ super admins: authorizing a DWD client ID requires a _second_ super admin's sign-off under Security → Multi-party approval before it takes effect) — a second human's action, not just backend propagation. The waiting-screen copy should mention this explicitly as a possible cause of a long wait, distinct from Google's own propagation delay.
   3. Attaching a payment method to a brand-new billing account, per above, only if no existing billing account was found.
 - **Scan-and-wait.** Once the admin confirms they've authorized it, a durable background job — the first concrete use case for the deferred jobs/execution pipeline — polls by attempting real impersonated API calls, **broken out per capability area** (Users, Devices, Groups, OrgUnits, Telemetry) rather than one opaque check, so a partial misconfiguration (e.g. Groups Settings scope missing) is immediately diagnosable rather than presenting as a generic "still waiting." Polling backs off over time to suit the observed real-world range (tight polling in the first ~15 minutes, backing off over hours), capped around Google's own stated 24h worst case before flagging for support. The job must be resumable across app/browser restarts — the admin can close the tab and come back later to a persistent setup-status view, not a modal they have to babysit — and should notify on success via email and in-app, since an hours-long wait means they've likely moved on.
 - **Permanent connection health diagnostic.** The same per-capability-area PASS/FAIL check used during onboarding remains reachable from within the app afterward — useful if a scope is later revoked, edited, or DWD needs re-authorization, giving a precise "here's exactly what's broken" view instead of generic API error messages surfacing during normal use.
@@ -81,18 +82,18 @@ Goal: connecting Campus Commander to a district's Workspace domain should requir
 
 The grid is `ag-grid-community` 36.x extended with LibreGrid (`@libregrid/*`) feature packages. LibreGrid is an MIT-licensed monorepo of modules that plug into the AG Grid Community module registry. The app registers only the modules it uses through `@libregrid/angular`. Packages are published to npm under the `@libregrid` scope at lockstep versions (current 1.3.0). Peer dependency: `ag-grid-community >=36.1.0 <37`. No AG Grid Enterprise dependency.
 
-| Requirement | Package(s) |
-|---|---|
-| Angular bootstrap, module registration, signal mirroring | `@libregrid/angular` |
-| Angular Material token to grid theme mapping | `@libregrid/material` |
-| Entity grids at 100k+ rows (Users, Devices, Groups) | `@libregrid/server-side-row-model` |
-| Server-side selection across filters, pages, and sessions | `@libregrid/server-side-selection` |
-| OrgUnits tree view with per-OU counts | `@libregrid/tree-data` |
-| Chip filter bar and column filters | `@libregrid/set-filter`, `@libregrid/multi-filter`, `@libregrid/advanced-filter`, `@libregrid/filters-tool-panel`, `@libregrid/find` |
-| Cell-range selection, copy/cut/paste | `@libregrid/cell-selection`, `@libregrid/clipboard` |
-| .xlsx export | `@libregrid/excel-export` |
-| Grid chrome (menus, side bar, columns panel, status bar) | `@libregrid/menu`, `@libregrid/side-bar`, `@libregrid/columns-tool-panel`, `@libregrid/status-bar` |
-| Telemetry time series (battery health trend charts) | `@libregrid/integrated-charts`, `@libregrid/sparklines` |
+| Requirement                                               | Package(s)                                                                                                                           |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Angular bootstrap, module registration, signal mirroring  | `@libregrid/angular`                                                                                                                 |
+| Angular Material token to grid theme mapping              | `@libregrid/material`                                                                                                                |
+| Entity grids at 100k+ rows (Users, Devices, Groups)       | `@libregrid/server-side-row-model`                                                                                                   |
+| Server-side selection across filters, pages, and sessions | `@libregrid/server-side-selection`                                                                                                   |
+| OrgUnits tree view with per-OU counts                     | `@libregrid/tree-data`                                                                                                               |
+| Chip filter bar and column filters                        | `@libregrid/set-filter`, `@libregrid/multi-filter`, `@libregrid/advanced-filter`, `@libregrid/filters-tool-panel`, `@libregrid/find` |
+| Cell-range selection, copy/cut/paste                      | `@libregrid/cell-selection`, `@libregrid/clipboard`                                                                                  |
+| .xlsx export                                              | `@libregrid/excel-export`                                                                                                            |
+| Grid chrome (menus, side bar, columns panel, status bar)  | `@libregrid/menu`, `@libregrid/side-bar`, `@libregrid/columns-tool-panel`, `@libregrid/status-bar`                                   |
+| Telemetry time series (battery health trend charts)       | `@libregrid/integrated-charts`, `@libregrid/sparklines`                                                                              |
 
 Notes:
 
@@ -112,6 +113,7 @@ Notes:
 ## Bulk Action Safety
 
 For every bulk action (and the import flow, see below):
+
 - **Preview/dry-run is a must-have for v1** — show the exact diff of what will change before committing.
 - **Audit log is a must-have for v1** — durable record of who ran what, on which entities, when.
 - **Undo/rollback is a stretch goal**, not required for v1 (not all Google API changes are cleanly reversible, e.g. password resets).
@@ -134,6 +136,7 @@ A single general mechanism, first designed against Users but intended to general
 ## Per-Entity Design
 
 ### Users
+
 - **Google resource:** Admin SDK Directory API `Users`.
 - **Cached/filterable fields:** `primaryEmail`, `name.givenName/familyName/fullName`, `orgUnitPath`, `suspended` + `suspensionReason`, `archived`, `lastLoginTime`, `creationTime`, `isEnrolledIn2Sv`, `organizations[]` (dept/title), `customSchemas` (schools often store grade level, student ID, etc. here), `aliases[]`.
 - **Bulk actions:**
@@ -147,6 +150,7 @@ A single general mechanism, first designed against Users but intended to general
 - **Cross-reference to Classroom (shelved, see below):** when suspending/deleting a user, the preview step should flag if that user owns active Classroom courses, so admins don't silently orphan courses.
 
 ### Devices (ChromeOS)
+
 - **Google resource:** Admin SDK Directory API `ChromeOsDevice`.
 - **Cached/filterable fields:** `serialNumber`, `status`, `model`, `orgUnitPath`, `annotatedUser`/`annotatedLocation`/`annotatedAssetId`, `notes`, `lastSync`, `osVersion` + `osVersionCompliance`, `diskVolumeReports[]`/`diskSpaceUsage`, `systemRamTotal`, `supportEndDate` + `willAutoRenew`, `recentUsers[]` (most recent), `firstEnrollmentTime`/`lastEnrollmentTime`, `deprovisionReason`.
 - **Writable surface is narrow:** only `annotatedUser`, `annotatedLocation`, `annotatedAssetId`, `notes`, `orgUnitPath` are patchable. Everything else is read-only device-reported telemetry — visible/filterable, never inline-editable.
@@ -164,6 +168,7 @@ A single general mechanism, first designed against Users but intended to general
   - **All other telemetry (CPU, memory, storage, network, etc.) is latest-snapshot only** — no historical retention, to bound storage growth at target scale (100k+ devices reporting every 10–60 minutes would be unsustainable to store in full).
 
 ### Groups
+
 - **Google resources:** Admin SDK Directory API `Groups` + `Members` sub-resource, plus the **Group Settings API** (join/post/moderation policy). Explicitly **not** Cloud Identity's dynamic/security groups (a different API surface) and **nothing related to group conversation/messaging content** (archives, discussion content) — purely directory-level identity, settings, and membership management.
 - **Cached/filterable fields:** `email`, `name`, `description`, `directMembersCount`, `aliases[]`, plus Group Settings fields (join/post/moderation policy — exact field list TBD when this entity is implemented).
 - **Membership:** a distinct sub-resource per group — `email`, `role` (OWNER/MANAGER/MEMBER), `type` (USER/GROUP/CUSTOMER/EXTERNAL), `delivery_settings`.
@@ -171,6 +176,7 @@ A single general mechanism, first designed against Users but intended to general
 - **No native bulk method for membership** — insert/delete are one-call-per-member. Bulk "add 200 students to a group" means 200 rate-limited individual calls — routed through the jobs/execution pipeline (see Standardized Execution / Jobs Pipeline).
 
 ### OrgUnits
+
 - **Google resource:** Admin SDK Directory API `OrgUnits`.
 - **Fields:** `name`, `description`, `orgUnitId` (stable), `orgUnitPath` (derived from name + `parentOrgUnitPath`, up to 35 levels deep), `parentOrgUnitId`/`parentOrgUnitPath`.
 - **Structurally different from other entities:** a small (dozens–low hundreds) hierarchical tree, not a flat bulk-manageable list of thousands. Likely UI: a **tree view** (like Google's own OU picker) used for navigation and as a filter source for the Users/Devices grids, showing computed entity counts per OU (computed by Campus Commander from the cache, not returned by Google).
@@ -179,6 +185,7 @@ A single general mechanism, first designed against Users but intended to general
 - No dedicated bulk method — "move entities into an OU" is a Users/Devices bulk action (already covered), not an OrgUnit-resource action.
 
 ### Classroom — SHELVED
+
 - Explicitly out of scope for v1 and likely for this project's near-term roadmap entirely.
 - Rationale: Classroom rostering at real scale is normally driven by SIS (Student Information System) sync (PowerSchool, Infinite Campus, OneRoster, etc.), not manual admin bulk-editing — a genuinely different problem (integration with an external system of record) from everything else in this spec (IT admin directly manipulating Workspace directory objects). If revisited, treat it as its own separate project, likely centered on SIS sync rather than manual roster CRUD.
 - The one retained cross-reference: the Users suspend/delete bulk-action preview should flag if the target user owns active Classroom courses (see Users section above).
@@ -192,7 +199,7 @@ Polling-based; Google's push notifications (`watch`) require a publicly reachabl
 - **Default staleness thresholds** (admin-tunable per install): Users **1h**, Devices **4h**, Groups + members **1h**, OrgUnits **12h** — reflecting how fast each actually changes (users/group-membership churn during enrollment windows; device inventory moves slowly; OU structure is near-static).
 - **Full sweep only in v1 — no delta/incremental path.** Every refresh is a full paginated list-sweep of the collection, upserted into Postgres. Bootstrap (first-ever sync into an empty database) is just the degenerate case of the same sweep — same codepath as view-triggered and nightly passes, with progress events surfaced on the setup screen. No etag/delta games; the complexity isn't worth it until mega-district scale, and quota pacing handles that pressure.
 - **Deletion detection: mark-and-sweep.** Every record touched by a sweep gets its `lastSyncAt` stamped. After a completed sweep, any record whose `lastSyncAt` predates the sweep start wasn't returned by Google → **soft delete**. New entities appear naturally as inserts. No tombstone tracking required.
-- **Concurrency: Redis in-flight marker + Pub/Sub events.** A per-entity-type in-flight key ensures a sync already running is *joined*, not duplicated (two admins opening the Users grid at once = one sync). Redis Pub/Sub carries progress/completion events; subscribed views live-update from Postgres on completion instead of polling or "refresh and pray."
+- **Concurrency: Redis in-flight marker + Pub/Sub events.** A per-entity-type in-flight key ensures a sync already running is _joined_, not duplicated (two admins opening the Users grid at once = one sync). Redis Pub/Sub carries progress/completion events; subscribed views live-update from Postgres on completion instead of polling or "refresh and pray."
 - **Quota pacing — resolved.** Per-API rate limits (Directory 2,400 QPM/user/project; Groups Settings 100k/day; Chrome Management QPM unpublished) are handled with a greedy first-come-first-serve model: workers do not coordinate on a shared rate budget, and backoff is driven reactively by Google's 429 responses. Two levels of retry apply: NestJS workers handle per-request backoff internally (fine-grained), and Kestra handles flow-level retry (coarse-grained, per-chunk). See `docs/research/google-api-quotas.md` for documented limits.
 
 ## Standardized Execution / Jobs Pipeline
@@ -214,6 +221,7 @@ Needed for: entity sync sweeps (see Sync & Freshness Strategy above), the bootst
 - **Failure/observability surface:** Basic job status only, modeled on the Google Cloud Console pattern — shows job status (running/completed/failed), duration, and brief error messages. No advanced observability (quota exhaustion warnings, sync lag metrics) in v1.
 
 ## Deferred / Explicitly Out of Scope for v1
+
 - Hosted LLM adapter for NL filtering (pluggable interface exists, but only the local-model implementation ships in v1).
 - Undo/rollback for bulk actions (stretch goal).
 - `makeAdmin` (super-admin grant) in bulk tooling.

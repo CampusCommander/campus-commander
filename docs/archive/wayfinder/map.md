@@ -45,7 +45,6 @@ Open Questions in that spec. Done when both sections are written, reviewed, and 
 
 ## Not yet specified
 
-
 ## Out of scope
 
 - Real-time push via Admin SDK push notifications / Cloud Pub/Sub subscriptions — v1 is

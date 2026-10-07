@@ -10,7 +10,6 @@ Apply the `ste-writing` skill to all prose output (docs, READMEs, PR description
 - No semicolons, no contractions. Max 20 words per instruction sentence.
 - One topic per paragraph (max six sentences).
 
-
 ## Client UI implementation
 
 For client pages, controls, feature flows, and UI reviews, read [docs/ui/README.md](docs/ui/README.md) first.

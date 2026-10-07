@@ -70,15 +70,15 @@ A local assignment key does not create Google idempotency support.
 
 ### Recovery transitions
 
-| Trigger | Durable transition | Recovery action |
-|---|---|---|
-| User confirms a preview | Commit job, frozen manifest reference, and dispatch outbox together | Outbox dispatcher retries delivery using the same identity |
-| Worker accepts assignment | Claim assignment and attempt epoch conditionally | Duplicate delivery returns the recorded state |
-| Worker prepares Google request | Record operation intent and request digest | Reconcile unresolved dispatch after lease expiry |
-| Google responds | Commit per-operation outcome and audit evidence | Retry eligible failed operations only |
-| Worker dies after remote acceptance | Preserve unresolved dispatch as unknown | Verify current state or require review according to capability |
-| Old worker reports completion | Reject mismatched epoch | Retain diagnostic evidence without replacing current state |
-| Every assignment settles | Aggregate operation records | Record completed, completed-with-errors, cancelled, failed, or needs-review outcome |
+| Trigger                             | Durable transition                                                  | Recovery action                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| User confirms a preview             | Commit job, frozen manifest reference, and dispatch outbox together | Outbox dispatcher retries delivery using the same identity                          |
+| Worker accepts assignment           | Claim assignment and attempt epoch conditionally                    | Duplicate delivery returns the recorded state                                       |
+| Worker prepares Google request      | Record operation intent and request digest                          | Reconcile unresolved dispatch after lease expiry                                    |
+| Google responds                     | Commit per-operation outcome and audit evidence                     | Retry eligible failed operations only                                               |
+| Worker dies after remote acceptance | Preserve unresolved dispatch as unknown                             | Verify current state or require review according to capability                      |
+| Old worker reports completion       | Reject mismatched epoch                                             | Retain diagnostic evidence without replacing current state                          |
+| Every assignment settles            | Aggregate operation records                                         | Record completed, completed-with-errors, cancelled, failed, or needs-review outcome |
 
 The worker-death experiment killed a real child process after a separately committed simulated provider effect.
 It proved preservation of uncertainty and stale-epoch rejection. It did not prove real Google reconciliation.
@@ -104,15 +104,15 @@ Five successful calls remains an example, not an accepted deployment constant.
 
 The next job-service experiment must prove these transitions:
 
-| Observation | Required behavior |
-|---|---|
-| New valid backoff | Overwrite owner, renew TTL, and invalidate earlier recovery evidence |
-| Worker remains in backoff | Continue accepted reporting during the wait and renew TTL |
-| Duplicate observation | Avoid incrementing recovery evidence twice |
-| Old attempt or terminal job | Reject the observation before it creates or clears a hold |
-| Success before the latest backoff revision | Exclude it from the current recovery count |
-| Recovery threshold reached | Clear only matching owner and recovery revision atomically |
-| Job completes after losing ownership | Preserve the replacement owner's hold |
+| Observation                                | Required behavior                                                    |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| New valid backoff                          | Overwrite owner, renew TTL, and invalidate earlier recovery evidence |
+| Worker remains in backoff                  | Continue accepted reporting during the wait and renew TTL            |
+| Duplicate observation                      | Avoid incrementing recovery evidence twice                           |
+| Old attempt or terminal job                | Reject the observation before it creates or clears a hold            |
+| Success before the latest backoff revision | Exclude it from the current recovery count                           |
+| Recovery threshold reached                 | Clear only matching owner and recovery revision atomically           |
+| Job completes after losing ownership       | Preserve the replacement owner's hold                                |
 
 The recovery design needs event identities and attempt epochs. It does not need an estimated Google quota balance.
 
@@ -162,15 +162,15 @@ Its PostgreSQL 16, Redis 7, and Kestra 0.20.0 images differ from the isolated ex
 
 Replace those scaffold sections during P0.1/P9.2:
 
-| Existing section | Replacement |
-|---|---|
-| Source builds through absent `apps/` Dockerfiles | Published application and worker images from the retained root-level workspace |
-| `KESTEA_*` configuration | Version-qualified Kestra repository, queue, internal storage, authentication, and health configuration |
-| One database ownership boundary | Separate application and Kestra databases and migration ownership, even on one server |
-| API-only job execution path | Independent workers with internal authenticated endpoints |
-| Static passwords and broad published ports | Generated installation secrets and an HTTPS edge with internal service networking |
-| Unspecified persistence | Explicit application artifacts, Kestra internal storage, database, and Redis persistence/rebuild policy |
-| Hardcoded local dependencies | Configurable PostgreSQL, Redis, Kestra, and artifact endpoints for each deployment profile |
+| Existing section                                 | Replacement                                                                                             |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Source builds through absent `apps/` Dockerfiles | Published application and worker images from the retained root-level workspace                          |
+| `KESTEA_*` configuration                         | Version-qualified Kestra repository, queue, internal storage, authentication, and health configuration  |
+| One database ownership boundary                  | Separate application and Kestra databases and migration ownership, even on one server                   |
+| API-only job execution path                      | Independent workers with internal authenticated endpoints                                               |
+| Static passwords and broad published ports       | Generated installation secrets and an HTTPS edge with internal service networking                       |
+| Unspecified persistence                          | Explicit application artifacts, Kestra internal storage, database, and Redis persistence/rebuild policy |
+| Hardcoded local dependencies                     | Configurable PostgreSQL, Redis, Kestra, and artifact endpoints for each deployment profile              |
 
 The isolated Kestra configuration did not disable Basic Auth through the attempted setting.
 Its first-run API required credential initialization. Packaging must test the selected version's actual startup behavior.

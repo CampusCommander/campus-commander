@@ -14,6 +14,7 @@ How does sync interact with bulk-action writes? Specifically: read-after-write f
 ## Resolution
 
 **Decided 2026-07-22:**
+
 1. **Post-job backfill** — After a job (e.g., bulk device update) completes successfully, NestJS backfills both Postgres (authoritative source) and Redis (cache) with all the success results.
 2. **Cache invalidation signal** — NestJS updates a known location (Redis pub/sub channel or key) that the client is actively watching. This replaces the previous Firebase-based notification system.
 3. **Client fetches from cache** — Upon receiving the notification, the client immediately fetches the new values from Redis, getting the updated data without hitting Postgres or Google APIs.

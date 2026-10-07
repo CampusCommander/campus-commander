@@ -333,7 +333,6 @@ The planning phase is complete when:
 - critical design claims have explicit acceptance tests;
 - unresolved decisions are recorded as blockers rather than left for implementation-time invention.
 
-
 ---
 
 ## 17. Resolved Decisions (Decision Record)
@@ -383,6 +382,7 @@ _This section records decisions made during planning sessions. Each entry captur
 **Decision:** Pure self-hosted. No vendor callback service. No vendor infrastructure dependency. Customer creates their own Google OAuth client in their own Google Cloud project.
 
 **Sub-decisions:**
+
 - Bootstrap OAuth scope is `email profile` only
 - All Google API scopes are granted via DWD in `admin.google.com`, not automated by the app
 - Designated Google Super Admin account is configured at install and changeable in Customer Settings
@@ -395,6 +395,7 @@ _This section records decisions made during planning sessions. Each entry captur
 ### 17.6 TLS / Certificate Strategy
 
 **Decision:** Four deployment modes with corresponding TLS:
+
 - Localhost dev: `http://localhost` + `mkcert` (one scripted command)
 - Cloud with domain: `Caddy` + Let's Encrypt via HTTP-01 (`DOMAIN` env var)
 - Cloud without domain: `sslip.io` + Caddy + Let's Encrypt
@@ -407,6 +408,7 @@ _This section records decisions made during planning sessions. Each entry captur
 ### 17.7 RBAC Model
 
 **Decision:** Two internal platform roles, separate from Google Super Admin (DWD account):
+
 - **Platform Admin:** Manages users, assigns RBAC roles. Cannot necessarily run jobs on all entities.
 - **Entity Super Admin:** Can view/execute jobs on any entity across all OUs.
 - Users are **invite-only** — no auto-provision on first login.

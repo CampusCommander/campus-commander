@@ -22,25 +22,25 @@ All checks use synthetic data. All tasks remain unimplemented until evidence est
 
 ## Task index
 
-| Local ID | Task | Blocked by |
-|---|---|---|
-| P1-T01 | Define and validate the Phase 1 deployment configuration contract | None |
-| P1-T02 | Qualify the Kestra edition, runtime version, and deployment topology | P1-T01 |
-| P1-T03 | Build minimal frontend, API, and worker release images | P1-T01 |
-| P1-T04 | Bootstrap isolated application and Kestra databases | P1-T01 |
-| P1-T05 | Bootstrap Redis with explicit security and restart behavior | P1-T01 |
-| P1-T06 | Implement the local artifact storage foundation | P1-T01, P1-T04 |
-| P1-T07 | Qualify one shared artifact backend across separate worker hosts | P1-T06 |
-| P1-T08 | Run authenticated Kestra with independent workers and qualified internal storage | P1-T02, P1-T03, P1-T04 |
-| P1-T09 | Protect the startup page with HTTPS and installation bootstrap access | P1-T01, P1-T03 |
-| P1-T10 | Deliver the complete all-Docker installation profile | P1-T03, P1-T04, P1-T05, P1-T06, P1-T08, P1-T09 |
-| P1-T11 | Deliver the hybrid Docker and district-server installation profile | P1-T07, P1-T10 |
-| P1-T12 | Deliver the enterprise Kubernetes installation profile | P1-T07, P1-T08, P1-T09 |
-| P1-T13 | Deliver repeatable preflight, install, resume, and upgrade commands | P1-T10, P1-T11, P1-T12 |
-| P1-T14 | Restore the foundational state into an isolated installation | P1-T10, P1-T11, P1-T12 |
-| P1-T15 | Qualify restart, outage, and resource failure behavior across all profiles | P1-T10, P1-T11, P1-T12 |
-| P1-T16 | Publish verified Phase 1 release artifacts and gate profile regressions in CI | P1-T13, P1-T14, P1-T15 |
-| P1-T17 | Accept the Phase 1 release through operator walkthroughs | P1-T16 |
+| Local ID | Task                                                                             | Blocked by                                     |
+| -------- | -------------------------------------------------------------------------------- | ---------------------------------------------- |
+| P1-T01   | Define and validate the Phase 1 deployment configuration contract                | None                                           |
+| P1-T02   | Qualify the Kestra edition, runtime version, and deployment topology             | P1-T01                                         |
+| P1-T03   | Build minimal frontend, API, and worker release images                           | P1-T01                                         |
+| P1-T04   | Bootstrap isolated application and Kestra databases                              | P1-T01                                         |
+| P1-T05   | Bootstrap Redis with explicit security and restart behavior                      | P1-T01                                         |
+| P1-T06   | Implement the local artifact storage foundation                                  | P1-T01, P1-T04                                 |
+| P1-T07   | Qualify one shared artifact backend across separate worker hosts                 | P1-T06                                         |
+| P1-T08   | Run authenticated Kestra with independent workers and qualified internal storage | P1-T02, P1-T03, P1-T04                         |
+| P1-T09   | Protect the startup page with HTTPS and installation bootstrap access            | P1-T01, P1-T03                                 |
+| P1-T10   | Deliver the complete all-Docker installation profile                             | P1-T03, P1-T04, P1-T05, P1-T06, P1-T08, P1-T09 |
+| P1-T11   | Deliver the hybrid Docker and district-server installation profile               | P1-T07, P1-T10                                 |
+| P1-T12   | Deliver the enterprise Kubernetes installation profile                           | P1-T07, P1-T08, P1-T09                         |
+| P1-T13   | Deliver repeatable preflight, install, resume, and upgrade commands              | P1-T10, P1-T11, P1-T12                         |
+| P1-T14   | Restore the foundational state into an isolated installation                     | P1-T10, P1-T11, P1-T12                         |
+| P1-T15   | Qualify restart, outage, and resource failure behavior across all profiles       | P1-T10, P1-T11, P1-T12                         |
+| P1-T16   | Publish verified Phase 1 release artifacts and gate profile regressions in CI    | P1-T13, P1-T14, P1-T15                         |
+| P1-T17   | Accept the Phase 1 release through operator walkthroughs                         | P1-T16                                         |
 
 ## Execution guidance
 

@@ -42,7 +42,7 @@
   --cc-content-max-width: 720px;
 }
 
-[data-theme="dark"] {
+[data-theme='dark'] {
   /* Color — dark (CC Color Dark) */
   --cc-surface-app: #121212;
   --cc-surface-card: #1e1e1e;
@@ -58,6 +58,6 @@
 
 /* Typography styles: Display 24/700/32, Title 16/500/24, Body 14/400/20, Caption 12/400/16 (Roboto). */
 :root {
-  --cc-font-family: "Roboto", "Helvetica Neue", Arial, sans-serif;
-  --cc-font-icon: "Material Symbols Outlined";
+  --cc-font-family: 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  --cc-font-icon: 'Material Symbols Outlined';
 }

@@ -11,14 +11,14 @@ Every scope below has the prefix `https://www.googleapis.com/auth/`.
 These are minimum scope candidates for the listed methods. Google privileges require controlled-account testing.
 The proposed application permission names describe contract responsibilities. P1.1 must finalize their identifiers.
 
-| Capability | Google method and source | Scope suffix | Proposed application permission | Runtime status |
-|---|---|---|---|---|
-| Read customer identity | [customers.get](https://developers.google.com/workspace/admin/directory/reference/rest/v1/customers/get) | `admin.directory.customer.readonly` | Manage connection | NOT RUN |
-| Read customer domains | [domains.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/domains/list) | `admin.directory.domain.readonly` | Manage connection | NOT RUN |
-| Read users | [users.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/list) | `admin.directory.user.readonly` | Read users within granted scope | NOT RUN |
-| Read ChromeOS devices | [chromeosdevices.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/list) | `admin.directory.device.chromeos.readonly` | Read devices within granted scope | NOT RUN |
-| Change a device annotation | [chromeosdevices.patch](https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/patch) | `admin.directory.device.chromeos` | Update approved device fields within granted scope | Deferred until a designated test device and write authorization exist |
-| Sign out a user | [users.signOut](https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/signOut) | `admin.directory.user.security` | Sign out users within granted scope | Outside the initial read-only experiment |
+| Capability                 | Google method and source                                                                                                 | Scope suffix                               | Proposed application permission                    | Runtime status                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------- | --------------------------------------------------------------------- |
+| Read customer identity     | [customers.get](https://developers.google.com/workspace/admin/directory/reference/rest/v1/customers/get)                 | `admin.directory.customer.readonly`        | Manage connection                                  | NOT RUN                                                               |
+| Read customer domains      | [domains.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/domains/list)                   | `admin.directory.domain.readonly`          | Manage connection                                  | NOT RUN                                                               |
+| Read users                 | [users.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/list)                       | `admin.directory.user.readonly`            | Read users within granted scope                    | NOT RUN                                                               |
+| Read ChromeOS devices      | [chromeosdevices.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/list)   | `admin.directory.device.chromeos.readonly` | Read devices within granted scope                  | NOT RUN                                                               |
+| Change a device annotation | [chromeosdevices.patch](https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/patch) | `admin.directory.device.chromeos`          | Update approved device fields within granted scope | Deferred until a designated test device and write authorization exist |
+| Sign out a user            | [users.signOut](https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/signOut)                 | `admin.directory.user.security`            | Sign out users within granted scope                | Outside the initial read-only experiment                              |
 
 The read-only experiment enables the first four rows. It requests no mutation scopes.
 Record supported Google roles, license prerequisites, returned fields, and omitted fields for each row after testing.
@@ -65,21 +65,21 @@ Restrict entity evidence to fixture aliases or counts. Keep actual account data 
 
 ## Execution and acceptance
 
-| Test | Procedure | Required result |
-|---|---|---|
-| Consent and scope accuracy | Authorize the four read capabilities | Granted scopes match enabled capabilities. Refresh credential exists. |
-| Customer identity | Resolve customer and compare known fixture identity | Exact customer match. Reject mismatch. |
-| Domain coverage | Read domains and enumerate users through the customer parameter | Primary and secondary fixture users appear without duplicate identity records. |
-| Device inventory | Read device inventory with the declared projection | Report available fields and empty inventory separately from access failure. |
-| Access-token reuse | Issue several reads within the access-token lifetime | Reuse the valid token instead of renewing for each request. |
-| Browser closure | Close the authorizing browser and issue another read | Worker access continues without a browser session. |
-| Process restart | Restart the harness with only encrypted persisted credentials and its key | Unattended read succeeds without consent. |
-| Renewal | Observe expiry or trigger renewal explicitly through the test harness | A new access token permits another read. Preserve the refresh credential when renewal omits it. |
-| Missing Google privilege | Remove one test identity privilege, then read its capability | Report the permission failure without misclassifying it as quota backoff. |
-| Revocation | Revoke the dedicated test grant and attempt renewal | Mark the connection as requiring authorization. Do not retry indefinitely. |
-| Identity replacement | Authorize another approved identity in the same customer | Resume reads and record the connection identity change. |
-| Wrong customer | Authorize an isolated identity from another test customer, when available | Reject replacement before changing installation ownership. |
-| Key recovery | Restart with a restored encrypted credential and independently restored key | Read succeeds. Missing key produces a clear recovery failure. |
+| Test                       | Procedure                                                                   | Required result                                                                                 |
+| -------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Consent and scope accuracy | Authorize the four read capabilities                                        | Granted scopes match enabled capabilities. Refresh credential exists.                           |
+| Customer identity          | Resolve customer and compare known fixture identity                         | Exact customer match. Reject mismatch.                                                          |
+| Domain coverage            | Read domains and enumerate users through the customer parameter             | Primary and secondary fixture users appear without duplicate identity records.                  |
+| Device inventory           | Read device inventory with the declared projection                          | Report available fields and empty inventory separately from access failure.                     |
+| Access-token reuse         | Issue several reads within the access-token lifetime                        | Reuse the valid token instead of renewing for each request.                                     |
+| Browser closure            | Close the authorizing browser and issue another read                        | Worker access continues without a browser session.                                              |
+| Process restart            | Restart the harness with only encrypted persisted credentials and its key   | Unattended read succeeds without consent.                                                       |
+| Renewal                    | Observe expiry or trigger renewal explicitly through the test harness       | A new access token permits another read. Preserve the refresh credential when renewal omits it. |
+| Missing Google privilege   | Remove one test identity privilege, then read its capability                | Report the permission failure without misclassifying it as quota backoff.                       |
+| Revocation                 | Revoke the dedicated test grant and attempt renewal                         | Mark the connection as requiring authorization. Do not retry indefinitely.                      |
+| Identity replacement       | Authorize another approved identity in the same customer                    | Resume reads and record the connection identity change.                                         |
+| Wrong customer             | Authorize an isolated identity from another test customer, when available   | Reject replacement before changing installation ownership.                                      |
+| Key recovery               | Restart with a restored encrypted credential and independently restored key | Read succeeds. Missing key produces a clear recovery failure.                                   |
 
 Record unavailable fixture cases as NOT RUN. Do not mark the credential profile qualified when required cases remain untested.
 Separate external Google approval time from hands-on setup time.

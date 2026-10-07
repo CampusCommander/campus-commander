@@ -15,29 +15,29 @@ The existing application configuration remains unchanged by this validation work
 
 ## Gate results
 
-| Milestone | Result | Evidence and remaining work |
-|---|---|---|
-| P0.1 dependency and scaffold checks | PARTIAL | API build passed. Frontend baseline failed. Isolated compiler override passed. Pinned LibreGrid compilation and browser smoke test passed. Full product grid remains untested. |
-| P2.1 all-settled orchestration | PARTIAL | Real Kestra dispatched ten assignments with concurrency three. Aggregation ran after settlement, including failures. Full restart and dispatch reconciliation remain open. |
-| P2.1 Redis admission policy | PARTIAL | Owner replacement, conditional cleanup, TTL renewal, expiry, and smallest-first gate passed. Complete job-service event aggregation remains untested. |
-| P2.1 operation recovery | PARTIAL | A killed worker left a simulated remote effect and an unresolved dispatch record. Stale completion failed its epoch check. |
-| P2.4 local publication | PARTIAL | Completed bytes remained unpublished after metadata rollback. Recovery verified bytes before publication. Real host-crash and shared-backend tests remain open. |
-| P3.1 credential proof | AWAITING ACCESS | No Google credentials were supplied. [Capability matrix and experiment procedure](google-credential-proof.md) are ready. |
-| P5.1 query spike | PASS, limited scope | One million synthetic rows, scoped indexed queries, and two background database loops. Full product workload remains open. |
-| P9.1 threat model | DRAFT COMPLETE | [Threat model](threat-model.md) defines boundaries, threats, controls, and required denial tests. Controls are not implemented or certified. |
-| P9.2 prerequisites and walkthrough | PARTIAL | Static packaging defects recorded. Docker execution and novice installation remain untested. |
+| Milestone                           | Result              | Evidence and remaining work                                                                                                                                                    |
+| ----------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0.1 dependency and scaffold checks | PARTIAL             | API build passed. Frontend baseline failed. Isolated compiler override passed. Pinned LibreGrid compilation and browser smoke test passed. Full product grid remains untested. |
+| P2.1 all-settled orchestration      | PARTIAL             | Real Kestra dispatched ten assignments with concurrency three. Aggregation ran after settlement, including failures. Full restart and dispatch reconciliation remain open.     |
+| P2.1 Redis admission policy         | PARTIAL             | Owner replacement, conditional cleanup, TTL renewal, expiry, and smallest-first gate passed. Complete job-service event aggregation remains untested.                          |
+| P2.1 operation recovery             | PARTIAL             | A killed worker left a simulated remote effect and an unresolved dispatch record. Stale completion failed its epoch check.                                                     |
+| P2.4 local publication              | PARTIAL             | Completed bytes remained unpublished after metadata rollback. Recovery verified bytes before publication. Real host-crash and shared-backend tests remain open.                |
+| P3.1 credential proof               | AWAITING ACCESS     | No Google credentials were supplied. [Capability matrix and experiment procedure](google-credential-proof.md) are ready.                                                       |
+| P5.1 query spike                    | PASS, limited scope | One million synthetic rows, scoped indexed queries, and two background database loops. Full product workload remains open.                                                     |
+| P9.1 threat model                   | DRAFT COMPLETE      | [Threat model](threat-model.md) defines boundaries, threats, controls, and required denial tests. Controls are not implemented or certified.                                   |
+| P9.2 prerequisites and walkthrough  | PARTIAL             | Static packaging defects recorded. Docker execution and novice installation remain untested.                                                                                   |
 
 Implementation package statuses remain TODO. Experimental evidence closes only the specific behaviors demonstrated.
 See [technical findings and change instructions](technical-findings.md) for exact change boundaries.
 
 ## Measured query results
 
-| Query | Samples | p95 | p99 |
-|---|---:|---:|---:|
-| Exact serial with school scope | 150 | 0.55 ms | 0.60 ms |
-| School and status, first 100 rows | 150 | 0.59 ms | 0.77 ms |
-| Name prefix with school scope | 150 | 2.36 ms | 2.84 ms |
-| Name substring with school scope | 150 | 7.79 ms | 8.36 ms |
+| Query                             | Samples |     p95 |     p99 |
+| --------------------------------- | ------: | ------: | ------: |
+| Exact serial with school scope    |     150 | 0.55 ms | 0.60 ms |
+| School and status, first 100 rows |     150 | 0.59 ms | 0.77 ms |
+| Name prefix with school scope     |     150 | 2.36 ms | 2.84 ms |
+| Name substring with school scope  |     150 | 7.79 ms | 8.36 ms |
 
 These measurements include the local PostgreSQL client round trip. They exclude HTTP, browser rendering, and LibreGrid interaction.
 The fixture contains 500,000 user rows and 500,000 device rows across 100 synthetic school identifiers.
@@ -65,19 +65,19 @@ The experiment identifies duplicate dispatch behavior. It does not attribute tha
 
 ## Evidence index
 
-| File | Content |
-|---|---|
-| [build-results.json](evidence/build-results.json) | Baseline builds and isolated frontend correction |
-| [installed-peer-check.json](evidence/installed-peer-check.json) | Installed dependency peer checks. Missing peers were outside this check. |
-| [grid-metadata.json](evidence/grid-metadata.json) | Published package versions, licenses, and peer declarations |
-| [grid-compiler.json](evidence/grid-compiler.json) | Pinned Angular/LibreGrid strict compilation with server-side row and selection modules |
-| [grid-browser.json](evidence/grid-browser.json) | Chromium smoke test for synthetic row loading, editing, and selection |
-| [runtime-probe.json](evidence/runtime-probe.json) | Nine PostgreSQL, Redis, worker-death, and local-storage checks |
-| [ttl-observation.json](evidence/ttl-observation.json) | Unrefreshed 300-second hold absent after 539.64 seconds. Exact expiry instant was not observed. |
-| [query-probe.json](evidence/query-probe.json) | Query timings, fixture size, and execution plans |
-| [kestra-probe-get.json](evidence/kestra-probe-get.json) | Corrected GET dispatch with duplicate request deduplication |
-| [kestra-probe-post.json](evidence/kestra-probe-post.json) | Corrected POST dispatch with duplicate request deduplication |
-| [Lab procedure](lab-procedure.md) | Environment, runtime setup, reproduction, and cleanup |
+| File                                                            | Content                                                                                         |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [build-results.json](evidence/build-results.json)               | Baseline builds and isolated frontend correction                                                |
+| [installed-peer-check.json](evidence/installed-peer-check.json) | Installed dependency peer checks. Missing peers were outside this check.                        |
+| [grid-metadata.json](evidence/grid-metadata.json)               | Published package versions, licenses, and peer declarations                                     |
+| [grid-compiler.json](evidence/grid-compiler.json)               | Pinned Angular/LibreGrid strict compilation with server-side row and selection modules          |
+| [grid-browser.json](evidence/grid-browser.json)                 | Chromium smoke test for synthetic row loading, editing, and selection                           |
+| [runtime-probe.json](evidence/runtime-probe.json)               | Nine PostgreSQL, Redis, worker-death, and local-storage checks                                  |
+| [ttl-observation.json](evidence/ttl-observation.json)           | Unrefreshed 300-second hold absent after 539.64 seconds. Exact expiry instant was not observed. |
+| [query-probe.json](evidence/query-probe.json)                   | Query timings, fixture size, and execution plans                                                |
+| [kestra-probe-get.json](evidence/kestra-probe-get.json)         | Corrected GET dispatch with duplicate request deduplication                                     |
+| [kestra-probe-post.json](evidence/kestra-probe-post.json)       | Corrected POST dispatch with duplicate request deduplication                                    |
+| [Lab procedure](lab-procedure.md)                               | Environment, runtime setup, reproduction, and cleanup                                           |
 
 ## Remaining V0 work
 

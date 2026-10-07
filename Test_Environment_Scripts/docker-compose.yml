@@ -1,0 +1,33 @@
+services:
+  test-env:
+    image: ubuntu:24.04
+    container_name: test-phase-env
+    hostname: test-env.local
+    mem_limit: 3200m
+    memswap_limit: 3200m
+    privileged: true
+    cgroup: host
+    stdin_open: true
+    tty: true
+    volumes:
+      - test-storage:/storage
+      - test-docker-data:/var/lib/docker
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ./certs:/etc/ssl/certs/custom:ro
+      - ./setup.sh:/setup.sh:ro
+      - ./generate-cert.sh:/generate-cert.sh:ro
+    environment:
+      - NODE_VERSION=24.19.0
+    command: /bin/bash
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge
+
+volumes:
+  test-storage:
+    driver: local
+  test-docker-data:
+    driver: local

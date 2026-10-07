@@ -39,11 +39,11 @@ Publish supported capacity only after measured qualification and a representativ
 Use the same application images and contracts across deployment profiles.
 Production runs on Linux. Development environments do not establish production support.
 
-| Profile | Placement | Intended use |
-|---|---|---|
-| All Docker | Compose runs frontend, API, workers, Kestra, PostgreSQL, and Redis. Artifacts use persistent local storage. | Default single-server installation |
-| Hybrid Docker and district servers | Compose runs retained components. Configured endpoints connect services hosted on district infrastructure. | Dedicated resources or separate administration |
-| Enterprise Kubernetes | Frontend, API, workers, and shared services use district-operated Kubernetes and configured external endpoints. | Districts that operate Kubernetes and need several hosts |
+| Profile                            | Placement                                                                                                       | Intended use                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| All Docker                         | Compose runs frontend, API, workers, Kestra, PostgreSQL, and Redis. Artifacts use persistent local storage.     | Default single-server installation                       |
+| Hybrid Docker and district servers | Compose runs retained components. Configured endpoints connect services hosted on district infrastructure.      | Dedicated resources or separate administration           |
+| Enterprise Kubernetes              | Frontend, API, workers, and shared services use district-operated Kubernetes and configured external endpoints. | Districts that operate Kubernetes and need several hosts |
 
 A separate database does not require Kubernetes. Moving workers to separate hosts requires a qualified shared storage backend.
 All three modes are Phase 1 deliverables. Later phases must remain installable in every mode.
@@ -84,17 +84,17 @@ Identify fields controlled by an SIS or another district system. Apply district 
 
 ## Deferred scope and exclusions
 
-| Capability | Status |
-|---|---|
-| Local language assistance | Optional later filter translation. No model download or GPU prerequisite for basic administration. |
-| Google Sheets round-trip | Optional after CSV qualification. Requires separate file authorization, ownership, and sharing design. |
-| Google external audit connector | Separate later capability. Local mutation audit does not include actions from other tools. |
-| Chrome fleet reports | Separate capability from local inventory reports and telemetry. Verify scope and coverage before activation. |
-| Dashboard generation and widget gallery | Later specifications. No dependency for first-release inventory insight. |
-| Classroom content and roster management | Excluded. No Classroom-ownership warning without an authorized integration. |
-| Bulk Super Admin grants, dynamic/security groups, conversation content | Excluded from initial action tooling. |
-| Automatic rollback of completed Google changes | Excluded. Cancellation preserves completed effects and unresolved outcomes. |
-| Google push delivery | Optional capability where supported. Polling remains the default. |
+| Capability                                                             | Status                                                                                                       |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Local language assistance                                              | Optional later filter translation. No model download or GPU prerequisite for basic administration.           |
+| Google Sheets round-trip                                               | Optional after CSV qualification. Requires separate file authorization, ownership, and sharing design.       |
+| Google external audit connector                                        | Separate later capability. Local mutation audit does not include actions from other tools.                   |
+| Chrome fleet reports                                                   | Separate capability from local inventory reports and telemetry. Verify scope and coverage before activation. |
+| Dashboard generation and widget gallery                                | Later specifications. No dependency for first-release inventory insight.                                     |
+| Classroom content and roster management                                | Excluded. No Classroom-ownership warning without an authorized integration.                                  |
+| Bulk Super Admin grants, dynamic/security groups, conversation content | Excluded from initial action tooling.                                                                        |
+| Automatic rollback of completed Google changes                         | Excluded. Cancellation preserves completed effects and unresolved outcomes.                                  |
+| Google push delivery                                                   | Optional capability where supported. Polling remains the default.                                            |
 
 ## Success criteria
 

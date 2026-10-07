@@ -14,6 +14,7 @@ What does the admin see when sync lags or quota is exhausted? What's the failure
 ## Resolution
 
 **Decided 2026-07-22:**
+
 - **Start with basic job status only.** Copy the Google Cloud Console pattern: minimal, informative job status notifications.
 - **Show:** Job status (running/completed/failed), duration, brief error messages.
 - **No advanced observability initially:** No quota exhaustion warnings, no sync lag metrics, no detailed performance dashboards.

@@ -23,11 +23,7 @@
       "id": "P1-T01",
       "title": "Define and validate the Phase 1 deployment configuration contract",
       "owner": "Platform lead",
-      "packages": [
-        "P0.1",
-        "P1.1",
-        "P9.2"
-      ],
+      "packages": ["P0.1", "P1.1", "P9.2"],
       "dependsOn": [],
       "scope": "Define one configuration contract for all Docker, hybrid Docker with district servers, and enterprise Kubernetes. Cover frontend, API, workers, PostgreSQL, Redis, Kestra, artifact storage, and the HTTPS edge. Make each dependency's local or external placement explicit.",
       "acceptance": [
@@ -48,13 +44,8 @@
       "id": "P1-T02",
       "title": "Qualify the Kestra edition, runtime version, and deployment topology",
       "owner": "Orchestration and platform lead",
-      "packages": [
-        "P0.1",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T01"
-      ],
+      "packages": ["P0.1", "P9.4"],
+      "dependsOn": ["P1-T01"],
       "scope": "Establish an executable Kestra deployment choice for each Phase 1 profile. Verify the retained edition's capabilities and recovery behavior before manifests depend on them. Use V0's 1.3.37 result as evidence to assess, not as automatic release qualification.",
       "acceptance": [
         "Record the chosen Kestra version, plugin versions, image digest, edition, license obligations, and supported topology.",
@@ -74,12 +65,8 @@
       "id": "P1-T03",
       "title": "Build minimal frontend, API, and worker release images",
       "owner": "Application foundation and build lead",
-      "packages": [
-        "P0.1"
-      ],
-      "dependsOn": [
-        "P1-T01"
-      ],
+      "packages": ["P0.1"],
+      "dependsOn": ["P1-T01"],
       "scope": "Produce runnable Phase 1 images from the retained Nx workspace. Preserve existing root-level frontend and API projects. Add the minimal independent worker entry point needed for startup and synthetic infrastructure probes.",
       "acceptance": [
         "Correct the V0 frontend compiler inheritance defect through scoped application configuration.",
@@ -100,13 +87,8 @@
       "id": "P1-T04",
       "title": "Bootstrap isolated application and Kestra databases",
       "owner": "Database and platform lead",
-      "packages": [
-        "P1.2",
-        "P9.2"
-      ],
-      "dependsOn": [
-        "P1-T01"
-      ],
+      "packages": ["P1.2", "P9.2"],
+      "dependsOn": ["P1-T01"],
       "scope": "Supply repeatable PostgreSQL provisioning and application migration startup for local and external database configurations. Keep Kestra migrations under Kestra's ownership.",
       "acceptance": [
         "Qualify and pin the PostgreSQL release used by the supported deployment profiles.",
@@ -127,13 +109,8 @@
       "id": "P1-T05",
       "title": "Bootstrap Redis with explicit security and restart behavior",
       "owner": "Platform lead",
-      "packages": [
-        "P9.2",
-        "P9.3"
-      ],
-      "dependsOn": [
-        "P1-T01"
-      ],
+      "packages": ["P9.2", "P9.3"],
+      "dependsOn": ["P1-T01"],
       "scope": "Provide a pinned Redis deployment and connection configuration for local containers and district endpoints. Specify which future data classes are persistent or rebuildable without implementing the Phase 5 hold protocol.",
       "acceptance": [
         "Qualify and pin Redis and configure authentication and internal network access.",
@@ -153,14 +130,8 @@
       "id": "P1-T06",
       "title": "Implement the local artifact storage foundation",
       "owner": "Storage lead",
-      "packages": [
-        "P1.1",
-        "P2.4"
-      ],
-      "dependsOn": [
-        "P1-T01",
-        "P1-T04"
-      ],
+      "packages": ["P1.1", "P2.4"],
+      "dependsOn": ["P1-T01", "P1-T04"],
       "scope": "Implement the initial job-storage interface and persistent local adapter using opaque artifact IDs and publication metadata. Prove a complete synthetic write, verification, publication, and read path before business jobs exist.",
       "acceptance": [
         "Define stage, inspect, publish, openRead, and remove contracts with artifact identity, size, checksum, and attempt locator.",
@@ -180,13 +151,8 @@
       "id": "P1-T07",
       "title": "Qualify one shared artifact backend across separate worker hosts",
       "owner": "Storage and platform lead",
-      "packages": [
-        "P2.4",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T06"
-      ],
+      "packages": ["P2.4", "P9.4"],
+      "dependsOn": ["P1-T06"],
       "scope": "Choose and implement one shared filesystem or S3-compatible adapter under the existing storage contract. Demonstrate actual cross-host access needed by hybrid and Kubernetes workers.",
       "acceptance": [
         "Record the selected backend, prerequisites, supported operations, and reason for the choice.",
@@ -207,16 +173,8 @@
       "id": "P1-T08",
       "title": "Run authenticated Kestra with independent workers and qualified internal storage",
       "owner": "Orchestration lead",
-      "packages": [
-        "P0.1",
-        "P9.2",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T02",
-        "P1-T03",
-        "P1-T04"
-      ],
+      "packages": ["P0.1", "P9.2", "P9.4"],
+      "dependsOn": ["P1-T02", "P1-T03", "P1-T04"],
       "scope": "Package the chosen Kestra topology with its real repository, queue, authentication, and internal-storage configuration. Execute a harmless synthetic worker task outside the interactive API.",
       "acceptance": [
         "Replace the invalid KESTEA configuration approach with settings verified against the selected release.",
@@ -237,15 +195,8 @@
       "id": "P1-T09",
       "title": "Protect the startup page with HTTPS and installation bootstrap access",
       "owner": "Platform security and frontend lead",
-      "packages": [
-        "P0.1",
-        "P9.1",
-        "P9.2"
-      ],
-      "dependsOn": [
-        "P1-T01",
-        "P1-T03"
-      ],
+      "packages": ["P0.1", "P9.1", "P9.2"],
+      "dependsOn": ["P1-T01", "P1-T03"],
       "scope": "Provide a restricted installation surface and HTTPS edge for Phase 1. Generate installation secrets and protect the startup page before Phase 2 supplies application sign-in.",
       "acceptance": [
         "Serve the minimal installation page through the configured district hostname and certificate.",
@@ -266,17 +217,8 @@
       "id": "P1-T10",
       "title": "Deliver the complete all-Docker installation profile",
       "owner": "Platform lead",
-      "packages": [
-        "P9.2"
-      ],
-      "dependsOn": [
-        "P1-T03",
-        "P1-T04",
-        "P1-T05",
-        "P1-T06",
-        "P1-T08",
-        "P1-T09"
-      ],
+      "packages": ["P9.2"],
+      "dependsOn": ["P1-T03", "P1-T04", "P1-T05", "P1-T06", "P1-T08", "P1-T09"],
       "scope": "Replace the scaffold Compose configuration with a complete installation of the Phase 1 topology using published image references, internal networks, and persistent volumes.",
       "acceptance": [
         "Start edge, frontend, API, independent workers, PostgreSQL, Redis, Kestra, and configured local artifact storage.",
@@ -296,14 +238,8 @@
       "id": "P1-T11",
       "title": "Deliver the hybrid Docker and district-server installation profile",
       "owner": "Platform integration lead",
-      "packages": [
-        "P9.2",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T07",
-        "P1-T10"
-      ],
+      "packages": ["P9.2", "P9.4"],
+      "dependsOn": ["P1-T07", "P1-T10"],
       "scope": "Run the same release images with district-hosted dependencies and retained local containers. External service ownership must be explicit for PostgreSQL, Redis, Kestra, worker placement, and artifact storage.",
       "acceptance": [
         "Document supported local/external combinations and validate each advertised external endpoint contract.",
@@ -323,15 +259,8 @@
       "id": "P1-T12",
       "title": "Deliver the enterprise Kubernetes installation profile",
       "owner": "Kubernetes platform lead",
-      "packages": [
-        "P9.2",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T07",
-        "P1-T08",
-        "P1-T09"
-      ],
+      "packages": ["P9.2", "P9.4"],
+      "dependsOn": ["P1-T07", "P1-T08", "P1-T09"],
       "scope": "Package and run the complete Phase 1 topology on a district-operated Kubernetes cluster using the shared image and configuration contracts.",
       "acceptance": [
         "Deploy frontend, API, workers, and the declared local or external shared services from pinned image references.",
@@ -352,14 +281,8 @@
       "id": "P1-T13",
       "title": "Deliver repeatable preflight, install, resume, and upgrade commands",
       "owner": "Installer lead",
-      "packages": [
-        "P9.2"
-      ],
-      "dependsOn": [
-        "P1-T10",
-        "P1-T11",
-        "P1-T12"
-      ],
+      "packages": ["P9.2"],
+      "dependsOn": ["P1-T10", "P1-T11", "P1-T12"],
       "scope": "Provide an operator workflow that selects a deployment mode, checks prerequisites, installs the release, and resumes after interruption. Keep shared configuration authoritative across deployment tools.",
       "acceptance": [
         "Check runtime, architecture, ports, hostname, certificates, storage, permissions, resources, time synchronization, and required egress.",
@@ -380,14 +303,8 @@
       "id": "P1-T14",
       "title": "Restore the foundational state into an isolated installation",
       "owner": "Operations and storage lead",
-      "packages": [
-        "P9.3"
-      ],
-      "dependsOn": [
-        "P1-T10",
-        "P1-T11",
-        "P1-T12"
-      ],
+      "packages": ["P9.3"],
+      "dependsOn": ["P1-T10", "P1-T11", "P1-T12"],
       "scope": "Back up and restore the application and Kestra databases, application artifacts, Kestra internal storage, and necessary configuration. Document Redis recovery and separately protected secret recovery.",
       "acceptance": [
         "Inventory every durable component and define a consistent backup procedure for the Phase 1 topology.",
@@ -408,15 +325,8 @@
       "id": "P1-T15",
       "title": "Qualify restart, outage, and resource failure behavior across all profiles",
       "owner": "Reliability lead",
-      "packages": [
-        "P9.3",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T10",
-        "P1-T11",
-        "P1-T12"
-      ],
+      "packages": ["P9.3", "P9.4"],
+      "dependsOn": ["P1-T10", "P1-T11", "P1-T12"],
       "scope": "Run a repeatable synthetic fault matrix against the complete Phase 1 release. Verify truthful readiness, bounded recovery, and durable fixture preservation.",
       "acceptance": [
         "Test API, worker, Redis, PostgreSQL, and Kestra process interruption against each applicable deployment mode.",
@@ -437,15 +347,8 @@
       "id": "P1-T16",
       "title": "Publish verified Phase 1 release artifacts and gate profile regressions in CI",
       "owner": "Build and release lead",
-      "packages": [
-        "P0.1",
-        "P9.2"
-      ],
-      "dependsOn": [
-        "P1-T13",
-        "P1-T14",
-        "P1-T15"
-      ],
+      "packages": ["P0.1", "P9.2"],
+      "dependsOn": ["P1-T13", "P1-T14", "P1-T15"],
       "scope": "Publish the release package and its verification material. Connect existing build and deployment checks to reproducible CI gates for the supported installation profiles.",
       "acceptance": [
         "Build through Nx and record image digests, supported architectures, dependency versions, and source revision.",
@@ -466,13 +369,8 @@
       "id": "P1-T17",
       "title": "Accept the Phase 1 release through operator walkthroughs",
       "owner": "Staff Tech Lead with UX and district operators",
-      "packages": [
-        "P9.2",
-        "P9.4"
-      ],
-      "dependsOn": [
-        "P1-T16"
-      ],
+      "packages": ["P9.2", "P9.4"],
+      "dependsOn": ["P1-T16"],
       "scope": "Demonstrate the released Phase 1 product from clean installation through restart and foundational restore in all three modes. Establish the handoff boundary for Phase 2.",
       "acceptance": [
         "Have an occasional IT helper follow the all-Docker instructions and record assistance, failed steps, and hands-on time.",

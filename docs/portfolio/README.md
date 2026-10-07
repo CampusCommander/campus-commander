@@ -34,18 +34,18 @@ The V0 report remains historical experiment evidence. Its former delivery refere
 
 ## File map
 
-| File | Responsibility |
-|---|---|
-| [01 — Product Brief](01-product-brief.md) | Audience, customer boundary, scope, deployment choices, and success criteria |
-| [02 — Domain Model](02-domain-model.md) | Canonical vocabulary, entities, actions, selection, and import semantics |
-| [03 — Architecture](03-architecture.md) | Runtime, credentials, data, jobs, admission, storage, sync, and operations |
-| [04 — UX/UI Spec](04-ux-ui-spec.md) | Visual system, search, editing, safety, accessibility, and product states |
-| [Agent UI contract](../ui/README.md) | Repository rules, page patterns, exact tokens, and implementation evidence for agents |
-| [05 — Decisions and Open Questions](05-decisions-and-open-questions.md) | Decision index, supersession map, and validation questions |
-| [06 — Work Breakdown](06-work-breakdown.md) | Evidence-first slices, package ownership, dependencies, and acceptance gates |
-| [Phase 1 Jira task backlog](phase-1-jira-tasks.md) | 17 published Jira tasks, 36 verified blocking links, and acceptance criteria. |
-| [07 — Issues and Opportunities](07-issues-and-opportunities.md) | Remaining gaps, feature opportunities, and review integration map |
-| [Prototype map](prototype-map.md) | Existing board inventory and required alignment work |
+| File                                                                    | Responsibility                                                                        |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| [01 — Product Brief](01-product-brief.md)                               | Audience, customer boundary, scope, deployment choices, and success criteria          |
+| [02 — Domain Model](02-domain-model.md)                                 | Canonical vocabulary, entities, actions, selection, and import semantics              |
+| [03 — Architecture](03-architecture.md)                                 | Runtime, credentials, data, jobs, admission, storage, sync, and operations            |
+| [04 — UX/UI Spec](04-ux-ui-spec.md)                                     | Visual system, search, editing, safety, accessibility, and product states             |
+| [Agent UI contract](../ui/README.md)                                    | Repository rules, page patterns, exact tokens, and implementation evidence for agents |
+| [05 — Decisions and Open Questions](05-decisions-and-open-questions.md) | Decision index, supersession map, and validation questions                            |
+| [06 — Work Breakdown](06-work-breakdown.md)                             | Evidence-first slices, package ownership, dependencies, and acceptance gates          |
+| [Phase 1 Jira task backlog](phase-1-jira-tasks.md)                      | 17 published Jira tasks, 36 verified blocking links, and acceptance criteria.         |
+| [07 — Issues and Opportunities](07-issues-and-opportunities.md)         | Remaining gaps, feature opportunities, and review integration map                     |
+| [Prototype map](prototype-map.md)                                       | Existing board inventory and required alignment work                                  |
 
 ## Reading and execution rules
 

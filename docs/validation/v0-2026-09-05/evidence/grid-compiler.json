@@ -25,10 +25,7 @@
       "target": "ES2022",
       "module": "ES2022",
       "moduleResolution": "bundler",
-      "lib": [
-        "ES2022",
-        "DOM"
-      ],
+      "lib": ["ES2022", "DOM"],
       "strict": true,
       "skipLibCheck": false,
       "experimentalDecorators": true,
@@ -38,9 +35,7 @@
     "angularCompilerOptions": {
       "strictTemplates": true
     },
-    "files": [
-      "./fixture.ts"
-    ]
+    "files": ["./fixture.ts"]
   },
   "stdout": "",
   "stderr": "",

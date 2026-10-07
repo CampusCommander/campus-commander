@@ -6,14 +6,14 @@ Executed while the owner was away, immediately after the 2026-09-03 grooming pas
 
 The grooming corrected the wizard scope list in `docs/portfolio/03-architecture.md` to eight scopes. This sweep checked every other document for stale scope references.
 
-| Location | Finding | Action |
-|---|---|---|
-| `docs/ux/ui-design-guide.md` | No scope strings. No count copy. | None needed. |
-| `docs/ux/prototype-map.md` | No scope strings. No count copy. | None needed. |
-| `docs/ux/design-review-2026-09-02.md` | References the historical "4 scopes granted" copy and the three-scope wizard, both as issue statements (S8, S9, L6) with their fixes. Historical record. | None needed. |
-| `docs/architecture/*` | Scopes described generically (identity-only bootstrap, manual DWD grant). No stale strings. | None needed. |
-| `docs/superpowers/specs/2026-07-07-core-entity-management-design.md` | References the DWD paste flow with a generic "scope list the wizard generated". No count, no strings. | None needed. |
-| `docs/research/admin-sdk-gap-analysis.md` | Section 1 table said "six scopes" as current state. | Fixed this audit: now "eight scopes (see Section 2)". |
+| Location                                                             | Finding                                                                                                                                                  | Action                                                |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `docs/ux/ui-design-guide.md`                                         | No scope strings. No count copy.                                                                                                                         | None needed.                                          |
+| `docs/ux/prototype-map.md`                                           | No scope strings. No count copy.                                                                                                                         | None needed.                                          |
+| `docs/ux/design-review-2026-09-02.md`                                | References the historical "4 scopes granted" copy and the three-scope wizard, both as issue statements (S8, S9, L6) with their fixes. Historical record. | None needed.                                          |
+| `docs/architecture/*`                                                | Scopes described generically (identity-only bootstrap, manual DWD grant). No stale strings.                                                              | None needed.                                          |
+| `docs/superpowers/specs/2026-07-07-core-entity-management-design.md` | References the DWD paste flow with a generic "scope list the wizard generated". No count, no strings.                                                    | None needed.                                          |
+| `docs/research/admin-sdk-gap-analysis.md`                            | Section 1 table said "six scopes" as current state.                                                                                                      | Fixed this audit: now "eight scopes (see Section 2)". |
 
 Conclusion: the only markdown drift was in the gap analysis itself, now fixed.
 
@@ -35,12 +35,12 @@ Two findings, both resolved in this audit with strike-through resolutions in `05
 
 Patterns banned by the review round's lint, checked across `docs/portfolio/` and `docs/ux/`:
 
-| Pattern | Result |
-|---|---|
-| Cadence copy ("every 15 minutes" and variants) | Clean. Hits exist only inside `design-review-2026-09-02.md` as historical issue statements (S8) and their fixes. |
-| "Incremental sync" copy | Clean in live docs. Decision 17.30 and `02`/`03` state full-sweep-only. Hits in the review doc are the historical S4 statement. |
-| Undo copy | Clean in live docs. Gate G1 holds. The review doc's "Undo Snackbar" references are historical and carry the documented rename to "Run Result Snackbar". |
-| Firmware copy | Clean in live docs. Hits in the review doc are the historical S5 statement. |
+| Pattern                                        | Result                                                                                                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cadence copy ("every 15 minutes" and variants) | Clean. Hits exist only inside `design-review-2026-09-02.md` as historical issue statements (S8) and their fixes.                                        |
+| "Incremental sync" copy                        | Clean in live docs. Decision 17.30 and `02`/`03` state full-sweep-only. Hits in the review doc are the historical S4 statement.                         |
+| Undo copy                                      | Clean in live docs. Gate G1 holds. The review doc's "Undo Snackbar" references are historical and carry the documented rename to "Run Result Snackbar". |
+| Firmware copy                                  | Clean in live docs. Hits in the review doc are the historical S5 statement.                                                                             |
 
 Conclusion: no live copy drift. The design review file is a record of issues found, so its mentions of banned copy are correct and expected.
 

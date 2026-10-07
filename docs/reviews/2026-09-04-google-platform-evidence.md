@@ -41,10 +41,10 @@ Use a district-owned project and internal audience for district-only use. Google
 
 Reject an external Testing configuration for unattended production. Google issues seven-day refresh tokens for that configuration when scopes extend beyond basic identity. Handle revocation and policy restrictions as explicit connection failures. Avoid unnecessary Cloud Platform scopes, which introduce Cloud session-control concerns. [OAuth token lifecycle](https://developers.google.com/identity/protocols/oauth2).
 
-| Profile | Runtime credential | Installation effect | Required validation |
-|---|---|---|---|
-| Default district OAuth connection | Encrypted offline refresh token for a dedicated admin identity | Removes service-account signing setup | Test all capability scopes, restart, revocation, rotation, and actor departure |
-| Enterprise service-account connection | Service-account credentials with explicitly assigned privileges or delegation | Supports organization-managed workload identity | Test direct roles first and delegated exceptions second |
+| Profile                               | Runtime credential                                                            | Installation effect                             | Required validation                                                            |
+| ------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------ |
+| Default district OAuth connection     | Encrypted offline refresh token for a dedicated admin identity                | Removes service-account signing setup           | Test all capability scopes, restart, revocation, rotation, and actor departure |
+| Enterprise service-account connection | Service-account credentials with explicitly assigned privileges or delegation | Supports organization-managed workload identity | Test direct roles first and delegated exceptions second                        |
 
 Use a dedicated admin identity with the minimum demonstrated privileges. Do not require permanent Super Admin impersonation as the untested default. Record exceptional operations that require stronger privileges. Offer read-only connection before write capabilities.
 
@@ -88,11 +88,11 @@ Replace the product statement that every school domain requires a separate deplo
 
 **Calculated examples.** These express nominal budget equivalents under documented defaults. They do not predict hidden burst enforcement or completion time.
 
-| Example | Arithmetic | Consequence |
-|---|---|---|
+| Example                    | Arithmetic      | Consequence                                        |
+| -------------------------- | --------------- | -------------------------------------------------- |
 | 100,000 individual updates | 100,000 / 2,400 | 41.7 minutes of the nominal default request budget |
-| 100,000 user creations | 100,000 / 10 | 2.78 hours at the documented creation rate |
-| 10,000 OU updates | 10,000 / 1 | 2.78 hours at the documented OU rate |
+| 100,000 user creations     | 100,000 / 10    | 2.78 hours at the documented creation rate         |
+| 10,000 OU updates          | 10,000 / 1      | 2.78 hours at the documented OU rate               |
 
 These examples omit retries, reads, propagation checks, other applications, and competing jobs. Faster hardware does not remove Google's limits. Batch requests reduce connection overhead. They do not multiply the available quota.
 
@@ -180,19 +180,19 @@ Do not treat a payment method as a universal Workspace connection prerequisite. 
 
 ## Acceptance evidence before implementation approval
 
-| Experiment | Required evidence |
-|---|---|
-| Local OAuth and service-account connection | Exact credential exchange, smallest scopes, restart, revoke, rotate, and reconnect results |
-| Direct service-account roles | Pass/fail matrix for every planned read and write endpoint |
-| OU authorization | Allowed and denied cross-school operations, exports, selections, and deferred execution |
-| Large inventory | Actual request counts and freshness for representative membership distributions |
-| Admission holds | Job-service updates permit owner replacement. Cleanup requires current ownership. Existing jobs continue. |
-| Hold expiration | Continuing-backoff reports reset the 300-second TTL. Holds expire after reports cease. |
-| Recovery and ordering | The job service aggregates recovery observations. Pending jobs of the held type sort smallest first. |
-| Ambiguous writes | Correct recovery after Google accepts a request but the response is lost |
-| Device commands | Command ID persistence and distinct acceptance, expiry, and execution results |
-| Sweep correctness | No false removals after failure, permission change, cancellation, or concurrent mutation |
-| Novice installation | Observed completion without developer assistance, plus every external prerequisite |
-| External audit insight | Exact supported event classes, scopes, delay, correlation fields, and retrieval limits |
+| Experiment                                 | Required evidence                                                                                         |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Local OAuth and service-account connection | Exact credential exchange, smallest scopes, restart, revoke, rotate, and reconnect results                |
+| Direct service-account roles               | Pass/fail matrix for every planned read and write endpoint                                                |
+| OU authorization                           | Allowed and denied cross-school operations, exports, selections, and deferred execution                   |
+| Large inventory                            | Actual request counts and freshness for representative membership distributions                           |
+| Admission holds                            | Job-service updates permit owner replacement. Cleanup requires current ownership. Existing jobs continue. |
+| Hold expiration                            | Continuing-backoff reports reset the 300-second TTL. Holds expire after reports cease.                    |
+| Recovery and ordering                      | The job service aggregates recovery observations. Pending jobs of the held type sort smallest first.      |
+| Ambiguous writes                           | Correct recovery after Google accepts a request but the response is lost                                  |
+| Device commands                            | Command ID persistence and distinct acceptance, expiry, and execution results                             |
+| Sweep correctness                          | No false removals after failure, permission change, cancellation, or concurrent mutation                  |
+| Novice installation                        | Observed completion without developer assistance, plus every external prerequisite                        |
+| External audit insight                     | Exact supported event classes, scopes, delay, correlation fields, and retrieval limits                    |
 
 Keep these results in the decision record. Update the product brief, connection model, sync strategy, job semantics, and work breakdown together.

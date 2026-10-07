@@ -11,16 +11,16 @@ Each later phase delivers a working version that preserves those deployment mode
 
 ## Retained technology
 
-| Responsibility | Technology |
-|---|---|
-| Interface | Angular, NgRx Signals, Angular Material, Tailwind |
-| Grid | AG Grid Community and LibreGrid |
-| API and workers | NestJS and TypeScript, with worker execution outside the API |
-| Orchestration | Kestra jobs, steps, and parallel assignments |
-| Durable data | PostgreSQL |
-| Cache and coordination | Redis, including job-service admission holds |
-| Artifacts | Job-storage interface with persistent local storage and one qualified shared backend in Phase 1 |
-| Workspace | Nx and npm |
+| Responsibility         | Technology                                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| Interface              | Angular, NgRx Signals, Angular Material, Tailwind                                               |
+| Grid                   | AG Grid Community and LibreGrid                                                                 |
+| API and workers        | NestJS and TypeScript, with worker execution outside the API                                    |
+| Orchestration          | Kestra jobs, steps, and parallel assignments                                                    |
+| Durable data           | PostgreSQL                                                                                      |
+| Cache and coordination | Redis, including job-service admission holds                                                    |
+| Artifacts              | Job-storage interface with persistent local storage and one qualified shared backend in Phase 1 |
+| Workspace              | Nx and npm                                                                                      |
 
 Exact compatible versions require qualification before implementation.
 One installation serves one Workspace customer account, including its supported domains.
@@ -28,11 +28,11 @@ Every mutation follows preview, confirmation, job execution, and file-backed aud
 
 ## Deployment direction
 
-| Profile | Placement |
-|---|---|
-| Single server | Compose runs application, workers, Kestra, PostgreSQL, and Redis with persistent local artifacts. |
+| Profile           | Placement                                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| Single server     | Compose runs application, workers, Kestra, PostgreSQL, and Redis with persistent local artifacts.    |
 | Separate services | The same images use district-managed databases, Redis, or worker hosts through configured endpoints. |
-| Kubernetes | District-operated API/worker replicas use shared services and qualified artifact storage. |
+| Kubernetes        | District-operated API/worker replicas use shared services and qualified artifact storage.            |
 
 Compose is the default. Kubernetes is optional. Distributed workers require a shared backend before activation.
 Kestra availability, shared-service recovery, and district capacity remain qualification gates.
@@ -66,4 +66,11 @@ Update task status only when its acceptance criteria have supporting evidence.
 
 ## License
 
-MIT
+Campus Commander uses the [Campus Commander Community License 1.0.0](LICENSE.md).
+Public K–12 schools, their districts, and public colleges and universities qualify worldwide.
+Other nonprofits qualify only when all their services are free of charge.
+Eligible organizations receive perpetual rights for their own institutional use, subject to the license terms.
+Paid contractors can act solely on an eligible organization's behalf.
+Other uses require a separate paid agreement before use begins.
+Contact Spencer Easton at spencer@easton-consulting.com for paid licensing.
+The license includes warranty and liability limitations. Third-party components retain their own licenses.

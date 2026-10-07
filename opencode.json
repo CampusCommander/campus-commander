@@ -7,7 +7,5 @@
       "enabled": true
     }
   },
-  "instructions": [
-    ".opencode/skills/ste-writing-skill/SKILL.md"
-  ]
+  "instructions": [".opencode/skills/ste-writing-skill/SKILL.md"]
 }

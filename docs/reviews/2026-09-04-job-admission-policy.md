@@ -25,12 +25,12 @@ The owner also permits release after a sequence of successful calls without back
 
 ## Ownership example
 
-| Event | Flag owner | Admission |
-|---|---|---|
-| Job A encounters backoff | A | New Update Device jobs wait. |
-| Active job B encounters backoff | B | New Update Device jobs still wait. |
-| Job A finishes | B | A cannot clear B's hold. |
-| Job B finishes or satisfies the recovery rule | None | Pending jobs become eligible in size order. |
+| Event                                         | Flag owner | Admission                                   |
+| --------------------------------------------- | ---------- | ------------------------------------------- |
+| Job A encounters backoff                      | A          | New Update Device jobs wait.                |
+| Active job B encounters backoff               | B          | New Update Device jobs still wait.          |
+| Job A finishes                                | B          | A cannot clear B's hold.                    |
+| Job B finishes or satisfies the recovery rule | None       | Pending jobs become eligible in size order. |
 
 Remaining workers in backoff continue reporting and reestablish their job's ownership. When the final job finishes while owning the hold, its cleanup deletes the hold. If updates stop after a crash, the hold expires five minutes after the last accepted update. Early release remains permitted through the recovery rule.
 
