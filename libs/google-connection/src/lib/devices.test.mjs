@@ -438,6 +438,22 @@ test('a quota answer retries the same page until Google answers', async (t) => {
   );
 });
 
+test('a quota page stops after 25 retries', async (t) => {
+  const { calls } = stub(t, Array.from({ length: 27 }, () => quotaAnswer()));
+  const waits = [];
+  await assert.rejects(
+    collect(
+      new GoogleDeviceReader({
+        backoff: () => 0,
+        sleep: async (milliseconds) => void waits.push(milliseconds),
+      }).devicePages(credential, 'C0123456', AbortSignal.timeout(5000)),
+    ),
+    { name: 'GoogleConnectionError', code: 'quota' },
+  );
+  assert.equal(calls.length, 26);
+  assert.equal(waits.length, 25);
+});
+
 test('an abort during a quota wait rejects with quota', async (t) => {
   stub(t, [quotaAnswer()]);
   const stopping = new AbortController();

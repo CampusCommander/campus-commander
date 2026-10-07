@@ -10,7 +10,7 @@ import {
   type DeviceObservation,
 } from '@campus/application-contracts';
 import type { DelegatedCredential } from './credential';
-import { GoogleBatchService, type BatchFailure } from './batch';
+import { BATCH_DEFAULTS, GoogleBatchService, type BatchFailure } from './batch';
 import { GoogleConnectionError, failure, scopedClient } from './provider';
 
 const directory = 'https://admin.googleapis.com/admin/directory/v1';
@@ -209,7 +209,7 @@ export class GoogleDeviceReader {
     this.batch = options.batch ?? new GoogleBatchService();
   }
 
-  /** Follow page tokens. A quota answer retries the same page until it succeeds or the signal aborts. */
+  /** Follow page tokens. A quota answer retries the same page up to 25 times, then fails with quota. */
   private async *pages<T>(
     credential: DelegatedCredential,
     scope: string,
@@ -238,7 +238,8 @@ export class GoogleDeviceReader {
           break;
         } catch (error) {
           const classified = failure(error);
-          if (classified.code !== 'quota') throw classified;
+          if (classified.code !== 'quota' || attempt >= BATCH_DEFAULTS.maxQuotaRetries)
+            throw classified;
           await this.sleep(this.backoff(attempt), signal);
           if (signal.aborted) throw new GoogleConnectionError('quota');
         }

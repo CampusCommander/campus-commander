@@ -13,6 +13,7 @@ import {
   type EntitySyncJob,
 } from '@campus/application-contracts';
 import {
+  BATCH_DEFAULTS,
   CredentialError,
   GoogleConnectionError,
   type CredentialCipher,
@@ -120,7 +121,7 @@ export class EntitySyncBatch {
   }
 
   /**
-   * Retry only quota answers. A shutdown signal ends the wait with worker-stopping.
+   * Retry only quota answers, up to 25 times. A shutdown signal ends the wait with worker-stopping.
    * Each wait first extends the claim on the batch IDs, so a retrying batch keeps them.
    */
   private async untilQuotaClears<T>(
@@ -134,7 +135,11 @@ export class EntitySyncBatch {
       try {
         return await read();
       } catch (error) {
-        if (!(error instanceof GoogleConnectionError) || error.code !== 'quota')
+        if (
+          !(error instanceof GoogleConnectionError) ||
+          error.code !== 'quota' ||
+          attempt >= BATCH_DEFAULTS.maxQuotaRetries
+        )
           throw error;
         await this.cache
           .extendMembers(claim.key, claim.ids, ENTITY_INFLIGHT_SECONDS)

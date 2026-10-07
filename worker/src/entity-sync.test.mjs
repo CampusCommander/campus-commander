@@ -246,6 +246,23 @@ test('telemetry quota errors retry in the worker until Google answers', async ()
   assert.deepEqual(waits, [0, 10]);
 });
 
+test('telemetry quota stops after 25 retries and fails the batch', async () => {
+  const waits = [];
+  const source = reader({
+    batteries: Array.from({ length: 26 }, () => new GoogleConnectionError('quota')),
+  });
+  const result = await new EntitySyncBatch(
+    database({ finish: job({ completedBatches: 0, failedBatches: 1, failure: 'quota' }) }),
+    cipher,
+    source,
+    cache(),
+    { backoff: () => 0, sleep: async (ms) => void waits.push(ms) },
+  ).run(request, AbortSignal.timeout(5000));
+  assert.equal(result.failure, 'quota');
+  assert.equal(names(source.calls).filter((name) => name === 'batteryBatch').length, 26);
+  assert.equal(waits.length, 25);
+});
+
 test('each batch service round extends the claim on the batch IDs', async () => {
   const redis = cache();
   await new EntitySyncBatch(database(), cipher, reader({ rounds: 2 }), redis, noSleep).run(
