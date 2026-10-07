@@ -197,7 +197,7 @@ export class DevicesController {
         }
       },
     });
-    if (!started)
+    if (!started && !response.headersSent)
       throw new ServiceUnavailableException({ reason: 'events-unavailable' });
   }
 

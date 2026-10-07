@@ -122,6 +122,59 @@ export class EventFanout {
   }
 }
 
+/** The part of a node-redis client that the subscriber adapter uses. */
+export interface SubscriberClient {
+  on(event: 'error' | 'end', listener: () => void): unknown;
+  connect(): Promise<unknown>;
+  subscribe(
+    channel: string,
+    listener: (message: string) => void,
+  ): Promise<unknown>;
+  unsubscribe(
+    channel: string,
+    listener: (message: string) => void,
+  ): Promise<unknown>;
+  readonly isOpen: boolean;
+  destroy(): void;
+}
+
+/**
+ * Connect a node-redis client as a Subscriber. The client does not reconnect.
+ * Errors before the connection resolves surface as the connect rejection. Later errors report a loss.
+ */
+export async function redisSubscriber(
+  client: SubscriberClient,
+  lost: () => void,
+): Promise<Subscriber> {
+  let connected = false;
+  const report = () => {
+    if (connected) lost();
+  };
+  // The listener must exist before connect, so an error never goes unhandled.
+  client.on('error', report);
+  client.on('end', report);
+  await client.connect();
+  connected = true;
+  // Unsubscribe must pass the exact listener, or a racing subscribe for the channel is dropped.
+  const listeners = new Map<string, (message: string) => void>();
+  return {
+    subscribe: async (channel, onMessage) => {
+      const listener = (message: string) => onMessage(String(message));
+      listeners.set(channel, listener);
+      await client.subscribe(channel, listener);
+    },
+    unsubscribe: async (channel) => {
+      const listener = listeners.get(channel);
+      if (!listener) return;
+      listeners.delete(channel);
+      await client.unsubscribe(channel, listener);
+    },
+    close: async () => {
+      if (client.isOpen) client.destroy();
+    },
+  };
+}
+
 /** Bytes buffered for one browser before its stream ends. The browser reconnects and reconciles. */
 export const MAX_BUFFERED_BYTES = 1_048_576;
 
@@ -163,7 +216,8 @@ export async function streamEvents(
     closed = true;
     clearInterval(timer);
     void unlisten?.().catch(() => undefined);
-    sink.end();
+    // Before the stream starts, nothing was written and the caller still owns the response.
+    if (started) sink.end();
   };
   const send = (chunk: string) => {
     if (closed || !started) return;
@@ -181,7 +235,7 @@ export async function streamEvents(
   }
   if (closed) {
     await unlisten().catch(() => undefined);
-    return true;
+    return false;
   }
   options.begin();
   started = true;

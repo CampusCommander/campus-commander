@@ -6,6 +6,7 @@ import {
   EventFanout,
   MAX_BUFFERED_BYTES,
   frame,
+  redisSubscriber,
   streamEvents,
 } from './device-events.ts';
 
@@ -268,7 +269,119 @@ test('a browser that leaves during the subscription unsubscribes', async () => {
   });
   response.disconnect();
   release();
-  assert.equal(await started, true);
+  assert.equal(await started, false);
   assert.equal(left, true);
   assert.equal(response.began, 0);
+});
+
+test('a loss before the stream starts returns false and does not end the sink', async () => {
+  const response = sink();
+  const fanout = new EventFanout(async (lost) => {
+    lost();
+    throw new Error('redis down');
+  });
+  const started = await streamEvents(response, {
+    customerId: 'C0123456',
+    fanout,
+    begin: () => {
+      response.began += 1;
+    },
+    recheck: async () => true,
+  });
+  assert.equal(started, false);
+  assert.equal(response.began, 0);
+  assert.equal(response.ended, false);
+  assert.deepEqual(response.chunks, []);
+});
+
+test('a loss during a pending subscribe ends the attempt and unsubscribes', async () => {
+  const response = sink();
+  let left = false;
+  let release;
+  let close;
+  const started = streamEvents(response, {
+    customerId: 'C0123456',
+    fanout: {
+      listen: (customerId, listener) => {
+        close = () => listener.close();
+        return new Promise((resolve) => {
+          release = () =>
+            resolve(async () => {
+              left = true;
+            });
+        });
+      },
+    },
+    begin: () => {
+      response.began += 1;
+    },
+    recheck: async () => true,
+  });
+  close();
+  release();
+  assert.equal(await started, false);
+  assert.equal(left, true);
+  assert.equal(response.began, 0);
+  assert.equal(response.ended, false);
+  assert.deepEqual(response.chunks, []);
+});
+
+/** A node-redis client stand-in. */
+function fakeClient({ failConnect = false } = {}) {
+  const handlers = {};
+  const client = {
+    isOpen: true,
+    destroyed: 0,
+    subscribed: [],
+    unsubscribed: [],
+    on(name, listener) {
+      handlers[name] = listener;
+    },
+    emit: (name) => handlers[name]?.(),
+    async connect() {
+      client.emit('error');
+      if (failConnect) throw new Error('refused');
+    },
+    async subscribe(channel, listener) {
+      client.subscribed.push([channel, listener]);
+    },
+    async unsubscribe(channel, listener) {
+      client.unsubscribed.push([channel, listener]);
+    },
+    destroy() {
+      client.destroyed += 1;
+    },
+  };
+  return client;
+}
+
+test('the adapter reports a loss only after the connection resolves', async () => {
+  let losses = 0;
+  const failing = fakeClient({ failConnect: true });
+  await assert.rejects(redisSubscriber(failing, () => (losses += 1)));
+  assert.equal(losses, 0, 'An error before connect surfaces as the rejection.');
+  const client = fakeClient();
+  const subscriber = await redisSubscriber(client, () => (losses += 1));
+  assert.equal(losses, 0);
+  client.emit('error');
+  client.emit('end');
+  assert.equal(losses, 2);
+  await subscriber.close();
+  assert.equal(client.destroyed, 1);
+});
+
+test('the adapter unsubscribes with the listener it subscribed', async () => {
+  const client = fakeClient();
+  const subscriber = await redisSubscriber(client, () => undefined);
+  const messages = [];
+  await subscriber.subscribe('a', (message) => messages.push(message));
+  client.subscribed[0][1]('hello');
+  assert.deepEqual(messages, ['hello']);
+  await subscriber.unsubscribe('a');
+  assert.equal(client.unsubscribed[0][0], 'a');
+  assert.equal(client.unsubscribed[0][1], client.subscribed[0][1]);
+  await subscriber.subscribe('a', () => undefined);
+  await subscriber.unsubscribe('a');
+  assert.notEqual(client.subscribed[1][1], client.subscribed[0][1]);
+  assert.equal(client.unsubscribed[1][1], client.subscribed[1][1]);
 });
