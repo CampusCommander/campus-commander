@@ -216,3 +216,27 @@ Do not raise the Kestra replica count above one under this decision.
 See [`RESEARCH.md`](RESEARCH.md) for primary sources.
 See [`../evidence/CC-5.md`](../evidence/CC-5.md) for measured results and limitations.
 See [`../evidence/CC-11.md`](../evidence/CC-11.md) for external-worker evidence.
+
+## Database recovery probe
+
+Run the focused probe with the pinned PostgreSQL and Kestra images:
+
+```sh
+npx nx run deployment:kestra-database-recovery-probe
+```
+
+The probe creates a private network and two disposable containers.
+It completes a synthetic task, interrupts PostgreSQL, and checks task completion after database recovery.
+The recovery bound remains 120 seconds. HTTP 200 responses alone do not establish recovery.
+The probe follows the current ephemeral port after Docker restarts Kestra.
+It removes its containers, anonymous volumes, and network before reporting success.
+
+The public report is `dist/phase-2-evidence/kestra-database-recovery-probe.json`.
+The printed private directory contains JVM thread dumps and command failures.
+Do not publish those raw files. The public report contains the private log checksum.
+
+[The shutdown observations](../evidence/CC-36-phase-2-kestra-shutdown-probe.json) record three focused runs.
+The five-minute grace runs recovered in 66.5 and 94.0 seconds.
+A three-second grace run recovered in 94.3 seconds.
+Queue shutdown waits remained visible with both settings.
+Production retains the five-minute setting. These observations do not resolve the distributed recovery failure.

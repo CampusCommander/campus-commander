@@ -1,0 +1,603 @@
+{
+  "status": "passed",
+  "profile": "hybrid",
+  "upgrade": {
+    "status": "passed",
+    "durationMs": 60305,
+    "baselineImages": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+    },
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:3d093a4f3c817cf1e223bbdc2021626e02b56a64d9de45847f35d74d4e2458a7",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:3751a40c2a4c058417c7997ed821732accb3b27ea4c8b6706f68d22e81356c65",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:6e6a03d619709328f6c7cbd00e0c5e6262c6529bc3d43424085f372ebe8d4384"
+    },
+    "beforeImages": [
+      {
+        "host": "8d79a4cb-fcad-4e3e-b2aa-25fd09f40756",
+        "service": "api",
+        "container": "4c962b1f6af8cf8d340451b6a8a658878bee8a37576651e0b31e5826a9f977b2",
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+        "imageId": "sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce"
+      },
+      {
+        "host": "8d79a4cb-fcad-4e3e-b2aa-25fd09f40756",
+        "service": "api",
+        "container": "e378a4c751c9dfdba7c7cd3fa86a0f21f786d9c7bc8940a629709a2c6517a656",
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+        "imageId": "sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce"
+      },
+      {
+        "host": "8d79a4cb-fcad-4e3e-b2aa-25fd09f40756",
+        "service": "frontend",
+        "container": "b2ede67ab440be072e552d2900df76d1f4955c37beebbce6163db172fb792e34",
+        "image": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+        "imageId": "sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944"
+      },
+      {
+        "host": "5761a651-53d0-43c3-98b6-30ed148e0dc9",
+        "service": "workers",
+        "container": "c96f1ec627a10d4a2f948fffa6ee80fdd50b33a39b7b9da24e902228c7eef0f5",
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14",
+        "imageId": "sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+      },
+      {
+        "host": "b497c91e-161f-4d25-805c-47868be98417",
+        "service": "workers",
+        "container": "8068e139b23626ab759f10929e5f1c1b0b7f592e5f8c7a3b9ed01285350edfba",
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14",
+        "imageId": "sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+      }
+    ],
+    "afterImages": [
+      {
+        "host": "8d79a4cb-fcad-4e3e-b2aa-25fd09f40756",
+        "service": "api",
+        "container": "e7c8afd7d95cbd7e94d31b677c366a568dde79addd11e8e9c137607d252f6e80",
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:3751a40c2a4c058417c7997ed821732accb3b27ea4c8b6706f68d22e81356c65",
+        "imageId": "sha256:3751a40c2a4c058417c7997ed821732accb3b27ea4c8b6706f68d22e81356c65"
+      },
+      {
+        "host": "8d79a4cb-fcad-4e3e-b2aa-25fd09f40756",
+        "service": "api",
+        "container": "2ea244043d15830f82da8ef9d449a1047cd9e9317931102e394b29430729452f",
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:3751a40c2a4c058417c7997ed821732accb3b27ea4c8b6706f68d22e81356c65",
+        "imageId": "sha256:3751a40c2a4c058417c7997ed821732accb3b27ea4c8b6706f68d22e81356c65"
+      },
+      {
+        "host": "8d79a4cb-fcad-4e3e-b2aa-25fd09f40756",
+        "service": "frontend",
+        "container": "51632c8c69a9d3d8e191b48c4c8384f07f2703ea9d391bf2d7444c37e0b88ee3",
+        "image": "ghcr.io/campuscommander/campus-commander-frontend@sha256:3d093a4f3c817cf1e223bbdc2021626e02b56a64d9de45847f35d74d4e2458a7",
+        "imageId": "sha256:3d093a4f3c817cf1e223bbdc2021626e02b56a64d9de45847f35d74d4e2458a7"
+      },
+      {
+        "host": "5761a651-53d0-43c3-98b6-30ed148e0dc9",
+        "service": "workers",
+        "container": "b6c19349a153476612d123055a386442fa9480ba8dcfbf3cd5aca8a00629c3bb",
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:6e6a03d619709328f6c7cbd00e0c5e6262c6529bc3d43424085f372ebe8d4384",
+        "imageId": "sha256:6e6a03d619709328f6c7cbd00e0c5e6262c6529bc3d43424085f372ebe8d4384"
+      },
+      {
+        "host": "b497c91e-161f-4d25-805c-47868be98417",
+        "service": "workers",
+        "container": "6c429a0f2e1ff37bbfef5f77441d020ddaf52e20bded99bd5dd3dce499aae62c",
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:6e6a03d619709328f6c7cbd00e0c5e6262c6529bc3d43424085f372ebe8d4384",
+        "imageId": "sha256:6e6a03d619709328f6c7cbd00e0c5e6262c6529bc3d43424085f372ebe8d4384"
+      }
+    ],
+    "baselineMigrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ],
+    "upgradedMigrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      },
+      {
+        "id": "002-application-auth",
+        "checksum": "561767ba67da4525759616617a86555626a86de520ca8014671fe7429bc57acd"
+      }
+    ],
+    "artifact": {
+      "artifactId": "afbefffe-4f43-40dd-9ac3-89bb477f787a",
+      "attemptId": "615db397-ada9-4c1f-80c7-da35a727d253",
+      "schemaVersion": 1,
+      "sizeBytes": 48,
+      "sha256": "bf5afe432e898cf4049a243192c6b3000edc3c83451a7f93817ce306ab839c25"
+    },
+    "executionId": "32G5wZBjIJMjtcHMPvvqup",
+    "internalStorageFiles": [
+      {
+        "path": "main/campus/validation/_files/phase2-upgrade.txt",
+        "sha256": "4a5c3e66d6e2de729d42838385567b9f330c3e88c146888f5ded9803169622c2"
+      },
+      {
+        "path": "main/campus/validation/cc11-external-worker/executions/32G5wZBjIJMjtcHMPvvqup/tasks/persist-result/4tWMhvzbFaTbpU8DVXmbeG/2092268739987063424.json",
+        "sha256": "070d39dac631bfb6d36384943df166f7f6e725c581cfc3420245882c94ba5797"
+      }
+    ],
+    "encryptedBackup": {
+      "status": "verified",
+      "manifestSha256": "d4c35171dfb1aaf439f6f67508e6d49d0f10d6e0b92c9db0f101724ed0858b95"
+    },
+    "limits": [
+      "The current installer CLI upgrades published baseline images on three synthetic Docker hosts.",
+      "Final source, district infrastructure, isolated restore, and fault acceptance require separate evidence."
+    ]
+  },
+  "capacity": {
+    "status": "passed",
+    "recoveryBoundSeconds": 180,
+    "sharedVolume": "cc-phase2-hybrid-b832877ea7f8-bounded-artifacts",
+    "observations": [
+      {
+        "host": "cc-phase2-hybrid-b832877ea7f8-controller",
+        "daemonId": "8d79a4cb-fcad-4e3e-b2aa-25fd09f40756",
+        "role": "api",
+        "processId": "3cd00304a32474f0e648b9a9cae0924af6f8a14e6bcfcb18768ed3e580814400",
+        "before": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 16773120
+        },
+        "during": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 0
+        },
+        "after": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 16773120
+        }
+      },
+      {
+        "host": "cc-phase2-hybrid-b832877ea7f8-controller",
+        "daemonId": "8d79a4cb-fcad-4e3e-b2aa-25fd09f40756",
+        "role": "api",
+        "processId": "096583d8d2f0fa29aea65d633731145af34bb45bcf57dc2652271c7086128b8a",
+        "before": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 16773120
+        },
+        "during": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 0
+        },
+        "after": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 16773120
+        }
+      },
+      {
+        "host": "cc-phase2-hybrid-b832877ea7f8-worker-1",
+        "daemonId": "5761a651-53d0-43c3-98b6-30ed148e0dc9",
+        "role": "workers",
+        "processId": "e41e16fd055c29d9972876e735aac3056846e685bf49deb4ac7975b115f5852c",
+        "before": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 16773120
+        },
+        "during": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 0
+        },
+        "after": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 16773120
+        }
+      },
+      {
+        "host": "cc-phase2-hybrid-b832877ea7f8-worker-2",
+        "daemonId": "b497c91e-161f-4d25-805c-47868be98417",
+        "role": "workers",
+        "processId": "3ee26d0b7de2e0056f6fd760033a38fab2cbe8a050394ad91521aa04952664a2",
+        "before": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 16773120
+        },
+        "during": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 0
+        },
+        "after": {
+          "filesystemType": 16914836,
+          "totalBytes": 16777216,
+          "availableBytes": 16773120
+        }
+      }
+    ],
+    "limits": [
+      "The three Docker daemons share one physical host and a capped synthetic tmpfs artifact volume.",
+      "The capacity fixture does not establish persistent storage, district capacity, or district infrastructure acceptance."
+    ],
+    "fault": {
+      "kind": "ENOSPC",
+      "writtenBytes": 16773120,
+      "availableBytes": 0,
+      "publicationRejected": true,
+      "readyRowsUnchanged": true
+    },
+    "authenticatedFailure": {
+      "httpStatus": 201,
+      "status": "failed",
+      "correlationId": "8b8e7483-eafd-4283-b62f-286afa286238"
+    },
+    "preserved": {
+      "principalCount": 1,
+      "preservedSecurityEvents": 44,
+      "identityAndPreferencesPreserved": true,
+      "migrationsPreserved": true,
+      "artifactSha256": "bf5afe432e898cf4049a243192c6b3000edc3c83451a7f93817ce306ab839c25",
+      "failedDiagnosticArtifactsRemoved": true,
+      "artifactMetadataPreserved": true,
+      "artifactFilesPreserved": true,
+      "preservedKestraExecutions": 6,
+      "preservedInternalFiles": 2
+    },
+    "recoveryMs": 2180
+  },
+  "sourceRevision": "8a5f82306ea29bc497a7200914b9bd9dddfe1f01",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:3d093a4f3c817cf1e223bbdc2021626e02b56a64d9de45847f35d74d4e2458a7",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:3751a40c2a4c058417c7997ed821732accb3b27ea4c8b6706f68d22e81356c65",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:6e6a03d619709328f6c7cbd00e0c5e6262c6529bc3d43424085f372ebe8d4384"
+  },
+  "recordedAt": "2026-09-12T14:42:12.830Z",
+  "durationMs": 266478,
+  "hosts": [
+    {
+      "role": "controller",
+      "name": "cc-phase2-hybrid-b832877ea7f8-controller",
+      "address": "172.24.0.3",
+      "daemonId": "8d79a4cb-fcad-4e3e-b2aa-25fd09f40756",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.200.0.1/24",
+        "pool": "10.200.0.0/16"
+      }
+    },
+    {
+      "role": "worker-1",
+      "name": "cc-phase2-hybrid-b832877ea7f8-worker-1",
+      "address": "172.24.0.4",
+      "daemonId": "5761a651-53d0-43c3-98b6-30ed148e0dc9",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.201.0.1/24",
+        "pool": "10.201.0.0/16"
+      }
+    },
+    {
+      "role": "worker-2",
+      "name": "cc-phase2-hybrid-b832877ea7f8-worker-2",
+      "address": "172.24.0.5",
+      "daemonId": "b497c91e-161f-4d25-805c-47868be98417",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.202.0.1/24",
+        "pool": "10.202.0.0/16"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "command": "prepare",
+      "status": "prepared"
+    },
+    {
+      "command": "install",
+      "status": "ready"
+    },
+    {
+      "command": "resume",
+      "status": "ready"
+    },
+    {
+      "command": "upgrade",
+      "status": "ready"
+    },
+    {
+      "command": "resume",
+      "status": "ready"
+    },
+    {
+      "command": "stop",
+      "status": "stopped"
+    },
+    {
+      "command": "resume",
+      "status": "ready"
+    },
+    {
+      "command": "uninstall",
+      "status": "uninstalled"
+    },
+    {
+      "command": "resume",
+      "status": "ready"
+    }
+  ],
+  "apiReplicaCount": 2,
+  "sessionChecks": [
+    {
+      "replica": "e7c8afd7d95cbd7e94d31b677c366a568dde79addd11e8e9c137607d252f6e80",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "2ea244043d15830f82da8ef9d449a1047cd9e9317931102e394b29430729452f",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "e7c8afd7d95cbd7e94d31b677c366a568dde79addd11e8e9c137607d252f6e80",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "2ea244043d15830f82da8ef9d449a1047cd9e9317931102e394b29430729452f",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "e7c8afd7d95cbd7e94d31b677c366a568dde79addd11e8e9c137607d252f6e80",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "2ea244043d15830f82da8ef9d449a1047cd9e9317931102e394b29430729452f",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "e7c8afd7d95cbd7e94d31b677c366a568dde79addd11e8e9c137607d252f6e80",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "2ea244043d15830f82da8ef9d449a1047cd9e9317931102e394b29430729452f",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "3cd00304a32474f0e648b9a9cae0924af6f8a14e6bcfcb18768ed3e580814400",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "096583d8d2f0fa29aea65d633731145af34bb45bcf57dc2652271c7086128b8a",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "3cd00304a32474f0e648b9a9cae0924af6f8a14e6bcfcb18768ed3e580814400",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "096583d8d2f0fa29aea65d633731145af34bb45bcf57dc2652271c7086128b8a",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "3cd00304a32474f0e648b9a9cae0924af6f8a14e6bcfcb18768ed3e580814400",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    },
+    {
+      "replica": "096583d8d2f0fa29aea65d633731145af34bb45bcf57dc2652271c7086128b8a",
+      "status": 200,
+      "principalId": "de583a36-4e49-49a0-baf5-facabd46d286"
+    }
+  ],
+  "restartRecoveries": [
+    {
+      "replica": "e7c8afd7d95cbd7e94d31b677c366a568dde79addd11e8e9c137607d252f6e80",
+      "recoveryMs": 278,
+      "observations": [
+        {
+          "status": 200,
+          "elapsedMs": 277
+        }
+      ]
+    },
+    {
+      "replica": "2ea244043d15830f82da8ef9d449a1047cd9e9317931102e394b29430729452f",
+      "recoveryMs": 420,
+      "observations": [
+        {
+          "status": 200,
+          "elapsedMs": 420
+        }
+      ]
+    }
+  ],
+  "providerConnections": [
+    {
+      "replica": "e7c8afd7d95cbd7e94d31b677c366a568dde79addd11e8e9c137607d252f6e80",
+      "status": 200
+    },
+    {
+      "replica": "2ea244043d15830f82da8ef9d449a1047cd9e9317931102e394b29430729452f",
+      "status": 200
+    }
+  ],
+  "qualificationSourceState": "Workspace installer and test source with explicitly pinned published application images.",
+  "originalRenderPreserved": true,
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "03a5ea6a-6496-4725-a7d2-28f1e1246994",
+        "observedAt": "2026-09-12T14:40:53.583Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "8a966a27-41c7-4290-939a-09c9258a3a27",
+        "observedAt": "2026-09-12T14:40:53.669Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "e0fdbbc5-96b2-45a0-bb0b-e349d9c0006b",
+        "observedAt": "2026-09-12T14:40:54.924Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "79dd2620-e679-437a-b0aa-34e5d81f5b25",
+        "observedAt": "2026-09-12T14:40:55.021Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "3f213bac-d695-4ec6-9cd1-b074024eca19",
+        "observedAt": "2026-09-12T14:41:00.743Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "4acf4b27-2c02-44c2-8683-8d7ee230c6ea",
+        "observedAt": "2026-09-12T14:41:00.835Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "75000a5b-7f66-4517-958b-0ce3cb21cfae",
+        "observedAt": "2026-09-12T14:41:01.462Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "fa233e6d-6957-4f0a-9132-1a34d87da19b",
+        "observedAt": "2026-09-12T14:41:01.557Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "9ca2d2a2-0ee6-4dca-aef0-f74330afa834",
+        "observedAt": "2026-09-12T14:41:31.125Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "9b766c99-243b-4653-86f0-0c05f78da778",
+        "observedAt": "2026-09-12T14:41:31.200Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "1aa4de9a-5c8c-4809-8694-2087e794feac",
+        "observedAt": "2026-09-12T14:41:31.999Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "5e1bdde9-7167-4c81-929b-720680bba33f",
+        "observedAt": "2026-09-12T14:41:32.106Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "5fc3611a-8171-4594-8ca2-e8b1c47c9451",
+        "observedAt": "2026-09-12T14:42:04.404Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "c97a043f-0417-415f-91ab-cb55751fa6b5",
+        "observedAt": "2026-09-12T14:42:04.496Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "5d9fac56-b356-4579-ae96-a2dc658e4a32",
+        "observedAt": "2026-09-12T14:42:05.292Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "298136b2-577c-4ba4-8054-4373c175b941",
+        "observedAt": "2026-09-12T14:42:05.401Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "331af194-c60d-4073-9f8a-f9d1cd6b721b",
+        "observedAt": "2026-09-12T14:42:05.912Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "bf967f74-a23d-4e44-a232-0690394f9112",
+        "observedAt": "2026-09-12T14:42:05.996Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "0ec7596b-0798-42bd-8134-3aec4b8464d2",
+        "observedAt": "2026-09-12T14:42:06.627Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "28af84d8-0a0c-4b81-af28-7f5327caf126",
+        "observedAt": "2026-09-12T14:42:06.728Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "c50f8b38-975b-4dc6-bef4-466eebda3f2b",
+        "observedAt": "2026-09-12T14:42:10.011Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "cc255599-df81-4949-9884-ef97617695da",
+        "observedAt": "2026-09-12T14:42:10.094Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "db5c464f-526e-4b6b-a4e6-347f28f4dba6",
+        "observedAt": "2026-09-12T14:42:10.719Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "1c9904c0-47d1-41e8-81e3-0d3dbfbd40eb",
+        "observedAt": "2026-09-12T14:42:10.809Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "limits": [
+    "Three Docker daemons share one physical Docker host and synthetic shared storage.",
+    "A separate Compose overlay trusts the synthetic identity provider through the existing district CA mount.",
+    "Final release qualification requires matching installer, test, and application source revisions.",
+    "Isolated restore, complete fault acceptance, and district infrastructure require separate evidence."
+  ],
+  "ownedResourcesRemoved": true
+}

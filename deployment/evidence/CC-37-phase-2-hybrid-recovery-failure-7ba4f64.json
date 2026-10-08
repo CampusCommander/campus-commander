@@ -1,0 +1,28 @@
+{
+  "status": "failed",
+  "sourceRevision": "7ba4f64e99e6d8b877728eb82d5f9bc2492f6102",
+  "run": "https://github.com/CampusCommander/campus-commander/actions/runs/34710817921",
+  "jobs": {
+    "passed": 27,
+    "failed": 1,
+    "skipped": 3
+  },
+  "failure": {
+    "job": "application (hybrid-upgrade-integration)",
+    "jobId": 103599899097,
+    "stage": "persistence-verification",
+    "durationMilliseconds": 80314.141461,
+    "checks": {
+      "executionPreserved": true,
+      "workerChecksumsMatch": true,
+      "internalStoragePreserved": true,
+      "finalReadiness": false
+    }
+  },
+  "logSha256": "225815d2d5abeefeff3ab0dd33b107a6d11b4076f9daa1f236feae4c693f91e4",
+  "limits": [
+    "The failed final readiness check followed an earlier successful readiness observation.",
+    "The report does not identify which dependency changed readiness.",
+    "The preceding d370bbd socket reset remains a separate retained observation."
+  ]
+}

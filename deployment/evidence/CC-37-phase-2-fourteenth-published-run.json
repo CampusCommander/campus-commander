@@ -1,0 +1,142 @@
+{
+  "sourceRevision": "ef49823152d49f9dff8dc8b8948e800f83c2b483",
+  "status": "success",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34696726733",
+  "jobs": [
+    {
+      "name": "validate",
+      "conclusion": "success",
+      "databaseId": 103561365467
+    },
+    {
+      "name": "publish (frontend)",
+      "conclusion": "success",
+      "databaseId": 103561523412
+    },
+    {
+      "name": "publish (api)",
+      "conclusion": "success",
+      "databaseId": 103561523417
+    },
+    {
+      "name": "publish (worker)",
+      "conclusion": "success",
+      "databaseId": 103561523492
+    },
+    {
+      "name": "capacity",
+      "conclusion": "success",
+      "databaseId": 103561872535
+    },
+    {
+      "name": "application (hybrid-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872562
+    },
+    {
+      "name": "application (all-docker-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872566
+    },
+    {
+      "name": "application (hybrid-cli-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872572
+    },
+    {
+      "name": "application (hybrid-cli-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872573
+    },
+    {
+      "name": "application (hybrid-cli-process-fault-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872574
+    },
+    {
+      "name": "application (all-docker-process-fault-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872576
+    },
+    {
+      "name": "application (hybrid-restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872580
+    },
+    {
+      "name": "application (kubernetes-restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872586
+    },
+    {
+      "name": "application (screen-reader-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872588
+    },
+    {
+      "name": "application (upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872591
+    },
+    {
+      "name": "application (hybrid-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872600
+    },
+    {
+      "name": "application (restore-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872601
+    },
+    {
+      "name": "application (kubernetes-upgrade-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872610
+    },
+    {
+      "name": "application (kubernetes-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872627
+    },
+    {
+      "name": "application (auth-image-integration)",
+      "conclusion": "success",
+      "databaseId": 103561872655
+    },
+    {
+      "name": "bundle",
+      "conclusion": "success",
+      "databaseId": 103562970549
+    }
+  ],
+  "pullRequestChecks": {
+    "runId": 34696728681,
+    "status": "success",
+    "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34696728681"
+  },
+  "release": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-ef49823152d4",
+  "reports": [
+    {
+      "artifact": "qualification-all-docker-integration/all-docker-profile.json",
+      "sha256": "12b4ecba8e72604a614099fe7109253a66395aaa56b1498823b82f48c8c9b81a",
+      "status": "passed",
+      "sourceRevision": "ef49823152d49f9dff8dc8b8948e800f83c2b483"
+    },
+    {
+      "artifact": "qualification-all-docker-process-fault-integration/all-docker-upgrade.json",
+      "sha256": "ace67be23b3afff8b571d8f209970b0110fe8b51a09900e5729e2ea96b0bbaa7",
+      "status": "passed",
+      "sourceRevision": null
+    },
+    {
+      "artifact": "qualification-all-docker-process-fault-integration/all-docker-process-faults.json",
+      "sha256": "5df9e85fa0d5ff70647f482a29923e2b78c5a0697b7b4da06351e49e2c7d661f",
+      "status": "passed",
+      "sourceRevision": "ef49823152d49f9dff8dc8b8948e800f83c2b483"
+    }
+  ],
+  "limits": [
+    "Candidate publication does not establish release acceptance.",
+    "Kubernetes application faults, complete capacity and certificate evidence, and accepted release assembly remain open."
+  ]
+}

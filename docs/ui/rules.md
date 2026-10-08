@@ -10,8 +10,9 @@ Rule IDs provide references for implementation plans, review findings, and accep
 - Keep advanced filtering, bulk actions, and keyboard access available to frequent administrators.
 - Expose navigation and actions only for capabilities available in the installed release.
 - Distinguish platform access management from Google Workspace user management.
-- Preserve earlier released workflows when adding another phase.
-- Follow the [delivery sequence](../portfolio/06-work-breakdown.md#delivery-sequence). Do not treat prototype page order as delivery order.
+- Follow the [current work order](../current-work.md). Phases are internal development milestones.
+- Do not infer a feature, navigation destination, or business entity from a generic pattern or historical task.
+- Inspect the relevant Figma composition before implementing the screen. Record missing workflow decisions explicitly.
 
 ## UI-02 — Shared shell
 
@@ -28,6 +29,7 @@ Rule IDs provide references for implementation plans, review findings, and accep
 
 ## UI-03 — Layout and density
 
+- Apply UI-11 for settings organization, list presentation, tabs, and visibility of primary work.
 - Use semantic dimensions and spacing from `tokens.json`.
 - Expand grids into the available width. Keep their status region visible beneath a bounded scrolling viewport.
 - Center ordinary forms and wizards within `layout/content-max-width`.
@@ -52,10 +54,16 @@ Rule IDs provide references for implementation plans, review findings, and accep
 - Check colors against the actual composed background, including selected and hover states.
 - Use only the Material Symbols icon family. Keep icon style consistent within each context.
 - Bundle required fonts and their licenses. Do not make core rendering depend on a font CDN.
+- The temporary installer credential page uses native controls before the application starts. Apply shared tokens, bundled fonts, and accessibility rules.
 - Use tabular numerals for numeric columns. Use the code type role for technical identifiers and evidence.
 
 ## UI-05 — Controls and copy
 
+- Write for the person using the page. Explain what happened and what they can do next.
+- Use everyday words in labels and messages. For example, use "person," "permissions," and "save status."
+- Keep engineering terms such as "principal," "receipt," and "revision" in technical details when users need them.
+- Remove repeated cautions and implementation commentary from ordinary task instructions.
+- Describe the actual consequence when confirmation is required. Avoid generic phrases such as "access consequences."
 - Provide one primary continuation for the active task. Style other actions as secondary.
 - Use outlined destructive actions before confirmation. Use a filled destructive action for final destructive confirmation.
 - Give buttons a verb and object. Include the affected count when it clarifies scope.
@@ -142,3 +150,41 @@ References: [text contrast](https://www.w3.org/TR/WCAG22/#contrast-minimum), [no
 - Record keyboard, focus, screen-reader, and usability evidence separately from static screenshots.
 - Report checks as passed, failed, not run, or inapplicable with a reason.
 - Do not claim implementation acceptance from Figma prototype validation.
+
+## UI-11 — Settings organization and visible work
+
+Source: owner direction in the platform-access discussion, 2026-09-17.
+
+> All platform settings are nested under the settings area. Each area of concern gets its on page. Do NOT mix concerns in one page.
+
+The owner named these separate concerns:
+
+- Platform Users
+- Platform Settings
+- Audit records
+- Service state
+- Provider settings
+- Platform Roles and Permissions
+
+The owner explicitly confirmed Access Assignments as another separate page under Settings:
+
+> 1. Separate Concerns get their own page. Do Not Mix concerns.
+
+The established access concerns also include OrgUnit Collections, which receives its own page under this rule.
+The [workflow](../workflows/platform-access.md#interface-organization--2026-09-17) records each page's responsibility.
+Access Assignments uses a grid listing platform user, role, and OrgUnit collection.
+
+Apply these rules:
+
+- Nest all platform settings under Settings.
+- Give each concern its own page. Do not combine separate concerns on one page.
+- Prefer grid views when a page needs a list.
+- Prefer horizontal tabs over vertical grouping, especially when vertical grouping pushes work below the fold.
+- Use tabs within a concern without combining separate concerns into one page.
+- Keep Access Assignments separate from Platform Users details. Do not use a tab to merge these concerns.
+- Apply established page boundaries directly. Do not offer mixed-concern alternatives unless the owner changes this rule.
+- Arrange primary work and controls to minimize scrolling below the initial viewport.
+- Preserve readable controls, keyboard access, and zoom support while reducing unnecessary vertical space.
+
+This direction establishes organization and layout preferences. Individual page behavior and Figma compositions still require definition.
+It does not authorize application implementation or settle permission assignment, invitation delivery, or access activation.

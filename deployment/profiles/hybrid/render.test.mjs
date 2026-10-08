@@ -136,9 +136,22 @@ test('renders one district-bound worker fragment for each host', () => {
       'workers-certificate',
       'workers-private-key',
       'campus-database-password',
+      'redis-password',
       'district-ca',
     ]),
   );
+});
+
+test('each worker host fragment mounts the Redis password and CA', () => {
+  for (const hostIndex of [0, 1]) {
+    const worker = renderWorkerHost(config, release, {
+      hostIndex,
+      bindAddress: `10.20.30.${41 + hostIndex}`,
+    });
+    const files = mounted(worker, 'workers');
+    assert.ok(files.has('redis-password'));
+    assert.ok(files.has('district-ca'));
+  }
 });
 
 test('removes an externally owned Kestra workload', () => {
@@ -341,4 +354,17 @@ test('controller and remote workers stage private files before nonroot startup',
   assert.deepEqual(worker.services.workers.networks, ['egress']);
   assert.deepEqual(worker.services['runtime-files'].networks, ['egress']);
   assert.equal(controller.networks.internal.internal, true);
+});
+
+test('applies controller API replicas without duplicating workers on each host', () => {
+  const replicated = structuredClone(config);
+  replicated.services.api.placement.replicas = 2;
+  const compose = renderHybrid(replicated, release);
+  assert.equal(compose.services.api.deploy.replicas, 2);
+  assert.equal(compose.services['database-migrate'].deploy.replicas, undefined);
+  const worker = renderWorkerHost(replicated, release, {
+    hostIndex: 0,
+    bindAddress: '10.20.30.41',
+  });
+  assert.equal(worker.services.workers.deploy.replicas ?? 1, 1);
 });

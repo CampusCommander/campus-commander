@@ -1,0 +1,30 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T05:15:53.195Z",
+  "durationMs": 62351,
+  "environment": "one Docker host, synthetic HTTPS OIDC provider, two API replicas, real PostgreSQL, Redis, Kestra, worker, artifact storage, and Chromium",
+  "browser": "149.0.7827.55",
+  "packagedApplicationImages": false,
+  "checks": [
+    "OIDC sign-in and forged callback denial",
+    "OIDC client credential rotation",
+    "worker credential rotation",
+    "cross-replica sessions and logout",
+    "absolute and idle expiry",
+    "revocation and recovery",
+    "database and Redis timeout recovery",
+    "four live utility operations",
+    "browser sign-in and sign-out",
+    "persisted preferences",
+    "system and explicit themes",
+    "offline observation recovery",
+    "keyboard focus and menus",
+    "CSS zoom 200 percent",
+    "320 pixel reflow"
+  ],
+  "limits": [
+    "Full deployment profile qualification remains separate.",
+    "Human screen-reader walkthrough remains unperformed.",
+    "Synthetic provider evidence does not qualify a district identity provider."
+  ]
+}

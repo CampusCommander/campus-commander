@@ -1,0 +1,109 @@
+<div class="device-detail" [attr.aria-busy]="busy()">
+  @switch (status()) { @case ('loading') {
+  <p role="status">Loading device details…</p>
+  } @case ('offline') {
+  <section class="card" aria-labelledby="device-offline-title">
+    <h1 id="device-offline-title">Cannot reach Campus Commander</h1>
+    <p>Device details need a connection.</p>
+    <div class="actions">
+      <a mat-stroked-button routerLink="/devices">Back to devices</a>
+      <button mat-flat-button type="button" (click)="retry()">Retry</button>
+    </div>
+  </section>
+  } @case ('missing') {
+  <section class="card" aria-labelledby="device-missing-title">
+    <h1 id="device-missing-title">Device not found</h1>
+    <p>The current inventory has no device with this ID.</p>
+    <a mat-stroked-button routerLink="/devices">Back to devices</a>
+  </section>
+  } @case ('ready') { @if (device(); as current) {
+  <header class="page-header">
+    <h1>{{ current.serialNumber || current.deviceId }}</h1>
+    <p class="subtitle">Device details · {{ current.orgUnitPath }}</p>
+  </header>
+  <div class="actions">
+    <a mat-stroked-button routerLink="/devices">Back to devices</a>
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="!hasNext()"
+      (click)="next()"
+    >
+      Next device
+    </button>
+  </div>
+  <div class="detail-layout">
+    <section class="card" aria-labelledby="device-identity-title">
+      <h2 id="device-identity-title">{{ identity(current) }}</h2>
+      <p>{{ current.orgUnitPath }}</p>
+      <p class="secondary">
+        Read from Google {{ current.lastEntitySync | date: 'MMM d, h:mm a' }}
+      </p>
+      @if (current.removedAt) {
+      <p class="secondary">
+        Google no longer returns this device (since {{ current.removedAt | date:
+        'MMM d, h:mm a' }}).
+      </p>
+      }
+      <dl class="annotations">
+        <div class="annotation">
+          <dt>Annotated location</dt>
+          <dd>{{ current.annotatedLocation || 'Not set' }}</dd>
+        </div>
+        <div class="annotation">
+          <dt>Notes</dt>
+          <dd>{{ current.notes || 'Not set' }}</dd>
+        </div>
+      </dl>
+      <p>Last device contact: {{ relative(current.lastContact) }}</p>
+    </section>
+    <section class="card battery" aria-labelledby="battery-title">
+      @switch (current.battery.status) { @case ('reported') {
+      <h2
+        id="battery-title"
+        class="health"
+        [class]="healthClass(current.battery)"
+      >
+        Battery health · {{ healthLabel(current.battery) }}
+      </h2>
+      <p class="capacity">{{ capacityText(current.battery) }}</p>
+      <p>
+        Health compares full-charge capacity with design capacity. It does not
+        show current charge.
+      </p>
+      <p class="secondary">
+        Classified by Google: Normal above 80%, Replace soon from 75% to 80%,
+        Replace now below 75% of design capacity.
+      </p>
+      <p class="secondary">
+        Latest report: {{ reportedAt(current.battery) | date: 'MMM d, h:mm a' }}
+      </p>
+      <h3>Recent reports</h3>
+      <ul class="reports">
+        @for (report of current.batteryReports; track report.reportedAt) {
+        <li>
+          <span>{{ report.reportedAt | date: 'MMM d' }}</span>
+          <span
+            >{{ report.capacityPercent === null ? 'No capacity' :
+            report.capacityPercent + '%' }}</span
+          >
+        </li>
+        }
+      </ul>
+      } @case ('no-report') {
+      <h2 id="battery-title">No battery report</h2>
+      <p>Google has not reported battery data for this device.</p>
+      <p class="secondary">
+        Common causes: the ReportDevicePowerStatus device policy is off, or the
+        device has no battery.
+      </p>
+      } @default {
+      <h2 id="battery-title">Battery data unavailable</h2>
+      <p>
+        The last inventory refresh could not read battery telemetry from Google.
+      </p>
+      } }
+    </section>
+  </div>
+  } } }
+</div>

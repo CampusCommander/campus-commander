@@ -1,0 +1,70 @@
+.access-content {
+  max-width: var(--cc-content-max-width);
+  margin-inline: auto;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-lg);
+}
+.principals {
+  list-style: none;
+  padding: 0;
+}
+.principals li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--cc-space-lg);
+  padding-block: var(--cc-space-lg);
+  border-bottom: 1px solid var(--cc-border);
+}
+.editor,
+.review {
+  border-top: 1px solid var(--cc-border);
+  margin-top: var(--cc-space-xl);
+  padding-top: var(--cc-space-xl);
+}
+fieldset {
+  padding: var(--cc-space-lg);
+  border: 1px solid var(--cc-border);
+  margin: var(--cc-space-lg) 0;
+}
+mat-checkbox {
+  display: block;
+  margin-block: var(--cc-space-sm);
+}
+button {
+  max-width: 100%;
+  height: auto;
+  min-height: 40px;
+  white-space: normal;
+  padding-block: var(--cc-space-sm);
+}
+dd {
+  margin: 0 0 var(--cc-space-md);
+}
+dt {
+  font-weight: 500;
+}
+dd,
+p,
+li,
+h2,
+h3,
+strong,
+summary {
+  overflow-wrap: anywhere;
+}
+.loading-placeholder {
+  min-height: 96px;
+  background: var(--cc-surface-hover);
+  border-radius: var(--cc-radius-control);
+}
+summary {
+  min-height: 24px;
+  padding-block: var(--cc-space-sm);
+  cursor: pointer;
+}

@@ -1,0 +1,53 @@
+{
+  "sourceRevision": "2f26a013e3bbc7cbf768add55f0b3701ac312243",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34686381860",
+  "originalArtifactFiles": [
+    {
+      "path": "auth/account-accessibility.json",
+      "sha256": "d205266d14efb290f949181423f27549274f7be758068824004d2e1a70ce42de",
+      "bytes": 2134
+    },
+    {
+      "path": "auth/diagnostics-dark-accessibility.json",
+      "sha256": "3a003d7a851774b0d840c16ba2ea3eaac2a2d8b0a331247e4a39dd4c06a01a8a",
+      "bytes": 3591
+    },
+    {
+      "path": "auth/diagnostics-dark.png",
+      "sha256": "28d916aaa669e0409db57cf12f9c5da316a6a7473a11f49cd88dd43642c125ae",
+      "bytes": 72522
+    },
+    {
+      "path": "auth/diagnostics-light-accessibility.json",
+      "sha256": "a3f782865fcb179adf9abbc22a1a739aa8c24deb028cb2d4f1e8b1e62bebcef4",
+      "bytes": 3593
+    },
+    {
+      "path": "auth/diagnostics-light.png",
+      "sha256": "579b97f16d28d7aca68cfcc798da783ce81a222c8880c5eb0986fd8120203883",
+      "bytes": 68517
+    },
+    {
+      "path": "auth/login-accessibility.json",
+      "sha256": "6692e8e010e43583e6e5c4bc63cc0dd12c4a0c52d267e1c2e51532156c5cbc95",
+      "bytes": 1027
+    },
+    {
+      "path": "auth/packaged-integration.json",
+      "sha256": "880bfd6c07c1c60870c9f551a6fb3a826fc9d07f4671b3944499b28a89b3dc5d",
+      "bytes": 3112
+    },
+    {
+      "path": "reader/all-docker-profile.json",
+      "sha256": "ff8ee52a5cc9e7b3a0669ed09aa1ace6942d9a025b8578650719ec2dce74f600",
+      "bytes": 11730
+    },
+    {
+      "path": "reader/screen-reader.json",
+      "sha256": "dee6bf7357ea8fc9be2ad6378355dc4bfac6a2d72482f1af1001d09a537d0c23",
+      "bytes": 9569
+    }
+  ],
+  "repositoryCopyPolicy": "JSON copies use repository formatting. Original artifact hashes identify downloaded bytes before formatting. PNG copies retain original bytes.",
+  "acceptedRelease": false
+}

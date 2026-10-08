@@ -1,0 +1,128 @@
+{
+  "status": "passed",
+  "sourceRevision": "55b53fe3d4164eac5c127a9026c25000cc60bcb8",
+  "recordedAt": "2026-09-16T18:09:00.986Z",
+  "checks": [
+    "copyable fragment link without SMTP",
+    "browser removes invitation fragment",
+    "link absent after creator reload",
+    "separate OIDC browser and pending inviter confirmation",
+    "no principal or grants before confirmation",
+    "reviewed exact identity and grant ceiling",
+    "invited sign-in receives only intended grants",
+    "direct unauthorized invitation reads and writes denied",
+    "CSRF and origin denial",
+    "revoked link denied",
+    "offline form preservation",
+    "light and dark accessibility",
+    "keyboard controls and 320 pixel reflow"
+  ],
+  "limits": [
+    "Human screen-reader walkthrough remains unperformed.",
+    "District and school invitation scopes require their owning verified resource tasks.",
+    "Axe reported incomplete contrast checks for empty Material fields. Zero automated violations does not establish full accessibility conformance."
+  ],
+  "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35131956143",
+  "environment": "One hosted Docker worker, real PostgreSQL and Redis, two API replicas, synthetic HTTPS OIDC provider, and Chromium.",
+  "databaseChecks": [
+    "hash-only storage and restricted runtime functions",
+    "concurrent claim and replay rejection",
+    "wrong issuer, subject, and browser rejection",
+    "inviter revocation and reduced grant ceiling",
+    "audit rollback for every transition",
+    "expiry, invitation revision, and token redaction"
+  ],
+  "accessibilityReports": [
+    {
+      "artifact": "invitation-awaiting-confirmation-dark-accessibility.json",
+      "sha256": "4e5c7165c9cc93ab45923d24f63fb08d9a9a3e345c603829066ca2d358519919",
+      "violations": 0,
+      "manualChecksOutstanding": []
+    },
+    {
+      "artifact": "invitation-awaiting-confirmation-light-accessibility.json",
+      "sha256": "5303831c247167436b1d203d65a7c2d3c19a17ce1907502bb7480cdc2f163f63",
+      "violations": 0,
+      "manualChecksOutstanding": []
+    },
+    {
+      "artifact": "invitation-identity-review-dark-accessibility.json",
+      "sha256": "e9018e80a5b5d0f4b152805eabd505cd40dcd8cfa7f37223d96099186519ec5c",
+      "violations": 0,
+      "manualChecksOutstanding": [
+        {
+          "rule": "color-contrast",
+          "nodes": 3
+        }
+      ]
+    },
+    {
+      "artifact": "invitation-identity-review-light-accessibility.json",
+      "sha256": "b3a69b8cb14fe082ffef38ccfaac8a464a57fce647551a055aea079d7b972831",
+      "violations": 0,
+      "manualChecksOutstanding": [
+        {
+          "rule": "color-contrast",
+          "nodes": 3
+        }
+      ]
+    },
+    {
+      "artifact": "invitation-revoked-dark-accessibility.json",
+      "sha256": "fad505c3acccddf01a8914bf2c6dc2a3e2ff61c27f9f96ef6d05b97f4b08bf3d",
+      "violations": 0,
+      "manualChecksOutstanding": [
+        {
+          "rule": "color-contrast",
+          "nodes": 1
+        }
+      ]
+    },
+    {
+      "artifact": "invitation-revoked-light-accessibility.json",
+      "sha256": "2e63b40de63239d0a60fb1cd2a757b1de89a29b1946361c50406962e122104b0",
+      "violations": 0,
+      "manualChecksOutstanding": [
+        {
+          "rule": "color-contrast",
+          "nodes": 1
+        }
+      ]
+    },
+    {
+      "artifact": "invitations-dark-accessibility.json",
+      "sha256": "f1282bc6fa62d455467388358d361795a3e7980fbde7a83e3147ec635cca80cd",
+      "violations": 0,
+      "manualChecksOutstanding": [
+        {
+          "rule": "color-contrast",
+          "nodes": 3
+        }
+      ]
+    },
+    {
+      "artifact": "invitations-light-accessibility.json",
+      "sha256": "fe525d244e60381af7be40fc4d324ab2ff9802fac77d6f83876df56a4e356c2c",
+      "violations": 0,
+      "manualChecksOutstanding": [
+        {
+          "rule": "color-contrast",
+          "nodes": 3
+        }
+      ]
+    }
+  ],
+  "uiRules": [
+    "UI-01",
+    "UI-02",
+    "UI-03",
+    "UI-04",
+    "UI-05",
+    "UI-06",
+    "UI-07",
+    "UI-08",
+    "UI-09",
+    "UI-10",
+    "FORM-01"
+  ]
+}

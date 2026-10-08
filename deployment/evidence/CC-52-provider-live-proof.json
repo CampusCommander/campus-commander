@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-09-17T01:25:59.118Z",
+  "customerId": "C01zcarnq",
+  "sourceRevision": "c227d90",
+  "method": "GoogleCustomerVerifier.readSchoolReferences",
+  "status": "passed",
+  "unitCount": 3,
+  "rootCount": 1,
+  "scope": "https://www.googleapis.com/auth/admin.directory.orgunit.readonly",
+  "exactScopeVerified": true,
+  "completeHierarchyValidated": true,
+  "limits": [
+    "Direct provider method only. Database credential generation fencing and production API remain pending.",
+    "Super Admin fixture does not prove a minimum Google role.",
+    "No selector or cross-school authorization qualification."
+  ]
+}

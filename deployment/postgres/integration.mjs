@@ -1,3 +1,11 @@
+import { qualifySchoolReferences } from './school-references.integration.mjs';
+import { qualifyDeviceInventory } from './device-inventory.integration.mjs';
+import { qualifyRestoredAccess } from './restore-access.integration.mjs';
+import { qualifyGoogleLifecycle } from './google-lifecycle.integration.mjs';
+import { qualifyGoogleHealth } from './google-health.integration.mjs';
+import { qualifyGoogleConnection } from './google-connection.integration.mjs';
+import { qualifyCustomerSettings } from './customer-settings.integration.mjs';
+import { qualifyAccessRevocation } from './access-revocation.integration.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -21,6 +29,9 @@ import {
   revokeBootstrap,
   verifyBootstrap,
 } from '../bootstrap/access.mjs';
+import { changeApplicationAccess } from '../bootstrap/application-access.mjs';
+import { qualifyInvitations } from './invitations.integration.mjs';
+import { qualifyPlatformAccess } from './platform-access.integration.mjs';
 
 const qualification = JSON.parse(
   await readFile(new URL('./qualification.json', import.meta.url), 'utf8'),
@@ -306,20 +317,243 @@ try {
   const migrators = await Promise.all(
     Array.from({ length: 8 }, () => connect('cc-migrator', 'cc-app')),
   );
+  const migrations = await loadMigrations();
+  await migrate(migrators[0], {
+    runtimeRole: 'cc-app',
+    migrations: migrations.slice(0, 2),
+  });
+  const issuer = 'https://phase3-identity.example.test';
+  const { principalId } = await changeApplicationAccess(
+    migrators[0],
+    {
+      action: 'initialize',
+      issuer,
+      subject: 'existing-phase2-owner',
+      displayName: 'Existing owner',
+    },
+    issuer,
+  );
+  const beforeUpgrade = (
+    await runtime.query('SELECT * FROM cc.application_principals WHERE id=$1', [
+      principalId,
+    ])
+  ).rows[0];
   await Promise.all(
     migrators.map((client) => migrate(client, { runtimeRole: 'cc-app' })),
   );
   const ledger = await runtime.query(
-    'SELECT count(*)::int AS count FROM cc.schema_migrations',
+    'SELECT id,checksum FROM cc.schema_migrations ORDER BY id',
   );
-  assert.equal(ledger.rows[0].count, 1);
+  assert.deepEqual(
+    ledger.rows,
+    migrations.map(({ id, checksum }) => ({ id, checksum })),
+  );
   assert.equal(await checkReadiness(runtime), true);
-  results.push('eight concurrent migrations apply one ledger entry: pass');
-  const migrations = await loadMigrations();
+  results.push('eight concurrent migrations apply each migration once: pass');
+  assert.deepEqual(
+    (
+      await runtime.query(
+        'SELECT * FROM cc.application_principals WHERE id=$1',
+        [principalId],
+      )
+    ).rows[0],
+    beforeUpgrade,
+  );
+  assert.equal(
+    (await runtime.query('SELECT * FROM cc.application_grants')).rowCount,
+    0,
+  );
+  for (const sql of [
+    'DELETE FROM cc.application_grants',
+    "UPDATE cc.application_actions SET scope_kinds=ARRAY['platform']",
+    "UPDATE cc.security_events SET detail='changed'",
+    'DELETE FROM cc.security_events',
+  ])
+    await assert.rejects(runtime.query(sql), /permission denied/);
+  const confirmation = {
+    action: 'confirm-platform-administrator',
+    principalId,
+    expectedVersion: 1,
+    confirmation: 'grant-platform-administrator',
+  };
+  await assert.rejects(
+    changeApplicationAccess(migrators[0], confirmation, issuer, 2),
+    /Phase 3/,
+  );
+  await assert.rejects(
+    changeApplicationAccess(
+      migrators[0],
+      { ...confirmation, confirmation: 'yes' },
+      issuer,
+      3,
+    ),
+  );
+  await assert.rejects(
+    changeApplicationAccess(runtime, confirmation, issuer, 3),
+    /permission denied/,
+  );
+  await migrators[0].query(
+    "ALTER TABLE cc.security_events ADD CONSTRAINT reject_confirmation CHECK(event <> 'platform-administrator-confirmed')",
+  );
+  await assert.rejects(
+    changeApplicationAccess(migrators[0], confirmation, issuer, 3),
+    /reject_confirmation/,
+  );
+  assert.equal(
+    (await runtime.query('SELECT * FROM cc.application_grants')).rowCount,
+    0,
+  );
+  assert.deepEqual(
+    (
+      await runtime.query(
+        'SELECT * FROM cc.application_principals WHERE id=$1',
+        [principalId],
+      )
+    ).rows[0],
+    beforeUpgrade,
+  );
+  await migrators[0].query(
+    'ALTER TABLE cc.security_events DROP CONSTRAINT reject_confirmation',
+  );
+  await changeApplicationAccess(migrators[0], confirmation, issuer, 3);
+  const grants = (
+    await runtime.query(
+      'SELECT action,scope FROM cc.application_grants WHERE principal_id=$1',
+      [principalId],
+    )
+  ).rows;
+  assert.equal(
+    grants.length,
+    (
+      await runtime.query(
+        'SELECT count(*)::integer AS n FROM cc.application_actions',
+      )
+    ).rows[0].n,
+  );
+  assert.ok(grants.every(({ scope }) => scope.kind === 'platform'));
+  const afterConfirmation = (
+    await runtime.query('SELECT * FROM cc.application_principals WHERE id=$1', [
+      principalId,
+    ])
+  ).rows[0];
+  assert.deepEqual(afterConfirmation, {
+    ...beforeUpgrade,
+    permission_version: 2,
+  });
+  await assert.rejects(
+    changeApplicationAccess(migrators[0], confirmation, issuer, 3),
+    /permission version changed/,
+  );
+  assert.equal(
+    (
+      await runtime.query(
+        "SELECT * FROM cc.security_events WHERE event='platform-administrator-confirmed'",
+      )
+    ).rowCount,
+    1,
+  );
+  for (const [action, scope] of [
+    ['connection:manage', { kind: 'district', customerId: 'Ctest' }],
+    ['customer:read', { kind: 'district' }],
+    [
+      'schools:read',
+      { kind: 'school', customerId: 'Ctest', schoolId: 'missing' },
+    ],
+    ['customer:read', { kind: 'platform', customerId: 'Ctest' }],
+    ['unrecognized:action', { kind: 'platform' }],
+  ])
+    await assert.rejects(
+      migrators[0].query(
+        'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
+        [principalId, action, scope],
+      ),
+    );
+  results.push(
+    'Phase 2 identity, preferences, and permissions preserved without implicit grants: pass',
+  );
+  results.push(
+    'explicit Phase 3 operator confirmation, stale-version denial, and audit rollback: pass',
+  );
+  results.push(
+    'runtime grant writes and audit rewriting denied; malformed and unsupported scopes rejected: pass',
+  );
+  results.push(
+    ...(await qualifyInvitations({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      principalId,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyPlatformAccess({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      principalId,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyAccessRevocation({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyGoogleConnection({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyCustomerSettings({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyGoogleHealth({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyGoogleLifecycle({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifySchoolReferences({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyDeviceInventory({
+      runtime,
+      migrator: migrators[0],
+      issuer,
+    })),
+  );
   const broken = [
     ...migrations,
     {
-      id: '002-broken',
+      id: '003-broken',
       checksum: 'synthetic',
       sql: 'CREATE TABLE cc.rollback_probe(id int); SELECT 1/0;',
     },
@@ -402,6 +636,13 @@ try {
   assert.equal(await verifyBootstrap(runtime, replacement), false);
   results.push(
     'bootstrap resume preserves expiry; expiry, replacement CAS, old credential denial, and revocation: pass',
+  );
+  results.push(
+    ...(await qualifyRestoredAccess({
+      runtime,
+      migrator: migrators[0],
+      principalId,
+    })),
   );
   const ca = await readFile(join(directory, 'server.crt'), 'utf8');
   const external = {

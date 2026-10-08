@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "sourceRevision": "c7932e27811eb33c33b65d851f3dd5987d356e89",
+  "command": "npm exec nx run api-e2e:phase3-auth-integration",
+  "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35188533234",
+  "recordedAt": "2026-09-17T06:14:51Z",
+  "durationMilliseconds": 119242.102141,
+  "durationScope": "Node test process, as reported in the failed job log",
+  "environment": {
+    "runner": "ubuntu-latest",
+    "nodeVersion": "24.19.0",
+    "dockerVersion": "29.7.2",
+    "composeVersion": "5.5.0",
+    "CC_AUTH_PACKAGED_IMAGES": "true",
+    "CC_AUTH_PHASE": "3"
+  },
+  "imageDigests": {
+    "status": "unavailable",
+    "reason": "The failed fixture did not write its final image inventory."
+  },
+  "limitations": [
+    "This record preserves the first rejected screenshot diagnostics. It does not establish the originating page or the failure cause.",
+    "The fixture used packaged application images and synthetic Google and sign-in providers.",
+    "This record does not qualify image identity or successful evidence redaction for the failed run."
+  ],
+  "diagnostics": {
+    "status": "failed",
+    "pendingResponses": 0,
+    "pendingStages": [],
+    "responseFailures": {
+      "headers": 1,
+      "body": 1
+    },
+    "failedResponses": [
+      {
+        "stage": "headers",
+        "route": "other",
+        "status": 200,
+        "reason": "target-closed"
+      },
+      {
+        "stage": "body",
+        "route": "other",
+        "status": 0,
+        "reason": "target-closed"
+      }
+    ],
+    "reason": "response-observation-failed"
+  }
+}

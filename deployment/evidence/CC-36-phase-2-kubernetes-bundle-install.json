@@ -1,0 +1,217 @@
+{
+  "status": "PASS",
+  "checkedAt": "2026-09-12T09:33:19.204Z",
+  "elapsedMilliseconds": 227273,
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d"
+  },
+  "sourceRevision": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
+  "imageBuildId": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
+  "workingTree": "clean",
+  "qualificationSourceRevision": "6d3bd6544f26d3240aa1a957e5e851b3fd0c9b80",
+  "qualificationWorkingTree": "uncommitted-candidate",
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "2b4f58fb-5726-48ef-8cd4-35c5379879d9",
+        "observedAt": "2026-09-12T09:31:33.438Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "d6157f6b-f33c-4d7f-b9f6-e31c5c443900",
+        "observedAt": "2026-09-12T09:31:33.527Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "dd49acfa-092d-4c34-8161-572092a972d9",
+        "observedAt": "2026-09-12T09:31:34.402Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "bc896428-5b87-47fc-a8dd-5c6a5b5a7b35",
+        "observedAt": "2026-09-12T09:31:34.498Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "55d46133-696b-4d0c-bdb5-a4ec342e6745",
+        "observedAt": "2026-09-12T09:31:46.658Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "e9324355-7ee5-4741-84c0-a8846939dabe",
+        "observedAt": "2026-09-12T09:31:46.743Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "ac48deb3-3b3a-4ad2-aeca-8f5da5bb6bba",
+        "observedAt": "2026-09-12T09:31:47.380Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "649c99c7-5724-4b26-9160-eb7a34dc8dca",
+        "observedAt": "2026-09-12T09:31:47.478Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "30c94755-56bf-4cd4-b1ed-cc81f56752d2",
+        "observedAt": "2026-09-12T09:32:00.340Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "534cffe3-326b-4797-ac33-7d193c9fd085",
+        "observedAt": "2026-09-12T09:32:00.674Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "6e1dfb6b-5149-4b13-931f-742f3509ac56",
+        "observedAt": "2026-09-12T09:32:01.300Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "21be2ee2-5539-41a0-8dbe-b02a80962125",
+        "observedAt": "2026-09-12T09:32:01.406Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "a4753315-f6a3-46ba-96eb-4e346503fbf4",
+        "observedAt": "2026-09-12T09:32:13.022Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "cd0f0811-5c6e-4571-8f56-458cc4f75246",
+        "observedAt": "2026-09-12T09:32:13.339Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "c2eb2eaa-b4fc-4e3f-8bc3-a63523796ada",
+        "observedAt": "2026-09-12T09:32:13.967Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "350503db-b257-4dea-afa6-f1f390851f06",
+        "observedAt": "2026-09-12T09:32:14.056Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "f1ae4a1d-2147-45cc-96a0-1facb334d150",
+        "observedAt": "2026-09-12T09:32:42.476Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "820d4337-0a17-4bb2-96fe-c10479b20933",
+        "observedAt": "2026-09-12T09:32:42.552Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "1d8b9c5c-eedb-420c-b0d5-c7d99c591fda",
+        "observedAt": "2026-09-12T09:32:43.370Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "b7b5ae77-9e26-44e1-a66c-e35d87c92175",
+        "observedAt": "2026-09-12T09:32:43.471Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "419076f5-4a82-41c0-9956-9a3e7d92025a",
+        "observedAt": "2026-09-12T09:33:17.990Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "e2b04a06-ec2a-4019-8ee9-790b2f5efe6c",
+        "observedAt": "2026-09-12T09:33:18.082Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "8fe3dab5-4426-4c19-b63b-5113a6473c49",
+        "observedAt": "2026-09-12T09:33:18.901Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "85c706cd-15c8-47c1-92b3-35422fcd9a39",
+        "observedAt": "2026-09-12T09:33:19.003Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "nodes": 3,
+  "apiReplicas": 2,
+  "workerRescheduled": true,
+  "installer": {
+    "status": "passed",
+    "commands": [
+      {
+        "command": "prepare",
+        "status": "prepared"
+      },
+      {
+        "command": "resume",
+        "status": "ready"
+      },
+      {
+        "command": "resume",
+        "status": "ready"
+      },
+      {
+        "command": "stop",
+        "status": "stopped"
+      },
+      {
+        "command": "resume",
+        "status": "ready"
+      },
+      {
+        "command": "uninstall",
+        "status": "uninstalled"
+      },
+      {
+        "command": "resume",
+        "status": "ready"
+      }
+    ],
+    "workerHosts": [
+      "cc-capacity-kube-a86229ce626f-worker",
+      "cc-capacity-kube-a86229ce626f-worker2"
+    ],
+    "originalRenderPreserved": true,
+    "source": "verified-extracted-bundle"
+  },
+  "limits": [
+    "Three Kind nodes share one Docker host and synthetic storage.",
+    "Kind default networking does not enforce NetworkPolicy.",
+    "District DNS, identity provider, CNI enforcement, and storage remain separate qualification requirements.",
+    "Upgrade and isolated restore require separate evidence."
+  ]
+}

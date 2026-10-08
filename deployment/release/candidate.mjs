@@ -5,15 +5,21 @@ import {
   readFile,
   writeFile,
   lstat,
-  copyFile,
+  chmod,
   readdir,
 } from 'node:fs/promises';
 import { dirname, resolve, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { sha256 } from './integrity.mjs';
+import { inspectPhase3Evidence } from './phase3-evidence.mjs';
+import {
+  applicationReports,
+  assertApplicationEvidence,
+} from './application-evidence.mjs';
 
 const run = promisify(execFile);
 const services = { frontend: 'frontend', api: 'api', worker: 'workers' };
+export { applicationReports } from './application-evidence.mjs';
 
 /** Package committed installation sources and the build output without local secret files. */
 export async function assembleCandidate({
@@ -21,7 +27,18 @@ export async function assembleCandidate({
   output,
   artifacts,
   sourceRevision,
+  phase = 1,
+  qualificationArtifacts,
+  mode = 'full',
 }) {
+  if (![1, 2, 3].includes(phase))
+    throw new Error('Select release phase 1, 2, or 3.');
+  if (!['full', 'lab'].includes(mode) || (mode === 'lab' && phase === 1))
+    throw new Error('Select full qualification or an application lab build.');
+  if (phase === 3 && mode !== 'lab')
+    throw new Error(
+      'Phase 3 profile qualification must precede full candidate assembly.',
+    );
   if (!/^[a-f0-9]{40}$/.test(sourceRevision))
     throw new Error('Candidate requires a source revision.');
   const head = (
@@ -53,11 +70,13 @@ export async function assembleCandidate({
       );
   }
   const files = [];
-  const add = async (source, path) => {
+  const add = async (source, path, expectedSha256) => {
     const stat = await lstat(source);
     if (!stat.isFile() || stat.isSymbolicLink())
       throw new Error('Candidate contains an unsupported file.');
     const bytes = await readFile(source);
+    if (expectedSha256 !== undefined && sha256(bytes) !== expectedSha256)
+      throw new Error('Candidate evidence changed after verification.');
     if (
       /-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/.test(
         bytes.toString('utf8'),
@@ -66,7 +85,11 @@ export async function assembleCandidate({
       throw new Error('Candidate contains private key material.');
     const destination = resolve(output, path);
     await mkdir(dirname(destination), { recursive: true });
-    await copyFile(source, destination);
+    await writeFile(destination, bytes, {
+      flag: 'wx',
+      mode: stat.mode & 0o777,
+    });
+    await chmod(destination, stat.mode & 0o777);
     files.push({ path, sizeBytes: bytes.length, sha256: sha256(bytes) });
   };
   for (const path of paths) await add(resolve(root, path), path);
@@ -119,19 +142,91 @@ export async function assembleCandidate({
     )
       throw new Error('Candidate image repository or digest is invalid.');
     images[key] = reference;
-    for (const suffix of ['reference', 'spdx.json', 'verification.json'])
+    for (const suffix of [
+      'reference',
+      'spdx.json',
+      'verification.json',
+      ...(phase >= 2 ? ['vulnerabilities.json'] : []),
+    ])
       await add(
         resolve(artifacts, `${service}.${suffix}`),
         `provenance/${service}.${suffix}`,
       );
   }
+  const applicationEvidence = {};
+  if (phase === 3) {
+    if (!qualificationArtifacts)
+      throw new Error('Phase 3 requires packaged application evidence.');
+    const target = 'phase3-auth-integration';
+    const directory = resolve(
+      qualificationArtifacts,
+      `qualification-${target}`,
+    );
+    const reports = await inspectPhase3Evidence(directory, {
+      sourceRevision,
+      images,
+    });
+    for (const report of reports) {
+      const reportPath = `qualification/${target}/${report.name}`;
+      await add(resolve(directory, report.name), reportPath, report.sha256);
+      applicationEvidence[report.name] = {
+        reportPath,
+        reportSha256: report.sha256,
+      };
+    }
+  }
+  if (phase === 2) {
+    if (!qualificationArtifacts)
+      throw new Error('Phase 2 requires application qualification artifacts.');
+    const reports =
+      mode === 'lab'
+        ? {
+            'auth-image-integration':
+              applicationReports['auth-image-integration'],
+          }
+        : applicationReports;
+    for (const [target, filename] of Object.entries(reports)) {
+      const source = resolve(
+        qualificationArtifacts,
+        `qualification-${target}`,
+        filename,
+      );
+      const report = JSON.parse(await readFile(source, 'utf8'));
+      assertApplicationEvidence(target, report, { sourceRevision, images });
+      const reportPath = `qualification/${target}/${filename}`;
+      await add(source, reportPath);
+      applicationEvidence[target] = {
+        reportPath,
+        reportSha256: files.find((file) => file.path === reportPath).sha256,
+      };
+    }
+    for (const filename of [
+      'login-accessibility.json',
+      'account-accessibility.json',
+      'diagnostics-light-accessibility.json',
+      'diagnostics-dark-accessibility.json',
+      'diagnostics-light.png',
+      'diagnostics-dark.png',
+    ])
+      await add(
+        resolve(
+          qualificationArtifacts,
+          'qualification-auth-image-integration',
+          filename,
+        ),
+        `qualification/accessibility/${filename}`,
+      );
+  }
   const manifest = {
     schemaVersion: 1,
+    phase,
     sourceRevision,
     architectures: ['linux/amd64'],
     platform: 'linux/amd64',
     images,
     qualification: 'candidate-only',
+    ...(mode === 'lab' ? { validationScope: 'lab' } : {}),
+    ...(phase >= 2 ? { applicationEvidence } : {}),
     evidence: Object.fromEntries(
       ['all-docker', 'hybrid', 'kubernetes'].map((profile) => [
         profile,
@@ -163,16 +258,28 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
-  const [output, artifacts, sourceRevision] = process.argv.slice(2);
+  const [
+    output,
+    artifacts,
+    sourceRevision,
+    phase = '1',
+    qualificationArtifacts,
+    mode = 'full',
+  ] = process.argv.slice(2);
   if (!output || !artifacts || !sourceRevision)
     throw new Error(
-      'Usage: candidate.mjs <new-output-directory> <image-artifacts> <source-revision>',
+      'Usage: candidate.mjs <new-output-directory> <image-artifacts> <source-revision> [phase] [qualification-artifacts] [full|lab]',
     );
   assembleCandidate({
     root: process.cwd(),
     output: resolve(output),
     artifacts: resolve(artifacts),
     sourceRevision,
+    phase: Number(phase),
+    mode,
+    qualificationArtifacts: qualificationArtifacts
+      ? resolve(qualificationArtifacts)
+      : undefined,
   }).catch(() => {
     process.stderr.write(
       'Candidate assembly failed. Check committed sources, build output, and signed image evidence.\n',

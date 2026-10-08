@@ -4,6 +4,7 @@
   "sourceRoot": "deployment/src",
   "projectType": "library",
   "tags": [],
+  "implicitDependencies": ["google-connection", "application-contracts"],
   "targets": {
     "installer-test": {
       "executor": "nx:run-commands",
@@ -77,7 +78,7 @@
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "command": "node deployment/postgres/integration.mjs"
+        "command": "node --import ./libs/application-contracts/test-register.mjs deployment/postgres/integration.mjs"
       },
       "dependsOn": ["build"]
     },
@@ -94,7 +95,11 @@
       "cache": true,
       "outputs": ["{workspaceRoot}/dist/deployment"],
       "options": {
-        "command": "tsc -p deployment/tsconfig.lib.json"
+        "commands": [
+          "tsc -p deployment/tsconfig.lib.json",
+          "node deployment/google-runtime.build.mjs"
+        ],
+        "parallel": false
       }
     },
     "test": {
@@ -327,6 +332,44 @@
       "dependsOn": ["build"],
       "options": {
         "command": "node deployment/installer/kubernetes-lifecycle-integration.mjs"
+      }
+    },
+    "kestra-database-recovery-probe": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node deployment/kestra/database-recovery-probe.mjs"
+      }
+    },
+    "operations-cli-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "CC_OPERATIONS_CLI=1 node deployment/operations/integration.mjs"
+      }
+    },
+    "google-proof-test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "options": {
+        "command": "node --test deployment/google-proof/*.test.mjs"
+      }
+    },
+    "google-proof": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node deployment/google-proof/cli.mjs"
+      }
+    },
+    "operations-phase3-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "CC_OPERATIONS_PHASE=3 CC_OPERATIONS_CLI=1 CC_OPERATIONS_CLI_CONTAINER=1 node deployment/operations/integration.mjs"
       }
     }
   }

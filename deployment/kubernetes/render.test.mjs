@@ -194,6 +194,42 @@ test('external dependencies omit local workloads and receive explicit network pa
   );
 });
 
+test('worker pods mount the Redis password and CA and reach Redis', () => {
+  const list = render();
+  const pod = workload(list, 'workers').spec.template.spec;
+  const projected = pod.volumes.flatMap(
+    (volume) =>
+      volume.secret?.items.map(
+        (item) => `${volume.secret.secretName}/${item.key}`,
+      ) ?? [],
+  );
+  for (const ref of [
+    profile.services.redis.passwordSecretRef,
+    profile.services.redis.endpoint.tls.caSecretRef,
+  ])
+    assert.ok(projected.includes(`${ref.name}/${ref.key}`));
+  const policy = (name) =>
+    list.items.find(
+      (item) => item.kind === 'NetworkPolicy' && item.metadata.name === name,
+    );
+  assert.ok(
+    policy('workers-egress').spec.egress.some((rule) =>
+      rule.to.some(
+        (peer) =>
+          peer.podSelector?.matchLabels['app.kubernetes.io/name'] === 'redis',
+      ),
+    ),
+  );
+  assert.ok(
+    policy('redis-ingress').spec.ingress.some((rule) =>
+      rule.from.some(
+        (peer) =>
+          peer.podSelector?.matchLabels['app.kubernetes.io/name'] === 'workers',
+      ),
+    ),
+  );
+});
+
 test('TLS probes preserve certificate verification and edge egress reaches only frontend and API', () => {
   const list = render();
   for (const key of ['frontend', 'api', 'workers', 'edge'])
@@ -214,4 +250,36 @@ test('TLS probes preserve certificate verification and edge egress reaches only 
     ),
     ['frontend', 'api'],
   );
+});
+
+test('database wait containers receive only configuration and their database credentials', () => {
+  const list = render();
+  for (const name of ['api', 'workers', 'kestra']) {
+    const pod = workload(list, name).spec.template.spec;
+    const wait = pod.initContainers.find(
+      (container) => container.name === 'wait-database',
+    );
+    const database =
+      profile.services[
+        name === 'kestra' ? 'kestraDatabase' : 'applicationDatabase'
+      ];
+    const expected = [
+      database.passwordSecretRef,
+      database.endpoint.tls.caSecretRef,
+    ]
+      .map((ref) => `${ref.name}/${ref.key}`)
+      .sort();
+    assert.ok(wait.volumeMounts.some((mount) => mount.name === 'config'));
+    const projected = wait.volumeMounts
+      .filter((mount) => mount.name !== 'config')
+      .flatMap((mount) => {
+        assert.equal(mount.readOnly, true);
+        const volume = pod.volumes.find((item) => item.name === mount.name);
+        return volume.secret.items.map(
+          (item) => `${volume.secret.secretName}/${item.key}`,
+        );
+      })
+      .sort();
+    assert.deepEqual(projected, expected);
+  }
 });

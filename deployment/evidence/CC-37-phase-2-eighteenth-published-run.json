@@ -1,0 +1,223 @@
+{
+  "status": "failed",
+  "recordedAt": "2026-09-12T15:36:45.774348+00:00",
+  "sourceRevision": "315b03db518db7a65d25ac7a933b36ab550b6140",
+  "candidate": {
+    "runId": 34701666129,
+    "status": "completed",
+    "conclusion": "failure",
+    "jobs": [
+      {
+        "id": 103574397698,
+        "name": "validate",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574620933,
+        "name": "publish (worker)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574620951,
+        "name": "publish (api)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574620958,
+        "name": "publish (frontend)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574938937,
+        "name": "capacity",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939089,
+        "name": "application (all-docker-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939100,
+        "name": "application (hybrid-cli-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939104,
+        "name": "application (hybrid-cli-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939116,
+        "name": "application (hybrid-cli-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939118,
+        "name": "application (all-docker-capacity-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939120,
+        "name": "application (hybrid-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939122,
+        "name": "application (all-docker-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939127,
+        "name": "application (hybrid-cli-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939134,
+        "name": "application (auth-image-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939146,
+        "name": "application (kubernetes-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939151,
+        "name": "application (restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939154,
+        "name": "application (kubernetes-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939164,
+        "name": "application (kubernetes-capacity-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103574939168,
+        "name": "application (kubernetes-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939171,
+        "name": "application (hybrid-upgrade-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103574939174,
+        "name": "application (kubernetes-replica-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939180,
+        "name": "application (screen-reader-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939184,
+        "name": "application (kubernetes-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939188,
+        "name": "application (kubernetes-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939192,
+        "name": "application (upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574939231,
+        "name": "application (hybrid-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103576516786,
+        "name": "bundle",
+        "conclusion": "skipped"
+      }
+    ]
+  },
+  "pr": {
+    "runId": 34701668524,
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 103574403546,
+        "name": "application-integration",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574403648,
+        "name": "foundation-integration (storage-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574403695,
+        "name": "foundation-integration (postgres-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574403703,
+        "name": "foundation-integration (qualify-redis)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574403713,
+        "name": "foundation-integration (operations-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574403722,
+        "name": "main",
+        "conclusion": "success"
+      },
+      {
+        "id": 103574403806,
+        "name": "browser",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "releasePublished": false,
+  "failures": [
+    {
+      "target": "hybrid-upgrade-integration",
+      "stage": "persistence-verification",
+      "error": "ECONNRESET: socket hang up",
+      "evidence": "deployment/evidence/CC-36-phase-2-hybrid-persistence-ci-failure.json"
+    },
+    {
+      "target": "kubernetes-capacity-integration",
+      "stage": "installer-lifecycle-before-capacity",
+      "error": "One application pod remained at the shutdown observation deadline.",
+      "evidence": "deployment/evidence/CC-36-phase-2-kubernetes-shutdown-observation.json"
+    }
+  ],
+  "limits": [
+    "Twenty-four candidate jobs and all seven PR jobs passed. Two candidate jobs failed and bundle assembly was skipped.",
+    "The new Kubernetes replica job and the native Kubernetes restore job passed.",
+    "The earlier f76a701 backup failure did not recur. Its underlying cause remains unconfirmed."
+  ],
+  "verifiedReports": [
+    {
+      "artifact": "kubernetes-replicas.json",
+      "status": "passed",
+      "sourceRevision": "315b03db518db7a65d25ac7a933b36ab550b6140",
+      "sha256": "6b8fb3ad331e756c8774404c444634b832f6cbfcda89cc14bd3c7b00bc280264"
+    },
+    {
+      "artifact": "kubernetes-restore.json",
+      "status": "passed",
+      "sourceRevision": "315b03db518db7a65d25ac7a933b36ab550b6140",
+      "sha256": "5676484ed20b6d6c090c9ec7b0eb2bbf46177304b95ed5fba5dd740c9bbc4702"
+    }
+  ]
+}

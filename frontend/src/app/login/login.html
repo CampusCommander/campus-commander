@@ -1,0 +1,26 @@
+<main class="login-page">
+  <section class="card" aria-labelledby="login-title">
+    <p class="wordmark">Campus Commander</p>
+    <h1 id="login-title">Sign in</h1>
+    <p>Sign in with the account your administrator approved.</p>
+    @if (callbackFailed) {
+    <p role="alert" class="error">
+      Sign-in failed. Try again, or ask your administrator to check your access.
+    </p>
+    } @if (auth.error(); as error) {
+    <p role="alert" class="error">{{ error }}</p>
+    } @if (auth.metadata()?.authenticationConfigured) {
+    <a mat-flat-button href="/api/auth/login" (click)="startSignIn($event)">
+      Sign in to Campus Commander
+    </a>
+    @if (signingIn()) {
+    <p role="status">Connecting to sign-in.</p>
+    } } @else {
+    <p role="status">Sign-in is unavailable. Contact your administrator.</p>
+    <button mat-stroked-button (click)="auth.metadataReady(true)">
+      Retry connection
+    </button>
+    }
+    <p class="secondary">Contact your administrator if you need an account.</p>
+  </section>
+</main>

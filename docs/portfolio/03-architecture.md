@@ -1,5 +1,8 @@
 # 03 — Architecture
 
+> Consolidated reference, subject to the 2026-09-17 owner reset.
+> [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
+
 **Status:** current planning baseline, revised 2026-09-05. See [05](05-decisions-and-open-questions.md) for decision status.
 
 This document integrates the [contractor review](../reviews/2026-09-04-contractor-report.md) and subsequent owner decisions.
@@ -9,18 +12,18 @@ Required experiments remain release gates. Proposed numerical settings do not re
 
 ## Retained stack
 
-| Layer | Technology and responsibility |
-|---|---|
-| Frontend | Angular, NgRx Signals, Angular Material, Tailwind for layout |
-| Grid | AG Grid Community and LibreGrid. The owner authors LibreGrid for the MIT distribution model. |
-| API | NestJS and the existing Express adapter. Requests, authorization, queries, previews, job acceptance, and SSE. |
-| Workers | Separate worker processes or services. Google requests, parsing, verification, synchronization, and artifact processing. |
-| Orchestration | Kestra flows define steps, parallel assignments, scheduling, timeouts, and settlement. |
-| Database | PostgreSQL holds entities, permissions, previews, job state, operation evidence, audit, and outbox records. |
-| Cache and coordination | Redis holds sessions, browsing selections, caches, broadcasts, and job admission holds. |
-| Job storage | Phase 1 supplies the interface, persistent local storage, and one qualified shared backend for distributed workers. |
-| Monorepo | Nx, TypeScript contracts, npm, one lockfile, and explicit dependency boundaries |
-| Deployment | Compose default, configurable external services, and district-operated Kubernetes profile |
+| Layer                  | Technology and responsibility                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Frontend               | Angular, NgRx Signals, Angular Material, Tailwind for layout                                                             |
+| Grid                   | AG Grid Community and LibreGrid. The owner authors LibreGrid for the MIT distribution model.                             |
+| API                    | NestJS and the existing Express adapter. Requests, authorization, queries, previews, job acceptance, and SSE.            |
+| Workers                | Separate worker processes or services. Google requests, parsing, verification, synchronization, and artifact processing. |
+| Orchestration          | Kestra flows define steps, parallel assignments, scheduling, timeouts, and settlement.                                   |
+| Database               | PostgreSQL holds entities, permissions, previews, job state, operation evidence, audit, and outbox records.              |
+| Cache and coordination | Redis holds sessions, browsing selections, caches, broadcasts, and job admission holds.                                  |
+| Job storage            | Phase 1 supplies the interface, persistent local storage, and one qualified shared backend for distributed workers.      |
+| Monorepo               | Nx, TypeScript contracts, npm, one lockfile, and explicit dependency boundaries                                          |
+| Deployment             | Compose default, configurable external services, and district-operated Kubernetes profile                                |
 
 Pin a compatible Angular, Node, TypeScript, AG Grid, and LibreGrid set before implementation.
 Angular 22 and PostgreSQL 18 are review candidates. Version qualification remains open.
@@ -78,7 +81,9 @@ Audit application permission, credential, and configuration changes as security 
 ## Google connection and capabilities
 
 Replace the former identity-only OAuth plus DWD combination. It lacks a complete runtime credential exchange.
-The candidate default uses district-owned OAuth authorization-code access with actual API scopes and encrypted offline refresh credentials.
+The owner selected service-account DWD for background Google access on 2026-09-16.
+Use the [credential record](phase-3-google-credentials.md) for this profile and the standing test boundary.
+The earlier offline-OAuth candidate and its qualification sequence below remain historical alternatives.
 Keep application sign-in separate from authorization for background Google API access.
 Use a dedicated district-managed Google identity with minimum verified privileges.
 Test the default before implementing the wizard. [Google web-server OAuth](https://developers.google.com/identity/protocols/oauth2/web-server)
@@ -104,14 +109,14 @@ Google approval, delegation propagation, and inventory completion remain separat
 
 ### Capability registry
 
-| Registry field | Required content |
-|---|---|
-| Identity | Product capability, action version, precise Google method, and supported credential profiles |
-| Authorization | Minimum read/write scopes, Google privileges, application permission, and object scope |
-| Availability | License, enrollment, reporting policy, device state, and field availability |
+| Registry field    | Required content                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| Identity          | Product capability, action version, precise Google method, and supported credential profiles      |
+| Authorization     | Minimum read/write scopes, Google privileges, application permission, and object scope            |
+| Availability      | License, enrollment, reporting policy, device state, and field availability                       |
 | Mutation contract | Writable-field allowlist, validation, preconditions, and conditional-write support or its absence |
-| Execution | Ordering, native batch size, HTTP batch support, request cost, retry class, and result semantics |
-| Evidence | Primary source, checked date, controlled-account result, and qualified software version |
+| Execution         | Ordering, native batch size, HTTP batch support, request cost, retry class, and result semantics  |
+| Evidence          | Primary source, checked date, controlled-account result, and qualified software version           |
 
 Generate wizard scope text, diagnostic areas, and action availability from this registry.
 There is no fixed eight-scope counter. Read-only setup requests only its required scopes.
@@ -130,16 +135,16 @@ Separate application directory, operation, and security data from Kestra metadat
 Use SQL-first access through `pg`, typed columns for searched fields, and bounded JSONB for provider metadata and custom fields.
 Keep Kestra internals outside domain queries. Budget database pools across every API, worker, and Kestra process.
 
-| Data group | Required content |
-|---|---|
-| Directory | Stable identities, domains, typed attributes, membership edges, coverage, observation age, and absence state |
-| Synchronization | Runs, staging generations, page checkpoints, completeness, leases, and publication |
-| Effective reads | Observations plus accepted write overlays, verification state, and conflicts |
-| Security | Principals, grants, permission versions, encrypted credential references, and capability health |
-| Selection and preview | Owner, filter revision, frozen targets, proposed values, approval, digest, and expiry |
-| Execution | Jobs, steps, assignments, operations, attempts, dispatch outbox, and reconciliation |
-| Evidence | Audit events, artifacts, exports, baselines, retention, and integrity metadata |
-| Notification | Durable outbox, committed replay stream, retention watermark, and consumer recovery |
+| Data group            | Required content                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Directory             | Stable identities, domains, typed attributes, membership edges, coverage, observation age, and absence state |
+| Synchronization       | Runs, staging generations, page checkpoints, completeness, leases, and publication                           |
+| Effective reads       | Observations plus accepted write overlays, verification state, and conflicts                                 |
+| Security              | Principals, grants, permission versions, encrypted credential references, and capability health              |
+| Selection and preview | Owner, filter revision, frozen targets, proposed values, approval, digest, and expiry                        |
+| Execution             | Jobs, steps, assignments, operations, attempts, dispatch outbox, and reconciliation                          |
+| Evidence              | Audit events, artifacts, exports, baselines, retention, and integrity metadata                               |
+| Notification          | Durable outbox, committed replay stream, retention watermark, and consumer recovery                          |
 
 Define one versioned typed filter expression for grids, saved searches, previews, reports, exports, and optional language translation.
 Compile allowlisted fields and operators into parameterized SQL. Apply permission scope to rows, counts, and aggregates.
@@ -170,7 +175,8 @@ The shared Google identity does not enforce individual application users' school
 
 Enforce permission on searches, counts, details, selection, preview, confirmation, dispatch, export, artifacts, audit, and SSE.
 Increment the permission version when grants change. Revalidate queued work before dispatch.
-Use invitation-only application access, established OIDC libraries, Redis sessions, secure cookies, and CSRF protection.
+Use established OIDC libraries, Redis sessions, secure cookies, and CSRF protection.
+The owner disputes the invitation workflow. Resolve [G01 and G02](../workflow-gaps.md#decisions-needed-for-access-and-setup) before changing platform enrollment or its permissions UI.
 Define logout, expiry, recovery, credential replacement, and internal service authentication in the first slice.
 District policy determines actions requiring a separate approver. Thresholds remain validation settings.
 
@@ -236,16 +242,16 @@ A worker can fail after Google accepts a request but before PostgreSQL records s
 Fencing rejects stale local transitions. It cannot cancel a request already sent to Google.
 Reconcile dispatched uncertain operations before another unsafe attempt.
 
-| Operation class | Recovery requirement |
-|---|---|
-| Read | Bounded randomized retry |
-| Absolute field update | Recheck relevant current fields and preconditions before repeating |
-| Append or prepend | Compute the approved final value once. Never append again during retry. |
-| Create | Reconcile stable identity and creation evidence. Existing names do not establish attribution. |
-| Membership change | Verify edge state and role conflicts |
-| Delete | Verify absence and evidence without claiming attribution from absence alone |
-| Sign-out or password action | Apply method-specific replay policy |
-| Device command | Persist command ID and track provider lifecycle. Unknown issuance requires reconciliation or review. |
+| Operation class             | Recovery requirement                                                                                 |
+| --------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Read                        | Bounded randomized retry                                                                             |
+| Absolute field update       | Recheck relevant current fields and preconditions before repeating                                   |
+| Append or prepend           | Compute the approved final value once. Never append again during retry.                              |
+| Create                      | Reconcile stable identity and creation evidence. Existing names do not establish attribution.        |
+| Membership change           | Verify edge state and role conflicts                                                                 |
+| Delete                      | Verify absence and evidence without claiming attribution from absence alone                          |
+| Sign-out or password action | Apply method-specific replay policy                                                                  |
+| Device command              | Persist command ID and track provider lifecycle. Unknown issuance requires reconciliation or review. |
 
 Serialize conflicting operations on an entity, membership edge, or OU structural scope.
 Check cancellation before each request and after each result. Preserve successful and uncertain outcomes.
@@ -299,10 +305,10 @@ Qualify cross-host access before the Phase 1 cluster milestone completes.
 Phase 5 extends publication and recovery evidence to actual mutation artifacts.
 Preserve file artifacts for every mutation, regardless of size.
 
-| Backend | Access and contract |
-|---|---|
-| Local filesystem | Persistent volume mounted into participating components on one host |
-| Shared filesystem | The same district storage mounted into every worker and artifact consumer |
+| Backend                      | Access and contract                                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| Local filesystem             | Persistent volume mounted into participating components on one host                            |
+| Shared filesystem            | The same district storage mounted into every worker and artifact consumer                      |
 | S3-compatible object storage | Configured district endpoint and bucket. Workers stream or download inputs and upload results. |
 
 Shared filesystem storage preserves filesystem operations inside its adapter.
@@ -314,13 +320,13 @@ PostgreSQL metadata resolves backend, locator, checksum, size, schema version, j
 Keep paths and object keys inside adapters. Keep credentials and temporary URLs outside durable job payloads.
 Bounded API bodies carry parameters and references. They do not transport entire district datasets.
 
-| Proposed interface operation | Required behavior |
-|---|---|
-| `stage` | Stream an attempt-specific artifact and return its identity, size, and checksum |
-| `inspect` | Verify existence, completed transfer, and integrity evidence |
-| `publish` | Application service commits ready metadata and the authoritative reference after verification |
-| `openRead` | Authorize and stream a published artifact |
-| `remove` | Apply retention or abandoned-upload cleanup after checking active work and references |
+| Proposed interface operation | Required behavior                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------- |
+| `stage`                      | Stream an attempt-specific artifact and return its identity, size, and checksum               |
+| `inspect`                    | Verify existence, completed transfer, and integrity evidence                                  |
+| `publish`                    | Application service commits ready metadata and the authoritative reference after verification |
+| `openRead`                   | Authorize and stream a published artifact                                                     |
+| `remove`                     | Apply retention or abandoned-upload cleanup after checking active work and references         |
 
 Do not require append, filesystem locks, atomic rename, or directory scans in the common interface.
 Workers needing file paths materialize inputs in bounded disposable workspace.
@@ -400,11 +406,11 @@ Redis Pub/Sub alone cannot recover missed events. [Redis delivery semantics](htt
 
 ## Deployment and installation
 
-| Profile | Placement | Storage requirement |
-|---|---|---|
-| All Docker | Compose: edge, frontend, API, workers, Kestra, PostgreSQL, Redis | Persistent local artifacts and separate backup destination |
-| Hybrid Docker and district servers | Same images with per-service external endpoints and retained local components | Shared backend for cross-host artifact consumers |
-| Enterprise Kubernetes | Frontend, API, workers, and configured shared services on district-operated Kubernetes | Shared endpoints, qualified artifacts, and separately configured Kestra storage |
+| Profile                            | Placement                                                                              | Storage requirement                                                             |
+| ---------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| All Docker                         | Compose: edge, frontend, API, workers, Kestra, PostgreSQL, Redis                       | Persistent local artifacts and separate backup destination                      |
+| Hybrid Docker and district servers | Same images with per-service external endpoints and retained local components          | Shared backend for cross-host artifact consumers                                |
+| Enterprise Kubernetes              | Frontend, API, workers, and configured shared services on district-operated Kubernetes | Shared endpoints, qualified artifacts, and separately configured Kestra storage |
 
 [The CC-4 configuration contract](../../deployment/README.md) defines typed settings, profile examples, validation, service placement, and network assumptions.
 Its validation establishes configuration consistency. Component versions and runtime qualification remain follow-on work.
@@ -453,13 +459,13 @@ Exclude tokens, passwords, and unnecessary provider payloads.
 Preserve permanent logical mutation evidence with searchable archive references.
 Temporary transport files do not require permanent retention.
 
-| Data | Proposed default for district review |
-|---|---|
-| Mutation and security evidence | Permanent logical retention with archive tiers |
-| Downloadable results and export baselines | 30 days, or a shorter approved baseline/input policy |
-| Operational logs | 14 days with size caps |
-| Battery history | 30 daily samples and 24 monthly aggregates |
-| Sync staging and execution metadata | Bounded operational retention after recovery and reference checks |
+| Data                                      | Proposed default for district review                              |
+| ----------------------------------------- | ----------------------------------------------------------------- |
+| Mutation and security evidence            | Permanent logical retention with archive tiers                    |
+| Downloadable results and export baselines | 30 days, or a shorter approved baseline/input policy              |
+| Operational logs                          | 14 days with size caps                                            |
+| Battery history                           | 30 daily samples and 24 monthly aggregates                        |
+| Sync staging and execution metadata       | Bounded operational retention after recovery and reference checks |
 
 Version and audit retention policies. Display actual artifact expiry.
 Restrict audit mutation through separate database roles.
@@ -470,16 +476,16 @@ Monitor latency, connection waits, queue age, holds, retries, unknown outcomes, 
 Correlate request, preview, job, step, assignment, operation, attempt, and generation identifiers.
 Provide redacted support bundles without automatic vendor transmission.
 
-| Failure | Behavior |
-|---|---|
-| Google outage or backoff | Continue local reads with age and coverage. Show queued work and retry state. |
-| Revoked credentials | Pause affected capabilities and provide the required reconnect action. |
-| PostgreSQL or audit persistence failure | Stop new external dispatch. Reconcile requests already sent. |
-| Redis unavailable | Keep approved manifests durable. Pause admission decisions requiring Redis until coordination recovers. |
-| Artifact storage unavailable | Block dependent jobs. Keep unrelated reads available. |
-| Low disk | Stop work that lacks reserved capacity. Preserve existing evidence and bounded diagnostics. |
-| SSE disconnection | Replay or resynchronize without losing drafts or selection. |
-| Unavailable live precondition | Block the affected sensitive operation and explain the missing verification. |
+| Failure                                 | Behavior                                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Google outage or backoff                | Continue local reads with age and coverage. Show queued work and retry state.                           |
+| Revoked credentials                     | Pause affected capabilities and provide the required reconnect action.                                  |
+| PostgreSQL or audit persistence failure | Stop new external dispatch. Reconcile requests already sent.                                            |
+| Redis unavailable                       | Keep approved manifests durable. Pause admission decisions requiring Redis until coordination recovers. |
+| Artifact storage unavailable            | Block dependent jobs. Keep unrelated reads available.                                                   |
+| Low disk                                | Stop work that lacks reserved capacity. Preserve existing evidence and bounded diagnostics.             |
+| SSE disconnection                       | Replay or resynchronize without losing drafts or selection.                                             |
+| Unavailable live precondition           | Block the affected sensitive operation and explain the missing verification.                            |
 
 Use district-operated PostgreSQL backup tooling or qualify pgBackRest.
 Back up application and Kestra data, artifacts, configuration, encryption-key recovery, certificates, and required Redis state.
@@ -510,16 +516,16 @@ See [06](06-work-breakdown.md) for package ownership and validation order.
 These facts inform capability tests. They do not predict hidden quota capacity or burst enforcement.
 The [Google evidence note](../reviews/2026-09-04-google-platform-evidence.md) supplies checked sources and unresolved API details.
 
-| Surface | Planning constraint |
-|---|---|
-| Directory requests | Documented default 2,400 requests/minute per user per project |
-| Method limits | User creation: ten per domain per second. OU create/update: one per customer per second. |
-| Groups Settings | Documented default 100,000 queries/day. Settings require per-group calls. |
-| Chrome Management | Read actual project quotas during the integration experiment. No unlimited-capacity assumption. |
-| Directory HTTP batch | Up to 1,000 enclosed calls, each consuming quota. Results require per-operation handling. |
-| ChromeOS OU move and status change | Native methods accept up to 50 devices. Do not confuse this with assignment size. |
-| Users / ChromeOS / members / telemetry list | Endpoint maxima: 500 / 300 / 200 / 1,000. Verify the ChromeOS documentation discrepancy. |
-| Other list surfaces | Verify groups, OUs, Reports, mobile, and future browser APIs before enabling those capabilities. |
+| Surface                                     | Planning constraint                                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Directory requests                          | Documented default 2,400 requests/minute per user per project                                    |
+| Method limits                               | User creation: ten per domain per second. OU create/update: one per customer per second.         |
+| Groups Settings                             | Documented default 100,000 queries/day. Settings require per-group calls.                        |
+| Chrome Management                           | Read actual project quotas during the integration experiment. No unlimited-capacity assumption.  |
+| Directory HTTP batch                        | Up to 1,000 enclosed calls, each consuming quota. Results require per-operation handling.        |
+| ChromeOS OU move and status change          | Native methods accept up to 50 devices. Do not confuse this with assignment size.                |
+| Users / ChromeOS / members / telemetry list | Endpoint maxima: 500 / 300 / 200 / 1,000. Verify the ChromeOS documentation discrepancy.         |
+| Other list surfaces                         | Verify groups, OUs, Reports, mobile, and future browser APIs before enabling those capabilities. |
 
 Google returns method-specific quota errors, including relevant 403 and 429 responses.
 Classify the response reason. Permission denial is not a quota signal.

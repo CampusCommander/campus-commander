@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-13T22:08:10.026260+00:00",
+  "scope": "CC-41 administrator enrollment after switching browser profiles",
+  "baseRevision": "95f0ecdca518c97c65d2897fe7536802bef0cb01",
+  "result": "passed",
+  "commands": [
+    "npm exec nx run api-e2e:auth-integration -- --output-style=static",
+    "npm exec nx run deployment:installer-test -- --output-style=static",
+    "npm exec nx run-many -- --targets=lint,typecheck --projects=api,frontend,api-e2e,deployment --output-style=static"
+  ],
+  "checks": {
+    "authIntegration": "passed",
+    "authIntegrationSeconds": 78.59,
+    "installerTests": {
+      "passed": 114,
+      "failed": 0
+    },
+    "lint": "passed",
+    "typecheck": "passed",
+    "build": "passed"
+  },
+  "coverage": [
+    "A first browser pairs a code before provider sign-in.",
+    "A second browser receives a specific reuse error and installer resume instructions.",
+    "Wrong codes remain forbidden.",
+    "No application principal exists before confirmation.",
+    "Installer cancellation and restart create a different code.",
+    "The old code remains forbidden after restart.",
+    "The second browser completes keyboard enrollment with the new code and explicit operator confirmation.",
+    "Completed enrollment remains intact on installer resume."
+  ],
+  "ui": {
+    "contractVersion": "1.3.1",
+    "ruleIds": [
+      "UI-01",
+      "UI-04",
+      "UI-05",
+      "UI-06",
+      "UI-08",
+      "UI-09",
+      "UI-10",
+      "FORM-01"
+    ],
+    "lightAndDarkAxe": "Zero reported violations. Incomplete contrast checks remain in the attached reports.",
+    "visualInspection": "Recovery instructions and controls remain readable at 360 CSS pixels in both themes.",
+    "zoom": "No horizontal overflow at 200 percent zoom in a 640 pixel viewport.",
+    "keyboard": "Enrollment completes through the labelled input and keyboard activation.",
+    "screenReaderWalkthrough": "not-run",
+    "artifacts": [
+      "deployment/evidence/CC-41-browser-recovery/administrator-browser-recovery-accessibility.json",
+      "deployment/evidence/CC-41-browser-recovery/administrator-browser-recovery-dark-accessibility.json",
+      "deployment/evidence/CC-41-browser-recovery/administrator-browser-recovery-light.png",
+      "deployment/evidence/CC-41-browser-recovery/administrator-browser-recovery-dark.png"
+    ]
+  },
+  "limitations": [
+    "The browser regression uses a controlled OIDC provider and local Docker services.",
+    "The operator reported successful Google enrollment before this change.",
+    "New recovery messages have not been tested on the operator VM.",
+    "Axe could not determine contrast for three light-theme nodes and one dark-theme node.",
+    "No release acceptance or new signed publication is established by this record."
+  ],
+  "files": [
+    {
+      "path": "api/src/app/auth/enrollment.errors.ts",
+      "sha256": "181ade5a8bcfdb1db6870c46b987ada66658f777b21fc832d65ed529e86d1f73"
+    },
+    {
+      "path": "api/src/app/auth/enrollment.service.ts",
+      "sha256": "cb0f61d7ac032b6627ced688a6434fc5f2f09755980f19714ca299b3a852e75d"
+    },
+    {
+      "path": "api/src/app/security.ts",
+      "sha256": "79696b57da52895166f766052b0056a9135eb9f4e4e88020bd3abcb19db30760"
+    },
+    {
+      "path": "frontend/src/app/setup/setup.ts",
+      "sha256": "4462a556b14b2b8151d3a79b65e9da202b0b3d4b805b1141e0e31495a8eb441f"
+    },
+    {
+      "path": "frontend/src/app/setup/setup.html",
+      "sha256": "003241e22975a6d13194fe1a36613e1b07841b396a1ee7cb1bbb81932a2f3806"
+    },
+    {
+      "path": "deployment/installer/application-enrollment.mjs",
+      "sha256": "f35054ad11ce315c7aa7f22547b821ff3c4e3095cb81d5775fb9be9e3aa72137"
+    },
+    {
+      "path": "api-e2e/auth.test.mjs",
+      "sha256": "c5a227b330c387893f2406ec48baf410527298d1a3536122b519acf7c961029d"
+    }
+  ]
+}

@@ -91,7 +91,12 @@ An occupied HTTPS port is accepted only when the existing Compose edge container
 
 ## Upgrade and lifecycle
 
-Upgrade accepts configuration changes only in the three application image digests.
+The [hosted installer](HOSTED.md#update-an-installation) exposes update and uninstall through its menu and command options.
+Guided update retains the installed phase and requires a verified recovery backup.
+
+Upgrade accepts new application image digests and the documented Phase 1 to Phase 2 authentication transition.
+The transition preserves service placement, public origin, storage, and existing infrastructure settings.
+Follow the [Phase 2 upgrade procedure](PHASE-2.md#upgrade-from-phase-1) before invoking the upgrade.
 Provide `upgradeFromReleaseHash` from state and `backupManifestSha256` for a verified foundation backup.
 Provide `upgradeBackup.backupDirectory` and `upgradeBackup.keyRecovery` for encrypted component verification.
 The backup must match the current profile and image inventory.

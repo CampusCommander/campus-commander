@@ -1,0 +1,132 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T15:14:38.822203+00:00",
+  "imageSourceRevision": "8a5f82306ea29bc497a7200914b9bd9dddfe1f01",
+  "fixtureSource": {
+    "baseGitRevision": "f76a701b5478c05fd6ab08e5808816e32e07e0a2",
+    "workingTree": "uncommitted-candidate",
+    "files": [
+      {
+        "path": "api-e2e/kubernetes-capacity-fixture.mjs",
+        "sha256": "7275be7bd4c7c941b433f13b5ba856e31571084bed2030209f33a092c5276f11"
+      },
+      {
+        "path": "api-e2e/kubernetes-capacity-volume.mjs",
+        "sha256": "a2a43d40b68820a3cc2b5238c366973bc6bcb9c8f6ff557fee6a035f19d94888"
+      },
+      {
+        "path": "api-e2e/kubernetes-replicas-fixture.mjs",
+        "sha256": "4fe9e0268a60f1c2dafea120ef0286f58c9777750fcccf0d09ed4bc48320703d"
+      },
+      {
+        "path": "deployment/operations/failure.mjs",
+        "sha256": "16bd075f1219426bcfe87b5beb9b55b273fc258fc3e33460cc0079500ba3da6c"
+      },
+      {
+        "path": "deployment/operations/failure.test.mjs",
+        "sha256": "789b1d07eab26111eda36dfafbee595fcbe337b35f08427c4ee558582155d8ed"
+      },
+      {
+        "path": ".github/workflows/phase-2-candidate.yml",
+        "sha256": "ef817a3d075e1a2517895d5d1d256f1142901fb10344281811a35d732605bc7c"
+      },
+      {
+        "path": "api-e2e/kubernetes-durable-fixture.mjs",
+        "sha256": "36f83ae8c7eba18af768abb4b6073b408b6aab7c61eb825097b7cc427f3bccd2"
+      },
+      {
+        "path": "api-e2e/kubernetes.test.mjs",
+        "sha256": "b7f998ae21e0835fe1cc08c907d80da69d928cb0904d9aac19d846eb5f6fa355"
+      },
+      {
+        "path": "api-e2e/profile-browser.mjs",
+        "sha256": "f0740501644e9001918a18705a6553fedaa0b6fdb4d64808cc9a157126fe6b25"
+      },
+      {
+        "path": "api-e2e/project.json",
+        "sha256": "47b2c8e5c76563f3140a2175f35cb737577b0962b15cc5443a27991b1055e7e6"
+      },
+      {
+        "path": "deployment/operations/cli.mjs",
+        "sha256": "c37fd6e3ac973b19d25731847c6a32895b239a3ae3e23e398c794c82f5fe20cc"
+      },
+      {
+        "path": "deployment/release/candidate.mjs",
+        "sha256": "6a2c71961f7d60a22d4a65f2b67a6c1465c65239a337b4e539c8fa731793d639"
+      },
+      {
+        "path": "deployment/release/candidate.test.mjs",
+        "sha256": "5950e133207155a23e29d3963b67725af777e705e55c10c0c8beffd119619f9a"
+      }
+    ]
+  },
+  "reports": [
+    {
+      "path": "deployment/evidence/CC-34-phase-2-kubernetes-reason-regression.json",
+      "sha256": "80861c6f790c6b406d2c9cd71a6a604fecee2093f43f0be0b5ed314531c6b70d"
+    },
+    {
+      "path": "deployment/evidence/CC-34-phase-2-operator-failure-reason-regression.json",
+      "sha256": "c443acd0c223205fc42e676e25933944462504e30c2b15ee1bd398358cf032d1"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-kubernetes-authenticated-capacity.json",
+      "sha256": "a5be3747e50963799bfa32c51d85e56d4748d0572dac797ab135d011b2ff4ab5"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-kubernetes-authenticated-replicas.json",
+      "sha256": "12ef1142c681ac3b9d27d09dc511c7bd3fe51aad31206aca2952974e45911e40"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-kubernetes-capacity-fixture-failures.json",
+      "sha256": "1460773d4df7f938587abf319de20e7436d00e634684a1ed39a00340ba3c8d27"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-seventeenth-published-run.json",
+      "sha256": "d04da464890c0f1d10bac56f1c705739b42b9992aa1ce2b52eacfa65d79eb7e0"
+    },
+    {
+      "path": "deployment/evidence/CC-37-phase-2-sixteenth-published-run.json",
+      "sha256": "eb20491967305f8801716117fd5718848392b9a4fd705b03297378a64cc1aadc"
+    }
+  ],
+  "tests": [
+    {
+      "target": "api-e2e:kubernetes-replica-integration",
+      "status": "passed",
+      "logSha256": "5c1076dfdded50a4917075f746292b8b24083335fc6d1d7633ecae27cc60364f"
+    },
+    {
+      "target": "api-e2e:kubernetes-capacity-integration",
+      "status": "passed",
+      "logSha256": "3af0490c5960a191f1ac06e420b398a9e320042f07ddfdcfc6f0981486ac2378"
+    },
+    {
+      "target": "deployment:operations-test",
+      "status": "passed",
+      "logSha256": "37278f79341180801aa030017146c9521831579c744fbcb29d0463762aba2e37"
+    },
+    {
+      "target": "deployment:operations-cli-integration",
+      "status": "passed",
+      "logSha256": "baf64b9106d6dcffce281a258ff2768216db0acbe29525c845e0485d6c05ec15"
+    },
+    {
+      "target": "deployment:release-test",
+      "status": "passed",
+      "logSha256": "b003fefda76bac8eb1b4d36efcefe38055d6efc243e14589bd42353ddcfc246e"
+    },
+    {
+      "target": "api-e2e:lint, deployment:lint",
+      "status": "passed",
+      "logSha256": "fba226fadc410f5c64ac234aaa3cceae3b4b26fbbaecc52cbc975c8ccf73168d"
+    }
+  ],
+  "limits": [
+    "Application images use published 8a5f823 digests. Current fixture and failure-reason changes require published revision CI.",
+    "Kubernetes capacity and replica tests use three Kind nodes on one physical host.",
+    "The bounded tmpfs fixture does not qualify persistent storage, district capacity, or NetworkPolicy enforcement.",
+    "The local Kubernetes restore used native host tools. The published f76a701 container backup failure remains undiagnosed.",
+    "Remaining certificate coverage, final revision qualification, and accepted release assembly remain open."
+  ]
+}

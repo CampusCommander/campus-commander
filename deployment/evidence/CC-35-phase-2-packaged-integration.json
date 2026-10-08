@@ -1,0 +1,59 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T06:27:59.178Z",
+  "durationMs": 56116,
+  "environment": "one Docker host, synthetic HTTPS OIDC provider, two API replicas, real PostgreSQL, Redis, Kestra, worker, artifact storage, and Chromium",
+  "browser": "149.0.7827.55",
+  "packagedApplicationImages": true,
+  "images": {
+    "api": {
+      "reference": "campus-commander/api:cc-6",
+      "id": "sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+      "labels": {
+        "org.opencontainers.image.licenses": "LicenseRef-Campus-Commander-Community-1.0.0",
+        "org.opencontainers.image.revision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e-dirty",
+        "org.opencontainers.image.version": "phase-2-development"
+      }
+    },
+    "frontend": {
+      "reference": "campus-commander/frontend:cc-6",
+      "id": "sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5",
+      "labels": {
+        "org.opencontainers.image.licenses": "LicenseRef-Campus-Commander-Community-1.0.0",
+        "org.opencontainers.image.revision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e-dirty",
+        "org.opencontainers.image.version": "phase-2-development"
+      }
+    },
+    "worker": {
+      "reference": "campus-commander/worker:cc-6",
+      "id": "sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8",
+      "labels": {
+        "org.opencontainers.image.licenses": "LicenseRef-Campus-Commander-Community-1.0.0",
+        "org.opencontainers.image.revision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e-dirty",
+        "org.opencontainers.image.version": "phase-2-development"
+      }
+    }
+  },
+  "checks": [
+    "OIDC sign-in and forged callback denial",
+    "OIDC client credential rotation",
+    "worker credential rotation",
+    "cross-replica sessions and logout",
+    "absolute and idle expiry",
+    "revocation and recovery",
+    "database and Redis timeout recovery",
+    "four live utility operations",
+    "browser sign-in and sign-out",
+    "persisted preferences",
+    "system and explicit themes",
+    "offline observation recovery",
+    "keyboard focus and menus",
+    "CSS zoom 200 percent",
+    "320 pixel reflow"
+  ],
+  "limits": [
+    "Full deployment profile qualification remains separate.",
+    "Human screen-reader walkthrough remains unperformed.",
+    "Synthetic provider evidence does not qualify a district identity provider."
+  ]
+}

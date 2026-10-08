@@ -1,0 +1,79 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T13:31:28.000308+00:00",
+  "imageSourceRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+  "fixtureSource": {
+    "baseGitRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+    "workingTree": "uncommitted-candidate",
+    "files": [
+      {
+        "path": "api-e2e/all-docker.test.mjs",
+        "sha256": "4ad39fba8ac71627694fefd07a9641579417f0ba76693f92c176bf9f6f3bb7a9"
+      },
+      {
+        "path": "api-e2e/all-docker-faults-fixture.mjs",
+        "sha256": "d65e9b2cb6f255b3ee382d88aa3ec449b20af17f438d0757c4c35da60f70861c"
+      },
+      {
+        "path": "api-e2e/upgrade.test.mjs",
+        "sha256": "77061f002f11cae5f425bb4fb4e03fde1c7a8deec53c3729aef048115a460956"
+      },
+      {
+        "path": "api-e2e/project.json",
+        "sha256": "f044f2569257b06e649e50fe5e1a81b34d77dc3a0ad0a26d226e6d63432fdc5e"
+      },
+      {
+        "path": "deployment/release/candidate.mjs",
+        "sha256": "ff835a7e932dbd484d1bade69d7f5d17acf1ea71a8250ac2856baa2525de1046"
+      },
+      {
+        "path": "deployment/release/candidate.test.mjs",
+        "sha256": "f00486c490340f89483065ea54aef793cca47f4727c0eeee7f9db5b70a9b97e0"
+      },
+      {
+        "path": ".github/workflows/phase-2-candidate.yml",
+        "sha256": "f1bea8a89a92cb0dde18f3965c9074fca0e783cc400e3c45ad5dcf9c2bba9465"
+      }
+    ]
+  },
+  "reports": [
+    {
+      "path": "deployment/evidence/CC-36-phase-2-all-docker-replicas.json",
+      "originalReportSha256": "e5a36d569a8ea623fa4bac3cfb4d9eb6e820b2e751a06eaff7a5176254f50fa8",
+      "sha256": "641e6163f661e5718a74624e41eba15c1ea5304331db2ee6ae08be60f527c4a9"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-all-docker-process-faults.json",
+      "originalReportSha256": "ebb7182a26b62a4d97c54546be9b1847b03280c3adf0c7c81a8f740c7a47aad4",
+      "sha256": "db742f7ce45c9c0c1a68f6f00c2948ee718c8d7c0ad288cb1354c4cf56db1ba6"
+    }
+  ],
+  "tests": [
+    {
+      "target": "api-e2e:all-docker-integration",
+      "status": "passed",
+      "logSha256": "671f9770b8148ab9201493461cb699016f911ff7727dc969df98bb76da7ab204"
+    },
+    {
+      "target": "api-e2e:all-docker-process-fault-integration",
+      "status": "passed",
+      "durationSeconds": 353.09,
+      "logSha256": "2f953d943b6e3b70d22d4b27e69a6941344b13671e2dd85b31f5825d045f7ca7"
+    },
+    {
+      "target": "deployment:release-test",
+      "status": "passed",
+      "tests": 4
+    },
+    {
+      "target": "deployment:lint and api-e2e:lint",
+      "status": "passed"
+    }
+  ],
+  "limits": [
+    "Local fixture changes follow the published image source revision.",
+    "Two API replicas run on one Docker host.",
+    "The certificate checks cover edge TLS and protected startup before application enrollment.",
+    "Complete profile capacity, Kubernetes application faults, final revision evidence, and accepted release assembly remain open."
+  ]
+}

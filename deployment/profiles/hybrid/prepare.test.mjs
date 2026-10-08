@@ -179,3 +179,52 @@ test('supports paired local PostgreSQL services on one host', async () => {
   assert.equal(result.databasePlacement, 'local');
   assert.equal(result.externalDatabase, false);
 });
+
+test('preserves running TLS material on resume and regenerates changed or damaged runtime files', async () => {
+  const { configPath, root } = await fixture();
+  let generation = 0;
+  const render = async (environment) => {
+    await fakeRenderer(environment);
+    generation++;
+    await writeFile(
+      join(environment.CC_KESTRA_RUNTIME_DIR, 'worker-truststore.p12'),
+      `truststore-generation-${generation}`,
+      { mode: 0o600 },
+    );
+  };
+  const options = { run: async () => undefined, render };
+  const first = await prepareHybrid(configPath, root, options);
+  const runtime = join(root, 'runtime', 'kestra');
+  const before = await Promise.all(
+    first.runtimeFiles.map((name) => readFile(join(runtime, name))),
+  );
+  await prepareHybrid(configPath, root, options);
+  assert.deepEqual(
+    await Promise.all(
+      first.runtimeFiles.map((name) => readFile(join(runtime, name))),
+    ),
+    before,
+  );
+  assert.equal(generation, 1);
+  await writeFile(
+    join(root, 'private', 'worker-dispatch'),
+    'replacement-worker-credential-1234567890',
+    { mode: 0o600 },
+  );
+  await prepareHybrid(configPath, root, options);
+  assert.equal(generation, 2);
+  await writeFile(join(runtime, 'worker-truststore.p12'), 'damaged', {
+    mode: 0o600,
+  });
+  await prepareHybrid(configPath, root, options);
+  assert.equal(generation, 3);
+  assert.equal(
+    await readFile(join(runtime, 'worker-truststore.p12'), 'utf8'),
+    'truststore-generation-3',
+  );
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  config.services.kestra.endpoint.url = 'https://kestra-next:8080';
+  await writeFile(configPath, JSON.stringify(config));
+  await prepareHybrid(configPath, root, options);
+  assert.equal(generation, 4);
+});

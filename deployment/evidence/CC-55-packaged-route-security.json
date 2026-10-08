@@ -1,0 +1,516 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "0a89f670d239c1caf8a98fc49ce187e7e866ece9",
+  "recordedAt": "2026-09-17T03:32:43.139Z",
+  "durationMs": 322,
+  "environment": "public HTTPS edge, real API, PostgreSQL, Redis, synthetic identity provider",
+  "routes": 32,
+  "checks": [
+    {
+      "route": "GET /api/customer",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "GET /api/customer/receipts/:id",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/customer/settings",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/customer/settings",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/customer/settings",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/customer/settings",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/customer/settings",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 400
+    },
+    {
+      "route": "GET /api/platform-users",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "GET /api/platform-users/:id",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "GET /api/platform-users/:id/receipts",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/platform-users/:id/review",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/platform-users/:id/review",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/platform-users/:id/review",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/platform-users/:id/review",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/platform-users/:id/review",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "POST /api/platform-users/:id/access",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/platform-users/:id/access",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/platform-users/:id/access",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/platform-users/:id/access",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/platform-users/:id/access",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "GET /api/auth/invitations",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/auth/invitations",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/auth/invitations",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations/:id/confirm",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/auth/invitations/:id/confirm",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations/:id/confirm",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations/:id/confirm",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations/:id/confirm",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations/:id/revoke",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/auth/invitations/:id/revoke",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations/:id/revoke",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations/:id/revoke",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/auth/invitations/:id/revoke",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "GET /api/google-connection",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "GET /api/google-connection/health",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "GET /api/google-connection/candidates/:id",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "GET /api/google-connection/credentials",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/google-connection/check",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/google-connection/check",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/check",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/check",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/check",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 400
+    },
+    {
+      "route": "POST /api/google-connection/health/check",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/google-connection/health/check",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/health/check",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/health/check",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/health/check",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 400
+    },
+    {
+      "route": "POST /api/google-connection/candidates",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/google-connection/candidates",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/candidates",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/candidates",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/candidates",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/candidates/:id/confirm",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/google-connection/candidates/:id/confirm",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/candidates/:id/confirm",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/candidates/:id/confirm",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/candidates/:id/confirm",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/replacements",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/google-connection/replacements",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/replacements",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/replacements",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/replacements",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/replacements/:id/activate",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/google-connection/replacements/:id/activate",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/replacements/:id/activate",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/replacements/:id/activate",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/replacements/:id/activate",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/credentials/rotate-key",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/google-connection/credentials/rotate-key",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/credentials/rotate-key",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/credentials/rotate-key",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/credentials/rotate-key",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/credentials/disconnect",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/google-connection/credentials/disconnect",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/credentials/disconnect",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/credentials/disconnect",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/google-connection/credentials/disconnect",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 403
+    },
+    {
+      "route": "GET /api/schools",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "GET /api/schools/:id",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "GET /api/schools/:id/audit",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "GET /api/schools/reviews/:id",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/schools/reviews",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/schools/reviews",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/schools/reviews",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/schools/reviews",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/schools/reviews",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 400
+    },
+    {
+      "route": "POST /api/schools/reviews/:id/confirm",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/schools/reviews/:id/confirm",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/schools/reviews/:id/confirm",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/schools/reviews/:id/confirm",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/schools/reviews/:id/confirm",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 400
+    },
+    {
+      "route": "GET /api/schools/references",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/schools/references/refresh",
+      "boundary": "missing-session",
+      "status": 401
+    },
+    {
+      "route": "POST /api/schools/references/refresh",
+      "boundary": "missing-csrf",
+      "status": 403
+    },
+    {
+      "route": "POST /api/schools/references/refresh",
+      "boundary": "wrong-origin",
+      "status": 403
+    },
+    {
+      "route": "POST /api/schools/references/refresh",
+      "boundary": "wrong-content-type",
+      "status": 403
+    },
+    {
+      "route": "POST /api/schools/references/refresh",
+      "boundary": "valid-browser-checks-invalid-input-or-action",
+      "status": 400
+    }
+  ],
+  "limits": [
+    "Guard checks do not establish action or resource authorization after valid browser checks.",
+    "Per-feature fixtures retain grant, scope, audit rollback, and provider failure checks.",
+    "This report does not establish complete release qualification."
+  ],
+  "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35178237363"
+}

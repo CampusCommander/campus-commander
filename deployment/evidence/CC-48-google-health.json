@@ -1,0 +1,80 @@
+{
+  "status": "implemented-with-recorded-qualification-limits",
+  "runtimeRevision": "14117c24684c5706b252338c857e48e33438c0dd",
+  "sourceQualificationRevision": "64b23acea927a85af530d218bfd180ed03629041",
+  "recordedOn": "2026-09-17",
+  "environment": "Hosted real PostgreSQL and Redis, API replicas, synthetic Google transport, workers, and Chromium.",
+  "ci": {
+    "source": "https://github.com/CampusCommander/campus-commander/actions/runs/35165931671",
+    "sourceStatus": "passed",
+    "full": "https://github.com/CampusCommander/campus-commander/actions/runs/35164443584",
+    "fullStatus": "passed",
+    "fullJobsPassed": 7,
+    "packagedPhase3Status": "passed",
+    "sourceGoogleHealthChecksPassed": 13
+  },
+  "capabilities": ["customer-identity", "domain-observations"],
+  "scopeBoundary": "Two enabled qualified Directory read scopes. Optional OU, inventory, and mutations excluded.",
+  "databaseChecks": [
+    "current actor and matching customer authority",
+    "private health tables and helper denial",
+    "independent partial results and last-success retention",
+    "inconclusive combined reads preserve capability evidence",
+    "targeted result preservation",
+    "one shared diagnostic lease across replicas",
+    "cooldown, expiry, supersession, and replay guards",
+    "atomic audit rollback",
+    "permission change rejects stale completion"
+  ],
+  "apiAndBrowserChecks": [
+    "strict capability allowlist and CSRF",
+    "partial DWD grant preserves working capability",
+    "scope verification remains separate from Google privileges",
+    "quota and network failure classification",
+    "wrong customer does not change ownership",
+    "combined failure preserves independent results",
+    "same concurrency limit across check routes",
+    "explicit recovery clears background failure without installation reset",
+    "sanitized correlation evidence",
+    "targeted browser recheck and shared footer health",
+    "light and dark automated accessibility",
+    "320-pixel reflow and 200 percent CSS zoom"
+  ],
+  "localChecks": {
+    "apiBuild": "passed",
+    "frontendBuild": "passed",
+    "lint": "passed",
+    "contractTests": "passed",
+    "providerTests": "passed",
+    "frontendTests": 20,
+    "healthChromiumCases": 8,
+    "asyncRegressions": 4
+  },
+  "liveEvidence": "CC-48-live-capability-check.json",
+  "review": {
+    "standardsRemainingFindings": 0,
+    "specRemainingFindings": 0
+  },
+  "accessibility": {
+    "themes": ["light", "dark"],
+    "visualInspection": "passed: packaged capability health screenshots in both themes",
+    "screenReaderWalkthrough": "not-run",
+    "automatedPackagedReports": 2,
+    "packagedViolations": 0,
+    "automatedSourceReports": 2,
+    "sourceViolations": 0,
+    "hostedIncompleteScopeLabelItemsPerTheme": 1,
+    "scopeLabelCorrectionRevision": "14117c24684c5706b252338c857e48e33438c0dd",
+    "scopeLabelCorrectionVerification": "Eight local Chromium checks passed. Both themes assert no incomplete aria-prohibited-attr result."
+  },
+  "limitations": [
+    "Live proof uses the owner-declared Super Admin. Minimum custom administrator privileges remain unqualified.",
+    "Controlled DWD/key revocation, restoration, and second-administrator replacement remain pending.",
+    "No Education test customer is available. Education-specific capabilities remain unqualified.",
+    "Directory methods have no verified license-specific failure contract. Generic permission denial does not establish a license restriction.",
+    "The direct live provider proof does not bind a deployed installation.",
+    "Human screen-reader and owner acceptance, and complete Phase 3 deployment-profile qualification remain separate gates."
+  ],
+  "revisionBoundary": "Changes from packaged revision 320e24b to source revision 64b23ac affect test fixtures only. Revision 14117c2 adds one accessible group role and its browser assertion. Eight local Chromium checks pass at 14117c2. Hosted reports precede that markup correction.",
+  "packagedQualificationRevision": "320e24b2b4356ce1408702cd41f3579a59674841"
+}

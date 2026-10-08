@@ -4,6 +4,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import { performance } from 'node:perf_hooks';
 
+export const faultRecoveryTimeoutSeconds = 180;
+
 const execute = promisify(execFile);
 const componentServices = {
   api: 'api',
@@ -118,7 +120,8 @@ export async function runProcessFaults(
         await recover();
       }
       const deadline =
-        performance.now() + (options.recoveryTimeoutSeconds ?? 180) * 1000;
+        performance.now() +
+        (options.recoveryTimeoutSeconds ?? faultRecoveryTimeoutSeconds) * 1000;
       let recovered = false;
       while (performance.now() < deadline) {
         if ((await observe()).status === 'ready') {

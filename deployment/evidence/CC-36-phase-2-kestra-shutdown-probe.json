@@ -1,0 +1,4581 @@
+{
+  "purpose": "focused shutdown diagnosis",
+  "status": "observed",
+  "images": {
+    "postgres": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114"
+  },
+  "runs": [
+    {
+      "status": "passed",
+      "terminationGracePeriod": "5m",
+      "interruptedAt": "2026-09-12T11:58:15.291Z",
+      "databaseStartedAt": "2026-09-12T11:58:17.443Z",
+      "recoveryMs": 66520,
+      "baselineExecution": "3zD3ITDBHmtmnEMkUXN7y8",
+      "recoveredExecution": "1p7M7U8QWSWzEN18MUBOps",
+      "samples": [
+        {
+          "elapsedMs": 0,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 1148,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 1688,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 2223,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 2760,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 3299,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 3835,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 4375,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 4912,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 5449,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 5990,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 6529,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 7069,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 7606,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 8142,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 8679,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 9218,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 9757,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 10295,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 10902,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 11442,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 11982,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 12521,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 13061,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 13601,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 14141,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 14680,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 15218,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 15756,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 16295,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 16833,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 17373,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 17912,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 18447,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 18984,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 19520,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 20053,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 20590,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 21127,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 21662,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 22200,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 22735,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 23273,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 23809,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 24348,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 24883,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 25422,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 25962,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 26497,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 27032,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 27566,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 28104,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 28642,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 29178,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 29712,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 30248,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 30784,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 31440,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 32140,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 32840,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 33541,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 34243,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 34943,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 35644,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 36347,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 37048,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 37748,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 38450,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 39150,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 39851,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 40552,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 41253,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 41954,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 42655,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 43357,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 44059,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 44760,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 45461,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 46162,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 46689,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 47214,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 47740,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 48284,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 48810,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 49335,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 49858,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 50384,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 50910,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 51437,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 51963,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 52491,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 53017,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 53543,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 54070,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 54596,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 55124,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 55650,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 56176,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 56700,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 57225,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 57751,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 58280,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 58807,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 59332,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 59857,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 60383,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 60910,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 61435,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 80844,
+          "port": "37181"
+        },
+        {
+          "elapsedMs": 62174,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "restarting",
+          "pid": 0
+        },
+        {
+          "elapsedMs": 62701,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 81329,
+          "port": "36435"
+        },
+        {
+          "elapsedMs": 63448,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 81329,
+          "port": "36435"
+        },
+        {
+          "elapsedMs": 63974,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 81329,
+          "port": "36435"
+        },
+        {
+          "elapsedMs": 64500,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 81329,
+          "port": "36435"
+        },
+        {
+          "elapsedMs": 65025,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 81329,
+          "port": "36435"
+        },
+        {
+          "elapsedMs": 65549,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 81329,
+          "port": "36435"
+        },
+        {
+          "elapsedMs": 66074,
+          "httpStatus": 200,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 81329,
+          "port": "36435"
+        }
+      ],
+      "rawLogSha256": "c6dac5a02033b1c4ba146c3871bc7274939d7a72e99eb39d27326e7398bc0330"
+    },
+    {
+      "status": "passed",
+      "terminationGracePeriod": "5m",
+      "interruptedAt": "2026-09-12T12:00:32.236Z",
+      "databaseStartedAt": "2026-09-12T12:00:34.696Z",
+      "recoveryMs": 93963,
+      "baselineExecution": "1SvrYb5dCbF1p7X4ZOzuw3",
+      "recoveredExecution": "6PnPCJr5LleAt8lAzdDdS4",
+      "samples": [
+        {
+          "elapsedMs": 0,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 829,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 1372,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 1914,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 2456,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 2998,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 3538,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 4080,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 4619,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 5161,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 5699,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 6237,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 6776,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 7317,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 7857,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 8394,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 8933,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 9473,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 10014,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 10615,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 11153,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 11692,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 12229,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 12766,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 13304,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 13840,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 14378,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 14918,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 15458,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 15998,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 16537,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 17077,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 17616,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 18155,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 18694,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 19234,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 19771,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 20308,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 20844,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 21381,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 21918,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 22453,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 22988,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 23526,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 24066,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 24602,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 25137,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 25676,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 26211,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 26746,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 27298,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 27834,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 28371,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 28906,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 29440,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 29976,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 30515,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 31050,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 31586,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 32125,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 32659,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 33200,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 33737,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 34276,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 34814,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 35351,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 35888,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 36426,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 36968,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 37510,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 38049,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 38588,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 39127,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 39667,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 40206,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 40745,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 41282,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 41822,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 42360,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 42896,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 43434,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 43974,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 44512,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 45048,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 45656,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 46196,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 46732,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 47265,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 47800,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 48335,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 48868,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 49404,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 49937,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 50472,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 51007,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 51542,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 52077,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 52611,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 53146,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 53681,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 54217,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 54753,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 55290,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 55824,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 56360,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 56893,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 57429,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 57964,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 58617,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 59316,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 60016,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 60717,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 61418,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 62120,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 62819,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 63519,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 64220,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 64922,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 65624,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 66324,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 67026,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 67727,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 68428,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 69129,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 69830,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 70531,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 71232,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 71933,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 72634,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 74658,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 75185,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 75710,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 76234,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 76757,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 77281,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 77807,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 78331,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 78856,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 79382,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 79908,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 80435,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 81024,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 81549,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 82074,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 82601,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 83128,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 83653,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 84177,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 84702,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 85226,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 85750,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 86274,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 86798,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 87323,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 87847,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 81911,
+          "port": "38069"
+        },
+        {
+          "elapsedMs": 88373,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "restarting",
+          "pid": 0
+        },
+        {
+          "elapsedMs": 89526,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 85642,
+          "port": "37381"
+        },
+        {
+          "elapsedMs": 90322,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 85642,
+          "port": "37381"
+        },
+        {
+          "elapsedMs": 90848,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 85642,
+          "port": "37381"
+        },
+        {
+          "elapsedMs": 91373,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 85642,
+          "port": "37381"
+        },
+        {
+          "elapsedMs": 91899,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 85642,
+          "port": "37381"
+        },
+        {
+          "elapsedMs": 92422,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 85642,
+          "port": "37381"
+        },
+        {
+          "elapsedMs": 92951,
+          "httpStatus": 200,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 85642,
+          "port": "37381"
+        },
+        {
+          "elapsedMs": 93918,
+          "httpStatus": 200,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 85642,
+          "port": "37381"
+        }
+      ],
+      "rawLogSha256": "61a80c43d6a782de6dcc0fdb13c573e683b9060cfadb941afc14e182dfc5bea7"
+    },
+    {
+      "status": "passed",
+      "terminationGracePeriod": "3s",
+      "interruptedAt": "2026-09-12T12:03:03.476Z",
+      "databaseStartedAt": "2026-09-12T12:03:05.626Z",
+      "recoveryMs": 94323,
+      "baselineExecution": "1e00d4oAk1DXx1yAqtNGrW",
+      "recoveredExecution": "6JLqEwApr858mZcYkSjgPo",
+      "samples": [
+        {
+          "elapsedMs": 0,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 1148,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 1688,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 2226,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 2773,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 3317,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 3863,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 4405,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 4949,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 5493,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 6039,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 6584,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 7126,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 7670,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 8214,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 8754,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 9300,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 9843,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 10388,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 11005,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 11546,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 12089,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 12633,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 13177,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 13718,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 14264,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 14803,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 15346,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 15891,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 16437,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 16975,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 17514,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 18053,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 18590,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 19130,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 19666,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 20205,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 20744,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 21283,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 21821,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 22358,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 22893,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 23429,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 23965,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 24499,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 25040,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 25577,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 26113,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 26649,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 27183,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 27719,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 28255,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 28791,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 29326,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 29862,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 30396,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 30931,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 31464,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 31998,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 32535,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 33075,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 33615,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 34156,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 34693,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 35231,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 35766,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 36304,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 36840,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 37377,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 37911,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 38445,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 38981,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 39516,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 40054,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 40590,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 41141,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 41676,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 42210,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 42745,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 43281,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 43817,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 44355,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 44891,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 45429,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 46028,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 46564,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 47101,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 47638,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 48173,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 48711,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 49249,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 49785,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 50319,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 50856,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 51393,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 51929,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 52464,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 52999,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 53534,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 54071,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 54605,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 55138,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 55675,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 56210,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 56745,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 57280,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 57815,
+          "httpStatus": 200,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 58354,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 59043,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 59742,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 60444,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 61145,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 61844,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 62545,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 63246,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 63947,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 64648,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 65348,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 66049,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 66752,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 67453,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 68154,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 68853,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 69556,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 70257,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 70958,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 71659,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 72360,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 73060,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 73586,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 74112,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 74638,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 75162,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 75687,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 76214,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 76739,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 77264,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 77787,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 78312,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 78836,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 79360,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 79884,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 80408,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 80995,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 81520,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 82043,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 82569,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 83095,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 83619,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 84143,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 84667,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 85192,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 85719,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 86244,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 86768,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 87294,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 87819,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 88344,
+          "httpStatus": null,
+          "restartCount": 0,
+          "status": "running",
+          "pid": 90955,
+          "port": "36615"
+        },
+        {
+          "elapsedMs": 89138,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "restarting",
+          "pid": 0
+        },
+        {
+          "elapsedMs": 89893,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 2431,
+          "port": "37511"
+        },
+        {
+          "elapsedMs": 90684,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 2431,
+          "port": "37511"
+        },
+        {
+          "elapsedMs": 91210,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 2431,
+          "port": "37511"
+        },
+        {
+          "elapsedMs": 91734,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 2431,
+          "port": "37511"
+        },
+        {
+          "elapsedMs": 92260,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 2431,
+          "port": "37511"
+        },
+        {
+          "elapsedMs": 92785,
+          "httpStatus": null,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 2431,
+          "port": "37511"
+        },
+        {
+          "elapsedMs": 93312,
+          "httpStatus": 200,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 2431,
+          "port": "37511"
+        },
+        {
+          "elapsedMs": 94264,
+          "httpStatus": 200,
+          "restartCount": 1,
+          "status": "running",
+          "pid": 2431,
+          "port": "37511"
+        }
+      ],
+      "rawLogSha256": "f0c223303b1b46c4f25c9f3c4f2c13e7024c9869f7c518d3947147eebfc36e7f"
+    }
+  ],
+  "findings": [
+    "The five-minute grace runs recovered task execution in 66.5 and 94.0 seconds.",
+    "The three-second grace run recovered task execution in 94.3 seconds. Shortening that setting did not remove the delay.",
+    "During shutdown, the queue thread waited in GracefulEmbeddedServiceShutdownListener.onApplicationEvent through CompletableFuture.join.",
+    "Shutdown callbacks waited in JdbcQueue.poll through Awaitility and in JdbcQueue.close through ThreadPoolExecutor.awaitTermination.",
+    "HTTP 200 responses continued before task execution recovered.",
+    "The dynamic port changed after Docker restarted Kestra. The corrected probe follows the current binding.",
+    "Applying the profile limits of two CPUs and 2 GiB produced 67.1-second task recovery. Those limits alone did not reproduce the longer distributed shutdown."
+  ],
+  "limits": [
+    "These focused runs do not override the retained distributed PostgreSQL recovery failure.",
+    "The first exploratory probe used a stale ephemeral port after restart. Its timeout is excluded from accepted observations.",
+    "Raw JVM dumps remain private. This report retains method names and hashes only.",
+    "No production grace period, runtime version, or recovery bound changed."
+  ],
+  "resourceComparison": {
+    "status": "passed",
+    "resources": {
+      "cpus": 2,
+      "memoryMiB": 2048
+    },
+    "terminationGracePeriod": "5m",
+    "recoveryMs": 67084,
+    "samples": [
+      {
+        "elapsedMs": 0,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 1110,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 1651,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 2191,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 2732,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 3271,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 3809,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 4346,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 4884,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 5423,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 5961,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 6499,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 7036,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 7572,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 8109,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 8645,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 9182,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 9720,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 10258,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 10857,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 11396,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 11933,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 12470,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 13008,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 13545,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 14080,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 14616,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 15149,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 15684,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 16223,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 16759,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 17294,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 17831,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 18365,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 18900,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 19436,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 19973,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 20511,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 21049,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 21586,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 22124,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 22661,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 23200,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 23739,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 24275,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 24813,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 25350,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 25888,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 26428,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 26966,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 27502,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 28038,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 28574,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 29108,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 29643,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 30177,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 30715,
+        "httpStatus": 200,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 31250,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 31940,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 32639,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 33344,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 34044,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 34748,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 35449,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 36152,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 36854,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 37556,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 38258,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 38960,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 39662,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 40363,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 41073,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 41774,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 42476,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 43177,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 43879,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 44582,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 45284,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 45986,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 46514,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 47038,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 47565,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 48092,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 48618,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 49144,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 49670,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 50197,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 50722,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 51249,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 51775,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 52301,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 52826,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 53352,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 53879,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 54406,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 54933,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 55459,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 55985,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 56512,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 57037,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 57564,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 58107,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 58633,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 59159,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 59685,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 60211,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 60738,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 61264,
+        "httpStatus": null,
+        "restartCount": 0,
+        "status": "running",
+        "pid": 25477,
+        "port": "36789"
+      },
+      {
+        "elapsedMs": 61790,
+        "httpStatus": null,
+        "restartCount": 1,
+        "status": "restarting",
+        "pid": 0
+      },
+      {
+        "elapsedMs": 62482,
+        "httpStatus": null,
+        "restartCount": 1,
+        "status": "running",
+        "pid": 29724,
+        "port": "38201"
+      },
+      {
+        "elapsedMs": 63240,
+        "httpStatus": null,
+        "restartCount": 1,
+        "status": "running",
+        "pid": 29724,
+        "port": "38201"
+      },
+      {
+        "elapsedMs": 63764,
+        "httpStatus": null,
+        "restartCount": 1,
+        "status": "running",
+        "pid": 29724,
+        "port": "38201"
+      },
+      {
+        "elapsedMs": 64289,
+        "httpStatus": null,
+        "restartCount": 1,
+        "status": "running",
+        "pid": 29724,
+        "port": "38201"
+      },
+      {
+        "elapsedMs": 64814,
+        "httpStatus": null,
+        "restartCount": 1,
+        "status": "running",
+        "pid": 29724,
+        "port": "38201"
+      },
+      {
+        "elapsedMs": 65339,
+        "httpStatus": null,
+        "restartCount": 1,
+        "status": "running",
+        "pid": 29724,
+        "port": "38201"
+      },
+      {
+        "elapsedMs": 65862,
+        "httpStatus": null,
+        "restartCount": 1,
+        "status": "running",
+        "pid": 29724,
+        "port": "38201"
+      },
+      {
+        "elapsedMs": 66387,
+        "httpStatus": 200,
+        "restartCount": 1,
+        "status": "running",
+        "pid": 29724,
+        "port": "38201"
+      }
+    ],
+    "privateLogSha256": "ba049520b71ba0c589aa5549151560b10decde617bdf01bbb34954efb9c4028b"
+  }
+}

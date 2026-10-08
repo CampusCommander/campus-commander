@@ -1,0 +1,26 @@
+{
+  "status": "passed",
+  "scope": "bounded-browser-reload-regression",
+  "sourceRevision": "c5fef81c0dcc89dae1965cd9256560d8f2e0a0a1",
+  "ciFailure": "CC-37-phase-2-fifteenth-published-run.json",
+  "tests": [
+    {
+      "target": "api-e2e:navigation-fixture-test",
+      "status": "passed",
+      "cases": 3,
+      "redLogSha256": "ec40b8333b6db81a47d494d823cb51b4f460af3b96b290830173c9511eb07ede",
+      "greenLogSha256": "fdccda67b27e495e281a6a67da0010c199790b5951bb74dcb358417da6ea0365"
+    },
+    {
+      "target": "api-e2e:all-docker-integration",
+      "status": "passed",
+      "durationSeconds": 175.24,
+      "logSha256": "b2fdce7e92da8569a3a9e12b2c2ef1a0529ffbdc7624ed700ad4c7400dfec3ed"
+    }
+  ],
+  "behavior": "Retry only ERR_NETWORK_CHANGED during page reload, with at most three attempts and a fifteen-second navigation budget.",
+  "limits": [
+    "The local full profile run observed no network-change retries.",
+    "The controlled regression covers the retry boundary. New CI must verify the published change."
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "recordedAt": "2026-09-17T20:37:10.015Z",
+  "status": "passed",
+  "readerVersion": "Orca version 50.2, AT-SPI2 version: 2.60.4, Session: tty",
+  "checks": [
+    {
+      "label": "Sign in to Campus Commander",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Sign in as review administrator",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Customer display name",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Save customer settings",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Recipient label",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Sign-in subject",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Expires after (hours)",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Refresh saved status",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Create school",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "School name",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Add inclusion",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Review school scope",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "I confirm this school scope and its access consequences",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Review access for Review recipient",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Load permitted scopes",
+      "nativeFocus": true,
+      "spoken": true
+    },
+    {
+      "label": "Select school Review school North",
+      "nativeFocus": true,
+      "spoken": true
+    }
+  ],
+  "saveReceiptAnnouncement": true,
+  "settingsAnnouncement": ["Save customer settings", "Confirmed save receipt"],
+  "utteranceCount": 133,
+  "readerConfiguration": {
+    "automaticReadWholePage": false,
+    "scope": "Verified runtime setter on the isolated Orca D-Bus service. Desktop preferences unchanged."
+  },
+  "limits": [
+    "Real Orca speech processing with audio discarded by the isolated ALSA null device.",
+    "Source review fixture with synthetic Google and OIDC. No live credentials.",
+    "No human listening or full accessibility conformance claim."
+  ],
+  "schemaVersion": 1,
+  "applicationSource": "dc7b349",
+  "publishedSourceWithSameFrontend": "a043ef187dc6efbda7b5db84d7367594f0922cb0",
+  "command": "CC_ORCA_ROOT=/tmp/cc61-orca-packages/root dbus-run-session -- xvfb-run -a node dist/client-review/check-screen-reader.mjs",
+  "probeSha256": "0e424ea950f23c11077e2b5f7121ebb6d5c64dedb9e22590055ec7a7fc66a0f3",
+  "rawReportSha256": "bec93824d729ea8dbec0de9f3721c6e8cc52f96af880acbbdf455db62077315e",
+  "rawReaderLogSha256": "98871b9b2b36835c286955cb9fa39a1bdaf0ee9b0dba24df5c0c150617e1bb03",
+  "rules": ["UI-09", "UI-10"],
+  "diagnosis": {
+    "plainHtmlControls": "passed",
+    "applicationFocusWithoutReader": "passed",
+    "initialInteractiveProbe": "failed",
+    "cause": "Orca Say All moved the caret through page content during programmatic focus checks. The trace identifies say_all_presenter callbacks.",
+    "correction": "Set SayAllOnLoad=false through the isolated Orca D-Bus service and verify its runtime getter.",
+    "applicationCodeChangedForFocus": false,
+    "assertionCorrection": "Use the actual save confirmation and the existing Google customer connection accessible name."
+  }
+}

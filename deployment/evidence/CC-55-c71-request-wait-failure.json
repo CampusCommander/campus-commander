@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "sourceRevision": "c71b38aae04a56ebb45a9fb73354176a2693ab52",
+  "command": "npm exec nx run api-e2e:phase3-auth-integration",
+  "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35194294259",
+  "recordedAt": "2026-09-17T07:26:35Z",
+  "durationMilliseconds": 100756.727487,
+  "durationScope": "Node test process, as reported in the failed job log",
+  "failure": "Browser requests did not finish before closure.",
+  "diagnostics": {
+    "pending": [],
+    "failures": [],
+    "activeRequestCount": 2,
+    "activeRequests": [
+      {
+        "stage": "request",
+        "route": "other",
+        "status": 0,
+        "contextId": 3,
+        "pageId": 10,
+        "resourceType": "fetch",
+        "pageClosing": false,
+        "pageClosed": false,
+        "contextClosing": false,
+        "contextClosed": false,
+        "headersObserved": true
+      },
+      {
+        "stage": "request",
+        "route": "other",
+        "status": 0,
+        "contextId": 4,
+        "pageId": 17,
+        "resourceType": "fetch",
+        "pageClosing": false,
+        "pageClosed": false,
+        "contextClosing": true,
+        "contextClosed": false,
+        "headersObserved": true
+      }
+    ]
+  },
+  "limitations": [
+    "Both unfinished requests had successful header observations. The report excludes their raw URLs and response bodies.",
+    "This failed run does not qualify the closure correction."
+  ]
+}

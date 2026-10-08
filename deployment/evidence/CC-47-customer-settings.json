@@ -1,0 +1,75 @@
+{
+  "status": "source-and-packaged-qualified-owner-acceptance-pending",
+  "sourceRevision": "dcdc80d6156f8bab92447c6a00ea3fad2ce5b151",
+  "recordedOn": "2026-09-16",
+  "environment": "Hosted real PostgreSQL and Redis, two API replicas, synthetic Google transport, and Chromium.",
+  "settingsAllowlist": ["displayName"],
+  "ci": {
+    "backend": "https://github.com/CampusCommander/campus-commander/actions/runs/35159796531",
+    "backendStatus": "passed",
+    "backendJobsPassed": 7,
+    "source": "https://github.com/CampusCommander/campus-commander/actions/runs/35160778901",
+    "sourceStatus": "passed",
+    "full": "https://github.com/CampusCommander/campus-commander/actions/runs/35160781529",
+    "fullStatus": "passed",
+    "fullJobsPassed": 7,
+    "packagedPhase3Status": "passed"
+  },
+  "databaseChecks": [
+    "strict local settings allowlist",
+    "current actor and permission version",
+    "matching customer scope",
+    "runtime table and private function denial",
+    "exact request retry with one audit event",
+    "request reuse and stale revision conflicts",
+    "one winner among concurrent writes",
+    "audit failure rolls back settings",
+    "authority change rejects waiting write"
+  ],
+  "apiAndBrowserChecks": [
+    "strict settings allowlist",
+    "CSRF and current scoped write authority",
+    "durable lost-response receipt after reload",
+    "exact retry creates one audit event",
+    "concurrent save conflicts preserve draft and require revision review",
+    "keyboard save",
+    "light and dark automated accessibility",
+    "200 percent CSS zoom and 320-pixel reflow",
+    "offline refresh preserves draft",
+    "API process restart preserves customer, settings, and draft",
+    "Redis session loss requires sign-in and preserves confirmed business progress",
+    "access recovery preserves draft without repeated credential verification",
+    "reload restores confirmed progress"
+  ],
+  "localChecks": {
+    "frontendBuild": "passed",
+    "frontendLint": "passed",
+    "frontendUnitTests": "passed",
+    "asyncRegressionCases": 3,
+    "settingsChromiumCases": 8,
+    "reviewRegressionChecks": [
+      "focus after receipt and conflict review",
+      "programmatic custom validation",
+      "revoked read access explanation",
+      "receipt retrieval after reload preserves draft"
+    ]
+  },
+  "accessibility": {
+    "automatedSourceReports": 2,
+    "sourceViolations": 0,
+    "themes": ["light", "dark"],
+    "visualInspection": "passed: hosted conflict screenshots in both themes",
+    "screenReaderWalkthrough": "not-run",
+    "automatedPackagedReports": 2,
+    "packagedViolations": 0
+  },
+  "review": {
+    "standardsRemainingFindings": 0,
+    "specRemainingFindings": 0
+  },
+  "limitations": [
+    "Human screen-reader walkthrough and owner acceptance remain pending.",
+    "This change configures the local display name and does not mutate Google data.",
+    "Complete Phase 3 deployment-profile qualification and live credential gates remain separate."
+  ]
+}

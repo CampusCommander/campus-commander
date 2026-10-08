@@ -1,0 +1,184 @@
+{
+  "status": "failed",
+  "recordedAt": "2026-09-12T14:59:06.429225+00:00",
+  "sourceRevision": "8a5f82306ea29bc497a7200914b9bd9dddfe1f01",
+  "candidate": {
+    "runId": 34699568200,
+    "status": "completed",
+    "conclusion": "failure",
+    "jobs": [
+      {
+        "id": 103568810996,
+        "name": "validate",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569029970,
+        "name": "publish (frontend)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569029974,
+        "name": "publish (api)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569029976,
+        "name": "publish (worker)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377542,
+        "name": "capacity",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377739,
+        "name": "application (all-docker-capacity-integration)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 103569377747,
+        "name": "application (all-docker-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377757,
+        "name": "application (all-docker-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377760,
+        "name": "application (kubernetes-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377762,
+        "name": "application (hybrid-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377774,
+        "name": "application (kubernetes-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377775,
+        "name": "application (kubernetes-certificate-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377777,
+        "name": "application (hybrid-cli-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377779,
+        "name": "application (hybrid-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377781,
+        "name": "application (auth-image-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377783,
+        "name": "application (hybrid-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377786,
+        "name": "application (hybrid-cli-upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377790,
+        "name": "application (hybrid-cli-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377801,
+        "name": "application (kubernetes-restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377805,
+        "name": "application (kubernetes-process-fault-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377840,
+        "name": "application (restore-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377853,
+        "name": "application (upgrade-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103569377878,
+        "name": "application (screen-reader-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103570829018,
+        "name": "bundle",
+        "conclusion": "skipped"
+      }
+    ]
+  },
+  "pr": {
+    "runId": 34699570850,
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 103568818352,
+        "name": "browser",
+        "conclusion": "success"
+      },
+      {
+        "id": 103568818367,
+        "name": "foundation-integration (qualify-redis)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103568818393,
+        "name": "foundation-integration (operations-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103568818425,
+        "name": "application-integration",
+        "conclusion": "success"
+      },
+      {
+        "id": 103568818426,
+        "name": "foundation-integration (storage-integration)",
+        "conclusion": "success"
+      },
+      {
+        "id": 103568818440,
+        "name": "main",
+        "conclusion": "success"
+      },
+      {
+        "id": 103568818443,
+        "name": "foundation-integration (postgres-integration)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "releasePublished": false,
+  "failure": {
+    "job": "application (all-docker-capacity-integration)",
+    "cause": "The clean daemon lacked the pinned PostgreSQL image before offline Compose startup.",
+    "logSha256": "7d3884a736139a1d2be5811d8a383488d4fa1b1534d7c1bd417c3c5b03e3628c"
+  },
+  "correctionRevision": "f76a701b5478c05fd6ab08e5808816e32e07e0a2",
+  "limits": [
+    "Successful individual jobs do not establish full release acceptance."
+  ]
+}

@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "hybrid",
+  "harnessRevision": "0e0db2f953867659baf7c9a678c5c58dfaaf1cc9",
+  "harnessWorkingTree": "clean",
+  "command": "npm exec -- nx run api-e2e:phase3-hybrid-install-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "uid": 1000,
+    "gid": 1000,
+    "browser": "149.0.7827.55"
+  },
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "recordedAt": "2026-09-17T14:19:52.144Z",
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "status": "passed",
+  "durationMs": 12397,
+  "durationScope": "Worker dispatch boundaries, concurrent credential renewal, and worker restart after browser closure.",
+  "customerId": "C0123456",
+  "generation": 2,
+  "workerHosts": [
+    {
+      "role": "worker-1",
+      "daemonId": "5f8311bb-3340-473c-86ff-bc6dac608929"
+    },
+    {
+      "role": "worker-2",
+      "daemonId": "70629b67-ec70-4a09-8e50-a8f5e372da9d"
+    }
+  ],
+  "observations": [
+    {
+      "host": "worker-1",
+      "daemonId": "5f8311bb-3340-473c-86ff-bc6dac608929",
+      "status": 401,
+      "generation": 2,
+      "mode": "unauthorized",
+      "completed": false
+    },
+    {
+      "host": "worker-1",
+      "daemonId": "5f8311bb-3340-473c-86ff-bc6dac608929",
+      "status": 400,
+      "generation": 2,
+      "mode": "credential-field",
+      "completed": false
+    },
+    {
+      "host": "worker-1",
+      "daemonId": "5f8311bb-3340-473c-86ff-bc6dac608929",
+      "status": 503,
+      "generation": 1,
+      "mode": "retired",
+      "completed": false
+    },
+    {
+      "host": "worker-1",
+      "daemonId": "5f8311bb-3340-473c-86ff-bc6dac608929",
+      "status": 200,
+      "generation": 2,
+      "mode": "current",
+      "completed": true
+    },
+    {
+      "host": "worker-2",
+      "daemonId": "70629b67-ec70-4a09-8e50-a8f5e372da9d",
+      "status": 401,
+      "generation": 2,
+      "mode": "unauthorized",
+      "completed": false
+    },
+    {
+      "host": "worker-2",
+      "daemonId": "70629b67-ec70-4a09-8e50-a8f5e372da9d",
+      "status": 400,
+      "generation": 2,
+      "mode": "credential-field",
+      "completed": false
+    },
+    {
+      "host": "worker-2",
+      "daemonId": "70629b67-ec70-4a09-8e50-a8f5e372da9d",
+      "status": 503,
+      "generation": 1,
+      "mode": "retired",
+      "completed": false
+    },
+    {
+      "host": "worker-2",
+      "daemonId": "70629b67-ec70-4a09-8e50-a8f5e372da9d",
+      "status": 200,
+      "generation": 2,
+      "mode": "current",
+      "completed": true
+    },
+    {
+      "host": "worker-1",
+      "daemonId": "5f8311bb-3340-473c-86ff-bc6dac608929",
+      "status": 200,
+      "generation": 2,
+      "mode": "current",
+      "completed": true
+    },
+    {
+      "host": "worker-2",
+      "daemonId": "70629b67-ec70-4a09-8e50-a8f5e372da9d",
+      "status": 200,
+      "generation": 2,
+      "mode": "current",
+      "completed": true
+    },
+    {
+      "host": "worker-1",
+      "daemonId": "5f8311bb-3340-473c-86ff-bc6dac608929",
+      "status": 200,
+      "generation": 2,
+      "mode": "current",
+      "completed": true
+    },
+    {
+      "host": "worker-2",
+      "daemonId": "70629b67-ec70-4a09-8e50-a8f5e372da9d",
+      "status": 200,
+      "generation": 2,
+      "mode": "current",
+      "completed": true
+    }
+  ],
+  "contention": {
+    "renewalDaemonId": "5f8311bb-3340-473c-86ff-bc6dac608929",
+    "pendingDaemonId": "70629b67-ec70-4a09-8e50-a8f5e372da9d",
+    "observedWithinMs": 1171
+  },
+  "renewalEvents": {
+    "before": 1,
+    "afterConcurrentReads": 2,
+    "afterRestart": 2
+  },
+  "restartRecoveryMs": 2682,
+  "restartRecoveryBoundSeconds": 30,
+  "checks": {
+    "readsAfterBrowserClosure": true,
+    "unauthorizedDispatchRejected": true,
+    "credentialFieldsRejected": true,
+    "retiredGenerationRejected": true,
+    "sharedRenewal": true,
+    "encryptedStoredToken": true,
+    "restartReusesToken": true
+  },
+  "limits": [
+    "The fixture advances the owned token expiry to exercise renewal without a one-hour wait.",
+    "Worker-only preload instrumentation holds synthetic renewal and observes the real pending-lease result without changing it.",
+    "Two worker daemons share one physical host and synthetic Google transport.",
+    "This report does not establish live Google privileges, independent physical failure domains, or complete hybrid fault recovery."
+  ],
+  "completeProfileDurationMs": 228815,
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35232255573",
+    "artifact": "phase-3-hybrid-installation",
+    "artifactId": 10501098963,
+    "artifactArchiveSha256": "026927ed9896d232fa113b8b0eecc4f3eb64e616620bde5797b0e3e5c21967aa",
+    "releaseTag": "phase-3-lab-a3601eff2a55",
+    "reports": [
+      {
+        "path": "hybrid-cli.json",
+        "sizeBytes": 24897,
+        "sha256": "4a05a9e7c6f37474cc042003b3d883c247a18b060b60747273b0f63f60cf13ec"
+      },
+      {
+        "path": "hybrid-installation.json",
+        "sizeBytes": 24360,
+        "sha256": "ecd4742394dd8ff5e06080342a5d0956b2e363fc1c0f17ddb5a544590989537b"
+      },
+      {
+        "path": "hybrid-resume.json",
+        "sizeBytes": 24530,
+        "sha256": "b11606e692c3d6fcda6aafb078aa90ff1bef5976acb1c0ae86b2d01e47b44806"
+      }
+    ]
+  }
+}

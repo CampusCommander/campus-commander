@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "sourceRevision": "4225f8d818decf61931041bfea02d7a4c2c94b38",
+  "command": "npm exec nx run api-e2e:auth-image-integration",
+  "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35193287230",
+  "recordedAt": "2026-09-17T07:15:19Z",
+  "durationMilliseconds": 83077.153909,
+  "durationScope": "Node test process, as reported in the failed job log",
+  "environment": {
+    "runner": "ubuntu-latest",
+    "nodeVersion": "24.19.0",
+    "CC_AUTH_PACKAGED_IMAGES": "true",
+    "CC_AUTH_PHASE": "2"
+  },
+  "failure": "Browser requests did not finish before closure.",
+  "diagnostics": {
+    "pending": [],
+    "failures": []
+  },
+  "limitations": [
+    "The failed fixture did not record active request metadata. This evidence does not identify the unfinished request.",
+    "Phase 3 authorization and Phase 2 all-Docker compatibility did not run after this failure.",
+    "The independent Phase 3 admission restore passed. That result does not qualify authorization evidence capture."
+  ]
+}

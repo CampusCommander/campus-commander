@@ -5,13 +5,79 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run browser and infrastructure integration checks
+        type: boolean
+        default: false
+      phase3Release:
+        description: Immutable Phase 3 lab tag for extracted installation workflows
+        type: string
+        default: ''
+      phase3Profile:
+        description: Installation profile for the signed Phase 3 laboratory release
+        type: choice
+        options: [all-docker, hybrid, kubernetes]
+        default: all-docker
+      phase3UpdateRelease:
+        description: Different signed Phase 3 lab tag for guided update
+        type: string
+        default: ''
+      phase3Upgrade:
+        description: Upgrade the pinned Phase 2 release before Phase 3 workflow checks
+        type: boolean
+        default: false
+      phase3Restore:
+        description: Restore the signed Phase 3 hybrid release into isolated services
+        type: boolean
+        default: false
+      phase3Faults:
+        description: Test service interruption and durable Phase 3 state
+        type: boolean
+        default: false
+      phase3FaultKind:
+        description: Fault group for the installed Phase 3 release
+        type: choice
+        options: [services, provider, certificates, capacity]
+        default: services
+      phase3Lifecycle:
+        description: Test installed restart, resume, stop, uninstall, and explicit erasure
+        type: boolean
+        default: false
+      phase3Only:
+        description: Run only the Phase 3 source API and browser qualification
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ inputs.phase3Release && 'phase3-profile' || inputs.phase3Only && 'phase3' || 'full' }}
+  cancel-in-progress: true
 
 permissions:
   actions: read
   contents: read
 
 jobs:
+  phase3-profile:
+    if: inputs.phase3Release != ''
+    uses: ./.github/workflows/phase-3-profile-check.yml
+    with:
+      release: ${{ inputs.phase3Release }}
+      profile: ${{ inputs.phase3Profile || 'all-docker' }}
+      upgrade: ${{ inputs.phase3Upgrade == true }}
+      restore: ${{ inputs.phase3Restore == true }}
+      faults: ${{ inputs.phase3Faults == true }}
+      faultKind: ${{ inputs.phase3FaultKind || 'services' }}
+      lifecycle: ${{ inputs.phase3Lifecycle == true }}
+      updateRelease: ${{ inputs.phase3UpdateRelease || '' }}
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+
   main:
+    if: inputs.phase3Only != true && inputs.phase3Release == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -26,15 +92,25 @@ jobs:
 
       - run: npm ci
 
-      - run: npm exec nx format:check -- --base="remotes/origin/main"
-      - run: npm exec nx run-many -- -t lint,test,build,typecheck -p deployment,frontend,api,worker
+      - name: Select comparison revision
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git cat-file -e "${BASE_REVISION:-missing}^{commit}" 2>/dev/null; then
+            echo "NX_BASE=$BASE_REVISION" >> "$GITHUB_ENV"
+          else
+            echo "NX_BASE=$(git rev-parse HEAD^)" >> "$GITHUB_ENV"
+          fi
+      - run: npm exec nx format:check -- --base="$NX_BASE"
+      - run: npm exec nx affected -- -t lint,test,build,typecheck --base="$NX_BASE" --head=HEAD
         env:
           NX_NO_CLOUD: ${{ vars.NX_CLOUD_ENABLED != 'true' }}
       - run: npm exec nx run api-e2e:e2e
       - run: npm exec nx run deployment:validate-examples
-      - run: npm exec nx run-many -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test -p deployment
+      - run: npm exec nx affected -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test,google-proof-test --base="$NX_BASE" --head=HEAD
 
   foundation-integration:
+    if: inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -45,6 +121,7 @@ jobs:
             postgres-integration,
             storage-integration,
             operations-integration,
+            operations-phase3-integration,
           ]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -56,8 +133,15 @@ jobs:
       - run: npm exec nx run deployment:${{ matrix.target }}
         env:
           NX_NO_CLOUD: 'true'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: matrix.target == 'operations-phase3-integration' && success()
+        with:
+          name: phase-3-recovery-evidence
+          path: dist/phase-3-recovery/
+          if-no-files-found: error
 
   browser:
+    if: inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -70,3 +154,90 @@ jobs:
       - run: npm exec nx run frontend-e2e:e2e -- --args="--project=chromium"
         env:
           NX_NO_CLOUD: 'true'
+
+  application-integration:
+    if: inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
+        with:
+          version: v29.7.2
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - uses: docker/setup-compose-action@4eb059ff7f16592f9c84d5ca339c53cb7c5064e2 # v2
+        with:
+          version: v5.5.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm exec nx run-many -- -t image -p api,frontend,worker --parallel=2
+        id: application-images
+        env:
+          NX_NO_CLOUD: 'true'
+          CC_IMAGE_VERSION: phase-2-ci
+      - run: npm exec nx run api-e2e:auth-image-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - run: npm exec nx run api-e2e:phase3-auth-integration
+        env:
+          NX_NO_CLOUD: 'true'
+          CC_AUTH_PACKAGED_IMAGES: 'true'
+      - run: npm exec nx run api-e2e:all-docker-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - run: npm exec nx run api-e2e:phase3-restore-integration
+        if: ${{ !cancelled() && steps.application-images.outcome == 'success' }}
+        env:
+          NX_NO_CLOUD: 'true'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-3-application-restore-evidence
+          path: dist/phase-3-recovery/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-2-application-evidence
+          path: dist/phase-2-evidence/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-3-authorization-evidence
+          path: dist/phase-3-evidence/
+          if-no-files-found: warn
+
+  phase3-authorization:
+    if: inputs.phase3Release == '' && inputs.phase3Only == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1
+        with:
+          version: v29.7.2
+          daemon-config: |
+            {"features":{"containerd-snapshotter":true}}
+      - uses: docker/setup-compose-action@4eb059ff7f16592f9c84d5ca339c53cb7c5064e2
+        with:
+          version: v5.5.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm exec nx run api-e2e:phase3-auth-integration
+        env:
+          NX_NO_CLOUD: 'true'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: phase-3-authorization-evidence
+          path: dist/phase-3-evidence/
+          if-no-files-found: warn

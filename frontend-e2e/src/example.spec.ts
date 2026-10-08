@@ -1,5 +1,18 @@
 import { test, expect } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/application', (route) =>
+    route.fulfill({
+      json: {
+        phase: 1,
+        authenticationConfigured: false,
+        version: 'test',
+        build: 'synthetic',
+      },
+    }),
+  );
+});
+
 test('shows the Phase 1 startup boundary', async ({ page }) => {
   await page.goto('/');
 

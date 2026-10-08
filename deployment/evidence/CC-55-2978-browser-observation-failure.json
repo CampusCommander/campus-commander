@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "sourceRevision": "2978b087b905747f1471bafb573d82a668af3f54",
+  "command": "npm exec nx run api-e2e:phase3-auth-integration",
+  "run": "https://github.com/CampusCommander/campus-commander/actions/runs/35190962752",
+  "recordedAt": "2026-09-17T06:48:27Z",
+  "durationMilliseconds": 116205.654416,
+  "durationScope": "Node test process, as reported in the failed job log",
+  "environment": {
+    "runner": "ubuntu-latest",
+    "nodeVersion": "24.19.0",
+    "CC_AUTH_PACKAGED_IMAGES": "true",
+    "CC_AUTH_PHASE": "3"
+  },
+  "imageDigests": {
+    "status": "unavailable",
+    "reason": "The failed authorization fixture did not write its final image inventory."
+  },
+  "limitations": [
+    "This record identifies a completed font response queried after its page closed. It does not establish the cause of earlier header-observation failures.",
+    "The fixture used packaged images and synthetic Google and sign-in providers.",
+    "This record does not qualify image identity or successful evidence redaction for the failed run."
+  ],
+  "diagnostics": {
+    "status": "failed",
+    "pendingResponses": 0,
+    "pendingStages": [],
+    "responseFailures": {
+      "headers": 0,
+      "body": 1
+    },
+    "failedResponses": [
+      {
+        "stage": "body",
+        "route": "other",
+        "status": 0,
+        "contextId": 3,
+        "pageId": 36,
+        "resourceType": "font",
+        "pageClosing": true,
+        "pageClosed": true,
+        "contextClosing": false,
+        "contextClosed": false,
+        "reason": "target-closed"
+      }
+    ],
+    "reason": "response-observation-failed"
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "status": "passed",
+  "checkedAt": "2026-09-12T17:59:07.008870+00:00",
+  "baseRevision": "be11ad27b09f892a8232d557193bbdf42a43daaa",
+  "sourceState": "uncommitted quiescence correction on the base revision",
+  "sourceFiles": {
+    "deployment/operations/index.mjs": "67888c6d7d89390d61d27d18ab3adf829d75c8695d8f4bea9fb214c9d03d0d2b",
+    "deployment/operations/quiescence.mjs": "d61ff1e7a282be42ac79ea9f72a03d40051282afb91fa182db78323f6c3c5034",
+    "deployment/operations/quiescence.test.mjs": "8316a4aef46fcd8b019e5cb0d7b66f3a32b191cd03a3a09c7979e4b228058877",
+    "deployment/operations/integration.mjs": "e5933662968f23bf2dd07382e098790280c62d2deb6b1f0414d41d5f255d7c0b"
+  },
+  "reproduction": {
+    "status": "reproduced",
+    "sourceRevision": "be11ad27b09f892a8232d557193bbdf42a43daaa",
+    "functionSha256": "6de03cd2b56fdb8555a6086f187b28693d744ccf475fe412229753043f7f6c62",
+    "checks": {
+      "openClientRejected": true,
+      "clientConfirmedAbsentByIndependentConnection": true,
+      "closedClientStillRejectedWithinTransaction": true,
+      "clearedSnapshotObservesZeroConnections": true
+    },
+    "limits": [
+      "The probe executes the exact current quiescence function against PostgreSQL 18.6.",
+      "This proves stale connection observations within a transaction. It does not identify the connection in the earlier Kubernetes CI failure."
+    ]
+  },
+  "behavior": {
+    "connectionObservationBudgetMilliseconds": 5000,
+    "pollIntervalMilliseconds": 100,
+    "freshStatisticsSnapshotBeforeEveryCount": true,
+    "requiredOtherConnections": 0,
+    "terminatesOtherConnections": false,
+    "tableLockPolicyChanged": false,
+    "fixedFailureReason": "DATABASE_CONNECTIONS_ACTIVE"
+  },
+  "validation": [
+    {
+      "target": "deployment:operations-test",
+      "before": "failed: two of seven tests",
+      "after": "passed: seven tests"
+    },
+    {
+      "target": "deployment:operations-cli-integration",
+      "before": "failed: real closing connection rejected within a transaction",
+      "after": "passed",
+      "runner": "operator-cli-native",
+      "postgresVersion": "18.6",
+      "durationSeconds": 15.1
+    },
+    {
+      "target": "deployment:release-test",
+      "status": "passed",
+      "tests": 6,
+      "durationSeconds": 23.7
+    },
+    {
+      "target": "deployment:lint",
+      "status": "passed"
+    },
+    {
+      "target": "api-e2e:kubernetes-restore-integration",
+      "status": "passed",
+      "durationMilliseconds": 341634.451896,
+      "applicationImageRevision": "608df6f14952f2a89b40625e337b65107962d230",
+      "operatorSource": "workspace with recorded correction",
+      "report": "deployment/evidence/CC-36-phase-2-quiescence-kubernetes-restore-608df6f.json",
+      "reportSha256": "cea707afdf8d767883b61e59bbdb86d05617ea9f17f18b55147d5196defa6d62"
+    }
+  ],
+  "logSha256": {
+    "unit-red": "5c731d3ab53cbf74dcbeb9d92df8cc21a6aec99af0e16700e51e2479d3b32fb6",
+    "native-red": "bc3710f750ccfc8f43109e9a49b8aa3b7bb284c09b17ce805c194d815cd627dd",
+    "unit-green": "f8b1e09eeebda30d3fd0faface872607bfb171f5f660cc2e7abedbe2d26dd1eb",
+    "native-green": "36cc19552d2e637c063c4f600636f736ca5c45580c606d909097b114682ae2f2",
+    "release-green": "a97e88817bd235bff46371b915bf6d6745bbe9e042ea785d65c3f3c42e14ed48",
+    "lint": "27e3eaf3d59e9e8f5b3449e4acd20e53957ca3a936b252f3246318557a75308a"
+  },
+  "kubernetesLogSha256": "84d066327183ba2ee0999f26a6b8672e97023751dbbd9f209a9cf60244fe6c8c",
+  "reference": "https://www.postgresql.org/docs/18/monitoring-stats.html",
+  "limits": [
+    "The exact database connection in the earlier CI failure remains unidentified.",
+    "The reproduction proves cached transaction statistics and immediate rejection of a closing connection.",
+    "Individual query timeouts also apply. The observation budget does not bound total command duration.",
+    "The Kubernetes test uses three Kind nodes on one Docker host and synthetic shared storage.",
+    "District storage, network policy, load balancer, and identity-provider acceptance remain open."
+  ]
+}

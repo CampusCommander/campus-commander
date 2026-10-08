@@ -1,0 +1,34 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T10:55:51.518096+00:00",
+  "sourceState": "uncommitted qualification and installer changes",
+  "baseGitRevision": "9aadf55a917870c6e3ed08d548308e659fc017fa",
+  "scope": "Unchanged hybrid preparation preserves running JVM truststore credentials. API replica contracts preserve configured counts.",
+  "sourceFiles": {
+    "deployment/profiles/hybrid/prepare.mjs": "aa2ab5a7bd5ecd4ce23f60416ba1801e0824ecb07390a02edbd28c6e0f88e927",
+    "deployment/profiles/hybrid/prepare.test.mjs": "f3bc3e4619ff34720b44255a40f0805f436180493a881cc7f6b9a8c65f7c163a",
+    "deployment/profiles/all-docker/render.mjs": "a0c7121ca397fcfec4fe49090530c2be585be367bfb1c9dac60a5c2ca592676e",
+    "deployment/profiles/all-docker/render.test.mjs": "5cb8e6ee0c454f9b0c4341257afe61ebff4da3b95e3a79d86fce4c0d2f9213b7",
+    "deployment/profiles/hybrid/render.test.mjs": "973e84fda14e8e9ef32a0e358621b89e3d39e4ac27e0a6b32f7900140929350b"
+  },
+  "red": {
+    "truststore": "The running JVM password could not open the truststore after unchanged preparation.",
+    "replicas": "Both Compose renderers returned no API replica count for a configured count of two."
+  },
+  "green": {
+    "truststore": "Java keytool opened the replacement path with the original JVM password after unchanged preparation.",
+    "regressionTargets": [
+      "deployment:profiles-test",
+      "deployment:installer-test",
+      "deployment:bootstrap-test",
+      "deployment:qualification-test"
+    ],
+    "configurationChangeRegenerates": true,
+    "credentialChangeRegenerates": true,
+    "damagedTruststoreRegenerates": true
+  },
+  "limits": [
+    "The real Java probe used synthetic TLS material copied from a stopped qualification fixture.",
+    "Full distributed CLI lifecycle and candidate CI require separate evidence."
+  ]
+}

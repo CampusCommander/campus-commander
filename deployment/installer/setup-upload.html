@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Google sign-in setup · Campus Commander</title>
+    <link rel="stylesheet" href="/setup.css" />
+    <script src="/setup.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <p>Campus Commander</p>
+      <h1>Configure Google sign-in</h1>
+      <form id="pair">
+        <label for="code">Installer pairing code</label
+        ><input
+          id="code"
+          type="password"
+          autocomplete="off"
+          required
+          maxlength="48"
+          aria-describedby="pair-help"
+        />
+        <p id="pair-help">
+          Copy the private pairing code from the installer terminal.
+        </p>
+        <button>Connect to installer</button>
+      </form>
+      <section id="upload" hidden>
+        <h2>Create the Google client</h2>
+        <ol>
+          <li>
+            Open
+            <a
+              href="https://console.cloud.google.com/auth/branding"
+              target="_blank"
+              rel="noreferrer"
+              >Google Auth branding</a
+            >
+            for your test project.
+          </li>
+          <li>
+            Select an Internal audience for your Google Workspace organization.
+          </li>
+          <li>
+            Create a
+            <a
+              href="https://console.cloud.google.com/auth/clients"
+              target="_blank"
+              rel="noreferrer"
+              >Web application client</a
+            >.
+          </li>
+          <li>
+            Add this exact redirect URI: <code id="callback"></code>
+            <button type="button" id="copy-callback" class="secondary">
+              Copy redirect URI
+            </button>
+          </li>
+          <li>Download the client JSON.</li>
+        </ol>
+        <p>
+          This configures application sign-in. It does not grant access to
+          Gmail, Drive, or user administration.
+        </p>
+        <form id="import">
+          <label for="file">Google Web application client JSON</label
+          ><input
+            id="file"
+            type="file"
+            accept=".json,application/json"
+            required
+          /><button>Import Google client</button>
+        </form>
+      </section>
+      <p id="status" role="status" aria-live="polite"></p>
+      <p id="error" role="alert"></p>
+    </main>
+  </body>
+</html>

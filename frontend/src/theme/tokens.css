@@ -1,37 +1,15 @@
-/* Campus Commander design tokens.
-   Design authority: docs/ui/tokens.json. Agent instructions: docs/ui/README.md.
-   This legacy subset predates the 2026-09-05 Figma revisions.
-   Reconcile values and missing tokens during theme implementation.
-   Status *-text tokens differ in dark mode: brightened for contrast on dark surfaces. */
-
+/* Exact design values from docs/ui/tokens.json. */
 :root {
-  /* Color — light (CC Color Light) */
-  --cc-surface-app: #f8fafc;
-  --cc-surface-card: #ffffff;
-  --cc-surface-hover: #f1f5f9;
-  --cc-border: #e2e8f0;
-  --cc-accent: #1a73e8; /* provisional, guide section 14 */
-  --cc-text-primary: #202124;
-  --cc-text-secondary: #5f6368;
-  --cc-text-disabled: #9aa0a6;
-  --cc-status-success: #188038;
-  --cc-status-warning: #f9ab00;
-  --cc-status-error: #d93025;
-  --cc-status-info: #1a73e8; /* resolves {color.accent} */
-  --cc-status-success-text: #188038;
-  --cc-status-error-text: #d93025;
-  --cc-status-warning-text: #f9ab00;
-
-  /* Scale (CC Scale) */
+  color-scheme: light dark;
   --cc-space-xs: 4px;
   --cc-space-sm: 8px;
   --cc-space-md: 12px;
   --cc-space-lg: 16px;
   --cc-space-xl: 24px;
   --cc-space-xxl: 32px;
-  --cc-space-xxxl: 48px;
   --cc-radius-control: 4px;
   --cc-radius-chip: 999px;
+  --cc-space-xxxl: 48px;
   --cc-nav-width: 240px;
   --cc-nav-width-collapsed: 56px;
   --cc-header-height: 64px;
@@ -40,24 +18,74 @@
   --cc-page-padding: 24px;
   --cc-card-padding: 16px;
   --cc-content-max-width: 720px;
+  --cc-surface-app: #f8fafc;
+  --cc-surface-card: #ffffff;
+  --cc-surface-hover: #f1f5f9;
+  --cc-border: #e2e8f0;
+  --cc-accent: #1a73e8;
+  --cc-text-primary: #202124;
+  --cc-text-secondary: #5f6368;
+  --cc-surface-selected: rgb(26 115 232 / 8%);
+  --cc-status-success: #188038;
+  --cc-status-warning: #f9ab00;
+  --cc-status-error: #d93025;
+  --cc-text-disabled: #9aa0a6;
+  --cc-text-on-accent: #ffffff;
+  --cc-surface-scrim: rgb(0 0 0 / 32%);
+  --cc-status-info: #1a73e8;
+  --cc-status-success-text: #188038;
+  --cc-status-warning-text: #7a4e00;
+  --cc-status-error-text: #b3261e;
+  --cc-text-link: #1556b0;
+  --cc-border-control: #80868b;
 }
-
-[data-theme="dark"] {
-  /* Color — dark (CC Color Dark) */
+:root[data-theme='dark'] {
+  color-scheme: dark;
   --cc-surface-app: #121212;
   --cc-surface-card: #1e1e1e;
   --cc-surface-hover: #2a2a2a;
   --cc-border: #3a3a3a;
+  --cc-accent: #1a73e8;
   --cc-text-primary: #e8eaed;
   --cc-text-secondary: #9aa0a6;
+  --cc-surface-selected: rgb(26 115 232 / 14%);
+  --cc-status-success: #188038;
+  --cc-status-warning: #f9ab00;
+  --cc-status-error: #d93025;
   --cc-text-disabled: #9aa0a6;
+  --cc-text-on-accent: #ffffff;
+  --cc-surface-scrim: rgb(0 0 0 / 32%);
+  --cc-status-info: #1a73e8;
   --cc-status-success-text: #81c995;
-  --cc-status-error-text: #f28b82;
   --cc-status-warning-text: #fdd663;
+  --cc-status-error-text: #f28b82;
+  --cc-text-link: #8ab4f8;
+  --cc-border-control: #9aa0a6;
 }
-
-/* Typography styles: Display 24/700/32, Title 16/500/24, Body 14/400/20, Caption 12/400/16 (Roboto). */
-:root {
-  --cc-font-family: "Roboto", "Helvetica Neue", Arial, sans-serif;
-  --cc-font-icon: "Material Symbols Outlined";
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
+    --cc-surface-app: #121212;
+    --cc-surface-card: #1e1e1e;
+    --cc-surface-hover: #2a2a2a;
+    --cc-border: #3a3a3a;
+    --cc-accent: #1a73e8;
+    --cc-text-primary: #e8eaed;
+    --cc-text-secondary: #9aa0a6;
+    --cc-surface-selected: rgb(26 115 232 / 14%);
+    --cc-status-success: #188038;
+    --cc-status-warning: #f9ab00;
+    --cc-status-error: #d93025;
+    --cc-text-disabled: #9aa0a6;
+    --cc-text-on-accent: #ffffff;
+    --cc-surface-scrim: rgb(0 0 0 / 32%);
+    --cc-status-info: #1a73e8;
+    --cc-status-success-text: #81c995;
+    --cc-status-warning-text: #fdd663;
+    --cc-status-error-text: #f28b82;
+    --cc-text-link: #8ab4f8;
+    --cc-border-control: #9aa0a6;
+  }
 }

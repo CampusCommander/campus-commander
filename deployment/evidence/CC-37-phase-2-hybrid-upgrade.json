@@ -1,0 +1,427 @@
+{
+  "upgrade": {
+    "status": "passed",
+    "recordedAt": "2026-09-12T06:48:14.048Z",
+    "durationMs": 46350,
+    "baselineImages": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+    },
+    "images": {
+      "frontend": "campus-commander/frontend@sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5",
+      "api": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+      "workers": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+    },
+    "runtimeImageContentVerified": true,
+    "baselineMigrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ],
+    "upgradedMigrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      },
+      {
+        "id": "002-application-auth",
+        "checksum": "561767ba67da4525759616617a86555626a86de520ca8014671fe7429bc57acd"
+      }
+    ],
+    "preserved": {
+      "artifactId": "41c8fe7e-f86d-41bf-b576-f5da47772779",
+      "artifactSha256": "5643a281390a9570ee7a65882184c5b5914e4db3e8f348ce0130126f9dca6060",
+      "artifactMetadata": true,
+      "sharedMarkerSha256": "e00a20c40890bb48f51e9000fdbc4c0a9c9f45bda96d88977b6fc678856ee7cc",
+      "workerReaders": 2,
+      "executionId": "uNM9a0lJ8kKVj0TiVJtkD",
+      "executionState": "SUCCESS",
+      "kestraFiles": 1
+    },
+    "limits": [
+      "The fixture upgrades rendered Compose projects through the documented preparation and migration commands.",
+      "The fixture uses one Docker host with external TLS PostgreSQL and Redis containers.",
+      "The fixture uses a synthetic identity provider and two worker Compose projects.",
+      "This report does not establish installer CLI, release signatures, or district infrastructure acceptance."
+    ]
+  },
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "53dc7615-f656-403e-ad37-8759fccde19d",
+        "observedAt": "2026-09-12T06:48:15.986Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "f5671fdd-7c55-4f1a-92dd-4803aaf4c847",
+        "observedAt": "2026-09-12T06:48:16.061Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "8540cb99-e203-4e68-86fc-4e0eeb165adb",
+        "observedAt": "2026-09-12T06:48:16.804Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "84545ec7-9eb2-46a2-8abc-e15ddb6c7572",
+        "observedAt": "2026-09-12T06:48:16.913Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "a4aac6ac-69ec-4c01-8975-61baac488c73",
+        "observedAt": "2026-09-12T06:48:25.454Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "8759ceb5-bf2e-41e7-ba09-2a815a29333f",
+        "observedAt": "2026-09-12T06:48:25.546Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "9bc90b2a-4070-4b18-b6eb-79086c45afc2",
+        "observedAt": "2026-09-12T06:48:26.179Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "1174c0d7-95cc-4141-855e-52ad6e6c17f1",
+        "observedAt": "2026-09-12T06:48:26.280Z"
+      }
+    ],
+    "recoveryBoundSeconds": 120,
+    "lifecycle": {
+      "restoration": {
+        "application": {
+          "status": "passed",
+          "browser": "149.0.7827.55",
+          "operations": ["postgresql", "redis", "kestra", "artifacts"],
+          "observations": [
+            {
+              "operation": "postgresql",
+              "status": "passed",
+              "correlationId": "497d4106-0bcb-472d-b434-2ab59757228f",
+              "observedAt": "2026-09-12T06:49:23.862Z"
+            },
+            {
+              "operation": "redis",
+              "status": "passed",
+              "correlationId": "07d996bb-58d8-40fd-8269-69847e8e27e3",
+              "observedAt": "2026-09-12T06:49:23.939Z"
+            },
+            {
+              "operation": "kestra",
+              "status": "passed",
+              "correlationId": "c57cfe04-c187-42b4-ad68-fb4ca59baf94",
+              "observedAt": "2026-09-12T06:49:24.737Z"
+            },
+            {
+              "operation": "artifacts",
+              "status": "passed",
+              "correlationId": "c42f426f-64c7-4604-a548-14a68c78664d",
+              "observedAt": "2026-09-12T06:49:24.840Z"
+            }
+          ],
+          "recoveryBoundSeconds": 0,
+          "districtBrowserTrustQualified": false,
+          "tls": "synthetic CA; browser trust prompts omitted only in fixture",
+          "oldSessionRejected": true,
+          "preservedTheme": "dark",
+          "externalDatabase": true,
+          "externalRedis": true,
+          "workerReplicas": 2,
+          "images": {
+            "frontend": "campus-commander/frontend@sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5",
+            "api": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+            "workers": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8",
+            "postgres": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+            "redis": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee",
+            "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114"
+          }
+        },
+        "schemaVersion": 1,
+        "status": "passed",
+        "profile": "hybrid",
+        "acceptedRelease": false,
+        "sourceState": {
+          "baseGitRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+          "workingTree": "uncommitted-candidate"
+        },
+        "images": {
+          "frontend": "campus-commander/frontend@sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5",
+          "api": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+          "workers": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8",
+          "postgres": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+          "redis": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee",
+          "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114"
+        },
+        "backup": {
+          "encryptedFiles": 8,
+          "durationMilliseconds": 258
+        },
+        "verification": {
+          "status": "verified-services-disabled",
+          "application": {
+            "principals": 1,
+            "securityEvents": 20,
+            "identityStateSha256": "d9db1c5942d0e6c01e3f14e896d0e8e7cf3510b0e25fbbf485fcee7eaf9eabb3",
+            "exactIdentityAndPreferences": true,
+            "exactSecurityEvents": true
+          },
+          "durationMilliseconds": 275,
+          "artifact": {
+            "artifactId": "2843d453-322c-4caf-ac6d-7f7a41b49198",
+            "sha256": "31beeacf839f45edab5aebd5cf915a4451ed2b717842acf2d29e392cb4dca28e"
+          },
+          "execution": {
+            "source": {
+              "rows": 1,
+              "sha256": "5eddde270c0bd9ade37e532b19fc8d7919b763feb7bb8763713e4434c3547c21",
+              "semanticSha256": "3d30267e9f8ac3330a151ab158ba77d4eaa10a84d76d77ed5027e4acc8f1c5bb",
+              "fulltextLexemesSha256": "cb7b2970a1af4eed83193786c10b3019abdd32d93d66a36e91bc2ca38948692c",
+              "recomputedFulltextSha256": "23b10414f37b550bfae100985102020f02d9d831a17caa579e9ad9714f0f9b3b",
+              "fulltextSchema": {
+                "generatedAlways": true,
+                "expressionSha256": "7e6ece0c336c3ea94eb2bd0ef306e81ebcfc7f37c561190d51f3be31fae9e397",
+                "functionSha256": "95a31dc06c957603c960698defd4d9e0567fb184f7a88a84d83a6100d521ea73",
+                "unorderedDistinct": true
+              },
+              "columns": {
+                "id": "c7b1dfaed5c510038a9f2b591c35f1945cfdebf15e9b66c11195ba4af60dc721",
+                "key": "c7b1dfaed5c510038a9f2b591c35f1945cfdebf15e9b66c11195ba4af60dc721",
+                "kind": "1d8fc6ceb1f94c6326d6d5483d258fcb2e179e9869325b245d105c2219bf69fd",
+                "value": "a4b8fb7c78d8f8f6658c536359315ecccf9924d8bcebec511cf0f68b08819836",
+                "deleted": "456e2e3fa05ee1e2f4e529558008ce162bbd388a9dd4a923c79543a4a1dba618",
+                "flow_id": "d236a0d6a67f693f0e62799a0bbe084810ea9458ec4aeaf724559823ec3f5653",
+                "end_date": "55d02214721e00f7c8132413bec0b36d5b41f9d3a82bd37a9dc29c6b017f0b48",
+                "fulltext": "ed1b019da8177c644dc3d5ae331f3d78d9026bf4ee6c1e9acb1bbe02a4ab8596",
+                "namespace": "4cf554d1888c0a49789241ff169efffd31d332410a9aab6a7f9ee516f224defc",
+                "tenant_id": "747354f83eb6b671d2a813f986f7e78cdc1d01e63cc1bd52b6e20284c52a43cc",
+                "start_date": "cc9fca0f37ccb568bf579fcede67d635c90efff5ed8d7b15a97d2035d3083c46",
+                "state_current": "24be8895565175ac32a4c8c23b1ee3cc4b3ea511ab6c7527477e16847c198e07",
+                "state_duration": "6d334b0b956babd518b1ee6c5b5cd5a395a0839a87369a9310687fb55eb81da6",
+                "trigger_execution_id": "1d8fc6ceb1f94c6326d6d5483d258fcb2e179e9869325b245d105c2219bf69fd"
+              }
+            },
+            "restored": {
+              "rows": 1,
+              "sha256": "204d9851371cc73465004c20cc28ab56cf2e5b9fe3effe75785b979f5dc8202e",
+              "semanticSha256": "3d30267e9f8ac3330a151ab158ba77d4eaa10a84d76d77ed5027e4acc8f1c5bb",
+              "fulltextLexemesSha256": "cb7b2970a1af4eed83193786c10b3019abdd32d93d66a36e91bc2ca38948692c",
+              "recomputedFulltextSha256": "23b10414f37b550bfae100985102020f02d9d831a17caa579e9ad9714f0f9b3b",
+              "fulltextSchema": {
+                "generatedAlways": true,
+                "expressionSha256": "7e6ece0c336c3ea94eb2bd0ef306e81ebcfc7f37c561190d51f3be31fae9e397",
+                "functionSha256": "95a31dc06c957603c960698defd4d9e0567fb184f7a88a84d83a6100d521ea73",
+                "unorderedDistinct": true
+              },
+              "columns": {
+                "id": "c7b1dfaed5c510038a9f2b591c35f1945cfdebf15e9b66c11195ba4af60dc721",
+                "key": "c7b1dfaed5c510038a9f2b591c35f1945cfdebf15e9b66c11195ba4af60dc721",
+                "kind": "1d8fc6ceb1f94c6326d6d5483d258fcb2e179e9869325b245d105c2219bf69fd",
+                "value": "a4b8fb7c78d8f8f6658c536359315ecccf9924d8bcebec511cf0f68b08819836",
+                "deleted": "456e2e3fa05ee1e2f4e529558008ce162bbd388a9dd4a923c79543a4a1dba618",
+                "flow_id": "d236a0d6a67f693f0e62799a0bbe084810ea9458ec4aeaf724559823ec3f5653",
+                "end_date": "55d02214721e00f7c8132413bec0b36d5b41f9d3a82bd37a9dc29c6b017f0b48",
+                "fulltext": "23b10414f37b550bfae100985102020f02d9d831a17caa579e9ad9714f0f9b3b",
+                "namespace": "4cf554d1888c0a49789241ff169efffd31d332410a9aab6a7f9ee516f224defc",
+                "tenant_id": "747354f83eb6b671d2a813f986f7e78cdc1d01e63cc1bd52b6e20284c52a43cc",
+                "start_date": "cc9fca0f37ccb568bf579fcede67d635c90efff5ed8d7b15a97d2035d3083c46",
+                "state_current": "24be8895565175ac32a4c8c23b1ee3cc4b3ea511ab6c7527477e16847c198e07",
+                "state_duration": "6d334b0b956babd518b1ee6c5b5cd5a395a0839a87369a9310687fb55eb81da6",
+                "trigger_execution_id": "1d8fc6ceb1f94c6326d6d5483d258fcb2e179e9869325b245d105c2219bf69fd"
+              }
+            },
+            "exactStoredColumns": true,
+            "exactOtherGeneratedColumns": true,
+            "fulltextLexemesEqual": true
+          },
+          "kestraFiles": 1,
+          "sourceMarkerPreserved": true,
+          "migrationLedgerPreserved": true,
+          "configurationPreserved": true,
+          "bootstrapRevoked": true,
+          "disabledMarkerPreserved": true,
+          "nativeTools": {
+            "pg_dump": "pg_dump (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)",
+            "pg_restore": "pg_restore (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)"
+          }
+        },
+        "freshRedis": {
+          "sourceSentinelAbsent": true,
+          "authenticatedTargetWriteRead": true,
+          "persistence": "new tmpfs"
+        },
+        "sourceOfflineDuringVerification": true,
+        "targetNetworkIsolated": true,
+        "targetServicesReleased": true,
+        "fixtureDirectory": "/tmp/cc-hybrid-restore-52f43f52-0e37-4e63-80ff-f3e694592f55-AG6l0i",
+        "limits": [
+          "One Docker host simulates district dependencies and worker hosts.",
+          "Separate temporary paths do not prove independent backup media.",
+          "No district shared-filesystem or operator recovery-key custody qualification.",
+          "Source and target use the same loopback application origin sequentially.",
+          "The target uses new database roles and passwords. Synthetic OIDC and service credentials remain unchanged."
+        ],
+        "durationMs": 64319,
+        "recordedAt": "2026-09-12T06:49:30.629Z"
+      }
+    },
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "checkedAt": "2026-09-12T06:50:07.685Z",
+  "durationSeconds": 209.5,
+  "status": "PASS",
+  "sourceState": "uncommitted workspace",
+  "images": {
+    "frontend": "campus-commander/frontend@sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5",
+    "api": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+    "worker": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8",
+    "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114",
+    "postgres": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "redis": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee"
+  },
+  "render": {
+    "controllerCompose": true,
+    "workerComposeFiles": 2,
+    "composeConfigAccepted": true,
+    "localReplacementPostgres": false,
+    "localReplacementRedis": false,
+    "productionPublishedServices": ["edge"],
+    "fixturePublishedServices": ["edge", "api", "kestra"]
+  },
+  "preparation": {
+    "runtimeFiles": [
+      "application.yaml",
+      "database-ca.pem",
+      "flow-secrets.env",
+      "probe-header",
+      "runtime-environment.json",
+      "server-ca.pem",
+      "server.p12",
+      "worker-truststore.p12"
+    ],
+    "credentialStatuses": ["created", "created", "created"],
+    "jdbcMode": "verify-full"
+  },
+  "startup": {
+    "componentContainers": [
+      "frontend",
+      "api",
+      "kestra",
+      "edge",
+      "worker-1",
+      "worker-2",
+      "postgresql",
+      "redis"
+    ],
+    "runningContainerCount": 8,
+    "imageHealth": {
+      "frontend": "healthy",
+      "api": "healthy",
+      "kestra": "healthy",
+      "edge": "healthy",
+      "worker-1": "healthy",
+      "worker-2": "healthy"
+    },
+    "readiness": {
+      "service": "api",
+      "status": "ready",
+      "checks": [
+        {
+          "name": "process-started",
+          "status": "ready"
+        },
+        {
+          "name": "application-database",
+          "status": "ready"
+        },
+        {
+          "name": "kestra-database",
+          "status": "ready"
+        },
+        {
+          "name": "redis",
+          "status": "ready"
+        },
+        {
+          "name": "frontend",
+          "status": "ready"
+        },
+        {
+          "name": "api",
+          "status": "ready"
+        },
+        {
+          "name": "workers",
+          "status": "ready"
+        },
+        {
+          "name": "artifacts",
+          "status": "ready"
+        },
+        {
+          "name": "kestra",
+          "status": "ready"
+        }
+      ]
+    }
+  },
+  "trust": {
+    "privateCa": true,
+    "edgeUnauthenticatedStatus": 401,
+    "edgeAuthorizedStatus": 200,
+    "kestraUnauthenticatedStatus": 401
+  },
+  "execution": {
+    "id": "uNM9a0lJ8kKVj0TiVJtkD",
+    "correlationId": "hybrid-full-fa618d66ae943c1a",
+    "state": "SUCCESS",
+    "storageUriSha256": "476d9c5f7a87db764d71f1b837878399d391693f58202be9b544567edb6b93e2"
+  },
+  "persistence": {
+    "sharedArtifactChecksum": "e00a20c40890bb48f51e9000fdbc4c0a9c9f45bda96d88977b6fc678856ee7cc",
+    "workerChecksumsMatch": true,
+    "executionPreserved": true,
+    "internalStoragePreserved": true,
+    "databaseVolume": "cc-hybrid-full-492350-e369bd29-postgres-data"
+  },
+  "outages": {
+    "redis": {
+      "observed": true,
+      "recoverySeconds": 2
+    },
+    "postgres": {
+      "observed": true,
+      "recoverySeconds": 3
+    },
+    "finalReadiness": "ready"
+  },
+  "cleanupPolicy": {
+    "uniquePrefix": "cc-hybrid-full-492350-e369bd29",
+    "retainedForRestore": false,
+    "composeVolumesRemoved": true,
+    "ownedResourcesRemoved": true,
+    "oldCampusCommanderVolumesTouched": false
+  },
+  "limits": [
+    "All eight component containers ran on one Docker host.",
+    "The two worker Compose projects simulate separate worker hosts.",
+    "The shared directories use one host filesystem.",
+    "The check does not qualify district DNS, firewall, or storage infrastructure.",
+    "The check uses synthetic certificates and a harmless worker task."
+  ]
+}

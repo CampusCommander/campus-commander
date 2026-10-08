@@ -1,0 +1,43 @@
+{
+  "status": "failed",
+  "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17",
+  "fixtureRevision": "CLI qualification changes after a41bb2f.",
+  "failures": [
+    {
+      "target": "api-e2e:restore-integration",
+      "stage": "operator CLI backup after the baseline upgrade and browser checks",
+      "durationSeconds": 186
+    },
+    {
+      "target": "deployment:operations-cli-integration",
+      "operator": "container",
+      "stage": "operator CLI backup",
+      "durationSeconds": 6.1
+    }
+  ],
+  "networkProbe": {
+    "hostLoopback": "connected",
+    "operatorContainerLoopback": "ECONNREFUSED",
+    "port": 36615
+  },
+  "diagnosis": "The native host reaches its loopback listener. The Docker Desktop host-network container receives ECONNREFUSED for that listener.",
+  "correction": "Run local operator CLI checks with native host tools and isolated secret mounts. Verify the container path on the Linux CI runner.",
+  "files": [
+    {
+      "name": "cc-phase2-all-docker-cli-restore.log",
+      "sha256": "51aabbe8bfb8f31588763c628a6086bcb9451ca0d23299df246b24d5dab44448"
+    },
+    {
+      "name": "cc-phase2-operations-cli-container.log",
+      "sha256": "295160e1594ad0192ca7344b12d3b34cdd2a72743e991fa81656a0bdd5beb134"
+    },
+    {
+      "name": "cc-phase2-operator-network-probe.json",
+      "sha256": "de51cf86a9d4e1ec9fa0e35b169f4605cc2a3ed618fd5cc6423acabc47ee360f"
+    }
+  ],
+  "limits": [
+    "The private debug invocation validated serialized inputs after failure. Source services had already stopped.",
+    "The network probe isolates host loopback reachability. It does not prove a Linux CI container failure."
+  ]
+}

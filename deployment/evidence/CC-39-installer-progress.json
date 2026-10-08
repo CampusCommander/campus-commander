@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "issue": "CC-39",
+  "sourceBase": "436d3b0698a54b3268e608d83524b0d5c7195a25",
+  "scope": "Local installer progress implementation. No signed release publication or operator VM execution.",
+  "checks": [
+    {
+      "command": "npm exec nx run deployment:installer-test",
+      "result": "passed",
+      "tests": 88,
+      "failed": 0
+    },
+    {
+      "command": "npm exec nx run-many -- --targets=installer-test,lint --projects=deployment",
+      "result": "passed"
+    },
+    {
+      "command": "npm exec nx format:check -- --files=<changed installer and research files>",
+      "result": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "behavior": [
+    "Immediate stage and elapsed-time output",
+    "Five-second activity updates during pending work",
+    "Timer cleanup after success and failure",
+    "Guided install and resume forward actual installer stages",
+    "Plain text without raw child-process output"
+  ],
+  "jiraAudit": {
+    "epic": "CC-22",
+    "tasks": [
+      {
+        "key": "CC-23",
+        "status": "Done"
+      },
+      {
+        "key": "CC-24",
+        "status": "Done"
+      },
+      {
+        "key": "CC-25",
+        "status": "Done"
+      },
+      {
+        "key": "CC-26",
+        "status": "Done"
+      },
+      {
+        "key": "CC-27",
+        "status": "Done"
+      },
+      {
+        "key": "CC-28",
+        "status": "Done"
+      },
+      {
+        "key": "CC-29",
+        "status": "Done"
+      },
+      {
+        "key": "CC-30",
+        "status": "Done"
+      },
+      {
+        "key": "CC-31",
+        "status": "Done"
+      },
+      {
+        "key": "CC-32",
+        "status": "Done"
+      },
+      {
+        "key": "CC-33",
+        "status": "Done"
+      },
+      {
+        "key": "CC-34",
+        "status": "Done"
+      },
+      {
+        "key": "CC-35",
+        "status": "Done"
+      },
+      {
+        "key": "CC-36",
+        "status": "In Progress"
+      },
+      {
+        "key": "CC-37",
+        "status": "In Progress"
+      },
+      {
+        "key": "CC-38",
+        "status": "In Progress"
+      },
+      {
+        "key": "CC-39",
+        "status": "In Progress"
+      },
+      {
+        "key": "CC-40",
+        "status": "To Do"
+      },
+      {
+        "key": "CC-41",
+        "status": "To Do"
+      }
+    ],
+    "blockingLinks": [
+      "CC-23->CC-24",
+      "CC-24->CC-25",
+      "CC-25->CC-26",
+      "CC-25->CC-27",
+      "CC-26->CC-28",
+      "CC-26->CC-33",
+      "CC-27->CC-28",
+      "CC-27->CC-35",
+      "CC-28->CC-29",
+      "CC-28->CC-30",
+      "CC-28->CC-31",
+      "CC-29->CC-32",
+      "CC-29->CC-35",
+      "CC-30->CC-35",
+      "CC-31->CC-32",
+      "CC-31->CC-33",
+      "CC-32->CC-33",
+      "CC-32->CC-35",
+      "CC-33->CC-34",
+      "CC-33->CC-35",
+      "CC-34->CC-35",
+      "CC-34->CC-36",
+      "CC-35->CC-36",
+      "CC-36->CC-37",
+      "CC-37->CC-38",
+      "CC-39->CC-37",
+      "CC-40->CC-41",
+      "CC-41->CC-36"
+    ],
+    "matchesManifest": true
+  },
+  "research": "docs/research/gam-onboarding-2026-09-13.md",
+  "remaining": [
+    "Signed release publication",
+    "Operator VM terminal validation",
+    "CC-40 credential import implementation",
+    "CC-41 integrated enrollment implementation"
+  ]
+}

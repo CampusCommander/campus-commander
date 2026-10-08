@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import 'pg';
 import 'zod';
 import { AppModule } from './app/app.module';
+import { ApplicationExceptionFilter, securityHeaders } from './app/security';
 import type {
   StartupRuntime,
   StartupRuntimeModule,
@@ -32,6 +33,8 @@ async function bootstrap() {
     httpsOptions ? { httpsOptions } : undefined,
   );
   app.enableShutdownHooks(['SIGINT', 'SIGTERM']);
+  app.use(securityHeaders);
+  app.useGlobalFilters(new ApplicationExceptionFilter());
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '0.0.0.0');
   Logger.log(

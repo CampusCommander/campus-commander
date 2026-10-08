@@ -1,3 +1,6 @@
+Read [AGENTS.md](AGENTS.md), [docs/README.md](docs/README.md), and [docs/current-work.md](docs/current-work.md) first.
+They control current scope. Historical phase plans and Jira tasks do not authorize product features.
+
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
 

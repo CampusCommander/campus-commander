@@ -1,5 +1,8 @@
 # 06 — Work Breakdown
 
+> Consolidated reference, subject to the 2026-09-17 owner reset.
+> [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
+
 **Status:** revised 2026-09-05. Every implementation package is **TODO**. V0 validation is **IN PROGRESS**.
 
 The [V0 report](../validation/v0-2026-09-05/README.md) records measured local behavior, failed assumptions, and remaining acceptance requirements.
@@ -52,18 +55,18 @@ Every later version retains the working features and supported deployment modes 
 Phase 1 supplies an operational installation. Phase 2 supplies an authenticated shell. Google administration grows from Phase 3 onward.
 Do not expose unfinished feature controls as working product capabilities.
 
-| Phase | Working version at completion | Main packages |
-|---|---|---|
-| 1 — Deployment foundation | All Docker, hybrid Docker with district services, and district Kubernetes install and start the complete service topology | P0.1, P1.1/P1.2 foundation, P2.4, P9.2–P9.4 foundation |
-| 2 — Authenticated application foundation | API, login, frontend shell, and protected utility page demonstrate authentication and service connections | P0.1, P1.x, P3.3 diagnostics foundation, P6.1, P9.1 |
-| 3 — Onboarding and platform administration | Connect a customer, manage settings, and delegate platform access | P3.1–P3.3, P9.1–P9.3 |
-| 4 — EntityCache, read mode | Synchronize ChromeOS devices and browse real authorized cached data on a basic device page | P4.1, P5.1, read-only P5.2/P6.2 |
-| 5 — JobService, write mode | Submit an audited test mutation, inspect jobs, and receive frontend notifications | P2.1–P2.4, P5.2, P7.1/P7.2 foundation, P9.3 |
-| 6 — Device management | Complete device workflows and owner-accepted interaction patterns | P6.2, P7.x, device P8.x, P10.x, Track 12 |
-| 7 — User management | Apply the accepted interaction patterns to Google Workspace users | User P4.1/P5.x/P6.2/P7.2/P8.x |
-| 8 — OU management | Manage the organizational hierarchy and safe placement workflows | P11.2 and supporting cache, query, action, and import contracts |
-| 9 — Groups and membership | Manage groups, settings, members, and member roles | P11.1 and supporting cache, query, action, and import contracts |
-| 10 — Fleet Status and Report Dashboard | View defined fleet status and reports with authorized drill-through and coverage | P6.4, aggregate P10.2, Track 12 |
+| Phase                                      | Working version at completion                                                                                             | Main packages                                                   |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 1 — Deployment foundation                  | All Docker, hybrid Docker with district services, and district Kubernetes install and start the complete service topology | P0.1, P1.1/P1.2 foundation, P2.4, P9.2–P9.4 foundation          |
+| 2 — Authenticated application foundation   | API, login, frontend shell, and protected utility page demonstrate authentication and service connections                 | P0.1, P1.x, P3.3 diagnostics foundation, P6.1, P9.1             |
+| 3 — Onboarding and platform administration | Connect a customer, manage settings, and delegate platform access                                                         | P3.1–P3.3, P9.1–P9.3                                            |
+| 4 — EntityCache, read mode                 | Synchronize ChromeOS devices and browse real authorized cached data on a basic device page                                | P4.1, P5.1, read-only P5.2/P6.2                                 |
+| 5 — JobService, write mode                 | Submit an audited test mutation, inspect jobs, and receive frontend notifications                                         | P2.1–P2.4, P5.2, P7.1/P7.2 foundation, P9.3                     |
+| 6 — Device management                      | Complete device workflows and owner-accepted interaction patterns                                                         | P6.2, P7.x, device P8.x, P10.x, Track 12                        |
+| 7 — User management                        | Apply the accepted interaction patterns to Google Workspace users                                                         | User P4.1/P5.x/P6.2/P7.2/P8.x                                   |
+| 8 — OU management                          | Manage the organizational hierarchy and safe placement workflows                                                          | P11.2 and supporting cache, query, action, and import contracts |
+| 9 — Groups and membership                  | Manage groups, settings, members, and member roles                                                                        | P11.1 and supporting cache, query, action, and import contracts |
+| 10 — Fleet Status and Report Dashboard     | View defined fleet status and reports with authorized drill-through and coverage                                          | P6.4, aggregate P10.2, Track 12                                 |
 
 ### Phase 1 — Deployment foundation
 
@@ -75,11 +78,11 @@ Frontend, API, independent workers, Kestra, PostgreSQL, Redis, and artifact stor
 Frontend and API use minimal startup images here. Their application structure and authenticated behavior follow in Phase 2.
 Storage is a configured backend and persistent data location. It does not require a separate storage server in every mode.
 
-| Mode | Phase 1 requirement |
-|---|---|
-| All Docker | Compose starts all executable services. Persistent volumes supply local artifacts and service state. |
-| Hybrid Docker and district servers | The same images connect to configured external services. Retained local services still start through Compose. |
-| Enterprise Kubernetes | Deployment manifests start the service topology with shared configuration, secrets, persistent storage, and working service discovery. |
+| Mode                               | Phase 1 requirement                                                                                                                    |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| All Docker                         | Compose starts all executable services. Persistent volumes supply local artifacts and service state.                                   |
+| Hybrid Docker and district servers | The same images connect to configured external services. Retained local services still start through Compose.                          |
+| Enterprise Kubernetes              | Deployment manifests start the service topology with shared configuration, secrets, persistent storage, and working service discovery. |
 
 **Acceptance:**
 
@@ -178,13 +181,13 @@ Google backoff remains observation-driven. This phase does not introduce a quota
 **Deliverable:** a complete device management experience accepted by the owner as the basis for later entity work.
 Each iteration remains installable and preserves the accepted earlier workflows.
 
-| Iteration | Working addition | Acceptance focus |
-|---|---|---|
-| 6.1 | Device lookup, grid, filters, selection, details, and freshness | Operators find and understand the intended devices. |
-| 6.2 | Draft edits, Save/Reset, conflicts, preview, confirmation, and job navigation | One-field edits remain clear and auditable. |
-| 6.3 | Update device dialog, large selections, bulk actions, cancellation, and recovery | Large work preserves approved values and individual outcomes. |
-| 6.4 | Device CSV export/reimport and qualified device commands | Round trips preserve baselines. Commands expose their actual lifecycle. |
-| 6.5 | Qualified device telemetry and final interaction refinement | Missing data stays explicit. The owner accepts the reusable experience. |
+| Iteration | Working addition                                                                 | Acceptance focus                                                        |
+| --------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 6.1       | Device lookup, grid, filters, selection, details, and freshness                  | Operators find and understand the intended devices.                     |
+| 6.2       | Draft edits, Save/Reset, conflicts, preview, confirmation, and job navigation    | One-field edits remain clear and auditable.                             |
+| 6.3       | Update device dialog, large selections, bulk actions, cancellation, and recovery | Large work preserves approved values and individual outcomes.           |
+| 6.4       | Device CSV export/reimport and qualified device commands                         | Round trips preserve baselines. Commands expose their actual lifecycle. |
+| 6.5       | Qualified device telemetry and final interaction refinement                      | Missing data stays explicit. The owner accepts the reusable experience. |
 
 Device CSV belongs here as a proposed allocation of the existing import/export scope.
 Do not infer device creation from a CSV row. Device enrollment remains outside the generic create workflow.
@@ -633,16 +636,16 @@ Windows Docker Desktop was unavailable during this run. Isolated process tests d
 Preserve board inventory in [prototype-map](prototype-map.md). Update [04](04-ux-ui-spec.md) and the map when prototype changes occur.
 This documentation integration did not establish working-client acceptance.
 
-| ID | Design deliverable | Dependent package |
-|---|---|---|
-| D-A | Draft styling, baseline conflicts, Save/Reset, changed-count toolbar, pending-row filter, preview, and confirmation | P7.3 |
-| D-B | Update device fields, valid operation modes, exact counts, and approved final values | P7.3 |
-| D-C | CSV baseline/expiry, visible metadata, merge review, explicit creation, and later Sheets authorization | P8.x |
-| D-D | Reusable chip filters and cross-entity lookup with typed query contract | P5.1/P6.2 |
-| D-E | Detail coverage, grouping selection, OU safety, command device lists, state polish, theme controls, and component masters | P6.x/P10.x/P11.x |
-| D-F | Credential-profile setup, generated scope counts, read-only start, propagation, and diagnostics | P3.2 |
-| D-G | Keyboard and screen-reader workflows, focus recovery, target spacing, and density study | P6.2 |
-| D-H | Held jobs, unknown results, verification, partial settlement, report coverage, and artifact expiry | P2.3/P6.4 |
+| ID  | Design deliverable                                                                                                        | Dependent package |
+| --- | ------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| D-A | Draft styling, baseline conflicts, Save/Reset, changed-count toolbar, pending-row filter, preview, and confirmation       | P7.3              |
+| D-B | Update device fields, valid operation modes, exact counts, and approved final values                                      | P7.3              |
+| D-C | CSV baseline/expiry, visible metadata, merge review, explicit creation, and later Sheets authorization                    | P8.x              |
+| D-D | Reusable chip filters and cross-entity lookup with typed query contract                                                   | P5.1/P6.2         |
+| D-E | Detail coverage, grouping selection, OU safety, command device lists, state polish, theme controls, and component masters | P6.x/P10.x/P11.x  |
+| D-F | Credential-profile setup, generated scope counts, read-only start, propagation, and diagnostics                           | P3.2              |
+| D-G | Keyboard and screen-reader workflows, focus recovery, target spacing, and density study                                   | P6.2              |
+| D-H | Held jobs, unknown results, verification, partial settlement, report coverage, and artifact expiry                        | P2.3/P6.4         |
 
 Detailed design remains required where interaction rules do not determine layout or workflow comprehension.
 Use representative occasional helpers and district operators. Proposed initial study: five helpers and three district administrators.
@@ -652,36 +655,36 @@ Record completion, mistakes, support interventions, and users' understanding of 
 
 These are proposed experiments. They are not verified district inventories, procurement specifications, or support guarantees.
 
-| Dimension | Small | District standard | Metropolitan stress |
-|---|---:|---:|---:|
-| Users | 2,000 | 50,000 | 1,000,000 |
-| ChromeOS devices | 2,000 | 50,000 | 1,000,000 |
-| Groups | 200 | 5,000 | 50,000 |
-| Direct membership edges | 20,000 | 1,000,000 | 20,000,000 |
-| OUs | 50 | 1,000 | 10,000 |
-| Retained audit events | 100,000 | 10,000,000 | 100,000,000 |
-| Active operators | 3 | 30 | 200 |
-| CSV rows for qualification | 10,000 | 50,000 | 1,000,000 |
+| Dimension                  |   Small | District standard | Metropolitan stress |
+| -------------------------- | ------: | ----------------: | ------------------: |
+| Users                      |   2,000 |            50,000 |           1,000,000 |
+| ChromeOS devices           |   2,000 |            50,000 |           1,000,000 |
+| Groups                     |     200 |             5,000 |              50,000 |
+| Direct membership edges    |  20,000 |         1,000,000 |          20,000,000 |
+| OUs                        |      50 |             1,000 |              10,000 |
+| Retained audit events      | 100,000 |        10,000,000 |         100,000,000 |
+| Active operators           |       3 |                30 |                 200 |
+| CSV rows for qualification |  10,000 |            50,000 |           1,000,000 |
 
 Include skewed groups, repeated names, deep OUs, long notes, sparse custom fields, domains, and suspended users.
 Run search alongside sync generation staging, import validation, audit queries, and worker requests with backoff.
 Use a deterministic Google simulator for load and faults. Use controlled real accounts for protocol, permissions, and license behavior.
 Record warm/cold results, p95/p99, failures, hardware, software versions, network, browser, and fixture distribution.
 
-| Measurement | Proposed target and boundary |
-|---|---|
-| Exact entity lookup | API p95 ≤200 ms, p99 ≤500 ms with background work |
-| Supported filtered first page | API p95 ≤400 ms, p99 ≤1 second, up to 100 rows |
-| Visible search after typing settles | Browser p95 ≤700 ms including debounce and declared 50 ms network round trip |
-| Selection toggle | Durable server update p95 ≤200 ms, excluding deliberate client batching |
-| Confirmed job receipt | p95 ≤500 ms after preview preparation |
-| Twenty-target preview | p95 ≤5 seconds with available Google capacity and declared latency |
-| Large preview | Visible progress within one second. Completion follows measured preparation cost. |
-| One-row dispatch | p95 ≤5 seconds without type hold, entity conflict, capacity shortage, or Google failure |
-| Grid interaction | No repeated main-thread stalls above 200 ms. Tested task stays within 300 MB steady browser memory. |
-| Safe work after worker crash | Resumes within 60 seconds. Unknown effects remain quarantined. |
-| Local setup | 30 minutes after prerequisites exist. Google approval and inventory completion measured separately. |
-| Routine user tasks | Proposed 90% unaided completion in a validation round, with sample size reported |
+| Measurement                         | Proposed target and boundary                                                                        |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Exact entity lookup                 | API p95 ≤200 ms, p99 ≤500 ms with background work                                                   |
+| Supported filtered first page       | API p95 ≤400 ms, p99 ≤1 second, up to 100 rows                                                      |
+| Visible search after typing settles | Browser p95 ≤700 ms including debounce and declared 50 ms network round trip                        |
+| Selection toggle                    | Durable server update p95 ≤200 ms, excluding deliberate client batching                             |
+| Confirmed job receipt               | p95 ≤500 ms after preview preparation                                                               |
+| Twenty-target preview               | p95 ≤5 seconds with available Google capacity and declared latency                                  |
+| Large preview                       | Visible progress within one second. Completion follows measured preparation cost.                   |
+| One-row dispatch                    | p95 ≤5 seconds without type hold, entity conflict, capacity shortage, or Google failure             |
+| Grid interaction                    | No repeated main-thread stalls above 200 ms. Tested task stays within 300 MB steady browser memory. |
+| Safe work after worker crash        | Resumes within 60 seconds. Unknown effects remain quarantined.                                      |
+| Local setup                         | 30 minutes after prerequisites exist. Google approval and inventory completion measured separately. |
+| Routine user tasks                  | Proposed 90% unaided completion in a validation round, with sample size reported                    |
 
 Initial hardware experiments use 4 vCPU/8 GB/100 GB SSD for small and 8 vCPU/32 GB/500 GB SSD for district standard.
 Metropolitan experiments start with separate application workers and PostgreSQL at 16–32 vCPU, 64–128 GB RAM, and 2 TB SSD.
@@ -715,14 +718,14 @@ Do not infer end-to-end correctness from unit tests or visual snapshots alone.
 
 ## Implementation ownership map
 
-| Module or artifact | Owner and boundary |
-|---|---|
-| `frontend/` | P6/P7 interaction work. Preserves LibreGrid and the Material theme. |
-| `api/` | P5/P9 query, permission, preview, acceptance, and SSE contracts |
-| Proposed `workers/` | P2/P4/P7/P10/P11 independent execution modules |
-| Shared contracts/domain modules | P1.1 types, runtime schemas, and domain rules without UI/API framework dependencies |
-| Proposed database/Google modules | P1.2 and P3.1 adapters under explicit contracts |
-| Proposed jobs/job-storage modules | P2.1/P2.4 orchestration integration, admission, artifact transfer, and publication |
+| Module or artifact                      | Owner and boundary                                                                    |
+| --------------------------------------- | ------------------------------------------------------------------------------------- |
+| `frontend/`                             | P6/P7 interaction work. Preserves LibreGrid and the Material theme.                   |
+| `api/`                                  | P5/P9 query, permission, preview, acceptance, and SSE contracts                       |
+| Proposed `workers/`                     | P2/P4/P7/P10/P11 independent execution modules                                        |
+| Shared contracts/domain modules         | P1.1 types, runtime schemas, and domain rules without UI/API framework dependencies   |
+| Proposed database/Google modules        | P1.2 and P3.1 adapters under explicit contracts                                       |
+| Proposed jobs/job-storage modules       | P2.1/P2.4 orchestration integration, admission, artifact transfer, and publication    |
 | Compose/deployment/operations artifacts | P0.1/P9 signed releases, installer, external endpoints, backup, upgrade, and recovery |
 
 These paths define proposed ownership. They do not claim that the modules already exist.

@@ -1,0 +1,281 @@
+@if (draft(); as draft) {
+<section class="card" aria-labelledby="school-editor-title">
+  <h2 id="school-editor-title">
+    {{ draft.expectedRevision ? 'Edit school' : 'Create school' }}
+  </h2>
+  <p>
+    Choose the Google organizational units that belong to this school in Campus
+    Commander. This does not move units in Google.
+  </p>
+  <p>
+    Customer: <span class="identifier">{{ draft.customerId }}</span>. Saved
+    revision: {{ draft.expectedRevision }}.
+  </p>
+  <div id="school-editor-status" tabindex="-1" role="status" aria-live="polite">
+    @if (message()) {
+    <p>{{ message() }}</p>
+    } @if (error()) {
+    <p class="error">{{ error() }}</p>
+    } @if (storageError()) {
+    <p class="error">{{ storageError() }}</p>
+    }
+  </div>
+  @if (!writable()) {
+  <p>
+    You do not have permission to edit schools. Your draft is still in this tab.
+  </p>
+  }
+  <mat-form-field appearance="outline">
+    <mat-label>School name</mat-label>
+    <input
+      matInput
+      id="school-name"
+      name="schoolName"
+      #schoolName="ngModel"
+      required
+      [pattern]="namePattern"
+      maxlength="256"
+      [ngModel]="draft.name"
+      (ngModelChange)="editName($event)"
+      [disabled]="!editable()"
+    />
+    <mat-hint>Enter 1–256 characters without control characters.</mat-hint>
+    <mat-error
+      >Enter a name with at least one non-space character and no control
+      characters.</mat-error
+    >
+  </mat-form-field>
+  <h3 id="school-rules-title" tabindex="-1">
+    Organizational units in this school
+  </h3>
+  <p>
+    Choose which units to include or exclude. Excluded units stay outside this
+    school, even when an inclusion rule matches them.
+  </p>
+  @for (kind of ['include', 'exclude']; track kind) {
+  <h4>{{ kind === 'include' ? 'Include' : 'Exclude' }}</h4>
+  <ul class="rule-list">
+    @for (rule of kind === 'include' ? draft.rules.include :
+    draft.rules.exclude; track rule.id) {
+    <li>
+      <span
+        >{{ unitLabel(rule.id) }} — {{ rule.descendants ? 'including units below
+        it' : 'this unit only' }}</span
+      >
+      <button
+        mat-button
+        type="button"
+        [disabled]="!editable()"
+        (click)="removeRule(kind === 'include' ? 'include' : 'exclude', rule.id)"
+        [attr.aria-label]="'Remove ' + (kind === 'include' ? 'inclusion ' : 'exclusion ') + rule.id"
+      >
+        Remove rule
+      </button>
+    </li>
+    } @empty {
+    <li>
+      {{ kind === 'include' ? 'Include at least one organizational unit.' : 'No
+      exclusions.' }}
+    </li>
+    }
+  </ul>
+  } @if (!pending() && !review()?.appliedAt) { @if
+  (store.references()?.observation; as observation) {
+  <div class="picker-layout">
+    <app-ou-reference-picker
+      [units]="observation.units"
+      [selectedId]="selectedId()"
+      [disabled]="!editable() || !store.fresh()"
+      (selected)="selectedId.set($event)"
+    />
+    <section aria-labelledby="selected-ou-title">
+      <h4 id="selected-ou-title">Selected organizational unit</h4>
+      @if (selected(); as unit) {
+      <p>{{ unit.path }}</p>
+      <p class="identifier">{{ unit.id }}</p>
+      <mat-checkbox
+        [ngModel]="descendants()"
+        (ngModelChange)="descendants.set($event)"
+        [disabled]="!editable() || !store.fresh()"
+        >Also include units below this one</mat-checkbox
+      >
+      <div class="actions">
+        <button
+          mat-stroked-button
+          type="button"
+          (click)="addRule('include')"
+          [disabled]="!editable() || !store.fresh()"
+        >
+          Include unit
+        </button>
+        <button
+          mat-stroked-button
+          type="button"
+          (click)="addRule('exclude')"
+          [disabled]="!editable() || !store.fresh()"
+        >
+          Exclude unit
+        </button>
+      </div>
+      <p>A new rule replaces any existing rule for this unit.</p>
+      } @else {
+      <p>Select a unit, then choose Include unit or Exclude unit.</p>
+      }
+    </section>
+  </div>
+  } @if (!store.fresh()) {
+  <p>
+    Refresh the Google organizational units above before choosing units or
+    reviewing your changes.
+  </p>
+  } @if (conflict()) {
+  <p>
+    This school changed since you opened it. Your edits are still here. Review
+    them against the latest saved school.
+  </p>
+  <button
+    mat-stroked-button
+    type="button"
+    (click)="useLatestRevision()"
+    [disabled]="!editable() || store.loading().detail"
+  >
+    Keep edits and use latest school
+  </button>
+  }
+  <div class="actions">
+    <button
+      mat-flat-button
+      type="button"
+      (click)="preview()"
+      [disabled]="!canPreview()"
+    >
+      Review school scope
+    </button>
+    <button mat-button type="button" (click)="close()" [disabled]="busy()">
+      Discard draft
+    </button>
+  </div>
+  } @if (pending(); as pending) {
+  <p>
+    Review identifier: <span class="identifier">{{ pending.input.id }}</span>.
+  </p>
+  <div class="actions">
+    <button
+      mat-stroked-button
+      type="button"
+      (click)="recover()"
+      [disabled]="busy() || !writable()"
+    >
+      Check school save status
+    </button>
+    @if (pending.stage === 'confirm') {
+    <button
+      mat-stroked-button
+      type="button"
+      (click)="retryConfirmation()"
+      [disabled]="busy() || !writable()"
+    >
+      Retry same confirmation
+    </button>
+    } @else {
+    <button
+      mat-button
+      type="button"
+      (click)="returnToDraft()"
+      [disabled]="busy()"
+    >
+      Return to draft
+    </button>
+    }
+  </div>
+  } @if (review(); as review) {
+  <section aria-labelledby="school-review-title">
+    <h3 id="school-review-title" tabindex="-1">
+      {{ review.appliedAt ? 'School saved' : 'Review school scope' }}
+    </h3>
+    <p>
+      {{ review.name }} — {{ review.approvedIds.length }} approved
+      organizational units.
+    </p>
+    <p>
+      @if (review.appliedAt) { School saved. {{ review.affectedPrincipalCount }}
+      people need to check their access again. {{ review.invitationIds.length }}
+      pending invitations were revoked. } @else { {{
+      review.affectedPrincipalCount }} people will need to check their access
+      again. {{ review.invitationIds.length }} pending invitations will be
+      revoked. }
+    </p>
+    <p>
+      New Google units will not automatically join this school. Review the
+      school again to add them.
+    </p>
+    <details>
+      <summary>
+        Approved organizational units ({{ review.approvedIds.length }})
+      </summary>
+      <ul>
+        @for (id of review.approvedIds; track id) {
+        <li>{{ unitLabel(id) }}</li>
+        }
+      </ul>
+    </details>
+    @if (review.invitationIds.length) {
+    <details>
+      <summary>
+        Invitations to revoke ({{ review.invitationIds.length }})
+      </summary>
+      <ul>
+        @for (id of review.invitationIds; track id) {
+        <li class="identifier">{{ id }}</li>
+        }
+      </ul>
+    </details>
+    } @if (review.appliedAt) {
+    <p>
+      Confirmed {{ review.appliedAt | date:'medium' }}. Saved revision {{
+      review.revision }}.
+    </p>
+    <p>Save reference: <span class="identifier">{{ review.id }}</span>.</p>
+    <div class="actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="returnToDraft()"
+        [disabled]="!writable()"
+      >
+        Edit school
+      </button>
+      <button mat-button type="button" (click)="close()">
+        Close confirmation
+      </button>
+    </div>
+    } @else if (pending()?.stage === 'review') {
+    <p>Review expires {{ review.expiresAt | date:'medium' }}.</p>
+    @if (!store.fresh() || review.referenceRevision !==
+    store.references()?.observation?.revision || reviewExpired()) {
+    <p>
+      This review is out of date. Return to your draft, refresh Google units,
+      and review your changes again.
+    </p>
+    }
+    <mat-checkbox
+      [ngModel]="confirmed()"
+      (ngModelChange)="confirmed.set($event)"
+      [disabled]="busy() || !writable()"
+      >I reviewed the units and access changes for this school</mat-checkbox
+    >
+    <div class="actions">
+      <button
+        mat-flat-button
+        type="button"
+        (click)="confirm()"
+        [disabled]="!canConfirm()"
+      >
+        Save school
+      </button>
+    </div>
+    }
+  </section>
+  }
+</section>
+}

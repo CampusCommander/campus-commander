@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "320e24b2b4356ce1408702cd41f3579a59674841",
+  "observedAt": "2026-09-16T23:57:01.954Z",
+  "fixture": "owner-approved-live-Workspace-customer",
+  "customerId": "C01zcarnq",
+  "operatorDeclaredRole": "Super Admin",
+  "checks": [
+    {
+      "capability": "customer-identity",
+      "scopeVerified": true,
+      "failure": null
+    },
+    {
+      "capability": "domain-observations",
+      "scopeVerified": true,
+      "failure": null
+    }
+  ],
+  "customerMatched": true,
+  "primaryDomainMatched": true,
+  "limits": [
+    "This direct provider test does not bind a deployed installation.",
+    "Super Admin success does not qualify minimum custom administrator privileges.",
+    "No Education-specific capability, controlled revocation, or second-administrator replacement was tested."
+  ]
+}

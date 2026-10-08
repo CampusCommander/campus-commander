@@ -154,6 +154,24 @@ export function renderKubernetes(input, operatorInput) {
     ].includes(operator.migrationRole)
   )
     throw new Error('Use a separate application migration role.');
+  if (
+    config.googleConnection &&
+    collectRefs([
+      operator.migrationPasswordSecretRef,
+      operator.databaseAdmins,
+      operator.kestraRuntime && {
+        provider: 'kubernetes',
+        name: operator.kestraRuntime.name,
+        key: operator.kestraRuntime.applicationKey,
+      },
+    ]).some((ref) =>
+      [
+        config.googleConnection,
+        ...(config.googleConnection.additionalKeys ?? []),
+      ].some((entry) => ref.name === entry.encryptionKeySecretRef.name),
+    )
+  )
+    throw new Error('Use a separate Google encryption key secret.');
   for (const [key, service] of Object.entries(config.services)) {
     if (
       service.placement.kind === 'local' &&
@@ -407,24 +425,46 @@ export function renderKubernetes(input, operatorInput) {
     });
     return { name: volume, mountPath: path, subPath };
   };
-  const waitContainer = (spec, serviceName) => ({
-    name: 'wait-database',
-    image: config.images.api,
-    securityContext: security,
-    resources: {
-      requests: { cpu: '50m', memory: '64Mi' },
-      limits: { cpu: '250m', memory: '128Mi' },
-    },
-    command: ['node', '/config/wait.mjs'],
-    env: env({ CC_WAIT_DATABASE: serviceName }),
-    volumeMounts: spec._mounts,
-  });
+  const waitContainer = (spec, serviceName) => {
+    const database =
+      config.services[
+        serviceName === 'kestra' ? 'kestraDatabase' : 'applicationDatabase'
+      ];
+    const required = mountsFor(
+      collectRefs({
+        endpoint: database.endpoint,
+        passwordSecretRef: database.passwordSecretRef,
+      }),
+    );
+    for (const { volume, mount } of required) {
+      volume.name = `wait-${serviceName}-${volume.name}`;
+      mount.name = volume.name;
+      spec.volumes.push(volume);
+    }
+    return {
+      name: 'wait-database',
+      image: config.images.api,
+      securityContext: security,
+      resources: {
+        requests: { cpu: '50m', memory: '64Mi' },
+        limits: { cpu: '250m', memory: '128Mi' },
+      },
+      command: ['node', '/config/wait.mjs'],
+      env: env({ CC_WAIT_DATABASE: serviceName }),
+      volumeMounts: [
+        ...spec._mounts.filter((mount) => mount.name === 'config'),
+        ...required.map(({ mount }) => mount),
+      ],
+    };
+  };
   for (const [key, service] of Object.entries(config.services)) {
     if (service.placement.kind !== 'local') continue;
     let refs = collectRefs(service);
     if (key === 'api')
       refs = collectRefs([
         service,
+        config.applicationAuth,
+        config.googleConnection,
         ...Object.values(config.services).map(
           ({ endpoint, passwordSecretRef, authSecretRef }) => ({
             endpoint,
@@ -436,8 +476,11 @@ export function renderKubernetes(input, operatorInput) {
     if (key === 'workers')
       refs = collectRefs([
         service,
+        config.googleConnection,
         config.services.applicationDatabase.endpoint,
         config.services.applicationDatabase.passwordSecretRef,
+        config.services.redis.endpoint,
+        config.services.redis.passwordSecretRef,
       ]);
     if (key === 'edge')
       refs = collectRefs([
@@ -876,10 +919,18 @@ export function renderKubernetes(input, operatorInput) {
       'redis',
       'kestra',
     ],
-    workers: ['applicationDatabase'],
+    workers: ['applicationDatabase', 'redis'],
     kestra: ['kestraDatabase', 'workers'],
     'database-prepare': ['applicationDatabase', 'kestraDatabase'],
   };
+  if (config.applicationAuth && !operator.externalEgress.identityProvider)
+    throw new Error(
+      'Phase 2 requires explicit identity-provider egress CIDRs.',
+    );
+  if (config.googleConnection && !operator.externalEgress.googleProvider)
+    throw new Error(
+      'Google connections require explicit Google-provider egress CIDRs.',
+    );
   const ingress = new Map();
   for (const [source, targets] of Object.entries(dependencies)) {
     if (
@@ -922,6 +973,27 @@ export function renderKubernetes(input, operatorInput) {
         }));
       egress.push({ to, ports: [{ protocol: 'TCP', port }] });
     }
+    if (source === 'api' && config.applicationAuth) {
+      const ports = [
+        ...new Set([
+          443,
+          Number(new URL(config.applicationAuth.issuer).port || 443),
+        ]),
+      ];
+      egress.push({
+        to: operator.externalEgress.identityProvider.map((cidr) => ({
+          ipBlock: { cidr },
+        })),
+        ports: ports.map((port) => ({ protocol: 'TCP', port })),
+      });
+    }
+    if (['api', 'workers'].includes(source) && config.googleConnection)
+      egress.push({
+        to: operator.externalEgress.googleProvider.map((cidr) => ({
+          ipBlock: { cidr },
+        })),
+        ports: [{ protocol: 'TCP', port: 443 }],
+      });
     items.push(
       object(
         'networking.k8s.io/v1',

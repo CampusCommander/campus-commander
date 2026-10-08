@@ -1,5 +1,9 @@
 # Phase 1 closeout review
 
+Status update: the owner closed Phase 1 on 2026-09-16.
+The [subsequent acceptance record](2026-09-16-phase-2-acceptance.md) also closes Phase 2 and authorizes Phase 3.
+The review below preserves the September 9 findings and their original evidence limits.
+
 Review date: 2026-09-09.
 The review compared implementation `3e6a6a67a2c3d29dda9546d7141bc58d3127bc84` against baseline `556cee09ba72dee24f14787828b31af969c0ea0f`.
 It also reconciled the public hosted validation record from commit `701bcf6`.

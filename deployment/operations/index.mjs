@@ -29,6 +29,8 @@ import {
 import { connectDatabase, migrate } from '../postgres/index.mjs';
 import { normalizePostgresSecret } from '../postgres/secrets.mjs';
 import { secretPath } from '../redis/runtime.mjs';
+import { noOtherConnections } from './quiescence.mjs';
+import { invalidateRestoredAccess } from './restore-access.mjs';
 
 const databaseIdentity = (service) => {
   const url = new URL(service.endpoint.url);
@@ -324,18 +326,6 @@ async function tableInventory(client) {
       ).rows[0].count,
     });
   return tables;
-}
-async function noOtherConnections(client) {
-  if (
-    (
-      await client.query(
-        'SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()',
-      )
-    ).rows[0].count
-  )
-    throw new Error(
-      'Stop every application and Kestra database connection before backup or restore.',
-    );
 }
 async function lockTables(client) {
   await noOtherConnections(client);
@@ -742,9 +732,7 @@ export async function restoreFoundation({
       'artifacts',
     );
     await verifyArtifacts(application, restoredArtifacts.files);
-    await application.query(
-      'UPDATE cc.bootstrap_access SET revoked_at=clock_timestamp()',
-    );
+    const accessRecovery = await invalidateRestoredAccess(application);
     await writeFile(
       join(targetDirectory, 'target-configuration.json'),
       JSON.stringify(targetConfig, null, 2) + '\n',
@@ -759,6 +747,7 @@ export async function restoreFoundation({
         policy: 'discard-cache',
         releaseRequiresFreshRedis: true,
       },
+      accessRecovery,
       backupCreatedAt: manifest.createdAt,
       applicationTables: manifest.applicationTables,
       kestraTables: manifest.kestraTables,

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "purpose": "client-review",
+  "observedAt": "2026-09-17T20:09:05.415133+00:00",
+  "sourceRevision": "a043ef187dc6efbda7b5db84d7367594f0922cb0",
+  "release": "phase-3-lab-a043ef187dc6",
+  "releaseUrl": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-3-lab-a043ef187dc6",
+  "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35267378305",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ebd089d83cb21fedca82fce8c9d1d27ef8af0399f1cb1453077e5a2e509437a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:8f7ce1ba3b83bc2bb7985e5d70b95d007fbe1cff47b25828780ce468f0d9488f",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:7a9f8052b703a752040ebdc2f2cac8aaa87916d199ef6675abe75c339526bcf2"
+  },
+  "reports": [
+    {
+      "path": "all-docker-profile.json",
+      "sizeBytes": 10175,
+      "sha256": "61fa2aa5cda9ed93ee5e60e496bb9857ba074e288ca1c8ef2f1c38ad619a258a"
+    },
+    {
+      "path": "phase3-workflows.json",
+      "sizeBytes": 6803,
+      "sha256": "2df1afed694d3cca0ea35f4e4c974cb51c47c48ffe928c03263074245866a662"
+    },
+    {
+      "path": "bundle-qualification.json",
+      "sizeBytes": 2176,
+      "sha256": "9be599a3154f4d56e1a456c2e2cbef6028cb55eabd8994fd35e3a27df2dcbc10"
+    }
+  ],
+  "independentVerification": {
+    "command": "DOCKER_CONFIG=/tmp/cc60-review-docker sh install.sh --verify-only --release phase-3-lab-a043ef187dc6 --cache-dir /tmp/cc60-review-download",
+    "status": "passed",
+    "archiveSignature": "passed",
+    "manifestSignature": "passed",
+    "imageSignatures": 3,
+    "inventoriedFiles": 1991,
+    "signingIdentity": "https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-60-review-delivery",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "archiveSha256": "d9c39acc0cd8b33603599060c04ab477da1e8358ca400d88b9d4100247006bd1",
+    "manifestSha256": "1764d353fe6158a32d7d029afa980416080d3dda30485fe9c216e9887f74b6a6"
+  },
+  "limits": [
+    "Candidate-only review build. No production release or owner acceptance claim.",
+    "Automated installed workflows used simulated Google and identity providers.",
+    "Migration, backup, restore, hybrid, Kubernetes, and exhaustive fault qualification are outside this review delivery.",
+    "The separate live Google provider check does not establish live browser sign-in or minimum-role qualification."
+  ]
+}

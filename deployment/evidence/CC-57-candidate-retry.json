@@ -1,0 +1,360 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "sourceRevision": "270fe8808aad78f5400fa4cbf237199a4144f772",
+  "images": {
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:fe8e64615b79d9db8aa1120812c1dcf4a476a3c0d7e4cc681cdd2737ff13d695",
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:03400c5003eb6ae65c4b0f926590b0fb249bde9b2013a4a4ff020774fc5fb20e",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:6089761743acafde7641d201d8262b297e4e850eba9d35610425f9c1ffebc7e2"
+  },
+  "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35222534304",
+  "candidateStatus": "not-published",
+  "applicationAttempt2": "passed",
+  "bundleAttempt2": "failed",
+  "failure": "Assembly selected the earlier failed artifact with the same name.",
+  "artifacts": {
+    "selectedFailed": {
+      "id": 10498890080,
+      "fileCount": 62,
+      "sha256": "93fd8449a75b9e54fdf3b0d49844bec458740c5e998c2f390ed986a5f122c7de"
+    },
+    "successful": {
+      "id": 10498771741,
+      "fileCount": 79,
+      "sha256": "c0c9834d0aba0e826fe2c9ec6b8a29d77afb1e1a53414f78dc926f86e8e75a68"
+    }
+  },
+  "localEvidenceInspection": {
+    "status": "passed",
+    "durationMs": 45,
+    "environment": {
+      "nodeVersion": "v24.19.0",
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    "command": "inspectPhase3Evidence on the successful attempt artifact",
+    "inventory": [
+      {
+        "name": "access-revocation-api.json",
+        "sha256": "cf82c2ef7d0a412c466a0cd9ad92783fe8f7fb9b76d667047635bf62b05d500a"
+      },
+      {
+        "name": "access-revocation-browser.json",
+        "sha256": "24223f68cad167f3f979a29366928debcec2fe3e83985c2bfde3d568582d6698"
+      },
+      {
+        "name": "access-revocation-interrupted-accessibility.json",
+        "sha256": "9e3833bb8529ae0eaf72072a26442af25604da070596aa8c449a46d0ed6f2127"
+      },
+      {
+        "name": "access-revocation-interrupted.png",
+        "sha256": "86821894e544ef443166dc1fd3d1cd3b56856f5a21becea8d4e911bf8eadf408"
+      },
+      {
+        "name": "account-accessibility.json",
+        "sha256": "b15d8371c61edd8ea7c1eef931dc37b701a3d58efd6987ec385783c9bb5c03e9"
+      },
+      {
+        "name": "administrator-browser-recovery-accessibility.json",
+        "sha256": "1e0df0c1279dd0f45b33c991ee769027b20b38c3ae00e1a46a37751c51028834"
+      },
+      {
+        "name": "administrator-browser-recovery-dark-accessibility.json",
+        "sha256": "8b15997bf1046eca50dfb09aa9a3b50fc595341e74a84af3a5d53890bfcda35c"
+      },
+      {
+        "name": "administrator-browser-recovery-dark.png",
+        "sha256": "59369b75f475a2d9f38a4094acf4a8ee1e7c4c168b1d4de335d69ec87acc275a"
+      },
+      {
+        "name": "administrator-browser-recovery-light.png",
+        "sha256": "3995836c5b82a822939b65692f726246d6c7df07996b0b4f03d1d91fea90eb8d"
+      },
+      {
+        "name": "administrator-enrollment-accessibility.json",
+        "sha256": "d0a7d885c77394b143519af02a4fb66400309b46d6d8caa6cc76508f4ff78189"
+      },
+      {
+        "name": "administrator-enrollment-dark-accessibility.json",
+        "sha256": "5a29963d61e38470e6d07ffe044d8b37fca1c37b0ed4f3ee735e74d9ab9fff29"
+      },
+      {
+        "name": "customer-settings-conflict-dark-accessibility.json",
+        "sha256": "3483ea3fe4e1d0c728fd420099fac8eb537dd5a860e79a31929544f6844e2310"
+      },
+      {
+        "name": "customer-settings-conflict-light-accessibility.json",
+        "sha256": "0ddab82c67cd9d416bc5c1fe2cc3ed95866e77e37470800bc48e3b1777569116"
+      },
+      {
+        "name": "customer-settings-dark.png",
+        "sha256": "6d19f1e2fbba4138dd98d1e810d306983e2404e9029152ab0f5e28a89a5c4ae5"
+      },
+      {
+        "name": "customer-settings-light.png",
+        "sha256": "3f3bb93da917fee919d4653e7a02c9376b75394317633348fb022cfbafdefa15"
+      },
+      {
+        "name": "customer-settings.json",
+        "sha256": "96627c7c8a616e25f3aff026dcedbbafb1e3ff143a13fd8676b90a0472d99ed2"
+      },
+      {
+        "name": "diagnostics-dark-accessibility.json",
+        "sha256": "f696f2c92161b014be24f9804ec5165d09dfd3d57bb5e3e5dafa081d4edfc668"
+      },
+      {
+        "name": "diagnostics-dark.png",
+        "sha256": "d01015b8cbe284b9a1e760b55d29b1fd6b7a532da56a69b87a27768d95ab108c"
+      },
+      {
+        "name": "diagnostics-light-accessibility.json",
+        "sha256": "94a074a0996264432aab3a4091cc10027d4e206cd1396fe781b283fc961ef0fa"
+      },
+      {
+        "name": "diagnostics-light.png",
+        "sha256": "048cb795485cd3008a3a974126799a57fb8b06444780320a1d3b93284faad4bd"
+      },
+      {
+        "name": "google-capability-health-dark-accessibility.json",
+        "sha256": "733c4a07a71ecbe3cf2f370f1d327f3d00c864ec059b82ef81f66adf3d8f9f00"
+      },
+      {
+        "name": "google-capability-health-dark.png",
+        "sha256": "511288c8a3b59c60ecb6c1f00a0c92f11383ec03162b017f87d80c97058da3a9"
+      },
+      {
+        "name": "google-capability-health-light-accessibility.json",
+        "sha256": "922f0866e11973765a9bdc9d9d0a8160704eec655bac0e3547979153f39ad31a"
+      },
+      {
+        "name": "google-capability-health-light.png",
+        "sha256": "ea10c2092af4e983fbce43b8d1262f3f23cfa5d677156e0d078e6dfaff6ae981"
+      },
+      {
+        "name": "google-client-import-accessibility.json",
+        "sha256": "839d3b9a52a0c15e1d766edc5d57d8a27dd2b68ffe3bd361c7720eab54062d2c"
+      },
+      {
+        "name": "google-client-pairing-accessibility.json",
+        "sha256": "087af0fa07f608e572ae2595578404511c446ccaf09b2af3036e6ad270f1bcd5"
+      },
+      {
+        "name": "google-client-pairing-dark-accessibility.json",
+        "sha256": "0fc227b6d0ce704b7b2cded9efb084664a7e306de48a06c4cbb9f9c5567c6bad"
+      },
+      {
+        "name": "google-connection-api.json",
+        "sha256": "aff6096269663a87d26ef82ecb306447cf1d7791fa222dbf702a2d24a3765a21"
+      },
+      {
+        "name": "google-connection-browser.json",
+        "sha256": "c76912df6a82bc2fab8f4e79a7aca18168c3a5e03a39f27c7fe6f06acd7c290b"
+      },
+      {
+        "name": "google-connection-confirmed-dark-accessibility.json",
+        "sha256": "19b2fb1996ea2aac2bef6392423543fa9c5c12f55a838aebbca6c890bf03e7dc"
+      },
+      {
+        "name": "google-connection-confirmed-light-accessibility.json",
+        "sha256": "d3a915595bdaf12abef492db558933cb73b1d489736ad7c7a3a01979a5c7192e"
+      },
+      {
+        "name": "google-connection-import-dark-accessibility.json",
+        "sha256": "4d3c1447145a1ceb0924dc205fda4b97cd5b845b392db4c7732c1d7667afc793"
+      },
+      {
+        "name": "google-connection-import-dark.png",
+        "sha256": "eec876c794a0af559472b797fb01afb3ab64a6f9f7eff38824a9c723b0176d7a"
+      },
+      {
+        "name": "google-connection-import-light-accessibility.json",
+        "sha256": "ebc43212b38126a86f2a6002d724e85fa8dd0134aab3406595e1fa64ffdd9590"
+      },
+      {
+        "name": "google-connection-import-light.png",
+        "sha256": "98a653ba85f97cd3850caee45fa0690c649163c59fcad920ebf087e89d039137"
+      },
+      {
+        "name": "google-connection-review-dark-accessibility.json",
+        "sha256": "f3985736d1b0a99e5e23958fff4028aa24c130cc4a10090f0b135209dd168837"
+      },
+      {
+        "name": "google-connection-review-dark.png",
+        "sha256": "c5794cfbb652744391e470dd87f7daae59529b1d350e4b697ebb69685a599b51"
+      },
+      {
+        "name": "google-connection-review-light-accessibility.json",
+        "sha256": "3db816f6d7d9846344c2ac9b10e795d47d9af8975190012ebf8949991093b8d2"
+      },
+      {
+        "name": "google-connection-review-light.png",
+        "sha256": "22374109da05a1f97d6aaf47ef2c5436a84f4f7d543ae20ec3ad674a9efb3586"
+      },
+      {
+        "name": "google-connection-worker.json",
+        "sha256": "ad21d88656035b080dad97403d63e20ca20d471c00e1ddafce377518c515d35d"
+      },
+      {
+        "name": "google-connection-zoom-1280-2.png",
+        "sha256": "8873ed31e0152012fffdebbac19755216668670e65959100457354d06a8320ec"
+      },
+      {
+        "name": "google-connection-zoom-320-1.png",
+        "sha256": "222d551dfa5309db4e019f8f4deaba9c356289d47314f6eca62a903f1a31e54b"
+      },
+      {
+        "name": "google-health-api.json",
+        "sha256": "5534040e718d9dcbd01377857e2bde6d3beacb5425d9372e5309f7901fa8d63f"
+      },
+      {
+        "name": "google-lifecycle-api.json",
+        "sha256": "a525b2aa7d1c70440b05480df2c8a3324434a8b90e7b2d08866b5a2b10bb9cb2"
+      },
+      {
+        "name": "google-lifecycle-browser-staging.json",
+        "sha256": "8f1544897b38926939b2cee7262fb7b43d4c715145adcb4470a066c2260936f3"
+      },
+      {
+        "name": "invitation-awaiting-confirmation-dark-accessibility.json",
+        "sha256": "485ecc6422829feee61d9985a4ca1e9b1c325215e70672a8f68c97e863077adb"
+      },
+      {
+        "name": "invitation-awaiting-confirmation-light-accessibility.json",
+        "sha256": "d6a8700f783738589feaf5f59018c1990da97e423691a3f39d5bd4b9d87d84e4"
+      },
+      {
+        "name": "invitation-identity-review-dark-accessibility.json",
+        "sha256": "c581434a4b7718dc761b9f4c5cc431f75747f0f3358377cc9c89536232ce868d"
+      },
+      {
+        "name": "invitation-identity-review-light-accessibility.json",
+        "sha256": "0cc1edf80e4f9b1fa0d43ef85a14e4ac1faab314c4d4f1885a3dde5d4841af13"
+      },
+      {
+        "name": "invitation-revoked-dark-accessibility.json",
+        "sha256": "43ed8943fdff6f45201ff8ed0a804e65d56bddffd4886f4ee3777a5936f034ff"
+      },
+      {
+        "name": "invitation-revoked-light-accessibility.json",
+        "sha256": "43e63d92a341190a99eb5881ccdd7b8520e54c6b98785e49a360c1455cc98226"
+      },
+      {
+        "name": "invitations-browser.json",
+        "sha256": "8bb3a52414acdf849e4e7e4287eefd4746de483964278b7e4bad4aaddb6a4fdf"
+      },
+      {
+        "name": "invitations-dark-accessibility.json",
+        "sha256": "9074c5881bcad81936dbce6cab2b7200608585f01b8e3297f44d20046cdad985"
+      },
+      {
+        "name": "invitations-dark.png",
+        "sha256": "94e7792e1148d070badb41a4013e3c176714bf881d6cc1b90f06ef2e70075475"
+      },
+      {
+        "name": "invitations-light-accessibility.json",
+        "sha256": "152e9e8556c064bb53c8b41346d545760b4fc7548242153b4a46e7815f1f171c"
+      },
+      {
+        "name": "invitations-light.png",
+        "sha256": "7fbaaeec9db67e49a584474f8ede2d6e1786e29f7376534b07276ed736a1ae2b"
+      },
+      {
+        "name": "login-accessibility.json",
+        "sha256": "13ff0eed57a6884c9ac8d4485ebc86a0198da977cac20bedbc97f964b2b4d4f8"
+      },
+      {
+        "name": "packaged-integration.json",
+        "sha256": "b030d92f3d9c18a36568e65c06b0b07cc0e81a28f97f92c68c6e93d7df767907"
+      },
+      {
+        "name": "phase3-route-security.json",
+        "sha256": "416e07e0882413b8763aa352c152214633015bf14d1917c161609957827980e0"
+      },
+      {
+        "name": "platform-access-api.json",
+        "sha256": "8913b53d9412012bdc20cb4386b19bf6c5e0edc2ba4cf259760cac633072bf45"
+      },
+      {
+        "name": "platform-access-browser.json",
+        "sha256": "71046f7aa5a2b8351a6e86730c52981bead69207bd006ef0b3d1c7a0afa1177d"
+      },
+      {
+        "name": "platform-access-mobile.png",
+        "sha256": "67e4ad0f4830f9d054e41a56331e033e46cd0fe6f6397c8be8a9ee4dc67165a9"
+      },
+      {
+        "name": "platform-access-review-dark-accessibility.json",
+        "sha256": "e187d5a1feccc3f302b114cbdc878fe2565e53f00b288cbd8e306be0f191bcc4"
+      },
+      {
+        "name": "platform-access-review-dark.png",
+        "sha256": "91dcf7effea86e792f36afd5d2c4a852d1e15bec9b723a2ba21c154bf2d067ce"
+      },
+      {
+        "name": "platform-access-review-light-accessibility.json",
+        "sha256": "869ae2961aac1f67dfee63fca130107cad89e7e77215a2f4e7b92dc9467dcd92"
+      },
+      {
+        "name": "platform-access-review-light.png",
+        "sha256": "6bed31edee28a1b560152c3d33cac161eea46fa95fccdf2217e0944393197c76"
+      },
+      {
+        "name": "school-definitions-api.json",
+        "sha256": "e0216bb767956f86e7cfaf0f3680982de315b1c415766eb033b48ba2657c6541"
+      },
+      {
+        "name": "school-draft-dark-accessibility.json",
+        "sha256": "d8998dc49f5ba7cd6f65c2b6d15cb87474bfe3360c862de0baf9e30eab44fae1"
+      },
+      {
+        "name": "school-draft-dark.png",
+        "sha256": "84a77d1113acb95ee26ffc2f5edee92c6bf66c7132e19fae1c04746bb2cfdfcc"
+      },
+      {
+        "name": "school-draft-light-accessibility.json",
+        "sha256": "10cf2eca0baf5dca33e7da65e5398a9341b990913eb087a667d741f6157870f0"
+      },
+      {
+        "name": "school-draft-light.png",
+        "sha256": "c06e644f8b086f476ec29e5a413d175acbb15291a3f150c3947250b8e728a033"
+      },
+      {
+        "name": "school-references-api.json",
+        "sha256": "7fd691407a7e3e14d59ca2dcd7e31671a4c2418338fb7885529d8a082284bba1"
+      },
+      {
+        "name": "school-review-dark-accessibility.json",
+        "sha256": "da6dc227eec58c9a908bad81b03f9d321f5d9c2144cd4314c5bb55a1f1bc4e02"
+      },
+      {
+        "name": "school-review-light-accessibility.json",
+        "sha256": "60bc11bee34fb5ca2da6e37a764d263c21608415560e6dcc22b5a8fefdc93160"
+      },
+      {
+        "name": "scoped-grants-dark-accessibility.json",
+        "sha256": "a7e797e9fb187c32ee1911e523bcd0e11dea1b0d9ded7b647bd0b3bacde362b9"
+      },
+      {
+        "name": "scoped-grants-dark.png",
+        "sha256": "0272a4f9b88ca78529532d9ff786b4537799f0912dfc67039ab1a145c30675a0"
+      },
+      {
+        "name": "scoped-grants-light-accessibility.json",
+        "sha256": "f141955acc9c6200c4135b11610ff9ee8f5c9514acfcfb61aa0f149a8fed9a6c"
+      },
+      {
+        "name": "scoped-grants-light.png",
+        "sha256": "1f20acd5898c971342a86538c164244bb8709cf88c084c2325dbc11d32c92c50"
+      },
+      {
+        "name": "evidence-redaction.json",
+        "sha256": "bd6bf34034c56c3d6ffb328e7941b2d72d33caf60d661c14abf38ed77b28140c"
+      }
+    ]
+  },
+  "limits": [
+    "The first application attempt failed during browser evidence collection. The retry passed without a collector change.",
+    "A local test completed 120 browser popup closures without reproducing the original failure.",
+    "This inspection validates existing evidence. It does not execute the application or qualify a published candidate."
+  ]
+}

@@ -1,0 +1,220 @@
+<a class="skip-link" href="#main-content">Skip to content</a>
+<div
+  class="shell"
+  [class.collapsed]="auth.session()?.identity?.preferences?.navigationCollapsed"
+>
+  <nav aria-label="Application navigation">
+    <div class="nav-heading">
+      <button
+        mat-icon-button
+        (click)="toggleNavigation()"
+        aria-label="Toggle navigation"
+        [attr.aria-expanded]="!auth.session()?.identity?.preferences?.navigationCollapsed"
+      >
+        <mat-icon fontSet="material-symbols-outlined">menu</mat-icon>
+      </button>
+      <span class="nav-label wordmark">Campus Commander</span>
+    </div>
+    @if (customer.customer(); as customer) {
+    <p class="customer-identity nav-label">
+      {{ customer.settings.displayName }}<span
+        >{{ customer.primaryDomain }}</span
+      ><span>{{ customer.customerId }}</span>
+    </p>
+    } @else if (connection.connection(); as customer) {
+    <p class="customer-identity nav-label">
+      {{ customer.observation.primaryDomain }}<span
+        >{{ customer.customerId }}</span
+      >
+    </p>
+    } @if (devices.readable()) {
+    <a
+      routerLink="/devices"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Devices"
+    >
+      <mat-icon fontSet="material-symbols-outlined">laptop_chromebook</mat-icon
+      ><span class="nav-label">Devices</span>
+    </a>
+    } @if (connection.readable()) {
+    <a
+      routerLink="/google-connection"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Google connection"
+    >
+      <mat-icon fontSet="material-symbols-outlined">domain</mat-icon
+      ><span class="nav-label">Google connection</span>
+    </a>
+    } @if (customer.readable()) {
+    <a
+      routerLink="/customer-settings"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Customer settings"
+      ><mat-icon fontSet="material-symbols-outlined">settings</mat-icon
+      ><span class="nav-label">Customer settings</span></a
+    >
+    }
+    <a
+      routerLink="/account"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Your account"
+    >
+      <mat-icon fontSet="material-symbols-outlined">account_circle</mat-icon
+      ><span class="nav-label">Your account</span>
+    </a>
+    @if (auth.session()?.identity?.permissions?.includes('diagnostics:read') ||
+    googleHealth.readable()) {
+    <a
+      routerLink="/diagnostics"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Diagnostics"
+    >
+      <mat-icon fontSet="material-symbols-outlined">monitor_heart</mat-icon
+      ><span class="nav-label">Diagnostics</span>
+    </a>
+    } @if (schoolsReadable()) {
+    <a
+      routerLink="/schools"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Schools"
+    >
+      <mat-icon fontSet="material-symbols-outlined">school</mat-icon
+      ><span class="nav-label">Schools</span>
+    </a>
+    } @if (auth.can('platform-users:read', {kind: 'platform'})) {
+    <a
+      routerLink="/platform-users"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Platform access"
+    >
+      <mat-icon fontSet="material-symbols-outlined">manage_accounts</mat-icon
+      ><span class="nav-label">Platform access</span>
+    </a>
+    <a
+      routerLink="/invitations"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Platform invitations"
+    >
+      <mat-icon fontSet="material-symbols-outlined">person_add</mat-icon
+      ><span class="nav-label">Platform invitations</span>
+    </a>
+    }
+  </nav>
+  <header>
+    <span class="header-title"
+      >{{ router.url.startsWith('/schools') ? 'Schools' :
+      router.url.startsWith('/customer-settings') ? 'Customer settings' :
+      router.url.startsWith('/google-connection') ? 'Google customer connection'
+      : router.url.startsWith('/platform-users') ? 'Platform access' :
+      router.url.startsWith('/invitations') ? 'Platform invitations' :
+      router.url.startsWith('/diagnostics') ? 'Diagnostics' : 'Your account'
+      }}</span
+    >
+    <div class="header-actions">
+      <a
+        mat-icon-button
+        routerLink="/account"
+        fragment="application-help"
+        aria-label="Help"
+        ><mat-icon fontSet="material-symbols-outlined">help</mat-icon></a
+      >
+      <button
+        mat-icon-button
+        [matMenuTriggerFor]="themes"
+        aria-label="Choose theme"
+      >
+        <mat-icon fontSet="material-symbols-outlined">contrast</mat-icon>
+      </button>
+      <mat-menu #themes="matMenu">
+        <button mat-menu-item (click)="theme('system')">
+          Use system theme
+        </button>
+        <button mat-menu-item (click)="theme('light')">Use light theme</button>
+        <button mat-menu-item (click)="theme('dark')">Use dark theme</button>
+      </mat-menu>
+      <button
+        mat-button
+        [matMenuTriggerFor]="account"
+        aria-label="Open user menu"
+      >
+        <mat-icon fontSet="material-symbols-outlined">account_circle</mat-icon
+        ><span>{{ auth.session()?.identity?.displayName }}</span>
+      </button>
+      <mat-menu #account="matMenu"
+        ><button mat-menu-item (click)="auth.logout()">
+          Sign out
+        </button></mat-menu
+      >
+    </div>
+  </header>
+  <main id="main-content" tabindex="-1">
+    @if (auth.metadata()?.build === 'client-review') {
+    <p class="review-notice" role="note">
+      <strong>Development review.</strong> Google sign-in and Workspace data are
+      simulated. Use the sample service-account file. Do not upload real
+      credentials.
+    </p>
+    } @if (auth.error(); as error) {
+    <p role="alert" class="error">{{ error }}</p>
+    } @if (preferenceError(); as error) {
+    <p role="alert" class="error">{{ error }}</p>
+    } @if (auth.interrupted()) {
+    <section aria-label="Restore application access">
+      <p>
+        Keep this tab open. Sign in in another tab, then recheck access here.
+      </p>
+      <a
+        mat-stroked-button
+        href="/api/auth/login"
+        target="_blank"
+        rel="noopener"
+        >Sign in in another tab</a
+      >
+      <button
+        mat-flat-button
+        (click)="auth.resume()"
+        [disabled]="auth.loading()"
+      >
+        Recheck access
+      </button>
+      <p>
+        Review current access before another confirmation. Navigating away
+        discards this tab's unsaved form values.
+      </p>
+    </section>
+    }
+    <router-outlet />
+  </main>
+  <footer>
+    <span
+      >Version {{ auth.metadata()?.version }} · Build {{ auth.metadata()?.build
+      }}</span
+    >
+    @if (auth.session()?.identity?.permissions?.includes('diagnostics:read')) {
+    <a
+      routerLink="/diagnostics"
+      [class.error]="diagnostics.stale() || diagnostics.health()?.status === 'not-ready'"
+    >
+      @if (diagnostics.stale()) { Connection status unavailable } @else if
+      (!diagnostics.health()) { Checking connections } @else if
+      (diagnostics.health()?.status === 'ready') { Services ready } @else {
+      Services need attention }
+    </a>
+    } @if (googleHealth.readable()) {
+    <a
+      routerLink="/diagnostics"
+      fragment="google-health"
+      (click)="focusGoogleHealth($event)"
+      >{{ googleHealth.summary() }}</a
+    >
+    }
+  </footer>
+</div>

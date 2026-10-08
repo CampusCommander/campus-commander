@@ -1,0 +1,77 @@
+{
+  "harnessRevision": "43f1de1987635a9508f0d21633d32ee2ec6d051f",
+  "harnessWorkingTree": "clean",
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "command": "npm exec -- nx run api-e2e:phase3-lifecycle-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "browser": "149.0.7827.55"
+  },
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "all-docker",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "recordedAt": "2026-09-17T12:44:02.394Z",
+  "status": "passed",
+  "limits": [
+    "The fixture uses synthetic Google and application sign-in providers.",
+    "Erasure removes owned Docker volumes. The existing contract retains operator files.",
+    "A different-release guided update requires separate evidence."
+  ],
+  "commands": [
+    {
+      "command": "prepare",
+      "status": "prepared",
+      "durationMs": 4986
+    },
+    {
+      "command": "resume",
+      "status": "ready",
+      "durationMs": 40798
+    }
+  ],
+  "checks": {
+    "cleanInstallation": true,
+    "installedWorkflows": true
+  },
+  "durationMs": 45784,
+  "durationScope": "Delivered CLI prepare and first resume. Subsequent workflow checks appear in phase3-workflows.json.",
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35222326908",
+    "artifact": "phase-3-installer-lifecycle",
+    "reports": [
+      {
+        "path": "all-docker-installation.json",
+        "sizeBytes": 1711,
+        "sha256": "80c96bc7e41668534ff8a95c4073cb2fce211c4d38178b2ef5e3ae7fe55a2c09"
+      },
+      {
+        "path": "all-docker-resume.json",
+        "sizeBytes": 1970,
+        "sha256": "ac87ced33a2200f3a42a523252378867665a5c7ea190757726f7964877afd20f"
+      },
+      {
+        "path": "all-docker-lifecycle.json",
+        "sizeBytes": 7925,
+        "sha256": "a79a34ab64945afb9d9249914991d76d9e6a20ae2241fb0a43faa8a65252f61e"
+      },
+      {
+        "path": "all-docker-profile.json",
+        "sizeBytes": 9417,
+        "sha256": "619a56bbcd230e0833a1efe47fa7354e6ec38cfa9d108955791123151e623dea"
+      },
+      {
+        "path": "phase3-workflows.json",
+        "sizeBytes": 6805,
+        "sha256": "823528824889b1ad54de03df5b080c1ade8186626f65981ae4bb8b3d43d006ec"
+      }
+    ]
+  }
+}

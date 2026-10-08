@@ -1,0 +1,33 @@
+{
+  "name": "login",
+  "engine": {
+    "name": "axe-core",
+    "version": "4.13.0"
+  },
+  "recordedAt": "2026-09-12T09:44:30.259Z",
+  "violations": [],
+  "incomplete": [],
+  "passedRuleIds": [
+    "aria-allowed-attr",
+    "aria-conditional-attr",
+    "aria-hidden-body",
+    "aria-prohibited-attr",
+    "aria-valid-attr-value",
+    "aria-valid-attr",
+    "bypass",
+    "color-contrast",
+    "document-title",
+    "duplicate-id-aria",
+    "html-has-lang",
+    "html-lang-valid",
+    "link-name",
+    "meta-viewport",
+    "target-size"
+  ],
+  "accessibilityTree": "- main:\n  - region \"Sign in\":\n    - paragraph: Campus Commander\n    - heading \"Sign in\" [level=1]\n    - paragraph: Use your authorized application identity to continue.\n    - link \"Sign in to Campus Commander\":\n      - /url: /api/auth/login\n    - paragraph: The installation operator manages application access.",
+  "computedTheme": {
+    "color": "rgb(32, 33, 36)",
+    "background": "rgb(248, 250, 252)"
+  },
+  "screenReaderWalkthrough": "not-run"
+}

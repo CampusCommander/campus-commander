@@ -125,14 +125,25 @@ test('stages private files per service without inheriting the installer identity
     initializer.command[2].includes('/staged/api-secrets/postgres-migrator'),
     false,
   );
-  assert.equal(
-    initializer.command[2].includes('/staged/workers-secrets/redis-password'),
-    false,
-  );
   assert.deepEqual(compose.services['database-migrate'].volumes, [
     'database-migrate-secrets:/run/secrets:ro',
     'database-migrate-config:/run/config:ro',
   ]);
+});
+
+test('the worker mounts the Redis password', () => {
+  const compose = renderAllDocker(config, release);
+  const initializer = compose.services['volume-permissions'];
+  assert.ok(
+    initializer.command[2].includes(
+      "cp '/run/secrets/redis-password' '/staged/workers-secrets/redis-password'",
+    ),
+  );
+  assert.ok(
+    compose.services.workers.volumes.includes(
+      'workers-secrets:/run/secrets:ro',
+    ),
+  );
 });
 
 test('private source mounts reject missing daemon paths instead of creating directories', () => {
@@ -153,4 +164,21 @@ test('private source mounts reject missing daemon paths instead of creating dire
         mount.target === '/run/secrets/redis-password',
     ),
   );
+});
+
+test('applies API replica counts without duplicating migration jobs', () => {
+  const replicated = structuredClone(config);
+  replicated.services.api.placement.replicas = 2;
+  const compose = renderAllDocker(replicated, release);
+  assert.equal(compose.services.api.deploy.replicas, 2);
+  assert.deepEqual(
+    compose.services.api.deploy.resources,
+    renderAllDocker(config, release).services.api.deploy.resources,
+  );
+  for (const name of [
+    'database-migrate',
+    'bootstrap-initialize',
+    'volume-permissions',
+  ])
+    assert.equal(compose.services[name].deploy.replicas, undefined);
 });

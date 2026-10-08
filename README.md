@@ -1,15 +1,36 @@
 # Campus Commander
 
 Campus Commander is a locally hosted Google Workspace administration tool for K–12 districts.
-It supports entity discovery, inventory insight, and small or district-wide updates with durable audit evidence.
+The intended product centers on device, user, OU, and group administration.
+The owner rejected the current UI and disputed the school-creation and invitation workflows. Documentation and scope are under review.
 
-**Status: Phase 1 candidate testing.** Published candidates are not accepted production releases.
-The [design portfolio](docs/portfolio/README.md) incorporates the contractor review and owner decisions as of 2026-09-05.
-Follow its [ten development phases](docs/portfolio/06-work-breakdown.md#delivery-sequence) and resolve the V0 findings required by each phase.
-Phase 1 supplies all Docker, hybrid Docker with district services, and enterprise Kubernetes installations.
-Each later phase delivers a working version that preserves those deployment modes and earlier capabilities.
+**Status: Greenfield application development. Nothing is live.**
+Phases organize development. They are not a user upgrade path. Development test data is disposable.
+Start with [the documentation guide](docs/README.md), [current work](docs/current-work.md), and [workflow gaps](docs/workflow-gaps.md).
 
-## Try the published installer
+## Run the application for review
+
+Use Linux or WSL with Node 24.19, npm, and a running Docker daemon.
+From the repository root, run:
+
+```sh
+npm ci
+npm exec -- nx run api-e2e:client-review
+```
+
+Open the HTTPS URL printed by the command and select **Sign in to Campus Commander**.
+The command runs the current client, API, worker, PostgreSQL, Redis, and Kestra.
+Google sign-in and Workspace responses use a simulator. No Google account or real service-account key is required.
+The terminal prints a generated sample key file and delegated email for the connection form.
+The client displays a development-review notice. Do not upload real credentials to this review environment.
+
+Keep the command running while reviewing. Stop it to remove its disposable environment.
+See [the client review guide](docs/testing/client-review.md) for certificate prompts and the review steps.
+For a prebuilt review candidate, follow [the fresh installation guide](docs/testing/fresh-install-review.md).
+
+## Published installer reference
+
+Earlier signed candidates remain available for reference. Use the review command above to run current source changes.
 
 Start in a Linux amd64 shell with internet access and root or sudo access.
 Run the installer first:
@@ -86,18 +107,20 @@ Published candidates provide prebuilt images and an installer. Customers do not 
 
 ## Documentation
 
-- [Design portfolio](docs/portfolio/README.md): current product, architecture, interactions, decisions, and work plan.
+- [Documentation guide](docs/README.md): source authority, reading order, and workflow format.
+- [Workflow gaps](docs/workflow-gaps.md): defined behavior, disputed features, and missing product decisions.
+- [File inventory](docs/document-index.csv): all indexed project documentation and evidence.
+- [Design portfolio](docs/portfolio/README.md): product, architecture, and interaction references.
 - [Contractor report](docs/reviews/2026-09-04-contractor-report.md): review conclusions and supporting evidence.
 - [Archive](docs/archive/README.md): earlier sources retained for traceability without current authority.
 
 ## Work tracking
 
 GitHub records source changes, planning documents, validation evidence, and pull requests.
-Jira records implementation tasks and dependencies in the Campus-Commander project, key `CC`.
-The [Phase 1 backlog](docs/portfolio/phase-1-jira-tasks.md) maps local planning references to CC-4 through CC-20.
-
-Include the Jira issue key in implementation branch names, commit messages, and pull request titles.
-For example, use `CC-4-deployment-contract` for the configuration contract task.
+Jira is no longer required for development. Existing issues and task snapshots remain historical references.
+Do not synchronize or expand Jira unless the owner requests it.
+Use focused `codex/` branches and describe the actual change. Jira keys are not required.
+The [current work record](docs/current-work.md) controls development order.
 Link the Jira task and describe validation evidence in each implementation pull request.
 Update task status only when its acceptance criteria have supporting evidence.
 

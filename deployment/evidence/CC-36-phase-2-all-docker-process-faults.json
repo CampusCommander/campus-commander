@@ -1,0 +1,836 @@
+{
+  "status": "passed",
+  "profile": "all-docker",
+  "sourceRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:01e60f23d23d4a65771b906d00cb373f7e49a44e5bb39baa8a1d7f71b1245558",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:498478124c8affb7fea4c5447bb77ddffb462c08f91b5cca677081f17c7c6e3f",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:46b48b59ffb8c8d8226c497303db2619da8835abfc47435ecfe67e15c834d0d2"
+  },
+  "recordedAt": "2026-09-12T13:27:24.751Z",
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "a897b35b-b15d-4046-aedc-69dc3fb1429d",
+        "observedAt": "2026-09-12T13:24:54.919Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "8c42e1c1-8762-425b-82ab-c4de59403872",
+        "observedAt": "2026-09-12T13:24:55.010Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "d9c0d6bd-345a-4f39-b815-543a70120311",
+        "observedAt": "2026-09-12T13:24:56.959Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "ab351e13-a552-4c8f-a94e-51a8bffb16dc",
+        "observedAt": "2026-09-12T13:24:57.087Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "1c1e8ff1-4a3f-47b1-b585-ce5d1405efde",
+        "observedAt": "2026-09-12T13:24:59.744Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "3c2d6b3e-79f8-4256-b4bc-293d370c172c",
+        "observedAt": "2026-09-12T13:24:59.827Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "fda8c45f-cdf5-4157-a080-017b5dbd09ca",
+        "observedAt": "2026-09-12T13:25:00.450Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "d5c9000f-f2be-4b86-ae2a-4cb0a4e85cf0",
+        "observedAt": "2026-09-12T13:25:00.546Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "72a8dac8-239c-4154-90ba-e8ba4a33dee3",
+        "observedAt": "2026-09-12T13:25:13.090Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "115e3153-d54c-4b6d-8fe7-970da9654189",
+        "observedAt": "2026-09-12T13:25:13.225Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "8814795c-f320-4069-849f-f593c3942197",
+        "observedAt": "2026-09-12T13:25:13.846Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "5908ca00-0bc1-4e03-b927-88ba46b3a911",
+        "observedAt": "2026-09-12T13:25:13.949Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "f7443bc4-25ba-4d74-9b5d-4f819b15aa6c",
+        "observedAt": "2026-09-12T13:25:15.175Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "2b816971-fd3a-4acc-9218-e08aa0db2fda",
+        "observedAt": "2026-09-12T13:25:15.258Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "b7ea27a6-da8a-4459-a467-d8b376dbb017",
+        "observedAt": "2026-09-12T13:25:15.880Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "0da69733-23cb-4622-b42d-50261af70163",
+        "observedAt": "2026-09-12T13:25:15.979Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "6a5cb7a8-2278-4e26-ae8c-2935dcd62a32",
+        "observedAt": "2026-09-12T13:25:24.691Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "6be059bc-69eb-4aed-9cb9-238e925d8c63",
+        "observedAt": "2026-09-12T13:25:24.775Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "dd2288d1-a639-4751-ba68-b95716e5e46a",
+        "observedAt": "2026-09-12T13:25:25.392Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "ec98d8eb-46c5-47ba-ac02-eea83864e8f3",
+        "observedAt": "2026-09-12T13:25:25.494Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "e70c1363-3aed-4879-a72b-7fdc7984df36",
+        "observedAt": "2026-09-12T13:25:26.727Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "103a8e5e-06da-4763-967c-b2428c853fbc",
+        "observedAt": "2026-09-12T13:25:26.808Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "779a80d2-443e-4224-8d20-418b8c1fc749",
+        "observedAt": "2026-09-12T13:25:27.426Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "fe977f4e-c201-4105-acd6-916a03c6dccc",
+        "observedAt": "2026-09-12T13:25:27.528Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "bbbad9ed-e3d8-4eb8-9f74-770fd117769a",
+        "observedAt": "2026-09-12T13:25:35.041Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "7587b354-9a06-434c-8f48-8ede3f2d5b2e",
+        "observedAt": "2026-09-12T13:25:35.124Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "7b4b8d3a-5c4a-4310-b035-1834e7933e2c",
+        "observedAt": "2026-09-12T13:25:35.738Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "4400939d-e616-4493-b21e-91b576c82339",
+        "observedAt": "2026-09-12T13:25:35.843Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "d63740b9-ac38-4e64-9b25-23ecd1bdab3f",
+        "observedAt": "2026-09-12T13:25:37.124Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "7ed396f0-8777-47f9-8fa3-ba270bfb80d7",
+        "observedAt": "2026-09-12T13:25:37.205Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "ae6d727f-0055-402b-89ea-e49d8d66bd80",
+        "observedAt": "2026-09-12T13:25:37.820Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "49ed4b06-43c6-4c3e-83e0-53073823468a",
+        "observedAt": "2026-09-12T13:25:37.924Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "ec73f83a-3661-497b-9caf-c30d0eec38df",
+        "observedAt": "2026-09-12T13:25:42.872Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "e20090d1-9a40-486e-a2f6-f8442739cf51",
+        "observedAt": "2026-09-12T13:25:42.956Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "424bb1d3-43cc-400e-994a-e0fea84cfe10",
+        "observedAt": "2026-09-12T13:25:43.568Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "b9dcf761-ef01-4cfb-a43f-d26554c41975",
+        "observedAt": "2026-09-12T13:25:43.685Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "d8966239-a487-4232-a8bf-f454b9131f60",
+        "observedAt": "2026-09-12T13:25:44.922Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "89571969-d146-4f08-b060-3be4206302be",
+        "observedAt": "2026-09-12T13:25:45.005Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "eae02487-54fd-419d-8199-ea3c96131af4",
+        "observedAt": "2026-09-12T13:25:45.621Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "b66427d2-2d00-4a68-bfdb-2976be5fd7b0",
+        "observedAt": "2026-09-12T13:25:45.724Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "7cb15ee5-15af-4e4a-8ed5-ff3b9e325951",
+        "observedAt": "2026-09-12T13:25:53.039Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "b6d2e65f-9c38-482c-ac21-eb57ca76b005",
+        "observedAt": "2026-09-12T13:25:54.888Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "14430796-e612-4df7-90e2-29164196c906",
+        "observedAt": "2026-09-12T13:26:18.466Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "4f65da4d-91bf-400f-87ea-602924e5bc02",
+        "observedAt": "2026-09-12T13:26:20.661Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "8c805885-547a-4a60-a470-c3c86d0d366f",
+        "observedAt": "2026-09-12T13:26:22.866Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "50705887-4aa6-4e7e-82ed-f833a56a668a",
+        "observedAt": "2026-09-12T13:26:25.071Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "522cddf3-9534-4fbc-a4fc-f9646f80da48",
+        "observedAt": "2026-09-12T13:26:27.277Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "8146b8f6-4daa-43a0-bb9a-3eae8fc293b2",
+        "observedAt": "2026-09-12T13:26:29.484Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "65fe7c68-78e8-4b7d-a17e-055a299be58c",
+        "observedAt": "2026-09-12T13:26:31.690Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "60e7288d-9897-45e7-a799-9708d5b3205c",
+        "observedAt": "2026-09-12T13:26:33.720Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "20e18255-20f2-4aa6-916d-eb6cc6d27aea",
+        "observedAt": "2026-09-12T13:26:35.752Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "69890965-8915-4f06-8707-97a2eab727f4",
+        "observedAt": "2026-09-12T13:26:37.786Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "20c8b4d0-0173-4ef5-b0ff-63d382057d71",
+        "observedAt": "2026-09-12T13:26:39.817Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "ff4d8a85-22e5-42c8-9690-f6ddebc430ca",
+        "observedAt": "2026-09-12T13:26:41.850Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "e66d1b26-f89f-4e01-83fb-95b4b82f01ec",
+        "observedAt": "2026-09-12T13:26:43.884Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "80e5f4c1-c23f-42da-b8c0-bbfe5ba5c84d",
+        "observedAt": "2026-09-12T13:26:45.917Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "bd491d07-ed5e-46c1-914f-c53382bb797f",
+        "observedAt": "2026-09-12T13:26:47.952Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "efd5d71a-ae4b-4536-9c04-8a78fced0a0e",
+        "observedAt": "2026-09-12T13:26:49.983Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "1e1e8526-6868-4339-a12f-5029b2f00317",
+        "observedAt": "2026-09-12T13:26:52.017Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "f428a624-5087-4341-81bd-264ea22a5817",
+        "observedAt": "2026-09-12T13:26:55.243Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "20d66e46-411c-4a7d-95a0-d1d85fec0320",
+        "observedAt": "2026-09-12T13:26:55.336Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "de9cb34a-c499-4c5f-9622-946e095ab4fb",
+        "observedAt": "2026-09-12T13:26:56.600Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "868602af-3cd6-46bc-9018-4d71156fb0bf",
+        "observedAt": "2026-09-12T13:26:56.683Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "cea0c6e8-de6a-48f3-85ce-96da22e8f712",
+        "observedAt": "2026-09-12T13:26:57.315Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "2fcea053-7d61-4859-a0e2-096b344e9070",
+        "observedAt": "2026-09-12T13:26:57.417Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "60e417dc-e851-40e0-984a-968b94b9c3b0",
+        "observedAt": "2026-09-12T13:27:07.614Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "b73e04ab-3160-4486-944c-d7e2eace4086",
+        "observedAt": "2026-09-12T13:27:07.697Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "e7a7ed94-d804-4ae5-8521-7d7afc50b51e",
+        "observedAt": "2026-09-12T13:27:07.781Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "8c288979-a330-4433-b05a-547d147f4be1",
+        "observedAt": "2026-09-12T13:27:09.816Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "707f63b1-0c93-4205-8f93-4f7b7a0f8667",
+        "observedAt": "2026-09-12T13:27:13.022Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "81d49749-722a-48ac-928e-69eb06971631",
+        "observedAt": "2026-09-12T13:27:13.120Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "da66760a-fa52-4ebc-92a4-e5d93a17d7a7",
+        "observedAt": "2026-09-12T13:27:14.399Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "5cd59da1-e02d-4d09-af5b-39a16998a31c",
+        "observedAt": "2026-09-12T13:27:14.482Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "010a8de3-21a9-4f16-9d79-c0b02a5d3640",
+        "observedAt": "2026-09-12T13:27:15.113Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "df021659-566d-42d9-bd9c-be606f6db644",
+        "observedAt": "2026-09-12T13:27:15.216Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "77cdc97f-6bfe-43c6-bf1d-8f11efefcd48",
+        "observedAt": "2026-09-12T13:27:16.947Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "b888bb15-aaba-41cb-ad35-76c8360a8477",
+        "observedAt": "2026-09-12T13:27:17.031Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "80b795bb-af72-4a81-9a3f-d2d365698b77",
+        "observedAt": "2026-09-12T13:27:17.654Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "eede1d4d-ca46-4587-9ff0-0554951acf8a",
+        "observedAt": "2026-09-12T13:27:17.748Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "lifecycle": {
+      "faults": {
+        "status": "passed",
+        "profile": "all-docker",
+        "sourceRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+        "images": {
+          "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:01e60f23d23d4a65771b906d00cb373f7e49a44e5bb39baa8a1d7f71b1245558",
+          "api": "ghcr.io/campuscommander/campus-commander-api@sha256:498478124c8affb7fea4c5447bb77ddffb462c08f91b5cca677081f17c7c6e3f",
+          "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:46b48b59ffb8c8d8226c497303db2619da8835abfc47435ecfe67e15c834d0d2"
+        },
+        "recoveryBoundSeconds": 180,
+        "cases": [
+          {
+            "name": "api-interruption",
+            "status": "passed",
+            "startedAt": "2026-09-12T13:25:01.701Z",
+            "observed": {
+              "httpStatus": 502
+            },
+            "interruptionMs": 9377,
+            "recoveryMs": 2900,
+            "durableState": {
+              "principalCount": 1,
+              "preservedSecurityEvents": 12,
+              "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+              "preservedKestraExecutions": 1,
+              "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+            }
+          },
+          {
+            "name": "worker-interruption",
+            "status": "passed",
+            "startedAt": "2026-09-12T13:25:17.356Z",
+            "observed": {
+              "httpStatus": 201,
+              "status": "failed",
+              "correlationId": "8c2779db-86a9-4686-a284-26f8ef13100e"
+            },
+            "interruptionMs": 7257,
+            "recoveryMs": 910,
+            "durableState": {
+              "principalCount": 1,
+              "preservedSecurityEvents": 12,
+              "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+              "preservedKestraExecutions": 1,
+              "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+            }
+          },
+          {
+            "name": "redis-interruption",
+            "status": "passed",
+            "startedAt": "2026-09-12T13:25:28.710Z",
+            "observed": {
+              "httpStatus": 503
+            },
+            "interruptionMs": 5855,
+            "sourceSessionRejected": true,
+            "recoveryMs": 1305,
+            "durableState": {
+              "principalCount": 1,
+              "preservedSecurityEvents": 12,
+              "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+              "preservedKestraExecutions": 1,
+              "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+            }
+          },
+          {
+            "name": "application-postgresql-interruption",
+            "status": "passed",
+            "startedAt": "2026-09-12T13:25:39.114Z",
+            "observed": {
+              "httpStatus": 503
+            },
+            "interruptionMs": 3556,
+            "recoveryMs": 1043,
+            "durableState": {
+              "principalCount": 1,
+              "preservedSecurityEvents": 12,
+              "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+              "preservedKestraExecutions": 1,
+              "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+            }
+          },
+          {
+            "name": "kestra-postgresql-interruption",
+            "status": "passed",
+            "startedAt": "2026-09-12T13:25:46.939Z",
+            "observed": {
+              "httpStatus": 201,
+              "status": "timed-out",
+              "correlationId": "39f1f1e6-b394-4d49-bb9b-3d950b4cd6c0"
+            },
+            "interruptionMs": 6021,
+            "recoveryMs": 62403,
+            "durableState": {
+              "principalCount": 1,
+              "preservedSecurityEvents": 12,
+              "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+              "preservedKestraExecutions": 1,
+              "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+            }
+          },
+          {
+            "name": "kestra-interruption",
+            "status": "passed",
+            "startedAt": "2026-09-12T13:26:58.610Z",
+            "observed": {
+              "httpStatus": 201,
+              "status": "failed",
+              "correlationId": "57518b76-680b-4ad5-8dcd-2b3cf67284a7"
+            },
+            "interruptionMs": 8926,
+            "recoveryMs": 5613,
+            "durableState": {
+              "principalCount": 1,
+              "preservedSecurityEvents": 12,
+              "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+              "preservedKestraExecutions": 1,
+              "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+            }
+          },
+          {
+            "name": "artifact-access-loss",
+            "status": "passed",
+            "startedAt": "2026-09-12T13:27:16.418Z",
+            "observed": {
+              "httpStatus": 201,
+              "status": "failed",
+              "correlationId": "a49f40a1-37a8-43b6-ab5f-bb02f63ff74e"
+            },
+            "interruptionMs": 460,
+            "recoveryMs": 899,
+            "durableState": {
+              "principalCount": 1,
+              "preservedSecurityEvents": 12,
+              "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+              "preservedKestraExecutions": 1,
+              "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+            }
+          }
+        ],
+        "limits": [
+          "One Docker host retains host and volume failure points.",
+          "Capacity and certificate faults require separate evidence."
+        ]
+      }
+    },
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "faults": {
+    "status": "passed",
+    "profile": "all-docker",
+    "sourceRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:01e60f23d23d4a65771b906d00cb373f7e49a44e5bb39baa8a1d7f71b1245558",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:498478124c8affb7fea4c5447bb77ddffb462c08f91b5cca677081f17c7c6e3f",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:46b48b59ffb8c8d8226c497303db2619da8835abfc47435ecfe67e15c834d0d2"
+    },
+    "recoveryBoundSeconds": 180,
+    "cases": [
+      {
+        "name": "api-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:25:01.701Z",
+        "observed": {
+          "httpStatus": 502
+        },
+        "interruptionMs": 9377,
+        "recoveryMs": 2900,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "worker-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:25:17.356Z",
+        "observed": {
+          "httpStatus": 201,
+          "status": "failed",
+          "correlationId": "8c2779db-86a9-4686-a284-26f8ef13100e"
+        },
+        "interruptionMs": 7257,
+        "recoveryMs": 910,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "redis-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:25:28.710Z",
+        "observed": {
+          "httpStatus": 503
+        },
+        "interruptionMs": 5855,
+        "sourceSessionRejected": true,
+        "recoveryMs": 1305,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "application-postgresql-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:25:39.114Z",
+        "observed": {
+          "httpStatus": 503
+        },
+        "interruptionMs": 3556,
+        "recoveryMs": 1043,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "kestra-postgresql-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:25:46.939Z",
+        "observed": {
+          "httpStatus": 201,
+          "status": "timed-out",
+          "correlationId": "39f1f1e6-b394-4d49-bb9b-3d950b4cd6c0"
+        },
+        "interruptionMs": 6021,
+        "recoveryMs": 62403,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "kestra-interruption",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:26:58.610Z",
+        "observed": {
+          "httpStatus": 201,
+          "status": "failed",
+          "correlationId": "57518b76-680b-4ad5-8dcd-2b3cf67284a7"
+        },
+        "interruptionMs": 8926,
+        "recoveryMs": 5613,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      },
+      {
+        "name": "artifact-access-loss",
+        "status": "passed",
+        "startedAt": "2026-09-12T13:27:16.418Z",
+        "observed": {
+          "httpStatus": 201,
+          "status": "failed",
+          "correlationId": "a49f40a1-37a8-43b6-ab5f-bb02f63ff74e"
+        },
+        "interruptionMs": 460,
+        "recoveryMs": 899,
+        "durableState": {
+          "principalCount": 1,
+          "preservedSecurityEvents": 12,
+          "artifactSha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+          "preservedKestraExecutions": 1,
+          "internalStorageSha256": "76ff77f3452aba63d7d809cceef0b2b6149641561a9ac2b12e48ead9dbd07e5c"
+        }
+      }
+    ],
+    "limits": [
+      "One Docker host retains host and volume failure points.",
+      "Capacity and certificate faults require separate evidence."
+    ]
+  },
+  "certificateFaults": {
+    "status": "passed",
+    "profile": "all-docker",
+    "scope": "complete-profile-edge-certificate-faults",
+    "qualifiesProfile": false,
+    "acceptedRelease": false,
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:01e60f23d23d4a65771b906d00cb373f7e49a44e5bb39baa8a1d7f71b1245558",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:498478124c8affb7fea4c5447bb77ddffb462c08f91b5cca677081f17c7c6e3f",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:46b48b59ffb8c8d8226c497303db2619da8835abfc47435ecfe67e15c834d0d2"
+    },
+    "sourceState": {
+      "baseGitRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+      "workingTree": "uncommitted-candidate"
+    },
+    "records": [
+      {
+        "fault": "expired",
+        "status": "passed",
+        "tlsError": "CERT_HAS_EXPIRED",
+        "elapsedMilliseconds": 16520,
+        "recoveredChecks": 8,
+        "fixturesPreserved": true
+      },
+      {
+        "fault": "wrong-host",
+        "status": "passed",
+        "tlsError": "ERR_TLS_CERT_ALTNAME_INVALID",
+        "elapsedMilliseconds": 16379,
+        "recoveredChecks": 8,
+        "fixturesPreserved": true
+      }
+    ],
+    "originalSecretBytesRestored": true
+  },
+  "installerChecks": [
+    "actual CLI prepare and resume",
+    "stop and resume preserve data",
+    "uninstall and resume preserve volumes",
+    "encrypted backup verified before upgrade",
+    "different image digests upgrade with artifact and ledger preservation",
+    "active secrets preserved",
+    "input release inventory metadata preserved"
+  ],
+  "ownedResourcesRemoved": true,
+  "limits": [
+    "One Docker host retains host and local-volume failure points.",
+    "Near-full storage requires separate complete-profile evidence."
+  ]
+}

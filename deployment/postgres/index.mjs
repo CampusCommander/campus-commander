@@ -95,17 +95,36 @@ export async function verifyConnection(client) {
 }
 
 export async function loadMigrations() {
-  const sql = await readFile(
-    new URL('./migrations/001-foundation.sql', import.meta.url),
-    'utf8',
+  return Promise.all(
+    [
+      '001-foundation',
+      '002-application-auth',
+      '003-application-grants',
+      '004-application-invitations',
+      '005-platform-access',
+      '006-access-revocation',
+      '007-google-connection',
+      '008-google-token-coordination',
+      '009-customer-settings',
+      '010-google-capability-health',
+      '011-google-credential-lifecycle',
+      '012-school-references',
+      '013-school-definitions',
+      '014-school-grants',
+      '015-restore-revalidation',
+      '016-device-inventory',
+    ].map(async (id) => {
+      const sql = await readFile(
+        new URL(`./migrations/${id}.sql`, import.meta.url),
+        'utf8',
+      );
+      return {
+        id,
+        sql,
+        checksum: createHash('sha256').update(sql).digest('hex'),
+      };
+    }),
   );
-  return [
-    {
-      id: '001-foundation',
-      sql,
-      checksum: createHash('sha256').update(sql).digest('hex'),
-    },
-  ];
 }
 
 export async function migrate(client, { runtimeRole, migrations } = {}) {
@@ -154,6 +173,102 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
     await client.query(
       `GRANT SELECT, INSERT, UPDATE, DELETE ON cc.artifacts, cc.bootstrap_access TO ${role}`,
     );
+    if (migrations.some(({ id }) => id === '002-application-auth')) {
+      await client.query(`GRANT SELECT ON cc.application_principals TO ${role};
+        GRANT UPDATE (preferences) ON cc.application_principals TO ${role};
+        GRANT SELECT, INSERT ON cc.security_events TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '003-application-grants')) {
+      await client.query(
+        `GRANT SELECT ON cc.application_actions, cc.application_grants TO ${role}`,
+      );
+    }
+    if (migrations.some(({ id }) => id === '004-application-invitations')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.create_invitation(uuid,integer,text,text,text,jsonb,integer,uuid),
+        cc.list_invitations(uuid,integer,uuid),
+        cc.claim_invitation(text,text,text,uuid),
+        cc.verify_invitation(uuid,text,text,text,text,uuid),
+        cc.invitation_browser_status(text,uuid),
+        cc.confirm_invitation(uuid,integer,uuid,integer,text,uuid),
+        cc.revoke_invitation(uuid,integer,uuid,integer,uuid) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '005-platform-access')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.list_platform_principals(uuid,integer,integer,integer),
+        cc.read_platform_principal(uuid,integer,uuid),
+        cc.list_platform_access_receipts(uuid,integer,uuid,integer),
+        cc.review_platform_access(uuid,integer,uuid,integer,boolean,jsonb),
+        cc.change_platform_access(uuid,integer,uuid,integer,boolean,jsonb,uuid${migrations.some(({ id }) => id === '006-access-revocation') ? ',jsonb' : ''}${migrations.some(({ id }) => id === '014-school-grants') ? ',jsonb' : ''}) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '008-google-token-coordination')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION cc.acquire_google_access(text,integer,uuid),
+        cc.finish_google_access(text,integer,uuid,jsonb,timestamptz,text,uuid),
+        cc.reject_google_access(text,integer,uuid,text,uuid),cc.record_google_observation(text,integer,jsonb,uuid,uuid,integer),
+        cc.reset_google_access(uuid,integer,text,integer,uuid) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '012-school-references')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION cc.read_school_references(uuid,integer),
+        cc.claim_school_references(uuid,integer,text,integer,uuid,uuid),
+        cc.finish_school_references(uuid,integer,text,integer,uuid,jsonb,text) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '013-school-definitions')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION cc.read_school_definition(uuid,integer,uuid),
+        cc.list_school_definitions(uuid,integer,integer,integer),
+        cc.preview_school_definition(uuid,integer,uuid,text,integer,uuid,text,jsonb,uuid,uuid),
+        cc.confirm_school_definition(uuid,integer,uuid),cc.read_school_review(uuid,integer,uuid),
+        cc.list_school_audit(uuid,integer,uuid,integer) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '011-google-credential-lifecycle')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.stage_google_replacement(uuid,integer,uuid,text,text,text,jsonb,uuid,text,integer),
+        cc.read_google_credential_management(uuid,integer),
+        cc.activate_google_replacement(uuid,integer,uuid,text,text,integer,jsonb,uuid),
+        cc.rotate_google_credential_key(uuid,integer,text,integer,uuid,jsonb,uuid),
+        cc.disconnect_google_credential(uuid,integer,text,integer,uuid,uuid) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '010-google-capability-health')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION cc.read_google_health(uuid,integer),
+        cc.claim_google_health(uuid,integer,text,integer,uuid,jsonb,uuid),
+        cc.finish_google_health(uuid,integer,text,integer,uuid,jsonb,jsonb) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '009-customer-settings')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION cc.read_customer_settings(uuid,integer),
+        cc.save_customer_settings(uuid,integer,text,integer,uuid,jsonb,uuid),
+        cc.read_customer_settings_receipt(uuid,integer,uuid) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '007-google-connection')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.expire_google_candidates(uuid),
+        cc.stage_google_credential(uuid,integer,uuid,text,text,text,jsonb,uuid),
+        cc.finish_google_candidate(uuid,integer,uuid,text,jsonb,text,uuid),
+        cc.read_google_candidate(uuid,integer,uuid,text),
+        cc.confirm_google_customer(uuid,integer,uuid,text,text,jsonb,uuid),
+        cc.read_google_connection(uuid,integer) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '016-device-inventory')) {
+      await client.query(`GRANT SELECT ON cc.devices, cc.device_sync_state, cc.entity_sync_jobs TO ${role};
+        GRANT EXECUTE ON FUNCTION cc.device_reader(uuid,integer),
+        cc.read_device_sync(uuid,integer),
+        cc.request_device_sync(uuid,integer,text,integer,uuid,uuid),
+        cc.abandon_device_sync(uuid,integer,text,uuid,text),
+        cc.claim_device_sync(text,uuid,uuid),
+        cc.device_record(cc.devices,text),
+        cc.upsert_devices(text,jsonb,timestamptz),
+        cc.upsert_device_batteries(text,jsonb),
+        cc.soft_delete_devices(text,jsonb),
+        cc.read_device_records(text,jsonb),
+        cc.page_device_records(text,text,integer),
+        cc.page_last_removed_device_ids(text,text,integer),
+        cc.stage_devices(text,uuid,uuid,jsonb),
+        cc.stage_device_batteries(text,uuid,uuid,jsonb),
+        cc.finish_device_sync(text,uuid,uuid,text,text),
+        cc.create_entity_sync_job(uuid,integer,text,text,jsonb,integer,uuid,uuid),
+        cc.abandon_entity_sync_job(uuid,integer,text,uuid),
+        cc.read_entity_sync_batch(text,uuid,integer),
+        cc.finish_entity_sync_batch(text,uuid,integer,text),
+        cc.purge_entity_sync_jobs(text,integer) TO ${role}`);
+    }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);
   }

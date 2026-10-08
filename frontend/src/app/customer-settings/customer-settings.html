@@ -1,0 +1,188 @@
+<div class="settings-content">
+  <h1>Customer settings</h1>
+  <p>Choose the name people see for your organization in Campus Commander.</p>
+  @if (error()) {
+  <p class="error" role="alert">{{ error() }}</p>
+  } @if (store.error()) {
+  <p class="error" role="alert">{{ store.error() }}</p>
+  } @if (storageError()) {
+  <p class="error" role="alert">{{ storageError() }}</p>
+  }
+  <p id="settings-status" tabindex="-1" role="status">{{ message() }}</p>
+  @if (!store.readable() && !auth.interrupted()) {
+  <p role="alert">
+    You do not have permission to view these settings. Contact your
+    administrator for access.
+  </p>
+  <a routerLink="/account">Return to your account</a>
+  }
+  <button
+    mat-stroked-button
+    (click)="store.refresh()"
+    [disabled]="store.loading() || busy() || !store.readable()"
+  >
+    Refresh saved settings
+  </button>
+  @if (store.stale() && store.loaded()) {
+  <p>These settings are out of date. Refresh them before saving.</p>
+  } @if (store.loading() && !store.loaded()) {
+  <section aria-label="Loading customer settings" aria-busy="true">
+    <p role="status">Loading saved customer settings.</p>
+    <div class="skeleton" aria-hidden="true"></div>
+    <div class="skeleton" aria-hidden="true"></div>
+  </section>
+  } @if (store.customer(); as customer) {
+  <section class="card" aria-labelledby="customer-identity-title">
+    <h2 id="customer-identity-title">Confirmed customer</h2>
+    <dl>
+      <dt>Google customer ID</dt>
+      <dd class="identifier">{{ customer.customerId }}</dd>
+      <dt>Primary domain</dt>
+      <dd>{{ customer.primaryDomain }}</dd>
+    </dl>
+  </section>
+  <section class="card" aria-labelledby="settings-title">
+    <h2 id="settings-title">Display name</h2>
+    <p>
+      Saved name: <strong>{{ customer.settings.displayName }}</strong>. Revision
+      {{ customer.revision }}.
+    </p>
+    @if (customer.lastRequestId && !pending()) {
+    <button
+      mat-stroked-button
+      (click)="viewReceipt()"
+      [disabled]="busy() || auth.interrupted()"
+    >
+      View last save
+    </button>
+    } @if (!canWrite()) {
+    <p>
+      You can view these settings. Ask your administrator for permission to edit
+      them.
+    </p>
+    }
+    <form (ngSubmit)="save()">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Customer display name</mat-label>
+        <input
+          matInput
+          name="displayName"
+          [ngModel]="name()"
+          (ngModelChange)="edit($event)"
+          maxlength="256"
+          required
+          autocomplete="organization"
+          [readonly]="!canWrite() || busy() || !!pending()"
+          [attr.aria-invalid]="dirty() && !valid()"
+          [aria-describedby]="dirty() && !valid() ? 'name-help name-error' : 'name-help'"
+        />
+        <mat-hint id="name-help"
+          >This name appears in Campus Commander. Your organization name in
+          Google stays the same.</mat-hint
+        >
+      </mat-form-field>
+      @if (dirty() && !valid()) {
+      <p id="name-error" class="error" role="alert">
+        Enter a name of 1–256 characters without control characters.
+      </p>
+      } @if (!pending()) {
+      <div class="actions">
+        <button
+          mat-flat-button
+          type="submit"
+          [disabled]="!canWrite() || busy() || !valid() || store.stale() || store.loading() || conflict()"
+        >
+          Save customer settings
+        </button>
+        <button
+          mat-button
+          type="button"
+          (click)="useLatest(false)"
+          [disabled]="busy() || store.stale() || !dirty()"
+        >
+          Discard edits and load saved name
+        </button>
+      </div>
+      }
+    </form>
+    @if (conflict()) {
+    <section aria-labelledby="conflict-title">
+      <h3 id="conflict-title" tabindex="-1">Review the latest saved name</h3>
+      <p>
+        Someone saved a change since you opened this form. Compare the saved
+        name above with your edits before saving.
+      </p>
+      <button
+        mat-stroked-button
+        (click)="useLatest(true)"
+        [disabled]="busy() || store.stale() || store.loading() || !canWrite()"
+      >
+        Keep my edited name
+      </button>
+    </section>
+    } @if (pending(); as pending) {
+    <section aria-labelledby="pending-title">
+      <h3 id="pending-title" tabindex="-1">Check whether your changes saved</h3>
+      <p>
+        We have not received a save confirmation. Check the save status before
+        making more changes.
+      </p>
+      <p>Requested name: {{ pending.settings.displayName }}</p>
+      <div class="actions">
+        <button
+          mat-flat-button
+          (click)="checkReceipt()"
+          [disabled]="busy() || auth.interrupted() || !store.readable()"
+        >
+          Check save status
+        </button>
+        <button
+          mat-stroked-button
+          (click)="save()"
+          [disabled]="busy() || !canWrite() || store.stale() || store.loading()"
+        >
+          Retry save
+        </button>
+      </div>
+    </section>
+    } @if (receipt(); as receipt) {
+    <section aria-labelledby="receipt-title">
+      <h3 id="receipt-title" tabindex="-1">Save confirmed</h3>
+      <p>
+        {{ receipt.settings.displayName }} — revision {{ receipt.revision }},
+        saved {{ receipt.savedAt | date:'medium' }}.
+      </p>
+      <p>This records an earlier save. The current name appears above.</p>
+    </section>
+    }
+  </section>
+  <section class="card" aria-labelledby="progress-title">
+    <h2 id="progress-title">Setup progress</h2>
+    <ol>
+      <li>
+        Customer confirmed: {{ customer.onboarding.customerConfirmedAt |
+        date:'medium' }}.
+      </li>
+      <li>
+        @if (customer.onboarding.settingsConfirmedAt) { Settings first saved: {{
+        customer.onboarding.settingsConfirmedAt | date:'medium' }}. } @else {
+        Customer settings have not been saved. }
+      </li>
+    </ol>
+    <p>
+      Last successful Google check: {{
+      customer.onboarding.lastGoogleObservationAt | date:'medium' }}.
+    </p>
+    <p>
+      To check whether Google access still works, open the Google connection
+      page.
+    </p>
+    @if (auth.can('connection:read', {kind: 'district', customerId:
+    customer.customerId})) {
+    <a routerLink="/google-connection">Review Google connection</a> }
+  </section>
+  } @else if (store.loaded()) {
+  <p>Connect your Google Workspace account before saving these settings.</p>
+  @if (auth.can('connection:read', {kind: 'platform'})) {
+  <a routerLink="/google-connection">Connect Google customer</a> } }
+</div>

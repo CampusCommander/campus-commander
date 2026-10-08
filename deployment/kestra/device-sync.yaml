@@ -1,0 +1,29 @@
+id: device_sync
+namespace: campus.application
+inputs:
+  - id: customerId
+    type: STRING
+  - id: syncId
+    type: STRING
+  - id: correlationId
+    type: STRING
+tasks:
+  - id: dispatch
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/device-sync'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "customerId": inputs.customerId,
+        "syncId": inputs.syncId,
+        "correlationId": inputs.correlationId
+      } | json }}
+    timeout: PT1H
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT1H

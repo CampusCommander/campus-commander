@@ -1,0 +1,27 @@
+id: phase2_connection
+namespace: campus.application
+inputs:
+  - id: correlationId
+    type: STRING
+  - id: marker
+    type: STRING
+tasks:
+  - id: dispatch
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/synthetic'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "correlationId": inputs.correlationId,
+        "marker": inputs.marker,
+        "delayMilliseconds": 0
+      } | json }}
+    timeout: PT10S
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT5S

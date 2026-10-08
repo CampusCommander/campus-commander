@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "kubernetes",
+  "sourceRevision": "0abf75ed6f03bb1202fe26fd928a40c09647f1b5",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:254bff587eeb0fd0bff2b3e6dbae342a7724329109b3d0c2d659c31857544f18",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:a119fb30b7b24f3040dbfa84a10a322da1fdf9f92dab16279882b7994663cbdc",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:6b4dd0f5130fac0d055ff6e39e4378d322595ae01bcec1d2a840d6ae54a53316"
+  },
+  "bundleManifestSha256": "d6291da7def3ec31da6e03da1f2f0297810694b5f4688c473bd9eccc552bde9c",
+  "harnessRevision": "4722d3870880bb2e51c8ae9e0607a93490910e4b",
+  "harnessWorkingTree": "clean",
+  "command": "npm exec -- nx run api-e2e:phase3-kubernetes-install-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "uid": 1000,
+    "gid": 1000
+  },
+  "status": "failed",
+  "stage": "installed public workflows",
+  "failureStages": ["installed public workflows"],
+  "failureLocations": [
+    {
+      "stage": "installed public workflows",
+      "locations": [
+        {
+          "file": "api-e2e/phase3-installed-workflows.mjs",
+          "line": 71,
+          "column": 12
+        },
+        {
+          "file": "api-e2e/phase3-installed-workflows.mjs",
+          "line": 104,
+          "column": 21
+        },
+        {
+          "file": "api-e2e/kubernetes.test.mjs",
+          "line": 671,
+          "column": 34
+        },
+        {
+          "file": "api-e2e/profile-browser.mjs",
+          "line": 122,
+          "column": 23
+        },
+        {
+          "file": "api-e2e/kubernetes.test.mjs",
+          "line": 666,
+          "column": 27
+        }
+      ]
+    }
+  ],
+  "durationMs": 313300,
+  "error": "Kubernetes Phase 3 qualification failed.",
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35257810791",
+    "artifactId": 10513689226,
+    "artifactName": "phase-3-kubernetes-installation",
+    "artifactArchiveSha256": "415c219c8d4d7545ff075a586c4e20f2701b8ef52f0200ce1fe8ebf23618f7c3",
+    "originalReport": "kubernetes-failure.json",
+    "originalReportBytes": 1886,
+    "originalReportSha256": "9eab1f45a3a10838c337409936e3748bfb74bc5ba84e11df62bb3111641846a0"
+  },
+  "disposition": {
+    "status": "fixture-correction-awaiting-hosted-verification",
+    "observation": "Source locations identify the status assertion for credential-candidate creation. The fixture supplied 44 bytes of base64 text instead of the required 32 key bytes.",
+    "localReproduction": "The original seeding path fails the actual loadCredentialCipher contract with key-unavailable after simulated Kubernetes Secret encoding and projection. Raw key bytes pass.",
+    "correction": "Seed raw key bytes. Encode only the Kubernetes Secret data representation. Assert the actual projected key length before public workflows.",
+    "earlierImagePreparationFailure": "This run completed image preparation. The preceding attempt did not retain enough detail to establish its cause.",
+    "qualificationPassed": false
+  }
+}

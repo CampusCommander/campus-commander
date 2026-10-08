@@ -1,0 +1,203 @@
+{
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "fd0acf3f-0606-47a4-86ac-4934a22a8eab",
+        "observedAt": "2026-09-12T12:47:09.188Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "b6c1c9b3-dcba-40f4-bfb7-6d342d8111a3",
+        "observedAt": "2026-09-12T12:47:09.281Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "403066ef-1993-47a4-bb44-073b59a7b94f",
+        "observedAt": "2026-09-12T12:47:10.155Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "16b29af8-a40b-45f6-91c0-70af348ee5fe",
+        "observedAt": "2026-09-12T12:47:10.247Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture",
+    "oldSessionRejected": true,
+    "preservedTheme": "dark",
+    "externalDatabase": true,
+    "externalRedis": true,
+    "workerReplicas": 2,
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6552fd5ac1740334f04235def95e58959c605b46f722a9091a98fbca5f6985ac",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:77806b035d3cf2c768290feb846429f4ef32bf18f7ac6e651ec8dcea521367f1",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:e9306ca625da685898cd4f8c00a385df50c4302504eefcd00d52c5097e8b3a61",
+      "postgres": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+      "redis": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee",
+      "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114"
+    }
+  },
+  "schemaVersion": 1,
+  "status": "passed",
+  "profile": "hybrid",
+  "acceptedRelease": false,
+  "sourceState": {
+    "baseGitRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17",
+    "workingTree": "uncommitted-candidate"
+  },
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6552fd5ac1740334f04235def95e58959c605b46f722a9091a98fbca5f6985ac",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:77806b035d3cf2c768290feb846429f4ef32bf18f7ac6e651ec8dcea521367f1",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:e9306ca625da685898cd4f8c00a385df50c4302504eefcd00d52c5097e8b3a61",
+    "postgres": "docker.io/library/postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "redis": "redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee",
+    "kestra": "docker.io/kestra/kestra@sha256:c9e6551c671d8e13274b85f3ccafb945065b8e35e33cf2ea3eeff817d52e7114"
+  },
+  "backup": {
+    "operatorCli": {
+      "runner": "operator-native-existing-mount",
+      "nodeVersion": "v24.19.0",
+      "secretMount": "/run/secrets",
+      "injectedDatabaseTool": false,
+      "commands": [
+        {
+          "command": "backup",
+          "status": "passed"
+        },
+        {
+          "command": "verify",
+          "status": "passed"
+        }
+      ]
+    },
+    "encryptedFiles": 8,
+    "durationMilliseconds": 321
+  },
+  "verification": {
+    "operatorCli": {
+      "runner": "operator-native-existing-mount",
+      "nodeVersion": "v24.19.0",
+      "secretMount": "/run/secrets",
+      "injectedDatabaseTool": false,
+      "commands": [
+        {
+          "command": "restore",
+          "status": "passed"
+        }
+      ]
+    },
+    "status": "verified-services-disabled",
+    "application": {
+      "principals": 1,
+      "securityEvents": 20,
+      "identityStateSha256": "f4720eba9ad90fb837750c67914519962df0f9b56ede9281797f63e76f37604c",
+      "exactIdentityAndPreferences": true,
+      "exactSecurityEvents": true
+    },
+    "durationMilliseconds": 293,
+    "artifact": {
+      "artifactId": "a82ffb1c-d0a2-4c4f-a60e-29da4c9fd0ca",
+      "sha256": "31beeacf839f45edab5aebd5cf915a4451ed2b717842acf2d29e392cb4dca28e"
+    },
+    "execution": {
+      "source": {
+        "rows": 1,
+        "sha256": "1b8ecb1af9a08319fd2977f57040ad352a8c1fc8c02c8db05bfe22fa431c0032",
+        "semanticSha256": "6aed795e51e494c0a188c3576c679ba71f50cce47fd228a1ba6c978d4ade70e6",
+        "fulltextLexemesSha256": "45501619d78d4f62b5b2428a5ae45cc407d33e7ae6c634356720820f3b3e8e2b",
+        "recomputedFulltextSha256": "11b0649c7452cc1672dcd9fe4a6d2366a30eb930e34a7e1963e8a04a519492fc",
+        "fulltextSchema": {
+          "generatedAlways": true,
+          "expressionSha256": "7e6ece0c336c3ea94eb2bd0ef306e81ebcfc7f37c561190d51f3be31fae9e397",
+          "functionSha256": "95a31dc06c957603c960698defd4d9e0567fb184f7a88a84d83a6100d521ea73",
+          "unorderedDistinct": true
+        },
+        "columns": {
+          "id": "d5439cf36b17874f20d4fb172077b5f02339902e17e71fa944f570f438808562",
+          "key": "d5439cf36b17874f20d4fb172077b5f02339902e17e71fa944f570f438808562",
+          "kind": "1d8fc6ceb1f94c6326d6d5483d258fcb2e179e9869325b245d105c2219bf69fd",
+          "value": "8d397860f7214c7ac696a07c6e464a95de79f00cdc9fee5e4dfb44bbddcbfef4",
+          "deleted": "456e2e3fa05ee1e2f4e529558008ce162bbd388a9dd4a923c79543a4a1dba618",
+          "flow_id": "d236a0d6a67f693f0e62799a0bbe084810ea9458ec4aeaf724559823ec3f5653",
+          "end_date": "a17d1d1ad009995641ffcd32638138af6e0ad77991595a7090f19005b4820feb",
+          "fulltext": "4ed78c6ace52eb2d0d9591ba76b5ce81d408cc7e3bf171cdec5e96fe58434ea0",
+          "namespace": "4cf554d1888c0a49789241ff169efffd31d332410a9aab6a7f9ee516f224defc",
+          "tenant_id": "747354f83eb6b671d2a813f986f7e78cdc1d01e63cc1bd52b6e20284c52a43cc",
+          "start_date": "19cc805462d68f659d80533c595ca6b7fa2921aae4747b6e04b5ad00ada4b018",
+          "state_current": "24be8895565175ac32a4c8c23b1ee3cc4b3ea511ab6c7527477e16847c198e07",
+          "state_duration": "12c9f1914c2e28eab2ad7e2414af25254a273f32a31b2da58f115b27335ea0f3",
+          "trigger_execution_id": "1d8fc6ceb1f94c6326d6d5483d258fcb2e179e9869325b245d105c2219bf69fd"
+        }
+      },
+      "restored": {
+        "rows": 1,
+        "sha256": "4ca404bc3a6b85ad40607287b267dc9b73169b2a7c9593ca3ed0577be3698b08",
+        "semanticSha256": "6aed795e51e494c0a188c3576c679ba71f50cce47fd228a1ba6c978d4ade70e6",
+        "fulltextLexemesSha256": "45501619d78d4f62b5b2428a5ae45cc407d33e7ae6c634356720820f3b3e8e2b",
+        "recomputedFulltextSha256": "11b0649c7452cc1672dcd9fe4a6d2366a30eb930e34a7e1963e8a04a519492fc",
+        "fulltextSchema": {
+          "generatedAlways": true,
+          "expressionSha256": "7e6ece0c336c3ea94eb2bd0ef306e81ebcfc7f37c561190d51f3be31fae9e397",
+          "functionSha256": "95a31dc06c957603c960698defd4d9e0567fb184f7a88a84d83a6100d521ea73",
+          "unorderedDistinct": true
+        },
+        "columns": {
+          "id": "d5439cf36b17874f20d4fb172077b5f02339902e17e71fa944f570f438808562",
+          "key": "d5439cf36b17874f20d4fb172077b5f02339902e17e71fa944f570f438808562",
+          "kind": "1d8fc6ceb1f94c6326d6d5483d258fcb2e179e9869325b245d105c2219bf69fd",
+          "value": "8d397860f7214c7ac696a07c6e464a95de79f00cdc9fee5e4dfb44bbddcbfef4",
+          "deleted": "456e2e3fa05ee1e2f4e529558008ce162bbd388a9dd4a923c79543a4a1dba618",
+          "flow_id": "d236a0d6a67f693f0e62799a0bbe084810ea9458ec4aeaf724559823ec3f5653",
+          "end_date": "a17d1d1ad009995641ffcd32638138af6e0ad77991595a7090f19005b4820feb",
+          "fulltext": "11b0649c7452cc1672dcd9fe4a6d2366a30eb930e34a7e1963e8a04a519492fc",
+          "namespace": "4cf554d1888c0a49789241ff169efffd31d332410a9aab6a7f9ee516f224defc",
+          "tenant_id": "747354f83eb6b671d2a813f986f7e78cdc1d01e63cc1bd52b6e20284c52a43cc",
+          "start_date": "19cc805462d68f659d80533c595ca6b7fa2921aae4747b6e04b5ad00ada4b018",
+          "state_current": "24be8895565175ac32a4c8c23b1ee3cc4b3ea511ab6c7527477e16847c198e07",
+          "state_duration": "12c9f1914c2e28eab2ad7e2414af25254a273f32a31b2da58f115b27335ea0f3",
+          "trigger_execution_id": "1d8fc6ceb1f94c6326d6d5483d258fcb2e179e9869325b245d105c2219bf69fd"
+        }
+      },
+      "exactStoredColumns": true,
+      "exactOtherGeneratedColumns": true,
+      "fulltextLexemesEqual": true
+    },
+    "kestraFiles": 1,
+    "sourceMarkerPreserved": true,
+    "migrationLedgerPreserved": true,
+    "configurationPreserved": true,
+    "bootstrapRevoked": true,
+    "disabledMarkerPreserved": true,
+    "nativeTools": {
+      "pg_dump": "pg_dump (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)",
+      "pg_restore": "pg_restore (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)"
+    }
+  },
+  "freshRedis": {
+    "sourceSentinelAbsent": true,
+    "authenticatedTargetWriteRead": true,
+    "persistence": "new tmpfs"
+  },
+  "sourceOfflineDuringVerification": true,
+  "targetNetworkIsolated": true,
+  "targetServicesReleased": true,
+  "fixtureDirectory": "/tmp/cc-hybrid-restore-24455a0c-5991-4041-b970-f9f1574364d3-JKYfdM",
+  "limits": [
+    "One Docker host simulates district dependencies and worker hosts.",
+    "Separate temporary paths do not prove independent backup media.",
+    "No district shared-filesystem or operator recovery-key custody qualification.",
+    "Source and target use the same loopback application origin sequentially.",
+    "The target uses new database roles and passwords. Synthetic OIDC and service credentials remain unchanged."
+  ],
+  "durationMs": 68404,
+  "recordedAt": "2026-09-12T12:47:22.536Z"
+}

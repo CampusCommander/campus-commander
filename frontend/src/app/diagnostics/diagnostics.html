@@ -1,0 +1,296 @@
+<h1>Diagnostics</h1>
+<p>Check application services and inspect their results.</p>
+@if (!auth.session()?.identity?.permissions?.includes('diagnostics:read')) {
+<p role="alert">
+  You do not have permission to view Diagnostics. Contact your administrator.
+</p>
+} @else { @if (diagnostics.error(); as error) {
+<p role="alert" class="error">{{ error }}</p>
+}
+<section
+  class="card"
+  aria-labelledby="connection-title"
+  [attr.aria-busy]="diagnostics.refreshing()"
+>
+  <div class="section-heading">
+    <h2 id="connection-title">Service connections</h2>
+    <button
+      mat-stroked-button
+      (click)="diagnostics.refresh()"
+      [disabled]="diagnostics.refreshing()"
+    >
+      Refresh connections
+    </button>
+  </div>
+  @if (diagnostics.health(); as health) {
+  <ul class="health-list">
+    @for (check of health.checks; track check.name) {
+    <li>
+      <span>{{ check.name }}</span
+      ><strong [class.error]="check.status !== 'ready'"
+        >{{ check.status === 'ready' ? 'Ready' : 'Needs attention' }}</strong
+      >
+    </li>
+    }
+  </ul>
+  <p class="secondary">
+    <time
+      [attr.datetime]="health.observedAt"
+      [attr.title]="health.observedAt | date:'medium'"
+      >Observed {{ diagnostics.ageSeconds() }} seconds ago</time
+    >@if (diagnostics.stale()) { · Out of date }
+  </p>
+  } @else { @if (diagnostics.refreshing()) {
+  <div class="health-skeleton" aria-hidden="true">
+    <span></span><span></span><span></span><span></span>
+  </div>
+  <p role="status">Checking service connections.</p>
+  } @else {
+  <p role="status">Connection checks have not returned a result.</p>
+  } }
+</section>
+<section aria-labelledby="checks-title">
+  <h2 id="checks-title">Service checks</h2>
+  <p>Checks use temporary test data. Run one check at a time.</p>
+  @if (!auth.session()?.identity?.permissions?.includes('diagnostics:run')) {
+  <p>
+    You can view connections. Ask your administrator for permission to run
+    checks.
+  </p>
+  }
+  <div class="check-grid">
+    @for (operation of operations; track operation.id) {
+    <article class="card">
+      <h3>{{ operation.label }}</h3>
+      <p>{{ operation.description }}</p>
+      <button
+        mat-stroked-button
+        [attr.aria-busy]="diagnostics.running() === operation.id"
+        (click)="diagnostics.run(operation.id)"
+        [disabled]="!!diagnostics.running() || !auth.session()?.identity?.permissions?.includes('diagnostics:run')"
+      >
+        Check {{ operation.label }}
+      </button>
+      <div aria-live="polite" aria-atomic="true">
+        @if (diagnostics.running() === operation.id) {
+        <p>{{ operation.label }}: The check is running.</p>
+        } @else if (diagnostics.results()[operation.id]; as result) {
+        <p [class.error]="result.status !== 'passed'">
+          {{ operation.label }}: {{ result.message }}
+        </p>
+        }
+      </div>
+      @if (diagnostics.results()[operation.id]; as result) {
+      <p class="secondary">{{ result.observedAt | date:'medium' }}</p>
+      <details>
+        <summary>Support reference</summary>
+        <code>{{ result.correlationId }}</code>
+      </details>
+      }
+    </article>
+    }
+  </div>
+</section>
+} @if (google.readable()) {
+<section
+  id="google-health"
+  class="google-health card"
+  aria-labelledby="google-health-title"
+  [attr.aria-busy]="google.loading() || google.running()"
+>
+  <div class="section-heading">
+    <h2 #googleHeading id="google-health-title" tabindex="-1">Google access</h2>
+    <button
+      mat-stroked-button
+      (click)="google.refresh()"
+      [disabled]="google.loading() || google.running()"
+    >
+      Refresh Google status
+    </button>
+  </div>
+  <p>
+    These checks test Google access. The service checks above test Campus
+    Commander itself.
+  </p>
+  <div #googleResult tabindex="-1" role="status" aria-atomic="true">
+    @if (google.error()) {
+    <p class="error">{{ google.error() }}</p>
+    } @if (google.message()) {
+    <p>{{ google.message() }}</p>
+    }
+  </div>
+  @if (google.loading() && !google.loaded()) {
+  <div class="health-skeleton" aria-hidden="true">
+    <span></span><span></span>
+  </div>
+  <p role="status">Loading Google access status.</p>
+  } @else if (!google.health() && !google.unavailable()) {
+  <p>Connect Google Workspace before running these checks.</p>
+  <a mat-stroked-button routerLink="/google-connection"
+    >Connect Google customer</a
+  >
+  } @if (google.health(); as health) {
+  <p>
+    Customer <code>{{ health.customerId }}</code>. {{ google.capabilities.length
+    }} read-only Google checks available.
+  </p>
+  <p>
+    These results show the last check. Run another check to confirm access now.
+  </p>
+  @if (health.connectionState === 'disconnected') {
+  <p role="status">
+    Campus Commander is disconnected from Google. The results below are from
+    earlier checks.
+  </p>
+  <a mat-stroked-button routerLink="/google-connection"
+    >Manage Google credentials</a
+  >
+  } @if (google.pending() || google.running()) {
+  <p role="status">
+    A Google check is running. Refresh Google status to retrieve its saved
+    result.
+  </p>
+  } @else if (google.expired()) {
+  <p role="status">
+    The Google check timed out. Run another check. The results below are from
+    earlier checks.
+  </p>
+  } @if (google.retrySeconds() > 0) {
+  <p>Another check is available in {{ google.retrySeconds() }} seconds.</p>
+  } @if (!google.canCheck() && health.connectionState !== 'disconnected') {
+  <p>
+    You can view these results. Ask your administrator for permission to run
+    Google checks.
+  </p>
+  }
+  <button
+    mat-flat-button
+    (click)="checkGoogle()"
+    [disabled]="google.disabled()"
+  >
+    Check Google access
+  </button>
+  @if (health.backgroundFailure; as failure) {
+  <div class="background-failure">
+    <h3>Background Google access</h3>
+    <p class="error">{{ google.recovery[failure].label }}</p>
+    <p>{{ google.recovery[failure].recovery }}</p>
+    <p>
+      After fixing the problem, run both Google checks to resume background
+      reads.
+    </p>
+  </div>
+  } @for (capability of google.capabilities; track capability.id) { @if
+  (google.result(capability.id); as result) {
+  <article class="capability" [attr.aria-labelledby]="capability.id + '-title'">
+    <h3 [id]="capability.id + '-title'">{{ capability.label }}</h3>
+    <p [class.error]="!!result.failure">
+      {{ result.failure ? google.recovery[result.failure].label : 'Last check
+      passed' }} @if (google.stale(result.checkedAt)) { · Out of date }
+    </p>
+    <p class="secondary">
+      <time
+        [attr.datetime]="result.checkedAt"
+        [attr.title]="result.checkedAt | date:'medium'"
+        >Checked {{ google.age(result.checkedAt) }} seconds ago</time
+      >
+    </p>
+    <p>
+      Required scope: {{ result.scopeVerified ? 'Included in the last access
+      check' : 'Not verified in the last check' }}.
+    </p>
+    @if (result.failure) {
+    <p>{{ google.recovery[result.failure].recovery }}</p>
+    } @if (result.lastSucceededAt) {
+    <p>
+      Last successful check:
+      <time [attr.datetime]="result.lastSucceededAt"
+        >{{ result.lastSucceededAt | date:'medium' }}</time
+      >.
+    </p>
+    }
+    <button
+      mat-stroked-button
+      (click)="checkGoogle(capability.id)"
+      [disabled]="google.disabled()"
+    >
+      Recheck {{ capability.label }}
+    </button>
+    <details>
+      <summary>{{ capability.label }} setup details</summary>
+      <p>
+        Enable domain-wide delegation for this scope. The delegated
+        administrator must also have access to this operation.
+      </p>
+      <code class="scope-text">{{ capability.scope }}</code>
+      <button mat-stroked-button (click)="copyGoogle(capability.scope)">
+        Copy {{ capability.label }} scope
+      </button>
+      <p>
+        <a [href]="capability.source" target="_blank" rel="noopener noreferrer"
+          >Google {{ capability.method }} documentation</a
+        >
+      </p>
+      <p>Checked at: {{ result.checkedAt | date:'medium' }}.</p>
+      <p>Test record: {{ capability.evidence }}.</p>
+      <p>
+        We tested this connection with a Google Super Admin. We have not yet
+        verified the minimum custom administrator role.
+      </p>
+      @if (result.correlationId) {
+      <p>Support reference: <code>{{ result.correlationId }}</code></p>
+      }
+    </details>
+  </article>
+  } }
+  <details class="authorization">
+    <summary>Configure required Google authorization</summary>
+    <p>
+      Add these {{ googleScopes.length }} scopes to allow the checks on this
+      page.
+    </p>
+    <ol>
+      <li>Enable the Admin SDK API in the service-account project.</li>
+      <li>
+        Open
+        <a
+          href="https://admin.google.com/ac/owl/domainwidedelegation"
+          target="_blank"
+          rel="noopener noreferrer"
+          >domain-wide delegation in Google Admin console</a
+        >.
+      </li>
+      <li>
+        Add the service-account numeric client ID and the required scopes below.
+      </li>
+    </ol>
+    @if (connection.connection(); as saved) {
+    <p>Service account client ID: <code>{{ saved.clientId }}</code></p>
+    <button mat-stroked-button (click)="copyGoogle(saved.clientId)">
+      Copy service account client ID
+    </button>
+    }
+    <pre
+      class="scope-text"
+      role="group"
+      tabindex="0"
+      aria-label="Required Google capability scopes"
+    >
+{{ googleScopes.join(',\n') }}</pre
+    >
+    <button mat-stroked-button (click)="copyGoogle(googleScopes.join(','))">
+      Copy required Google scopes
+    </button>
+    <p>
+      Google needs time to apply delegation changes. Run the check again after
+      the change takes effect.
+    </p>
+    <p>
+      To check organizational unit access, open Schools. These checks only cover
+      customer and domain access.
+    </p>
+    <p>These checks do not list users or devices, or change Google data.</p>
+  </details>
+  }
+</section>
+}

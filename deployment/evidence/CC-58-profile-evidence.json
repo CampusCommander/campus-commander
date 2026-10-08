@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "hybrid",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "status": "incomplete",
+  "recordedAt": "2026-09-17T17:24:45.499585+00:00",
+  "reports": [
+    {
+      "kind": "installation",
+      "path": "CC-58-installation.json",
+      "sizeBytes": 21051,
+      "sha256": "1acf64defccdf8342f2f62cbb910187783477951718580cf0b84ac71d3a1aed9",
+      "status": "passed"
+    },
+    {
+      "kind": "resume",
+      "path": "CC-58-resume.json",
+      "sizeBytes": 21221,
+      "sha256": "97938f1aceab952617ede5c91b452572fe045d10b8c1469d7a58e6a4a94a70aa",
+      "status": "passed"
+    },
+    {
+      "kind": "upgrade",
+      "path": "CC-58-native-operator-upgrade.json",
+      "sizeBytes": 40990,
+      "sha256": "c75aa11066219a52927b1b851dfa8acfaa9ec2f0c8002fd2b21cca98637e7942",
+      "status": "passed"
+    },
+    {
+      "kind": "restore",
+      "path": "CC-58-nonempty-storage-restore.json",
+      "sizeBytes": 26032,
+      "sha256": "c4feca5f5ac41c250e5e9e2237d1650312a86ebb48a810a9dc58fe54bc980010",
+      "status": "passed"
+    },
+    {
+      "kind": "faults",
+      "path": "CC-58-faults.json",
+      "sizeBytes": 11107,
+      "sha256": "b6de6c3b2a89f5636c8944e571e79de9d6136681080404de6316d69f5723b786",
+      "status": "passed"
+    }
+  ],
+  "supplementalReports": [
+    {
+      "kind": "installed-workflows",
+      "path": "CC-58-installed-workflows.json",
+      "sizeBytes": 21588,
+      "sha256": "b94b248a73b8a2df303e8731761fc28473d091f55add224bb18c9869dcc0febc",
+      "status": "passed"
+    },
+    {
+      "kind": "distributed-renewal",
+      "path": "CC-58-distributed-renewal.json",
+      "sizeBytes": 5783,
+      "sha256": "eb0a00b8fe4bf5feedc19c08ad326637fdfeef9f4b43fb79c4693a00b5223c7a",
+      "status": "passed"
+    },
+    {
+      "kind": "replica-permissions",
+      "path": "CC-58-replica-permissions.json",
+      "sizeBytes": 29035,
+      "sha256": "7ebfd71f780684803284c79e66438e1a8e231efac2d1d1cdeebdf4dc936e6d9c",
+      "status": "passed"
+    },
+    {
+      "kind": "lifecycle",
+      "path": "CC-58-lifecycle.json",
+      "sizeBytes": 40539,
+      "sha256": "e8fd3172223073eb35dc3ef7217329fe7fcdcb9ef1d04d10ed0675f3d2c67f49",
+      "status": "passed"
+    },
+    {
+      "kind": "guided-update",
+      "path": "CC-58-guided-update.json",
+      "sizeBytes": 43348,
+      "sha256": "3eda45c10bc7faa2e6c15d2a2360b967af2c156fdbc0487d69d63a2e733fdcd2",
+      "status": "passed"
+    }
+  ],
+  "remaining": ["Reconcile CC-54, CC-55, and CC-56 prerequisite acceptance."],
+  "limits": [
+    "All listed profile reports bind application a3601eff2a55373074958c6bc93e9134adbea741. They do not qualify another application revision.",
+    "This inventory records five distinct report categories. It does not close CC-58 or permit full release assembly.",
+    "Synthetic providers do not establish live Google privileges, Education capabilities, or district browser trust.",
+    "The Phase 2 baseline pins the accepted implementation revision. The owner did not identify the exact installed revision.",
+    "Three Docker daemons share one physical host and synthetic shared storage. They do not establish independent physical failure domains or district storage acceptance."
+  ]
+}

@@ -1,0 +1,1475 @@
+{
+  "status": "passed",
+  "profile": "hybrid",
+  "schemaVersion": 1,
+  "phase": 3,
+  "harnessRevision": "b783baf865d2e9f0ce400ff488548c90f61afa82",
+  "harnessWorkingTree": "clean",
+  "command": "npm exec -- nx run api-e2e:phase3-hybrid-provider-fault-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "uid": 1000,
+    "gid": 1000,
+    "browser": "149.0.7827.55"
+  },
+  "installedWorkflows": {
+    "status": "passed",
+    "durationMs": 107801,
+    "checks": {
+      "customerConfirmation": true,
+      "settingsConfirmation": true,
+      "schoolScopeConfirmation": true,
+      "invitationRedemption": true,
+      "explicitIdentityConfirmation": true,
+      "scopedGrantAssignment": true,
+      "crossSchoolDenial": true,
+      "revocation": true,
+      "credentialReplacement": true,
+      "restartPersistence": true
+    },
+    "observations": [
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/candidates",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/google-connection/candidates/23fd28e3-419d-44bd-b883-29dfad662fc6/confirm",
+        "method": "POST",
+        "status": 409
+      },
+      {
+        "path": "/api/google-connection/candidates/23fd28e3-419d-44bd-b883-29dfad662fc6/confirm",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/google-connection",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer/settings",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/references/refresh",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/schools/reviews",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/schools/reviews/08493718-eee1-425c-b531-6db18281ce55/confirm",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/schools/6bae24d2-0a59-49d7-9252-7885e9531246",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/reviews",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/schools/reviews/7f4ddb42-7791-4599-bba6-fa948aae7679/confirm",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/schools/99fdf0de-b011-4c65-9867-5c89e87ccd77",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/auth/invitations",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/auth/session",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "path": "/api/auth/invitations",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/auth/invitations/3335d850-5c56-4e7f-a8ed-829f8f99a63d/confirm",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/auth/session",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users",
+        "method": "GET",
+        "status": 403
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/review",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/access",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/auth/session",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "path": "/api/schools/6bae24d2-0a59-49d7-9252-7885e9531246",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/99fdf0de-b011-4c65-9867-5c89e87ccd77",
+        "method": "GET",
+        "status": 404
+      },
+      {
+        "path": "/api/schools/1fcdecfd-4075-4dd0-b872-e24a20b57868",
+        "method": "GET",
+        "status": 404
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/review",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/access",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/auth/session",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "path": "/api/schools/6bae24d2-0a59-49d7-9252-7885e9531246",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/receipts",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/credentials",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/replacements",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/google-connection/replacements/2a2529b8-cc6e-46ef-b73b-5dd1d3cb4ba3/activate",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/credentials",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/6bae24d2-0a59-49d7-9252-7885e9531246",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/99fdf0de-b011-4c65-9867-5c89e87ccd77",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/receipts",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/credentials",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/6bae24d2-0a59-49d7-9252-7885e9531246",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/99fdf0de-b011-4c65-9867-5c89e87ccd77",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/receipts",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/credentials",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/6bae24d2-0a59-49d7-9252-7885e9531246",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/99fdf0de-b011-4c65-9867-5c89e87ccd77",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/receipts",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/credentials",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/6bae24d2-0a59-49d7-9252-7885e9531246",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/99fdf0de-b011-4c65-9867-5c89e87ccd77",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/receipts",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/credentials",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/6bae24d2-0a59-49d7-9252-7885e9531246",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/99fdf0de-b011-4c65-9867-5c89e87ccd77",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/receipts",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/credentials",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/6bae24d2-0a59-49d7-9252-7885e9531246",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/99fdf0de-b011-4c65-9867-5c89e87ccd77",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/receipts",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/credentials",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/6bae24d2-0a59-49d7-9252-7885e9531246",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/99fdf0de-b011-4c65-9867-5c89e87ccd77",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/c6f8014e-68bb-4a4a-a48a-e9e827064f6f/receipts",
+        "method": "GET",
+        "status": 200
+      }
+    ],
+    "limits": [
+      "The installed application uses synthetic Google and OIDC providers.",
+      "This report covers public API workflows and selected browser steps. It does not establish complete accessibility or district acceptance."
+    ],
+    "durationScope": "Public workflows and restart persistence, including intervening installer diagnostics."
+  },
+  "workerCredentials": {
+    "status": "passed",
+    "durationMs": 11399,
+    "durationScope": "Worker dispatch boundaries, concurrent credential renewal, and worker restart after browser closure.",
+    "customerId": "C0123456",
+    "generation": 2,
+    "workerHosts": [
+      {
+        "role": "worker-1",
+        "daemonId": "dda7b35d-981c-4582-becd-ad46b8b39e33"
+      },
+      {
+        "role": "worker-2",
+        "daemonId": "231b09e9-5c42-4bc9-8a73-cc3203ecf4a9"
+      }
+    ],
+    "observations": [
+      {
+        "host": "worker-1",
+        "daemonId": "dda7b35d-981c-4582-becd-ad46b8b39e33",
+        "status": 401,
+        "generation": 2,
+        "mode": "unauthorized",
+        "completed": false
+      },
+      {
+        "host": "worker-1",
+        "daemonId": "dda7b35d-981c-4582-becd-ad46b8b39e33",
+        "status": 400,
+        "generation": 2,
+        "mode": "credential-field",
+        "completed": false
+      },
+      {
+        "host": "worker-1",
+        "daemonId": "dda7b35d-981c-4582-becd-ad46b8b39e33",
+        "status": 503,
+        "generation": 1,
+        "mode": "retired",
+        "completed": false
+      },
+      {
+        "host": "worker-1",
+        "daemonId": "dda7b35d-981c-4582-becd-ad46b8b39e33",
+        "status": 200,
+        "generation": 2,
+        "mode": "current",
+        "completed": true
+      },
+      {
+        "host": "worker-2",
+        "daemonId": "231b09e9-5c42-4bc9-8a73-cc3203ecf4a9",
+        "status": 401,
+        "generation": 2,
+        "mode": "unauthorized",
+        "completed": false
+      },
+      {
+        "host": "worker-2",
+        "daemonId": "231b09e9-5c42-4bc9-8a73-cc3203ecf4a9",
+        "status": 400,
+        "generation": 2,
+        "mode": "credential-field",
+        "completed": false
+      },
+      {
+        "host": "worker-2",
+        "daemonId": "231b09e9-5c42-4bc9-8a73-cc3203ecf4a9",
+        "status": 503,
+        "generation": 1,
+        "mode": "retired",
+        "completed": false
+      },
+      {
+        "host": "worker-2",
+        "daemonId": "231b09e9-5c42-4bc9-8a73-cc3203ecf4a9",
+        "status": 200,
+        "generation": 2,
+        "mode": "current",
+        "completed": true
+      },
+      {
+        "host": "worker-1",
+        "daemonId": "dda7b35d-981c-4582-becd-ad46b8b39e33",
+        "status": 200,
+        "generation": 2,
+        "mode": "current",
+        "completed": true
+      },
+      {
+        "host": "worker-2",
+        "daemonId": "231b09e9-5c42-4bc9-8a73-cc3203ecf4a9",
+        "status": 200,
+        "generation": 2,
+        "mode": "current",
+        "completed": true
+      },
+      {
+        "host": "worker-1",
+        "daemonId": "dda7b35d-981c-4582-becd-ad46b8b39e33",
+        "status": 200,
+        "generation": 2,
+        "mode": "current",
+        "completed": true
+      },
+      {
+        "host": "worker-2",
+        "daemonId": "231b09e9-5c42-4bc9-8a73-cc3203ecf4a9",
+        "status": 200,
+        "generation": 2,
+        "mode": "current",
+        "completed": true
+      }
+    ],
+    "contention": {
+      "renewalDaemonId": "dda7b35d-981c-4582-becd-ad46b8b39e33",
+      "pendingDaemonId": "231b09e9-5c42-4bc9-8a73-cc3203ecf4a9",
+      "observedWithinMs": 583
+    },
+    "renewalEvents": {
+      "before": 1,
+      "afterConcurrentReads": 2,
+      "afterRestart": 2
+    },
+    "restartRecoveryMs": 2570,
+    "restartRecoveryBoundSeconds": 30,
+    "checks": {
+      "readsAfterBrowserClosure": true,
+      "unauthorizedDispatchRejected": true,
+      "credentialFieldsRejected": true,
+      "retiredGenerationRejected": true,
+      "sharedRenewal": true,
+      "encryptedStoredToken": true,
+      "restartReusesToken": true
+    },
+    "limits": [
+      "The fixture advances the owned token expiry to exercise renewal without a one-hour wait.",
+      "Worker-only preload instrumentation holds synthetic renewal and observes the real pending-lease result without changing it.",
+      "Two worker daemons share one physical host and synthetic Google transport.",
+      "This report does not establish live Google privileges, independent physical failure domains, or complete hybrid fault recovery."
+    ]
+  },
+  "recipientAccessChecks": [
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "stage": "grants-changed",
+      "resource": "session",
+      "status": 401
+    },
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "stage": "grants-changed",
+      "resource": "granted-school",
+      "status": 401
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "stage": "grants-changed",
+      "resource": "session",
+      "status": 401
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "stage": "grants-changed",
+      "resource": "granted-school",
+      "status": 401
+    },
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "stage": "scoped-access",
+      "resource": "session",
+      "status": 200
+    },
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "stage": "scoped-access",
+      "resource": "granted-school",
+      "status": 200
+    },
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "stage": "scoped-access",
+      "resource": "ungranted-school",
+      "status": 404
+    },
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "stage": "scoped-access",
+      "resource": "unknown-school",
+      "status": 404
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "stage": "scoped-access",
+      "resource": "session",
+      "status": 200
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "stage": "scoped-access",
+      "resource": "granted-school",
+      "status": 200
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "stage": "scoped-access",
+      "resource": "ungranted-school",
+      "status": 404
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "stage": "scoped-access",
+      "resource": "unknown-school",
+      "status": 404
+    },
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "stage": "revoked",
+      "resource": "session",
+      "status": 401
+    },
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "stage": "revoked",
+      "resource": "granted-school",
+      "status": 401
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "stage": "revoked",
+      "resource": "session",
+      "status": 401
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "stage": "revoked",
+      "resource": "granted-school",
+      "status": 401
+    }
+  ],
+  "credentialKeyProjection": [
+    {
+      "host": "controller",
+      "daemonId": "a7cb28af-55f4-4ff7-aaee-b88bf88030fb",
+      "service": "api",
+      "containerId": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "readOnly": true,
+      "volumeName": "cc-phase3-hybrid-6b9548322d73_api-secrets",
+      "keyBytesVerified": true,
+      "fileMode": 384,
+      "fileUid": 1000,
+      "fileGid": 1000,
+      "keyId": "hybrid-google-qualification-key"
+    },
+    {
+      "host": "controller",
+      "daemonId": "a7cb28af-55f4-4ff7-aaee-b88bf88030fb",
+      "service": "api",
+      "containerId": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "readOnly": true,
+      "volumeName": "cc-phase3-hybrid-6b9548322d73_api-secrets",
+      "keyBytesVerified": true,
+      "fileMode": 384,
+      "fileUid": 1000,
+      "fileGid": 1000,
+      "keyId": "hybrid-google-qualification-key"
+    },
+    {
+      "host": "worker-1",
+      "daemonId": "dda7b35d-981c-4582-becd-ad46b8b39e33",
+      "service": "workers",
+      "containerId": "b6ab6b9c19df06e441669ee2c091bb6117cbe4669bf54e81e714ef553f559c4e",
+      "readOnly": true,
+      "volumeName": "cc-phase3-hybrid-6b9548322d73-worker-1_workers-secrets",
+      "keyBytesVerified": true,
+      "fileMode": 384,
+      "fileUid": 1000,
+      "fileGid": 1000,
+      "keyId": "hybrid-google-qualification-key"
+    },
+    {
+      "host": "worker-2",
+      "daemonId": "231b09e9-5c42-4bc9-8a73-cc3203ecf4a9",
+      "service": "workers",
+      "containerId": "9187e0665f9d934c83a01ee0be6fe627fc4166f64d46ee4cd6b21696ed5f5fc7",
+      "readOnly": true,
+      "volumeName": "cc-phase3-hybrid-6b9548322d73-worker-2_workers-secrets",
+      "keyBytesVerified": true,
+      "fileMode": 384,
+      "fileUid": 1000,
+      "fileGid": 1000,
+      "keyId": "hybrid-google-qualification-key"
+    }
+  ],
+  "durationScope": "Extracted hybrid installation, public workflows, selected fault group, recovery, and fixture cleanup.",
+  "providerFaults": {
+    "harnessRevision": "b783baf865d2e9f0ce400ff488548c90f61afa82",
+    "harnessWorkingTree": "clean",
+    "command": "npm exec -- nx run api-e2e:phase3-hybrid-provider-fault-integration",
+    "environment": {
+      "nodeVersion": "v24.19.0",
+      "platform": "linux",
+      "architecture": "x64",
+      "browser": "149.0.7827.55"
+    },
+    "schemaVersion": 1,
+    "phase": 3,
+    "profile": "hybrid",
+    "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+    },
+    "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+    "status": "passed",
+    "recordedAt": "2026-09-17T16:57:14.542Z",
+    "durationScope": "Provider fault setup, public checks, local sign-in, recovery, and preservation probes.",
+    "recoveryBoundSeconds": 45,
+    "cases": [
+      {
+        "name": "network",
+        "status": "passed",
+        "failure": "network-failure",
+        "lastSuccessPreserved": true,
+        "localDiagnosticsPassed": true,
+        "freshSignInPassed": true,
+        "connectionPreserved": true,
+        "durableState": {
+          "preservedPolicy": {
+            "google_connection": {
+              "count": 1,
+              "sha256": "0de44d5be1b397d0b0e1dffaf229639819339fc33b06e817cecb72a302b7e86c"
+            },
+            "google_credentials": {
+              "count": 1,
+              "sha256": "66497e8e12342a8649d43de0b63b75d008831e65891208bd5f1ade5d8b264b2e"
+            },
+            "customer_settings_revisions": {
+              "count": 1,
+              "sha256": "2a0b80d0b7d07e6947cc60133c40f0a32873351c947db0bd154d1526870282b3"
+            },
+            "school_definitions": {
+              "count": 2,
+              "sha256": "5b0c74df47fd1f1648277e4169abc10e6fdf6ea826bf060b404edc5c07de6611"
+            },
+            "application_grants": {
+              "count": 13,
+              "sha256": "e6e40240aba8a65c464bcd81d78b7b30e2d9b5b22af2f8b237090d13e9f37257"
+            },
+            "application_access_changes": {
+              "count": 2,
+              "sha256": "d00c5ce141a3a2b429b70971625769d1dc31ccd65e59722df5b3157c78c94ebd"
+            }
+          },
+          "principalCount": 2,
+          "preservedSecurityEvents": 75,
+          "preservedArtifactRecords": 1,
+          "artifactSha256": "0af28308e74cba4fe03c1bf2724d829ac15eb0cffa8391141e3e0c2ddb7ffbeb",
+          "preservedKestraExecutions": 5,
+          "internalStorageSha256": "f8cdf44056085ba066b65b2fd4563ddf5c7a9df02f6a7b1796f2130ad2d8ab4c"
+        },
+        "recoveryMs": 2521,
+        "recovered": true,
+        "durationMs": 6170
+      },
+      {
+        "name": "quota",
+        "status": "passed",
+        "failure": "quota",
+        "lastSuccessPreserved": true,
+        "localDiagnosticsPassed": true,
+        "connectionPreserved": true,
+        "durableState": {
+          "preservedPolicy": {
+            "google_connection": {
+              "count": 1,
+              "sha256": "0de44d5be1b397d0b0e1dffaf229639819339fc33b06e817cecb72a302b7e86c"
+            },
+            "google_credentials": {
+              "count": 1,
+              "sha256": "66497e8e12342a8649d43de0b63b75d008831e65891208bd5f1ade5d8b264b2e"
+            },
+            "customer_settings_revisions": {
+              "count": 1,
+              "sha256": "2a0b80d0b7d07e6947cc60133c40f0a32873351c947db0bd154d1526870282b3"
+            },
+            "school_definitions": {
+              "count": 2,
+              "sha256": "5b0c74df47fd1f1648277e4169abc10e6fdf6ea826bf060b404edc5c07de6611"
+            },
+            "application_grants": {
+              "count": 13,
+              "sha256": "e6e40240aba8a65c464bcd81d78b7b30e2d9b5b22af2f8b237090d13e9f37257"
+            },
+            "application_access_changes": {
+              "count": 2,
+              "sha256": "d00c5ce141a3a2b429b70971625769d1dc31ccd65e59722df5b3157c78c94ebd"
+            }
+          },
+          "principalCount": 2,
+          "preservedSecurityEvents": 75,
+          "preservedArtifactRecords": 1,
+          "artifactSha256": "0af28308e74cba4fe03c1bf2724d829ac15eb0cffa8391141e3e0c2ddb7ffbeb",
+          "preservedKestraExecutions": 5,
+          "internalStorageSha256": "f8cdf44056085ba066b65b2fd4563ddf5c7a9df02f6a7b1796f2130ad2d8ab4c"
+        },
+        "recoveryMs": 2535,
+        "recovered": true,
+        "durationMs": 5166
+      },
+      {
+        "name": "domain-privilege-denied",
+        "status": "passed",
+        "failure": "permission-denied",
+        "lastSuccessPreserved": true,
+        "localDiagnosticsPassed": true,
+        "connectionPreserved": true,
+        "durableState": {
+          "preservedPolicy": {
+            "google_connection": {
+              "count": 1,
+              "sha256": "0de44d5be1b397d0b0e1dffaf229639819339fc33b06e817cecb72a302b7e86c"
+            },
+            "google_credentials": {
+              "count": 1,
+              "sha256": "66497e8e12342a8649d43de0b63b75d008831e65891208bd5f1ade5d8b264b2e"
+            },
+            "customer_settings_revisions": {
+              "count": 1,
+              "sha256": "2a0b80d0b7d07e6947cc60133c40f0a32873351c947db0bd154d1526870282b3"
+            },
+            "school_definitions": {
+              "count": 2,
+              "sha256": "5b0c74df47fd1f1648277e4169abc10e6fdf6ea826bf060b404edc5c07de6611"
+            },
+            "application_grants": {
+              "count": 13,
+              "sha256": "e6e40240aba8a65c464bcd81d78b7b30e2d9b5b22af2f8b237090d13e9f37257"
+            },
+            "application_access_changes": {
+              "count": 2,
+              "sha256": "d00c5ce141a3a2b429b70971625769d1dc31ccd65e59722df5b3157c78c94ebd"
+            }
+          },
+          "principalCount": 2,
+          "preservedSecurityEvents": 75,
+          "preservedArtifactRecords": 1,
+          "artifactSha256": "0af28308e74cba4fe03c1bf2724d829ac15eb0cffa8391141e3e0c2ddb7ffbeb",
+          "preservedKestraExecutions": 5,
+          "internalStorageSha256": "f8cdf44056085ba066b65b2fd4563ddf5c7a9df02f6a7b1796f2130ad2d8ab4c"
+        },
+        "recoveryMs": 2517,
+        "recovered": true,
+        "durationMs": 5069
+      },
+      {
+        "name": "wrong-customer",
+        "status": "passed",
+        "failure": "wrong-customer",
+        "lastSuccessPreserved": true,
+        "localDiagnosticsPassed": true,
+        "connectionPreserved": true,
+        "durableState": {
+          "preservedPolicy": {
+            "google_connection": {
+              "count": 1,
+              "sha256": "0de44d5be1b397d0b0e1dffaf229639819339fc33b06e817cecb72a302b7e86c"
+            },
+            "google_credentials": {
+              "count": 1,
+              "sha256": "66497e8e12342a8649d43de0b63b75d008831e65891208bd5f1ade5d8b264b2e"
+            },
+            "customer_settings_revisions": {
+              "count": 1,
+              "sha256": "2a0b80d0b7d07e6947cc60133c40f0a32873351c947db0bd154d1526870282b3"
+            },
+            "school_definitions": {
+              "count": 2,
+              "sha256": "5b0c74df47fd1f1648277e4169abc10e6fdf6ea826bf060b404edc5c07de6611"
+            },
+            "application_grants": {
+              "count": 13,
+              "sha256": "e6e40240aba8a65c464bcd81d78b7b30e2d9b5b22af2f8b237090d13e9f37257"
+            },
+            "application_access_changes": {
+              "count": 2,
+              "sha256": "d00c5ce141a3a2b429b70971625769d1dc31ccd65e59722df5b3157c78c94ebd"
+            }
+          },
+          "principalCount": 2,
+          "preservedSecurityEvents": 75,
+          "preservedArtifactRecords": 1,
+          "artifactSha256": "0af28308e74cba4fe03c1bf2724d829ac15eb0cffa8391141e3e0c2ddb7ffbeb",
+          "preservedKestraExecutions": 5,
+          "internalStorageSha256": "f8cdf44056085ba066b65b2fd4563ddf5c7a9df02f6a7b1796f2130ad2d8ab4c"
+        },
+        "recoveryMs": 2516,
+        "recovered": true,
+        "durationMs": 5078
+      }
+    ],
+    "limits": [
+      "Google responses and application sign-in use independent synthetic providers.",
+      "The fixture advances the health-check retry timestamp in its owned database.",
+      "Policy hashes exclude connection observation fields that successful health checks refresh. Each failed check separately preserves the full connection.",
+      "These checks do not establish live Google privileges, revocation, or Education behavior.",
+      "Capacity, certificates, and complete profile acceptance require separate evidence."
+    ],
+    "durationMs": 24260,
+    "retiredGenerationRejected": true
+  },
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "recordedAt": "2026-09-17T16:57:52.563Z",
+  "durationMs": 266147,
+  "hosts": [
+    {
+      "role": "controller",
+      "name": "cc-phase3-hybrid-6b9548322d73-controller",
+      "address": "172.18.0.3",
+      "daemonId": "a7cb28af-55f4-4ff7-aaee-b88bf88030fb",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.200.0.1/24",
+        "pool": "10.200.0.0/16"
+      }
+    },
+    {
+      "role": "worker-1",
+      "name": "cc-phase3-hybrid-6b9548322d73-worker-1",
+      "address": "172.18.0.4",
+      "daemonId": "dda7b35d-981c-4582-becd-ad46b8b39e33",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.201.0.1/24",
+        "pool": "10.201.0.0/16"
+      }
+    },
+    {
+      "role": "worker-2",
+      "name": "cc-phase3-hybrid-6b9548322d73-worker-2",
+      "address": "172.18.0.5",
+      "daemonId": "231b09e9-5c42-4bc9-8a73-cc3203ecf4a9",
+      "serverVersion": "29.8.0",
+      "daemonNetwork": {
+        "bridge": "10.202.0.1/24",
+        "pool": "10.202.0.0/16"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "command": "prepare",
+      "releaseRoot": "/release",
+      "status": "prepared",
+      "durationMs": 4359
+    },
+    {
+      "command": "install",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 24264
+    },
+    {
+      "command": "resume",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 7155
+    },
+    {
+      "command": "resume",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 7192
+    },
+    {
+      "command": "stop",
+      "releaseRoot": "/release",
+      "status": "stopped",
+      "durationMs": 2289
+    },
+    {
+      "command": "resume",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 23764
+    },
+    {
+      "command": "uninstall",
+      "releaseRoot": "/release",
+      "status": "uninstalled",
+      "durationMs": 2643
+    },
+    {
+      "command": "resume",
+      "releaseRoot": "/release",
+      "status": "ready",
+      "durationMs": 24430
+    }
+  ],
+  "apiReplicaCount": 2,
+  "sessionChecks": [
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "bab905ef54c421d7e7f12dd67da71f4b84fa8489c2e9e6e2622e3d1eb0f052a7",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "5ccb04c9ef02d449c28adee317e0b6ac1369be6cf4ad5abe60a1398566ce298a",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "bab905ef54c421d7e7f12dd67da71f4b84fa8489c2e9e6e2622e3d1eb0f052a7",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "5ccb04c9ef02d449c28adee317e0b6ac1369be6cf4ad5abe60a1398566ce298a",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "bab905ef54c421d7e7f12dd67da71f4b84fa8489c2e9e6e2622e3d1eb0f052a7",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "5ccb04c9ef02d449c28adee317e0b6ac1369be6cf4ad5abe60a1398566ce298a",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "bab905ef54c421d7e7f12dd67da71f4b84fa8489c2e9e6e2622e3d1eb0f052a7",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "5ccb04c9ef02d449c28adee317e0b6ac1369be6cf4ad5abe60a1398566ce298a",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "bab905ef54c421d7e7f12dd67da71f4b84fa8489c2e9e6e2622e3d1eb0f052a7",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "5ccb04c9ef02d449c28adee317e0b6ac1369be6cf4ad5abe60a1398566ce298a",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "bab905ef54c421d7e7f12dd67da71f4b84fa8489c2e9e6e2622e3d1eb0f052a7",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "5ccb04c9ef02d449c28adee317e0b6ac1369be6cf4ad5abe60a1398566ce298a",
+      "status": 200,
+      "principalId": "aa289787-502b-4d17-ac9f-ee2ff644daac",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "bab905ef54c421d7e7f12dd67da71f4b84fa8489c2e9e6e2622e3d1eb0f052a7",
+      "status": 401,
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "5ccb04c9ef02d449c28adee317e0b6ac1369be6cf4ad5abe60a1398566ce298a",
+      "status": 401,
+      "hiddenSchoolResponse": false
+    }
+  ],
+  "restartRecoveries": [
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "recoveryMs": 3408,
+      "observations": [
+        {
+          "status": "unavailable",
+          "elapsedMs": 1004
+        },
+        {
+          "status": "unavailable",
+          "elapsedMs": 2095
+        },
+        {
+          "status": 200,
+          "elapsedMs": 3407
+        }
+      ]
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "recoveryMs": 483,
+      "observations": [
+        {
+          "status": 200,
+          "elapsedMs": 482
+        }
+      ]
+    }
+  ],
+  "providerConnections": [
+    {
+      "replica": "fe23eff76ee391103d8fb309da65bac79c41e09abba784a544cb6ff1244f3814",
+      "status": 200
+    },
+    {
+      "replica": "3b6c361eb44bdf8ddf485a12cbe397c565247dcb40af84d7377b5238d0c20348",
+      "status": 200
+    }
+  ],
+  "qualificationSourceState": "Extracted published installer bundle with matching application images.",
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "originalRenderPreserved": true,
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "31163985-aaa0-48aa-ad9a-f37205fd9da4",
+        "observedAt": "2026-09-17T16:55:46.643Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "24c307dd-1462-410f-b5cb-9aa972c9623d",
+        "observedAt": "2026-09-17T16:55:46.743Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "5179dc69-9edc-4e9d-ac8d-200f1a4e8bc1",
+        "observedAt": "2026-09-17T16:55:48.664Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "986f3831-1c63-4bd4-a1c5-d05b7441291d",
+        "observedAt": "2026-09-17T16:55:48.846Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "0a76064e-cccc-41e6-b2d0-936493bb5d2a",
+        "observedAt": "2026-09-17T16:56:00.110Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "195f9f12-e1d6-45f6-9669-656369a3368a",
+        "observedAt": "2026-09-17T16:56:00.226Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "93c5aeed-342a-4c25-a555-84c94d7e54cb",
+        "observedAt": "2026-09-17T16:56:00.875Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "1defe169-bea9-451e-aeea-6a5681fe1903",
+        "observedAt": "2026-09-17T16:56:00.991Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "35199320-bc38-411d-9dd0-20967af90da5",
+        "observedAt": "2026-09-17T16:56:08.501Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "ed57864f-0749-4f9b-b6c2-b871b38739fa",
+        "observedAt": "2026-09-17T16:56:08.616Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "5d146ebd-9ec3-4d83-bbce-b37cbe605edd",
+        "observedAt": "2026-09-17T16:56:09.328Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "5b532f13-f2ed-4909-9559-ad2c793c7d2f",
+        "observedAt": "2026-09-17T16:56:09.441Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "0af414b9-0a08-41a0-b54a-5c265bf9a304",
+        "observedAt": "2026-09-17T16:56:39.393Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "226a7589-67aa-4552-8705-fefac333f1e6",
+        "observedAt": "2026-09-17T16:56:39.509Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "9fc7511d-5a8c-4a71-b147-33398ce59c2f",
+        "observedAt": "2026-09-17T16:56:41.057Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "544fce65-8c3f-41b2-8e50-0748bff80ce2",
+        "observedAt": "2026-09-17T16:56:41.174Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "d9bb8ebf-c3fd-4f36-a656-dd60e669ad91",
+        "observedAt": "2026-09-17T16:57:12.661Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "cf3ec8df-dcae-4454-887d-2d608eeab6ae",
+        "observedAt": "2026-09-17T16:57:12.765Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "51a1780e-308c-408c-b163-44b50393fe57",
+        "observedAt": "2026-09-17T16:57:14.374Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "78fd04dd-539d-4ac7-8016-360a80832757",
+        "observedAt": "2026-09-17T16:57:14.489Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "ae4a0c81-b855-4e0f-af40-c1d68ed34e45",
+        "observedAt": "2026-09-17T16:57:17.446Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "fd62481e-6c20-4244-873d-0ec764675b98",
+        "observedAt": "2026-09-17T16:57:17.559Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "f8e3d3d7-ec00-4062-aa26-4efb24be3117",
+        "observedAt": "2026-09-17T16:57:18.214Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "57b23fff-b6be-4407-b29b-bc5d48a5ca2b",
+        "observedAt": "2026-09-17T16:57:18.339Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "bab479cc-cb0d-4221-b44d-bd4d97bb36d9",
+        "observedAt": "2026-09-17T16:57:23.624Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "57649a94-a1fa-4108-8506-739a9061582c",
+        "observedAt": "2026-09-17T16:57:23.724Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "a04521dc-a760-409e-84c6-88ac0efc7fc5",
+        "observedAt": "2026-09-17T16:57:24.377Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "dc73681b-bb29-459d-bd89-8f3e5b142487",
+        "observedAt": "2026-09-17T16:57:24.483Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "502efa72-ced9-49f5-af58-ae57eef12b9a",
+        "observedAt": "2026-09-17T16:57:28.807Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "52258862-d3e7-4ee8-b717-a0f850c802f6",
+        "observedAt": "2026-09-17T16:57:28.907Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "3c5f86bf-5f41-4fbc-9aad-75b7352f7e02",
+        "observedAt": "2026-09-17T16:57:29.546Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "9dd762c5-d1fb-4a08-b669-acaa0e1b92c4",
+        "observedAt": "2026-09-17T16:57:29.646Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "de44ddf8-c834-4353-a520-727e8cc45ce4",
+        "observedAt": "2026-09-17T16:57:33.907Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "92f50bf6-c1b6-4447-8f83-2c744c91953a",
+        "observedAt": "2026-09-17T16:57:34.006Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "7c8db28d-61ba-4c86-a1e8-aa99560f2d96",
+        "observedAt": "2026-09-17T16:57:34.642Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "76f0a5c0-ad5b-4106-8e80-158b94c3d6b9",
+        "observedAt": "2026-09-17T16:57:34.744Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "limits": [
+    "Three Docker daemons share one physical Docker host and synthetic shared storage.",
+    "A separate Compose overlay trusts the synthetic identity provider through the existing district CA mount.",
+    "Final release qualification requires matching installer, test, and application source revisions.",
+    "Upgrade requires separate evidence.",
+    "Isolated restore requires separate evidence.",
+    "Complete fault acceptance and district infrastructure require separate evidence."
+  ],
+  "ownedResourcesRemoved": true,
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35249190946",
+    "artifact": "phase-3-hybrid-provider-faults",
+    "artifactId": 10508562484,
+    "artifactArchiveSha256": "12aaa081afdc3c4fca97b29854621f20d47a647e480cf0dcedf67d13eea3b8f8",
+    "releaseTag": "phase-3-lab-a3601eff2a55",
+    "reports": [
+      {
+        "path": "hybrid-cli.json",
+        "sizeBytes": 45534,
+        "sha256": "b8cf652c255d9deb3c0cce74f5cd7663d64c36601bcb2fe38901c0e805100ab6"
+      },
+      {
+        "path": "hybrid-fault-progress.json",
+        "sizeBytes": 8526,
+        "sha256": "2fa3fd1dce662619e5445b72c160c93c4324364d4d178025b730653eb08f1cde"
+      },
+      {
+        "path": "hybrid-provider-faults.json",
+        "sizeBytes": 45534,
+        "sha256": "b8cf652c255d9deb3c0cce74f5cd7663d64c36601bcb2fe38901c0e805100ab6"
+      }
+    ]
+  }
+}

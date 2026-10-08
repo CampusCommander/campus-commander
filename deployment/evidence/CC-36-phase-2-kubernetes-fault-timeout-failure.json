@@ -1,0 +1,57 @@
+{
+  "status": "failed",
+  "scope": "kubernetes-authenticated-process-fault-fixture",
+  "report": {
+    "status": "failed",
+    "profile": "kubernetes",
+    "sourceRevision": "016fd588aa2741e58d564842fdba5ecc52e7386a",
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:01e60f23d23d4a65771b906d00cb373f7e49a44e5bb39baa8a1d7f71b1245558",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:498478124c8affb7fea4c5447bb77ddffb462c08f91b5cca677081f17c7c6e3f",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:46b48b59ffb8c8d8226c497303db2619da8835abfc47435ecfe67e15c834d0d2"
+    },
+    "recoveryBoundSeconds": 180,
+    "cases": [
+      {
+        "name": "api-interruption",
+        "status": "in-progress",
+        "startedAt": "2026-09-12T13:40:46.839Z"
+      }
+    ],
+    "limits": [
+      "Three Kind nodes share one Docker host and synthetic storage.",
+      "NetworkPolicy enforcement, capacity, and certificate faults require separate evidence."
+    ]
+  },
+  "failure": {
+    "case": "api-interruption",
+    "type": "TimeoutError",
+    "message": "The session request reached its 45-second deadline while both API pods were stopped.",
+    "targetDurationSeconds": 318.27
+  },
+  "correction": "Record a bounded session transport timeout during an intentional API outage. Require successful authenticated recovery afterward.",
+  "regression": {
+    "target": "api-e2e:kubernetes-fault-fixture-test",
+    "original": "failed with TimeoutError",
+    "corrected": "passed",
+    "durationMilliseconds": 454.03
+  },
+  "logs": [
+    {
+      "name": "cc-phase2-kube-process-faults-first.log",
+      "sha256": "47349e34b9c0cfac4c64bd7acfdbdd67c33ae3f5d3158f932cc08887f8149943"
+    },
+    {
+      "name": "cc-phase2-kube-timeout-red.log",
+      "sha256": "583e3d2a51f7d8e3b846df784086fe79d42368b544a39bece54efa13338cb662"
+    },
+    {
+      "name": "cc-phase2-kube-timeout-green.log",
+      "sha256": "914f8378756ae0ce867451d5a7b830502567bebf7c0870b15dd997e60fc7d16a"
+    }
+  ],
+  "limits": [
+    "The failed run does not qualify Kubernetes process recovery.",
+    "The corrected complete profile target requires a separate passing report."
+  ]
+}

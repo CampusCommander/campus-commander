@@ -16,6 +16,7 @@ import {
   sha256,
   signRelease,
   verifyRelease,
+  verifyReleaseFiles,
 } from './integrity.mjs';
 
 const profiles = ['all-docker', 'hybrid', 'kubernetes'];
@@ -170,4 +171,40 @@ test('release verification rejects report claims that differ from the manifest',
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('release inventory verifies dependency @ paths while rejecting traversal and changed bytes', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-runtime-path-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = 'node_modules/node-fetch/@types/index.d.ts';
+  await mkdir(join(root, 'node_modules/node-fetch/@types'), {
+    recursive: true,
+  });
+  const bytes = Buffer.from('export interface Request {}\n');
+  await writeFile(join(root, path), bytes);
+  const entry = { path, sizeBytes: bytes.length, sha256: sha256(bytes) };
+  await verifyReleaseFiles(root, { files: [entry] });
+  for (const invalid of [
+    '/node_modules/@types/file',
+    'node_modules/@types/../../outside',
+    'node_modules/@types/./file',
+    'node_modules/@types//file',
+    'node_modules/@types/file\\name',
+    'node_modules/@types/file\nname',
+  ])
+    await assert.rejects(
+      verifyReleaseFiles(root, { files: [{ ...entry, path: invalid }] }),
+      /path is invalid/,
+    );
+  await writeFile(join(root, path), 'changed');
+  await assert.rejects(
+    verifyReleaseFiles(root, { files: [entry] }),
+    /integrity failed/,
+  );
+  await rm(join(root, path));
+  await symlink('/tmp', join(root, path));
+  await assert.rejects(
+    verifyReleaseFiles(root, { files: [entry] }),
+    /symlinks/,
+  );
 });

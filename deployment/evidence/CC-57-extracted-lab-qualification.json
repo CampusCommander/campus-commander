@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "phase": 3,
+  "profile": "all-docker",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "checks": {
+    "install": "passed",
+    "resume": "passed",
+    "restore": "passed",
+    "upgrade": "not-run",
+    "faults": "not-run"
+  },
+  "command": "node deployment/release/phase3-bundle-qualification.mjs",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "ci": true
+  },
+  "durationMs": 880,
+  "durationScope": "Evidence validation and bundle inventory verification only.",
+  "qualificationDurations": [
+    {
+      "report": "all-docker-profile.json",
+      "durationMs": 241590,
+      "scope": "Complete installer, lifecycle, browser, and restore fixture."
+    },
+    {
+      "report": "all-docker-restore.json",
+      "durationMs": 57157,
+      "scope": "Isolated restore target before source cleanup and pending-login control."
+    }
+  ],
+  "reports": [
+    {
+      "path": "all-docker-profile.json",
+      "sizeBytes": 22626,
+      "sha256": "94d03278a16fd6723dbfc2be587de9929c8ab000608f28efdd9b5fa1c36c3812"
+    },
+    {
+      "path": "all-docker-restore.json",
+      "sizeBytes": 11946,
+      "sha256": "89b6af511123604e91037c830bb91c9c303364cb4e6f854969f4260d883d6656"
+    }
+  ],
+  "limits": [
+    "This laboratory report does not establish full profile or release acceptance.",
+    "Synthetic Google and identity providers do not qualify district privileges or browser trust."
+  ],
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35211855292",
+    "artifact": "phase-3-extracted-qualification",
+    "releaseTag": "phase-3-lab-a3601eff2a55"
+  },
+  "independentVerification": {
+    "status": "passed",
+    "recordedAt": "2026-09-17T11:01:45.929502+00:00",
+    "command": "DOCKER_CONFIG=<isolated-empty-directory> sh install.sh --release phase-3-lab-a3601eff2a55 --verify-only",
+    "archiveSignature": "passed",
+    "manifestSignature": "passed",
+    "imageSignatures": 3,
+    "inventoriedFiles": 1945,
+    "reportHashes": "passed",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "identity": "https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-57-phase3-delivery",
+    "limits": [
+      "Read-only verification does not establish local installation or upgrade behavior."
+    ]
+  }
+}

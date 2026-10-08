@@ -1,0 +1,114 @@
+{
+  "sourceRevision": "fd04554c47dbeccc7f93ab7a7b5f212dbf3f1630",
+  "status": "failure",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249",
+  "jobs": [
+    {
+      "name": "validate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103527767846"
+    },
+    {
+      "name": "publish (worker)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103527935096"
+    },
+    {
+      "name": "publish (api)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103527935133"
+    },
+    {
+      "name": "publish (frontend)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103527935134"
+    },
+    {
+      "name": "capacity",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234792"
+    },
+    {
+      "name": "application (all-docker-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234940"
+    },
+    {
+      "name": "application (hybrid-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234941"
+    },
+    {
+      "name": "application (auth-image-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234942"
+    },
+    {
+      "name": "application (hybrid-restore-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234948"
+    },
+    {
+      "name": "application (kubernetes-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234952"
+    },
+    {
+      "name": "application (hybrid-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234968"
+    },
+    {
+      "name": "application (screen-reader-integration)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234972"
+    },
+    {
+      "name": "application (kubernetes-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234976"
+    },
+    {
+      "name": "application (upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234978"
+    },
+    {
+      "name": "application (restore-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528234990"
+    },
+    {
+      "name": "application (kubernetes-restore-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103528235016"
+    },
+    {
+      "name": "bundle",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34684040249/job/103529097168"
+    }
+  ],
+  "acceptedRelease": false,
+  "installationBundlePublished": false,
+  "readerFailure": "Orca announced startup but received no Chromium announcements. The default browser cache did not prevent recurrence.",
+  "prWorkflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34684041918",
+  "prFailure": "New retained JSON reports required repository formatting. Other PR jobs passed."
+}

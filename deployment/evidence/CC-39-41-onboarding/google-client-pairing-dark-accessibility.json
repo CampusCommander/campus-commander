@@ -1,0 +1,40 @@
+{
+  "name": "google-client-pairing-dark",
+  "engine": {
+    "name": "axe-core",
+    "version": "4.13.0"
+  },
+  "recordedAt": "2026-09-13T03:29:20.963Z",
+  "violations": [],
+  "incomplete": [],
+  "passedRuleIds": [
+    "aria-allowed-attr",
+    "aria-conditional-attr",
+    "aria-deprecated-role",
+    "aria-hidden-body",
+    "aria-prohibited-attr",
+    "aria-required-attr",
+    "aria-roles",
+    "aria-valid-attr-value",
+    "aria-valid-attr",
+    "autocomplete-valid",
+    "button-name",
+    "bypass",
+    "color-contrast",
+    "document-title",
+    "duplicate-id-aria",
+    "form-field-multiple-labels",
+    "html-has-lang",
+    "html-lang-valid",
+    "label",
+    "meta-viewport",
+    "nested-interactive",
+    "target-size"
+  ],
+  "accessibilityTree": "- main:\n  - paragraph: Campus Commander\n  - heading \"Configure Google sign-in\" [level=1]\n  - text: Installer pairing code\n  - textbox \"Installer pairing code\"\n  - paragraph: Copy the private pairing code from the installer terminal.\n  - button \"Connect to installer\"\n  - status\n  - alert",
+  "computedTheme": {
+    "color": "rgb(255, 255, 255)",
+    "background": "rgba(0, 0, 0, 0)"
+  },
+  "screenReaderWalkthrough": "not-run"
+}

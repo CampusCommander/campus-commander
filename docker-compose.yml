@@ -518,6 +518,7 @@
                 'source': 'campus-database-password',
                 'target': 'campus-database-password',
               },
+              { 'source': 'redis-password', 'target': 'redis-password' },
             ],
           'volumes':
             [

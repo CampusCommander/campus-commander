@@ -1,0 +1,177 @@
+{
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "0c2cd27d-2347-4cd7-8051-036cdc30349d",
+        "observedAt": "2026-09-12T05:56:51.811Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "3e392765-8544-4290-89dd-9c5077d6c56b",
+        "observedAt": "2026-09-12T05:56:51.870Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "263285bc-b515-4804-bafa-13fcbdb6810a",
+        "observedAt": "2026-09-12T05:56:52.704Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "1189c57a-61e7-4e8e-8f2d-e6c349001f3c",
+        "observedAt": "2026-09-12T05:56:52.815Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "status": "passed",
+  "project": "cc-installer-4c7f4890-1",
+  "profile": "all-docker",
+  "acceptedRelease": false,
+  "workingTree": "uncommitted-candidate",
+  "baseGitRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+  "artifact": {
+    "artifactId": "f75dca23-fbcc-43ca-b87d-edf2fb823c10",
+    "attemptId": "ad62808e-148a-4b5d-93b8-7c0c976094ec",
+    "schemaVersion": 1,
+    "sizeBytes": 28,
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7"
+  },
+  "before": {
+    "artifactId": "f75dca23-fbcc-43ca-b87d-edf2fb823c10",
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "ledger": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ]
+  },
+  "after": {
+    "artifactId": "f75dca23-fbcc-43ca-b87d-edf2fb823c10",
+    "sha256": "87a0d05fbcc74a234322516a8b2ab569238635925b4345094249e13debac45b7",
+    "ledger": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      },
+      {
+        "id": "002-application-auth",
+        "checksum": "561767ba67da4525759616617a86555626a86de520ca8014671fe7429bc57acd"
+      }
+    ]
+  },
+  "releaseB": {
+    "frontend": "127.0.0.1:37639/phase2/frontend@sha256:cbb4f734e1c4bb4ac7d48dbab9c74d56ab56d86059edf8e69e31aea8f962d70e",
+    "api": "127.0.0.1:37639/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+    "workers": "127.0.0.1:37639/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+  },
+  "releaseInventories": [
+    {
+      "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+      "architectures": ["linux/amd64"],
+      "images": {
+        "frontend": "127.0.0.1:37639/phase1/frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+        "api": "127.0.0.1:37639/phase1/api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+        "workers": "127.0.0.1:37639/phase1/workers@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+      }
+    },
+    {
+      "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+      "architectures": ["linux/amd64"],
+      "workingTree": "uncommitted-candidate",
+      "images": {
+        "frontend": "127.0.0.1:37639/phase2/frontend@sha256:cbb4f734e1c4bb4ac7d48dbab9c74d56ab56d86059edf8e69e31aea8f962d70e",
+        "api": "127.0.0.1:37639/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+        "workers": "127.0.0.1:37639/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+      }
+    }
+  ],
+  "checks": [
+    "actual CLI prepare and resume",
+    "stop and resume preserve data",
+    "uninstall and resume preserve volumes",
+    "encrypted backup verified before upgrade",
+    "different image digests upgrade with artifact and ledger preservation",
+    "active secrets preserved",
+    "input release inventory metadata preserved"
+  ],
+  "prerequisiteExceptions": [
+    {
+      "name": "district-dns",
+      "reason": "Synthetic hostname resolves through explicit loopback connection override."
+    },
+    {
+      "name": "time-synchronization",
+      "reason": "Disposable development host does not expose district time-service evidence."
+    },
+    {
+      "name": "storage-capacity",
+      "reason": "Synthetic fixture uses small data rather than declared district capacity reservation."
+    }
+  ],
+  "baseline": {
+    "schemaVersion": 1,
+    "sourceRevision": "7dbeee83cc06786f03a06d1e2ab21332caeae96e",
+    "architectures": ["linux/amd64"],
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+    },
+    "phase": 1,
+    "qualification": "candidate-only",
+    "sourceTag": "phase-1-candidate-7dbeee83cc06",
+    "sourceManifestSha256": "3afe29148d358bf0629a3826442a2275071d0930190063ded32778e49de4462b",
+    "sourceUrl": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-1-candidate-7dbeee83cc06"
+  },
+  "imageMirrors": [
+    {
+      "source": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+      "mirror": "127.0.0.1:37639/phase1/frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+      "imageId": "sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944"
+    },
+    {
+      "source": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+      "mirror": "127.0.0.1:37639/phase1/api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+      "imageId": "sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce"
+    },
+    {
+      "source": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14",
+      "mirror": "127.0.0.1:37639/phase1/workers@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14",
+      "imageId": "sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+    },
+    {
+      "source": "127.0.0.1:36581/phase2/frontend@sha256:cbb4f734e1c4bb4ac7d48dbab9c74d56ab56d86059edf8e69e31aea8f962d70e",
+      "mirror": "127.0.0.1:37639/phase2/frontend@sha256:cbb4f734e1c4bb4ac7d48dbab9c74d56ab56d86059edf8e69e31aea8f962d70e",
+      "imageId": "sha256:cbb4f734e1c4bb4ac7d48dbab9c74d56ab56d86059edf8e69e31aea8f962d70e"
+    },
+    {
+      "source": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+      "mirror": "127.0.0.1:37639/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+      "imageId": "sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f"
+    },
+    {
+      "source": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8",
+      "mirror": "127.0.0.1:37639/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8",
+      "imageId": "sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+    }
+  ],
+  "registryTransport": "desktop-loopback-relay",
+  "limits": [
+    "The fixture uses the real current installer CLI and published Phase 1 image digests.",
+    "Phase 2 target images remain development artifacts unless published references are supplied.",
+    "The fixture adds its synthetic provider CA and host mapping to the rendered API service.",
+    "A disposable HTTP registry mirrors both inventories with unchanged image content through loopback listeners.",
+    "This check does not certify release signatures or district infrastructure."
+  ]
+}

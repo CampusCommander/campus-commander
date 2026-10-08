@@ -109,7 +109,7 @@ describe('Phase 1 deployment contract', () => {
       label: 'later phase',
       profile: 'all-docker',
       path: 'phase',
-      value: 2,
+      value: 4,
       error: 'phase',
     },
     {
@@ -532,4 +532,150 @@ describe('pre-start CLI', () => {
       rmSync(directory, { recursive: true });
     }
   });
+});
+
+describe('Phase 2 authentication configuration', () => {
+  it.each(profiles)(
+    'requires secure application authentication for %s',
+    (profile) => {
+      const config = parseDeploymentConfig(fixture(profile));
+      config.phase = 2;
+      expect(() => parseDeploymentConfig(config)).toThrow('applicationAuth');
+      config.services.edge.access = 'application';
+      config.applicationAuth = {
+        issuer: 'https://identity.example.org',
+        clientId: 'campus-commander',
+        clientSecretRef:
+          profile === 'kubernetes'
+            ? {
+                provider: 'kubernetes',
+                name: 'application-auth',
+                key: 'client-secret',
+              }
+            : { provider: 'file', path: '/run/secrets/oidc-secret' },
+        publicOrigin: 'https://campus.example.org',
+        sessionLifetimeSeconds: 28800,
+        sessionIdleSeconds: 1800,
+      };
+      expect(parseDeploymentConfig(config).phase).toBe(2);
+      config.phase = 3;
+      expect(parseDeploymentConfig(config).phase).toBe(3);
+      config.googleConnection = {
+        keyId: 'google-key-1',
+        encryptionKeySecretRef:
+          profile === 'kubernetes'
+            ? {
+                provider: 'kubernetes',
+                name: 'google-key',
+                key: 'encryption-key',
+              }
+            : { provider: 'file', path: '/run/secrets/google-key' },
+      };
+      expect(parseDeploymentConfig(config).googleConnection?.keyId).toBe(
+        'google-key-1',
+      );
+      const extraKey = {
+        keyId: 'google-key-2',
+        encryptionKeySecretRef:
+          profile === 'kubernetes'
+            ? {
+                provider: 'kubernetes',
+                name: 'google-key-2',
+                key: 'encryption-key',
+              }
+            : { provider: 'file', path: '/run/secrets/google-key-2' },
+      };
+      expect(
+        parseDeploymentConfig({
+          ...config,
+          googleConnection: {
+            ...config.googleConnection,
+            additionalKeys: [extraKey],
+          },
+        }).googleConnection?.additionalKeys,
+      ).toHaveLength(1);
+      expect(() =>
+        parseDeploymentConfig({
+          ...config,
+          googleConnection: {
+            ...config.googleConnection,
+            additionalKeys: [{ ...extraKey, keyId: 'google-key-1' }],
+          },
+        }),
+      ).toThrow('identifiers must be unique');
+      expect(() =>
+        parseDeploymentConfig({
+          ...config,
+          googleConnection: {
+            ...config.googleConnection,
+            additionalKeys: [
+              {
+                ...extraKey,
+                encryptionKeySecretRef:
+                  config.googleConnection?.encryptionKeySecretRef,
+              },
+            ],
+          },
+        }),
+      ).toThrow('distinct secret references');
+      expect(() =>
+        parseDeploymentConfig({
+          ...config,
+          googleConnection: {
+            ...config.googleConnection,
+            additionalKeys: [
+              {
+                ...extraKey,
+                encryptionKeySecretRef: config.applicationAuth?.clientSecretRef,
+              },
+            ],
+          },
+        }),
+      ).toThrow('separate secret reference');
+      expect(() => parseDeploymentConfig({ ...config, phase: 2 })).toThrow(
+        'Google connections require Phase 3',
+      );
+      expect(() =>
+        parseDeploymentConfig({
+          ...config,
+          googleConnection: {
+            ...config.googleConnection,
+            encryptionKeySecretRef: config.applicationAuth?.clientSecretRef,
+          },
+        }),
+      ).toThrow('separate secret reference');
+      if (profile !== 'kubernetes')
+        for (const name of [
+          'postgres-migrator',
+          'application-postgres-admin-password',
+          'kestra-postgres-admin-password',
+        ])
+          expect(() =>
+            parseDeploymentConfig({
+              ...config,
+              googleConnection: {
+                ...config.googleConnection,
+                encryptionKeySecretRef: {
+                  provider: 'file',
+                  path: `/run/secrets/${name}`,
+                },
+              },
+            }),
+          ).toThrow('Operator secrets');
+      expect(() =>
+        parseDeploymentConfig({ ...config, applicationAuth: undefined }),
+      ).toThrow('applicationAuth');
+      config.applicationAuth.issuer = 'http://identity.example.org';
+      expect(() => parseDeploymentConfig(config)).toThrow('issuer');
+      config.applicationAuth.issuer = 'https://identity.example.org';
+      config.applicationAuth.publicOrigin =
+        'https://campus.example.org/callback';
+      expect(() => parseDeploymentConfig(config)).toThrow('publicOrigin');
+      config.applicationAuth.publicOrigin = 'https://campus.example.org';
+      config.applicationAuth.sessionLifetimeSeconds = 86401;
+      expect(() => parseDeploymentConfig(config)).toThrow(
+        'sessionLifetimeSeconds',
+      );
+    },
+  );
 });

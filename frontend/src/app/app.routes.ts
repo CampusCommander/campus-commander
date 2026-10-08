@@ -1,0 +1,170 @@
+import { inject } from '@angular/core';
+import { Router, type CanActivateFn, type Routes } from '@angular/router';
+import { AuthStore } from './auth.store';
+import { CustomerStore } from './customer-settings/customer.store';
+import { ConnectionStore } from './google-connection/connection.store';
+import { schoolsReadable } from './schools/schools.store';
+import { devicesReadable } from './devices/devices.store';
+
+const authenticated: CanActivateFn = async () => {
+  const auth = inject(AuthStore),
+    router = inject(Router);
+  const metadata = await auth.metadataReady();
+  if (metadata?.phase === 1) return router.parseUrl('/startup');
+  return (await auth.restore()) || router.parseUrl('/login');
+};
+
+export const routes: Routes = [
+  {
+    path: 'invitation',
+    title: 'Accept invitation · Campus Commander',
+    canActivate: [
+      async () => {
+        const auth = inject(AuthStore);
+        const router = inject(Router);
+        return (
+          (await auth.metadataReady())?.phase === 3 || router.parseUrl('/login')
+        );
+      },
+    ],
+    loadComponent: () =>
+      import('./invitations/redeem').then((m) => m.RedeemInvitation),
+  },
+  {
+    path: 'setup',
+    title: 'Administrator setup · Campus Commander',
+    loadComponent: () => import('./setup/setup').then((m) => m.Setup),
+  },
+  {
+    path: 'login',
+    title: 'Sign in · Campus Commander',
+    loadComponent: () => import('./login/login').then((m) => m.Login),
+  },
+  {
+    path: 'startup',
+    title: 'Campus Commander startup',
+    canActivate: [
+      async () => {
+        const auth = inject(AuthStore),
+          router = inject(Router);
+        return (
+          (await auth.metadataReady())?.phase === 1 || router.parseUrl('/')
+        );
+      },
+    ],
+    loadComponent: () => import('./startup/startup').then((m) => m.Startup),
+  },
+  {
+    path: '',
+    loadComponent: () => import('./shell/shell').then((m) => m.Shell),
+    canActivate: [authenticated],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'account' },
+      {
+        path: 'devices',
+        title: 'Devices · Campus Commander',
+        canActivate: [
+          () =>
+            devicesReadable(inject(AuthStore)) ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () =>
+          import('./devices/devices').then((m) => m.DevicesPage),
+      },
+      {
+        path: 'devices/:deviceId',
+        title: 'Device details · Campus Commander',
+        canActivate: [
+          () =>
+            devicesReadable(inject(AuthStore)) ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () =>
+          import('./devices/device-detail').then((m) => m.DeviceDetailPage),
+      },
+      {
+        path: 'schools',
+        title: 'Schools · Campus Commander',
+        canActivate: [
+          () =>
+            schoolsReadable(inject(AuthStore)) ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () =>
+          import('./schools/schools').then((m) => m.SchoolsPage),
+      },
+      {
+        path: 'customer-settings',
+        title: 'Customer settings · Campus Commander',
+        canActivate: [
+          () =>
+            inject(CustomerStore).readable() ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () =>
+          import('./customer-settings/customer-settings').then(
+            (m) => m.CustomerSettingsPage,
+          ),
+      },
+      {
+        path: 'google-connection',
+        title: 'Google customer connection · Campus Commander',
+        canActivate: [
+          () =>
+            inject(ConnectionStore).readable() ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () =>
+          import('./google-connection/google-connection').then(
+            (m) => m.GoogleConnectionPage,
+          ),
+      },
+      {
+        path: 'platform-users',
+        title: 'Platform access · Campus Commander',
+        canActivate: [
+          () => {
+            const auth = inject(AuthStore);
+            const router = inject(Router);
+            return (
+              auth.can('platform-users:read', { kind: 'platform' }) ||
+              router.parseUrl('/account')
+            );
+          },
+        ],
+        loadComponent: () =>
+          import('./platform-access/platform-access').then(
+            (m) => m.PlatformAccess,
+          ),
+      },
+      {
+        path: 'invitations',
+        title: 'Platform invitations · Campus Commander',
+        canActivate: [
+          () => {
+            const auth = inject(AuthStore);
+            const router = inject(Router);
+            return (
+              auth.can('platform-users:read', { kind: 'platform' }) ||
+              router.parseUrl('/account')
+            );
+          },
+        ],
+        loadComponent: () =>
+          import('./invitations/invitations').then((m) => m.Invitations),
+      },
+      {
+        path: 'account',
+        title: 'Your account · Campus Commander',
+        loadComponent: () => import('./account/account').then((m) => m.Account),
+      },
+      {
+        path: 'diagnostics',
+        title: 'Diagnostics · Campus Commander',
+        loadComponent: () =>
+          import('./diagnostics/diagnostics').then((m) => m.Diagnostics),
+      },
+    ],
+  },
+  { path: '**', redirectTo: '' },
+];

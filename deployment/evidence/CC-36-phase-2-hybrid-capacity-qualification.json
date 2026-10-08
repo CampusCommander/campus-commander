@@ -1,0 +1,85 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T14:44:03.194213+00:00",
+  "imageSourceRevision": "8a5f82306ea29bc497a7200914b9bd9dddfe1f01",
+  "fixtureSource": {
+    "baseGitRevision": "8a5f82306ea29bc497a7200914b9bd9dddfe1f01",
+    "workingTree": "uncommitted-candidate",
+    "files": [
+      {
+        "path": ".github/workflows/phase-2-candidate.yml",
+        "sha256": "a14304ca15e5ab7973e4c756288958b74eeb47b9b04225358c7c6b8a438546b8"
+      },
+      {
+        "path": "api-e2e/all-docker-capacity.test.mjs",
+        "sha256": "30efe3ac7094bd8b45d6373b4a0deb3306293273cad51825a1efe116dda539b1"
+      },
+      {
+        "path": "api-e2e/hybrid-cli.test.mjs",
+        "sha256": "4e1ca85a68c42da463333721cf4ebb37454311b7d9ba15a1844f81cf8845cac8"
+      },
+      {
+        "path": "api-e2e/hybrid-hosts-fixture.mjs",
+        "sha256": "047249389edd1d11960ae4bf1c2e9939c9a65deaa0209c2033db15e8c9e06ee8"
+      },
+      {
+        "path": "api-e2e/project.json",
+        "sha256": "69a08c374577687b93acba3da6fd5a80fbb09402fcc61f1051b926474e14b3de"
+      },
+      {
+        "path": "deployment/release/candidate.mjs",
+        "sha256": "4f6160e83eae95f1eac0f89c6d716fe62676a872073be4aec420f623e5f53844"
+      },
+      {
+        "path": "deployment/release/candidate.test.mjs",
+        "sha256": "99098d86635ba3b33a80a8b3435b3b87a0751cef5f5712b32055f456f79cc7d9"
+      },
+      {
+        "path": "api-e2e/hybrid-capacity-fixture.mjs",
+        "sha256": "fe1e16d0cdf96695665c03363a5ced3fa48cd40722130ba73149c16f97b55c79"
+      }
+    ]
+  },
+  "reports": [
+    {
+      "path": "deployment/evidence/CC-36-phase-2-all-docker-capacity-image-preparation.json",
+      "sha256": "86510278f8574ec4dc15850a3f1f5610f5296032ba56b23648519f9f98fbe5f9"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-capacity-image-preparation-failure.json",
+      "sha256": "bfb8a7a5d5281398c9414ea54d3810f4c0e4784c6fc17d5dabcee7c507e52fab"
+    },
+    {
+      "path": "deployment/evidence/CC-36-phase-2-hybrid-authenticated-capacity.json",
+      "sha256": "8328c50d0ed6dfab89c72952817b156d7c9a3a01ed96135ec1c68dcc4829b743"
+    }
+  ],
+  "tests": [
+    {
+      "target": "api-e2e:hybrid-cli-capacity-integration",
+      "status": "passed",
+      "logSha256": "9c0721e74cbf6d040e76586f3fe97f975b8b2a26babf5843a0c9aadfc7fcde5f"
+    },
+    {
+      "target": "api-e2e:all-docker-capacity-integration",
+      "status": "passed",
+      "logSha256": "b1f3940b2cd430fb98f947d57721400da7a1e713a2376b37b87ae59001015bac"
+    },
+    {
+      "target": "deployment:release-test",
+      "status": "passed",
+      "logSha256": "fdb2d49ef238b66417599215b966011736e2b68160501c9c0165fa1e7efa1ead"
+    },
+    {
+      "target": "api-e2e:lint, deployment:lint",
+      "status": "passed",
+      "logSha256": "9bae1ddcc18bb3d96b4b3e71ca01a7dae20300cd0e274c13a1a887fc149c8a20"
+    }
+  ],
+  "limits": [
+    "All application images use published 8a5f823 digests. Fixture and release gate changes require final revision CI.",
+    "The hybrid capacity test uses three Docker daemons on one physical host and a bounded synthetic tmpfs volume.",
+    "Local all-Docker preparation executed pinned downloads with cached layers. A clean CI daemon still requires verification.",
+    "Kubernetes capacity, remaining certificate coverage, complete release qualification, and accepted release assembly remain open."
+  ]
+}

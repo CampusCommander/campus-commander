@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "scope": "bounded-artifact-adapter",
+  "qualifiesProfile": false,
+  "capacityBytes": 8388608,
+  "filledBytes": 8384512,
+  "partialPublished": false,
+  "fixtureSha256": "9e16f6a9aff3d621205d7ce70baead8965f59e20882dda5ad9e2b02350823cb0",
+  "image": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+  "postgresImage": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+  "recordedAt": "2026-09-12T08:33:37.227Z"
+}

@@ -1,0 +1,258 @@
+{
+  "status": "PASS",
+  "checkedAt": "2026-09-12T07:11:02.972Z",
+  "elapsedMilliseconds": 247830,
+  "images": {
+    "frontend": "campus-commander/frontend@sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5",
+    "api": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+    "workers": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+  },
+  "upgrade": {
+    "status": "passed",
+    "recordedAt": "2026-09-12T07:09:16.264Z",
+    "durationMs": 34800,
+    "baselineImages": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+    },
+    "images": {
+      "frontend": "campus-commander/frontend@sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5",
+      "api": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+      "workers": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+    },
+    "runtimeImageContentVerified": true,
+    "beforeImages": [
+      {
+        "service": "frontend",
+        "pod": "frontend-57f4b5b986-mstzs",
+        "image": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944",
+        "imageId": "ghcr.io/campuscommander/campus-commander-frontend@sha256:a0ba050d4f033411fa112692afd63a4af8a8ca16c539bd833ef300cb4e8d2944"
+      },
+      {
+        "service": "api",
+        "pod": "api-7bf85d8bbb-fg9hg",
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+        "imageId": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce"
+      },
+      {
+        "service": "api",
+        "pod": "api-7bf85d8bbb-hqlmg",
+        "image": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce",
+        "imageId": "ghcr.io/campuscommander/campus-commander-api@sha256:2150291765065e38a799cdb7d986eba03b4353b04f7c48afd10d4c9baa6c21ce"
+      },
+      {
+        "service": "workers",
+        "pod": "workers-6764c5fb97-rw82j",
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14",
+        "imageId": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+      },
+      {
+        "service": "workers",
+        "pod": "workers-6764c5fb97-xmc2s",
+        "image": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14",
+        "imageId": "ghcr.io/campuscommander/campus-commander-worker@sha256:695ef426bcb3f2b1cc38c3a7083c5ccb07fb9b0c778de767a2ac4b17f242cf14"
+      }
+    ],
+    "afterImages": [
+      {
+        "service": "frontend",
+        "pod": "frontend-86f8cd868f-l2fw4",
+        "image": "campus-commander/frontend@sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5",
+        "imageId": "docker.io/campus-commander/frontend@sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5"
+      },
+      {
+        "service": "api",
+        "pod": "api-6ffc57b99-92hrb",
+        "image": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+        "imageId": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f"
+      },
+      {
+        "service": "api",
+        "pod": "api-6ffc57b99-x5lsq",
+        "image": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+        "imageId": "127.0.0.1:36581/phase2/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f"
+      },
+      {
+        "service": "workers",
+        "pod": "workers-c99b7fc6d-2wxbg",
+        "image": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8",
+        "imageId": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+      },
+      {
+        "service": "workers",
+        "pod": "workers-c99b7fc6d-4csjc",
+        "image": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8",
+        "imageId": "127.0.0.1:36581/phase2/workers@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+      }
+    ],
+    "baselineMigrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      }
+    ],
+    "upgradedMigrations": [
+      {
+        "id": "001-foundation",
+        "checksum": "7800aa3086d3b642e0b957c934b7c2b7b6ba00d76081fe2c3b79b4d68df18b66"
+      },
+      {
+        "id": "002-application-auth",
+        "checksum": "561767ba67da4525759616617a86555626a86de520ca8014671fe7429bc57acd"
+      }
+    ],
+    "preserved": {
+      "artifactId": "62da3a2e-9b5c-4ea7-9881-f433a55b7006",
+      "artifactSha256": "e5804c1710c0b522544a9e78970f72071e0fc82ad45e8e1752ff3a09621161a6",
+      "artifactMetadata": true,
+      "executionId": "1i0FjJPJtTLGVFKKN1H3sb",
+      "executionState": "SUCCESS",
+      "kestraFiles": 1
+    },
+    "limits": [
+      "Three Kind nodes share one Docker host and synthetic shared storage.",
+      "The fixture applies rendered manifests and runs the installer-owned migration job.",
+      "This report does not establish district infrastructure, network policy enforcement, or signed release acceptance."
+    ]
+  },
+  "application": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "70c96117-ad10-4802-8fc5-f7408fa3be6a",
+        "observedAt": "2026-09-12T07:09:21.300Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "c099ef8c-748c-4a69-af8a-be629589248f",
+        "observedAt": "2026-09-12T07:09:21.381Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "15426ea7-dd0f-42c6-8191-270fe9c1e3d9",
+        "observedAt": "2026-09-12T07:09:22.164Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "9f91cd45-9c8b-4379-ade3-bf716d555f28",
+        "observedAt": "2026-09-12T07:09:22.293Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "1631c931-064e-4e4f-ab6b-12c34ba59b23",
+        "observedAt": "2026-09-12T07:09:34.694Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "65dcf083-42b9-44c5-92ba-d677d60eb77f",
+        "observedAt": "2026-09-12T07:09:34.780Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "38f06fa6-0d8c-4fa7-a6cf-8eb19d3b5de6",
+        "observedAt": "2026-09-12T07:09:35.411Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "bfd30cec-aec1-44d7-9725-d646a326bb4c",
+        "observedAt": "2026-09-12T07:09:35.519Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "5ca8f441-8c94-45a2-82fd-660869605e02",
+        "observedAt": "2026-09-12T07:09:48.154Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "369b69f1-1c96-48e5-9a86-84830b111f5d",
+        "observedAt": "2026-09-12T07:09:48.479Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "caca4dca-8d9a-43e4-b750-6c38cddc8f94",
+        "observedAt": "2026-09-12T07:09:49.119Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "a1437897-75e8-4bb1-a4d0-c77bb89a2931",
+        "observedAt": "2026-09-12T07:09:49.219Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "77dc6db3-5bd5-4340-89b5-2cdbd6527405",
+        "observedAt": "2026-09-12T07:10:01.031Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "2fd66383-d016-42ee-8001-7ef186673ae4",
+        "observedAt": "2026-09-12T07:10:01.263Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "f0eaff26-20f8-4772-b1e3-c45b57b208f2",
+        "observedAt": "2026-09-12T07:10:01.889Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "5f439e9b-b426-48ee-ab1d-6fa784706251",
+        "observedAt": "2026-09-12T07:10:01.999Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "c959a1fc-3c60-41d2-93e0-29e1a0ceffab",
+        "observedAt": "2026-09-12T07:11:01.749Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "bc817236-bb2c-4e7e-bf9a-2e942c39e0e9",
+        "observedAt": "2026-09-12T07:11:01.838Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "c5a75eb6-cd7e-4476-951a-020ef834243b",
+        "observedAt": "2026-09-12T07:11:02.671Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "6f4f692e-203b-440b-83a6-f3e6e5c64e8f",
+        "observedAt": "2026-09-12T07:11:02.774Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "nodes": 3,
+  "apiReplicas": 2,
+  "workerRescheduled": true,
+  "limits": [
+    "Three Kind nodes share one Docker host and synthetic storage.",
+    "Kind default networking does not enforce NetworkPolicy.",
+    "District DNS, identity provider, CNI enforcement, and storage remain separate qualification requirements.",
+    "Isolated restore requires separate evidence."
+  ]
+}

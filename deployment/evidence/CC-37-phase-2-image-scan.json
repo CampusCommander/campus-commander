@@ -1,0 +1,75 @@
+{
+  "recordedAt": "2026-09-12T06:30:53.615000+00:00",
+  "status": "passed",
+  "images": [
+    {
+      "service": "api",
+      "references": [
+        "campus-commander/api@sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f"
+      ],
+      "imageId": "sha256:2f8b84e8dcbaaa29d5e7e6ecca60f67675ba4da8a4dcea2107b61adb5f40941f",
+      "version": "phase-2-development",
+      "build": "7dbeee83cc06786f03a06d1e2ab21332caeae96e-dirty",
+      "scanner": "Trivy 0.74.0",
+      "createdAt": "2026-09-12T01:10:43.589848814-04:00",
+      "results": [
+        {
+          "target": "campus-commander/api:cc-6 (alpine 3.23.5)",
+          "vulnerabilities": 0
+        },
+        {
+          "target": "Node.js",
+          "vulnerabilities": 0
+        }
+      ]
+    },
+    {
+      "service": "frontend",
+      "references": [
+        "campus-commander/frontend@sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5"
+      ],
+      "imageId": "sha256:f83ea348e25da8f418abc806e5beb1b12d5d70ffb1f8ad038f4b2c5be6e812e5",
+      "version": "phase-2-development",
+      "build": "7dbeee83cc06786f03a06d1e2ab21332caeae96e-dirty",
+      "scanner": "Trivy 0.74.0",
+      "createdAt": "2026-09-11T12:36:48Z",
+      "results": [
+        {
+          "target": "campus-commander/frontend:cc-6 (alpine 3.23.5)",
+          "vulnerabilities": 0
+        },
+        {
+          "target": "Node.js",
+          "vulnerabilities": 0
+        }
+      ],
+      "recordedAt": "2026-09-12T06:30:53.615000+00:00"
+    },
+    {
+      "service": "worker",
+      "references": [
+        "campus-commander/worker@sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8"
+      ],
+      "imageId": "sha256:82b9e2f4c6c95bc23b69cf6c8e38008cf89ecfec504e09fbbb6129a534ebeec8",
+      "version": "phase-2-development",
+      "build": "7dbeee83cc06786f03a06d1e2ab21332caeae96e-dirty",
+      "scanner": "Trivy 0.74.0",
+      "createdAt": "2026-09-12T01:10:46.017873938-04:00",
+      "results": [
+        {
+          "target": "campus-commander/worker:cc-6 (alpine 3.23.5)",
+          "vulnerabilities": 0
+        },
+        {
+          "target": "Node.js",
+          "vulnerabilities": 0
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Locally built development images. No signed release qualification.",
+    "Runtime npm was removed. Build stages retain npm.",
+    "Pinned OpenSSL packages: libcrypto3 and libssl3 3.5.8-r0."
+  ]
+}

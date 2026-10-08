@@ -1,0 +1,339 @@
+{
+  "status": "passed",
+  "profile": "all-docker",
+  "recordedAt": "2026-09-12T11:12:59.427Z",
+  "durationMs": 214188,
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ce7e3b9be29f88857d1635a95b1ac1ecfef583ae429fc727c5b3e092c1719ec3",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:5aa75734edc67ac38fb1d9ae3270ce18d5c2836f9bd207315b7b22a25d882b9f",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:d7b93b9e2929530485eebf0207c94e45b007f831b8427f48d8a16c0a6b6f751c"
+  },
+  "sourceRevision": "0185173a5b71831b813e890469661805cd9d69ee",
+  "imageBuildId": "0185173a5b71831b813e890469661805cd9d69ee",
+  "workingTree": "clean",
+  "imageMirrors": [],
+  "installer": {
+    "status": "passed",
+    "commands": [
+      "prepare",
+      "resume",
+      "resume",
+      "stop",
+      "resume",
+      "uninstall",
+      "resume"
+    ],
+    "repeatedResume": true,
+    "redisSessionsDiscarded": true,
+    "freshSignInPreservesPreferences": true,
+    "originalRenderPreserved": true,
+    "source": "workspace"
+  },
+  "browser": {
+    "status": "passed",
+    "screenReader": {
+      "status": "passed",
+      "recordedAt": "2026-09-12T11:12:59.323Z",
+      "reader": "46.1",
+      "checks": {
+        "speechConnection": true,
+        "login": true,
+        "controls": true,
+        "completion": true,
+        "boundedAnnouncements": true,
+        "signOut": true
+      },
+      "connection": {
+        "beforeBrowser": {
+          "status": "observed",
+          "applicationCount": 1,
+          "chromiumRegistered": false,
+          "readerRegistered": true
+        },
+        "afterBrowser": {
+          "status": "observed",
+          "applicationCount": 2,
+          "chromiumRegistered": true,
+          "readerRegistered": true
+        },
+        "loginControlObservations": [
+          {
+            "name": "Sign in to Campus Commander",
+            "role": "link",
+            "focused": false
+          },
+          {
+            "name": "Sign in to Campus Commander",
+            "role": "link",
+            "focused": true
+          }
+        ],
+        "startupAnnouncementVisibleBeforeBrowser": true,
+        "explicitAccessibilityBus": false,
+        "nativeAccessibilityEnabled": true,
+        "browserMentionedInDebug": true,
+        "debugLineCount": 55193,
+        "eventLineCount": 5978
+      },
+      "utterances": [
+        "Screen reader on.",
+        "Google Chrome for Testing frame.",
+        "Address and search bar autocomplete https://campus.example.org:35221/login.",
+        "Finished loading Sign in · Campus Commander.",
+        "Page has 2 landmarks, 1 heading, 1 unvisited link.",
+        "Sign in to Campus Commander link.",
+        "Connecting to sign-in.",
+        "Finished loading Your account · Campus Commander.",
+        "Page has 6 landmarks, 3 headings, 5 unvisited links.",
+        "Loading the application.",
+        "Diagnostics link.",
+        "main content",
+        "region Service checks",
+        "Check PostgreSQL push button.",
+        "PostgreSQL: The check is running.",
+        "PostgreSQL: The check passed. The service returned the expected result.",
+        "Check Redis push button.",
+        "Redis: The check passed. The service returned the expected result.",
+        "Check Kestra push button.",
+        "Kestra: The check is running.",
+        "Kestra: The check passed. The service returned the expected result.",
+        "Check Artifact storage push button.",
+        "Artifact storage: The check is running.",
+        "Artifact storage: The check passed. The service returned the expected result.",
+        "leaving region.",
+        "leaving main content.",
+        "menu",
+        "Use system theme.",
+        "Focus mode",
+        "banner",
+        "Choose theme collapsed push button.",
+        "opens menu",
+        "Browse mode",
+        "Loading the application.",
+        "Diagnostics link.",
+        "Check PostgreSQL push button.",
+        "PostgreSQL: The check is running.",
+        "PostgreSQL: The check passed. The service returned the expected result.",
+        "leaving information.",
+        "main content",
+        "region Service checks",
+        "Check Redis push button.",
+        "Redis: The check is running.",
+        "Redis: The check passed. The service returned the expected result.",
+        "Check Kestra push button.",
+        "Kestra: The check is running.",
+        "Kestra: The check failed. Inspect the service configuration and retry.",
+        "Kestra: The check is running.",
+        "Kestra: The check failed. Inspect the service configuration and retry.",
+        "Kestra: The check is running.",
+        "Kestra: The check passed. The service returned the expected result.",
+        "Check Artifact storage push button.",
+        "Artifact storage: The check is running.",
+        "Artifact storage: The check passed. The service returned the expected result.",
+        "Finished loading Campus Commander.",
+        "Page has 1 landmark, 1 heading.",
+        "Loading the application.",
+        "Finished loading Campus Commander.",
+        "Page has 6 landmarks, 3 headings, 5 unvisited links.",
+        "Loading the application.",
+        "Diagnostics link.",
+        "main content",
+        "region Service checks",
+        "Check PostgreSQL push button.",
+        "PostgreSQL: The check is running.",
+        "PostgreSQL: The check passed. The service returned the expected result.",
+        "Check Redis push button.",
+        "Redis: The check is running.",
+        "Redis: The check passed. The service returned the expected result.",
+        "Check Kestra push button.",
+        "Kestra: The check is running.",
+        "Kestra: The check passed. The service returned the expected result.",
+        "Check Artifact storage push button.",
+        "Artifact storage: The check is running.",
+        "Artifact storage: The check passed. The service returned the expected result.",
+        "Finished loading Campus Commander.",
+        "Page has 1 landmark, 1 heading.",
+        "Loading the application.",
+        "Finished loading Your account · Campus Commander.",
+        "Page has 6 landmarks, 3 headings, 5 unvisited links.",
+        "Diagnostics link.",
+        "main content",
+        "region Service checks",
+        "Check PostgreSQL push button.",
+        "PostgreSQL: The check is running.",
+        "PostgreSQL: The check passed. The service returned the expected result.",
+        "Check Redis push button.",
+        "Redis: The check is running.",
+        "Redis: The check passed. The service returned the expected result.",
+        "Check Kestra push button.",
+        "Kestra: The check is running.",
+        "Kestra: The check passed. The service returned the expected result.",
+        "Check Artifact storage push button.",
+        "Artifact storage: The check is running.",
+        "Artifact storage: The check passed. The service returned the expected result.",
+        "leaving region.",
+        "leaving main content.",
+        "banner",
+        "Open user menu collapsed push button.",
+        "opens menu",
+        "Focus mode",
+        "leaving banner.",
+        "menu",
+        "Sign out.",
+        "Screen reader off."
+      ],
+      "rawEvidenceDirectory": "/tmp/cc-phase2-orca-p6Ir81",
+      "rules": ["UI-09", "UI-10"],
+      "limits": [
+        "Orca and eSpeak process the real Chromium accessibility tree and speech output.",
+        "The isolated ALSA null device discards audio. Human listening and usability remain separate.",
+        "This fixture covers representative Phase 2 controls and diagnostic completion announcements."
+      ]
+    },
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "dad0c8cb-3b36-48e2-b031-b06881543dfa",
+        "observedAt": "2026-09-12T11:10:30.280Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "1ddef269-db88-4102-a6e6-7feff650b85a",
+        "observedAt": "2026-09-12T11:10:33.339Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "7e7abfdd-14ef-4d95-b200-075bf2eb6b84",
+        "observedAt": "2026-09-12T11:10:37.824Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "e7d46e6b-86dc-4ce3-8f8d-c07e67e3b306",
+        "observedAt": "2026-09-12T11:10:40.917Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "c9be9a65-3dc3-4381-ab43-765dda264bb5",
+        "observedAt": "2026-09-12T11:10:55.993Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "58022b88-d669-4ae6-a0b7-e00d24a38ae7",
+        "observedAt": "2026-09-12T11:10:59.028Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "26183b5f-b934-4adf-ad22-e434e20d72f0",
+        "observedAt": "2026-09-12T11:11:02.475Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "failed",
+        "correlationId": "5309713c-da59-4679-bbfd-faafda60c281",
+        "observedAt": "2026-09-12T11:11:06.815Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "0e719d34-340a-4de5-a996-d2d09e1861fb",
+        "observedAt": "2026-09-12T11:11:11.163Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "77c3489e-8040-4f4e-a7e3-78c06b210e48",
+        "observedAt": "2026-09-12T11:11:14.242Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "115065bb-26e1-4437-95af-9dc48aaa22ce",
+        "observedAt": "2026-09-12T11:11:52.983Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "c96d3a51-98a8-464e-b74d-89aae2751f86",
+        "observedAt": "2026-09-12T11:11:56.012Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "273a3619-7196-4cb3-b6a0-5541dc2f14a9",
+        "observedAt": "2026-09-12T11:11:59.717Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "fd42d020-73cf-472e-a1f6-063ddb9345d0",
+        "observedAt": "2026-09-12T11:12:02.807Z"
+      },
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "b9f3b43d-56f0-4796-830e-80ef29badd36",
+        "observedAt": "2026-09-12T11:12:41.565Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "54a251e4-cbef-4dff-8f5a-d6b88520b83a",
+        "observedAt": "2026-09-12T11:12:44.595Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "7174058b-bf04-419b-b4d3-d531e18660a8",
+        "observedAt": "2026-09-12T11:12:48.857Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "84fd79cb-6148-42d1-becd-8d5206bc2a17",
+        "observedAt": "2026-09-12T11:12:51.946Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "lifecycle": {
+      "restartRecoveryBoundSeconds": 60,
+      "networkAddresses": {
+        "before": {
+          "api": "172.19.0.7",
+          "frontend": "172.19.0.3",
+          "workers": "172.19.0.6"
+        },
+        "after": {
+          "api": "172.19.0.7",
+          "frontend": "172.19.0.6",
+          "workers": "172.19.0.3"
+        }
+      }
+    },
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "readinessChecks": [
+    "application-database",
+    "kestra-database",
+    "redis",
+    "frontend",
+    "api",
+    "workers",
+    "artifacts",
+    "kestra"
+  ],
+  "sessionSurvivedRestart": true,
+  "limits": [
+    "Synthetic provider CA and loopback port replace district ingress.",
+    "Upgrade and isolated restore require separate evidence."
+  ]
+}

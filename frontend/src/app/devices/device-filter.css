@@ -1,0 +1,87 @@
+:host {
+  position: relative;
+  display: inline-block;
+}
+.add-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  min-height: 32px;
+  padding-inline: var(--cc-space-md);
+  border: 1px dashed var(--cc-border-control);
+  border-radius: var(--cc-radius-chip);
+  background: transparent;
+  color: var(--cc-text-secondary);
+  cursor: pointer;
+}
+.entry input[role='combobox'] {
+  min-height: 32px;
+  min-width: 240px;
+  padding-inline: var(--cc-space-sm);
+  border: 2px solid var(--cc-accent);
+  border-radius: var(--cc-radius-control);
+}
+.suggestions,
+.editor {
+  position: absolute;
+  z-index: 10;
+  inset-block-start: calc(100% + var(--cc-space-xs));
+  inset-inline-start: 0;
+  min-width: 320px;
+  max-height: 420px;
+  overflow: auto;
+}
+.group-label {
+  margin: var(--cc-space-sm) 0 var(--cc-space-xs);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+[role='option'] {
+  padding: var(--cc-space-sm);
+  cursor: pointer;
+}
+[role='option'].active {
+  background: var(--cc-surface-selected);
+}
+.editor h2 {
+  margin-block-start: 0;
+  font-size: 16px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-xs);
+  margin-block-end: var(--cc-space-md);
+}
+.field select,
+.field input {
+  min-height: 40px;
+  padding-inline: var(--cc-space-sm);
+}
+.check,
+.unit {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-height: 32px;
+}
+.units {
+  max-height: 220px;
+  overflow: auto;
+}
+.hint {
+  color: var(--cc-text-secondary);
+}
+.editor-actions {
+  display: flex;
+  gap: var(--cc-space-sm);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

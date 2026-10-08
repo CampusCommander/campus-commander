@@ -116,8 +116,22 @@ export function renderAllDocker(
     redisPassword: services.redis.passwordSecretRef,
     kestraAuth: services.kestra.authSecretRef,
   };
+  const redisCa =
+    services.redis.endpoint.tls.mode === 'private-ca'
+      ? [services.redis.endpoint.tls.caSecretRef]
+      : [];
   const secretReferences = [
     ...Object.values(refs),
+    ...redisCa,
+    ...(config.applicationAuth ? [config.applicationAuth.clientSecretRef] : []),
+    ...(config.googleConnection
+      ? [
+          config.googleConnection.encryptionKeySecretRef,
+          ...(config.googleConnection.additionalKeys ?? []).map(
+            (entry) => entry.encryptionKeySecretRef,
+          ),
+        ]
+      : []),
     services.edge.serverTls.certificateSecretRef,
     services.edge.serverTls.privateKeySecretRef,
   ];
@@ -134,6 +148,15 @@ export function renderAllDocker(
   ])
     secrets[name] = { file: `./private/${name}` };
   const apiSecrets = [
+    ...(config.applicationAuth ? [config.applicationAuth.clientSecretRef] : []),
+    ...(config.googleConnection
+      ? [
+          config.googleConnection.encryptionKeySecretRef,
+          ...(config.googleConnection.additionalKeys ?? []).map(
+            (entry) => entry.encryptionKeySecretRef,
+          ),
+        ]
+      : []),
     refs.appPassword,
     refs.kestraPassword,
     refs.redisPassword,
@@ -411,7 +434,9 @@ export function renderAllDocker(
         ...restart,
         ...hardening,
         ...resourceLimits(services.workers),
-        networks: ['internal'],
+        networks: config.googleConnection
+          ? ['internal', 'google-egress']
+          : ['internal'],
         healthcheck: health('/health', 3001),
         tmpfs: ['/tmp'],
         environment: {
@@ -422,6 +447,16 @@ export function renderAllDocker(
         secrets: [
           mountedSecret(refs.dispatch),
           mountedSecret(refs.appPassword),
+          mountedSecret(refs.redisPassword),
+          ...redisCa.map(mountedSecret),
+          ...(config.googleConnection
+            ? [
+                config.googleConnection.encryptionKeySecretRef,
+                ...(config.googleConnection.additionalKeys ?? []).map(
+                  (entry) => entry.encryptionKeySecretRef,
+                ),
+              ].map(mountedSecret)
+            : []),
         ],
         volumes: [
           profileMount,
@@ -436,7 +471,10 @@ export function renderAllDocker(
         image: images.api,
         ...restart,
         ...hardening,
-        ...resourceLimits(services.api),
+        deploy: {
+          ...resourceLimits(services.api).deploy,
+          replicas: services.api.placement.replicas,
+        },
         networks: ['ingress', 'internal'],
         healthcheck: health('/health', 3000),
         tmpfs: ['/tmp'],
@@ -494,7 +532,11 @@ export function renderAllDocker(
         },
       },
     },
-    networks: { ingress: {}, internal: { internal: true } },
+    networks: {
+      ingress: {},
+      internal: { internal: true },
+      ...(config.googleConnection ? { 'google-egress': {} } : {}),
+    },
     volumes: {
       'application-postgres': {},
       'kestra-postgres': {},

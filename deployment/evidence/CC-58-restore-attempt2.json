@@ -1,0 +1,141 @@
+{
+  "status": "failed",
+  "profile": "hybrid",
+  "phase": 3,
+  "harnessRevision": "7365415a5229ed376bb8bddad4cff0806e8f0f17",
+  "harnessWorkingTree": "clean",
+  "command": "npm exec -- nx run api-e2e:phase3-hybrid-restore-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "uid": 1000,
+    "gid": 1000
+  },
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "stage": "isolated hybrid restore: native restore",
+  "failure": {
+    "category": "unclassified",
+    "exitCode": null
+  },
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "durationMs": 230978,
+  "providerConnections": [
+    {
+      "replica": "13c9c51de8d7aa2a15660f652a1af40228d6a6cc106664d99d230ab4ffdcb49e",
+      "status": 200
+    },
+    {
+      "replica": "6f2ff8abd45d8285a5c752d8148b7b310aff71f4a20e6996ed29457662a15ae9",
+      "status": 200
+    }
+  ],
+  "sessionChecks": [
+    {
+      "replica": "13c9c51de8d7aa2a15660f652a1af40228d6a6cc106664d99d230ab4ffdcb49e",
+      "status": 200,
+      "principalId": "7421f7e2-8687-4996-81cf-c20e7cbf434a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "6f2ff8abd45d8285a5c752d8148b7b310aff71f4a20e6996ed29457662a15ae9",
+      "status": 200,
+      "principalId": "7421f7e2-8687-4996-81cf-c20e7cbf434a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "13c9c51de8d7aa2a15660f652a1af40228d6a6cc106664d99d230ab4ffdcb49e",
+      "status": 200,
+      "principalId": "7421f7e2-8687-4996-81cf-c20e7cbf434a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "6f2ff8abd45d8285a5c752d8148b7b310aff71f4a20e6996ed29457662a15ae9",
+      "status": 200,
+      "principalId": "7421f7e2-8687-4996-81cf-c20e7cbf434a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "13c9c51de8d7aa2a15660f652a1af40228d6a6cc106664d99d230ab4ffdcb49e",
+      "status": 200,
+      "principalId": "7421f7e2-8687-4996-81cf-c20e7cbf434a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "6f2ff8abd45d8285a5c752d8148b7b310aff71f4a20e6996ed29457662a15ae9",
+      "status": 200,
+      "principalId": "7421f7e2-8687-4996-81cf-c20e7cbf434a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "13c9c51de8d7aa2a15660f652a1af40228d6a6cc106664d99d230ab4ffdcb49e",
+      "status": 200,
+      "principalId": "7421f7e2-8687-4996-81cf-c20e7cbf434a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "6f2ff8abd45d8285a5c752d8148b7b310aff71f4a20e6996ed29457662a15ae9",
+      "status": 200,
+      "principalId": "7421f7e2-8687-4996-81cf-c20e7cbf434a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "0509daff13b55f380c5866990613bcebe87d106b7936d9c2fa428aba3a2fa57b",
+      "status": 200,
+      "principalId": "7421f7e2-8687-4996-81cf-c20e7cbf434a",
+      "hiddenSchoolResponse": false
+    },
+    {
+      "replica": "d8eb1ac9d50ef533ef3a71b6616919a00e27729e5580b6ed63c2825a65b34113",
+      "status": 200,
+      "principalId": "7421f7e2-8687-4996-81cf-c20e7cbf434a",
+      "hiddenSchoolResponse": false
+    }
+  ],
+  "restartRecoveries": [
+    {
+      "replica": "13c9c51de8d7aa2a15660f652a1af40228d6a6cc106664d99d230ab4ffdcb49e",
+      "recoveryMs": 1537,
+      "observations": [
+        {
+          "status": "unavailable",
+          "elapsedMs": 645
+        },
+        {
+          "status": 200,
+          "elapsedMs": 1537
+        }
+      ]
+    },
+    {
+      "replica": "6f2ff8abd45d8285a5c752d8148b7b310aff71f4a20e6996ed29457662a15ae9",
+      "recoveryMs": 235,
+      "observations": [
+        {
+          "status": 200,
+          "elapsedMs": 235
+        }
+      ]
+    }
+  ],
+  "recordedAt": "2026-09-17T15:34:34.698Z",
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35240547903",
+    "artifact": "phase-3-hybrid-restore",
+    "artifactId": 10506105307,
+    "artifactArchiveSha256": "706312d29dbe1221c1836a9c1a4b4954aaa8bc3a4a7e809c34902a55d21d33e8",
+    "releaseTag": "phase-3-lab-a3601eff2a55",
+    "reports": [
+      {
+        "path": "hybrid-cli-failure.json",
+        "sizeBytes": 3350,
+        "sha256": "6f89ef9fe26b25695dceff75143a406d7e04683caf04b10890ce352898877d9a"
+      }
+    ]
+  }
+}

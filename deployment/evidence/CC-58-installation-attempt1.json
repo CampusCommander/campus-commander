@@ -1,0 +1,41 @@
+{
+  "status": "failed",
+  "profile": "hybrid",
+  "phase": 3,
+  "harnessRevision": "83ed68093ac6451fddc4e967eaf63f2cf88bf54e",
+  "harnessWorkingTree": "uncommitted-candidate",
+  "command": "npm exec -- nx run api-e2e:phase3-hybrid-install-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64"
+  },
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "stage": "host preparation",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "durationMs": 60385,
+  "providerConnections": [],
+  "sessionChecks": [],
+  "restartRecoveries": [],
+  "recordedAt": "2026-09-17T13:34:50.530Z",
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35227673796",
+    "artifact": "phase-3-hybrid-installation",
+    "artifactId": 10499698762,
+    "report": {
+      "path": "hybrid-cli-failure.json",
+      "sizeBytes": 1014,
+      "sha256": "87474df0e399200d175e72c1c0d2c24ab57f023a82059cb9fb72a62a4fc3c35b"
+    }
+  },
+  "limits": [
+    "The fixture failed during preparation before delivered installation or browser checks.",
+    "The original stage does not distinguish image transfer, external services, and provider preparation.",
+    "The original working-tree check included generated untracked bundle files. The diagnostic revision checks tracked files."
+  ]
+}

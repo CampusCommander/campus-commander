@@ -1,0 +1,103 @@
+{
+  "status": "platform-qualified-district-integration-pending",
+  "sourceRevision": "e6bfd8d3c8800efe62e53068112ba1983b15ed1c",
+  "recordedAt": "2026-09-16T18:54:07.244Z",
+  "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35136921322",
+  "environment": "Hosted Docker worker, real PostgreSQL and Redis, two API replicas, synthetic HTTPS OIDC provider, and Chromium.",
+  "browserChecks": [
+    "principal list and exact identity detail",
+    "offline draft preservation and disabled review",
+    "failed detail reload invalidates confirmed preview",
+    "unchanged review explains the required edit",
+    "receipt history survives browser reload",
+    "lost confirmation response reports unknown outcome and reconciles committed receipt",
+    "server review and explicit grant confirmation",
+    "editing invalidates reviewed changes",
+    "audited receipt and persisted exact grants",
+    "light and dark accessibility",
+    "keyboard confirmation and 320 pixel reflow"
+  ],
+  "apiChecks": [
+    "authorized principal list, count, detail, and bounded pagination",
+    "direct invited-user read and grant-management denial",
+    "origin and CSRF rejection",
+    "review preserves state and exposes exact grant changes",
+    "confirmation and actor revision required",
+    "exact grants, permission version, and durable receipt returned",
+    "previous recipient session rejected after grant change",
+    "stale confirmation denied",
+    "last platform administrator disable denied",
+    "principal disable and enable preserve stable identity"
+  ],
+  "databaseQualification": {
+    "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35136924107",
+    "job": "foundation-integration (postgres-integration)",
+    "status": "passed",
+    "checks": [
+      "delegation ceilings and self-escalation denial",
+      "concurrent last-administrator protection",
+      "grant/version/enabled-state/audit atomicity and rollback",
+      "identity and preferences preserved",
+      "authorized receipt history, stale actor denial, and bounded pagination"
+    ]
+  },
+  "compatibilityQualification": {
+    "ciRun": "https://github.com/CampusCommander/campus-commander/actions/runs/35136924107",
+    "status": "passed",
+    "jobsPassed": 7
+  },
+  "review": {
+    "base": "29ee2ccf860f6fa4e2130601cab2bf578da8be4f",
+    "initialHead": "955af8d72a7d96e60f24843fd8fce946f8c1bb6c",
+    "fixRevision": "79a0688",
+    "standards": {
+      "initialFindings": 3,
+      "remainingFindings": 0,
+      "resolved": [
+        "unknown confirmation outcome handling",
+        "specific review rejection guidance",
+        "durable authorized receipt history"
+      ]
+    },
+    "spec": {
+      "initialFindings": 1,
+      "remainingFindings": 0,
+      "resolved": [
+        "failed detail reload invalidates confirmation and preserves edits"
+      ]
+    }
+  },
+  "accessibilityReports": [
+    {
+      "artifact": "platform-access-review-dark-accessibility.json",
+      "sha256": "7b26b8409e5b4b71584979549aa625b3bf3b294afe12d8f3b9d82a4d3ba3517b",
+      "violations": 0,
+      "manualChecksOutstanding": []
+    },
+    {
+      "artifact": "platform-access-review-light-accessibility.json",
+      "sha256": "1c2f9f21f1b76cb6fa2d9e457db80b8c13bd2617e73c508374329e8c40c3bf56",
+      "violations": 0,
+      "manualChecksOutstanding": []
+    }
+  ],
+  "uiRules": [
+    "UI-01",
+    "UI-02",
+    "UI-03",
+    "UI-04",
+    "UI-05",
+    "UI-06",
+    "UI-07",
+    "UI-08",
+    "UI-09",
+    "UI-10",
+    "FORM-01"
+  ],
+  "limits": [
+    "CC-46 confirmed customer integration remains required for district grants and CC-51 completion.",
+    "CC-52 adds verified school scopes downstream.",
+    "Human screen-reader validation remains not run.",
+    "No Phase 3 completion or release qualification claim."
+  ]
+}

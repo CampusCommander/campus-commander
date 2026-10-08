@@ -1,0 +1,180 @@
+{
+  "status": "passed",
+  "sourceRevision": "a41bb2fde8d5fff79d59b98c94cace2c8722ba17",
+  "fixtureRevision": "Uncommitted operator CLI fixture changes after a41bb2f.",
+  "command": "PATH=<qualified-native-tools>/bin:$PATH npx nx run deployment:operations-cli-integration",
+  "durationSeconds": 5.3,
+  "logSha256": "a810ff0c0ce9140a52af90810032147198f6b7f6972333fd446c58d6f31ed5c2",
+  "result": {
+    "runner": "operator-cli-native",
+    "commands": [
+      {
+        "command": "generate-key",
+        "status": "passed"
+      },
+      {
+        "command": "generate-key",
+        "status": "rejected"
+      },
+      {
+        "command": "backup",
+        "status": "rejected"
+      },
+      {
+        "command": "backup",
+        "status": "passed"
+      },
+      {
+        "command": "verify",
+        "status": "passed"
+      },
+      {
+        "command": "verify",
+        "status": "rejected"
+      },
+      {
+        "command": "restore",
+        "status": "passed"
+      },
+      {
+        "command": "restore",
+        "status": "rejected"
+      }
+    ],
+    "toolVersions": {
+      "pg_dump": "pg_dump (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)",
+      "pg_restore": "pg_restore (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)"
+    },
+    "backupMilliseconds": 201,
+    "restoreMilliseconds": 150,
+    "encryptedFiles": 6,
+    "results": [
+      "actual connection quiescence enforced",
+      "both database dumps restored",
+      "Phase 2 identity, preferences, permission version, and security events restored",
+      "artifact identity and Unicode bytes restored",
+      "Kestra synthetic state and internal files restored",
+      "missing/wrong keys rejected",
+      "corrupt and missing backup files rejected",
+      "backup inside primary volume rejected",
+      "nonempty target rejected",
+      "absent source volume rejected",
+      "failed restore retains disabled marker without success report",
+      "services remain disabled; Redis requires fresh instance"
+    ],
+    "hybrid": "not-run: district shared mount absent",
+    "kubernetes": "not-run: qualified RWX storage absent"
+  },
+  "nativeToolProvenance": {
+    "image": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+    "versions": {
+      "pg_dump": "pg_dump (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)",
+      "pg_restore": "pg_restore (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)"
+    },
+    "files": [
+      {
+        "path": "bin/pg_dump",
+        "sha256": "c392fd65fa9694ab6b1f3809ae83441de2f223b8053d172a4be2051481a210d3"
+      },
+      {
+        "path": "bin/pg_restore",
+        "sha256": "db4820e33f0b64ea8e0b234a70bd0973e6d73f24a2e315ec94b772f01cd38e8a"
+      },
+      {
+        "path": "lib/ld-linux-x86-64.so.2",
+        "sha256": "438c546d8e8cc48496bf3a95f753051afd9db66a629a74e31a9ded71586b56e0"
+      },
+      {
+        "path": "lib/libc.so.6",
+        "sha256": "fa430b8f298f817a266046af84a77533185ad6fc4406c7d3787b5a0a0c207826"
+      },
+      {
+        "path": "lib/libcom_err.so.2",
+        "sha256": "dc4828400674492839b630c001db424cd38e5cecfcf46dbf705a637647e04bea"
+      },
+      {
+        "path": "lib/libcrypto.so.3",
+        "sha256": "cb0b7ad91caee5f3b1448198b1a60b4d202baf916e779e9dbab7f232155991eb"
+      },
+      {
+        "path": "lib/libgssapi_krb5.so.2",
+        "sha256": "c290f761873ebeac539911010526e1c5db86218bfcb29672760da46841741de0"
+      },
+      {
+        "path": "lib/libk5crypto.so.3",
+        "sha256": "c4c3221d0350f882cee0430b58d5fb289a5776c684d3156964864c8a9719dff1"
+      },
+      {
+        "path": "lib/libkeyutils.so.1",
+        "sha256": "e5d5a7450d08eff7d4bbcaac75ef2b94d3447c81a1b2ddf3ab85d2de4709a9a8"
+      },
+      {
+        "path": "lib/libkrb5.so.3",
+        "sha256": "c4ab64e6bc2874a83e649e4439be752465da027a0041e2bb5343f81c80f0882d"
+      },
+      {
+        "path": "lib/libkrb5support.so.0",
+        "sha256": "f559f051ee5d39f151a57d79f2cde475c484030098b0c73f9f7035b421b187c4"
+      },
+      {
+        "path": "lib/liblber.so.2",
+        "sha256": "ca319704dd4f58b5b3fc8510738850f03f18940544ba04bebf2fa8a23a798346"
+      },
+      {
+        "path": "lib/libldap.so.2",
+        "sha256": "e8f34e65087f24f296fa7a65a8c65383f4a7e2b532c46e40463d4e59a206c20a"
+      },
+      {
+        "path": "lib/liblz4.so.1",
+        "sha256": "67bf8b84af77e962e09be661944f7c61393c4806746734e36db9fbdaebc1de36"
+      },
+      {
+        "path": "lib/libm.so.6",
+        "sha256": "6d567d53e895273ca14a1f9dc164fc6c8d39aed2f60aa46a733c2784228915f3"
+      },
+      {
+        "path": "lib/libpq.so.5",
+        "sha256": "9cce9bfae9405a71e0d642457d9d8748093cea9fdc0f785b5d2ed9575aec168d"
+      },
+      {
+        "path": "lib/libresolv.so.2",
+        "sha256": "d41dd4adacf5a35df426461dd8a92d7bdd5ba29bb61a1c3531bec0ada386f8dd"
+      },
+      {
+        "path": "lib/libsasl2.so.2",
+        "sha256": "3f93968591811eb3972c3467c69c2968dd9cb2b51f7b7bb48de22ba8e17d13fd"
+      },
+      {
+        "path": "lib/libssl.so.3",
+        "sha256": "caac96cbdee92283c7ab4a25611503cb63f161dcc7e6569be76158b63830e398"
+      },
+      {
+        "path": "lib/libxxhash.so.0",
+        "sha256": "7dd49b353facbee50c371d0559ce29db5afee5ac33249ca5c7068420fb642762"
+      },
+      {
+        "path": "lib/libz.so.1",
+        "sha256": "85590dd58edf5445e18bc7193e5ebc01ac5841f1ae187e97705a662e90c6421e"
+      },
+      {
+        "path": "lib/libzstd.so.1",
+        "sha256": "27f07c9a49c2c956bcfb64cd4712976586a66facbf15fc7f09bc37413b5f2b21"
+      },
+      {
+        "path": "native/pg_dump",
+        "sha256": "66115325f4e49f7f9c79a83cfc89d2c9a1698858a1ae9786ae7595cd7a9f2de9"
+      },
+      {
+        "path": "native/pg_restore",
+        "sha256": "06115b93c3d1bf9d7c62563abb595792ea90acb9083233fd293eac1b34695840"
+      }
+    ],
+    "execution": "Native host binaries with the pinned image dynamic loader and libraries. No Docker command adapter runs database tools."
+  },
+  "limits": [
+    "Loopback PostgreSQL without TLS.",
+    "Synthetic Kestra database state and files.",
+    "Linux user and mount namespaces isolate /run/secrets.",
+    "This fixture does not establish full application or district restore acceptance."
+  ]
+}

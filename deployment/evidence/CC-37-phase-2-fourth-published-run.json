@@ -1,0 +1,152 @@
+{
+  "sourceRevision": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
+  "status": "success",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766",
+  "jobs": [
+    {
+      "name": "validate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103525919867"
+    },
+    {
+      "name": "publish (worker)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526057821"
+    },
+    {
+      "name": "publish (frontend)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526057847"
+    },
+    {
+      "name": "publish (api)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526057897"
+    },
+    {
+      "name": "capacity",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371376"
+    },
+    {
+      "name": "application (all-docker-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371479"
+    },
+    {
+      "name": "application (hybrid-restore-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371494"
+    },
+    {
+      "name": "application (auth-image-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371512"
+    },
+    {
+      "name": "application (kubernetes-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371513"
+    },
+    {
+      "name": "application (hybrid-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371519"
+    },
+    {
+      "name": "application (kubernetes-restore-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371526"
+    },
+    {
+      "name": "application (restore-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371533"
+    },
+    {
+      "name": "application (hybrid-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371548"
+    },
+    {
+      "name": "application (kubernetes-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371558"
+    },
+    {
+      "name": "application (screen-reader-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371569"
+    },
+    {
+      "name": "application (upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103526371595"
+    },
+    {
+      "name": "bundle",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34683360766/job/103527156134"
+    }
+  ],
+  "artifactSha256": {
+    "qualification-all-docker-integration/all-docker-profile.json": "3d25c13dd77709cae858b4adcdbae127111e7e43dcf72fe426024523173eb765",
+    "qualification-auth-image-integration/account-accessibility.json": "b9966b9bbca2ead7129155f3b9b9af65abcf43eb10f61e7246522071e978a40a",
+    "qualification-auth-image-integration/diagnostics-dark-accessibility.json": "a61a3c601ab9897ea1f7376c89d2cd8b53c813b9f681d749a862bbd47403684c",
+    "qualification-auth-image-integration/diagnostics-dark.png": "dc1497f06a6469994e6eace8b7c7a5062e41d08da92e2d1bd29ebf65282d55b8",
+    "qualification-auth-image-integration/diagnostics-light-accessibility.json": "7d5f5a734b59fc1d03f835aabacbcba09f695ed8d15c8a0380b93b5beb83978b",
+    "qualification-auth-image-integration/diagnostics-light.png": "cc0be50441519aac20c2a7eea64d961be7ca140243e15d5f5027a862eeac1444",
+    "qualification-auth-image-integration/login-accessibility.json": "39b90d17520639aabc5276b42e87fbeb2dccee403d2fea63f6dece78a9640ed1",
+    "qualification-auth-image-integration/packaged-integration.json": "59206970a9a06ea1a146f3b9a211ab153cac0edca7603b37904d386480f40c96",
+    "qualification-capacity/capacity-result.json": "34954f27df921c1b250e582193f6645eaa04f23e929e3a0df562b2e8c8d439ed",
+    "qualification-capacity/profile-capacity-result.json": "49d921c650aa52efa2a2cbe056ad5d3c60415dd8d935d19719ca2b6815087ae2",
+    "qualification-hybrid-integration/hybrid-profile.json": "f217d5a253e6ec3d9000018064829b2c28da1fb6462b6006f88e829996883ada",
+    "qualification-hybrid-restore-integration/hybrid-restore.json": "f0adddabb293753958a397142c0150ce40a562200d8d9de94b2cecab363d8a1a",
+    "qualification-hybrid-restore-integration/hybrid-upgrade.json": "614ed86c8a949535d3900299b6e3fcdbf4f65d0ff6a14d59d2e644ed2fa5b6bb",
+    "qualification-hybrid-upgrade-integration/hybrid-upgrade.json": "0e71d83bde64ed564b3af64254726b0628b61de8a529bb3d077f66b6ae563d1b",
+    "qualification-kubernetes-integration/kubernetes-profile.json": "de747c9f2ce44f2ccfb53aa25bac1de625d56f2f41a63f1b2bd56e43cb138b3a",
+    "qualification-kubernetes-restore-integration/kubernetes-restore.json": "a774d9d5bf81a679350233fe37957e8e43b4517f92fc07e96dbbca9a3d1b6f32",
+    "qualification-kubernetes-restore-integration/kubernetes-upgrade.json": "357d0947590ad23f6032a470114938ee9cf8aeb17bb77d926bb3b3429eed63cf",
+    "qualification-kubernetes-upgrade-integration/kubernetes-upgrade.json": "5ee923ca6003fdfce7d4625d3612fcd8e0fda0cd831e3e3ffff154e59b717b8d",
+    "qualification-restore-integration/all-docker-restore.json": "b5733826f86cbff194e283509d1d0438662e867560c8f28a0843cce08288ad17",
+    "qualification-restore-integration/all-docker-upgrade.json": "a6d784599e5307ed96dc922c68cd39274c8396a93787fbe8498835b1da78a63d",
+    "qualification-screen-reader-integration/all-docker-profile.json": "65d7cc73b32ba1ddd1f09d7fa511e20c4785dd05f5c7dce86dae925a20db519d",
+    "qualification-screen-reader-integration/screen-reader.json": "ffb99e6b6b662ec83b6b63f33496f29e32fdcb680089108ccb326fff1f870cb2",
+    "qualification-upgrade-integration/all-docker-upgrade.json": "f69bf027e4d2d036109857c1b9baf2498931938c433b9633735dbe833df586db"
+  },
+  "releaseAssetSha256": {
+    "phase-2-candidate.sigstore.json": "8bb0217721c7f0f1e078efd860a09d8be43f75680d2328e7626c771ebe35934f",
+    "phase-2-candidate.tar.gz": "32b3b8ecaa3132cb3a5dc61466d7b84c9c3ddcbc572e67c21f8ba6680ca37b94",
+    "release-manifest.json": "3384696aa12cea81c6d3d8411a512f5a9678f3ee0bc504e5e2bb6c894d9abb40",
+    "release-manifest.sigstore.json": "c0507cabde431861a3a7019a4f57f08c496c4598b89e65f49adc219a3873c281"
+  },
+  "releaseUrl": "https://github.com/CampusCommander/campus-commander/releases/tag/phase-2-candidate-dae5f7a10a03",
+  "acceptedRelease": false,
+  "installationBundlePublished": true,
+  "qualification": "candidate-only",
+  "remainingProfileGates": [
+    "install",
+    "resume",
+    "upgrade",
+    "restore",
+    "faults"
+  ],
+  "retainedCopies": "Repository JSON copies use Prettier formatting. Artifact checksums identify the original downloaded bytes."
+}

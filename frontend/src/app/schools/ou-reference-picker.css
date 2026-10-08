@@ -1,0 +1,49 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+.help {
+  color: var(--cc-text-secondary);
+}
+[role='tree'] {
+  border: 1px solid var(--cc-border-control);
+  border-radius: var(--cc-radius-control);
+}
+[role='treeitem'] {
+  display: flex;
+  align-items: center;
+  min-height: var(--cc-row-height-grid);
+  padding-inline-start: min(calc(var(--ou-depth) * var(--cc-space-lg)), 25%);
+  padding-inline-end: var(--cc-space-sm);
+  cursor: pointer;
+}
+[role='treeitem']:hover {
+  background: var(--cc-surface-hover);
+}
+[aria-selected='true'] {
+  background: var(--cc-surface-selected);
+}
+[role='treeitem']:focus-visible {
+  outline: 2px solid var(--cc-text-link);
+  outline-offset: -2px;
+}
+.expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 var(--cc-row-height-grid);
+  width: var(--cc-row-height-grid);
+  height: var(--cc-row-height-grid);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.label {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  padding-block: var(--cc-space-xs);
+}
+[aria-disabled='true'] {
+  cursor: default;
+}

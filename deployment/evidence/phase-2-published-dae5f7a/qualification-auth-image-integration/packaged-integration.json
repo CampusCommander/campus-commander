@@ -1,0 +1,64 @@
+{
+  "status": "passed",
+  "recordedAt": "2026-09-12T08:34:59.273Z",
+  "durationMs": 74158,
+  "environment": "one Docker host, synthetic HTTPS OIDC provider, two API replicas, real PostgreSQL, Redis, Kestra, worker, artifact storage, and Chromium",
+  "browser": "149.0.7827.55",
+  "packagedApplicationImages": true,
+  "images": {
+    "api": {
+      "reference": "ghcr.io/campuscommander/campus-commander-api@sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+      "id": "sha256:85fb9be6f7377476f91a53c32f9f7be7aeb22ba284f1bb18d3ac235970cd564a",
+      "labels": {
+        "org.opencontainers.image.licenses": "LicenseRef-Campus-Commander-Community-1.0.0",
+        "org.opencontainers.image.revision": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
+        "org.opencontainers.image.version": "phase-2-candidate-dae5f7a10a0347043931f5b97ef317882c1d70f6"
+      }
+    },
+    "frontend": {
+      "reference": "ghcr.io/campuscommander/campus-commander-frontend@sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+      "id": "sha256:6ce8c05416cf4b3df07954b8d68f54c69b2240e8940f2d032f53449bc82a86ab",
+      "labels": {
+        "org.opencontainers.image.licenses": "LicenseRef-Campus-Commander-Community-1.0.0",
+        "org.opencontainers.image.revision": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
+        "org.opencontainers.image.version": "phase-2-candidate-dae5f7a10a0347043931f5b97ef317882c1d70f6"
+      }
+    },
+    "worker": {
+      "reference": "ghcr.io/campuscommander/campus-commander-worker@sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d",
+      "id": "sha256:4d95ec5c9c5e5005e8bb40eceb21aee183adde5efb0d9cf8f66cdeade7655d5d",
+      "labels": {
+        "org.opencontainers.image.licenses": "LicenseRef-Campus-Commander-Community-1.0.0",
+        "org.opencontainers.image.revision": "dae5f7a10a0347043931f5b97ef317882c1d70f6",
+        "org.opencontainers.image.version": "phase-2-candidate-dae5f7a10a0347043931f5b97ef317882c1d70f6"
+      }
+    }
+  },
+  "checks": [
+    "OIDC sign-in and forged callback denial",
+    "OIDC client credential rotation",
+    "worker credential rotation",
+    "cross-replica sessions and logout",
+    "absolute and idle expiry",
+    "revocation and recovery",
+    "database and Redis timeout recovery",
+    "four live utility operations",
+    "execution permission denial for all four utility operations",
+    "PostgreSQL transaction rejection, rollback, audit, and retry",
+    "Redis diagnostic key denial, preserved session, and retry",
+    "origin, CSRF, content-type, and preference-tampering rejection",
+    "uncached redacted errors without permissive CORS",
+    "browser sign-in and sign-out",
+    "persisted preferences",
+    "system and explicit themes",
+    "offline observation recovery",
+    "keyboard focus and menus",
+    "CSS zoom 200 percent",
+    "320 pixel reflow"
+  ],
+  "limits": [
+    "Full deployment profile qualification remains separate.",
+    "Human screen-reader walkthrough remains unperformed.",
+    "Synthetic provider evidence does not qualify a district identity provider."
+  ]
+}

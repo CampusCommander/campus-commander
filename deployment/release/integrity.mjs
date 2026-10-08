@@ -19,6 +19,7 @@ const matchingImages = (actual, expected) =>
 export function assertReleaseEvidence(manifest) {
   if (
     manifest.schemaVersion !== 1 ||
+    ![1, 2, 3].includes(manifest.phase ?? 1) ||
     !/^[a-f0-9]{40}$/.test(manifest.sourceRevision)
   )
     throw new Error('Release identity is invalid.');
@@ -103,7 +104,7 @@ export async function verifyReleaseEvidence(root, manifest) {
 async function releaseFile(root, path) {
   if (
     typeof path !== 'string' ||
-    !/^[A-Za-z0-9_./-]+$/.test(path) ||
+    !/^[A-Za-z0-9_@./-]+$/.test(path) ||
     path.startsWith('/') ||
     path.split('/').some((part) => !part || part === '.' || part === '..')
   ) {

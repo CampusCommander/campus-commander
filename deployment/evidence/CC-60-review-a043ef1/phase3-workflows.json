@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-17T20:05:53.034Z",
+  "phase": 3,
+  "profile": "all-docker",
+  "sourceRevision": "a043ef187dc6efbda7b5db84d7367594f0922cb0",
+  "harnessRevision": "a043ef187dc6efbda7b5db84d7367594f0922cb0",
+  "harnessWorkingTree": "clean",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:ebd089d83cb21fedca82fce8c9d1d27ef8af0399f1cb1453077e5a2e509437a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:8f7ce1ba3b83bc2bb7985e5d70b95d007fbe1cff47b25828780ce468f0d9488f",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:7a9f8052b703a752040ebdc2f2cac8aaa87916d199ef6675abe75c339526bcf2"
+  },
+  "installer": {
+    "source": "extracted-published-bundle",
+    "bundleManifestSha256": "1764d353fe6158a32d7d029afa980416080d3dda30485fe9c216e9887f74b6a6"
+  },
+  "command": "npm exec -- nx run api-e2e:phase3-install-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "browser": "149.0.7827.55"
+  },
+  "status": "passed",
+  "durationMs": 11561,
+  "checks": {
+    "customerConfirmation": true,
+    "settingsConfirmation": true,
+    "schoolScopeConfirmation": true,
+    "invitationRedemption": true,
+    "explicitIdentityConfirmation": true,
+    "scopedGrantAssignment": true,
+    "crossSchoolDenial": true,
+    "revocation": true,
+    "credentialReplacement": true,
+    "restartPersistence": true
+  },
+  "observations": [
+    {
+      "path": "/api/customer",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/google-connection/candidates",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/google-connection/candidates/5f6bf92f-0e3b-4c43-a3c6-b3e144efff3e/confirm",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "path": "/api/google-connection/candidates/5f6bf92f-0e3b-4c43-a3c6-b3e144efff3e/confirm",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/google-connection",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/customer/settings",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/customer",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/schools/references/refresh",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/schools/reviews",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/schools/reviews/ff3987cb-1166-4c1a-9875-664befac7f73/confirm",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/schools/c286db2d-c43d-4d81-b039-6e7ef5e9fdfc",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/schools/reviews",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/schools/reviews/355eb0c7-98dd-4277-93d5-b736aef78c93/confirm",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/schools/56b7b614-27a3-4b9a-a8fa-47ec70a9472b",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/auth/invitations",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/auth/session",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "path": "/api/auth/invitations",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/auth/invitations/749cbebf-9d89-41da-94f2-c72c66b10240/confirm",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/auth/session",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/customer",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/platform-users",
+      "method": "GET",
+      "status": 403
+    },
+    {
+      "path": "/api/platform-users/e25d4fea-0d12-4a75-a7a0-98e6709d3e2c/review",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/platform-users/e25d4fea-0d12-4a75-a7a0-98e6709d3e2c/access",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/auth/session",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "path": "/api/schools/c286db2d-c43d-4d81-b039-6e7ef5e9fdfc",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/schools/56b7b614-27a3-4b9a-a8fa-47ec70a9472b",
+      "method": "GET",
+      "status": 404
+    },
+    {
+      "path": "/api/schools/75540acc-7946-4cc7-b893-7a30caab9f08",
+      "method": "GET",
+      "status": 404
+    },
+    {
+      "path": "/api/platform-users/e25d4fea-0d12-4a75-a7a0-98e6709d3e2c/review",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/platform-users/e25d4fea-0d12-4a75-a7a0-98e6709d3e2c/access",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/auth/session",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "path": "/api/schools/c286db2d-c43d-4d81-b039-6e7ef5e9fdfc",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "path": "/api/platform-users/e25d4fea-0d12-4a75-a7a0-98e6709d3e2c/receipts",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/platform-users/e25d4fea-0d12-4a75-a7a0-98e6709d3e2c",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/google-connection/credentials",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/google-connection/replacements",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/google-connection/replacements/473dc4c3-b09c-4597-a61e-0b0d71c31b56/activate",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/api/customer",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/customer",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/google-connection/credentials",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/schools/c286db2d-c43d-4d81-b039-6e7ef5e9fdfc",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/schools/56b7b614-27a3-4b9a-a8fa-47ec70a9472b",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/platform-users/e25d4fea-0d12-4a75-a7a0-98e6709d3e2c",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/api/platform-users/e25d4fea-0d12-4a75-a7a0-98e6709d3e2c/receipts",
+      "method": "GET",
+      "status": 200
+    }
+  ],
+  "limits": [
+    "The installed application uses synthetic Google and OIDC providers.",
+    "This report covers public API workflows and selected browser steps. It does not establish complete accessibility or district acceptance."
+  ],
+  "durationScope": "Public workflows and restart persistence, including intervening installer diagnostics."
+}

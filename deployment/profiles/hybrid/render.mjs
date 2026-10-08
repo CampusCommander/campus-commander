@@ -335,6 +335,11 @@ function renderBase(input, release) {
     caReference(services.frontend),
   );
   compose.services.api.secrets = secretsFor(
+    config.applicationAuth?.clientSecretRef,
+    config.googleConnection?.encryptionKeySecretRef,
+    (config.googleConnection?.additionalKeys ?? []).map(
+      (entry) => entry.encryptionKeySecretRef,
+    ),
     services.api.serverTls.certificateSecretRef,
     services.api.serverTls.privateKeySecretRef,
     services.applicationDatabase.passwordSecretRef,
@@ -351,11 +356,17 @@ function renderBase(input, release) {
     ].map(caReference),
   );
   compose.services.workers.secrets = secretsFor(
+    config.googleConnection?.encryptionKeySecretRef,
+    (config.googleConnection?.additionalKeys ?? []).map(
+      (entry) => entry.encryptionKeySecretRef,
+    ),
     services.workers.dispatchSecretRef,
     services.workers.serverTls.certificateSecretRef,
     services.workers.serverTls.privateKeySecretRef,
     services.applicationDatabase.passwordSecretRef,
+    services.redis.passwordSecretRef,
     caReference(services.applicationDatabase),
+    caReference(services.redis),
     caReference(services.workers),
   );
   compose.services.edge.secrets = secretsFor(
@@ -420,12 +431,15 @@ function renderBase(input, release) {
     },
   };
   const apiNeedsEgress =
+    Boolean(config.applicationAuth) ||
+    Boolean(config.googleConnection) ||
     !local(services.applicationDatabase) ||
     !local(services.kestraDatabase) ||
     !local(services.redis) ||
     !local(services.kestra) ||
     config.host.workerHosts > 1;
   if (apiNeedsEgress) addNetwork(compose.services.api, 'egress');
+  if (config.googleConnection) addNetwork(compose.services.workers, 'egress');
   if (!local(services.applicationDatabase)) {
     addNetwork(compose.services['database-migrate'], 'egress');
     addNetwork(compose.services['bootstrap-initialize'], 'egress');
@@ -541,11 +555,17 @@ export function renderWorkerHost(input, release, { hostIndex, bindAddress }) {
     },
   ];
   worker.secrets = secretsFor(
+    config.googleConnection?.encryptionKeySecretRef,
+    (config.googleConnection?.additionalKeys ?? []).map(
+      (entry) => entry.encryptionKeySecretRef,
+    ),
     config.services.workers.dispatchSecretRef,
     config.services.workers.serverTls.certificateSecretRef,
     config.services.workers.serverTls.privateKeySecretRef,
     config.services.applicationDatabase.passwordSecretRef,
+    config.services.redis.passwordSecretRef,
     caReference(config.services.applicationDatabase),
+    caReference(config.services.redis),
     caReference(config.services.workers),
   );
   const preflight = storagePreflight(config.images, config, false);

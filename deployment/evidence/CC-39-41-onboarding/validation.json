@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 1,
+  "issues": ["CC-39", "CC-40", "CC-41"],
+  "recordedAt": "2026-09-13T03:35:00Z",
+  "sourceBase": "436d3b0698a54b3268e608d83524b0d5c7195a25",
+  "scope": "Local onboarding implementation and synthetic qualification. The installed 436d3b0 release retains the previous flow.",
+  "checks": [
+    {
+      "command": "npm exec nx run deployment:installer-test",
+      "status": "passed",
+      "tests": 100
+    },
+    {
+      "command": "npm exec nx run-many -- --targets=lint,build,installer-test,bootstrap-test,release-test,profiles-test,kubernetes-test --projects=api,frontend,deployment,api-e2e",
+      "status": "passed"
+    },
+    {
+      "command": "npm exec nx run api-e2e:auth-integration",
+      "status": "passed",
+      "scope": "Source enrollment, upload, invalid OIDC claims, and application regression"
+    },
+    {
+      "command": "npm exec nx run api-e2e:auth-image-integration",
+      "status": "passed",
+      "durationMs": 84587,
+      "scope": "Packaged sign-in, enrollment, pairing expiry/replay/concurrency, keyboard operation, both themes, and application regression"
+    },
+    {
+      "command": "npm exec nx run api-e2e:all-docker-integration",
+      "status": "passed",
+      "durationMs": 155643,
+      "scope": "Protected HTTPS installer request, actual migration helper, and complete lifecycle"
+    },
+    {
+      "command": "npm exec nx run api-e2e:hybrid-integration",
+      "status": "passed",
+      "durationMs": 168963,
+      "scope": "Rendered hybrid application regression with external TLS services"
+    },
+    {
+      "command": "CC_KIND_BINARY=/tmp/cc-phase2-tools/kind-linux-amd64 npm exec nx run api-e2e:kubernetes-integration",
+      "status": "passed",
+      "durationMs": 297401,
+      "scope": "Actual installer migration Pod enrollment, inspection, and Kubernetes lifecycle"
+    }
+  ],
+  "securityChecks": [
+    "Wrong origin and Host rejected for credential upload",
+    "One browser cookie and CSRF proof required for upload",
+    "Google client type, endpoints, exact callback, and size validated",
+    "Private files and interrupted import resume tested",
+    "Pairing codes excluded from ordinary output",
+    "Operator authorization required before pairing",
+    "Invalid state, nonce, audience, and issuer rejected before grants",
+    "Pairing expiry, cancel, attempt limit, replay, and concurrent pairing tested",
+    "Explicit installer confirmation required before consuming the verified identity",
+    "Existing advisory transaction lock retains first-principal serialization",
+    "Migration credentials remain outside running application containers",
+    "Already-enrolled resume preserves access"
+  ],
+  "correctionsDuringValidation": [
+    "Replaced a Node fetch Host-header override with a real HTTP Host test",
+    "Preserved the first login cookie position when clearing the enrollment cookie",
+    "Waited for the settled dark theme label color before contrast measurement",
+    "Added the guided setup certificate record to the lower-level Compose fixture"
+  ],
+  "artifacts": [
+    {
+      "path": "deployment/evidence/CC-39-41-onboarding/packaged-integration.json",
+      "sha256": "37205ff70c2805be76e5ce6d18fa03c92f6aec064d2572f57544174b17e3fe02"
+    },
+    {
+      "path": "deployment/evidence/CC-39-41-onboarding/all-docker-profile.json",
+      "sha256": "9fce3342a587f82e50933e577282650c171a741c9439d4bc3edb53957a5a8084"
+    },
+    {
+      "path": "deployment/evidence/CC-39-41-onboarding/hybrid-profile.json",
+      "sha256": "816fae0065a27a7ca875744fe35dbe6a0201399c82e63a8fd2dbe558df38551d"
+    },
+    {
+      "path": "deployment/evidence/CC-39-41-onboarding/kubernetes-profile.json",
+      "sha256": "727729585a3b44aa5e68ce488d5a5762cba321446ffc989add81114fbab22210"
+    },
+    {
+      "path": "deployment/evidence/CC-39-41-onboarding/google-client-pairing-accessibility.json",
+      "sha256": "c07525816073d217028c272016a93fa935cc9c354f018502eabbff9e0ddfed09"
+    },
+    {
+      "path": "deployment/evidence/CC-39-41-onboarding/google-client-pairing-dark-accessibility.json",
+      "sha256": "0e6192f130f7ca3a68e2cd7c2d0976bb0bf8fe6901042d304286d64cc9b8aca4"
+    },
+    {
+      "path": "deployment/evidence/CC-39-41-onboarding/google-client-import-accessibility.json",
+      "sha256": "a5c009b634e2ff3524fa6892f133ef45de49744f27440b006c06a3de41168a92"
+    },
+    {
+      "path": "deployment/evidence/CC-39-41-onboarding/administrator-enrollment-accessibility.json",
+      "sha256": "79e71a1f9d9e9545803f473151bc133c6b1a4bc587964d86a65127802939d1e4"
+    },
+    {
+      "path": "deployment/evidence/CC-39-41-onboarding/administrator-enrollment-dark-accessibility.json",
+      "sha256": "0fa0b0a853d35333cab781304a56cc2cc302264cc9e4ea28a90baf514766aaf2"
+    }
+  ],
+  "uiHandoff": {
+    "contractVersion": "1.3.1",
+    "pages": ["temporary credential upload", "/setup"],
+    "primaryJob": "Configure sign-in and enroll the initial administrator",
+    "pattern": "centered-form",
+    "phase": 2,
+    "rules": [
+      "UI-01",
+      "UI-03",
+      "UI-04",
+      "UI-05",
+      "UI-06",
+      "UI-08",
+      "UI-09",
+      "UI-10",
+      "FORM-01"
+    ],
+    "components": [
+      "deployment/installer/setup-upload.html",
+      "frontend/src/app/setup/setup.ts"
+    ],
+    "states": {
+      "loading": "implemented",
+      "empty": "implemented: unpaired enrollment",
+      "error": "implemented",
+      "partial": "implemented: identity awaits terminal confirmation",
+      "stale": "implemented: pairing expiry",
+      "offline": "implemented: connection recovery instructions"
+    },
+    "writeFlow": "installer authorization > verified OIDC identity > explicit operator confirmation > privileged audited grant > database-confirmed browser completion",
+    "verification": {
+      "lightAndDark": "passed: axe audits",
+      "keyboardAndFocus": "passed: keyboard enrollment and paired-upload focus",
+      "screenReader": "not-run: human walkthrough",
+      "contrastAndTargets": "passed: automated WCAG checks",
+      "countsAndScope": "passed: one verified candidate and explicit confirmation",
+      "recoveryAndPreservation": "passed: invalid upload retry and existing-enrollment resume",
+      "overflowAndZoom": "passed: 360px setup reflow; full application 200 percent zoom"
+    },
+    "limitations": [
+      "The temporary pre-start page uses native controls under the UI-04 installer exception.",
+      "Human screen-reader and new Google tenant walkthroughs remain open."
+    ]
+  },
+  "limitations": [
+    "No new signed release or deployment to the operator VM.",
+    "No real Google tenant execution for this implementation.",
+    "Hybrid regression uses the rendered profile. New guided enrollment uses the same Compose migration helper.",
+    "District acceptance, upgrades, and isolated restore retain their separate gates."
+  ],
+  "implementationFiles": [
+    {
+      "path": "api/src/app/auth/enrollment.service.ts",
+      "sha256": "0d216b25610ee03622e21357356983a79e890af3c460d2109df5552806f9d6f9"
+    },
+    {
+      "path": "deployment/installer/application-enrollment.mjs",
+      "sha256": "c6d85b905973d902e064b0d9bade9859aef01185874d610a87abcc39f56d5e64"
+    },
+    {
+      "path": "deployment/installer/application-enrollment.test.mjs",
+      "sha256": "1053ddf22eb7410df7abfb5d6166668ac838ae99fa625d74b5c64c732ba106a9"
+    },
+    {
+      "path": "deployment/installer/fonts/LICENSE.txt",
+      "sha256": "84044c09058803d87a241bd28abb4ce30a433d7db9c27a04da3efad6a0ca539c"
+    },
+    {
+      "path": "deployment/installer/fonts/roboto-latin-400-normal.woff2",
+      "sha256": "e44c11f4834bdd4d6b6da7b8ee5eaebc8acb41250cd6bce5cc82ea8262140eaa"
+    },
+    {
+      "path": "deployment/installer/fonts/roboto-latin-500-normal.woff2",
+      "sha256": "e5b29c36b2e7a2f4db58307359fa574004be43d39790e4b7a3cf80a7b16e8bb6"
+    },
+    {
+      "path": "deployment/installer/fonts/roboto-latin-700-normal.woff2",
+      "sha256": "2bef6bc763635f137e6b49fc7d01d0d1f74e55413d92a21ce76c9c92c3457150"
+    },
+    {
+      "path": "deployment/installer/google-client.mjs",
+      "sha256": "5faf8433a1af59672afe4fdc1fcedd54569bdeed5662342682243926f8ece5eb"
+    },
+    {
+      "path": "deployment/installer/google-client.test.mjs",
+      "sha256": "5b3262b4490b6eb8ac96da260964100636eb283522fcde93d2d6a82d25fc3e94"
+    },
+    {
+      "path": "deployment/installer/private-output.mjs",
+      "sha256": "331199c798f3c56109311c798f52f2eac11b98d0624b5898dfb79834a54c3e23"
+    },
+    {
+      "path": "deployment/installer/progress.mjs",
+      "sha256": "360eba3c3c6f02e61846ced9d5b2c52059d05d7ed3ef87d3f1cd3d64f7b47d6b"
+    },
+    {
+      "path": "deployment/installer/progress.test.mjs",
+      "sha256": "368caab8806f0623984725568b3d2143de8858e5615a13ac87b68e56a84b63c4"
+    },
+    {
+      "path": "deployment/installer/setup-upload.css",
+      "sha256": "cc9aefe6ab10bce69b286ee4a68c1b557d7ba4fe71eab32e7cddb9564d3bec99"
+    },
+    {
+      "path": "deployment/installer/setup-upload.html",
+      "sha256": "4be7feac9aa1c551fc8bf5de4620f997519f0442bfec279cad4b98722fdde8d8"
+    },
+    {
+      "path": "deployment/installer/setup-upload.js",
+      "sha256": "788b08db5453072e16475ca35ea7c13283df7b46c60077497dd7795916f558dd"
+    },
+    {
+      "path": "deployment/installer/setup-upload.mjs",
+      "sha256": "08969bde281d0bed8336559ccdc68f8569f31c9137bd38ccd5711152da3cfc93"
+    },
+    {
+      "path": "frontend/src/app/setup/setup.css",
+      "sha256": "d809577586a9936328075d06865cd08c6498ade3bc7a24b034df4377e5ec650d"
+    },
+    {
+      "path": "frontend/src/app/setup/setup.html",
+      "sha256": "9daf698d7ca29ea733bc164fc487a03d053346e3d87b8f50ed7ceffe07f62f52"
+    },
+    {
+      "path": "frontend/src/app/setup/setup.ts",
+      "sha256": "6beb639f623e7f12a01031791c601ad7181ed32023d6d83e981905e805b2639c"
+    },
+    {
+      "path": "api-e2e/all-docker.test.mjs",
+      "sha256": "11bcd3e37e09928a5f033a96ea578cef3e50b2f27a7d9f5a7f9ed50094740852"
+    },
+    {
+      "path": "api-e2e/auth.test.mjs",
+      "sha256": "5dcf6a561fd92c2af6b51a482036a05ca2a08fd2a58902d573ffbc0865bf6721"
+    },
+    {
+      "path": "api-e2e/kubernetes-installer-fixture.mjs",
+      "sha256": "7ab7893cc57875ffe707fcefac99518d2a46348eac58cdf063880d5bc9aae27e"
+    },
+    {
+      "path": "api-e2e/kubernetes.test.mjs",
+      "sha256": "2ccd918bef56bd0c3bdbe754e57321e4afd2817ad3fcba6ebae530092f2be2e6"
+    },
+    {
+      "path": "api/src/app/auth/auth.controller.ts",
+      "sha256": "633c3494e14308dc83cf21ca2f64de9951da8c39886d36cfa2f2d74fce67ea5c"
+    },
+    {
+      "path": "api/src/app/auth/auth.module.ts",
+      "sha256": "19c19fcdbfb72b9a7975a9d001010ac751b790688c655872a324972b2e901cdd"
+    },
+    {
+      "path": "api/src/app/auth/auth.service.ts",
+      "sha256": "2117f558696bc81f8e1a703fa2a82b5d54112791538e5212c95b03fb45698c07"
+    },
+    {
+      "path": "api/src/app/bootstrap.controller.ts",
+      "sha256": "a38947242ad070898a729885ba64bdc55c5a62dd680205c17a5c7470755ff085"
+    },
+    {
+      "path": "api/src/app/cache/cache.service.ts",
+      "sha256": "aedeb40ee521e4b282e0f4e562a759e672d6303dca2205000ab802d465109c3d"
+    },
+    {
+      "path": "deployment/bootstrap/APPLICATION-ACCESS.md",
+      "sha256": "9646a64ad0248a3cb4385c30a3ce575ea1a429c6b2187d81f42f9fb8cce86a7e"
+    },
+    {
+      "path": "deployment/bootstrap/application-edge.mjs",
+      "sha256": "ce1fbb1f9d47c082160f1c8cf958e3203434e9805570c58a6dd2e1df551926dd"
+    },
+    {
+      "path": "deployment/installer/HOSTED.md",
+      "sha256": "6da8d652644a9159062949e0466de31ffe60d595198fdeb1d990ae22081cf0af"
+    },
+    {
+      "path": "deployment/installer/application-setup.mjs",
+      "sha256": "2f396df718d80d64d616fb3a20c18e3950ecbd8f1f50c646315776deb75a62c9"
+    },
+    {
+      "path": "deployment/installer/application-setup.test.mjs",
+      "sha256": "2da69ca1f595e8dfede003f786baf34b45c4d9037bc1392acde09b54669994c8"
+    },
+    {
+      "path": "deployment/installer/orchestrator.mjs",
+      "sha256": "55d3e6bcfe20e4ddf84b9a1523c3965dedb6f2b319c0b3b9ab0e8520ff1c200d"
+    },
+    {
+      "path": "deployment/installer/setup.mjs",
+      "sha256": "fab8aee0197d2c34c3bef8f65d5f90025858aee9928892481ec06f3b64bc3062"
+    },
+    {
+      "path": "deployment/installer/setup.test.mjs",
+      "sha256": "41cf2a9023b1da741dcc6fcc3edf42cfb3c05eb2d39ebcfb3f0d8c979d5b1d52"
+    },
+    {
+      "path": "frontend/src/app/app.routes.ts",
+      "sha256": "8bdc19b5b8c308a0190d41ef44c8a5ac29a6dff1676dec3c0cb8317eaceb0c4a"
+    }
+  ]
+}

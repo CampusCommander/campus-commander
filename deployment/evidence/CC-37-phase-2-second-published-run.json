@@ -1,0 +1,142 @@
+{
+  "sourceRevision": "700e813a193360cf42bddd183e09b959103f46dd",
+  "status": "failure",
+  "workflowUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033",
+  "jobs": [
+    {
+      "name": "validate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520219198"
+    },
+    {
+      "name": "publish (worker)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520375963"
+    },
+    {
+      "name": "publish (frontend)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520375986"
+    },
+    {
+      "name": "publish (api)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520375994"
+    },
+    {
+      "name": "capacity",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520671949"
+    },
+    {
+      "name": "application (upgrade-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672009"
+    },
+    {
+      "name": "application (kubernetes-integration)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672010"
+    },
+    {
+      "name": "application (hybrid-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672011"
+    },
+    {
+      "name": "application (all-docker-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672012"
+    },
+    {
+      "name": "application (hybrid-integration)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672019"
+    },
+    {
+      "name": "application (hybrid-restore-integration)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672025"
+    },
+    {
+      "name": "application (screen-reader-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672041"
+    },
+    {
+      "name": "application (kubernetes-restore-integration)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672044"
+    },
+    {
+      "name": "application (kubernetes-upgrade-integration)",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672069"
+    },
+    {
+      "name": "application (auth-image-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672101"
+    },
+    {
+      "name": "application (restore-integration)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103520672105"
+    },
+    {
+      "name": "bundle",
+      "status": "completed",
+      "conclusion": "skipped",
+      "url": "https://github.com/CampusCommander/campus-commander/actions/runs/34681268033/job/103521747209"
+    }
+  ],
+  "authenticationEvidence": {
+    "account-accessibility.json": {
+      "sha256": "30c2b755684ae647d2fd2e168bfffafc26f5984e1bfa4236a0908236277701ec",
+      "violations": 0,
+      "incomplete": 0
+    },
+    "diagnostics-dark-accessibility.json": {
+      "sha256": "7613071d9bd52b6604333a5dac691d908dad6f0908bca910b127e52e80ffba86",
+      "violations": 0,
+      "incomplete": 0
+    },
+    "diagnostics-dark.png": {
+      "sha256": "a5f4641e87d1801d32e28574e9ff034f3224110b2aab34735a651314284aa622"
+    },
+    "diagnostics-light-accessibility.json": {
+      "sha256": "7d38e9af2fd19b52c6b18a52f5530d92728e79d27c87913e23af2f211ed121fb",
+      "violations": 0,
+      "incomplete": 0
+    },
+    "diagnostics-light.png": {
+      "sha256": "1920a1a52d7616813e39110969e1018a9a62b79b54af20638c6be7116b8aae89"
+    },
+    "login-accessibility.json": {
+      "sha256": "37132f3d44df4bdeeef2387e8f6c50d966a17319980816971980921ca75f9656",
+      "violations": 0,
+      "incomplete": 0
+    },
+    "packaged-integration.json": {
+      "sha256": "c5557977e66f73e9fc1760a654036e0da051ce9aef23cb7e1f48e29112df0109"
+    }
+  },
+  "acceptedRelease": false,
+  "installationBundlePublished": false
+}

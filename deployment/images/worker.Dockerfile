@@ -6,6 +6,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY nx.json tsconfig.base.json eslint.config.mjs ./
 COPY worker ./worker
+COPY libs/application-contracts ./libs/application-contracts
+COPY libs/google-connection ./libs/google-connection
 COPY deployment ./deployment
 RUN npm exec -- nx run deployment:build
 RUN npm exec -- nx run worker:build
@@ -19,6 +21,10 @@ RUN npm ci --omit=dev --ignore-scripts
 
 FROM node:24.19.0-alpine3.23@sha256:244cc2b53f46f9e876304391d17682b0ddae9ac33491f4857e25e35a36ba7995
 ENV NODE_ENV=production PORT=3001
+ARG CC_VERSION=development
+ARG CC_BUILD_ID=unreleased
+LABEL org.opencontainers.image.version=${CC_VERSION} org.opencontainers.image.revision=${CC_BUILD_ID}
+RUN apk add --no-cache libcrypto3=3.5.9-r0 libssl3=3.5.9-r0 && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 WORKDIR /app
 COPY --from=build --chown=node:node /workspace/dist/worker/main.js ./main.js
 COPY --from=runtime-dependencies --chown=node:node /app/node_modules ./node_modules

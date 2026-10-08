@@ -1,3 +1,5 @@
+import { qualifyGoogleRevalidationCli } from './google-cli-fixture.mjs';
+import { seedPhase3State, verifyPhase3State } from './phase3-state-fixture.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -18,6 +20,13 @@ import { pipeline } from 'node:stream/promises';
 import pg from 'pg';
 import { migrate, provision } from '../postgres/index.mjs';
 import { createArtifactStore } from '../storage/index.mjs';
+import { changeApplicationAccess } from '../bootstrap/application-access.mjs';
+import { createOperationsCliFixture } from './cli-fixture.mjs';
+import { noOtherConnections } from './quiescence.mjs';
+import {
+  seedInvitationRecovery,
+  verifyInvitationRecovery,
+} from './restore-access-fixture.mjs';
 import {
   backupFoundation,
   postgresToolArguments,
@@ -25,19 +34,19 @@ import {
   verifyBackup,
 } from './index.mjs';
 
+const startedAt = Date.now();
 const name = `cc-restore-${randomUUID()}`,
   root = await mkdtemp(join(tmpdir(), 'cc-restore-'));
-const native = process.env.CC_OPERATIONS_NATIVE === '1';
-const toolVersions = native
-  ? Object.fromEntries(
-      ['pg_dump', 'pg_restore'].map((tool) => [
-        tool,
-        execFileSync(tool, ['--version'], { encoding: 'utf8' }).trim(),
-      ]),
-    )
-  : undefined;
-const password = randomUUID(),
-  encryptionKey = randomBytes(32);
+const phase3 = process.env.CC_OPERATIONS_PHASE === '3';
+let sourcePhase3,
+  phase3Recovery,
+  googleKeyOverride,
+  omitGoogleKey = false;
+const cli = process.env.CC_OPERATIONS_CLI === '1';
+const cliContainer = cli && process.env.CC_OPERATIONS_CLI_CONTAINER === '1';
+const native = cli || process.env.CC_OPERATIONS_NATIVE === '1';
+const password = randomUUID();
+let encryptionKey = randomBytes(32);
 const docker = (...args) =>
   execFileSync('docker', args, {
     encoding: 'utf8',
@@ -49,6 +58,16 @@ const pin = JSON.parse(
     'utf8',
   ),
 );
+const toolVersions = native
+  ? Object.fromEntries(
+      ['pg_dump', 'pg_restore'].map((tool) => [
+        tool,
+        cliContainer
+          ? docker('run', '--rm', '--entrypoint', tool, pin.image, '--version')
+          : execFileSync(tool, ['--version'], { encoding: 'utf8' }).trim(),
+      ]),
+    )
+  : undefined;
 const keyRecovery = {
   id: 'synthetic-backup-key',
   version: 1,
@@ -57,10 +76,39 @@ const keyRecovery = {
 const resolveSecret = async (reference) =>
   reference.path === '/run/secrets/backup-key'
     ? encryptionKey
-    : Buffer.from(`${password}\r\n`);
-let admin, pool, store;
+    : reference.path === '/run/secrets/google-recovery-key'
+      ? (googleKeyOverride ?? sourcePhase3.key)
+      : Buffer.from(`${password}\r\n`);
+let admin, pool, store, operatorCli;
 const clients = [];
 try {
+  if (cli) {
+    const googlePreload = phase3
+      ? join(root, 'operator-cli', 'google-connection-preload.cjs')
+      : undefined;
+    operatorCli = await createOperationsCliFixture(
+      join(root, 'operator-cli'),
+      resolveSecret,
+      {
+        container: cliContainer,
+        googlePreload,
+        async beforeInvoke({ command, secretDirectory }) {
+          if (command === 'revalidate-google' && omitGoogleKey)
+            await rm(join(secretDirectory, 'google-recovery-key'));
+        },
+        mountDirectories: [root],
+      },
+    );
+    if (googlePreload)
+      await cp(
+        new URL('../../api-e2e/google-connection-preload.cjs', import.meta.url),
+        googlePreload,
+      );
+    encryptionKey.fill(0);
+    encryptionKey = await operatorCli.generateKey();
+    assert.equal(encryptionKey.length, 32);
+    await assert.rejects(operatorCli.generateKey());
+  }
   await writeFile(
     join(root, 'postgres.env'),
     `POSTGRES_PASSWORD=${password}\n`,
@@ -124,6 +172,50 @@ try {
   });
   await migration.connect();
   await migrate(migration, { runtimeRole: 'app-source' });
+  const { principalId } = await changeApplicationAccess(
+    migration,
+    {
+      action: 'initialize',
+      issuer: 'https://identity.example.invalid',
+      subject: 'restore-administrator',
+      displayName: 'Restore administrator',
+    },
+    'https://identity.example.invalid',
+  );
+  await migration.query(
+    'UPDATE cc.application_principals SET preferences=$1 WHERE id=$2',
+    [{ theme: 'dark', navigationCollapsed: true }, principalId],
+  );
+  if (phase3) {
+    await changeApplicationAccess(
+      migration,
+      {
+        action: 'confirm-platform-administrator',
+        principalId,
+        expectedVersion: 1,
+        confirmation: 'grant-platform-administrator',
+      },
+      'https://identity.example.invalid',
+      3,
+    );
+    const version = (
+      await migration.query(
+        'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+        [principalId],
+      )
+    ).rows[0].permission_version;
+    sourcePhase3 = await seedPhase3State(migration, principalId, version);
+  }
+  const originalPrincipals = (
+    await migration.query('SELECT * FROM cc.application_principals ORDER BY id')
+  ).rows;
+  const originalEvents = (
+    await migration.query('SELECT * FROM cc.security_events ORDER BY id')
+  ).rows;
+  const invitationRecovery = await seedInvitationRecovery(
+    migration,
+    principalId,
+  );
   await migration.end();
   const sourceRoots = {
     artifacts: join(root, 'source-artifacts'),
@@ -184,6 +276,27 @@ try {
       database,
       role,
     });
+  config.phase = phase3 ? 3 : 2;
+  if (phase3)
+    config.googleConnection = {
+      keyId: sourcePhase3.keyId,
+      encryptionKeySecretRef: {
+        provider: 'file',
+        path: '/run/secrets/google-recovery-key',
+      },
+    };
+  config.services.edge.access = 'application';
+  config.applicationAuth = {
+    issuer: 'https://identity.example.invalid',
+    clientId: 'restore-fixture',
+    clientSecretRef: {
+      provider: 'file',
+      path: '/run/secrets/oidc-client-secret',
+    },
+    publicOrigin: 'https://campus.example.invalid',
+    sessionLifetimeSeconds: 28800,
+    sessionIdleSeconds: 1800,
+  };
   config.artifacts.location = sourceRoots.artifacts;
   config.services.kestra.internalStorage.location = sourceRoots.kestraInternal;
   const release = {
@@ -253,6 +366,48 @@ try {
     stoppedServices: ['api', 'workers', 'kestra'],
   };
   const backupDirectory = join(root, 'backup');
+  const observer = new pg.Client({
+    ...connection,
+    user: 'migrator-source',
+    database: 'app-source',
+  });
+  const closingClient = new pg.Client({
+    ...connection,
+    user: 'app-source',
+    database: 'app-source',
+  });
+  let closed;
+  try {
+    await observer.connect();
+    await closingClient.connect();
+    await observer.query('BEGIN');
+    assert.equal(
+      (
+        await observer.query(
+          'SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()',
+        )
+      ).rows[0].count,
+      1,
+    );
+    closed = new Promise((done) => setTimeout(done, 100)).then(() =>
+      closingClient.end(),
+    );
+    await noOtherConnections(observer);
+    await closed;
+    assert.equal(
+      (
+        await observer.query(
+          'SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()',
+        )
+      ).rows[0].count,
+      0,
+    );
+    await observer.query('ROLLBACK');
+  } finally {
+    if (closed) await closed;
+    else await closingClient.end();
+    await observer.end();
+  }
   const busy = new pg.Client({
     ...connection,
     user: 'app-source',
@@ -273,6 +428,18 @@ try {
     }),
     /Stop every/,
   );
+  if (cli)
+    await assert.rejects(
+      operatorCli.run('backup', {
+        config,
+        release,
+        backupDirectory,
+        sourceRoots,
+        keyRecovery,
+        quiesce,
+        applicationCredentials,
+      }),
+    );
   await busy.end();
   await assert.rejects(
     backupFoundation({
@@ -290,17 +457,36 @@ try {
       runTool,
     }),
   );
-  const manifest = await backupFoundation({
-    config,
-    release,
-    backupDirectory,
-    sourceRoots,
-    keyRecovery,
-    quiesce,
-    resolveSecret,
-    applicationCredentials,
-    runTool,
-  });
+  if (cli) {
+    const backup = await operatorCli.run('backup', {
+      config,
+      release,
+      backupDirectory,
+      sourceRoots,
+      keyRecovery,
+      quiesce,
+      applicationCredentials,
+    });
+    assert.equal(backup.result.status, 'complete');
+    const verified = await operatorCli.run('verify', {
+      backupDirectory,
+      keyRecovery,
+    });
+    assert.equal(verified.result.status, 'verified');
+  }
+  const manifest = cli
+    ? await verifyBackup({ backupDirectory, keyRecovery, resolveSecret })
+    : await backupFoundation({
+        config,
+        release,
+        backupDirectory,
+        sourceRoots,
+        keyRecovery,
+        quiesce,
+        resolveSecret,
+        applicationCredentials,
+        runTool,
+      });
   assert.ok(
     manifest.files.every((file) => file.encryptedPath.endsWith('.enc')),
   );
@@ -327,6 +513,10 @@ try {
   const corrupt = join(root, 'corrupt');
   await cp(backupDirectory, corrupt, { recursive: true });
   await writeFile(join(corrupt, manifest.files[0].encryptedPath), 'corrupt');
+  if (cli)
+    await assert.rejects(
+      operatorCli.run('verify', { backupDirectory: corrupt, keyRecovery }),
+    );
   await assert.rejects(
     verifyBackup({ backupDirectory: corrupt, keyRecovery, resolveSecret }),
   );
@@ -403,20 +593,35 @@ try {
     ).includes('stopped'),
   );
   await assert.rejects(readFile(join(failedDirectory, 'restore-report.json')));
-  const report = await restoreFoundation({
-    backupDirectory,
-    targetConfig,
-    targetDirectory,
-    keyRecovery,
-    resolveSecret,
-    applicationCredentials: targetCredentials,
-    runTool,
-  });
+  const cliRestore = cli
+    ? await operatorCli.run('restore', {
+        backupDirectory,
+        targetConfig,
+        targetDirectory,
+        keyRecovery,
+        applicationCredentials: targetCredentials,
+      })
+    : undefined;
+  const report = cli
+    ? JSON.parse(
+        await readFile(join(targetDirectory, 'restore-report.json'), 'utf8'),
+      )
+    : await restoreFoundation({
+        backupDirectory,
+        targetConfig,
+        targetDirectory,
+        keyRecovery,
+        resolveSecret,
+        applicationCredentials: targetCredentials,
+        runTool,
+      });
   assert.equal(report.status, 'verified-services-disabled');
+  if (cli) assert.equal(cliRestore.result.status, 'verified-services-disabled');
   assert.deepEqual(report.redisRecovery, {
     policy: 'discard-cache',
     releaseRequiresFreshRedis: true,
   });
+  assert.equal(report.accessRecovery.pendingInvitationsRevoked, 3);
   assert.deepEqual(
     JSON.parse(
       await readFile(
@@ -424,7 +629,7 @@ try {
         'utf8',
       ),
     ),
-    targetConfig,
+    cliRestore?.configuration ?? targetConfig,
   );
   assert.ok(
     (
@@ -455,6 +660,40 @@ try {
     user: 'app-target',
     database: 'app-target',
   });
+  assert.deepEqual(
+    (await pool.query('SELECT * FROM cc.application_principals ORDER BY id'))
+      .rows,
+    originalPrincipals,
+  );
+  assert.deepEqual(
+    (
+      await pool.query(
+        'SELECT * FROM cc.security_events WHERE id=ANY($1::uuid[]) ORDER BY id',
+        [originalEvents.map((event) => event.id)],
+      )
+    ).rows,
+    originalEvents,
+  );
+  const restoredAccess = new pg.Client({
+    ...connection,
+    user: 'migrator-target',
+    database: 'app-target',
+  });
+  await restoredAccess.connect();
+  try {
+    await verifyInvitationRecovery(restoredAccess, pool, invitationRecovery);
+    if (phase3)
+      phase3Recovery = await verifyPhase3State(
+        restoredAccess,
+        pool,
+        sourcePhase3,
+        report.accessRecovery,
+        encryptionKey,
+        { deferRevalidation: cli },
+      );
+  } finally {
+    await restoredAccess.end();
+  }
   store = await createArtifactStore({
     pool,
     root: targetConfig.artifacts.location,
@@ -467,6 +706,30 @@ try {
   store = undefined;
   await pool.end();
   pool = undefined;
+  if (phase3 && cli) {
+    const cliProof = await qualifyGoogleRevalidationCli({
+      operatorCli,
+      directory: join(root, 'operator-cli'),
+      targetDirectory,
+      targetConfig,
+      applicationCredentials: targetCredentials,
+      recovery: report.accessRecovery.googleConnection,
+      async connect() {
+        const client = new pg.Client({
+          ...connection,
+          user: 'migrator-target',
+          database: 'app-target',
+        });
+        await client.connect();
+        return client;
+      },
+      setKeyFault(mode) {
+        omitGoogleKey = mode === 'missing';
+        googleKeyOverride = mode === 'backup-key' ? encryptionKey : undefined;
+      },
+    });
+    phase3Recovery = { ...phase3Recovery, ...cliProof, status: 'passed' };
+  }
   await assert.rejects(
     restoreFoundation({
       backupDirectory,
@@ -479,35 +742,92 @@ try {
     }),
     /empty/,
   );
-  console.log(
-    JSON.stringify(
-      {
-        runner: native ? 'default-native' : 'injected-docker',
-        toolVersions,
-        backupMilliseconds: manifest.durationMilliseconds,
-        restoreMilliseconds: report.durationMilliseconds,
-        encryptedFiles: manifest.files.length,
-        results: [
-          'actual connection quiescence enforced',
-          'both database dumps restored',
-          'artifact identity and Unicode bytes restored',
-          'Kestra synthetic state and internal files restored',
-          'missing/wrong keys rejected',
-          'corrupt and missing backup files rejected',
-          'backup inside primary volume rejected',
-          'nonempty target rejected',
-          'absent source volume rejected',
-          'failed restore retains disabled marker without success report',
-          'services remain disabled; Redis requires fresh instance',
-        ],
-        hybrid: 'not-run: district shared mount absent',
-        kubernetes: 'not-run: qualified RWX storage absent',
-      },
-      null,
-      2,
-    ),
-  );
+  if (cli)
+    await assert.rejects(
+      operatorCli.run('restore', {
+        backupDirectory,
+        targetConfig,
+        targetDirectory,
+        keyRecovery,
+        applicationCredentials: targetCredentials,
+      }),
+    );
+  const qualification = {
+    runner: cli
+      ? 'operator-cli-native'
+      : native
+        ? 'default-native'
+        : 'injected-docker',
+    ...(cli ? { commands: operatorCli.commands } : {}),
+    ...(cli ? { operatorCli: operatorCli.execution } : {}),
+    toolVersions,
+    phase: config.phase,
+    ...(phase3
+      ? {
+          phase3Recovery,
+          backupAgeMilliseconds: Date.now() - Date.parse(manifest.createdAt),
+        }
+      : {}),
+    backupMilliseconds: manifest.durationMilliseconds,
+    restoreMilliseconds: report.durationMilliseconds,
+    encryptedFiles: manifest.files.length,
+    results: [
+      'actual connection quiescence enforced',
+      'delayed connection teardown observed through fresh transaction statistics',
+      'both database dumps restored',
+      'Phase 2 identity, preferences, permission version, and security events restored',
+      'artifact identity and Unicode bytes restored',
+      'Kestra synthetic state and internal files restored',
+      'missing/wrong keys rejected',
+      'corrupt and missing backup files rejected',
+      'backup inside primary volume rejected',
+      'nonempty target rejected',
+      'absent source volume rejected',
+      'failed restore retains disabled marker without success report',
+      'services remain disabled; Redis requires fresh instance',
+    ],
+    hybrid: 'not-run: district shared mount absent',
+    kubernetes: 'not-run: qualified RWX storage absent',
+  };
+  if (phase3) {
+    const evidenceDirectory = new URL(
+      '../../dist/phase-3-recovery/',
+      import.meta.url,
+    );
+    await mkdir(evidenceDirectory, { recursive: true });
+    await writeFile(
+      new URL('operations.json', evidenceDirectory),
+      JSON.stringify(
+        {
+          ...qualification,
+          status: 'passed',
+          command: cli
+            ? 'npm exec nx run deployment:operations-phase3-integration'
+            : 'CC_OPERATIONS_PHASE=3 node deployment/operations/integration.mjs',
+          images: { postgres: pin.image },
+          durationMilliseconds: Date.now() - startedAt,
+          limits: [
+            cli
+              ? 'Synthetic Google transport with the production operator CLI and verifier.'
+              : 'Synthetic Google verifier and migration-role library revalidation.',
+            'Distinct databases and storage trees share one PostgreSQL container and Docker host.',
+            'Separate networks, fresh Redis, browser sessions, and live Google privileges remain unqualified.',
+          ],
+          sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], {
+            encoding: 'utf8',
+          }).trim(),
+          recordedAt: new Date().toISOString(),
+          environment:
+            'Synthetic source and target databases share one PostgreSQL container on one Docker host.',
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+  }
+  console.log(JSON.stringify(qualification, null, 2));
 } finally {
+  sourcePhase3?.key.fill(0);
   await store?.close();
   await pool?.end();
   await admin?.end();

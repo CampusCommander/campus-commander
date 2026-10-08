@@ -1,0 +1,159 @@
+{
+  "status": "browser-api-database-worker-qualified-profile-qualification-pending",
+  "sourceRevision": "ad1d7ee7f1cee6e34adc562712225c2242b8303e",
+  "recordedOn": "2026-09-16",
+  "environment": "Hosted PostgreSQL and Redis, two API replicas, two independent worker containers, synthetic HTTPS OIDC and Google transport, Chromium, and source plus packaged application execution.",
+  "ci": {
+    "focused": "https://github.com/CampusCommander/campus-commander/actions/runs/35157399846",
+    "focusedSourceRevision": "ad1d7ee7f1cee6e34adc562712225c2242b8303e",
+    "focusedStatus": "passed",
+    "full": "https://github.com/CampusCommander/campus-commander/actions/runs/35157401813",
+    "fullStatus": "passed",
+    "packagedPhase3Status": "passed",
+    "fullJobsPassed": 7
+  },
+  "databaseChecks": [
+    "runtime table-access and helper-execution denial",
+    "current actor, permission version, and browser binding",
+    "failure and expiry erase ciphertext with atomic events",
+    "authorized terminal metadata recovery",
+    "wall-clock expiry after lock contention",
+    "indexed 500-row terminal cleanup and failed-check rate limits",
+    "exact customer confirmation and replay rejection",
+    "audit failure rolls back activation and candidate consumption",
+    "competing confirmations bind exactly one customer",
+    "independent encryption-key recovery and exact context",
+    "district scope requires the confirmed customer",
+    "one renewal lease across independent database clients",
+    "encrypted token reuse with purpose-bound authenticated data",
+    "renewal audit failure rolls back cache mutation",
+    "expired and retired leases reject completion",
+    "retired credential generations reject renewal and observation writes",
+    "permanent failure latch and authorized retry",
+    "transient failure cooldown",
+    "concurrent actor revocation rejects operator observation and audit writes while independent worker reads continue"
+  ],
+  "apiChecks": [
+    "current browser authority and CSRF required",
+    "invalid client ID rejected before staging",
+    "candidate metadata supports response recovery without credentials",
+    "explicit exact customer confirmation required",
+    "confirmation stores encrypted generation one and rejects replay",
+    "CSRF-protected current-generation connection checks",
+    "platform and confirmed district authority accepted",
+    "unrelated district authority and resource denied"
+  ],
+  "localChecks": {
+    "credentialTests": 8,
+    "providerTests": 8,
+    "apiBuild": "passed",
+    "lint": "passed",
+    "typecheck": "passed",
+    "configurationAndRenderers": "passed",
+    "edgeRoutesAndBodyLimits": "passed",
+    "workerBuild": "passed",
+    "frontendBuild": "passed",
+    "frontendTests": "passed",
+    "onboardingAsyncRegressionCases": 3,
+    "onboardingChromiumCases": 7,
+    "productionBuildBrowserCases": 7,
+    "productionDependencyAudit": "zero vulnerabilities"
+  },
+  "review": {
+    "standardsRemainingFindings": 0,
+    "specRemainingFindings": 0,
+    "resolved": [
+      "expiry used transaction-start time before lock waits",
+      "terminal cleanup lacked a batch limit and index",
+      "failed candidate reads lost recovery metadata",
+      "public edge omitted connection routes and import body allowance",
+      "provider status parsing depended on error-body shape",
+      "encryption-key references accepted reserved operator secrets",
+      "Kubernetes lacked separate Google-provider egress",
+      "API check reused a stale authority snapshot",
+      "API check rejected district-scoped authority",
+      "SDK constructor ignored the zero early-refresh threshold",
+      "delayed staging response body restored an obsolete review",
+      "overlapping saved-state read hid a confirmed customer",
+      "rate-limited staging retained a nonexistent candidate"
+    ],
+    "authorityBoundary": "The controller reauthenticates before returning. Observation writes check actor and permission version inside their audit transaction."
+  },
+  "liveProviderEvidence": "CC-46-live-provider-read.json",
+  "limits": [
+    "All three deployment profiles still require complete Phase 3 qualification.",
+    "The live provider check does not bind a deployed installation.",
+    "CC-44 live revocation and delegated-identity replacement remain incomplete.",
+    "Human screen-reader validation remains unperformed.",
+    "The customer/domain live proof uses a declared Super Admin. Minimum custom-role privileges remain unqualified.",
+    "No Education-specific capability qualification applies.",
+    "Owner usability acceptance remains pending."
+  ],
+  "testStability": {
+    "file": "deployment/kubernetes/isolated-port-forward.test.mjs",
+    "issue": "The socket closed before the child-process close event updated the failure count.",
+    "regression": "Inherited output streams delay process closure. The assertion failed before explicit synchronization and passed afterward.",
+    "validation": "Seven Kubernetes unit tests and deployment lint passed.",
+    "runtimeChanged": false
+  },
+  "runtimeRevision": "2131292d47e5044901897bba9b9c5fd0b992a316",
+  "workerChecks": [
+    "reads after browser logout and closure",
+    "encrypted token reuse after API and worker restart",
+    "one coordinated renewal across two independent worker processes",
+    "dispatch accepts operation identifiers and rejects credential fields",
+    "incorrect encryption key and denied database access fail closed",
+    "responses and stored envelopes omit plaintext access tokens"
+  ],
+  "nearExpiryRegression": {
+    "trigger": "Cached token has ninety seconds remaining.",
+    "before": "SDK retained its five-minute default and attempted unavailable refresh.",
+    "after": "Directory requests use the cached token. Only the database lease permits renewal.",
+    "validation": "Regression failed before direct SDK property assignment and passed afterward."
+  },
+  "browserChecks": [
+    "keyboard file import and confirmation",
+    "reject sign-in client file",
+    "offline input preservation and stale-state denial",
+    "exact client ID and shared read-only scope text",
+    "lost import response and reload recover public candidate metadata",
+    "customer, primary and secondary domains, aliases, and verification flags before confirmation",
+    "confirmation requires explicit customer review",
+    "pending confirmation prevents duplicate submission",
+    "lost confirmation response recovers durable customer binding",
+    "credentials absent from DOM and browser storage",
+    "light and dark automated accessibility",
+    "200 percent CSS zoom and 320-pixel overflow"
+  ],
+  "browserQualification": {
+    "rules": [
+      "UI-01",
+      "UI-02",
+      "UI-03",
+      "UI-04",
+      "UI-05",
+      "UI-06",
+      "UI-07",
+      "UI-08",
+      "UI-09",
+      "UI-10",
+      "FORM-01"
+    ],
+    "themes": ["light", "dark"],
+    "states": ["import", "review", "confirmed"],
+    "automatedAccessibilityReports": 6,
+    "automatedAccessibilityViolations": 0,
+    "humanScreenReader": "not-run",
+    "ownerAcceptance": "not-run",
+    "fixture": "Real API and PostgreSQL with synthetic Google transport.",
+    "testCorrections": [
+      "Wait for saved theme, inherited nested text colors, and completed paint before accessibility scans.",
+      "Expand inherited collapsed navigation before customer identity visibility checks.",
+      "Wait for responsive layout after changing viewport and CSS zoom."
+    ],
+    "resizeEvidence": "Hosted immediate dimensions reported overflow. The following screenshot fit 320 pixels. Polling the final layout passed qualification.",
+    "packagedApplicationImages": true,
+    "packagedAccessibilityReports": 6,
+    "packagedAccessibilityViolations": 0
+  }
+}

@@ -1,0 +1,474 @@
+{
+  "harnessRevision": "6cb04af732ebc2b4033cdccc5d6e2e339de9f503",
+  "harnessWorkingTree": "clean",
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "command": "npm exec -- nx run api-e2e:phase3-fault-integration",
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-17T12:01:05.494Z",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "browser": "149.0.7827.55"
+  },
+  "durationScope": "Durable-state setup, service interruptions, recovery checks, and preservation probes.",
+  "status": "passed",
+  "profile": "all-docker",
+  "phase": 3,
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "recoveryBoundSeconds": 180,
+  "cases": [
+    {
+      "name": "api-interruption",
+      "status": "passed",
+      "startedAt": "2026-09-17T12:01:13.915Z",
+      "observed": {
+        "httpStatus": 502
+      },
+      "interruptionMs": 8360,
+      "recoveryMs": 3947,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "51921359415df1fbc2de74649e37dd3c05d83b854d6ccead509d69bc25317d2c"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "8339bb718c6e1d317fdea675509255a67ab7eeb2e8437e3ba58d9c1588a5e997"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "6d29c49c7436b3f2088ce2070dc286689d0084db120009d82db28a8bac30f430"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "cb48b6932b80bb7de8ab2937fb90bcdf875da59a545b1684dcedd88f412bfaab"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "7124bf204960476787dcaeb1286fe7e1ed1ef3e1aa56d7c6a0999afb6e1c257e"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "7520b549a9339b1d66392e6c79e6a7cc4106bc7f6f98d88eecff527f348aa06d"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      }
+    },
+    {
+      "name": "worker-interruption",
+      "status": "passed",
+      "startedAt": "2026-09-17T12:01:32.561Z",
+      "observed": {
+        "httpStatus": 201,
+        "status": "failed",
+        "correlationId": "beed5605-6507-4024-bf1d-69b4ed632877"
+      },
+      "interruptionMs": 3102,
+      "recoveryMs": 8859,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "51921359415df1fbc2de74649e37dd3c05d83b854d6ccead509d69bc25317d2c"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "8339bb718c6e1d317fdea675509255a67ab7eeb2e8437e3ba58d9c1588a5e997"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "6d29c49c7436b3f2088ce2070dc286689d0084db120009d82db28a8bac30f430"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "cb48b6932b80bb7de8ab2937fb90bcdf875da59a545b1684dcedd88f412bfaab"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "7124bf204960476787dcaeb1286fe7e1ed1ef3e1aa56d7c6a0999afb6e1c257e"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "7520b549a9339b1d66392e6c79e6a7cc4106bc7f6f98d88eecff527f348aa06d"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      }
+    },
+    {
+      "name": "redis-interruption",
+      "status": "passed",
+      "startedAt": "2026-09-17T12:01:50.829Z",
+      "observed": {
+        "httpStatus": 503
+      },
+      "interruptionMs": 4838,
+      "sourceSessionRejected": true,
+      "recoveryMs": 1755,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "51921359415df1fbc2de74649e37dd3c05d83b854d6ccead509d69bc25317d2c"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "8339bb718c6e1d317fdea675509255a67ab7eeb2e8437e3ba58d9c1588a5e997"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "6d29c49c7436b3f2088ce2070dc286689d0084db120009d82db28a8bac30f430"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "cb48b6932b80bb7de8ab2937fb90bcdf875da59a545b1684dcedd88f412bfaab"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "7124bf204960476787dcaeb1286fe7e1ed1ef3e1aa56d7c6a0999afb6e1c257e"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "7520b549a9339b1d66392e6c79e6a7cc4106bc7f6f98d88eecff527f348aa06d"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      }
+    },
+    {
+      "name": "application-postgresql-interruption",
+      "status": "passed",
+      "startedAt": "2026-09-17T12:02:03.588Z",
+      "observed": {
+        "httpStatus": 503
+      },
+      "interruptionMs": 3540,
+      "recoveryMs": 1048,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "51921359415df1fbc2de74649e37dd3c05d83b854d6ccead509d69bc25317d2c"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "8339bb718c6e1d317fdea675509255a67ab7eeb2e8437e3ba58d9c1588a5e997"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "6d29c49c7436b3f2088ce2070dc286689d0084db120009d82db28a8bac30f430"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "cb48b6932b80bb7de8ab2937fb90bcdf875da59a545b1684dcedd88f412bfaab"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "7124bf204960476787dcaeb1286fe7e1ed1ef3e1aa56d7c6a0999afb6e1c257e"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "7520b549a9339b1d66392e6c79e6a7cc4106bc7f6f98d88eecff527f348aa06d"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      }
+    },
+    {
+      "name": "kestra-postgresql-interruption",
+      "status": "passed",
+      "startedAt": "2026-09-17T12:02:14.450Z",
+      "observed": {
+        "httpStatus": 201,
+        "status": "timed-out",
+        "correlationId": "f7bbf439-a224-4f7d-93e2-13384dfd2d8c"
+      },
+      "interruptionMs": 5569,
+      "recoveryMs": 73823,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "51921359415df1fbc2de74649e37dd3c05d83b854d6ccead509d69bc25317d2c"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "8339bb718c6e1d317fdea675509255a67ab7eeb2e8437e3ba58d9c1588a5e997"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "6d29c49c7436b3f2088ce2070dc286689d0084db120009d82db28a8bac30f430"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "cb48b6932b80bb7de8ab2937fb90bcdf875da59a545b1684dcedd88f412bfaab"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "7124bf204960476787dcaeb1286fe7e1ed1ef3e1aa56d7c6a0999afb6e1c257e"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "7520b549a9339b1d66392e6c79e6a7cc4106bc7f6f98d88eecff527f348aa06d"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      }
+    },
+    {
+      "name": "kestra-interruption",
+      "status": "passed",
+      "startedAt": "2026-09-17T12:03:40.613Z",
+      "observed": {
+        "httpStatus": 201,
+        "status": "timed-out",
+        "correlationId": "722325bc-3b08-4ee4-8c35-c177bc056f48"
+      },
+      "interruptionMs": 8587,
+      "recoveryMs": 10535,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "51921359415df1fbc2de74649e37dd3c05d83b854d6ccead509d69bc25317d2c"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "8339bb718c6e1d317fdea675509255a67ab7eeb2e8437e3ba58d9c1588a5e997"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "6d29c49c7436b3f2088ce2070dc286689d0084db120009d82db28a8bac30f430"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "cb48b6932b80bb7de8ab2937fb90bcdf875da59a545b1684dcedd88f412bfaab"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "7124bf204960476787dcaeb1286fe7e1ed1ef3e1aa56d7c6a0999afb6e1c257e"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "7520b549a9339b1d66392e6c79e6a7cc4106bc7f6f98d88eecff527f348aa06d"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      }
+    },
+    {
+      "name": "artifact-access-loss",
+      "status": "passed",
+      "startedAt": "2026-09-17T12:04:06.835Z",
+      "observed": {
+        "httpStatus": 201,
+        "status": "failed",
+        "correlationId": "f4d238f1-8d7a-4af0-80d2-a076db5678eb"
+      },
+      "interruptionMs": 949,
+      "recoveryMs": 1031,
+      "durableState": {
+        "preservedPolicy": {
+          "google_connection": {
+            "count": 1,
+            "sha256": "51921359415df1fbc2de74649e37dd3c05d83b854d6ccead509d69bc25317d2c"
+          },
+          "google_credentials": {
+            "count": 1,
+            "sha256": "8339bb718c6e1d317fdea675509255a67ab7eeb2e8437e3ba58d9c1588a5e997"
+          },
+          "customer_settings_revisions": {
+            "count": 1,
+            "sha256": "6d29c49c7436b3f2088ce2070dc286689d0084db120009d82db28a8bac30f430"
+          },
+          "school_definitions": {
+            "count": 2,
+            "sha256": "cb48b6932b80bb7de8ab2937fb90bcdf875da59a545b1684dcedd88f412bfaab"
+          },
+          "application_grants": {
+            "count": 13,
+            "sha256": "7124bf204960476787dcaeb1286fe7e1ed1ef3e1aa56d7c6a0999afb6e1c257e"
+          },
+          "application_access_changes": {
+            "count": 2,
+            "sha256": "7520b549a9339b1d66392e6c79e6a7cc4106bc7f6f98d88eecff527f348aa06d"
+          }
+        },
+        "principalCount": 2,
+        "preservedSecurityEvents": 51,
+        "artifactSha256": "3d3f9c3850f8f8283ff5dfd7afe781fdef19640946dee941dde35ead1b388c20",
+        "preservedKestraExecutions": 2,
+        "internalStorageSha256": "2d04577b1785dbf95ee7497a56c6121bc03b350af20f54f5e68faa60a6877c1f",
+        "preservedInternalFiles": 1
+      }
+    }
+  ],
+  "limits": [
+    "One Docker host retains host and volume failure points.",
+    "Capacity and certificate faults require separate evidence.",
+    "Provider faults, stale credentials, and full profile acceptance require separate evidence."
+  ],
+  "durationMs": 186002,
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35218528299",
+    "artifact": "phase-3-service-faults",
+    "reports": [
+      {
+        "path": "all-docker-faults.json",
+        "sizeBytes": 13233,
+        "sha256": "0bd0106f2b8835a18fa7b6fd7bee457b50230b59195f6bcb9cfd23575afc365b"
+      },
+      {
+        "path": "all-docker-profile.json",
+        "sizeBytes": 22864,
+        "sha256": "9aeaa740740a7abb59d109ca16cfa68d84511338d6bcfd1e06030c8cf276a2dd"
+      },
+      {
+        "path": "phase3-workflows.json",
+        "sizeBytes": 7512,
+        "sha256": "cb4af2eace322de70efedd679bed767888a4cf6ac3ecb9952b3308bb55b3486b"
+      }
+    ]
+  },
+  "installedWorkflows": {
+    "customerConfirmation": true,
+    "settingsConfirmation": true,
+    "schoolScopeConfirmation": true,
+    "invitationRedemption": true,
+    "explicitIdentityConfirmation": true,
+    "scopedGrantAssignment": true,
+    "crossSchoolDenial": true,
+    "revocation": true,
+    "credentialReplacement": true,
+    "restartPersistence": true
+  },
+  "profileDurationMs": 342746,
+  "installer": {
+    "status": "passed",
+    "commands": [
+      "prepare",
+      "resume",
+      "resume",
+      "stop",
+      "resume",
+      "uninstall",
+      "resume"
+    ],
+    "repeatedResume": true,
+    "redisSessionsDiscarded": true,
+    "freshSignInPreservesPreferences": true,
+    "originalRenderPreserved": true,
+    "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+    "source": "extracted-published-bundle"
+  },
+  "replicaObservations": [
+    {
+      "phase": "initial-session",
+      "container": "8fb947179e3b75d7e1b320210df5ea9aa666c8f7de3cc8aca4f1a9c18fc6bf77",
+      "status": 200,
+      "principalId": "d7bc6195-107a-4f0c-8d49-6e3f27880f4e"
+    },
+    {
+      "phase": "initial-session",
+      "container": "7588696af9f7dad73a27e832898546ecd9e8a06cd73059adecd4752eb7c9a20b",
+      "status": 200,
+      "principalId": "d7bc6195-107a-4f0c-8d49-6e3f27880f4e"
+    },
+    {
+      "phase": "fault-recovery-session",
+      "container": "8fb947179e3b75d7e1b320210df5ea9aa666c8f7de3cc8aca4f1a9c18fc6bf77",
+      "status": 200,
+      "principalId": "d7bc6195-107a-4f0c-8d49-6e3f27880f4e"
+    },
+    {
+      "phase": "fault-recovery-session",
+      "container": "7588696af9f7dad73a27e832898546ecd9e8a06cd73059adecd4752eb7c9a20b",
+      "status": 200,
+      "principalId": "d7bc6195-107a-4f0c-8d49-6e3f27880f4e"
+    },
+    {
+      "phase": "restart-session",
+      "container": "8fb947179e3b75d7e1b320210df5ea9aa666c8f7de3cc8aca4f1a9c18fc6bf77",
+      "status": 200,
+      "principalId": "d7bc6195-107a-4f0c-8d49-6e3f27880f4e"
+    },
+    {
+      "phase": "restart-session",
+      "container": "7588696af9f7dad73a27e832898546ecd9e8a06cd73059adecd4752eb7c9a20b",
+      "status": 200,
+      "principalId": "d7bc6195-107a-4f0c-8d49-6e3f27880f4e"
+    },
+    {
+      "phase": "stop-resume-session",
+      "container": "8fb947179e3b75d7e1b320210df5ea9aa666c8f7de3cc8aca4f1a9c18fc6bf77",
+      "status": 200,
+      "principalId": "d7bc6195-107a-4f0c-8d49-6e3f27880f4e"
+    },
+    {
+      "phase": "stop-resume-session",
+      "container": "7588696af9f7dad73a27e832898546ecd9e8a06cd73059adecd4752eb7c9a20b",
+      "status": 200,
+      "principalId": "d7bc6195-107a-4f0c-8d49-6e3f27880f4e"
+    },
+    {
+      "phase": "uninstall-resume-session",
+      "container": "2281fd7c817d7bce937a0d30820773e740ec46d8ff8d1cfc85787d973ed811e0",
+      "status": 200,
+      "principalId": "d7bc6195-107a-4f0c-8d49-6e3f27880f4e"
+    },
+    {
+      "phase": "uninstall-resume-session",
+      "container": "1daee31c56af259fe134e3da9df2ca500e58a7ee2b1af0590c2047b3abda9a38",
+      "status": 200,
+      "principalId": "d7bc6195-107a-4f0c-8d49-6e3f27880f4e"
+    },
+    {
+      "phase": "signed-out-session",
+      "container": "2281fd7c817d7bce937a0d30820773e740ec46d8ff8d1cfc85787d973ed811e0",
+      "status": 401
+    },
+    {
+      "phase": "signed-out-session",
+      "container": "1daee31c56af259fe134e3da9df2ca500e58a7ee2b1af0590c2047b3abda9a38",
+      "status": 401
+    }
+  ]
+}

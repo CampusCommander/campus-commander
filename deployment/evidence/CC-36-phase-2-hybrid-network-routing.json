@@ -1,0 +1,29 @@
+{
+  "gateway": "172.17.0.1",
+  "cases": [
+    {
+      "mode": "default",
+      "route": "local 172.17.0.1 dev lo  src 172.17.0.1",
+      "device": "lo",
+      "bridge": [
+        {
+          "Subnet": "172.17.0.0/16",
+          "Gateway": "172.17.0.1"
+        }
+      ]
+    },
+    {
+      "mode": "separate",
+      "route": "172.17.0.1 via 172.24.0.1 dev eth0  src 172.24.0.3",
+      "device": "eth0",
+      "bridge": [
+        {
+          "Subnet": "10.250.0.0/24",
+          "Gateway": "10.250.0.1"
+        }
+      ]
+    }
+  ],
+  "status": "passed",
+  "ownedResourcesRemoved": true
+}

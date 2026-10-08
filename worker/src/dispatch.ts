@@ -1,3 +1,16 @@
+import { z } from 'zod';
+import {
+  GoogleConnectionError,
+  GoogleStoreError,
+  CredentialError,
+} from '@campus/google-connection';
+import {
+  entitySyncBatchRequestSchema,
+  googleCustomerIdSchema,
+} from '@campus/application-contracts';
+import type { GoogleWorker } from './google-connection';
+import { EntityCacheError } from './entity-cache';
+import { DeviceSyncError, deviceSyncRequestSchema } from './device-sync';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -79,6 +92,148 @@ export async function handleSyntheticDispatch(
     }
   }
 
+  return true;
+}
+
+const googleReadSchema = z.strictObject({
+  customerId: googleCustomerIdSchema,
+  generation: z.number().int().positive(),
+  correlationId: z.uuid(),
+  executionId: z.uuid(),
+});
+
+export async function handleGoogleDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (request.method !== 'POST' || request.url !== '/dispatch/google-customer')
+    return false;
+  if (rejected(request, response, context)) return true;
+  try {
+    const input = googleReadSchema.parse(await readJson(request));
+    const { executionId, ...read } = input;
+    const result = await google.read(read, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status: 'completed',
+      ...result,
+    });
+  } catch (error) {
+    if (error instanceof DispatchError)
+      respond(response, error.statusCode, { error: error.code });
+    else if (error instanceof z.ZodError)
+      respond(response, 400, { error: 'invalid-payload' });
+    else if (
+      error instanceof GoogleConnectionError ||
+      error instanceof GoogleStoreError ||
+      error instanceof CredentialError
+    )
+      respond(response, 503, { error: error.code });
+    else respond(response, 503, { error: 'connection-unavailable' });
+  }
+  return true;
+}
+
+/** Reject unauthenticated or non-JSON dispatches. Returns true when the response is complete. */
+function rejected(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+): boolean {
+  if (!authorized(request.headers.authorization, context.secret)) {
+    respond(response, 401, { error: 'unauthorized' });
+    request.resume();
+    return true;
+  }
+  if (
+    request.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !==
+    'application/json'
+  ) {
+    respond(response, 415, { error: 'application-json-required' });
+    request.resume();
+    return true;
+  }
+  return false;
+}
+
+const deviceSyncDispatchSchema = deviceSyncRequestSchema.extend({
+  executionId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+});
+
+export async function handleDeviceSyncDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (request.method !== 'POST' || request.url !== '/dispatch/device-sync')
+    return false;
+  if (rejected(request, response, context)) return true;
+  try {
+    const { executionId, ...input } = deviceSyncDispatchSchema.parse(
+      await readJson(request),
+    );
+    const sync = await google.syncDevices(input, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status: 'completed',
+      sync,
+    });
+  } catch (error) {
+    if (error instanceof DispatchError)
+      respond(response, error.statusCode, { error: error.code });
+    else if (error instanceof z.ZodError)
+      respond(response, 400, { error: 'invalid-payload' });
+    else if (error instanceof DeviceSyncError)
+      respond(response, 409, { error: error.code });
+    else respond(response, 503, { error: 'device-sync-unavailable' });
+  }
+  return true;
+}
+
+const entitySyncDispatchSchema = entitySyncBatchRequestSchema.extend({
+  executionId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+});
+
+export async function handleEntitySyncDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (
+    request.method !== 'POST' ||
+    request.url !== '/dispatch/entity-sync-batch'
+  )
+    return false;
+  if (rejected(request, response, context)) return true;
+  try {
+    const { executionId, ...input } = entitySyncDispatchSchema.parse(
+      await readJson(request),
+    );
+    const result = await google.syncEntityBatch(input, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status: result.failure === null ? 'completed' : 'failed',
+      failure: result.failure,
+      job: result.job,
+    });
+  } catch (error) {
+    if (error instanceof DispatchError)
+      respond(response, error.statusCode, { error: error.code });
+    else if (error instanceof z.ZodError)
+      respond(response, 400, { error: 'invalid-payload' });
+    else if (error instanceof DeviceSyncError)
+      respond(response, 409, { error: error.code });
+    else if (error instanceof EntityCacheError)
+      respond(response, 503, { error: error.code });
+    else respond(response, 503, { error: 'entity-sync-unavailable' });
+  }
   return true;
 }
 

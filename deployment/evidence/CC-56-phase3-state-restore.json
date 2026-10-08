@@ -1,0 +1,89 @@
+{
+  "runner": "injected-docker",
+  "phase": 3,
+  "phase3Recovery": {
+    "status": "passed",
+    "preserved": {
+      "google_connection": {
+        "count": 1,
+        "sha256": "f44232fe6149df91ade40550735323964c728a5cacb40bf935bc38e3869a5946"
+      },
+      "google_credentials": {
+        "count": 1,
+        "sha256": "84bd3ee50fd1ef4f289cf4b3e6d42cf7c9114e7e908fce2bb912899a1cd0d617"
+      },
+      "customer_settings_revisions": {
+        "count": 1,
+        "sha256": "255bcd5d996057df97ef19934448918a2dd7cc71e807ba8fda5e3992df52b5e6"
+      },
+      "school_definitions": {
+        "count": 1,
+        "sha256": "f4446df7a29f3edcea83d81651b3bb370f09ffb1183f2ffae49188bb8362d53e"
+      },
+      "application_grants": {
+        "count": 12,
+        "sha256": "a8e6e2f2d703c85357f83a2c13672730e62f910748dfa58ff10c548118a0be67"
+      },
+      "application_principals": {
+        "count": 1,
+        "sha256": "ffe4c301f592c495d93c66865709edca1bf9c5c4472687d80eed5eec65ece42c"
+      },
+      "school_reference_history": {
+        "count": 1,
+        "sha256": "d6a37647059723ac1441ef54391267ac654cab7f385f685e0e6bf915b7864a74"
+      }
+    },
+    "oldSettingsReceiptPreserved": true,
+    "approvedSchoolScopePreserved": true,
+    "oldSchoolReferencesEffective": false,
+    "pendingCandidatesExpired": 1,
+    "pendingReviewsExpired": 1,
+    "exactRecoveredKeyVerified": true,
+    "backupKeyCannotDecryptGoogleCredential": true,
+    "wrongCustomerRejected": true,
+    "revalidation": {
+      "status": "revalidated",
+      "customerId": "Crestore01",
+      "generation": 1
+    },
+    "provider": "synthetic verifier, real restored ciphertext and PostgreSQL",
+    "limits": [
+      "This fixture invokes the revalidation library. It does not qualify the revalidation CLI or live Google privileges."
+    ]
+  },
+  "backupAgeMilliseconds": 532,
+  "backupMilliseconds": 328,
+  "restoreMilliseconds": 304,
+  "encryptedFiles": 6,
+  "results": [
+    "actual connection quiescence enforced",
+    "delayed connection teardown observed through fresh transaction statistics",
+    "both database dumps restored",
+    "Phase 2 identity, preferences, permission version, and security events restored",
+    "artifact identity and Unicode bytes restored",
+    "Kestra synthetic state and internal files restored",
+    "missing/wrong keys rejected",
+    "corrupt and missing backup files rejected",
+    "backup inside primary volume rejected",
+    "nonempty target rejected",
+    "absent source volume rejected",
+    "failed restore retains disabled marker without success report",
+    "services remain disabled; Redis requires fresh instance"
+  ],
+  "hybrid": "not-run: district shared mount absent",
+  "kubernetes": "not-run: qualified RWX storage absent",
+  "status": "passed",
+  "command": "npm exec nx run deployment:operations-phase3-integration",
+  "images": {
+    "postgres": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
+  },
+  "durationMilliseconds": 15446,
+  "limits": [
+    "Synthetic Google verifier and migration-role library revalidation.",
+    "Distinct databases and storage trees share one PostgreSQL container and Docker host.",
+    "Separate networks, fresh Redis, browser sessions, and revalidation CLI remain unqualified."
+  ],
+  "sourceRevision": "06685a91384ba0ac35effbf8e9c7130efc1e1cec",
+  "recordedAt": "2026-09-17T05:42:21.141Z",
+  "environment": "Synthetic source and target databases share one PostgreSQL container on one Docker host."
+}

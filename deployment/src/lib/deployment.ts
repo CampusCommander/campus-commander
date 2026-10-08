@@ -134,7 +134,51 @@ const database = service.extend({
 
 const shape = z.strictObject({
   schemaVersion: z.literal(1),
-  phase: z.literal(1),
+  phase: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  applicationAuth: z
+    .strictObject({
+      issuer: z.url().refine((value) => {
+        const url = new URL(value);
+        return (
+          url.protocol === 'https:' &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash
+        );
+      }),
+      clientId: z.string().min(1).max(512),
+      clientSecretRef: secretReferenceSchema,
+      publicOrigin: z
+        .url()
+        .refine(
+          (value) =>
+            new URL(value).origin === value && value.startsWith('https://'),
+        ),
+      sessionLifetimeSeconds: z
+        .number()
+        .int()
+        .min(300)
+        .max(86400)
+        .default(28800),
+      sessionIdleSeconds: z.number().int().min(60).max(3600).default(1800),
+    })
+    .optional(),
+  googleConnection: z
+    .strictObject({
+      keyId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
+      encryptionKeySecretRef: secretReferenceSchema,
+      additionalKeys: z
+        .array(
+          z.strictObject({
+            keyId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
+            encryptionKeySecretRef: secretReferenceSchema,
+          }),
+        )
+        .max(3)
+        .optional(),
+    })
+    .optional(),
   profile: z.enum(['all-docker', 'hybrid', 'kubernetes']),
   host: z.strictObject({
     os: z.literal('linux'),
@@ -163,15 +207,70 @@ const shape = z.strictObject({
     }),
     edge: service.extend({
       bootstrapSecretRef: secretReferenceSchema,
-      access: z.literal('bootstrap-only'),
+      access: z.enum(['bootstrap-only', 'application']),
     }),
   }),
   artifacts: persistence,
 });
 
 export const deploymentConfigSchema = shape.superRefine((config, ctx) => {
+  if (
+    config.phase >= 2 !== Boolean(config.applicationAuth) ||
+    config.phase >= 2 !== (config.services.edge.access === 'application')
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['applicationAuth'],
+      message:
+        'Phases 2 and 3 require application authentication and application edge access.',
+    });
+  }
   const reject = (path: (string | number)[], message: string) =>
     ctx.addIssue({ code: 'custom', path, message });
+  if (config.googleConnection && config.phase !== 3)
+    reject(['googleConnection'], 'Google connections require Phase 3.');
+  const googleKeys = config.googleConnection
+    ? [
+        config.googleConnection,
+        ...(config.googleConnection.additionalKeys ?? []),
+      ]
+    : [];
+  if (
+    new Set(googleKeys.map((entry) => entry.keyId)).size !== googleKeys.length
+  )
+    reject(
+      ['googleConnection'],
+      'Google encryption key identifiers must be unique.',
+    );
+  for (let i = 0; i < googleKeys.length; i += 1) {
+    if (
+      googleKeys.some(
+        (entry, j) =>
+          i !== j &&
+          sameSecret(
+            entry.encryptionKeySecretRef,
+            googleKeys[i].encryptionKeySecretRef,
+          ),
+      )
+    )
+      reject(
+        ['googleConnection'],
+        'Google encryption keys require distinct secret references.',
+      );
+    const googleKey = googleKeys[i].encryptionKeySecretRef;
+    if (
+      googleKey?.provider === 'file' &&
+      [
+        'postgres-migrator',
+        'application-postgres-admin-password',
+        'kestra-postgres-admin-password',
+      ].includes(googleKey.path.split('/').at(-1) ?? '')
+    )
+      reject(
+        ['googleConnection', 'encryptionKeySecretRef'],
+        'Operator secrets cannot supply the Google encryption key.',
+      );
+  }
   const services = config.services;
   const distributed =
     config.profile === 'kubernetes' || config.host.workerHosts > 1;
@@ -386,6 +485,18 @@ export const deploymentConfigSchema = shape.superRefine((config, ctx) => {
     for (const [key, child] of Object.entries(value)) {
       if (key.endsWith('SecretRef')) {
         const ref = secretReferenceSchema.safeParse(child);
+        if (
+          ref.success &&
+          config.googleConnection &&
+          path[0] !== 'googleConnection' &&
+          googleKeys.some((entry) =>
+            sameSecret(ref.data, entry.encryptionKeySecretRef),
+          )
+        )
+          reject(
+            ['googleConnection', 'encryptionKeySecretRef'],
+            'The Google encryption key requires a separate secret reference.',
+          );
         if (ref.success && ref.data.provider !== expectedProvider)
           reject([...path, key], 'Secret provider does not match the runtime.');
       } else inspectSecrets(child, [...path, key]);

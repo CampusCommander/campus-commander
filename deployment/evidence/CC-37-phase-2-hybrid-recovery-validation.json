@@ -1,0 +1,54 @@
+{
+  "status": "passed",
+  "checkedAt": "2026-09-12T18:43:52.102329+00:00",
+  "baseRevision": "7ba4f64e99e6d8b877728eb82d5f9bc2492f6102",
+  "sourceFiles": {
+    "deployment/profiles/hybrid/full-integration.mjs": "eac7bc77fe6a2949f5b92aba5874c2032e6de72cf40255f7249f9b269e9fd642",
+    "deployment/profiles/hybrid/recovery.test.mjs": "2ca17d1a5b9ec5cf0fadc86827dec07986588f44ead051deefa656555d87776d"
+  },
+  "behavior": {
+    "completeObservationBudgetSeconds": 90,
+    "requiresReadinessAndPersistenceTogether": true,
+    "rejectsLateSuccess": true,
+    "upgradeExecutionReadsBounded": true,
+    "replayedMutations": false
+  },
+  "regression": {
+    "before": "Real TLS tests failed after a healthy response followed by 503 or an execution-read connection reset.",
+    "after": "Both transient cases pass through the complete observation. Persistent failure, corrupted artifact bytes, and late success reject.",
+    "clock": "Virtual clock for the ninety-second rejection cases. HTTPS connections and temporary artifact files are real."
+  },
+  "validation": {
+    "profilesTest": {
+      "status": "passed",
+      "tests": 30
+    },
+    "deploymentLint": "passed",
+    "hybridUpgrade": {
+      "status": "passed",
+      "applicationImageRevision": "7ba4f64e99e6d8b877728eb82d5f9bc2492f6102",
+      "durationMilliseconds": 183073.843478,
+      "report": "deployment/evidence/CC-36-phase-2-hybrid-recovery-7ba4f64.json",
+      "reportSha256": "e44ddbd8f95d214a1a84f4947fae69dc8010fa8f5a837837f916f539b6a68994"
+    }
+  },
+  "intermediateFailure": {
+    "log": "/tmp/cc-phase2-7ba4f64-hybrid-recovery-integration.log",
+    "logSha256": "12cd9d54906d47d4e27839a9deed8690d1c6eba165f536a2484a77beb3a43d29",
+    "code": "ECONNRESET",
+    "scope": "A separate execution read before upgrade preparation remained outside bounded observation.",
+    "upgradeOidcFileCreated": false
+  },
+  "logs": {
+    "cc-phase2-hybrid-recovery-red": "92fe24db0aa8d18d6b2047a904b41f90e6d17f85f6aba80ce401b1a28889cd76",
+    "cc-phase2-hybrid-recovery-final-green": "c9cfb0dfeabc005f56a7101532678bb50faf70935163e81e9acba40fedafa7af",
+    "cc-phase2-hybrid-recovery-lint": "62fbd7bc8268aa2b0ec98114b5190b6f12726f9a87f1fb4abc13394efa421ae1",
+    "cc-phase2-7ba4f64-hybrid-recovery-complete": "e6baa01ca8238279578aa9d4e9b185268335a5a213f4c5111fa0052b3d50cbec"
+  },
+  "limits": [
+    "The test does not identify the upstream cause of transient readiness or connection resets.",
+    "Each observation requires all existing persistence checks. Only read operations repeat.",
+    "Individual I/O timeouts also apply. Late success cannot pass the observation deadline.",
+    "The complete fixture uses one Docker host and synthetic certificates. District acceptance remains open."
+  ]
+}

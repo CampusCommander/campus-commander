@@ -1,2 +1,6 @@
 # Disposable validation experiments are not workspace projects.
 docs/validation/**/experiments/**
+# Extracted release files belong to the qualification fixture.
+extracted-candidate/
+extracted-baseline/
+extracted-update/

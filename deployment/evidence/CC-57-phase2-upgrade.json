@@ -1,0 +1,488 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "profile": "all-docker",
+  "sourceRevision": "a3601eff2a55373074958c6bc93e9134adbea741",
+  "harnessRevision": "4386077ccba9f6c3f8b7a223edeef49bcec951c8",
+  "harnessWorkingTree": "clean",
+  "images": {
+    "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:32f23636b9331600345065006675e9fe6e7b00409affa89e3f56a5f8d4f1c4a4",
+    "api": "ghcr.io/campuscommander/campus-commander-api@sha256:1dd763896782e3d225b745d9c01dc28f640fd3194a15780eaa8a4a3223407338",
+    "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:5474021d762edb88b8f97e063b5cb444bd00cf7271fbafcad9cb0df6fa91b884"
+  },
+  "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+  "command": "npm exec -- nx run api-e2e:phase3-upgrade-integration",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "linux",
+    "architecture": "x64",
+    "browser": "149.0.7827.55"
+  },
+  "recordedAt": "2026-09-17T11:45:37.707Z",
+  "status": "passed",
+  "durationMs": 51313,
+  "durationScope": "Phase 2 browser checks, seeded state, verified cold backup, upgrade, resume, and preservation checks.",
+  "baseline": {
+    "sourceRevision": "1b04fa38c1a4ba8c49e293143351c6ad9f5b6432",
+    "images": {
+      "frontend": "ghcr.io/campuscommander/campus-commander-frontend@sha256:44a987f5687a1e4f1420c2c859ac150b3c68825dac3ce87628c9b87e812f016d",
+      "api": "ghcr.io/campuscommander/campus-commander-api@sha256:5d8639f533f76eadf76401610dbc453e1ccb9baca5af0ab085eff0e9355d2d30",
+      "workers": "ghcr.io/campuscommander/campus-commander-worker@sha256:cb95230e3ced7b6036b72c9e0940b9f72de40768e64696fe7fe0486fca52e7e3"
+    },
+    "bundleManifestSha256": "14b4407879eba3a704f47531023431f6cfb0659c3cdf969a4a8a4fcbf91b08d3",
+    "sourceTag": "phase-2-lab-1b04fa38c1a4",
+    "acceptanceScope": "Owner accepted Phase 2 work at this implementation revision. The owner did not identify the exact installed revision."
+  },
+  "baselineBrowser": {
+    "status": "passed",
+    "browser": "149.0.7827.55",
+    "operations": ["postgresql", "redis", "kestra", "artifacts"],
+    "observations": [
+      {
+        "operation": "postgresql",
+        "status": "passed",
+        "correlationId": "8da3dfcc-1c7c-4bd0-9ffb-c75dae9a5809",
+        "observedAt": "2026-09-17T11:42:54.412Z"
+      },
+      {
+        "operation": "redis",
+        "status": "passed",
+        "correlationId": "a2cde6ce-15c5-4653-8865-95aa16f70126",
+        "observedAt": "2026-09-17T11:42:54.509Z"
+      },
+      {
+        "operation": "kestra",
+        "status": "passed",
+        "correlationId": "73d9aaf4-5467-49ac-a185-262a2840efab",
+        "observedAt": "2026-09-17T11:42:56.192Z"
+      },
+      {
+        "operation": "artifacts",
+        "status": "passed",
+        "correlationId": "23dfc241-3e92-4466-9ee8-92260e2ef68e",
+        "observedAt": "2026-09-17T11:42:56.310Z"
+      }
+    ],
+    "recoveryBoundSeconds": 0,
+    "districtBrowserTrustQualified": false,
+    "tls": "synthetic CA; browser trust prompts omitted only in fixture"
+  },
+  "operations": {
+    "commands": [
+      {
+        "command": "backup",
+        "status": "passed"
+      },
+      {
+        "command": "verify",
+        "status": "passed"
+      }
+    ],
+    "execution": {
+      "runner": "operator-container-native",
+      "postgresImage": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+      "nodeVersion": "v24.19.0",
+      "secretMount": "/run/secrets",
+      "injectedDatabaseTool": false,
+      "source": "extracted-published-bundle",
+      "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f"
+    }
+  },
+  "checks": {
+    "principalsPreserved": true,
+    "preferencesPreserved": true,
+    "artifactPreserved": true,
+    "migrationChecksumsPreserved": true,
+    "newMigrationsApplied": true,
+    "installerStateAdvanced": true,
+    "existingSecretsPreserved": true,
+    "backupVerified": true,
+    "repeatedResume": true
+  },
+  "principalCount": 2,
+  "migrationCount": {
+    "before": 2,
+    "after": 15
+  },
+  "artifact": {
+    "id": "536fdf6f-8032-44a5-982f-6b177cddc254",
+    "sha256": "30cfc3207916d3e2019e986ddad471ea1537a17f61b7f21aef321fbb4c9972dd"
+  },
+  "installerState": {
+    "before": {
+      "phase": "ready",
+      "releaseHash": "bc5883df997ab9d6162d208ee1685788701a0b243a6376cb4693216e1fd486b1",
+      "configurationHash": "3b7a837e5455e58b656cecefc158e044b570e9ef4769b07c6afcb641b7969d90"
+    },
+    "after": {
+      "phase": "ready",
+      "releaseHash": "17d60cfea9fc3c885a44cc374c35df2fd5a9d46f85f4cb74b49a807279992b0e",
+      "configurationHash": "32fbc685e4d3f279f6e7912c129a9c3a1d3ee7a00eb2ede7e45cdcce46c4bf76"
+    }
+  },
+  "limits": [
+    "The accepted Phase 2 implementation revision is pinned. The owner did not identify the exact previously installed revision.",
+    "Synthetic identity and Google providers do not establish district acceptance."
+  ],
+  "postUpgradeWorkflows": {
+    "status": "passed",
+    "durationMs": 13090,
+    "checks": {
+      "customerConfirmation": true,
+      "settingsConfirmation": true,
+      "schoolScopeConfirmation": true,
+      "invitationRedemption": true,
+      "explicitIdentityConfirmation": true,
+      "scopedGrantAssignment": true,
+      "crossSchoolDenial": true,
+      "revocation": true,
+      "credentialReplacement": true,
+      "restartPersistence": true
+    },
+    "observations": [
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/candidates",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/google-connection/candidates/91681f2d-a0a3-427e-baca-6465ba8d9bae/confirm",
+        "method": "POST",
+        "status": 409
+      },
+      {
+        "path": "/api/google-connection/candidates/91681f2d-a0a3-427e-baca-6465ba8d9bae/confirm",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/google-connection",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer/settings",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/references/refresh",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/schools/reviews",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/schools/reviews/b936812e-dc4e-4c8a-a9dd-a0424d0701c6/confirm",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/schools/2bf6efdb-a088-488e-9a9b-5c0a81a1ed41",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/reviews",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/schools/reviews/f392e9f9-5875-4048-b48c-e7feea3a7b81/confirm",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/schools/ac94cf1a-2c4c-4159-a543-41ae78685132",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/auth/invitations",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/auth/session",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "path": "/api/auth/invitations",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/auth/invitations/7eaa6541-5c78-4b44-bf93-35b0f4a18b93/confirm",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/auth/session",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users",
+        "method": "GET",
+        "status": 403
+      },
+      {
+        "path": "/api/platform-users/09c610e9-ecdd-48f6-ab74-2fc98aa6f7b4/review",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/platform-users/09c610e9-ecdd-48f6-ab74-2fc98aa6f7b4/access",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/auth/session",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "path": "/api/schools/2bf6efdb-a088-488e-9a9b-5c0a81a1ed41",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/ac94cf1a-2c4c-4159-a543-41ae78685132",
+        "method": "GET",
+        "status": 404
+      },
+      {
+        "path": "/api/schools/2c194901-c7e5-4485-9da1-b11e529ac5cb",
+        "method": "GET",
+        "status": 404
+      },
+      {
+        "path": "/api/platform-users/09c610e9-ecdd-48f6-ab74-2fc98aa6f7b4/review",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/platform-users/09c610e9-ecdd-48f6-ab74-2fc98aa6f7b4/access",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/auth/session",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "path": "/api/schools/2bf6efdb-a088-488e-9a9b-5c0a81a1ed41",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "path": "/api/platform-users/09c610e9-ecdd-48f6-ab74-2fc98aa6f7b4/receipts",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/09c610e9-ecdd-48f6-ab74-2fc98aa6f7b4",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/credentials",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/replacements",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/google-connection/replacements/5d30c120-2025-4ae7-9034-9268b8e5184e/activate",
+        "method": "POST",
+        "status": 201
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/customer",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/google-connection/credentials",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/2bf6efdb-a088-488e-9a9b-5c0a81a1ed41",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/schools/ac94cf1a-2c4c-4159-a543-41ae78685132",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/09c610e9-ecdd-48f6-ab74-2fc98aa6f7b4",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "path": "/api/platform-users/09c610e9-ecdd-48f6-ab74-2fc98aa6f7b4/receipts",
+        "method": "GET",
+        "status": 200
+      }
+    ],
+    "limits": [
+      "The installed application uses synthetic Google and OIDC providers.",
+      "This report covers public API workflows and selected browser steps. It does not establish complete accessibility or district acceptance."
+    ],
+    "durationScope": "Public workflows and restart persistence, including intervening installer diagnostics."
+  },
+  "provenance": {
+    "runUrl": "https://github.com/CampusCommander/campus-commander/actions/runs/35216878990",
+    "artifact": "phase-3-upgrade-workflows",
+    "releaseTag": "phase-3-lab-a3601eff2a55",
+    "reports": [
+      {
+        "path": "all-docker-upgrade.json",
+        "sizeBytes": 11235,
+        "sha256": "06edb2c57994687b3fd9c10e3118c4c28414266ae39334478af5a42be6eebafd"
+      },
+      {
+        "path": "phase3-workflows.json",
+        "sizeBytes": 6803,
+        "sha256": "0df2d18b25d946a31df9de0160203b4a4d42232c79ef6325a3777d4f53efe730"
+      },
+      {
+        "path": "all-docker-profile.json",
+        "sizeBytes": 9502,
+        "sha256": "6dae2fa021f8c88d00b796f1b8555983895eae135d8a1c722a602aa2fcbe5d27"
+      }
+    ]
+  },
+  "profileVerification": {
+    "status": "passed",
+    "durationMs": 220114,
+    "installer": {
+      "status": "passed",
+      "commands": [
+        "prepare",
+        "resume",
+        "resume",
+        "stop",
+        "resume",
+        "uninstall",
+        "resume"
+      ],
+      "upgradeCommands": ["upgrade", "resume"],
+      "repeatedResume": true,
+      "redisSessionsDiscarded": true,
+      "freshSignInPreservesPreferences": true,
+      "originalRenderPreserved": true,
+      "bundleManifestSha256": "257c8139a3e727fdec9668a7c3bee4e07c127b6efc415af00e35a041bcd7e55f",
+      "source": "extracted-published-bundle"
+    },
+    "readinessChecks": [
+      "application-database",
+      "kestra-database",
+      "redis",
+      "frontend",
+      "api",
+      "workers",
+      "artifacts",
+      "kestra"
+    ],
+    "apiReplicaCount": 2,
+    "replicaObservations": [
+      {
+        "phase": "initial-session",
+        "container": "b127b58c8b5e1b8b37b3f56355a1b5d827132dc4fa13a06cfdd9611ba2227cd5",
+        "status": 200,
+        "principalId": "dbc2dacf-d707-401a-81fa-600c0fae68ef"
+      },
+      {
+        "phase": "initial-session",
+        "container": "83d40f834170885f1d847d1670781c89a73a989d17f187c99a3bc16bd5027daf",
+        "status": 200,
+        "principalId": "dbc2dacf-d707-401a-81fa-600c0fae68ef"
+      },
+      {
+        "phase": "restart-session",
+        "container": "b127b58c8b5e1b8b37b3f56355a1b5d827132dc4fa13a06cfdd9611ba2227cd5",
+        "status": 200,
+        "principalId": "dbc2dacf-d707-401a-81fa-600c0fae68ef"
+      },
+      {
+        "phase": "restart-session",
+        "container": "83d40f834170885f1d847d1670781c89a73a989d17f187c99a3bc16bd5027daf",
+        "status": 200,
+        "principalId": "dbc2dacf-d707-401a-81fa-600c0fae68ef"
+      },
+      {
+        "phase": "stop-resume-session",
+        "container": "b127b58c8b5e1b8b37b3f56355a1b5d827132dc4fa13a06cfdd9611ba2227cd5",
+        "status": 200,
+        "principalId": "dbc2dacf-d707-401a-81fa-600c0fae68ef"
+      },
+      {
+        "phase": "stop-resume-session",
+        "container": "83d40f834170885f1d847d1670781c89a73a989d17f187c99a3bc16bd5027daf",
+        "status": 200,
+        "principalId": "dbc2dacf-d707-401a-81fa-600c0fae68ef"
+      },
+      {
+        "phase": "uninstall-resume-session",
+        "container": "1940160fd6419c06667ef4f1646a0badbd69cd61d13caa5e71acb860dfc3ef73",
+        "status": 200,
+        "principalId": "dbc2dacf-d707-401a-81fa-600c0fae68ef"
+      },
+      {
+        "phase": "uninstall-resume-session",
+        "container": "44775b37067b3d057a8ce52eb1a8e4535fce5edbf69651b96eed4e70f66bb506",
+        "status": 200,
+        "principalId": "dbc2dacf-d707-401a-81fa-600c0fae68ef"
+      },
+      {
+        "phase": "signed-out-session",
+        "container": "1940160fd6419c06667ef4f1646a0badbd69cd61d13caa5e71acb860dfc3ef73",
+        "status": 401
+      },
+      {
+        "phase": "signed-out-session",
+        "container": "44775b37067b3d057a8ce52eb1a8e4535fce5edbf69651b96eed4e70f66bb506",
+        "status": 401
+      }
+    ],
+    "sessionSurvivedRestart": true,
+    "logoutRejectedAcrossReplicas": true,
+    "limits": [
+      "Synthetic provider CA and loopback port replace district ingress.",
+      "Isolated restore and complete fault qualification require separate evidence."
+    ],
+    "durationScope": "Complete baseline installation, upgrade, browser, restart, stop, uninstall, and resume fixture."
+  }
+}
