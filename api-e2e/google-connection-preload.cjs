@@ -272,12 +272,16 @@ prototype.request = async function (options) {
     if (fault === 'device-delay')
       await new Promise((resolve) => setTimeout(resolve, 4000));
     quotaCalls += 1;
-    const ids = [
+    // Google echoes each request part's Content-ID with a `response-` prefix.
+    const requests = [
       ...String(options.body ?? options.data).matchAll(
-        /GET \/admin\/directory\/v1\/customer\/C0123456\/devices\/chromeos\/([A-Za-z0-9_-]+)/g,
+        /Content-ID: <([^>]+)>\r?\n\r?\nGET \/admin\/directory\/v1\/customer\/C0123456\/devices\/chromeos\/([A-Za-z0-9_%-]+)/g,
       ),
-    ].map((match) => decodeURIComponent(match[1]));
-    const parts = ids.map((id) => {
+    ].map((match) => ({
+      contentId: match[1],
+      id: decodeURIComponent(match[2]),
+    }));
+    const parts = requests.map(({ contentId, id }) => {
       const found = fleet.find((device) => device.deviceId === id);
       const removed = fault === 'device-removed' && id === 'synthetic-device-3';
       const quota = fault === 'device-quota' && quotaCalls === 1;
@@ -297,7 +301,7 @@ prototype.request = async function (options) {
       return [
         '--batch_synthetic',
         'Content-Type: application/http',
-        `Content-ID: <response-item-${id}>`,
+        `Content-ID: <response-${contentId}>`,
         '',
         `HTTP/1.1 ${status} ${status === 200 ? 'OK' : 'Error'}`,
         'Content-Type: application/json; charset=UTF-8',
