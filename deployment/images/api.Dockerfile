@@ -25,7 +25,7 @@ ARG CC_VERSION=development
 ARG CC_BUILD_ID=unreleased
 ENV CC_VERSION=${CC_VERSION} CC_BUILD_ID=${CC_BUILD_ID}
 LABEL org.opencontainers.image.version=${CC_VERSION} org.opencontainers.image.revision=${CC_BUILD_ID}
-RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+RUN apk add --no-cache libcrypto3=3.5.9-r0 libssl3=3.5.9-r0 && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 WORKDIR /app
 COPY --from=build --chown=node:node /workspace/dist/api ./
 COPY --from=runtime-dependencies --chown=node:node /app/node_modules ./node_modules
