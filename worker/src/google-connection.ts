@@ -44,13 +44,17 @@ export class GoogleWorker {
     const transport = service.endpoint.tls;
     this.redis = new WorkerRedis({
       url: service.endpoint.url,
-      password: secret(service.passwordSecretRef).toString('utf8').replace(/\r?\n$/, ''),
+      password: secret(service.passwordSecretRef)
+        .toString('utf8')
+        .replace(/\r?\n$/, ''),
       tls:
         transport.mode === 'disabled'
           ? null
           : {
               servername: new URL(service.endpoint.url).hostname,
-              ...(transport.mode === 'private-ca' ? { ca: secret(transport.caSecretRef) } : {}),
+              ...(transport.mode === 'private-ca'
+                ? { ca: secret(transport.caSecretRef) }
+                : {}),
             },
     });
     return this.redis;
@@ -135,7 +139,12 @@ export class GoogleWorker {
   /** An entity batch requires Redis. A missing cache answers 503 so Kestra retries the batch. */
   async syncEntityBatch(input: EntitySyncBatchRequest, signal: AbortSignal) {
     const { pool, cipher } = this.resources();
-    return new EntitySyncBatch(pool, cipher, new GoogleDeviceReader(), this.cache()).run(input, signal);
+    return new EntitySyncBatch(
+      pool,
+      cipher,
+      new GoogleDeviceReader(),
+      this.cache(),
+    ).run(input, signal);
   }
 
   async close() {

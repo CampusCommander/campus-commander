@@ -38,21 +38,21 @@
 
 ## File Structure
 
-| File | Responsibility |
-| --- | --- |
-| `libs/google-connection/src/lib/batch.ts` (create) | Types, validation, wire format, classification, backoff, `GoogleBatchService`, `BatchRun` |
-| `libs/google-connection/src/lib/batch-fake.mjs` (create) | Test double for the batch endpoint, test clock, request helper. Not a test file. |
-| `libs/google-connection/src/lib/batch-wire.test.mjs` (create) | Task 1 tests |
-| `libs/google-connection/src/lib/batch-classify.test.mjs` (create) | Task 2 tests |
-| `libs/google-connection/src/lib/batch.test.mjs` (create) | Task 3 tests |
-| `libs/google-connection/src/lib/batch-run.test.mjs` (create) | Task 4 tests |
-| `libs/google-connection/src/index.ts` (modify) | Export the service and its types |
-| `libs/google-connection/src/lib/devices.ts` (modify) | `deviceBatch` on the service, pager quota cap |
-| `libs/google-connection/src/lib/devices.test.mjs` (modify) | Device batch and pager tests |
-| `worker/src/entity-sync.ts` (modify) | Drop the Directory quota loop, extend the claim per round, cap telemetry retries |
-| `worker/src/entity-sync.test.mjs` (modify) | Worker tests |
-| `deployment/google-proof/batch-live.mjs` (create) | Manual read-only live check |
-| `deployment/evidence/batch-service-live-<date>.json` (create) | Sanitized live evidence |
+| File                                                              | Responsibility                                                                            |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `libs/google-connection/src/lib/batch.ts` (create)                | Types, validation, wire format, classification, backoff, `GoogleBatchService`, `BatchRun` |
+| `libs/google-connection/src/lib/batch-fake.mjs` (create)          | Test double for the batch endpoint, test clock, request helper. Not a test file.          |
+| `libs/google-connection/src/lib/batch-wire.test.mjs` (create)     | Task 1 tests                                                                              |
+| `libs/google-connection/src/lib/batch-classify.test.mjs` (create) | Task 2 tests                                                                              |
+| `libs/google-connection/src/lib/batch.test.mjs` (create)          | Task 3 tests                                                                              |
+| `libs/google-connection/src/lib/batch-run.test.mjs` (create)      | Task 4 tests                                                                              |
+| `libs/google-connection/src/index.ts` (modify)                    | Export the service and its types                                                          |
+| `libs/google-connection/src/lib/devices.ts` (modify)              | `deviceBatch` on the service, pager quota cap                                             |
+| `libs/google-connection/src/lib/devices.test.mjs` (modify)        | Device batch and pager tests                                                              |
+| `worker/src/entity-sync.ts` (modify)                              | Drop the Directory quota loop, extend the claim per round, cap telemetry retries          |
+| `worker/src/entity-sync.test.mjs` (modify)                        | Worker tests                                                                              |
+| `deployment/google-proof/batch-live.mjs` (create)                 | Manual read-only live check                                                               |
+| `deployment/evidence/batch-service-live-<date>.json` (create)     | Sanitized live evidence                                                                   |
 
 The test target glob is `libs/google-connection/src/lib/*.test.mjs`. `batch-fake.mjs` does not match it.
 
@@ -61,11 +61,13 @@ The test target glob is `libs/google-connection/src/lib/*.test.mjs`. `batch-fake
 ### Task 1: Wire format, request validation, and options
 
 **Files:**
+
 - Create: `libs/google-connection/src/lib/batch.ts`
 - Test: `libs/google-connection/src/lib/batch-wire.test.mjs`
 - Commit also: `docs/superpowers/specs/2026-10-07-google-batch-service-decisions.md`, `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md`, `docs/current-work.md`, this plan
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces, all exported from `batch.ts`:
   - Types `BatchMethod`, `BatchRequest`, `BatchFailureKind`, `BatchAttempts`, `BatchFailure`, `BatchResult<T>`, `BatchHttpResponse`, `BatchHttpClient`, `BatchOptions`, `BatchOutcome<T>`, `BatchResponseEvent<T>`, `BatchRoundEvent`, `BatchCall<T>`, `BatchPartResponse`, `BatchServiceErrorCode`.
@@ -175,7 +177,9 @@ test('parseMultipartResponse reads the content id, status, headers, and body of 
           'content-type': 'application/json; charset=UTF-8',
           'retry-after': '7',
         },
-        body: { error: { code: 429, errors: [{ reason: 'rateLimitExceeded' }] } },
+        body: {
+          error: { code: 429, errors: [{ reason: 'rateLimitExceeded' }] },
+        },
       },
       { contentId: 'cc-1', status: 204, headers: {}, body: null },
     ],
@@ -196,14 +200,17 @@ test('parseMultipartResponse accepts a quoted boundary and keeps a non-JSON body
     '--reply--',
     '',
   ].join('\r\n');
-  assert.deepEqual(parseMultipartResponse('multipart/mixed; boundary="reply"', text), [
-    {
-      contentId: 'cc-7',
-      status: 503,
-      headers: { 'content-type': 'text/html' },
-      body: '<html>busy</html>',
-    },
-  ]);
+  assert.deepEqual(
+    parseMultipartResponse('multipart/mixed; boundary="reply"', text),
+    [
+      {
+        contentId: 'cc-7',
+        status: 503,
+        headers: { 'content-type': 'text/html' },
+        body: '<html>busy</html>',
+      },
+    ],
+  );
 });
 
 test('parseMultipartResponse rejects a reply that is not multipart or lacks a Content-ID or status', () => {
@@ -211,11 +218,23 @@ test('parseMultipartResponse rejects a reply that is not multipart or lacks a Co
     name: 'BatchServiceError',
     code: 'malformed-response',
   });
-  const noId = ['--b', 'Content-Type: application/http', '', 'HTTP/1.1 200 OK', '', '{}', '--b--', ''].join('\r\n');
-  assert.throws(() => parseMultipartResponse('multipart/mixed; boundary=b', noId), {
-    name: 'BatchServiceError',
-    code: 'malformed-response',
-  });
+  const noId = [
+    '--b',
+    'Content-Type: application/http',
+    '',
+    'HTTP/1.1 200 OK',
+    '',
+    '{}',
+    '--b--',
+    '',
+  ].join('\r\n');
+  assert.throws(
+    () => parseMultipartResponse('multipart/mixed; boundary=b', noId),
+    {
+      name: 'BatchServiceError',
+      code: 'malformed-response',
+    },
+  );
   const noStatus = [
     '--b',
     'Content-Type: application/http',
@@ -227,15 +246,21 @@ test('parseMultipartResponse rejects a reply that is not multipart or lacks a Co
     '--b--',
     '',
   ].join('\r\n');
-  assert.throws(() => parseMultipartResponse('multipart/mixed; boundary=b', noStatus), {
-    name: 'BatchServiceError',
-    code: 'malformed-response',
-  });
+  assert.throws(
+    () => parseMultipartResponse('multipart/mixed; boundary=b', noStatus),
+    {
+      name: 'BatchServiceError',
+      code: 'malformed-response',
+    },
+  );
 });
 
 test('headerValue reads gaxios Headers and plain objects without regard to case', () => {
   assert.equal(
-    headerValue(new Headers({ 'Content-Type': 'multipart/mixed' }), 'content-type'),
+    headerValue(
+      new Headers({ 'Content-Type': 'multipart/mixed' }),
+      'content-type',
+    ),
     'multipart/mixed',
   );
   assert.equal(headerValue({ 'Retry-After': '7' }, 'retry-after'), '7');
@@ -472,7 +497,13 @@ export class BatchServiceError extends Error {
   }
 }
 
-const METHODS: ReadonlySet<string> = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const METHODS: ReadonlySet<string> = new Set([
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+]);
 const BODY_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH']);
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 /** Printable ASCII without spaces. The query travels in `query`. */
@@ -489,10 +520,14 @@ export function validateRequests(requests: readonly BatchRequest[]): void {
     if (typeof request.id !== 'string' || request.id === '')
       throw invalidRequest('Every request needs a non-empty id.');
     if (seen.has(request.id))
-      throw invalidRequest(`Request id ${JSON.stringify(request.id)} appears twice.`);
+      throw invalidRequest(
+        `Request id ${JSON.stringify(request.id)} appears twice.`,
+      );
     seen.add(request.id);
     if (!METHODS.has(request.method))
-      throw invalidRequest(`Request ${JSON.stringify(request.id)} has an unsupported method.`);
+      throw invalidRequest(
+        `Request ${JSON.stringify(request.id)} has an unsupported method.`,
+      );
     if (
       !PART_PATH.test(request.path) ||
       request.path.startsWith('//') ||
@@ -511,7 +546,11 @@ export function validateRequests(requests: readonly BatchRequest[]): void {
           `Request ${JSON.stringify(request.id)} has a non-finite query value.`,
         );
     for (const [name, value] of Object.entries(request.headers ?? {}))
-      if (!HEADER_NAME.test(name) || /^content-/i.test(name) || /[\r\n]/.test(value))
+      if (
+        !HEADER_NAME.test(name) ||
+        /^content-/i.test(name) ||
+        /[\r\n]/.test(value)
+      )
         throw invalidRequest(
           `Request ${JSON.stringify(request.id)} has an invalid header ${JSON.stringify(name)}.`,
         );
@@ -519,11 +558,22 @@ export function validateRequests(requests: readonly BatchRequest[]): void {
 }
 
 /** Merge overrides onto the defaults and reject values out of range. */
-export function resolveOptions(overrides: Partial<BatchOptions> = {}): BatchOptions {
+export function resolveOptions(
+  overrides: Partial<BatchOptions> = {},
+): BatchOptions {
   const options: BatchOptions = { ...BATCH_DEFAULTS, ...overrides };
-  const whole = (name: keyof BatchOptions, min: number, max = Number.MAX_SAFE_INTEGER) => {
+  const whole = (
+    name: keyof BatchOptions,
+    min: number,
+    max = Number.MAX_SAFE_INTEGER,
+  ) => {
     const value = options[name];
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max)
+    if (
+      typeof value !== 'number' ||
+      !Number.isInteger(value) ||
+      value < min ||
+      value > max
+    )
       throw new BatchServiceError(
         'invalid-option',
         `${name} must be an integer from ${min} to ${max}.`,
@@ -537,7 +587,10 @@ export function resolveOptions(overrides: Partial<BatchOptions> = {}): BatchOpti
   whole('initialDelayMs', 0);
   whole('maxDelayMs', 0);
   if (!Number.isFinite(options.multiplier) || options.multiplier < 1)
-    throw new BatchServiceError('invalid-option', 'multiplier must be a finite number of at least 1.');
+    throw new BatchServiceError(
+      'invalid-option',
+      'multiplier must be a finite number of at least 1.',
+    );
   return options;
 }
 
@@ -591,7 +644,9 @@ function malformed(message: string): BatchServiceError {
 
 function splitOnce(text: string, separator: string): [string, string] | null {
   const index = text.indexOf(separator);
-  return index < 0 ? null : [text.slice(0, index), text.slice(index + separator.length)];
+  return index < 0
+    ? null
+    : [text.slice(0, index), text.slice(index + separator.length)];
 }
 
 /** Parse JSON. Keep other text as a string. Return null for an empty body. */
@@ -606,20 +661,27 @@ export function decodeBody(text: string): unknown {
 }
 
 /** Split a multipart/mixed batch reply into its HTTP parts. */
-export function parseMultipartResponse(contentType: string, text: string): BatchPartResponse[] {
+export function parseMultipartResponse(
+  contentType: string,
+  text: string,
+): BatchPartResponse[] {
   const match = /boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(contentType);
   const boundary = match?.[1] ?? match?.[2];
   if (!boundary || !/^multipart\//i.test(contentType.trim()))
     throw malformed('The batch response is not multipart.');
   const parts: BatchPartResponse[] = [];
-  for (const section of text.replace(/\r\n/g, '\n').split(`--${boundary}`).slice(1)) {
+  for (const section of text
+    .replace(/\r\n/g, '\n')
+    .split(`--${boundary}`)
+    .slice(1)) {
     if (section.startsWith('--')) break;
     if (section.trim() === '') continue;
     const envelope = splitOnce(section.replace(/^\n/, ''), '\n\n');
     const contentId = envelope
       ? /^content-id:\s*<response-([^>]+)>\s*$/im.exec(envelope[0])?.[1]
       : undefined;
-    if (!envelope || !contentId) throw malformed('A batch response part has no Content-ID.');
+    if (!envelope || !contentId)
+      throw malformed('A batch response part has no Content-ID.');
     const message = splitOnce(envelope[1], '\n\n') ?? [envelope[1], ''];
     const [statusLine = '', ...headerLines] = message[0].split('\n');
     const status = Number(/^HTTP\/\d(?:\.\d)? (\d{3})\b/.exec(statusLine)?.[1]);
@@ -629,7 +691,9 @@ export function parseMultipartResponse(contentType: string, text: string): Batch
     for (const line of headerLines) {
       const colon = line.indexOf(':');
       if (colon > 0)
-        headers[line.slice(0, colon).trim().toLowerCase()] = line.slice(colon + 1).trim();
+        headers[line.slice(0, colon).trim().toLowerCase()] = line
+          .slice(colon + 1)
+          .trim();
     }
     parts.push({ contentId, status, headers, body: decodeBody(message[1]) });
   }
@@ -637,7 +701,10 @@ export function parseMultipartResponse(contentType: string, text: string): Batch
 }
 
 /** gaxios 7 returns a Headers instance. Test doubles return a plain object. */
-export function headerValue(headers: unknown, name: string): string | undefined {
+export function headerValue(
+  headers: unknown,
+  name: string,
+): string | undefined {
   if (headers === null || typeof headers !== 'object') return undefined;
   const lookup = (headers as { get?: unknown }).get;
   if (typeof lookup === 'function') {
@@ -645,7 +712,8 @@ export function headerValue(headers: unknown, name: string): string | undefined 
     return typeof value === 'string' ? value : undefined;
   }
   for (const [key, value] of Object.entries(headers))
-    if (key.toLowerCase() === name.toLowerCase() && typeof value === 'string') return value;
+    if (key.toLowerCase() === name.toLowerCase() && typeof value === 'string')
+      return value;
   return undefined;
 }
 ```
@@ -673,10 +741,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 2: Part classification and backoff
 
 **Files:**
+
 - Modify: `libs/google-connection/src/lib/batch.ts` (append)
 - Test: `libs/google-connection/src/lib/batch-classify.test.mjs`
 
 **Interfaces:**
+
 - Consumes: `BatchOptions`, `BatchFailureKind` from Task 1.
 - Produces, exported from `batch.ts`:
   - `type PartKind = 'success' | 'not-found' | 'quota' | 'transient' | 'auth' | 'rejected'`.
@@ -693,7 +763,12 @@ Create `libs/google-connection/src/lib/batch-classify.test.mjs`:
 ```js
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { backoffDelay, classifyStatus, nextPageToken, retryAfterMs } from './batch.ts';
+import {
+  backoffDelay,
+  classifyStatus,
+  nextPageToken,
+  retryAfterMs,
+} from './batch.ts';
 
 const reason = (why) => ({ error: { errors: [{ reason: why }] } });
 
@@ -721,10 +796,23 @@ test('classifyStatus separates success, missing, quota, transient, auth, and rej
     [412, null, 'rejected'],
   ];
   for (const [status, body, kind] of cases)
-    assert.equal(classifyStatus(status, body).kind, kind, `${status} ${JSON.stringify(body)}`);
-  assert.deepEqual(classifyStatus(403, reason('forbidden')), { kind: 'auth', reason: 'forbidden' });
-  assert.deepEqual(classifyStatus(200, reason('ignored')), { kind: 'success', reason: null });
-  assert.equal(classifyStatus(429, { error: { status: 'RESOURCE_EXHAUSTED' } }).reason, 'RESOURCE_EXHAUSTED');
+    assert.equal(
+      classifyStatus(status, body).kind,
+      kind,
+      `${status} ${JSON.stringify(body)}`,
+    );
+  assert.deepEqual(classifyStatus(403, reason('forbidden')), {
+    kind: 'auth',
+    reason: 'forbidden',
+  });
+  assert.deepEqual(classifyStatus(200, reason('ignored')), {
+    kind: 'success',
+    reason: null,
+  });
+  assert.equal(
+    classifyStatus(429, { error: { status: 'RESOURCE_EXHAUSTED' } }).reason,
+    'RESOURCE_EXHAUSTED',
+  );
 });
 
 test('backoffDelay grows by the multiplier, caps at the maximum, and applies full jitter', () => {
@@ -733,8 +821,14 @@ test('backoffDelay grows by the multiplier, caps at the maximum, and applies ful
     [1, 2, 3, 6, 7, 25].map((retry) => backoffDelay(retry, options, () => 0.5)),
     [500, 1_000, 2_000, 16_000, 30_000, 30_000],
   );
-  assert.equal(backoffDelay(3, options, () => 0), 0);
-  assert.equal(backoffDelay(30, options, () => 0.999999), 59_999);
+  assert.equal(
+    backoffDelay(3, options, () => 0),
+    0,
+  );
+  assert.equal(
+    backoffDelay(30, options, () => 0.999999),
+    59_999,
+  );
 });
 
 test('retryAfterMs reads seconds and HTTP dates', () => {
@@ -771,17 +865,27 @@ const QUOTA_REASONS: ReadonlySet<string> = new Set([
   'quotaExceeded',
 ]);
 
-export type PartKind = 'success' | 'not-found' | 'quota' | 'transient' | 'auth' | 'rejected';
+export type PartKind =
+  | 'success'
+  | 'not-found'
+  | 'quota'
+  | 'transient'
+  | 'auth'
+  | 'rejected';
 
 /** Read `error.errors[0].reason`, or `error.status` from newer Google APIs. */
 export function googleReason(body: unknown): string | null {
   const error =
-    body !== null && typeof body === 'object' ? (body as { error?: unknown }).error : undefined;
+    body !== null && typeof body === 'object'
+      ? (body as { error?: unknown }).error
+      : undefined;
   if (error === null || typeof error !== 'object') return null;
   const errors = (error as { errors?: unknown }).errors;
   const first: unknown = Array.isArray(errors) ? errors[0] : undefined;
   const reason =
-    first !== null && typeof first === 'object' ? (first as { reason?: unknown }).reason : undefined;
+    first !== null && typeof first === 'object'
+      ? (first as { reason?: unknown }).reason
+      : undefined;
   if (typeof reason === 'string') return reason;
   const status = (error as { status?: unknown }).status;
   return typeof status === 'string' ? status : null;
@@ -795,7 +899,10 @@ export function classifyStatus(
   if (status >= 200 && status < 300) return { kind: 'success', reason: null };
   const reason = googleReason(body);
   if (status === 404) return { kind: 'not-found', reason };
-  if (status === 429 || (status === 403 && reason !== null && QUOTA_REASONS.has(reason)))
+  if (
+    status === 429 ||
+    (status === 403 && reason !== null && QUOTA_REASONS.has(reason))
+  )
     return { kind: 'quota', reason };
   if (status >= 500 || (status === 403 && reason === 'backendError'))
     return { kind: 'transient', reason };
@@ -804,7 +911,10 @@ export function classifyStatus(
 }
 
 /** Read a Retry-After value in seconds or as an HTTP date. */
-export function retryAfterMs(value: string | undefined, now: number): number | null {
+export function retryAfterMs(
+  value: string | undefined,
+  now: number,
+): number | null {
   if (value === undefined) return null;
   const trimmed = value.trim();
   if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1_000;
@@ -858,11 +968,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 3: The re-batch loop, paging, and hooks
 
 **Files:**
+
 - Create: `libs/google-connection/src/lib/batch-fake.mjs`
 - Modify: `libs/google-connection/src/lib/batch.ts` (add one import, append the service)
 - Test: `libs/google-connection/src/lib/batch.test.mjs`
 
 **Interfaces:**
+
 - Consumes: everything from Tasks 1 and 2.
 - Produces:
   - `interface GoogleBatchServiceOptions { sleep?(milliseconds: number, signal: AbortSignal): Promise<void>; now?(): number; random?(): number }`. `sleep` resolves early, without throwing, when the signal aborts.
@@ -883,18 +995,25 @@ const crlf = '\r\n';
 
 function splitOnce(text, separator) {
   const index = text.indexOf(separator);
-  return index < 0 ? [text, ''] : [text.slice(0, index), text.slice(index + separator.length)];
+  return index < 0
+    ? [text, '']
+    : [text.slice(0, index), text.slice(index + separator.length)];
 }
 
 /** Read the parts the service sent. `key` is the last path segment, decoded. */
 export function parseBatchRequest(options) {
-  const boundary = /boundary=([^;\s]+)/.exec(options.headers['content-type'])[1];
+  const boundary = /boundary=([^;\s]+)/.exec(
+    options.headers['content-type'],
+  )[1];
   return options.body
     .split(`--${boundary}`)
     .slice(1)
     .filter((section) => !section.startsWith('--'))
     .map((section) => {
-      const [outer, http] = splitOnce(section.replace(/^\r\n/, ''), crlf + crlf);
+      const [outer, http] = splitOnce(
+        section.replace(/^\r\n/, ''),
+        crlf + crlf,
+      );
       const contentId = /Content-ID: <([^>]+)>/.exec(outer)[1];
       const [head, rawBody] = splitOnce(http, crlf + crlf);
       const [line, ...headerLines] = head.split(crlf);
@@ -903,7 +1022,10 @@ export function parseBatchRequest(options) {
       const headers = Object.fromEntries(
         headerLines.map((header) => {
           const colon = header.indexOf(':');
-          return [header.slice(0, colon).toLowerCase(), header.slice(colon + 1).trim()];
+          return [
+            header.slice(0, colon).toLowerCase(),
+            header.slice(colon + 1).trim(),
+          ];
         }),
       );
       const text = rawBody.trim();
@@ -931,7 +1053,9 @@ export function multipartReply(answers, boundary = 'batch_reply') {
           '',
           `HTTP/1.1 ${status} ${status < 300 ? 'OK' : 'Error'}`,
           'Content-Type: application/json; charset=UTF-8',
-          ...Object.entries(headers).map(([name, value]) => `${name}: ${value}`),
+          ...Object.entries(headers).map(
+            ([name, value]) => `${name}: ${value}`,
+          ),
           '',
           raw ?? (body === undefined ? '' : JSON.stringify(body)),
           '',
@@ -979,7 +1103,9 @@ export function fakeGoogle(answer, { outer, delay = false } = {}) {
           .reverse();
         return {
           status: 200,
-          headers: new Headers({ 'content-type': 'multipart/mixed; boundary=batch_reply' }),
+          headers: new Headers({
+            'content-type': 'multipart/mixed; boundary=batch_reply',
+          }),
           data: multipartReply(answers),
         };
       } finally {
@@ -1057,7 +1183,11 @@ function setup() {
   const clock = testClock();
   return {
     clock,
-    batch: new GoogleBatchService({ now: clock.now, sleep: clock.sleep, random: clock.random }),
+    batch: new GoogleBatchService({
+      now: clock.now,
+      sleep: clock.sleep,
+      random: clock.random,
+    }),
   };
 }
 
@@ -1073,7 +1203,11 @@ function call(google, requests, extra = {}) {
 }
 
 const things = (...ids) => ids.map((id) => thing(id));
-const sends = (google, key) => google.keys().flat().filter((sent) => sent === key).length;
+const sends = (google, key) =>
+  google
+    .keys()
+    .flat()
+    .filter((sent) => sent === key).length;
 
 test('every part resolves on its own and results aggregate by caller id', async () => {
   const google = fakeGoogle(
@@ -1084,10 +1218,14 @@ test('every part resolves on its own and results aggregate by caller id', async 
       d: [reason(400, 'invalid')],
     }),
   );
-  const result = await setup().batch.execute(call(google, things('a', 'b', 'c', 'd')));
+  const result = await setup().batch.execute(
+    call(google, things('a', 'b', 'c', 'd')),
+  );
   assert.deepEqual([...result.succeeded], [['a', [{ name: 'a' }]]]);
   assert.deepEqual(
-    Object.fromEntries([...result.failed].map(([id, f]) => [id, [f.kind, f.status, f.reason]])),
+    Object.fromEntries(
+      [...result.failed].map(([id, f]) => [id, [f.kind, f.status, f.reason]]),
+    ),
     {
       b: ['not-found', 404, 'notFound'],
       c: ['auth', 403, 'forbidden'],
@@ -1107,7 +1245,9 @@ test('every part resolves on its own and results aggregate by caller id', async 
 test('replies match by Content-ID, and odd caller ids resolve under the original id', async () => {
   const odd = 'odd>id with space\r\n';
   const google = fakeGoogle((part) => ok(part.key));
-  const result = await setup().batch.execute(call(google, things('a', 'b', odd)));
+  const result = await setup().batch.execute(
+    call(google, things('a', 'b', odd)),
+  );
   assert.deepEqual(Object.fromEntries(result.succeeded), {
     a: [{ name: 'a' }],
     b: [{ name: 'b' }],
@@ -1120,7 +1260,11 @@ test('a quota wave re-batches only the throttled parts', async () => {
     perKey({
       a: [ok('a')],
       b: [reason(429, 'rateLimitExceeded'), ok('b')],
-      c: [reason(403, 'userRateLimitExceeded'), reason(429, 'rateLimitExceeded'), ok('c')],
+      c: [
+        reason(403, 'userRateLimitExceeded'),
+        reason(429, 'rateLimitExceeded'),
+        ok('c'),
+      ],
     }),
   );
   const { batch, clock } = setup();
@@ -1132,7 +1276,10 @@ test('a quota wave re-batches only the throttled parts', async () => {
 
 test('default limits allow 25 quota retries and 10 transient retries per part', async () => {
   const google = fakeGoogle(
-    perKey({ q: [reason(429, 'rateLimitExceeded')], t: [{ status: 503, body: null }] }),
+    perKey({
+      q: [reason(429, 'rateLimitExceeded')],
+      t: [{ status: 503, body: null }],
+    }),
   );
   const result = await setup().batch.execute(call(google, things('q', 't')));
   assert.equal(sends(google, 'q'), 26);
@@ -1145,7 +1292,10 @@ test('default limits allow 25 quota retries and 10 transient retries per part', 
     body: { error: { code: 429, errors: [{ reason: 'rateLimitExceeded' }] } },
   });
   assert.equal(result.failed.get('t').kind, 'transient');
-  assert.deepEqual(result.failed.get('t').attempts, { quota: 0, transient: 10 });
+  assert.deepEqual(result.failed.get('t').attempts, {
+    quota: 0,
+    transient: 10,
+  });
 });
 
 test('a configured quota limit overrides the default', async () => {
@@ -1171,7 +1321,9 @@ test('Retry-After replaces the computed delay and stays under the maximum', asyn
   assert.deepEqual(honored.clock.waits, [7_000, 60_000]);
   const ignored = setup();
   await ignored.batch.execute(
-    call(fakeGoogle(replies()), things('a'), { options: { honorRetryAfter: false } }),
+    call(fakeGoogle(replies()), things('a'), {
+      options: { honorRetryAfter: false },
+    }),
   );
   assert.deepEqual(ignored.clock.waits, [500, 1_000]);
 });
@@ -1179,12 +1331,20 @@ test('Retry-After replaces the computed delay and stays under the maximum', asyn
 test('a POST does not retry a server error unless the caller allows it', async () => {
   const replies = () =>
     perKey({
-      p: [{ status: 503, body: null }, { status: 200, body: { created: true } }],
-      q: [reason(429, 'rateLimitExceeded'), { status: 200, body: { created: true } }],
+      p: [
+        { status: 503, body: null },
+        { status: 200, body: { created: true } },
+      ],
+      q: [
+        reason(429, 'rateLimitExceeded'),
+        { status: 200, body: { created: true } },
+      ],
     });
   const post = (id) => thing(id, { method: 'POST', body: { name: id } });
   let google = fakeGoogle(replies());
-  let result = await setup().batch.execute(call(google, [post('p'), post('q')]));
+  let result = await setup().batch.execute(
+    call(google, [post('p'), post('q')]),
+  );
   assert.equal(result.failed.get('p').kind, 'transient');
   assert.deepEqual(result.failed.get('p').attempts, { quota: 0, transient: 0 });
   assert.deepEqual(result.succeeded.get('q'), [{ created: true }]);
@@ -1200,19 +1360,27 @@ test('requests split into batches of at most 250, or the configured size', async
   const ids = Array.from({ length: 600 }, (_, index) => `d${index}`);
   const google = fakeGoogle((part) => ok(part.key));
   const result = await setup().batch.execute(call(google, things(...ids)));
-  assert.deepEqual(google.sent.map((round) => round.length), [250, 250, 100]);
+  assert.deepEqual(
+    google.sent.map((round) => round.length),
+    [250, 250, 100],
+  );
   assert.equal(result.succeeded.size, 600);
   const smaller = fakeGoogle((part) => ok(part.key));
   await setup().batch.execute(
     call(smaller, things(...ids.slice(0, 10)), { options: { batchSize: 4 } }),
   );
-  assert.deepEqual(smaller.sent.map((round) => round.length), [4, 4, 2]);
+  assert.deepEqual(
+    smaller.sent.map((round) => round.length),
+    [4, 4, 2],
+  );
 });
 
 test('maxInFlight sends that many batches at once', async () => {
   const google = fakeGoogle((part) => ok(part.key), { delay: true });
   const result = await setup().batch.execute(
-    call(google, things('a', 'b', 'c', 'd', 'e'), { options: { batchSize: 1, maxInFlight: 3 } }),
+    call(google, things('a', 'b', 'c', 'd', 'e'), {
+      options: { batchSize: 1, maxInFlight: 3 },
+    }),
   );
   assert.equal(google.state.maxActive, 3);
   assert.equal(result.succeeded.size, 5);
@@ -1228,12 +1396,19 @@ test('an unanswered part retries as transient and an unknown Content-ID is ignor
   );
   const events = [];
   const result = await setup().batch.execute(
-    call(google, things('a', 'b', 'c'), { onResponse: (event) => void events.push(event) }),
+    call(google, things('a', 'b', 'c'), {
+      onResponse: (event) => void events.push(event),
+    }),
   );
-  assert.deepEqual(google.keys(), [['a', 'b', 'c'], ['b', 'c']]);
+  assert.deepEqual(google.keys(), [
+    ['a', 'b', 'c'],
+    ['b', 'c'],
+  ]);
   assert.deepEqual(result.succeeded.get('b'), [{ name: 'b' }]);
   assert.deepEqual(result.succeeded.get('c'), [{ name: 'c' }]);
-  const missing = events.find((event) => event.id === 'b' && event.outcome.kind === 'retry');
+  const missing = events.find(
+    (event) => event.id === 'b' && event.outcome.kind === 'retry',
+  );
   assert.equal(missing.outcome.failure.reason, 'missing-part');
 });
 
@@ -1275,14 +1450,23 @@ test('a list request follows nextPageToken and keeps every page in order', async
     p2: { items: [2], nextPageToken: 'p3' },
     p3: { items: [3] },
   };
-  const google = fakeGoogle((part) => ({ status: 200, body: pages[part.query.pageToken ?? ''] }));
+  const google = fakeGoogle((part) => ({
+    status: 200,
+    body: pages[part.query.pageToken ?? ''],
+  }));
   const result = await setup().batch.execute(
-    call(google, [thing('list', { query: { maxResults: 1 } })], { parse: (body) => body.items }),
+    call(google, [thing('list', { query: { maxResults: 1 } })], {
+      parse: (body) => body.items,
+    }),
   );
   assert.deepEqual(result.succeeded.get('list'), [[1], [2], [3]]);
   assert.deepEqual(
     google.sent.map(([part]) => part.query),
-    [{ maxResults: '1' }, { maxResults: '1', pageToken: 'p2' }, { maxResults: '1', pageToken: 'p3' }],
+    [
+      { maxResults: '1' },
+      { maxResults: '1', pageToken: 'p2' },
+      { maxResults: '1', pageToken: 'p3' },
+    ],
   );
 });
 
@@ -1335,7 +1519,10 @@ test('each page starts with fresh retry counters', async () => {
 });
 
 test('the page cap stops a token that never ends', async () => {
-  const google = fakeGoogle(() => ({ status: 200, body: { nextPageToken: 'again' } }));
+  const google = fakeGoogle(() => ({
+    status: 200,
+    body: { nextPageToken: 'again' },
+  }));
   const result = await setup().batch.execute(
     call(google, things('list'), { options: { maxPages: 3 } }),
   );
@@ -1349,13 +1536,23 @@ test('the page cap stops a token that never ends', async () => {
 test('onResponse reports every part outcome, including retries', async () => {
   const events = [];
   const google = fakeGoogle(
-    perKey({ a: [ok('a')], b: [reason(429, 'rateLimitExceeded'), reason(404, 'notFound')] }),
+    perKey({
+      a: [ok('a')],
+      b: [reason(429, 'rateLimitExceeded'), reason(404, 'notFound')],
+    }),
   );
   await setup().batch.execute(
-    call(google, things('a', 'b'), { onResponse: (event) => void events.push(event) }),
+    call(google, things('a', 'b'), {
+      onResponse: (event) => void events.push(event),
+    }),
   );
   assert.deepEqual(
-    events.map((event) => [event.id, event.outcome.kind, event.status, event.attempts]),
+    events.map((event) => [
+      event.id,
+      event.outcome.kind,
+      event.status,
+      event.attempts,
+    ]),
     [
       ['b', 'retry', 429, { quota: 1, transient: 0 }],
       ['a', 'success', 200, { quota: 0, transient: 0 }],
@@ -1377,10 +1574,14 @@ test('a list request fires one success event per page with the page token it sen
   const events = [];
   const google = fakeGoogle((part) => ({
     status: 200,
-    body: part.query.pageToken ? { items: [2] } : { items: [1], nextPageToken: 'p2' },
+    body: part.query.pageToken
+      ? { items: [2] }
+      : { items: [1], nextPageToken: 'p2' },
   }));
   await setup().batch.execute(
-    call(google, things('list'), { onResponse: (event) => void events.push(event) }),
+    call(google, things('list'), {
+      onResponse: (event) => void events.push(event),
+    }),
   );
   assert.deepEqual(
     events.map((event) => [
@@ -1400,7 +1601,9 @@ test('onBatch fires once per round and is awaited before the next round', async 
   const rounds = [];
   const google = fakeGoogle(
     (part, round) =>
-      round === 0 && part.key === 'b' ? reason(429, 'rateLimitExceeded') : ok(part.key),
+      round === 0 && part.key === 'b'
+        ? reason(429, 'rateLimitExceeded')
+        : ok(part.key),
     { outer: (round) => void order.push(`send-${round}`) },
   );
   await setup().batch.execute(
@@ -1417,7 +1620,14 @@ test('onBatch fires once per round and is awaited before the next round', async 
     { round: 1, sentCount: 2, outerStatus: 200, durationMs: 0, pending: 1 },
     { round: 2, sentCount: 1, outerStatus: 200, durationMs: 0, pending: 0 },
   ]);
-  assert.deepEqual(order, ['send-0', 'hook-start', 'hook-end', 'send-1', 'hook-start', 'hook-end']);
+  assert.deepEqual(order, [
+    'send-0',
+    'hook-start',
+    'hook-end',
+    'send-1',
+    'hook-start',
+    'hook-end',
+  ]);
 });
 
 test('a hook that throws rejects execute', async () => {
@@ -1434,54 +1644,70 @@ test('a hook that throws rejects execute', async () => {
   );
 });
 
-test('an abort lets the batch in flight finish and fails what is still pending', { timeout: 5_000 }, async () => {
-  const stopping = new AbortController();
-  const google = fakeGoogle((part) => {
-    stopping.abort();
-    return part.key === 'a' ? ok('a') : reason(429, 'rateLimitExceeded');
-  });
-  const result = await setup().batch.execute(
-    call(google, [thing('a'), thing('b')], { signal: stopping.signal }),
-  );
-  assert.deepEqual(result.succeeded.get('a'), [{ name: 'a' }]);
-  assert.deepEqual(result.failed.get('b'), {
-    kind: 'aborted',
-    status: 0,
-    reason: null,
-    attempts: { quota: 1, transient: 0 },
-    body: null,
-  });
-  assert.equal(google.sent.length, 1);
-});
-
-test('an abort during a wait stops without another send', { timeout: 5_000 }, async () => {
-  const stopping = new AbortController();
-  const google = fakeGoogle(() => reason(429, 'rateLimitExceeded'));
-  const clock = testClock();
-  const batch = new GoogleBatchService({
-    now: clock.now,
-    random: clock.random,
-    sleep: async () => {
+test(
+  'an abort lets the batch in flight finish and fails what is still pending',
+  { timeout: 5_000 },
+  async () => {
+    const stopping = new AbortController();
+    const google = fakeGoogle((part) => {
       stopping.abort();
-      await new Promise((resolve) => setImmediate(resolve));
-    },
-  });
-  const result = await batch.execute(call(google, [thing('a')], { signal: stopping.signal }));
-  assert.equal(google.sent.length, 1);
-  assert.equal(result.failed.get('a').kind, 'aborted');
-});
+      return part.key === 'a' ? ok('a') : reason(429, 'rateLimitExceeded');
+    });
+    const result = await setup().batch.execute(
+      call(google, [thing('a'), thing('b')], { signal: stopping.signal }),
+    );
+    assert.deepEqual(result.succeeded.get('a'), [{ name: 'a' }]);
+    assert.deepEqual(result.failed.get('b'), {
+      kind: 'aborted',
+      status: 0,
+      reason: null,
+      attempts: { quota: 1, transient: 0 },
+      body: null,
+    });
+    assert.equal(google.sent.length, 1);
+  },
+);
 
-test('the default wait ends when the signal aborts', { timeout: 5_000 }, async () => {
-  const stopping = new AbortController();
-  const google = fakeGoogle(() => reason(429, 'rateLimitExceeded', { 'Retry-After': '60' }));
-  const started = Date.now();
-  setTimeout(() => stopping.abort(), 20);
-  const result = await new GoogleBatchService().execute(
-    call(google, [thing('a')], { signal: stopping.signal }),
-  );
-  assert.equal(result.failed.get('a').kind, 'aborted');
-  assert.ok(Date.now() - started < 5_000);
-});
+test(
+  'an abort during a wait stops without another send',
+  { timeout: 5_000 },
+  async () => {
+    const stopping = new AbortController();
+    const google = fakeGoogle(() => reason(429, 'rateLimitExceeded'));
+    const clock = testClock();
+    const batch = new GoogleBatchService({
+      now: clock.now,
+      random: clock.random,
+      sleep: async () => {
+        stopping.abort();
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+    });
+    const result = await batch.execute(
+      call(google, [thing('a')], { signal: stopping.signal }),
+    );
+    assert.equal(google.sent.length, 1);
+    assert.equal(result.failed.get('a').kind, 'aborted');
+  },
+);
+
+test(
+  'the default wait ends when the signal aborts',
+  { timeout: 5_000 },
+  async () => {
+    const stopping = new AbortController();
+    const google = fakeGoogle(() =>
+      reason(429, 'rateLimitExceeded', { 'Retry-After': '60' }),
+    );
+    const started = Date.now();
+    setTimeout(() => stopping.abort(), 20);
+    const result = await new GoogleBatchService().execute(
+      call(google, [thing('a')], { signal: stopping.signal }),
+    );
+    assert.equal(result.failed.get('a').kind, 'aborted');
+    assert.ok(Date.now() - started < 5_000);
+  },
+);
 test('bad input rejects before a token is minted, and no requests means no mint', async () => {
   const google = fakeGoogle((part) => ok(part.key));
   const { batch } = setup();
@@ -1489,10 +1715,13 @@ test('bad input rejects before a token is minted, and no requests means no mint'
     name: 'BatchServiceError',
     code: 'invalid-request',
   });
-  await assert.rejects(batch.execute(call(google, things('a'), { options: { batchSize: 251 } })), {
-    name: 'BatchServiceError',
-    code: 'invalid-option',
-  });
+  await assert.rejects(
+    batch.execute(call(google, things('a'), { options: { batchSize: 251 } })),
+    {
+      name: 'BatchServiceError',
+      code: 'invalid-option',
+    },
+  );
   const empty = await batch.execute(call(google, []));
   assert.deepEqual([empty.succeeded.size, empty.failed.size], [0, 0]);
   assert.equal(google.state.mints, 0);
@@ -1539,7 +1768,10 @@ interface Entry<T> {
   inFlight: boolean;
 }
 
-function abortableSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
+function abortableSleep(
+  milliseconds: number,
+  signal: AbortSignal,
+): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted) {
       resolve();
@@ -1557,13 +1789,18 @@ function abortableSleep(milliseconds: number, signal: AbortSignal): Promise<void
 
 function sentRequest<T>(entry: Entry<T>): BatchRequest {
   if (entry.pageToken === null) return entry.request;
-  return { ...entry.request, query: { ...entry.request.query, pageToken: entry.pageToken } };
+  return {
+    ...entry.request,
+    query: { ...entry.request.query, pageToken: entry.pageToken },
+  };
 }
 
 /** gaxios attaches the HTTP answer to a thrown error as `error.response`. */
 function responseOf(error: unknown): BatchHttpResponse | undefined {
   const response =
-    error !== null && typeof error === 'object' ? (error as { response?: unknown }).response : undefined;
+    error !== null && typeof error === 'object'
+      ? (error as { response?: unknown }).response
+      : undefined;
   return response !== null && typeof response === 'object'
     ? (response as BatchHttpResponse)
     : undefined;
@@ -1576,7 +1813,10 @@ class BatchRun<T> {
   private readonly clock: Clock;
   private readonly pending = new Map<string, Entry<T>>();
   private readonly inFlight = new Set<Promise<void>>();
-  private readonly result: BatchResult<T> = { succeeded: new Map(), failed: new Map() };
+  private readonly result: BatchResult<T> = {
+    succeeded: new Map(),
+    failed: new Map(),
+  };
   private client: BatchHttpClient | null = null;
   private round = 0;
   private sequence = 0;
@@ -1653,7 +1893,10 @@ class BatchRun<T> {
     this.inFlight.add(task);
   }
 
-  private async send(entries: Entry<T>[], client: BatchHttpClient): Promise<void> {
+  private async send(
+    entries: Entry<T>[],
+    client: BatchHttpClient,
+  ): Promise<void> {
     const round = ++this.round;
     const byContentId = new Map<string, Entry<T>>();
     const parts = entries.map((entry) => {
@@ -1678,13 +1921,28 @@ class BatchRun<T> {
       response = responseOf(error);
     }
     const status =
-      typeof response?.status === 'number' ? response.status : failure === undefined ? 200 : 0;
-    if (failure === undefined && response !== undefined && status >= 200 && status < 300)
+      typeof response?.status === 'number'
+        ? response.status
+        : failure === undefined
+          ? 200
+          : 0;
+    if (
+      failure === undefined &&
+      response !== undefined &&
+      status >= 200 &&
+      status < 300
+    )
       await this.resolveParts(byContentId, response);
     else {
       // An aborted send leaves its requests pending. The run loop fails them as aborted.
       if (failure !== undefined && this.call.signal.aborted) return;
-      throw failure ?? new BatchServiceError('outer-rejected', `The batch endpoint answered HTTP ${status}.`);
+      throw (
+        failure ??
+        new BatchServiceError(
+          'outer-rejected',
+          `The batch endpoint answered HTTP ${status}.`,
+        )
+      );
     }
     await this.reportRound(round, entries.length, status, started);
   }
@@ -1706,23 +1964,47 @@ class BatchRun<T> {
     }
     for (const [contentId, entry] of byContentId)
       if (!answered.has(contentId))
-        await this.retryOrFail(entry, 'transient', 0, 'missing-part', null, undefined);
+        await this.retryOrFail(
+          entry,
+          'transient',
+          0,
+          'missing-part',
+          null,
+          undefined,
+        );
   }
 
-  private async resolvePart(entry: Entry<T>, part: BatchPartResponse): Promise<void> {
+  private async resolvePart(
+    entry: Entry<T>,
+    part: BatchPartResponse,
+  ): Promise<void> {
     const { kind, reason } = classifyStatus(part.status, part.body);
     if (kind === 'success') {
       await this.acceptPage(entry, part);
       return;
     }
     if (kind === 'quota' || kind === 'transient') {
-      await this.retryOrFail(entry, kind, part.status, reason, part.body, part.headers['retry-after']);
+      await this.retryOrFail(
+        entry,
+        kind,
+        part.status,
+        reason,
+        part.body,
+        part.headers['retry-after'],
+      );
       return;
     }
-    await this.resolveFailure(entry, { kind, status: part.status, reason, body: part.body }, true);
+    await this.resolveFailure(
+      entry,
+      { kind, status: part.status, reason, body: part.body },
+      true,
+    );
   }
 
-  private async acceptPage(entry: Entry<T>, part: BatchPartResponse): Promise<void> {
+  private async acceptPage(
+    entry: Entry<T>,
+    part: BatchPartResponse,
+  ): Promise<void> {
     const request = sentRequest(entry);
     const attempts = { ...entry.attempts };
     let page: T;
@@ -1731,7 +2013,12 @@ class BatchRun<T> {
     } catch {
       await this.resolveFailure(
         entry,
-        { kind: 'invalid-response', status: part.status, reason: 'parse-failed', body: part.body },
+        {
+          kind: 'invalid-response',
+          status: part.status,
+          reason: 'parse-failed',
+          body: part.body,
+        },
         true,
       );
       return;
@@ -1740,7 +2027,12 @@ class BatchRun<T> {
     if (token !== null && entry.pages.length + 1 >= this.options.maxPages) {
       await this.resolveFailure(
         entry,
-        { kind: 'invalid-response', status: part.status, reason: 'page-limit', body: null },
+        {
+          kind: 'invalid-response',
+          status: part.status,
+          reason: 'page-limit',
+          body: null,
+        },
         true,
       );
       return;
@@ -1760,7 +2052,12 @@ class BatchRun<T> {
       request,
       attempts,
       status: part.status,
-      outcome: { kind: 'success', page, pageIndex, hasNextPage: token !== null },
+      outcome: {
+        kind: 'success',
+        page,
+        pageIndex,
+        hasNextPage: token !== null,
+      },
     });
   }
 
@@ -1773,15 +2070,21 @@ class BatchRun<T> {
     retryAfter: string | undefined,
   ): Promise<void> {
     const limit =
-      kind === 'quota' ? this.options.maxQuotaRetries : this.options.maxTransientRetries;
+      kind === 'quota'
+        ? this.options.maxQuotaRetries
+        : this.options.maxTransientRetries;
     const unsafe =
-      kind === 'transient' && entry.request.method === 'POST' && !this.options.retryUnsafeWrites;
+      kind === 'transient' &&
+      entry.request.method === 'POST' &&
+      !this.options.retryUnsafeWrites;
     if (unsafe || entry.attempts[kind] >= limit) {
       await this.resolveFailure(entry, { kind, status, reason, body }, true);
       return;
     }
     entry.attempts[kind] += 1;
-    const hinted = this.options.honorRetryAfter ? retryAfterMs(retryAfter, this.clock.now()) : null;
+    const hinted = this.options.honorRetryAfter
+      ? retryAfterMs(retryAfter, this.clock.now())
+      : null;
     const retryInMs =
       hinted === null
         ? backoffDelay(entry.attempts[kind], this.options, this.clock.random)
@@ -1793,7 +2096,11 @@ class BatchRun<T> {
       request: sentRequest(entry),
       attempts,
       status,
-      outcome: { kind: 'retry', failure: { kind, status, reason, attempts, body }, retryInMs },
+      outcome: {
+        kind: 'retry',
+        failure: { kind, status, reason, attempts, body },
+        retryInMs,
+      },
     });
   }
 
@@ -1919,10 +2226,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 4: Outer outcomes and token renewal
 
 **Files:**
+
 - Modify: `libs/google-connection/src/lib/batch.ts`
 - Test: `libs/google-connection/src/lib/batch-run.test.mjs`
 
 **Interfaces:**
+
 - Consumes: `BatchRun` from Task 3, `GoogleConnectionError` from `./provider`.
 - Produces: a new private method `BatchRun.outerFailure(entries, status, response, failure)` and a `mintedAt` field. No new exports.
 
@@ -1949,7 +2258,11 @@ function setup() {
   const clock = testClock();
   return {
     clock,
-    batch: new GoogleBatchService({ now: clock.now, sleep: clock.sleep, random: clock.random }),
+    batch: new GoogleBatchService({
+      now: clock.now,
+      sleep: clock.sleep,
+      random: clock.random,
+    }),
   };
 }
 
@@ -1966,7 +2279,8 @@ function call(google, requests, extra = {}) {
 
 test('an outer server error retries the whole batch, except a POST', async () => {
   const google = fakeGoogle((part) => ok(part.key), {
-    outer: (round) => (round === 0 ? { status: 503, data: '{"error":{"code":503}}' } : undefined),
+    outer: (round) =>
+      round === 0 ? { status: 503, data: '{"error":{"code":503}}' } : undefined,
   });
   const { batch, clock } = setup();
   const result = await batch.execute(
@@ -1974,19 +2288,28 @@ test('an outer server error retries the whole batch, except a POST', async () =>
   );
   assert.deepEqual(google.keys(), [['a', 'p'], ['a']]);
   assert.deepEqual(result.succeeded.get('a'), [{ name: 'a' }]);
-  assert.deepEqual([result.failed.get('p').kind, result.failed.get('p').status], ['transient', 503]);
+  assert.deepEqual(
+    [result.failed.get('p').kind, result.failed.get('p').status],
+    ['transient', 503],
+  );
   assert.deepEqual(clock.waits, [500]);
 });
 
 test('an outer 429 retries every part, a POST included, and honors Retry-After', async () => {
   const google = fakeGoogle((part) => ok(part.key), {
-    outer: (round) => (round === 0 ? { status: 429, headers: { 'retry-after': '3' } } : undefined),
+    outer: (round) =>
+      round === 0
+        ? { status: 429, headers: { 'retry-after': '3' } }
+        : undefined,
   });
   const { batch, clock } = setup();
   const result = await batch.execute(
     call(google, [thing('a'), thing('p', { method: 'POST', body: {} })]),
   );
-  assert.deepEqual(google.keys(), [['a', 'p'], ['a', 'p']]);
+  assert.deepEqual(google.keys(), [
+    ['a', 'p'],
+    ['a', 'p'],
+  ]);
   assert.deepEqual(clock.waits, [3_000]);
   assert.equal(result.succeeded.size, 2);
 });
@@ -1995,15 +2318,23 @@ test('an outer network error retries as transient with the error code as reason'
   const events = [];
   const google = fakeGoogle((part) => ok(part.key), {
     outer: (round) =>
-      round === 0 ? Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }) : undefined,
+      round === 0
+        ? Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })
+        : undefined,
   });
   const result = await setup().batch.execute(
-    call(google, [thing('a')], { onResponse: (event) => void events.push(event) }),
+    call(google, [thing('a')], {
+      onResponse: (event) => void events.push(event),
+    }),
   );
   assert.deepEqual(google.keys(), [['a'], ['a']]);
   assert.deepEqual(result.succeeded.get('a'), [{ name: 'a' }]);
   assert.deepEqual(
-    [events[0].outcome.kind, events[0].status, events[0].outcome.failure.reason],
+    [
+      events[0].outcome.kind,
+      events[0].status,
+      events[0].outcome.failure.reason,
+    ],
     ['retry', 0, 'ECONNRESET'],
   );
 });
@@ -2012,15 +2343,24 @@ test('an outer 401 fails only the parts in that batch', async () => {
   const google = fakeGoogle((part) => ok(part.key), {
     outer: (round) =>
       round === 0
-        ? { status: 401, data: '{"error":{"code":401,"errors":[{"reason":"authError"}]}}' }
+        ? {
+            status: 401,
+            data: '{"error":{"code":401,"errors":[{"reason":"authError"}]}}',
+          }
         : undefined,
   });
   const result = await setup().batch.execute(
-    call(google, [thing('a'), thing('b'), thing('c')], { options: { batchSize: 2 } }),
+    call(google, [thing('a'), thing('b'), thing('c')], {
+      options: { batchSize: 2 },
+    }),
   );
   assert.deepEqual(google.keys(), [['a', 'b'], ['c']]);
   assert.deepEqual(
-    [result.failed.get('a').kind, result.failed.get('a').status, result.failed.get('a').reason],
+    [
+      result.failed.get('a').kind,
+      result.failed.get('a').status,
+      result.failed.get('a').reason,
+    ],
     ['auth', 401, 'authError'],
   );
   assert.equal(result.failed.get('b').kind, 'auth');
@@ -2028,13 +2368,19 @@ test('an outer 401 fails only the parts in that batch', async () => {
 });
 
 test('an outer 400 or a malformed reply rejects the run', async () => {
-  const rejected = fakeGoogle((part) => ok(part.key), { outer: () => ({ status: 400, data: '{}' }) });
+  const rejected = fakeGoogle((part) => ok(part.key), {
+    outer: () => ({ status: 400, data: '{}' }),
+  });
   await assert.rejects(setup().batch.execute(call(rejected, [thing('a')])), {
     name: 'BatchServiceError',
     code: 'outer-rejected',
   });
   const garbled = fakeGoogle((part) => ok(part.key), {
-    outer: () => ({ status: 200, headers: { 'content-type': 'text/html' }, data: '<html>' }),
+    outer: () => ({
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+      data: '<html>',
+    }),
   });
   await assert.rejects(setup().batch.execute(call(garbled, [thing('a')])), {
     name: 'BatchServiceError',
@@ -2141,13 +2487,19 @@ Replace `BatchRun.ensureClient` with:
 In `BatchRun.send`, replace this line:
 
 ```ts
-      throw failure ?? new BatchServiceError('outer-rejected', `The batch endpoint answered HTTP ${status}.`);
+throw (
+  failure ??
+  new BatchServiceError(
+    'outer-rejected',
+    `The batch endpoint answered HTTP ${status}.`,
+  )
+);
 ```
 
 with:
 
 ```ts
-      await this.outerFailure(entries, status, response, failure);
+await this.outerFailure(entries, status, response, failure);
 ```
 
 Add this method to `BatchRun`, after `send`:
@@ -2223,6 +2575,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 5: Move the device batch onto the service
 
 **Files:**
+
 - Modify: `libs/google-connection/src/lib/devices.ts`
 - Modify: `libs/google-connection/src/index.ts`
 - Modify: `libs/google-connection/src/lib/devices.test.mjs`
@@ -2230,6 +2583,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `worker/src/entity-sync.test.mjs`
 
 **Interfaces:**
+
 - Consumes: `GoogleBatchService`, `BatchFailure` from Tasks 3 and 4. `scopedClient` and `failure` from `./provider`.
 - Produces:
   - `GoogleDeviceReaderOptions.batch?: GoogleBatchService`.
@@ -2260,7 +2614,8 @@ import { fakeGoogle } from './batch-fake.mjs';
 3. Add these helpers and tests where the deleted tests were:
 
 ```js
-const fastBatch = () => new GoogleBatchService({ sleep: async () => undefined, random: () => 0 });
+const fastBatch = () =>
+  new GoogleBatchService({ sleep: async () => undefined, random: () => 0 });
 const signal = () => AbortSignal.timeout(5000);
 
 function stubBatch(t, answer) {
@@ -2273,7 +2628,9 @@ function stubBatch(t, answer) {
   t.mock.method(JWT.prototype, 'getTokenInfo', async function () {
     return { scopes: [...this.scopes], expiry_date: Date.now() + 3_500_000 };
   });
-  t.mock.method(OAuth2Client.prototype, 'request', (options) => google.client.request(options));
+  t.mock.method(OAuth2Client.prototype, 'request', (options) =>
+    google.client.request(options),
+  );
   return { google, scopes };
 }
 
@@ -2289,26 +2646,44 @@ const quotaPart = {
 test('deviceBatch reads each device once and reports missing devices', async (t) => {
   const { google, scopes } = stubBatch(t, (part) =>
     part.key === 'd2'
-      ? { status: 404, body: { error: { code: 404, message: 'Resource Not Found' } } }
+      ? {
+          status: 404,
+          body: { error: { code: 404, message: 'Resource Not Found' } },
+        }
       : directoryDevice(part.key),
   );
-  const result = await new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
-    credential,
-    'C0123456',
-    ['d1', 'd2', 'd1'],
-    signal(),
-  );
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).deviceBatch(credential, 'C0123456', ['d1', 'd2', 'd1'], signal());
   assert.deepEqual(scopes, [deviceScope]);
-  assert.equal(google.requests[0].url, 'https://www.googleapis.com/batch/admin/directory_v1');
+  assert.equal(
+    google.requests[0].url,
+    'https://www.googleapis.com/batch/admin/directory_v1',
+  );
   assert.deepEqual(
-    google.sent[0].map((part) => [part.method, part.path, part.query.projection]),
+    google.sent[0].map((part) => [
+      part.method,
+      part.path,
+      part.query.projection,
+    ]),
     [
-      ['GET', '/admin/directory/v1/customer/C0123456/devices/chromeos/d1', 'FULL'],
-      ['GET', '/admin/directory/v1/customer/C0123456/devices/chromeos/d2', 'FULL'],
+      [
+        'GET',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d1',
+        'FULL',
+      ],
+      [
+        'GET',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d2',
+        'FULL',
+      ],
     ],
   );
   assert.match(google.sent[0][0].query.fields, /^deviceId,serialNumber,/);
-  assert.deepEqual(result.devices.map((device) => device.serialNumber), ['S-d1']);
+  assert.deepEqual(
+    result.devices.map((device) => device.serialNumber),
+    ['S-d1'],
+  );
   assert.deepEqual(result.missing, ['d2']);
 });
 
@@ -2321,20 +2696,25 @@ test('deviceBatch retries a quota part and keeps the parts that succeeded', asyn
     }
     return directoryDevice(part.key);
   });
-  const result = await new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
-    credential,
-    'C0123456',
-    ['d1', 'd2'],
-    signal(),
-  );
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).deviceBatch(credential, 'C0123456', ['d1', 'd2'], signal());
   assert.deepEqual(google.keys(), [['d1', 'd2'], ['d1']]);
-  assert.deepEqual(result.devices.map((device) => device.deviceId), ['d1', 'd2']);
+  assert.deepEqual(
+    result.devices.map((device) => device.deviceId),
+    ['d1', 'd2'],
+  );
 });
 
 test('deviceBatch fails with quota after 25 quota retries', async (t) => {
   const { google } = stubBatch(t, () => quotaPart);
   await assert.rejects(
-    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(credential, 'C0123456', ['d1'], signal()),
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
+      credential,
+      'C0123456',
+      ['d1'],
+      signal(),
+    ),
     { name: 'GoogleConnectionError', code: 'quota' },
   );
   assert.equal(google.sent.length, 26);
@@ -2343,11 +2723,19 @@ test('deviceBatch fails with quota after 25 quota retries', async (t) => {
 test('deviceBatch fails the batch on any other part error', async (t) => {
   stubBatch(t, (part) =>
     part.key === 'd2'
-      ? { status: 403, body: { error: { code: 403, errors: [{ reason: 'forbidden' }] } } }
+      ? {
+          status: 403,
+          body: { error: { code: 403, errors: [{ reason: 'forbidden' }] } },
+        }
       : directoryDevice(part.key),
   );
   await assert.rejects(
-    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(credential, 'C0123456', ['d1', 'd2'], signal()),
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
+      credential,
+      'C0123456',
+      ['d1', 'd2'],
+      signal(),
+    ),
     { name: 'GoogleConnectionError', code: 'permission-denied' },
   );
 });
@@ -2381,7 +2769,12 @@ test('deviceBatch surfaces a token failure with its own code', async (t) => {
     });
   });
   await assert.rejects(
-    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(credential, 'C0123456', ['d1'], signal()),
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
+      credential,
+      'C0123456',
+      ['d1'],
+      signal(),
+    ),
     { name: 'GoogleConnectionError', code: 'credential-rejected' },
   );
 });
@@ -2420,7 +2813,8 @@ const directoryDevice = devicePage.shape.chromeosdevices.unwrap().element;
 /** Map a final batch failure to the existing failure vocabulary. */
 function batchFailure(failed: BatchFailure): GoogleConnectionError {
   if (failed.kind === 'quota') return new GoogleConnectionError('quota');
-  if (failed.kind === 'invalid-response') return new GoogleConnectionError('invalid-response');
+  if (failed.kind === 'invalid-response')
+    return new GoogleConnectionError('invalid-response');
   if (failed.kind === 'aborted' || failed.status === 0)
     return new GoogleConnectionError('network-failure');
   return failure({ response: { status: failed.status, data: failed.body } });
@@ -2554,7 +2948,9 @@ test('a Directory quota failure fails the batch without a worker retry', async (
   const waits = [];
   const source = reader({ devices: [new GoogleConnectionError('quota')] });
   const result = await new EntitySyncBatch(
-    database({ finish: job({ completedBatches: 0, failedBatches: 1, failure: 'quota' }) }),
+    database({
+      finish: job({ completedBatches: 0, failedBatches: 1, failure: 'quota' }),
+    }),
     cipher,
     source,
     cache(),
@@ -2571,10 +2967,16 @@ test('telemetry quota errors retry in the worker until Google answers', async ()
     database(),
     cipher,
     reader({
-      batteries: [new GoogleConnectionError('quota'), new GoogleConnectionError('quota')],
+      batteries: [
+        new GoogleConnectionError('quota'),
+        new GoogleConnectionError('quota'),
+      ],
     }),
     cache(),
-    { backoff: (attempt) => attempt * 10, sleep: async (ms) => void waits.push(ms) },
+    {
+      backoff: (attempt) => attempt * 10,
+      sleep: async (ms) => void waits.push(ms),
+    },
   ).run(request, AbortSignal.timeout(5000));
   assert.equal(result.failure, null);
   assert.deepEqual(waits, [0, 10]);
@@ -2582,11 +2984,16 @@ test('telemetry quota errors retry in the worker until Google answers', async ()
 
 test('each batch service round extends the claim on the batch IDs', async () => {
   const redis = cache();
-  await new EntitySyncBatch(database(), cipher, reader({ rounds: 2 }), redis, noSleep).run(
-    request,
-    AbortSignal.timeout(5000),
+  await new EntitySyncBatch(
+    database(),
+    cipher,
+    reader({ rounds: 2 }),
+    redis,
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  const extensions = redis.calls.filter(
+    (call) => call.name === 'extendMembers',
   );
-  const extensions = redis.calls.filter((call) => call.name === 'extendMembers');
   assert.equal(extensions.length, 2);
   assert.deepEqual(extensions[0].args.slice(1), [['d1', 'd2', 'd3'], 120]);
 });
@@ -2605,7 +3012,10 @@ test('a telemetry quota sleep extends the batch claim on its in-flight IDs', asy
     cipher,
     reader({ batteries: [new GoogleConnectionError('quota')] }),
     redis,
-    { backoff: () => 0, sleep: async () => void waits.push(redis.calls.length) },
+    {
+      backoff: () => 0,
+      sleep: async () => void waits.push(redis.calls.length),
+    },
   ).run(request, AbortSignal.timeout(5000));
   const extended = redis.calls.filter((call) => call.name === 'extendMembers');
   assert.equal(extended.length, 1);
@@ -2667,32 +3077,27 @@ In `worker/src/entity-sync.ts`:
 3. Replace the Directory read:
 
 ```ts
-      const read = await this.untilQuotaClears(signal, claim, () =>
-        this.reader.deviceBatch(
-          credential,
-          input.customerId,
-          batch.ids,
-          signal,
-        ),
-      );
+const read = await this.untilQuotaClears(signal, claim, () =>
+  this.reader.deviceBatch(credential, input.customerId, batch.ids, signal),
+);
 ```
 
 with:
 
 ```ts
-      // Each multipart round extends the claim, so a long quota wave keeps the batch IDs.
-      const extendClaim = async () => {
-        await this.cache
-          .extendMembers(claim.key, claim.ids, ENTITY_INFLIGHT_SECONDS)
-          .catch(() => undefined);
-      };
-      const read = await this.reader.deviceBatch(
-        credential,
-        input.customerId,
-        batch.ids,
-        signal,
-        extendClaim,
-      );
+// Each multipart round extends the claim, so a long quota wave keeps the batch IDs.
+const extendClaim = async () => {
+  await this.cache
+    .extendMembers(claim.key, claim.ids, ENTITY_INFLIGHT_SECONDS)
+    .catch(() => undefined);
+};
+const read = await this.reader.deviceBatch(
+  credential,
+  input.customerId,
+  batch.ids,
+  signal,
+  extendClaim,
+);
 ```
 
 - [ ] **Step 8: Run the worker checks**
@@ -2714,12 +3119,14 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 6: Cap the remaining quota loops at 25 retries
 
 **Files:**
+
 - Modify: `libs/google-connection/src/lib/devices.ts` (the `pages` pager)
 - Modify: `libs/google-connection/src/lib/devices.test.mjs`
 - Modify: `worker/src/entity-sync.ts` (`untilQuotaClears`)
 - Modify: `worker/src/entity-sync.test.mjs`
 
 **Interfaces:**
+
 - Consumes: `BATCH_DEFAULTS.maxQuotaRetries` from `./batch` and from `@campus/google-connection`.
 - Produces: no new names. The pagers and `untilQuotaClears` throw `quota` after 25 retries.
 
@@ -2729,7 +3136,10 @@ Add to `libs/google-connection/src/lib/devices.test.mjs`, after `a quota answer 
 
 ```js
 test('a quota page stops after 25 retries', async (t) => {
-  const { calls } = stub(t, Array.from({ length: 27 }, () => quotaAnswer()));
+  const { calls } = stub(
+    t,
+    Array.from({ length: 27 }, () => quotaAnswer()),
+  );
   const waits = [];
   await assert.rejects(
     collect(
@@ -2751,17 +3161,25 @@ Add to `worker/src/entity-sync.test.mjs`:
 test('telemetry quota stops after 25 retries and fails the batch', async () => {
   const waits = [];
   const source = reader({
-    batteries: Array.from({ length: 26 }, () => new GoogleConnectionError('quota')),
+    batteries: Array.from(
+      { length: 26 },
+      () => new GoogleConnectionError('quota'),
+    ),
   });
   const result = await new EntitySyncBatch(
-    database({ finish: job({ completedBatches: 0, failedBatches: 1, failure: 'quota' }) }),
+    database({
+      finish: job({ completedBatches: 0, failedBatches: 1, failure: 'quota' }),
+    }),
     cipher,
     source,
     cache(),
     { backoff: () => 0, sleep: async (ms) => void waits.push(ms) },
   ).run(request, AbortSignal.timeout(5000));
   assert.equal(result.failure, 'quota');
-  assert.equal(names(source.calls).filter((name) => name === 'batteryBatch').length, 26);
+  assert.equal(
+    names(source.calls).filter((name) => name === 'batteryBatch').length,
+    26,
+  );
   assert.equal(waits.length, 25);
 });
 ```
@@ -2776,31 +3194,31 @@ Expected: FAIL. The pager makes a 27th call. The worker loop retries a 26th time
 In `libs/google-connection/src/lib/devices.ts`, change the batch import to `import { BATCH_DEFAULTS, GoogleBatchService, type BatchFailure } from './batch';`. In `pages`, change the doc comment and the quota check:
 
 ```ts
-  /** Follow page tokens. A quota answer retries the same page up to 25 times, then fails with quota. */
+/** Follow page tokens. A quota answer retries the same page up to 25 times, then fails with quota. */
 ```
 
 ```ts
-          const classified = failure(error);
-          if (classified.code !== 'quota' || attempt >= BATCH_DEFAULTS.maxQuotaRetries)
-            throw classified;
+const classified = failure(error);
+if (classified.code !== 'quota' || attempt >= BATCH_DEFAULTS.maxQuotaRetries)
+  throw classified;
 ```
 
 In `worker/src/entity-sync.ts`, add `BATCH_DEFAULTS` to the `@campus/google-connection` import. Change the `untilQuotaClears` doc comment and the quota check:
 
 ```ts
-  /**
-   * Retry only quota answers, up to 25 times. A shutdown signal ends the wait with worker-stopping.
-   * Each wait first extends the claim on the batch IDs, so a retrying batch keeps them.
-   */
+/**
+ * Retry only quota answers, up to 25 times. A shutdown signal ends the wait with worker-stopping.
+ * Each wait first extends the claim on the batch IDs, so a retrying batch keeps them.
+ */
 ```
 
 ```ts
-        if (
-          !(error instanceof GoogleConnectionError) ||
-          error.code !== 'quota' ||
-          attempt >= BATCH_DEFAULTS.maxQuotaRetries
-        )
-          throw error;
+if (
+  !(error instanceof GoogleConnectionError) ||
+  error.code !== 'quota' ||
+  attempt >= BATCH_DEFAULTS.maxQuotaRetries
+)
+  throw error;
 ```
 
 - [ ] **Step 4: Run all checks**
@@ -2822,11 +3240,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 7: Live wire check and records
 
 **Files:**
+
 - Create: `deployment/google-proof/batch-live.mjs`
 - Create: `deployment/evidence/batch-service-live-<date>.json` (written by the script)
 - Modify: `docs/superpowers/specs/2026-10-07-google-batch-service-decisions.md`
 
 **Interfaces:**
+
 - Consumes: `GoogleBatchService` and `validateServiceAccount` from `@campus/google-connection`, `scopedClient` from `libs/google-connection/src/lib/provider.ts`.
 - Produces: a sanitized evidence file. No code exports.
 
@@ -2843,19 +3263,27 @@ Create `deployment/google-proof/batch-live.mjs`:
  * It batches orgunits.get for up to two real OUs and one missing path, then writes sanitized evidence.
  */
 import { readFile, writeFile } from 'node:fs/promises';
-import { GoogleBatchService, validateServiceAccount } from '@campus/google-connection';
+import {
+  GoogleBatchService,
+  validateServiceAccount,
+} from '@campus/google-connection';
 import { scopedClient } from '../../libs/google-connection/src/lib/provider.ts';
 
 const customerId = 'C01zcarnq';
 const subject = 'spencer@easton-consulting.com';
 const clientId = '113794681976879482895';
-const scope = 'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
+const scope =
+  'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
 const directory = `/admin/directory/v1/customer/${customerId}/orgunits`;
-const keyPath = process.argv[2] ?? '/mnt/c/Users/spenc/Downloads/DWD_SA_CC.json';
+const keyPath =
+  process.argv[2] ?? '/mnt/c/Users/spenc/Downloads/DWD_SA_CC.json';
 
 const credential = {
   subject,
-  serviceAccount: validateServiceAccount(JSON.parse(await readFile(keyPath, 'utf8')), clientId),
+  serviceAccount: validateServiceAccount(
+    JSON.parse(await readFile(keyPath, 'utf8')),
+    clientId,
+  ),
 };
 const signal = AbortSignal.timeout(120_000);
 const client = await scopedClient(credential, scope, signal);
@@ -2889,11 +3317,17 @@ const result = await new GoogleBatchService().execute({
   batchUrl: 'https://www.googleapis.com/batch/admin/directory_v1',
   requests,
   // A page matches when Google answered the OU this part asked for. This proves Content-ID mapping.
-  parse: (body, request) => ({ matched: request.path.endsWith(`/${body?.orgUnitId}`) }),
+  parse: (body, request) => ({
+    matched: request.path.endsWith(`/${body?.orgUnitId}`),
+  }),
   getClient: (runSignal) => scopedClient(credential, scope, runSignal),
   signal,
   onBatch: (event) =>
-    void rounds.push({ sentCount: event.sentCount, outerStatus: event.outerStatus, pending: event.pending }),
+    void rounds.push({
+      sentCount: event.sentCount,
+      outerStatus: event.outerStatus,
+      pending: event.pending,
+    }),
 });
 
 const outcome = (id) => {
@@ -2907,12 +3341,17 @@ const evidence = {
   recordedAt,
   fixture: 'approved Easton read-only fixture',
   scope,
-  method: 'directory.orgunits.get through https://www.googleapis.com/batch/admin/directory_v1',
+  method:
+    'directory.orgunits.get through https://www.googleapis.com/batch/admin/directory_v1',
   ouCount: ouIds.length,
   rounds,
-  outcomes: Object.fromEntries(requests.map((request) => [request.id, outcome(request.id)])),
+  outcomes: Object.fromEntries(
+    requests.map((request) => [request.id, outcome(request.id)]),
+  ),
   durationMs: Date.now() - started,
-  limitations: ['Paging is not exercised. No authorized live scope returns page tokens.'],
+  limitations: [
+    'Paging is not exercised. No authorized live scope returns page tokens.',
+  ],
 };
 const path = `deployment/evidence/batch-service-live-${recordedAt.slice(0, 10)}.json`;
 await writeFile(path, `${JSON.stringify(evidence, null, 2)}\n`);

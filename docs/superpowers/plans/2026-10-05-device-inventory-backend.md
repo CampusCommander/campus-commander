@@ -34,6 +34,7 @@
 ### Task 1: Device contracts and the `devices:read` action
 
 **Files:**
+
 - Create: `libs/application-contracts/src/lib/devices.ts`
 - Create: `libs/application-contracts/src/lib/devices.test.mjs`
 - Modify: `libs/application-contracts/src/index.ts`
@@ -42,6 +43,7 @@
 - Modify: `docs/workflows/device-browsing.md` (battery reason text)
 
 **Interfaces:**
+
 - Produces: `deviceObservationSchema`, `batteryObservationSchema`, `deviceRowSchema`, `deviceDetailSchema`, `devicePredicateSchema`, `deviceQuerySchema`, `devicePageSchema`, `deviceSyncStateSchema`, `deviceSyncFailureSchema`, `batteryHealthSchema`, and their inferred types `DeviceObservation`, `BatteryObservation`, `DeviceRow`, `DeviceDetail`, `DevicePredicate`, `DeviceQuery`, `DevicePage`, `DeviceSyncState`, `BatteryHealth`. Adds action `'devices:read'`.
 
 Telemetry cannot distinguish a device without a battery from a device without the `ReportDevicePowerStatus` policy. Google withholds `batteryInfo` in both cases. The battery states are therefore `reported`, `no-report`, and `unavailable`.
@@ -87,15 +89,40 @@ test('device queries default to the first serial page', () => {
 
 test('predicates accept only the operators of their field type', () => {
   const ok = (value) => devicePredicateSchema.safeParse(value).success;
-  assert.equal(ok({ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }), true);
+  assert.equal(
+    ok({ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }),
+    true,
+  );
   assert.equal(ok({ field: 'assetTag', operator: 'isEmpty' }), true);
-  assert.equal(ok({ field: 'assetTag', operator: 'isEmpty', value: 'x' }), false);
-  assert.equal(ok({ field: 'battery', operator: 'contains', value: 'x' }), false);
-  assert.equal(ok({ field: 'battery', operator: 'is', values: ['replace-soon'] }), true);
+  assert.equal(
+    ok({ field: 'assetTag', operator: 'isEmpty', value: 'x' }),
+    false,
+  );
+  assert.equal(
+    ok({ field: 'battery', operator: 'contains', value: 'x' }),
+    false,
+  );
+  assert.equal(
+    ok({ field: 'battery', operator: 'is', values: ['replace-soon'] }),
+    true,
+  );
   assert.equal(ok({ field: 'battery', operator: 'is', values: [] }), false);
-  assert.equal(ok({ field: 'orgUnitPath', operator: 'within', value: 'School A' }), false);
-  assert.equal(ok({ field: 'orgUnitPath', operator: 'within', value: '/School A' }), true);
-  assert.equal(ok({ field: 'lastContact', operator: 'after', value: '2026-10-01T00:00:00Z' }), true);
+  assert.equal(
+    ok({ field: 'orgUnitPath', operator: 'within', value: 'School A' }),
+    false,
+  );
+  assert.equal(
+    ok({ field: 'orgUnitPath', operator: 'within', value: '/School A' }),
+    true,
+  );
+  assert.equal(
+    ok({
+      field: 'lastContact',
+      operator: 'after',
+      value: '2026-10-01T00:00:00Z',
+    }),
+    true,
+  );
   assert.equal(ok({ field: 'school', operator: 'equals', value: 'x' }), false);
 });
 
@@ -103,7 +130,11 @@ test('queries bound page size, predicate count, and unknown keys', () => {
   assert.equal(deviceQuerySchema.safeParse({ limit: 201 }).success, false);
   assert.equal(
     deviceQuerySchema.safeParse({
-      predicates: Array(21).fill({ field: 'model', operator: 'contains', value: 'a' }),
+      predicates: Array(21).fill({
+        field: 'model',
+        operator: 'contains',
+        value: 'a',
+      }),
     }).success,
     false,
   );
@@ -117,11 +148,25 @@ test('battery values distinguish reported, missing, and unavailable data', () =>
     capacityPercent: 78,
     reportedAt: '2026-09-05T09:50:00-04:00',
   };
-  assert.equal(deviceRowSchema.safeParse({ ...row, battery: reported }).success, true);
+  assert.equal(
+    deviceRowSchema.safeParse({ ...row, battery: reported }).success,
+    true,
+  );
   for (const status of ['no-report', 'unavailable'])
-    assert.equal(deviceRowSchema.safeParse({ ...row, battery: { status } }).success, true);
-  assert.equal(deviceRowSchema.safeParse({ ...row, battery: { status: 'reported' } }).success, false);
-  assert.equal(deviceRowSchema.safeParse({ ...row, battery: { status: 'unsupported' } }).success, false);
+    assert.equal(
+      deviceRowSchema.safeParse({ ...row, battery: { status } }).success,
+      true,
+    );
+  assert.equal(
+    deviceRowSchema.safeParse({ ...row, battery: { status: 'reported' } })
+      .success,
+    false,
+  );
+  assert.equal(
+    deviceRowSchema.safeParse({ ...row, battery: { status: 'unsupported' } })
+      .success,
+    false,
+  );
 });
 
 test('sync failures include orchestration and interruption codes', () => {
@@ -139,18 +184,41 @@ test('sync failures include orchestration and interruption codes', () => {
   };
   assert.equal(deviceSyncStateSchema.safeParse(state).success, true);
   assert.equal(
-    deviceSyncStateSchema.safeParse({ ...state, failure: 'orchestration-unavailable' }).success,
+    deviceSyncStateSchema.safeParse({
+      ...state,
+      failure: 'orchestration-unavailable',
+    }).success,
     true,
   );
-  assert.equal(deviceSyncStateSchema.safeParse({ ...state, failure: 'unknown' }).success, false);
+  assert.equal(
+    deviceSyncStateSchema.safeParse({ ...state, failure: 'unknown' }).success,
+    false,
+  );
 });
 
 test('devices:read applies to platform and district scopes', () => {
   assert.ok(actionSchema.options.includes('devices:read'));
   assert.deepEqual(actionScopeKinds['devices:read'], ['platform', 'district']);
-  const grants = [{ action: 'devices:read', scope: { kind: 'district', customerId: 'C0123456' } }];
-  assert.equal(isAuthorized(grants, 'devices:read', { kind: 'district', customerId: 'C0123456' }), true);
-  assert.equal(isAuthorized(grants, 'devices:read', { kind: 'district', customerId: 'C9999999' }), false);
+  const grants = [
+    {
+      action: 'devices:read',
+      scope: { kind: 'district', customerId: 'C0123456' },
+    },
+  ];
+  assert.equal(
+    isAuthorized(grants, 'devices:read', {
+      kind: 'district',
+      customerId: 'C0123456',
+    }),
+    true,
+  );
+  assert.equal(
+    isAuthorized(grants, 'devices:read', {
+      kind: 'district',
+      customerId: 'C9999999',
+    }),
+    false,
+  );
 });
 ```
 
@@ -165,14 +233,21 @@ Create `libs/application-contracts/src/lib/devices.ts`:
 
 ```ts
 import * as z from 'zod';
-import { googleCustomerIdSchema, googleFailureSchema } from './google-connection';
+import {
+  googleCustomerIdSchema,
+  googleFailureSchema,
+} from './google-connection';
 
 const timestamp = z.iso.datetime({ offset: true });
 const deviceId = z.string().min(1).max(128);
 const orgUnitPath = z.string().min(1).max(4096).startsWith('/');
 const percent = z.number().int().min(0).max(200);
 
-export const batteryHealthSchema = z.enum(['normal', 'replace-soon', 'replace-now']);
+export const batteryHealthSchema = z.enum([
+  'normal',
+  'replace-soon',
+  'replace-now',
+]);
 export type BatteryHealth = z.infer<typeof batteryHealthSchema>;
 
 export const batteryReportSchema = z.strictObject({
@@ -271,7 +346,10 @@ export const devicePredicateSchema = z.union([
     operator: z.enum(['contains', 'startsWith', 'equals']),
     value: filterText,
   }),
-  z.strictObject({ field: deviceTextFieldSchema, operator: z.literal('isEmpty') }),
+  z.strictObject({
+    field: deviceTextFieldSchema,
+    operator: z.literal('isEmpty'),
+  }),
   z.strictObject({
     field: z.literal('orgUnitPath'),
     operator: z.enum(['equals', 'within']),
@@ -389,6 +467,7 @@ git commit -m "feat: add device inventory contracts and devices:read action"
 ### Task 2: Google device and telemetry reader
 
 **Files:**
+
 - Modify: `libs/application-contracts/src/lib/google-capabilities.ts` (two registry entries)
 - Modify: `libs/google-connection/src/lib/provider.ts` (export `failure` and `scopedClient`, response limit parameter, URL allowlist)
 - Create: `libs/google-connection/src/lib/devices.ts`
@@ -396,6 +475,7 @@ git commit -m "feat: add device inventory contracts and devices:read action"
 - Modify: `libs/google-connection/src/index.ts`
 
 **Interfaces:**
+
 - Consumes: `deviceObservationSchema`, `batteryObservationSchema`, `DeviceObservation`, `BatteryObservation`, `BatteryHealth` from Task 1.
 - Produces: `class GoogleDeviceReader` with
   `devicePages(credential: DelegatedCredential, customerId: string, signal: AbortSignal): AsyncGenerator<DeviceObservation[]>` and
@@ -426,8 +506,10 @@ const credential = {
     private_key_id: 'fixture',
   },
 };
-const deviceScope = 'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly';
-const telemetryScope = 'https://www.googleapis.com/auth/chrome.management.telemetry.readonly';
+const deviceScope =
+  'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly';
+const telemetryScope =
+  'https://www.googleapis.com/auth/chrome.management.telemetry.readonly';
 
 function stub(t, pages) {
   const calls = [];
@@ -475,10 +557,17 @@ test('device pages follow page tokens and normalize fields', async (t) => {
     { chromeosdevices: [{ deviceId: 'd2', orgUnitPath: '/' }] },
   ]);
   const pages = await collect(
-    new GoogleDeviceReader().devicePages(credential, 'C0123456', AbortSignal.timeout(5000)),
+    new GoogleDeviceReader().devicePages(
+      credential,
+      'C0123456',
+      AbortSignal.timeout(5000),
+    ),
   );
   assert.deepEqual(scopes, [deviceScope]);
-  assert.equal(calls[0].url, 'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/devices/chromeos');
+  assert.equal(
+    calls[0].url,
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/devices/chromeos',
+  );
   assert.equal(calls[0].params.maxResults, 300);
   assert.equal(calls[0].params.projection, 'FULL');
   assert.equal(calls[0].params.pageToken, undefined);
@@ -509,7 +598,9 @@ test('device pages follow page tokens and normalize fields', async (t) => {
 
 test('battery pages use the latest classified report and design capacity', async (t) => {
   const reports = Array.from({ length: 32 }, (_, index) => ({
-    reportTime: new Date(Date.UTC(2026, 8, 1) + index * 86_400_000).toISOString(),
+    reportTime: new Date(
+      Date.UTC(2026, 8, 1) + index * 86_400_000,
+    ).toISOString(),
     fullChargeCapacity: String(4000 - index * 10),
     batteryHealth: 'BATTERY_REPLACE_SOON',
   }));
@@ -526,7 +617,11 @@ test('battery pages use the latest classified report and design capacity', async
           deviceId: 'd3',
           batteryInfo: [{ designCapacity: '5000' }],
           batteryStatusReport: [
-            { reportTime: '2026-09-05T13:50:00Z', fullChargeCapacity: '3900', batteryHealth: 'BATTERY_HEALTH_UNSPECIFIED' },
+            {
+              reportTime: '2026-09-05T13:50:00Z',
+              fullChargeCapacity: '3900',
+              batteryHealth: 'BATTERY_HEALTH_UNSPECIFIED',
+            },
           ],
         },
         { serialNumber: 'no-device-id' },
@@ -534,11 +629,21 @@ test('battery pages use the latest classified report and design capacity', async
     },
   ]);
   const [page] = await collect(
-    new GoogleDeviceReader().batteryPages(credential, 'C0123456', AbortSignal.timeout(5000)),
+    new GoogleDeviceReader().batteryPages(
+      credential,
+      'C0123456',
+      AbortSignal.timeout(5000),
+    ),
   );
   assert.deepEqual(scopes, [telemetryScope]);
-  assert.equal(calls[0].url, 'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices');
-  assert.equal(calls[0].params.readMask, 'deviceId,batteryInfo,batteryStatusReport');
+  assert.equal(
+    calls[0].url,
+    'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices',
+  );
+  assert.equal(
+    calls[0].params.readMask,
+    'deviceId,batteryInfo,batteryStatusReport',
+  );
   assert.equal(page.length, 3);
   assert.deepEqual(page[0].battery, {
     status: 'reported',
@@ -548,23 +653,48 @@ test('battery pages use the latest classified report and design capacity', async
   });
   assert.equal(page[0].reports.length, 30);
   assert.equal(page[0].reports[0].reportedAt, reports[31].reportTime);
-  assert.deepEqual(page[1], { deviceId: 'd2', battery: { status: 'no-report' }, reports: [] });
+  assert.deepEqual(page[1], {
+    deviceId: 'd2',
+    battery: { status: 'no-report' },
+    reports: [],
+  });
   assert.deepEqual(page[2].battery, { status: 'no-report' });
   assert.equal(page[2].reports[0].capacityPercent, 78);
 });
 
 test('provider failures keep their classified codes', async (t) => {
-  stub(t, [{ response: { status: 403, data: { error: { errors: [{ reason: 'forbidden' }] } } } }]);
+  stub(t, [
+    {
+      response: {
+        status: 403,
+        data: { error: { errors: [{ reason: 'forbidden' }] } },
+      },
+    },
+  ]);
   await assert.rejects(
-    collect(new GoogleDeviceReader().devicePages(credential, 'C0123456', AbortSignal.timeout(5000))),
+    collect(
+      new GoogleDeviceReader().devicePages(
+        credential,
+        'C0123456',
+        AbortSignal.timeout(5000),
+      ),
+    ),
     { name: 'GoogleConnectionError', code: 'permission-denied' },
   );
 });
 
 test('malformed pages fail as invalid responses', async (t) => {
-  stub(t, [{ chromeosdevices: [{ deviceId: 'd1', orgUnitPath: 'missing-slash' }] }]);
+  stub(t, [
+    { chromeosdevices: [{ deviceId: 'd1', orgUnitPath: 'missing-slash' }] },
+  ]);
   await assert.rejects(
-    collect(new GoogleDeviceReader().devicePages(credential, 'C0123456', AbortSignal.timeout(5000))),
+    collect(
+      new GoogleDeviceReader().devicePages(
+        credential,
+        'C0123456',
+        AbortSignal.timeout(5000),
+      ),
+    ),
     { name: 'GoogleConnectionError', code: 'invalid-response' },
   );
 });
@@ -793,10 +923,17 @@ export function batteryObservation(
       const reportedAt = instant(report.reportTime);
       if (!reportedAt) return [];
       const health =
-        report.batteryHealth && Object.hasOwn(healthByGoogle, report.batteryHealth)
+        report.batteryHealth &&
+        Object.hasOwn(healthByGoogle, report.batteryHealth)
           ? healthByGoogle[report.batteryHealth]
           : null;
-      return [{ reportedAt, health, capacityPercent: percent(report.fullChargeCapacity) }];
+      return [
+        {
+          reportedAt,
+          health,
+          capacityPercent: percent(report.fullChargeCapacity),
+        },
+      ];
     })
     .sort((a, b) => Date.parse(b.reportedAt) - Date.parse(a.reportedAt))
     .slice(0, reportLimit);
@@ -822,7 +959,10 @@ export class GoogleDeviceReader {
     scope: string,
     signal: AbortSignal,
     limit: number | undefined,
-    load: (client: OAuth2Client, pageToken: string | undefined) => Promise<{
+    load: (
+      client: OAuth2Client,
+      pageToken: string | undefined,
+    ) => Promise<{
       items: T[];
       nextPageToken: string | undefined;
     }>,
@@ -947,12 +1087,14 @@ git commit -m "feat: read ChromeOS devices and battery telemetry from Google"
 ### Task 3: Device inventory storage
 
 **Files:**
+
 - Create: `deployment/postgres/migrations/016-device-inventory.sql`
 - Modify: `deployment/postgres/index.mjs` (`loadMigrations` list and runtime grants)
 - Create: `deployment/postgres/device-inventory.integration.mjs`
 - Modify: `deployment/postgres/integration.mjs` (run the new qualification after `qualifySchoolReferences`)
 
 **Interfaces:**
+
 - Consumes: Task 1 field names and battery states.
 - Produces these database functions. API functions take `(actor uuid, version integer)` and check `devices:read` without locks.
   - `cc.device_reader(uuid,integer) → cc.google_connection` (null row when no connection exists)
@@ -994,7 +1136,11 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       );
     await migrator.query(
       'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
-      [reader, 'devices:read', JSON.stringify({ kind: 'district', customerId: customer })],
+      [
+        reader,
+        'devices:read',
+        JSON.stringify({ kind: 'district', customerId: customer }),
+      ],
     );
     const result = (sql, values) =>
       runtime.query(sql, values).then((r) => r.rows[0].result);
@@ -1002,10 +1148,18 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       result('SELECT cc.read_device_sync($1,1) AS result', [who]);
     const request = (id = randomUUID()) =>
       result('SELECT cc.request_device_sync($1,1,$2,$3,$4,$5) AS result', [
-        reader, customer, generation, id, randomUUID(),
+        reader,
+        customer,
+        generation,
+        id,
+        randomUUID(),
       ]).then((state) => ({ id, state }));
     const claim = (id, attempt) =>
-      result('SELECT cc.claim_device_sync($1,$2,$3) AS result', [customer, id, attempt]);
+      result('SELECT cc.claim_device_sync($1,$2,$3) AS result', [
+        customer,
+        id,
+        attempt,
+      ]);
     const device = (deviceId, extra = {}) => ({
       deviceId,
       serialNumber: `SN-${deviceId}`,
@@ -1020,15 +1174,25 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     });
     const stage = (id, attempt, devices) =>
       result('SELECT cc.stage_devices($1,$2,$3,$4) AS result', [
-        customer, id, attempt, JSON.stringify(devices),
+        customer,
+        id,
+        attempt,
+        JSON.stringify(devices),
       ]);
     const batteries = (id, attempt, values) =>
       result('SELECT cc.stage_device_batteries($1,$2,$3,$4) AS result', [
-        customer, id, attempt, JSON.stringify(values),
+        customer,
+        id,
+        attempt,
+        JSON.stringify(values),
       ]);
     const finish = (id, attempt, failure = null, telemetry = null) =>
       result('SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result', [
-        customer, id, attempt, failure, telemetry,
+        customer,
+        id,
+        attempt,
+        failure,
+        telemetry,
       ]);
     const purge = () =>
       result('SELECT cc.purge_device_syncs($1,5000) AS result', [customer]);
@@ -1051,17 +1215,35 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     const claimed = await claim(first.id, attempt);
     assert.equal(claimed.generation, generation);
     assert.ok(claimed.credentialId);
-    await assert.rejects(claim(first.id, randomUUID()), detail('device-sync-claimed'));
+    await assert.rejects(
+      claim(first.id, randomUUID()),
+      detail('device-sync-claimed'),
+    );
     assert.equal(
-      await stage(first.id, attempt, [device('d1'), device('d2'), device('d2', { model: 'HP' })]),
+      await stage(first.id, attempt, [
+        device('d1'),
+        device('d2'),
+        device('d2', { model: 'HP' }),
+      ]),
       2,
     );
     assert.equal(
       await batteries(first.id, attempt, [
         {
           deviceId: 'd1',
-          battery: { status: 'reported', health: 'replace-soon', capacityPercent: 78, reportedAt: '2026-10-05T11:00:00.000Z' },
-          reports: [{ reportedAt: '2026-10-05T11:00:00.000Z', health: 'replace-soon', capacityPercent: 78 }],
+          battery: {
+            status: 'reported',
+            health: 'replace-soon',
+            capacityPercent: 78,
+            reportedAt: '2026-10-05T11:00:00.000Z',
+          },
+          reports: [
+            {
+              reportedAt: '2026-10-05T11:00:00.000Z',
+              health: 'replace-soon',
+              capacityPercent: 78,
+            },
+          ],
         },
         { deviceId: 'unknown', battery: { status: 'no-report' }, reports: [] },
       ]),
@@ -1072,10 +1254,16 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     assert.equal(ready.deviceCount, 2);
     assert.equal(ready.stale, false);
     let rows = await published();
-    assert.deepEqual(rows.map((row) => row.model), ['Lenovo 100e Gen 4', 'HP']);
+    assert.deepEqual(
+      rows.map((row) => row.model),
+      ['Lenovo 100e Gen 4', 'HP'],
+    );
     assert.equal(rows[0].battery_health, 'replace-soon');
     assert.equal(rows[1].battery_status, 'no-report');
-    await assert.rejects(finish(first.id, attempt), detail('device-sync-changed'));
+    await assert.rejects(
+      finish(first.id, attempt),
+      detail('device-sync-changed'),
+    );
 
     const failed = await request();
     const failedAttempt = randomUUID();
@@ -1094,11 +1282,19 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     const blindAttempt = randomUUID();
     await claim(blind.id, blindAttempt);
     await stage(blind.id, blindAttempt, [device('d1')]);
-    const unavailable = await finish(blind.id, blindAttempt, null, 'permission-denied');
+    const unavailable = await finish(
+      blind.id,
+      blindAttempt,
+      null,
+      'permission-denied',
+    );
     assert.equal(unavailable.status, 'ready');
     assert.equal(unavailable.telemetryFailure, 'permission-denied');
     rows = await published();
-    assert.deepEqual(rows.map((row) => row.battery_status), ['unavailable']);
+    assert.deepEqual(
+      rows.map((row) => row.battery_status),
+      ['unavailable'],
+    );
     assert.equal(await purge(), 2);
 
     const lost = await request();
@@ -1112,8 +1308,14 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     assert.equal(interrupted.status, 'failed');
     assert.equal(interrupted.failure, 'interrupted');
     assert.equal(interrupted.stale, true);
-    await assert.rejects(stage(lost.id, lostAttempt, [device('d5')]), detail('device-sync-changed'));
-    await assert.rejects(finish(lost.id, lostAttempt), detail('device-sync-changed'));
+    await assert.rejects(
+      stage(lost.id, lostAttempt, [device('d5')]),
+      detail('device-sync-changed'),
+    );
+    await assert.rejects(
+      finish(lost.id, lostAttempt),
+      detail('device-sync-changed'),
+    );
     const next = await request();
     assert.equal(next.state.status, 'running');
     const abandoned = await result(
@@ -1135,7 +1337,9 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       'expired leases report interruption and reject late publication: pass',
     ];
   } finally {
-    await migrator.query('UPDATE cc.google_connection SET active=$1', [wasActive]);
+    await migrator.query('UPDATE cc.google_connection SET active=$1', [
+      wasActive,
+    ]);
   }
 }
 ```
@@ -1143,13 +1347,13 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
 In `deployment/postgres/integration.mjs`, import `qualifyDeviceInventory` from `./device-inventory.integration.mjs` and add this block directly after the `qualifySchoolReferences` block:
 
 ```js
-  results.push(
-    ...(await qualifyDeviceInventory({
-      runtime,
-      migrator: migrators[0],
-      issuer,
-    })),
-  );
+results.push(
+  ...(await qualifyDeviceInventory({
+    runtime,
+    migrator: migrators[0],
+    issuer,
+  })),
+);
 ```
 
 - [ ] **Step 2: Run the integration and confirm it fails**
@@ -1440,8 +1644,8 @@ The `WITH ORDINALITY` ordering keeps the last duplicate of a device within one p
 In `deployment/postgres/index.mjs`, add `'016-device-inventory',` after `'015-restore-revalidation',` in `loadMigrations`. Add this block after the `007-google-connection` grant block inside `migrate`:
 
 ```js
-    if (migrations.some(({ id }) => id === '016-device-inventory')) {
-      await client.query(`GRANT SELECT ON cc.devices, cc.device_sync_state TO ${role};
+if (migrations.some(({ id }) => id === '016-device-inventory')) {
+  await client.query(`GRANT SELECT ON cc.devices, cc.device_sync_state TO ${role};
         GRANT EXECUTE ON FUNCTION cc.device_reader(uuid,integer),
         cc.read_device_sync(uuid,integer),
         cc.request_device_sync(uuid,integer,text,integer,uuid,uuid),
@@ -1451,7 +1655,7 @@ In `deployment/postgres/index.mjs`, add `'016-device-inventory',` after `'015-re
         cc.stage_device_batteries(text,uuid,uuid,jsonb),
         cc.finish_device_sync(text,uuid,uuid,text,text),
         cc.purge_device_syncs(text,integer) TO ${role}`);
-    }
+}
 ```
 
 - [ ] **Step 5: Run the checks and confirm they pass**
@@ -1474,6 +1678,7 @@ git commit -m "feat: store device inventory syncs in PostgreSQL"
 ### Task 4: Worker device sync
 
 **Files:**
+
 - Modify: `libs/application-contracts/test-register.mjs` (resolve `@campus/google-connection`)
 - Create: `worker/src/device-sync.ts`
 - Create: `worker/src/device-sync.test.mjs`
@@ -1483,6 +1688,7 @@ git commit -m "feat: store device inventory syncs in PostgreSQL"
 - Modify: `worker/project.json` (`test` target)
 
 **Interfaces:**
+
 - Consumes: `GoogleDeviceReader` (Task 2). Database functions `cc.claim_device_sync`, `cc.stage_devices`, `cc.stage_device_batteries`, `cc.finish_device_sync`, and `cc.purge_device_syncs` (Task 3). `deviceSyncStateSchema` (Task 1).
 - Produces: `POST /dispatch/device-sync` on the worker. It requires the bearer dispatch secret and the body `{customerId, syncId, correlationId, executionId}`. It returns `200 {executionId, correlationId, status:'completed', sync}`. It returns `409 {error}` for a lost or claimed lease and `400` for an invalid payload.
 
@@ -1491,12 +1697,12 @@ git commit -m "feat: store device inventory syncs in PostgreSQL"
 In `libs/application-contracts/test-register.mjs`, add this branch after the `@campus/application-contracts` branch:
 
 ```js
-    if (specifier === '@campus/google-connection') {
-      return nextResolve(
-        new URL('../google-connection/src/index.ts', import.meta.url).href,
-        context,
-      );
-    }
+if (specifier === '@campus/google-connection') {
+  return nextResolve(
+    new URL('../google-connection/src/index.ts', import.meta.url).href,
+    context,
+  );
+}
 ```
 
 In `worker/project.json`, add:
@@ -1523,7 +1729,11 @@ import { GoogleConnectionError } from '@campus/google-connection';
 import { DeviceSync, DeviceSyncError } from './device-sync.ts';
 
 const customerId = 'C0123456';
-const request = { customerId, syncId: randomUUID(), correlationId: randomUUID() };
+const request = {
+  customerId,
+  syncId: randomUUID(),
+  correlationId: randomUUID(),
+};
 const state = {
   customerId,
   generation: 1,
@@ -1555,17 +1765,37 @@ function database({ fail = {}, purged = [0] } = {}) {
     async query(sql, values) {
       const name = /cc\.(\w+)/.exec(sql)[1];
       calls.push({ name, values });
-      if (fail[name]) throw Object.assign(new Error(name), { code: 'P0001', detail: fail[name] });
+      if (fail[name])
+        throw Object.assign(new Error(name), {
+          code: 'P0001',
+          detail: fail[name],
+        });
       if (name === 'claim_device_sync')
-        return { rows: [{ result: { generation: 1, credentialId: randomUUID(), envelope: { sealed: true } } }] };
+        return {
+          rows: [
+            {
+              result: {
+                generation: 1,
+                credentialId: randomUUID(),
+                envelope: { sealed: true },
+              },
+            },
+          ],
+        };
       if (name === 'finish_device_sync') return { rows: [{ result: state }] };
-      if (name === 'purge_device_syncs') return { rows: [{ result: purged.shift() ?? 0 }] };
+      if (name === 'purge_device_syncs')
+        return { rows: [{ result: purged.shift() ?? 0 }] };
       return { rows: [{ result: 1 }] };
     },
   };
 }
-const cipher = { open: () => ({ subject: 'fixture@example.invalid', serviceAccount: {} }) };
-function reader({ devices = [[device('d1'), device('d2')]], batteries = [[]] } = {}) {
+const cipher = {
+  open: () => ({ subject: 'fixture@example.invalid', serviceAccount: {} }),
+};
+function reader({
+  devices = [[device('d1'), device('d2')]],
+  batteries = [[]],
+} = {}) {
   return {
     async *devicePages() {
       for (const page of devices) {
@@ -1585,7 +1815,10 @@ const names = (calls) => calls.map((call) => call.name);
 
 test('stages every page, publishes, and purges retired rows', async () => {
   const db = database({ purged: [5000, 12] });
-  const result = await new DeviceSync(db, cipher, reader()).run(request, AbortSignal.timeout(5000));
+  const result = await new DeviceSync(db, cipher, reader()).run(
+    request,
+    AbortSignal.timeout(5000),
+  );
   assert.deepEqual(result, state);
   assert.deepEqual(names(db.calls), [
     'claim_device_sync',
@@ -1616,7 +1849,9 @@ test('a device page failure records the failure without reading telemetry', asyn
   await new DeviceSync(
     db,
     cipher,
-    reader({ devices: [[device('d1')], new GoogleConnectionError('permission-denied')] }),
+    reader({
+      devices: [[device('d1')], new GoogleConnectionError('permission-denied')],
+    }),
   ).run(request, AbortSignal.timeout(5000));
   assert.equal(names(db.calls).includes('stage_device_batteries'), false);
   const finish = db.calls.find((call) => call.name === 'finish_device_sync');
@@ -1626,8 +1861,12 @@ test('a device page failure records the failure without reading telemetry', asyn
 test('a second attempt for the same sync stops before Google access', async () => {
   const db = database({ fail: { claim_device_sync: 'device-sync-claimed' } });
   await assert.rejects(
-    new DeviceSync(db, cipher, reader()).run(request, AbortSignal.timeout(5000)),
-    (error) => error instanceof DeviceSyncError && error.code === 'device-sync-claimed',
+    new DeviceSync(db, cipher, reader()).run(
+      request,
+      AbortSignal.timeout(5000),
+    ),
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'device-sync-claimed',
   );
   assert.deepEqual(names(db.calls), ['claim_device_sync']);
 });
@@ -1635,8 +1874,12 @@ test('a second attempt for the same sync stops before Google access', async () =
 test('a lost lease stops staging and never publishes', async () => {
   const db = database({ fail: { stage_devices: 'device-sync-changed' } });
   await assert.rejects(
-    new DeviceSync(db, cipher, reader()).run(request, AbortSignal.timeout(5000)),
-    (error) => error instanceof DeviceSyncError && error.code === 'device-sync-changed',
+    new DeviceSync(db, cipher, reader()).run(
+      request,
+      AbortSignal.timeout(5000),
+    ),
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'device-sync-changed',
   );
   assert.equal(names(db.calls).includes('finish_device_sync'), false);
 });
@@ -1939,15 +2182,15 @@ Replace the two inline checks in `handleGoogleDispatch` with `if (rejected(reque
 In `worker/src/main.ts`, import `handleDeviceSyncDispatch` and add this before the 404 response:
 
 ```ts
-  if (
-    await handleDeviceSyncDispatch(
-      request,
-      response,
-      { secret: dispatchSecret, signal: stopping.signal },
-      google,
-    )
+if (
+  await handleDeviceSyncDispatch(
+    request,
+    response,
+    { secret: dispatchSecret, signal: stopping.signal },
+    google,
   )
-    return;
+)
+  return;
 ```
 
 - [ ] **Step 7: Build and lint the worker**
@@ -1970,6 +2213,7 @@ git commit -m "feat: run device inventory syncs in the worker"
 ### Task 5: API device endpoints and the Kestra sync flow
 
 **Files:**
+
 - Create: `deployment/kestra/device-sync.yaml`
 - Modify: `api/src/app/orchestration/orchestration.service.ts`
 - Create: `api/src/app/devices/device-query.ts`
@@ -1981,6 +2225,7 @@ git commit -m "feat: run device inventory syncs in the worker"
 - Modify: `api/project.json` (`test` target)
 
 **Interfaces:**
+
 - Consumes: Task 1 schemas, Task 3 functions and tables, the worker dispatch from Task 4.
 - Produces HTTP endpoints, all behind `AuthGuard` and `devices:read`:
   - `GET /api/devices/sync` returns `{ sync: DeviceSyncState | null }`.
@@ -2009,23 +2254,38 @@ Create `api/src/app/devices/device-query.test.mjs`:
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { deviceQuerySchema } from '@campus/application-contracts';
-import { deviceDetail, devicePageSql, deviceRow, escapeLike } from './device-query.ts';
+import {
+  deviceDetail,
+  devicePageSql,
+  deviceRow,
+  escapeLike,
+} from './device-query.ts';
 
-const query = (value) => devicePageSql('C0123456', deviceQuerySchema.parse(value));
+const query = (value) =>
+  devicePageSql('C0123456', deviceQuerySchema.parse(value));
 
 test('the default page sorts by serial number with a stable tie-break', () => {
   const { rows, count } = query({});
-  assert.match(rows.text, /WHERE s\.customer_id=\$1 ORDER BY d\.serial_number ASC NULLS LAST,d\.device_id ASC OFFSET \$2 LIMIT \$3$/);
+  assert.match(
+    rows.text,
+    /WHERE s\.customer_id=\$1 ORDER BY d\.serial_number ASC NULLS LAST,d\.device_id ASC OFFSET \$2 LIMIT \$3$/,
+  );
   assert.deepEqual(rows.values, ['C0123456', 0, 100]);
   assert.deepEqual(count.values, ['C0123456']);
 });
 
 test('like wildcards in filter text match literally', () => {
   assert.equal(escapeLike('HS_04%\\'), 'HS\\_04\\%\\\\');
-  const { rows } = query({ predicates: [{ field: 'assetTag', operator: 'startsWith', value: 'HS_04%' }] });
+  const { rows } = query({
+    predicates: [
+      { field: 'assetTag', operator: 'startsWith', value: 'HS_04%' },
+    ],
+  });
   assert.match(rows.text, /d\.asset_tag ILIKE \$2/);
   assert.equal(rows.values[1], 'HS\\_04\\%%');
-  const contains = query({ predicates: [{ field: 'notes', operator: 'contains', value: 'a_b' }] });
+  const contains = query({
+    predicates: [{ field: 'notes', operator: 'contains', value: 'a_b' }],
+  });
   assert.equal(contains.rows.values[1], '%a\\_b%');
 });
 
@@ -2042,26 +2302,62 @@ test('filter values never enter the SQL text', () => {
 });
 
 test('organization unit scope includes descendants and treats root as everything', () => {
-  const school = query({ predicates: [{ field: 'orgUnitPath', operator: 'within', value: '/School A' }] });
-  assert.match(school.rows.text, /\(d\.org_unit_path=\$2 OR d\.org_unit_path LIKE \$3\)/);
-  assert.deepEqual(school.rows.values.slice(1, 3), ['/School A', '/School A/%']);
-  const root = query({ predicates: [{ field: 'orgUnitPath', operator: 'within', value: '/' }] });
+  const school = query({
+    predicates: [
+      { field: 'orgUnitPath', operator: 'within', value: '/School A' },
+    ],
+  });
+  assert.match(
+    school.rows.text,
+    /\(d\.org_unit_path=\$2 OR d\.org_unit_path LIKE \$3\)/,
+  );
+  assert.deepEqual(school.rows.values.slice(1, 3), [
+    '/School A',
+    '/School A/%',
+  ]);
+  const root = query({
+    predicates: [{ field: 'orgUnitPath', operator: 'within', value: '/' }],
+  });
   assert.deepEqual(root.rows.values, ['C0123456', 0, 100]);
 });
 
 test('battery filters combine Google classes and missing data with OR', () => {
-  const { rows } = query({ predicates: [{ field: 'battery', operator: 'is', values: ['replace-soon', 'no-report'] }] });
-  assert.match(rows.text, /\(\(d\.battery_status='reported' AND d\.battery_health=ANY\(\$2::text\[\]\)\) OR d\.battery_status=ANY\(\$3::text\[\]\)\)/);
+  const { rows } = query({
+    predicates: [
+      {
+        field: 'battery',
+        operator: 'is',
+        values: ['replace-soon', 'no-report'],
+      },
+    ],
+  });
+  assert.match(
+    rows.text,
+    /\(\(d\.battery_status='reported' AND d\.battery_health=ANY\(\$2::text\[\]\)\) OR d\.battery_status=ANY\(\$3::text\[\]\)\)/,
+  );
   assert.deepEqual(rows.values.slice(1, 3), [['replace-soon'], ['no-report']]);
 });
 
 test('empty, date, and battery sorts use fixed expressions', () => {
-  const empty = query({ predicates: [{ field: 'assetTag', operator: 'isEmpty' }] });
+  const empty = query({
+    predicates: [{ field: 'assetTag', operator: 'isEmpty' }],
+  });
   assert.match(empty.rows.text, /\(d\.asset_tag IS NULL OR d\.asset_tag=''\)/);
-  const date = query({ predicates: [{ field: 'lastContact', operator: 'before', value: '2026-10-01T00:00:00Z' }] });
+  const date = query({
+    predicates: [
+      {
+        field: 'lastContact',
+        operator: 'before',
+        value: '2026-10-01T00:00:00Z',
+      },
+    ],
+  });
   assert.match(date.rows.text, /d\.last_contact < \$2::timestamptz/);
   const battery = query({ sort: { field: 'battery', direction: 'desc' } });
-  assert.match(battery.rows.text, /ORDER BY CASE d\.battery_status .* END DESC NULLS LAST,d\.device_id DESC/);
+  assert.match(
+    battery.rows.text,
+    /ORDER BY CASE d\.battery_status .* END DESC NULLS LAST,d\.device_id DESC/,
+  );
 });
 
 test('rows map database values to the device contract', () => {
@@ -2086,13 +2382,23 @@ test('rows map database values to the device contract', () => {
     reportedAt: '2026-10-05T11:00:00.000Z',
   });
   assert.equal(deviceRow(base).lastContact, '2026-10-05T12:00:00.000Z');
-  assert.deepEqual(deviceRow({ ...base, battery_status: 'unavailable', battery_health: null }).battery, {
-    status: 'unavailable',
-  });
+  assert.deepEqual(
+    deviceRow({ ...base, battery_status: 'unavailable', battery_health: null })
+      .battery,
+    {
+      status: 'unavailable',
+    },
+  );
   const detail = deviceDetail({
     ...base,
     observed_at: new Date('2026-10-05T12:05:00Z'),
-    battery_reports: [{ reportedAt: '2026-10-05T11:00:00.000Z', health: 'replace-soon', capacityPercent: 78 }],
+    battery_reports: [
+      {
+        reportedAt: '2026-10-05T11:00:00.000Z',
+        health: 'replace-soon',
+        capacityPercent: 78,
+      },
+    ],
   });
   assert.equal(detail.observedAt, '2026-10-05T12:05:00.000Z');
   assert.equal(detail.batteryReports.length, 1);
@@ -2164,8 +2470,12 @@ function deviceWhere(
           `(d.org_unit_path=${add(predicate.value)} OR d.org_unit_path LIKE ${add(`${escapeLike(predicate.value)}/%`)})`,
         );
     } else if (predicate.field === 'battery') {
-      const health = predicate.values.filter((value) => healthValues.has(value));
-      const missing = predicate.values.filter((value) => !healthValues.has(value));
+      const health = predicate.values.filter((value) =>
+        healthValues.has(value),
+      );
+      const missing = predicate.values.filter(
+        (value) => !healthValues.has(value),
+      );
       const parts: string[] = [];
       if (health.length)
         parts.push(
@@ -2483,7 +2793,12 @@ export class DevicesService {
     } catch {
       await this.result(
         'SELECT cc.abandon_device_sync($1,$2,$3,$4,$5) AS result',
-        [...this.actor(session), current.customerId, syncId, 'orchestration-unavailable'],
+        [
+          ...this.actor(session),
+          current.customerId,
+          syncId,
+          'orchestration-unavailable',
+        ],
       );
       throw new ServiceUnavailableException({
         reason: 'orchestration-unavailable',
@@ -2506,16 +2821,17 @@ export class DevicesService {
             this.actor(session),
           )
         ).rows[0]?.['customer_id'];
-        return typeof customerId === 'string'
-          ? run(client, customerId)
-          : empty;
+        return typeof customerId === 'string' ? run(client, customerId) : empty;
       });
     } catch (error) {
       translate(error);
     }
   }
 
-  async page(session: SessionResponse, query: DeviceQuery): Promise<DevicePage> {
+  async page(
+    session: SessionResponse,
+    query: DeviceQuery,
+  ): Promise<DevicePage> {
     return this.read(
       session,
       async (client, customerId) => {
@@ -2656,7 +2972,12 @@ import { DevicesController } from './devices.controller';
 import { DevicesService } from './devices.service';
 
 @Module({
-  imports: [AuthModule, ConfigurationModule, DatabaseModule, OrchestrationModule],
+  imports: [
+    AuthModule,
+    ConfigurationModule,
+    DatabaseModule,
+    OrchestrationModule,
+  ],
   controllers: [DevicesController],
   providers: [DevicesService],
 })
@@ -2684,11 +3005,13 @@ git commit -m "feat: serve device inventory and start syncs through Kestra"
 ### Task 6: Simulated devices and the end-to-end device check
 
 **Files:**
+
 - Modify: `api-e2e/google-connection-preload.cjs` (device and telemetry endpoints, tokens, and faults)
 - Create: `api-e2e/devices-api.mjs`
 - Modify: `api-e2e/auth.test.mjs` (run the device check after `qualifySchoolReferencesApi`)
 
 **Interfaces:**
+
 - Consumes: every earlier task, end to end through the real API, Kestra, worker, and PostgreSQL.
 - Produces: 450 deterministic simulated devices for review and tests. `serialNumber` is `C0A1-` plus a four-digit hexadecimal index. `assetTag` is `HS-` plus `400 + index`, except every 25th device has none. Devices rotate through `/School A`, `/School B`, and `/`. Battery capacity rotates through 92%, 78%, and 72% of 5000 mAh. Every tenth device, at index 9, 19, and so on, has no telemetry. Fault modes `device-privilege-denied` and `telemetry-privilege-denied` use the existing `google-health-fault.json` file.
 
@@ -2720,7 +3043,9 @@ export async function qualifyDevicesApi({
     const page = await context.newPage();
     await qualificationSignIn(page, publicOrigin, evidenceDirectory, 'devices');
     const api = context.request;
-    const session = await (await api.get(`${publicOrigin}/api/auth/session`)).json();
+    const session = await (
+      await api.get(`${publicOrigin}/api/auth/session`)
+    ).json();
     evidenceSecurity.register('csrf-token', session.csrfToken);
     const headers = { origin: publicOrigin, 'x-csrf-token': session.csrfToken };
     const root = `${publicOrigin}/api/devices`;
@@ -2748,7 +3073,12 @@ export async function qualifyDevicesApi({
 
     assert.equal((await sync()).status, 'never');
     assert.equal((await api.post(`${root}/sync`, { data: {} })).status(), 403);
-    assert.equal((await api.post(`${root}/query`, { headers, data: { limit: 500 } })).status(), 400);
+    assert.equal(
+      (
+        await api.post(`${root}/query`, { headers, data: { limit: 500 } })
+      ).status(),
+      400,
+    );
 
     const ready = await run();
     assert.equal(ready.status, 'ready');
@@ -2761,26 +3091,48 @@ export async function qualifyDevicesApi({
     assert.equal(first.rows[0].serialNumber, 'C0A1-0000');
     assert.equal(JSON.stringify(first).includes('envelope'), false);
     assert.equal(
-      (await query({ predicates: [{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }] })).matching,
+      (
+        await query({
+          predicates: [
+            { field: 'assetTag', operator: 'startsWith', value: 'HS-04' },
+          ],
+        })
+      ).matching,
       96,
     );
     assert.equal(
-      (await query({ predicates: [{ field: 'battery', operator: 'is', values: ['replace-soon'] }] })).matching,
+      (
+        await query({
+          predicates: [
+            { field: 'battery', operator: 'is', values: ['replace-soon'] },
+          ],
+        })
+      ).matching,
       135,
     );
     assert.equal(
-      (await query({ predicates: [{ field: 'orgUnitPath', operator: 'within', value: '/School A' }] })).matching,
+      (
+        await query({
+          predicates: [
+            { field: 'orgUnitPath', operator: 'within', value: '/School A' },
+          ],
+        })
+      ).matching,
       150,
     );
     const detail = await (await api.get(`${root}/synthetic-device-1`)).json();
     assert.deepEqual(
-      { health: detail.device.battery.health, capacity: detail.device.battery.capacityPercent },
+      {
+        health: detail.device.battery.health,
+        capacity: detail.device.battery.capacityPercent,
+      },
       { health: 'replace-soon', capacity: 78 },
     );
     assert.equal(detail.device.batteryReports.length, 3);
     assert.equal((await api.get(`${root}/synthetic-device-9`)).ok(), true);
     assert.equal(
-      (await (await api.get(`${root}/synthetic-device-9`)).json()).device.battery.status,
+      (await (await api.get(`${root}/synthetic-device-9`)).json()).device
+        .battery.status,
       'no-report',
     );
     assert.equal((await api.get(`${root}/missing-device`)).status(), 404);
@@ -2790,7 +3142,13 @@ export async function qualifyDevicesApi({
     assert.equal(blind.status, 'ready');
     assert.equal(blind.telemetryFailure, 'permission-denied');
     assert.equal(
-      (await query({ predicates: [{ field: 'battery', operator: 'is', values: ['unavailable'] }] })).matching,
+      (
+        await query({
+          predicates: [
+            { field: 'battery', operator: 'is', values: ['unavailable'] },
+          ],
+        })
+      ).matching,
       450,
     );
 
@@ -2817,16 +3175,16 @@ export async function qualifyDevicesApi({
 In `api-e2e/auth.test.mjs`, import `qualifyDevicesApi` from `./devices-api.mjs`. Add this block directly after the `qualifySchoolReferencesApi` block:
 
 ```js
-      if (applicationPhase === 3)
-        await qualifyDevicesApi({
-          browser,
-          publicOrigin,
-          directory,
-          evidenceDirectory,
-          setSubject: (value) => {
-            subject = value;
-          },
-        });
+if (applicationPhase === 3)
+  await qualifyDevicesApi({
+    browser,
+    publicOrigin,
+    directory,
+    evidenceDirectory,
+    setSubject: (value) => {
+      subject = value;
+    },
+  });
 ```
 
 The expected counts follow from the fixture formula. Asset tags `HS-0400` through `HS-0499` cover indexes 0–99. Indexes 0, 25, 50, and 75 have none, which leaves 96. "Replace soon" covers indexes where `index % 3 === 1`, 150 devices. Fifteen of those fall on `index % 10 === 9` and have no telemetry, which leaves 135.
@@ -2861,7 +3219,9 @@ const fleet = Array.from({ length: 450 }, (_, index) => ({
   deviceId: `synthetic-device-${index}`,
   serialNumber: `C0A1-${index.toString(16).toUpperCase().padStart(4, '0')}`,
   model: models[index % models.length],
-  ...(index % 25 === 0 ? {} : { annotatedAssetId: `HS-${String(400 + index).padStart(4, '0')}` }),
+  ...(index % 25 === 0
+    ? {}
+    : { annotatedAssetId: `HS-${String(400 + index).padStart(4, '0')}` }),
   orgUnitPath: ['/School A', '/School B', '/'][index % 3],
   lastSync: new Date(Date.UTC(2026, 9, 5, 16) - index * 60_000).toISOString(),
   ...(index % 4 === 0 ? { annotatedLocation: 'Science wing' } : {}),
@@ -2876,15 +3236,22 @@ const telemetry = ({ deviceId, capacity }) =>
         deviceId,
         batteryInfo: [{ designCapacity: '5000' }],
         batteryStatusReport: [0, 1, 2].map((day) => ({
-          reportTime: new Date(Date.UTC(2026, 9, 5 - day, 13, 50)).toISOString(),
+          reportTime: new Date(
+            Date.UTC(2026, 9, 5 - day, 13, 50),
+          ).toISOString(),
           fullChargeCapacity: String(capacity + day * 10),
           batteryHealth: healthFor(capacity + day * 10),
         })),
       };
 const pageOf = (options, url, size) => {
-  const start = Number(options.params?.pageToken ?? url.searchParams.get('pageToken') ?? 0);
+  const start = Number(
+    options.params?.pageToken ?? url.searchParams.get('pageToken') ?? 0,
+  );
   const items = fleet.slice(start, start + size);
-  return { items, next: start + size < fleet.length ? String(start + size) : undefined };
+  return {
+    items,
+    next: start + size < fleet.length ? String(start + size) : undefined,
+  };
 };
 const forbidden = (options) => ({
   response: {

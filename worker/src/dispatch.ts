@@ -205,11 +205,16 @@ export async function handleEntitySyncDispatch(
   context: DispatchContext,
   google: GoogleWorker,
 ): Promise<boolean> {
-  if (request.method !== 'POST' || request.url !== '/dispatch/entity-sync-batch')
+  if (
+    request.method !== 'POST' ||
+    request.url !== '/dispatch/entity-sync-batch'
+  )
     return false;
   if (rejected(request, response, context)) return true;
   try {
-    const { executionId, ...input } = entitySyncDispatchSchema.parse(await readJson(request));
+    const { executionId, ...input } = entitySyncDispatchSchema.parse(
+      await readJson(request),
+    );
     const result = await google.syncEntityBatch(input, context.signal);
     respond(response, 200, {
       executionId,
@@ -219,10 +224,14 @@ export async function handleEntitySyncDispatch(
       job: result.job,
     });
   } catch (error) {
-    if (error instanceof DispatchError) respond(response, error.statusCode, { error: error.code });
-    else if (error instanceof z.ZodError) respond(response, 400, { error: 'invalid-payload' });
-    else if (error instanceof DeviceSyncError) respond(response, 409, { error: error.code });
-    else if (error instanceof EntityCacheError) respond(response, 503, { error: error.code });
+    if (error instanceof DispatchError)
+      respond(response, error.statusCode, { error: error.code });
+    else if (error instanceof z.ZodError)
+      respond(response, 400, { error: 'invalid-payload' });
+    else if (error instanceof DeviceSyncError)
+      respond(response, 409, { error: error.code });
+    else if (error instanceof EntityCacheError)
+      respond(response, 503, { error: error.code });
     else respond(response, 503, { error: 'entity-sync-unavailable' });
   }
   return true;

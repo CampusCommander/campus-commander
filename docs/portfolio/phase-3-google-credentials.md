@@ -3,7 +3,6 @@
 > The owner-selected DWD profile and standing read-only test authorization remain current.
 > Historical qualification gates below do not override [current work](../current-work.md).
 
-
 Decision owner: CC-44. Date: 2026-09-16. Status: owner-selected profile, live qualification incomplete.
 
 The owner supplied a service-account credential and configured domain-wide delegation for background authentication.

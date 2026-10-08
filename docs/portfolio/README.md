@@ -8,17 +8,17 @@ Historical approval labels do not settle those disputed features.
 
 ## Reference map
 
-| Reference | Purpose |
-| --- | --- |
-| [Product brief](01-product-brief.md) | Product purpose, audience, and consolidated scope. Apply the current scope corrections. |
-| [Domain model](02-domain-model.md) | Entity terminology and behavior. School-specific definitions remain disputed. |
-| [Architecture](03-architecture.md) | Engineering design. The owner-selected DWD profile supersedes the earlier background OAuth proposal. |
-| [UX specification](04-ux-ui-spec.md) | Shared interaction requirements. Inspect the relevant visual design before screen implementation. |
+| Reference                                                     | Purpose                                                                                                       |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| [Product brief](01-product-brief.md)                          | Product purpose, audience, and consolidated scope. Apply the current scope corrections.                       |
+| [Domain model](02-domain-model.md)                            | Entity terminology and behavior. School-specific definitions remain disputed.                                 |
+| [Architecture](03-architecture.md)                            | Engineering design. The owner-selected DWD profile supersedes the earlier background OAuth proposal.          |
+| [UX specification](04-ux-ui-spec.md)                          | Shared interaction requirements. Inspect the relevant visual design before screen implementation.             |
 | [Decisions and questions](05-decisions-and-open-questions.md) | Dated decision history and technical questions. The current workflow register identifies active product gaps. |
-| [Work breakdown](06-work-breakdown.md) | Historical phase and package allocation. Do not execute its unchecked items automatically. |
-| [Issues and opportunities](07-issues-and-opportunities.md) | Earlier findings and candidate features. Opportunities are not authorized scope. |
-| [Figma map](prototype-map.md) | Current visual references and coverage limits. |
-| [UI contract](../ui/README.md) | Shared controls, patterns, tokens, and accessibility. |
+| [Work breakdown](06-work-breakdown.md)                        | Historical phase and package allocation. Do not execute its unchecked items automatically.                    |
+| [Issues and opportunities](07-issues-and-opportunities.md)    | Earlier findings and candidate features. Opportunities are not authorized scope.                              |
+| [Figma map](prototype-map.md)                                 | Current visual references and coverage limits.                                                                |
+| [UI contract](../ui/README.md)                                | Shared controls, patterns, tokens, and accessibility.                                                         |
 
 ## Phase records
 

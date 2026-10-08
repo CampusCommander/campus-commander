@@ -33,12 +33,14 @@
 ### Task 1: Group contracts and group SQL
 
 **Files:**
+
 - Modify: `libs/application-contracts/src/lib/devices.ts`
 - Modify: `libs/application-contracts/src/lib/devices.test.mjs`
 - Modify: `api/src/app/devices/device-query.ts`
 - Modify: `api/src/app/devices/device-query.test.mjs`
 
 **Interfaces:**
+
 - Produces: in `@campus/application-contracts`:
   - `deviceGroupFieldSchema` and type `DeviceGroupField = 'orgUnitPath' | 'model' | 'battery'`.
   - `deviceGroupingSchema` and type `DeviceGrouping = { by: DeviceGroupField[]; keys: string[] }`. `by` holds at most three distinct fields. `keys` is never longer than `by`.
@@ -56,7 +58,10 @@ In `libs/application-contracts/src/lib/devices.test.mjs`, add `deviceGroupQueryS
 ```js
 test('grouping names each field once and keys only grouped levels', () => {
   const ok = (value) => deviceGroupingSchema.safeParse(value).success;
-  assert.equal(ok({ by: ['orgUnitPath', 'battery'], keys: ['/School A'] }), true);
+  assert.equal(
+    ok({ by: ['orgUnitPath', 'battery'], keys: ['/School A'] }),
+    true,
+  );
   assert.equal(ok({ by: ['model'], keys: [''] }), true);
   assert.equal(ok({ by: ['model', 'model'], keys: [] }), false);
   assert.equal(ok({ by: ['serialNumber'], keys: [] }), false);
@@ -146,7 +151,11 @@ Expected: FAIL. `deviceGroupingSchema` and `deviceGroupsSql` are not exported.
 In `libs/application-contracts/src/lib/devices.ts`, insert before the selection contracts (`const selectionIds = ...`):
 
 ```ts
-export const deviceGroupFieldSchema = z.enum(['orgUnitPath', 'model', 'battery']);
+export const deviceGroupFieldSchema = z.enum([
+  'orgUnitPath',
+  'model',
+  'battery',
+]);
 export type DeviceGroupField = z.infer<typeof deviceGroupFieldSchema>;
 /** Group keys are filter values: an OrgUnit path, a model (empty for none), or a battery filter value. */
 const groupKey = z.string().max(4096);
@@ -184,9 +193,7 @@ export const deviceGroupQuerySchema = deviceQuerySchema.refine(
 
 export const deviceGroupPageSchema = z.strictObject({
   groups: z
-    .array(
-      z.strictObject({ key: groupKey, devices: z.number().int().min(0) }),
-    )
+    .array(z.strictObject({ key: groupKey, devices: z.number().int().min(0) }))
     .max(1000),
   groupCount: z.number().int().min(0),
   /** Devices in all groups of this level. */
@@ -298,6 +305,7 @@ git commit -m "feat: query device groups with counts"
 ### Task 2: Group selection contracts, state, and SQL
 
 **Files:**
+
 - Modify: `libs/application-contracts/src/lib/devices.ts`
 - Modify: `libs/application-contracts/src/lib/devices.test.mjs`
 - Modify: `api/src/app/devices/device-query.ts`
@@ -306,6 +314,7 @@ git commit -m "feat: query device groups with counts"
 - Modify: `api/src/app/devices/device-selection.test.mjs`
 
 **Interfaces:**
+
 - Consumes: Task 1 `DeviceGroupField`, `groupKey`, and `groupClauses`.
 - Produces: in `@campus/application-contracts`:
   - `deviceGroupScopeSchema` and type `DeviceGroupScope = { predicates: DevicePredicate[]; by: DeviceGroupField[]; route: string[] }`. `route` is not longer than `by`.
@@ -324,12 +333,25 @@ In `libs/application-contracts/src/lib/devices.test.mjs`, append:
 ```js
 test('group selection operations carry the filters and grouped fields', () => {
   const ok = (op) =>
-    deviceSelectionChangeSchema.safeParse({ gridId: 'devices', tabId, ops: [op] })
-      .success;
-  const scope = { predicates: [], by: ['orgUnitPath', 'model'], route: ['/School A'] };
+    deviceSelectionChangeSchema.safeParse({
+      gridId: 'devices',
+      tabId,
+      ops: [op],
+    }).success;
+  const scope = {
+    predicates: [],
+    by: ['orgUnitPath', 'model'],
+    route: ['/School A'],
+  };
   assert.equal(ok({ op: 'selectGroup', ...scope }), true);
-  assert.equal(ok({ op: 'deselectGroup', ...scope, route: ['/School A', ''] }), true);
-  assert.equal(ok({ op: 'selectGroup', ...scope, route: ['a', 'b', 'c'] }), false);
+  assert.equal(
+    ok({ op: 'deselectGroup', ...scope, route: ['/School A', ''] }),
+    true,
+  );
+  assert.equal(
+    ok({ op: 'selectGroup', ...scope, route: ['a', 'b', 'c'] }),
+    false,
+  );
   assert.equal(ok({ op: 'selectGroup', ...scope, route: [] }), false);
 });
 ```
@@ -342,7 +364,9 @@ In `api/src/app/devices/device-query.test.mjs`, add `groupSelectionSql` and `sel
 test('a selected group holds its filtered devices inside the group', () => {
   const sql = selectionCountSql('C0123456', {
     terms: [],
-    groups: [{ predicates: hs04Selection, by: ['battery'], route: ['replace-soon'] }],
+    groups: [
+      { predicates: hs04Selection, by: ['battery'], route: ['replace-soon'] },
+    ],
     additions: [],
     exceptions: [],
   });
@@ -355,12 +379,10 @@ test('a selected group holds its filtered devices inside the group', () => {
 });
 
 test('group lookups bind the group after the filters', () => {
-  const matching = matchingAmongSql(
-    'C0123456',
-    [],
-    ['d1'],
-    { by: ['orgUnitPath'], keys: ['/School A'] },
-  );
+  const matching = matchingAmongSql('C0123456', [], ['d1'], {
+    by: ['orgUnitPath'],
+    keys: ['/School A'],
+  });
   assert.ok(
     matching.text.endsWith(
       'WHERE s.customer_id=$1 AND d.org_unit_path=$3 AND d.device_id=ANY($2::text[])',
@@ -392,7 +414,11 @@ test('group selection matches the joined route text instead of splitting it', ()
     sql.text,
     `SELECT ${route} AS route,bool_and((d.device_id=ANY($3::text[]))) AS selected FROM cc.device_sync_state s JOIN cc.devices d ON d.sync_id=s.current_sync_id WHERE s.customer_id=$1 GROUP BY ${batteryKey},coalesce(d.model,'') HAVING ${route}=ANY($2::text[])`,
   );
-  assert.deepEqual(sql.values, ['C0123456', ['replace-soon|Lenovo | 100e'], ['d9']]);
+  assert.deepEqual(sql.values, [
+    'C0123456',
+    ['replace-soon|Lenovo | 100e'],
+    ['d9'],
+  ]);
 });
 ```
 
@@ -411,7 +437,11 @@ const hs04Selection = [
 In `api/src/app/devices/device-selection.test.mjs`, add `groups: []` to each whole-state object that a test compares with `assert.deepEqual`: the two in `select and deselect move devices between additions and exceptions` and the one in `deselecting under a filter term records an exception`. In `the spec reports terms and counts without device IDs`, pass `groups: []` in the state and expect `groups: []` in the spec. Append:
 
 ```js
-const replaceSoon = { predicates: hs04, by: ['battery'], route: ['replace-soon'] };
+const replaceSoon = {
+  predicates: hs04,
+  by: ['battery'],
+  route: ['replace-soon'],
+};
 
 test('selecting a group clears the exceptions inside it and keeps its filters', async () => {
   const calls = [];
@@ -443,13 +473,20 @@ test('deselecting a group inside Select All excepts only that group', async () =
     return ['d2', 'd3'];
   };
   const state = await applySelectionOps(
-    { terms: [[]], groups: [replaceSoon], additions: ['d3', 'd8'], exceptions: [] },
+    {
+      terms: [[]],
+      groups: [replaceSoon],
+      additions: ['d3', 'd8'],
+      exceptions: [],
+    },
     [{ op: 'deselectGroup', ...replaceSoon }],
     none,
     selectedIn,
   );
   // The exact group term goes first, then its remaining devices become exceptions.
-  assert.deepEqual(asked, [[0, hs04, { by: ['battery'], keys: ['replace-soon'] }]]);
+  assert.deepEqual(asked, [
+    [0, hs04, { by: ['battery'], keys: ['replace-soon'] }],
+  ]);
   assert.deepEqual(state, {
     terms: [[]],
     groups: [],
@@ -497,7 +534,9 @@ const groupScopeShape = {
 const routeFits = (scope: { by: string[]; route: string[] }) =>
   scope.route.length <= scope.by.length &&
   new Set(scope.by).size === scope.by.length;
-const routeMessage = { message: 'A group route needs one grouped field per key.' };
+const routeMessage = {
+  message: 'A group route needs one grouped field per key.',
+};
 
 /** A group as the grid showed it: the active filters, the grouped fields, and the group's keys. */
 export const deviceGroupScopeSchema = z
@@ -749,6 +788,7 @@ git commit -m "feat: evaluate selected device groups in the device query"
 ### Task 3: Group endpoints, group selection, and edge route
 
 **Files:**
+
 - Modify: `api/src/app/devices/devices.service.ts`
 - Modify: `api/src/app/devices/devices.controller.ts`
 - Modify: `deployment/bootstrap/application-edge.mjs`
@@ -756,6 +796,7 @@ git commit -m "feat: evaluate selected device groups in the device query"
 - Modify: `api-e2e/devices-api.mjs`
 
 **Interfaces:**
+
 - Consumes: Task 1 `deviceGroupQuerySchema`, `deviceGroupPageSchema`, and `deviceGroupsSql`; Task 2 lookups and `groupSelectionSql`.
 - Produces: `POST /api/devices/groups` with a `deviceGroupQuerySchema` body. It requires `devices:read`, returns 200 and `{ groups: DeviceGroupPage }`, and honors `selection` like the device query.
 - Produces: `POST /api/devices/selection/ops` accepts `selectGroup` and `deselectGroup`. `POST /api/devices/selection/resolve` answers group routes for the given `predicates` and `by`. A route that matches no group answers `false`.
@@ -794,60 +835,60 @@ Expected: PASS.
 In `api-e2e/devices-api.mjs`, insert after the assertion that `deselectAll` returns a selected count of 0:
 
 ```js
-    const groups = async (data) => {
-      const response = await api.post(`${root}/groups`, { headers, data });
-      assert.equal(response.status(), 200, await response.text());
-      return (await response.json()).groups;
-    };
-    const battery = await groups({ group: { by: ['battery'], keys: [] } });
-    assert.equal(battery.matching, 450);
-    assert.equal(battery.groupCount, battery.groups.length);
-    assert.equal(
-      battery.groups.reduce((sum, group) => sum + group.devices, 0),
-      450,
-    );
-    assert.equal(
-      battery.groups.find((group) => group.key === 'replace-soon')?.devices,
-      135,
-    );
-    assert.equal(battery.groups[0].key, 'normal');
-    const schoolA = await groups({
-      group: { by: ['orgUnitPath', 'model'], keys: ['/School A'] },
-    });
-    assert.equal(schoolA.matching, 150);
-    assert.equal(
-      (
-        await query({
-          group: { by: ['battery'], keys: ['replace-soon'] },
-          limit: 1000,
-        })
-      ).rows.length,
-      135,
-    );
-    // While grouped, LibreGrid selects whole groups under the active filters.
-    const grouped = { predicates: hs04, by: ['battery'], route: ['replace-soon'] };
-    assert.equal(
-      (await select('/ops', { ...tab, ops: [{ op: 'selectGroup', ...grouped }] }))
-        .selection.selectedCount,
-      29,
-    );
-    assert.deepEqual(
-      (
-        await select('/resolve', {
-          ...tab,
-          rowIds: [],
-          groupRoutes: ['replace-soon', 'normal', 'no|such'],
-          predicates: hs04,
-          by: ['battery'],
-        })
-      ).selected,
-      { 'replace-soon': true, normal: false, 'no|such': false },
-    );
-    assert.equal(
-      (await select('/ops', { ...tab, ops: [{ op: 'deselectGroup', ...grouped }] }))
-        .selection.selectedCount,
-      0,
-    );
+const groups = async (data) => {
+  const response = await api.post(`${root}/groups`, { headers, data });
+  assert.equal(response.status(), 200, await response.text());
+  return (await response.json()).groups;
+};
+const battery = await groups({ group: { by: ['battery'], keys: [] } });
+assert.equal(battery.matching, 450);
+assert.equal(battery.groupCount, battery.groups.length);
+assert.equal(
+  battery.groups.reduce((sum, group) => sum + group.devices, 0),
+  450,
+);
+assert.equal(
+  battery.groups.find((group) => group.key === 'replace-soon')?.devices,
+  135,
+);
+assert.equal(battery.groups[0].key, 'normal');
+const schoolA = await groups({
+  group: { by: ['orgUnitPath', 'model'], keys: ['/School A'] },
+});
+assert.equal(schoolA.matching, 150);
+assert.equal(
+  (
+    await query({
+      group: { by: ['battery'], keys: ['replace-soon'] },
+      limit: 1000,
+    })
+  ).rows.length,
+  135,
+);
+// While grouped, LibreGrid selects whole groups under the active filters.
+const grouped = { predicates: hs04, by: ['battery'], route: ['replace-soon'] };
+assert.equal(
+  (await select('/ops', { ...tab, ops: [{ op: 'selectGroup', ...grouped }] }))
+    .selection.selectedCount,
+  29,
+);
+assert.deepEqual(
+  (
+    await select('/resolve', {
+      ...tab,
+      rowIds: [],
+      groupRoutes: ['replace-soon', 'normal', 'no|such'],
+      predicates: hs04,
+      by: ['battery'],
+    })
+  ).selected,
+  { 'replace-soon': true, normal: false, 'no|such': false },
+);
+assert.equal(
+  (await select('/ops', { ...tab, ops: [{ op: 'deselectGroup', ...grouped }] }))
+    .selection.selectedCount,
+  0,
+);
 ```
 
 Add this line to the returned list after the selection line:
@@ -919,27 +960,24 @@ In `api/src/app/devices/devices.service.ts`:
 4. In `changeSelection`, replace the `matching` constant and the `applySelectionOps` call with:
 
 ```ts
-        const matching = (
-          predicates: DevicePredicate[],
-          ids: string[],
-          group?: DeviceGrouping,
-        ) =>
-          this.deviceIds(
-            client,
-            matchingAmongSql(customerId, predicates, ids, group ?? null),
-          );
-        const selectedIn = (
-          state: SelectionState,
-          predicates: DevicePredicate[],
-          group: DeviceGrouping,
-        ) =>
-          this.deviceIds(
-            client,
-            selectedInSql(customerId, state, predicates, group),
-          );
+const matching = (
+  predicates: DevicePredicate[],
+  ids: string[],
+  group?: DeviceGrouping,
+) =>
+  this.deviceIds(
+    client,
+    matchingAmongSql(customerId, predicates, ids, group ?? null),
+  );
+const selectedIn = (
+  state: SelectionState,
+  predicates: DevicePredicate[],
+  group: DeviceGrouping,
+) =>
+  this.deviceIds(client, selectedInSql(customerId, state, predicates, group));
 ```
 
-   and pass both: `(current) => applySelectionOps(current, ops, matching, selectedIn)`.
+and pass both: `(current) => applySelectionOps(current, ops, matching, selectedIn)`.
 
 5. Replace `resolveSelection` with:
 
@@ -1036,6 +1074,7 @@ git commit -m "feat: list device groups and select whole groups through the API"
 ### Task 4: Group data in the datasource, store, and selection provider
 
 **Files:**
+
 - Modify: `frontend/src/app/devices/device-fields.ts`
 - Modify: `frontend/src/app/devices/device-fields.spec.ts`
 - Modify: `frontend/src/app/devices/device-datasource.ts`
@@ -1047,6 +1086,7 @@ git commit -m "feat: list device groups and select whole groups through the API"
 - Modify: `frontend/src/app/devices/device-status-panel.spec.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1 and Task 2 contracts.
 - Produces: in `device-fields.ts`, `groupLabel(field: DeviceGroupField, key: string): string`.
 - Produces: in `device-datasource.ts`:
@@ -1194,15 +1234,18 @@ it('only the outermost grouped query reports counts and the group limit', async 
   });
   expect(store.page()?.matching).toBe(450);
   expect(store.groupLimit()).toBe(true);
-  store.setView({ ...root, group: { by: ['orgUnitPath'], keys: ['/School A'] } });
+  store.setView({
+    ...root,
+    group: { by: ['orgUnitPath'], keys: ['/School A'] },
+  });
   await store.rows(0, 1000);
   expect(store.page()?.matching).toBe(450);
 });
 
 it('describes the grid to the selection provider', async () => {
-  const request = vi.fn().mockResolvedValue(
-    Response.json({ selected: { '/School A': true } }),
-  );
+  const request = vi
+    .fn()
+    .mockResolvedValue(Response.json({ selected: { '/School A': true } }));
   const store = setup(request);
   store.setView({
     predicates: [{ field: 'notes', operator: 'isEmpty' }],
@@ -1521,7 +1564,7 @@ const flat = (): SelectionContext => ({ predicates: [], by: [] });
       return [{ op: op.op, ...context, route: op.route }];
 ```
 
-   and its signature with `function deviceOps(op: SelectionOp, context: SelectionContext): DeviceSelectionOp[]`.
+and its signature with `function deviceOps(op: SelectionOp, context: SelectionContext): DeviceSelectionOp[]`.
 
 4. Give the provider a second constructor parameter:
 
@@ -1631,6 +1674,7 @@ git commit -m "feat: load device groups and select them from the grid"
 ### Task 5: Group the device grid
 
 **Files:**
+
 - Modify: `package.json`, `package-lock.json`
 - Modify: `frontend/src/app/devices/device-columns.ts`
 - Modify: `frontend/src/app/devices/device-details-cell.ts`
@@ -1645,6 +1689,7 @@ git commit -m "feat: load device groups and select them from the grid"
 - Modify: `frontend/src/app/devices/devices.spec.ts`
 
 **Interfaces:**
+
 - Consumes: Task 4 `DeviceGroupLoader`, `store.groups`, `store.groupLimit`, and `groupLabel`.
 - Produces: in `device-columns.ts`, `deviceGroupColumn: AutoGroupColumnDef<DeviceRow>`, and `onDetails(row, node)` callbacks that receive the row node.
 - Produces: in `device-grid-options.ts`, `detailsTarget(node): { index: number; route: string[] | null } | null`. A device inside a group reports its index in that group and the group's route.
@@ -1690,7 +1735,9 @@ it('opens details with Enter and leaves Space to row selection', () => {
 it('groups by organization unit, model, and battery with counts', () => {
   const columns = deviceColumnDefs(() => undefined);
   expect(
-    columns.filter((column) => column.enableRowGroup).map((column) => column.colId),
+    columns
+      .filter((column) => column.enableRowGroup)
+      .map((column) => column.colId),
   ).toEqual(['model', 'orgUnitPath', 'battery']);
   const battery = columns.find((column) => column.colId === 'battery')!;
   const groupNode = { group: true, field: 'battery' };
@@ -1724,10 +1771,10 @@ it('finds a grouped device by its index inside the group', () => {
 In `frontend/src/app/devices/device-grid-options.spec.ts`, in the first test, remove `suppressRowGroups: true,` from the expected `toolPanelParams`, and add after the side bar assertion:
 
 ```ts
-  expect(
-    options.getColumnMenuItems?.({ defaultItems: ['sortAscending'] } as never),
-  ).toEqual(['sortAscending', 'separator', 'rowGroup', 'rowUnGroup']);
-  expect(options.autoGroupColumnDef?.headerName).toBe('Group');
+expect(
+  options.getColumnMenuItems?.({ defaultItems: ['sortAscending'] } as never),
+).toEqual(['sortAscending', 'separator', 'rowGroup', 'rowUnGroup']);
+expect(options.autoGroupColumnDef?.headerName).toBe('Group');
 ```
 
 In `frontend/src/app/devices/device-status-panel.spec.ts`, add `groupLimit: signal(false),` to the fake store, and append:
@@ -1830,9 +1877,9 @@ export const deviceGroupColumn: AutoGroupColumnDef<DeviceRow> = {
 5. In `detailsKeyHandler`, replace the last three lines of the handler with:
 
 ```ts
-    if (!event.data || event.node.group) return;
-    keyboard.preventDefault();
-    onDetails(event.data, event.node);
+if (!event.data || event.node.group) return;
+keyboard.preventDefault();
+onDetails(event.data, event.node);
 ```
 
 In `frontend/src/app/devices/device-details-cell.ts`, change `onDetails(row: DeviceRow, index: number): void;` to `onDetails(row: DeviceRow, node: IRowNode<DeviceRow>): void;` and import `type IRowNode` from `ag-grid-community`. Add a computed `group = computed(() => !!this.params()?.node.group);`, wrap the button in `@if (!group()) { ... }`, and replace `activate` with:
@@ -1887,10 +1934,10 @@ In `frontend/src/app/devices/device-grid.ts`:
 4. In `ngOnInit`, replace `open` with:
 
 ```ts
-    const open = (row: DeviceRow, node: IRowNode<DeviceRow>) => {
-      const target = detailsTarget(node);
-      if (target) this.details.emit({ row, ...target });
-    };
+const open = (row: DeviceRow, node: IRowNode<DeviceRow>) => {
+  const target = detailsTarget(node);
+  if (target) this.details.emit({ row, ...target });
+};
 ```
 
 5. In `reload`, pass the group loader as the fourth argument: `(view) => this.loadGroups()(view),`.
@@ -1938,12 +1985,9 @@ In `frontend/src/app/devices/devices.html`, on `app-device-grid`, add `[loadGrou
 In `frontend/src/app/devices/device-status-panel.ts`, add after the scope paragraph:
 
 ```html
-      @if (store.groupLimit()) {
-      <p>
-        Open groups list their first 1,000 devices. Add a filter to see the
-        rest.
-      </p>
-      }
+@if (store.groupLimit()) {
+<p>Open groups list their first 1,000 devices. Add a filter to see the rest.</p>
+}
 ```
 
 - [ ] **Step 7: Run the tests to verify they pass**
@@ -1978,6 +2022,7 @@ git commit -m "feat: group the device grid by organization unit, model, and batt
 ### Task 6: Browser check and workflow record
 
 **Files:**
+
 - Modify: `api-e2e/devices-browser.mjs`
 - Modify: `docs/workflows/device-browsing.md`
 - Modify: `docs/current-work.md`
@@ -1985,6 +2030,7 @@ git commit -m "feat: group the device grid by organization unit, model, and batt
 - Modify: `docs/document-index.csv`
 
 **Interfaces:**
+
 - Consumes: every earlier task through the real application. At the start of the new steps, no filter is active, the Columns side bar is open, and Serial sorts ascending.
 
 The simulated serials are hexadecimal, and battery classes repeat every three devices. C0A1-0001 and C0A1-0004 are the first two Replace soon devices.
@@ -1994,44 +2040,42 @@ The simulated serials are hexadecimal, and battery classes repeat every three de
 In `api-e2e/devices-browser.mjs`, insert after `await auditAccessibility(page, 'devices-columns');`:
 
 ```js
-    // Group by battery class from the column menu (grouping decision).
-    await page.getByRole('tab', { name: 'Columns' }).click();
-    const groupBy = async (name) => {
-      const header = page.getByRole('columnheader', { name: 'Battery' });
-      await header.hover();
-      await header.locator('.ag-header-cell-menu-button').click();
-      await page.getByRole('menuitem', { name }).click();
-    };
-    await groupBy('Group by Battery');
-    const replaceSoonGroup = page.getByRole('button', {
-      name: 'Replace soon (135)',
-    });
-    await expect(replaceSoonGroup).toBeVisible();
-    await auditAccessibility(page, 'devices-groups');
-    await page
-      .getByRole('row', { name: /Replace soon \(135\)/ })
-      .getByRole('checkbox')
-      .check();
-    await expect(page.getByText('Total Selected: 135')).toBeVisible();
-    await expect(page.getByText('Selected groups: Replace soon')).toBeVisible();
-    await replaceSoonGroup.click();
-    await page
-      .getByRole('button', { name: 'Open details for C0A1-0001' })
-      .click();
-    await page.getByRole('button', { name: 'Next device' }).click();
-    await expect(
-      page.getByRole('heading', { name: 'C0A1-0004', level: 1 }),
-    ).toBeVisible();
-    await page.getByRole('link', { name: 'Back to devices' }).click();
-    await expect(
-      page.getByRole('button', { name: 'Replace soon (135)' }),
-    ).toBeVisible();
-    await page.getByRole('button', { name: 'Deselect All' }).click();
-    await expect(page.getByText('Total Selected: 0')).toBeVisible();
-    await groupBy('Stop grouping by Battery');
-    await expect(
-      page.getByText('450 matching devices · 450 in district'),
-    ).toBeVisible();
+// Group by battery class from the column menu (grouping decision).
+await page.getByRole('tab', { name: 'Columns' }).click();
+const groupBy = async (name) => {
+  const header = page.getByRole('columnheader', { name: 'Battery' });
+  await header.hover();
+  await header.locator('.ag-header-cell-menu-button').click();
+  await page.getByRole('menuitem', { name }).click();
+};
+await groupBy('Group by Battery');
+const replaceSoonGroup = page.getByRole('button', {
+  name: 'Replace soon (135)',
+});
+await expect(replaceSoonGroup).toBeVisible();
+await auditAccessibility(page, 'devices-groups');
+await page
+  .getByRole('row', { name: /Replace soon \(135\)/ })
+  .getByRole('checkbox')
+  .check();
+await expect(page.getByText('Total Selected: 135')).toBeVisible();
+await expect(page.getByText('Selected groups: Replace soon')).toBeVisible();
+await replaceSoonGroup.click();
+await page.getByRole('button', { name: 'Open details for C0A1-0001' }).click();
+await page.getByRole('button', { name: 'Next device' }).click();
+await expect(
+  page.getByRole('heading', { name: 'C0A1-0004', level: 1 }),
+).toBeVisible();
+await page.getByRole('link', { name: 'Back to devices' }).click();
+await expect(
+  page.getByRole('button', { name: 'Replace soon (135)' }),
+).toBeVisible();
+await page.getByRole('button', { name: 'Deselect All' }).click();
+await expect(page.getByText('Total Selected: 0')).toBeVisible();
+await groupBy('Stop grouping by Battery');
+await expect(
+  page.getByText('450 matching devices · 450 in district'),
+).toBeVisible();
 ```
 
 If LibreGrid hides the Battery column while it groups by it, stop grouping from the Row Groups area of the Columns side bar instead, and ledger the ruling.
@@ -2079,7 +2123,7 @@ In `docs/current-work.md`, replace `The owner added grid tools, paging, and serv
 In `docs/testing/client-review.md`, in the Devices item, add after the sentence that ends with "use the Columns side bar.":
 
 ```markdown
-  Group by Battery from the column menu, open a group, and select it.
+Group by Battery from the column menu, open a group, and select it.
 ```
 
 In `docs/document-index.csv`, set the inspection field of the `docs/workflows/device-browsing.md`, `docs/current-work.md`, and `docs/testing/client-review.md` rows to `"Device grid grouping recorded, 2026-10-06"`.

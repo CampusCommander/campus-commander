@@ -3,7 +3,6 @@
 > Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
 > This record does not authorize disputed features or require completion of its old checklists.
 
-
 Owner: CC-56. Status: implementation and qualification in progress.
 This record does not establish release acceptance.
 

@@ -46,9 +46,7 @@
           "none": [],
           "impact": "serious",
           "html": "<input _ngcontent-ng-c26447...=\"\" matinput=\"\" name=\"code\" type=\"password\" autocomplete=\"off\" required=\"\" maxlength=\"64\" class=\"mat-mdc-input-elemen...\" id=\"mat-input-0\" aria-required=\"true\" style=\"\">",
-          "target": [
-            "#mat-input-0"
-          ],
+          "target": ["#mat-input-0"],
           "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
         }
       ]

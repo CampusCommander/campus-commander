@@ -182,15 +182,16 @@ export class DeviceSync {
           after = ids[ids.length - 1];
         }
         const recordPage = z.array(
-          z.object({ deviceId: z.string(), lastEntitySync: z.string() }).passthrough(),
+          z
+            .object({ deviceId: z.string(), lastEntitySync: z.string() })
+            .passthrough(),
         );
         for (let after = ''; !signal.aborted; ) {
           const records = recordPage.parse(
-            await this.call('SELECT cc.page_device_records($1,$2,$3) AS result', [
-              input.customerId,
-              after,
-              1000,
-            ]),
+            await this.call(
+              'SELECT cc.page_device_records($1,$2,$3) AS result',
+              [input.customerId, after, 1000],
+            ),
           );
           if (records.length === 0) break;
           await this.cache.setRecords(
@@ -206,7 +207,9 @@ export class DeviceSync {
           );
           after = records[records.length - 1].deviceId;
         }
-        await this.cache.increment(queryGenerationKey('device', input.customerId));
+        await this.cache.increment(
+          queryGenerationKey('device', input.customerId),
+        );
       } catch {
         // The next read fills the cache. Plan B reconciles the generation on its next full sync.
       }

@@ -236,7 +236,8 @@ test('device pages allow long notes across a full page', async (t) => {
   assert.ok(limits[0] >= 4 * 1024 * 1024, `limit ${limits[0]}`);
 });
 
-const fastBatch = () => new GoogleBatchService({ sleep: async () => undefined, random: () => 0 });
+const fastBatch = () =>
+  new GoogleBatchService({ sleep: async () => undefined, random: () => 0 });
 const signal = () => AbortSignal.timeout(5000);
 
 function stubBatch(t, answer, options) {
@@ -249,7 +250,9 @@ function stubBatch(t, answer, options) {
   t.mock.method(JWT.prototype, 'getTokenInfo', async function () {
     return { scopes: [...this.scopes], expiry_date: Date.now() + 3_500_000 };
   });
-  t.mock.method(OAuth2Client.prototype, 'request', (options) => google.client.request(options));
+  t.mock.method(OAuth2Client.prototype, 'request', (options) =>
+    google.client.request(options),
+  );
   return { google, scopes };
 }
 
@@ -265,26 +268,44 @@ const quotaPart = {
 test('deviceBatch reads each device once and reports missing devices', async (t) => {
   const { google, scopes } = stubBatch(t, (part) =>
     part.key === 'd2'
-      ? { status: 404, body: { error: { code: 404, message: 'Resource Not Found' } } }
+      ? {
+          status: 404,
+          body: { error: { code: 404, message: 'Resource Not Found' } },
+        }
       : directoryDevice(part.key),
   );
-  const result = await new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
-    credential,
-    'C0123456',
-    ['d1', 'd2', 'd1'],
-    signal(),
-  );
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).deviceBatch(credential, 'C0123456', ['d1', 'd2', 'd1'], signal());
   assert.deepEqual(scopes, [deviceScope]);
-  assert.equal(google.requests[0].url, 'https://www.googleapis.com/batch/admin/directory_v1');
+  assert.equal(
+    google.requests[0].url,
+    'https://www.googleapis.com/batch/admin/directory_v1',
+  );
   assert.deepEqual(
-    google.sent[0].map((part) => [part.method, part.path, part.query.projection]),
+    google.sent[0].map((part) => [
+      part.method,
+      part.path,
+      part.query.projection,
+    ]),
     [
-      ['GET', '/admin/directory/v1/customer/C0123456/devices/chromeos/d1', 'FULL'],
-      ['GET', '/admin/directory/v1/customer/C0123456/devices/chromeos/d2', 'FULL'],
+      [
+        'GET',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d1',
+        'FULL',
+      ],
+      [
+        'GET',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d2',
+        'FULL',
+      ],
     ],
   );
   assert.match(google.sent[0][0].query.fields, /^deviceId,serialNumber,/);
-  assert.deepEqual(result.devices.map((device) => device.serialNumber), ['S-d1']);
+  assert.deepEqual(
+    result.devices.map((device) => device.serialNumber),
+    ['S-d1'],
+  );
   assert.deepEqual(result.missing, ['d2']);
 });
 
@@ -297,20 +318,25 @@ test('deviceBatch retries a quota part and keeps the parts that succeeded', asyn
     }
     return directoryDevice(part.key);
   });
-  const result = await new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
-    credential,
-    'C0123456',
-    ['d1', 'd2'],
-    signal(),
-  );
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).deviceBatch(credential, 'C0123456', ['d1', 'd2'], signal());
   assert.deepEqual(google.keys(), [['d1', 'd2'], ['d1']]);
-  assert.deepEqual(result.devices.map((device) => device.deviceId), ['d1', 'd2']);
+  assert.deepEqual(
+    result.devices.map((device) => device.deviceId),
+    ['d1', 'd2'],
+  );
 });
 
 test('deviceBatch fails with quota after 25 quota retries', async (t) => {
   const { google } = stubBatch(t, () => quotaPart);
   await assert.rejects(
-    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(credential, 'C0123456', ['d1'], signal()),
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
+      credential,
+      'C0123456',
+      ['d1'],
+      signal(),
+    ),
     { name: 'GoogleConnectionError', code: 'quota' },
   );
   assert.equal(google.sent.length, 26);
@@ -318,10 +344,19 @@ test('deviceBatch fails with quota after 25 quota retries', async (t) => {
 
 test('deviceBatch maps a malformed batch answer to invalid-response', async (t) => {
   stubBatch(t, () => quotaPart, {
-    outer: () => ({ status: 200, headers: { 'content-type': 'text/html' }, data: '<html>' }),
+    outer: () => ({
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+      data: '<html>',
+    }),
   });
   await assert.rejects(
-    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(credential, 'C0123456', ['d1'], signal()),
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
+      credential,
+      'C0123456',
+      ['d1'],
+      signal(),
+    ),
     { name: 'GoogleConnectionError', code: 'invalid-response' },
   );
 });
@@ -333,7 +368,12 @@ test('deviceBatch surfaces a shutdown during a quota wait as network-failure', a
     return quotaPart;
   });
   await assert.rejects(
-    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(credential, 'C0123456', ['d1'], stopping.signal),
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
+      credential,
+      'C0123456',
+      ['d1'],
+      stopping.signal,
+    ),
     { name: 'GoogleConnectionError', code: 'network-failure' },
   );
 });
@@ -341,11 +381,19 @@ test('deviceBatch surfaces a shutdown during a quota wait as network-failure', a
 test('deviceBatch fails the batch on any other part error', async (t) => {
   stubBatch(t, (part) =>
     part.key === 'd2'
-      ? { status: 403, body: { error: { code: 403, errors: [{ reason: 'forbidden' }] } } }
+      ? {
+          status: 403,
+          body: { error: { code: 403, errors: [{ reason: 'forbidden' }] } },
+        }
       : directoryDevice(part.key),
   );
   await assert.rejects(
-    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(credential, 'C0123456', ['d1', 'd2'], signal()),
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
+      credential,
+      'C0123456',
+      ['d1', 'd2'],
+      signal(),
+    ),
     { name: 'GoogleConnectionError', code: 'permission-denied' },
   );
 });
@@ -379,7 +427,12 @@ test('deviceBatch surfaces a token failure with its own code', async (t) => {
     });
   });
   await assert.rejects(
-    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(credential, 'C0123456', ['d1'], signal()),
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
+      credential,
+      'C0123456',
+      ['d1'],
+      signal(),
+    ),
     { name: 'GoogleConnectionError', code: 'credential-rejected' },
   );
 });
@@ -392,7 +445,11 @@ test('batteryBatch reads one telemetry record per device and treats 404 as no re
       deviceId: 'd1',
       batteryInfo: [{ designCapacity: '5000' }],
       batteryStatusReport: [
-        { reportTime: '2026-10-05T13:50:00.000Z', fullChargeCapacity: '3900', batteryHealth: 'BATTERY_REPLACE_SOON' },
+        {
+          reportTime: '2026-10-05T13:50:00.000Z',
+          fullChargeCapacity: '3900',
+          batteryHealth: 'BATTERY_REPLACE_SOON',
+        },
       ],
     },
     missing,
@@ -404,26 +461,40 @@ test('batteryBatch reads one telemetry record per device and treats 404 as no re
     AbortSignal.timeout(5000),
   );
   assert.deepEqual(scopes, [telemetryScope]);
+  assert.deepEqual(calls.map((call) => call.url).sort(), [
+    'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/d1',
+    'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/d2',
+  ]);
   assert.deepEqual(
-    calls.map((call) => call.url).sort(),
+    result.map((observation) => [
+      observation.deviceId,
+      observation.battery.status,
+    ]),
     [
-      'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/d1',
-      'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/d2',
+      ['d1', 'reported'],
+      ['d2', 'no-report'],
     ],
-  );
-  assert.deepEqual(
-    result.map((observation) => [observation.deviceId, observation.battery.status]),
-    [['d1', 'reported'], ['d2', 'no-report']],
   );
 });
 
 test('batteryBatch stops issuing reads after the first hard failure', async (t) => {
   const forbidden = new Error('forbidden');
-  forbidden.response = { status: 403, data: { error: { errors: [{ reason: 'forbidden' }] } } };
+  forbidden.response = {
+    status: 403,
+    data: { error: { errors: [{ reason: 'forbidden' }] } },
+  };
   const ids = Array.from({ length: 8 }, (_, index) => `d${index + 1}`);
-  const { calls } = stub(t, [forbidden, ...ids.slice(1).map((deviceId) => ({ deviceId }))]);
+  const { calls } = stub(t, [
+    forbidden,
+    ...ids.slice(1).map((deviceId) => ({ deviceId })),
+  ]);
   await assert.rejects(
-    new GoogleDeviceReader().batteryBatch(credential, 'C0123456', ids, AbortSignal.timeout(5000)),
+    new GoogleDeviceReader().batteryBatch(
+      credential,
+      'C0123456',
+      ids,
+      AbortSignal.timeout(5000),
+    ),
     { name: 'GoogleConnectionError', code: 'permission-denied' },
   );
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -432,12 +503,18 @@ test('batteryBatch stops issuing reads after the first hard failure', async (t) 
 
 const quotaAnswer = () =>
   Object.assign(new Error('quota'), {
-    response: { status: 429, data: { error: { errors: [{ reason: 'rateLimitExceeded' }] } } },
+    response: {
+      status: 429,
+      data: { error: { errors: [{ reason: 'rateLimitExceeded' }] } },
+    },
   });
 
 test('a quota answer retries the same page until Google answers', async (t) => {
   const { calls } = stub(t, [
-    { nextPageToken: 'page-2', chromeosdevices: [{ deviceId: 'd1', orgUnitPath: '/' }] },
+    {
+      nextPageToken: 'page-2',
+      chromeosdevices: [{ deviceId: 'd1', orgUnitPath: '/' }],
+    },
     quotaAnswer(),
     quotaAnswer(),
     { chromeosdevices: [{ deviceId: 'd2', orgUnitPath: '/' }] },
@@ -461,7 +538,10 @@ test('a quota answer retries the same page until Google answers', async (t) => {
 });
 
 test('a quota page stops after 25 retries', async (t) => {
-  const { calls } = stub(t, Array.from({ length: 27 }, () => quotaAnswer()));
+  const { calls } = stub(
+    t,
+    Array.from({ length: 27 }, () => quotaAnswer()),
+  );
   const waits = [];
   await assert.rejects(
     collect(
@@ -510,7 +590,10 @@ test('the default quota wait ends when the signal aborts', async (t) => {
 
 test('other page failures do not retry', async (t) => {
   const forbidden = Object.assign(new Error('forbidden'), {
-    response: { status: 403, data: { error: { errors: [{ reason: 'forbidden' }] } } },
+    response: {
+      status: 403,
+      data: { error: { errors: [{ reason: 'forbidden' }] } },
+    },
   });
   const { calls } = stub(t, [forbidden]);
   let slept = false;

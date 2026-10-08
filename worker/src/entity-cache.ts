@@ -18,7 +18,11 @@ export interface EntityCache {
   remove(keys: string[]): Promise<void>;
   removeMembers(key: string, members: string[]): Promise<void>;
   /** Move the expiry of members that still hold a claim to `seconds` from now. */
-  extendMembers(key: string, members: readonly string[], seconds: number): Promise<void>;
+  extendMembers(
+    key: string,
+    members: readonly string[],
+    seconds: number,
+  ): Promise<void>;
   increment(key: string): Promise<void>;
   publish(channel: string, message: string): Promise<void>;
   close(): Promise<void>;
@@ -28,7 +32,10 @@ export interface EntityCache {
  * Seconds that a device record stays fresh after `lastEntitySync`. A Redis hit is fresh by construction.
  * A stale or unreadable stamp gets one second. A future stamp gets the full threshold.
  */
-export function recordSeconds(lastEntitySync: string, now = Date.now()): number {
+export function recordSeconds(
+  lastEntitySync: string,
+  now = Date.now(),
+): number {
   const threshold = ENTITY_CACHE_SECONDS.device;
   const age = Math.floor((now - Date.parse(lastEntitySync)) / 1000);
   if (!Number.isFinite(age)) return 1;
@@ -123,7 +130,11 @@ export class WorkerRedis implements EntityCache {
     if (members.length) await this.run((client) => client.zRem(key, members));
   }
 
-  async extendMembers(key: string, members: readonly string[], seconds: number) {
+  async extendMembers(
+    key: string,
+    members: readonly string[],
+    seconds: number,
+  ) {
     const score = Date.now() + seconds * 1000;
     for (let start = 0; start < members.length; start += chunk) {
       const slice = members.slice(start, start + chunk);

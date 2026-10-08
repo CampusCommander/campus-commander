@@ -204,7 +204,12 @@ export class EntitySyncBatch {
       let batteries: BatteryObservation[] | null = null;
       try {
         batteries = await this.untilQuotaClears(signal, claim, () =>
-          this.reader.batteryBatch(credential, input.customerId, present, signal),
+          this.reader.batteryBatch(
+            credential,
+            input.customerId,
+            present,
+            signal,
+          ),
         );
       } catch (error) {
         // A telemetry failure keeps the stored battery fields. The Directory data still lands.

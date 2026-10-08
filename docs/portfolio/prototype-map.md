@@ -9,19 +9,19 @@ Use [the documentation guide](../README.md) for source authority and [workflow g
 The read-only audit inspected page structure, frame names, and text relevant to access and setup across all eleven pages.
 This establishes design coverage. It does not certify every interaction or visual state.
 
-| Page | Node | Coverage |
-| --- | --- | --- |
-| 00 — Start Here | `17:2` | Historical guide and source instructions. Current repository authority supersedes conflicting instructions. |
-| 01 — Design Language | `17:3` | Audience, principles, character, and voice. |
-| 02 — Foundations | `17:4` | Colors, typography, dimensions, icons, and accessibility specimens. |
-| 03 — Layout Templates | `17:5` | Shell and generic page patterns. No complete platform-access or onboarding flow. |
-| 04 — Components & States | `17:6` | Shared controls, grid components, field states, and typed filters. |
-| 05 — UX Rules | `17:7` | Action language, system state, and Google-change interactions. |
-| 06 — Agent Build Checklist | `17:8` | Historical construction checklist. It cannot authorize missing workflows. |
-| 07 — Reference Screen | `0:1` | Earlier light/dark Users examples. |
-| 08 — Device Management | `57:2` | Earlier device studies. Prefer revised page 09 for current composition. |
-| 09 — Device Workflows · Revised | `94:2` | Device, grid editing/filtering, CSV, Jobs, and recovery examples. |
-| 10 — Users | `240:2` | Eighteen numbered frames plus an index for Google Workspace user workflows. |
+| Page                            | Node    | Coverage                                                                                                    |
+| ------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+| 00 — Start Here                 | `17:2`  | Historical guide and source instructions. Current repository authority supersedes conflicting instructions. |
+| 01 — Design Language            | `17:3`  | Audience, principles, character, and voice.                                                                 |
+| 02 — Foundations                | `17:4`  | Colors, typography, dimensions, icons, and accessibility specimens.                                         |
+| 03 — Layout Templates           | `17:5`  | Shell and generic page patterns. No complete platform-access or onboarding flow.                            |
+| 04 — Components & States        | `17:6`  | Shared controls, grid components, field states, and typed filters.                                          |
+| 05 — UX Rules                   | `17:7`  | Action language, system state, and Google-change interactions.                                              |
+| 06 — Agent Build Checklist      | `17:8`  | Historical construction checklist. It cannot authorize missing workflows.                                   |
+| 07 — Reference Screen           | `0:1`   | Earlier light/dark Users examples.                                                                          |
+| 08 — Device Management          | `57:2`  | Earlier device studies. Prefer revised page 09 for current composition.                                     |
+| 09 — Device Workflows · Revised | `94:2`  | Device, grid editing/filtering, CSV, Jobs, and recovery examples.                                           |
+| 10 — Users                      | `240:2` | Eighteen numbered frames plus an index for Google Workspace user workflows.                                 |
 
 No complete design for adding platform users, assigning their permissions, creating schools, or onboarding was found in this file.
 The owner subsequently confirmed [settings organization and layout rules](../ui/rules.md#ui-11--settings-organization-and-visible-work) on 2026-09-17.
@@ -34,17 +34,17 @@ It does not define the implemented connection, invitation, access, customer-sett
 These designs concern managed Google accounts. They do not define how people receive Campus Commander access.
 Their presence does not change the current development order.
 
-| Starting point | Reference |
-| --- | --- |
-| Users index | [Start here](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=254-823) |
-| Inventory, light | [Users](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=240-3) |
-| Inventory, dark | [Users dark](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=243-132) |
-| User details | [Details](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=244-395) |
-| Suspension | [Preview](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=245-399) |
-| OU edit | [Staged edit](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=247-413) |
-| Results | [Job results](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=246-409) |
-| States | [States and recovery](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=249-807) |
-| Other actions and CSV | [Action catalog](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=252-823) |
+| Starting point        | Reference                                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Users index           | [Start here](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=254-823)          |
+| Inventory, light      | [Users](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=240-3)                 |
+| Inventory, dark       | [Users dark](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=243-132)          |
+| User details          | [Details](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=244-395)             |
+| Suspension            | [Preview](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=245-399)             |
+| OU edit               | [Staged edit](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=247-413)         |
+| Results               | [Job results](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=246-409)         |
+| States                | [States and recovery](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=249-807) |
+| Other actions and CSV | [Action catalog](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=252-823)      |
 
 The last frame summarizes actions and CSV. A catalog is not a complete design for every action it names.
 

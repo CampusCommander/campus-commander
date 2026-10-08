@@ -46,9 +46,7 @@
           "none": [],
           "impact": "serious",
           "html": "<mat-label _ngcontent-ng-c2644793772=\"\">Installer pairing code</mat-label>",
-          "target": [
-            "mat-label"
-          ],
+          "target": ["mat-label"],
           "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
         },
         {
@@ -71,9 +69,7 @@
           "none": [],
           "impact": "serious",
           "html": "<input _ngcontent-ng-c26447...=\"\" matinput=\"\" name=\"code\" type=\"password\" autocomplete=\"off\" required=\"\" maxlength=\"64\" class=\"mat-mdc-input-elemen...\" id=\"mat-input-0\" aria-required=\"true\">",
-          "target": [
-            "#mat-input-0"
-          ],
+          "target": ["#mat-input-0"],
           "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
         },
         {
@@ -96,9 +92,7 @@
           "none": [],
           "impact": "serious",
           "html": "<p _ngcontent-ng-c2644793772=\"\" role=\"alert\" class=\"error\">This pairing code has already started sign-in in a browser.</p>",
-          "target": [
-            ".error"
-          ],
+          "target": [".error"],
           "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it is overlapped by another element"
         }
       ]

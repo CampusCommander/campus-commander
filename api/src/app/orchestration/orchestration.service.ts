@@ -131,7 +131,9 @@ export class OrchestrationService {
     return this.execute('entity_sync', {
       customerId: values.customerId,
       jobId: values.jobId,
-      batches: JSON.stringify(Array.from({ length: values.batchCount }, (_, index) => index)),
+      batches: JSON.stringify(
+        Array.from({ length: values.batchCount }, (_, index) => index),
+      ),
       correlationId: values.correlationId,
     });
   }

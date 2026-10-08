@@ -190,7 +190,8 @@ async function quotaSleep(milliseconds: number, signal: AbortSignal) {
 /** Map a final batch failure to the existing failure vocabulary. */
 function batchFailure(failed: BatchFailure): GoogleConnectionError {
   if (failed.kind === 'quota') return new GoogleConnectionError('quota');
-  if (failed.kind === 'invalid-response') return new GoogleConnectionError('invalid-response');
+  if (failed.kind === 'invalid-response')
+    return new GoogleConnectionError('invalid-response');
   if (failed.kind === 'aborted' || failed.status === 0)
     return new GoogleConnectionError('network-failure');
   return failure({ response: { status: failed.status, data: failed.body } });
@@ -204,7 +205,10 @@ export interface GoogleDeviceReaderOptions {
 
 /** Read device inventory and battery telemetry with one exact-scope token per capability. */
 export class GoogleDeviceReader {
-  private readonly sleep: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+  private readonly sleep: (
+    milliseconds: number,
+    signal: AbortSignal,
+  ) => Promise<void>;
   private readonly backoff: (attempt: number) => number;
   private readonly batch: GoogleBatchService;
 
@@ -243,7 +247,10 @@ export class GoogleDeviceReader {
           break;
         } catch (error) {
           const classified = failure(error);
-          if (classified.code !== 'quota' || attempt >= BATCH_DEFAULTS.maxQuotaRetries)
+          if (
+            classified.code !== 'quota' ||
+            attempt >= BATCH_DEFAULTS.maxQuotaRetries
+          )
             throw classified;
           await this.sleep(this.backoff(attempt), signal);
           if (signal.aborted) throw new GoogleConnectionError('quota');
@@ -342,7 +349,8 @@ export class GoogleDeviceReader {
     googleCustomerIdSchema.parse(customerId);
     const ids = [...new Set(deviceIds)];
     if (ids.length === 0) return { devices: [], missing: [] };
-    if (ids.length > batchLimit) throw new GoogleConnectionError('invalid-response');
+    if (ids.length > batchLimit)
+      throw new GoogleConnectionError('invalid-response');
     const mint: { failure?: GoogleConnectionError } = {};
     let result;
     try {
@@ -374,7 +382,9 @@ export class GoogleDeviceReader {
     } catch (error) {
       if (error instanceof BatchServiceError)
         throw new GoogleConnectionError(
-          error.code === 'malformed-response' ? 'invalid-response' : 'request-failed',
+          error.code === 'malformed-response'
+            ? 'invalid-response'
+            : 'request-failed',
         );
       throw error;
     }
@@ -432,7 +442,11 @@ export class GoogleDeviceReader {
           .object({ response: z.object({ status: z.number() }) })
           .safeParse(error).data?.response.status;
         if (status === 404) {
-          results.push({ deviceId: id, battery: { status: 'no-report' }, reports: [] });
+          results.push({
+            deviceId: id,
+            battery: { status: 'no-report' },
+            reports: [],
+          });
           return;
         }
         throw failure(error);
@@ -441,17 +455,20 @@ export class GoogleDeviceReader {
     // The first hard failure stops new reads. Reads already in flight settle before it surfaces.
     const stop: { error?: GoogleConnectionError } = {};
     await Promise.all(
-      Array.from({ length: Math.min(telemetryConcurrency, queue.length) }, async () => {
-        while (!stop.error) {
-          const id = queue.shift();
-          if (id === undefined) return;
-          try {
-            await readOne(id);
-          } catch (error) {
-            stop.error ??= failure(error);
+      Array.from(
+        { length: Math.min(telemetryConcurrency, queue.length) },
+        async () => {
+          while (!stop.error) {
+            const id = queue.shift();
+            if (id === undefined) return;
+            try {
+              await readOne(id);
+            } catch (error) {
+              stop.error ??= failure(error);
+            }
           }
-        }
-      }),
+        },
+      ),
     );
     if (stop.error) throw stop.error;
     return results.sort((a, b) => a.deviceId.localeCompare(b.deviceId));

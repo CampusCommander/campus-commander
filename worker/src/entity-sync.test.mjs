@@ -220,7 +220,9 @@ test('a Directory quota failure fails the batch without a worker retry', async (
   const waits = [];
   const source = reader({ devices: [new GoogleConnectionError('quota')] });
   const result = await new EntitySyncBatch(
-    database({ finish: job({ completedBatches: 0, failedBatches: 1, failure: 'quota' }) }),
+    database({
+      finish: job({ completedBatches: 0, failedBatches: 1, failure: 'quota' }),
+    }),
     cipher,
     source,
     cache(),
@@ -237,10 +239,16 @@ test('telemetry quota errors retry in the worker until Google answers', async ()
     database(),
     cipher,
     reader({
-      batteries: [new GoogleConnectionError('quota'), new GoogleConnectionError('quota')],
+      batteries: [
+        new GoogleConnectionError('quota'),
+        new GoogleConnectionError('quota'),
+      ],
     }),
     cache(),
-    { backoff: (attempt) => attempt * 10, sleep: async (ms) => void waits.push(ms) },
+    {
+      backoff: (attempt) => attempt * 10,
+      sleep: async (ms) => void waits.push(ms),
+    },
   ).run(request, AbortSignal.timeout(5000));
   assert.equal(result.failure, null);
   assert.deepEqual(waits, [0, 10]);
@@ -249,27 +257,40 @@ test('telemetry quota errors retry in the worker until Google answers', async ()
 test('telemetry quota stops after 25 retries and fails the batch', async () => {
   const waits = [];
   const source = reader({
-    batteries: Array.from({ length: 26 }, () => new GoogleConnectionError('quota')),
+    batteries: Array.from(
+      { length: 26 },
+      () => new GoogleConnectionError('quota'),
+    ),
   });
   const result = await new EntitySyncBatch(
-    database({ finish: job({ completedBatches: 0, failedBatches: 1, failure: 'quota' }) }),
+    database({
+      finish: job({ completedBatches: 0, failedBatches: 1, failure: 'quota' }),
+    }),
     cipher,
     source,
     cache(),
     { backoff: () => 0, sleep: async (ms) => void waits.push(ms) },
   ).run(request, AbortSignal.timeout(5000));
   assert.equal(result.failure, 'quota');
-  assert.equal(names(source.calls).filter((name) => name === 'batteryBatch').length, 26);
+  assert.equal(
+    names(source.calls).filter((name) => name === 'batteryBatch').length,
+    26,
+  );
   assert.equal(waits.length, 25);
 });
 
 test('each batch service round extends the claim on the batch IDs', async () => {
   const redis = cache();
-  await new EntitySyncBatch(database(), cipher, reader({ rounds: 2 }), redis, noSleep).run(
-    request,
-    AbortSignal.timeout(5000),
+  await new EntitySyncBatch(
+    database(),
+    cipher,
+    reader({ rounds: 2 }),
+    redis,
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  const extensions = redis.calls.filter(
+    (call) => call.name === 'extendMembers',
   );
-  const extensions = redis.calls.filter((call) => call.name === 'extendMembers');
   assert.equal(extensions.length, 2);
   assert.deepEqual(extensions[0].args.slice(1), [['d1', 'd2', 'd3'], 120]);
 });
@@ -451,8 +472,13 @@ test('a quota answer from telemetry still retries and writes batteries', async (
     names(source.calls).filter((name) => name === 'batteryBatch').length,
     2,
   );
-  const upsert = db.calls.find((call) => call.name === 'upsert_device_batteries');
-  assert.deepEqual(JSON.parse(upsert.values[1]).map((b) => b.deviceId), ['d1']);
+  const upsert = db.calls.find(
+    (call) => call.name === 'upsert_device_batteries',
+  );
+  assert.deepEqual(
+    JSON.parse(upsert.values[1]).map((b) => b.deviceId),
+    ['d1'],
+  );
 });
 
 test('the freshness stamp comes from Postgres before the Directory read', async () => {
@@ -485,7 +511,10 @@ test('a telemetry quota sleep extends the batch claim on its in-flight IDs', asy
     cipher,
     reader({ batteries: [new GoogleConnectionError('quota')] }),
     redis,
-    { backoff: () => 0, sleep: async () => void waits.push(redis.calls.length) },
+    {
+      backoff: () => 0,
+      sleep: async () => void waits.push(redis.calls.length),
+    },
   ).run(request, AbortSignal.timeout(5000));
   const extended = redis.calls.filter((call) => call.name === 'extendMembers');
   assert.equal(extended.length, 1);

@@ -3,7 +3,6 @@
 > Historical planning or implementation record. Read [current work](../current-work.md) and [workflow gaps](../workflow-gaps.md) before using it.
 > This record does not authorize disputed features or require completion of its old checklists.
 
-
 ## Current review delivery — 2026-09-17
 
 The [current work plan](phase-3-current-plan.md) supersedes the historical deployment matrix below.

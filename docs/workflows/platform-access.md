@@ -638,10 +638,10 @@ The owner stated:
 Roles contain separately selectable granular permissions.
 The owner named these initial permissions:
 
-| Entity area | Permission labels |
-| --- | --- |
-| Devices | Device Read, Device Write, Device Deprovision, Device Bulk Actions |
-| Google users | User Read, User Write, User Schema Manage, User Bulk Actions |
+| Entity area  | Permission labels                                                  |
+| ------------ | ------------------------------------------------------------------ |
+| Devices      | Device Read, Device Write, Device Deprovision, Device Bulk Actions |
+| Google users | User Read, User Write, User Schema Manage, User Bulk Actions       |
 
 These are distinct permission choices. A single broad "Manage devices" or "Manage users" permission does not replace them.
 The list is illustrative, not a complete catalog. Exact action coverage and other dependencies require definition before dependent implementation.
@@ -847,12 +847,12 @@ The owner provided this example:
 
 > A role is a collection of permissions. Like `devices-read`, `users-read`. Is saved as a role named `Librarian`s. A collection of orgUnits /devices/schools/smith/lib1, /devices/schools/smith/lib2 with a name like Smith Elementary. Note: An orgUnit collection is the best representation of a school in google workspace meta. Then you Make the Assignment, mSmith@school.edu is assigned Libraries and Smith Elementary. So Mrs. Smith can now read Devices and Users scoped by the orgUnit collection.
 
-| Concept | Owner-confirmed meaning | Example |
-| --- | --- | --- |
-| Permission | An action available within an entity area. | `devices-read`, `users-read` |
-| Role | A named reusable collection of permissions. | Librarians contains `devices-read` and `users-read`. |
-| OrgUnit collection | A named reusable collection of OrgUnits defining resource scope. | Smith Elementary contains `/devices/schools/smith/lib1` and `/devices/schools/smith/lib2`. |
-| Access assignment | For ordinary asset roles, the association of a platform user, a role, and an OrgUnit collection. | `mSmith@school.edu` receives Librarians scoped to Smith Elementary. |
+| Concept            | Owner-confirmed meaning                                                                          | Example                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Permission         | An action available within an entity area.                                                       | `devices-read`, `users-read`                                                               |
+| Role               | A named reusable collection of permissions.                                                      | Librarians contains `devices-read` and `users-read`.                                       |
+| OrgUnit collection | A named reusable collection of OrgUnits defining resource scope.                                 | Smith Elementary contains `/devices/schools/smith/lib1` and `/devices/schools/smith/lib2`. |
+| Access assignment  | For ordinary asset roles, the association of a platform user, a role, and an OrgUnit collection. | `mSmith@school.edu` receives Librarians scoped to Smith Elementary.                        |
 
 The example uses "Librarians" consistently for the role called "Librarian`s" and "Libraries" in the owner's message.
 These example names do not establish built-in roles or a fixed permission catalog.
@@ -887,7 +887,7 @@ This example describes separate scopes. Where collections overlap, the most-perm
 
 The owner answered:
 
-> 1) Most permissive wins
+> 1. Most permissive wins
 
 The question offered combining permissions or preventing overlapping assignments.
 The owner selected combining permissions.
@@ -954,12 +954,12 @@ Do not place assignment management inside Platform Users details or an assignmen
 
 Apply the owner's one-page-per-concern rule to the established access model:
 
-| Settings page | Concern |
-| --- | --- |
-| Platform Users | Platform users and invitations. |
-| Platform Roles and Permissions | Role definitions and their permissions. |
-| OrgUnit Collections | Named collections of OrgUnits and each entry's descendant option. |
-| Access Assignments | Assignments connecting platform users, roles, and OrgUnit collections. |
+| Settings page                  | Concern                                                                |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| Platform Users                 | Platform users and invitations.                                        |
+| Platform Roles and Permissions | Role definitions and their permissions.                                |
+| OrgUnit Collections            | Named collections of OrgUnits and each entry's descendant option.      |
+| Access Assignments             | Assignments connecting platform users, roles, and OrgUnit collections. |
 
 These pages remain separate. Tabs organize content within one concern, not multiple concerns on one page.
 Do not reopen this separation as a product choice in later design questions.

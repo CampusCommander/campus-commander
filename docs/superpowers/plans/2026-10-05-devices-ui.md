@@ -36,6 +36,7 @@
 ### Task 1: OrgUnit list endpoint and device page routes at the edge
 
 **Files:**
+
 - Modify: `libs/application-contracts/src/lib/devices.ts`
 - Modify: `libs/application-contracts/src/lib/devices.test.mjs`
 - Modify: `api/src/app/devices/device-query.ts`
@@ -47,6 +48,7 @@
 - Modify: `api-e2e/devices-api.mjs`
 
 **Interfaces:**
+
 - Produces: `deviceOrgUnitSchema`, `deviceOrgUnitsSchema`, and type `DeviceOrgUnit = { path: string; devices: number }` from `@campus/application-contracts`.
 - Produces: `GET /api/devices/org-units` returning `{ orgUnits: DeviceOrgUnit[] }`. It lists the distinct OrgUnit paths of the published inventory with device counts, ordered by path.
 - Produces: the edge serves the frontend for `/devices` and `/devices/<id>` in phase 3.
@@ -59,9 +61,19 @@ Append to `libs/application-contracts/src/lib/devices.test.mjs`, and add `device
 
 ```js
 test('organization unit lists carry a path and a device count', () => {
-  assert.equal(deviceOrgUnitsSchema.safeParse([{ path: '/School A', devices: 150 }]).success, true);
-  assert.equal(deviceOrgUnitsSchema.safeParse([{ path: 'School A', devices: 1 }]).success, false);
-  assert.equal(deviceOrgUnitsSchema.safeParse([{ path: '/', devices: -1 }]).success, false);
+  assert.equal(
+    deviceOrgUnitsSchema.safeParse([{ path: '/School A', devices: 150 }])
+      .success,
+    true,
+  );
+  assert.equal(
+    deviceOrgUnitsSchema.safeParse([{ path: 'School A', devices: 1 }]).success,
+    false,
+  );
+  assert.equal(
+    deviceOrgUnitsSchema.safeParse([{ path: '/', devices: -1 }]).success,
+    false,
+  );
 });
 ```
 
@@ -70,8 +82,14 @@ Append to `api/src/app/devices/device-query.test.mjs`, and add `deviceOrgUnitsSq
 ```js
 test('organization units come from the published inventory in path order', () => {
   const sql = deviceOrgUnitsSql('C0123456');
-  assert.match(sql.text, /FROM cc\.device_sync_state s JOIN cc\.devices d ON d\.sync_id=s\.current_sync_id/);
-  assert.match(sql.text, /GROUP BY d\.org_unit_path ORDER BY d\.org_unit_path LIMIT 10000$/);
+  assert.match(
+    sql.text,
+    /FROM cc\.device_sync_state s JOIN cc\.devices d ON d\.sync_id=s\.current_sync_id/,
+  );
+  assert.match(
+    sql.text,
+    /GROUP BY d\.org_unit_path ORDER BY d\.org_unit_path LIMIT 10000$/,
+  );
   assert.deepEqual(sql.values, ['C0123456']);
 });
 ```
@@ -93,13 +111,13 @@ Add to the rejected table:
 In `api-e2e/devices-api.mjs`, add after the `const first = await query({});` block:
 
 ```js
-    const units = await api.get(`${root}/org-units`);
-    assert.equal(units.status(), 200, await units.text());
-    assert.deepEqual((await units.json()).orgUnits, [
-      { path: '/', devices: 150 },
-      { path: '/School A', devices: 150 },
-      { path: '/School B', devices: 150 },
-    ]);
+const units = await api.get(`${root}/org-units`);
+assert.equal(units.status(), 200, await units.text());
+assert.deepEqual((await units.json()).orgUnits, [
+  { path: '/', devices: 150 },
+  { path: '/School A', devices: 150 },
+  { path: '/School B', devices: 150 },
+]);
 ```
 
 - [ ] **Step 2: Run the tests and confirm they fail**
@@ -174,9 +192,9 @@ const devicePage = /^\/devices\/[A-Za-z0-9_-]{1,128}$/;
 Then change the `page` computation to:
 
 ```js
-  const page =
-    pages.has(pathname) ||
-    (phase === 3 && (phase3Pages.has(pathname) || devicePage.test(pathname)));
+const page =
+  pages.has(pathname) ||
+  (phase === 3 && (phase3Pages.has(pathname) || devicePage.test(pathname)));
 ```
 
 - [ ] **Step 4: Run the tests and confirm they pass**
@@ -202,11 +220,13 @@ git commit -m "feat: list device organization units and route device pages at th
 ### Task 2: Grid dependencies and device field helpers
 
 **Files:**
+
 - Modify: `package.json`, `package-lock.json` (three exact dependencies)
 - Create: `frontend/src/app/devices/device-fields.ts`
 - Create: `frontend/src/app/devices/device-fields.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `DevicePredicate`, `DeviceBattery`, `DeviceOrgUnit`, `DeviceQuery`, `DeviceSyncFailure`, `GoogleFailure`, `batteryFilterValueSchema` from `@campus/application-contracts`.
 - Produces from `frontend/src/app/devices/device-fields.ts`:
   - types `DeviceSortField`, `BatteryFilterValue`, `DeviceFieldKind`, `DeviceField { id; label; kind; optional }`, `OrgUnitOption { path; label; depth }`
@@ -244,14 +264,34 @@ describe('device fields', () => {
   it('labels each filter type the way the chips read', () => {
     const day = new Date(2026, 9, 1).toISOString();
     const cases: [DevicePredicate, string][] = [
-      [{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }, 'Asset tag starts with: HS-04'],
+      [
+        { field: 'assetTag', operator: 'startsWith', value: 'HS-04' },
+        'Asset tag starts with: HS-04',
+      ],
       [{ field: 'notes', operator: 'isEmpty' }, 'Notes is empty'],
-      [{ field: 'serialNumber', operator: 'equals', value: 'C0A1' }, 'Serial is: C0A1'],
-      [{ field: 'orgUnitPath', operator: 'within', value: '/School A' }, 'Organization unit is within: /School A'],
-      [{ field: 'battery', operator: 'is', values: ['replace-soon', 'no-report'] }, 'Battery · Replace soon, No battery report'],
-      [{ field: 'lastContact', operator: 'before', value: day }, 'Device contact before: Oct 1, 2026'],
+      [
+        { field: 'serialNumber', operator: 'equals', value: 'C0A1' },
+        'Serial is: C0A1',
+      ],
+      [
+        { field: 'orgUnitPath', operator: 'within', value: '/School A' },
+        'Organization unit is within: /School A',
+      ],
+      [
+        {
+          field: 'battery',
+          operator: 'is',
+          values: ['replace-soon', 'no-report'],
+        },
+        'Battery · Replace soon, No battery report',
+      ],
+      [
+        { field: 'lastContact', operator: 'before', value: day },
+        'Device contact before: Oct 1, 2026',
+      ],
     ];
-    for (const [predicate, label] of cases) expect(chipLabel(predicate)).toBe(label);
+    for (const [predicate, label] of cases)
+      expect(chipLabel(predicate)).toBe(label);
   });
 
   it('lists matched fields and identifier shortcuts for typed text', () => {
@@ -267,18 +307,30 @@ describe('device fields', () => {
   });
 
   it('builds the organization unit tree with ancestors and search', () => {
-    const units = [{ path: '/School A/Library', devices: 3 }, { path: '/School B', devices: 1 }];
+    const units = [
+      { path: '/School A/Library', devices: 3 },
+      { path: '/School B', devices: 1 },
+    ];
     expect(orgUnitOptions(units)).toEqual([
       { path: '/', label: 'All organization units', depth: 0 },
       { path: '/School A', label: 'School A', depth: 1 },
       { path: '/School A/Library', label: 'Library', depth: 2 },
       { path: '/School B', label: 'School B', depth: 1 },
     ]);
-    expect(orgUnitOptions(units, 'library').map((unit) => unit.path)).toEqual(['/School A/Library']);
+    expect(orgUnitOptions(units, 'library').map((unit) => unit.path)).toEqual([
+      '/School A/Library',
+    ]);
   });
 
   it('describes battery data and contact age', () => {
-    expect(batteryText({ status: 'reported', health: 'replace-now', capacityPercent: 70, reportedAt: '2026-10-05T12:00:00Z' })).toBe('Replace now');
+    expect(
+      batteryText({
+        status: 'reported',
+        health: 'replace-now',
+        capacityPercent: 70,
+        reportedAt: '2026-10-05T12:00:00Z',
+      }),
+    ).toBe('Replace now');
     expect(batteryText({ status: 'no-report' })).toBe('No battery report');
     expect(batteryText({ status: 'unavailable' })).toBe('Unavailable');
     const now = Date.parse('2026-10-05T12:00:00Z');
@@ -298,10 +350,16 @@ describe('device fields', () => {
   });
 
   it('explains Google access failures with the scope action', () => {
-    expect(syncFailureText('delegation-not-authorized')).toContain('Add the device scopes');
-    expect(syncFailureText('interrupted')).toBe('The last refresh stopped before it finished.');
+    expect(syncFailureText('delegation-not-authorized')).toContain(
+      'Add the device scopes',
+    );
+    expect(syncFailureText('interrupted')).toBe(
+      'The last refresh stopped before it finished.',
+    );
     expect(syncFailureText(null)).toBe('');
-    expect(telemetryFailureText('permission-denied')).toContain('Add the telemetry scope');
+    expect(telemetryFailureText('permission-denied')).toContain(
+      'Add the telemetry scope',
+    );
     expect(telemetryFailureText(null)).toBeNull();
   });
 });
@@ -351,10 +409,20 @@ export const DEVICE_FIELDS: readonly DeviceField[] = [
   { id: 'serialNumber', label: 'Serial', kind: 'text', optional: false },
   { id: 'model', label: 'Model', kind: 'text', optional: false },
   { id: 'assetTag', label: 'Asset tag', kind: 'text', optional: false },
-  { id: 'orgUnitPath', label: 'Organization unit', kind: 'orgUnit', optional: false },
+  {
+    id: 'orgUnitPath',
+    label: 'Organization unit',
+    kind: 'orgUnit',
+    optional: false,
+  },
   { id: 'battery', label: 'Battery', kind: 'battery', optional: false },
   { id: 'lastContact', label: 'Device contact', kind: 'date', optional: false },
-  { id: 'annotatedLocation', label: 'Annotated location', kind: 'text', optional: true },
+  {
+    id: 'annotatedLocation',
+    label: 'Annotated location',
+    kind: 'text',
+    optional: true,
+  },
   { id: 'notes', label: 'Notes', kind: 'text', optional: true },
 ];
 
@@ -555,10 +623,12 @@ git commit -m "feat: add device field helpers and the qualified grid packages"
 ### Task 3: Devices store
 
 **Files:**
+
 - Create: `frontend/src/app/devices/devices.store.ts`
 - Create: `frontend/src/app/devices/devices.store.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `AuthStore.request(path, body?) → Promise<Response>`, contract schemas, Task 2 nothing.
 - Produces: `devicesReadable(auth) → boolean` and `@Injectable({ providedIn: 'root' }) class DevicesStore` with:
   - signals `sync`, `syncLoaded`, `predicates`, `sort`, `page`, `orgUnits`, `offline`, `error`, `revision`, `position`, `optionalColumns`; computed `refreshing`, `readable`; field `pollInterval` (milliseconds)
@@ -623,7 +693,9 @@ function setup(request: ReturnType<typeof vi.fn>) {
 it('queries rows with the active filters and sort and keeps the counts', async () => {
   const request = vi.fn().mockResolvedValue(Response.json({ page }));
   const store = setup(request);
-  store.setPredicates([{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }]);
+  store.setPredicates([
+    { field: 'assetTag', operator: 'startsWith', value: 'HS-04' },
+  ]);
   store.setSort({ field: 'assetTag', direction: 'desc' });
   await store.rows(100, 100);
   expect(request).toHaveBeenCalledWith('/api/devices/query', {
@@ -632,7 +704,11 @@ it('queries rows with the active filters and sort and keeps the counts', async (
     offset: 100,
     limit: 100,
   });
-  expect(store.page()).toEqual({ matching: 96, total: 450, observedAt: page.observedAt });
+  expect(store.page()).toEqual({
+    matching: 96,
+    total: 450,
+    observedAt: page.observedAt,
+  });
   expect(store.readable()).toBe(true);
 });
 
@@ -656,23 +732,31 @@ it('keeps the last counts and reports offline when the network fails', async () 
 it('polls a refresh until it settles and reloads with the same filters', async () => {
   const request = vi
     .fn()
-    .mockResolvedValueOnce(Response.json({ sync: state('running') }, { status: 201 }))
+    .mockResolvedValueOnce(
+      Response.json({ sync: state('running') }, { status: 201 }),
+    )
     .mockResolvedValueOnce(Response.json({ sync: state('running') }))
     .mockResolvedValueOnce(Response.json({ sync: state('ready') }));
   const store = setup(request);
-  store.setPredicates([{ field: 'model', operator: 'contains', value: 'Lenovo' }]);
+  store.setPredicates([
+    { field: 'model', operator: 'contains', value: 'Lenovo' },
+  ]);
   const before = store.revision();
   await store.refreshAll();
   expect(request).toHaveBeenNthCalledWith(1, '/api/devices/sync', {});
   expect(store.sync()?.status).toBe('ready');
   expect(store.revision()).toBe(before + 1);
-  expect(store.predicates()).toEqual([{ field: 'model', operator: 'contains', value: 'Lenovo' }]);
+  expect(store.predicates()).toEqual([
+    { field: 'model', operator: 'contains', value: 'Lenovo' },
+  ]);
 });
 
 it('follows a refresh that is already running', async () => {
   const request = vi
     .fn()
-    .mockResolvedValueOnce(Response.json({ reason: 'device-sync-running' }, { status: 409 }))
+    .mockResolvedValueOnce(
+      Response.json({ reason: 'device-sync-running' }, { status: 409 }),
+    )
     .mockResolvedValueOnce(Response.json({ sync: state('running') }))
     .mockResolvedValueOnce(Response.json({ sync: state('ready') }));
   const store = setup(request);
@@ -897,6 +981,7 @@ git commit -m "feat: keep device browsing state in a shared store"
 ### Task 4: Device grid
 
 **Files:**
+
 - Create: `frontend/src/app/devices/device-details-cell.ts`
 - Create: `frontend/src/app/devices/device-columns.ts`
 - Create: `frontend/src/app/devices/device-datasource.ts`
@@ -904,6 +989,7 @@ git commit -m "feat: keep device browsing state in a shared store"
 - Create: `frontend/src/app/devices/device-grid.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `DEVICE_FIELDS`, `batteryText`, `relativeTime` (Task 2).
 - Produces:
   - `deviceColumnDefs(onDetails: (row: DeviceRow, index: number) => void, now?: () => number): ColDef<DeviceRow>[]`
@@ -932,34 +1018,67 @@ const row: DeviceRow = {
   lastContact: '2026-10-05T11:58:00Z',
   annotatedLocation: null,
   notes: null,
-  battery: { status: 'reported', health: 'replace-soon', capacityPercent: 78, reportedAt: '2026-10-05T11:00:00Z' },
+  battery: {
+    status: 'reported',
+    health: 'replace-soon',
+    capacityPercent: 78,
+    reportedAt: '2026-10-05T11:00:00Z',
+  },
 };
 type Getter = (params: { data: DeviceRow }) => unknown;
 
 it('orders columns after the details icon and hides optional fields', () => {
-  const columns = deviceColumnDefs(() => undefined, () => Date.parse('2026-10-05T12:00:00Z'));
+  const columns = deviceColumnDefs(
+    () => undefined,
+    () => Date.parse('2026-10-05T12:00:00Z'),
+  );
   expect(columns.map((column) => column.colId)).toEqual([
-    'details', 'serialNumber', 'model', 'assetTag', 'orgUnitPath', 'battery', 'lastContact', 'annotatedLocation', 'notes',
+    'details',
+    'serialNumber',
+    'model',
+    'assetTag',
+    'orgUnitPath',
+    'battery',
+    'lastContact',
+    'annotatedLocation',
+    'notes',
   ]);
   expect(columns[0].pinned).toBe('left');
-  expect(columns.filter((column) => column.hide).map((column) => column.colId)).toEqual(['annotatedLocation', 'notes']);
-  const value = (id: string) => (columns.find((column) => column.colId === id)!.valueGetter as Getter)({ data: row });
+  expect(
+    columns.filter((column) => column.hide).map((column) => column.colId),
+  ).toEqual(['annotatedLocation', 'notes']);
+  const value = (id: string) =>
+    (columns.find((column) => column.colId === id)!.valueGetter as Getter)({
+      data: row,
+    });
   expect(value('battery')).toBe('Replace soon');
   expect(value('lastContact')).toBe('2 min ago');
   expect(value('notes')).toBe('');
 });
 
 it('loads grid blocks from the device query with the header sort', async () => {
-  const load = vi.fn().mockResolvedValue({ rows: [row], matching: 96, total: 450, observedAt: null });
+  const load = vi.fn().mockResolvedValue({
+    rows: [row],
+    matching: 96,
+    total: 450,
+    observedAt: null,
+  });
   const success = vi.fn();
   const fail = vi.fn();
   deviceDatasource(load).getRows({
-    request: { startRow: 100, endRow: 200, sortModel: [{ colId: 'assetTag', sort: 'desc' }] },
+    request: {
+      startRow: 100,
+      endRow: 200,
+      sortModel: [{ colId: 'assetTag', sort: 'desc' }],
+    },
     success,
     fail,
   } as unknown as IServerSideGetRowsParams<DeviceRow>);
   await vi.waitFor(() => expect(success).toHaveBeenCalled());
-  expect(load).toHaveBeenCalledWith(100, 100, { field: 'assetTag', direction: 'desc' });
+  expect(load).toHaveBeenCalledWith(100, 100, {
+    field: 'assetTag',
+    direction: 'desc',
+  });
   expect(success).toHaveBeenCalledWith({ rowData: [row], rowCount: 96 });
   expect(fail).not.toHaveBeenCalled();
 });
@@ -975,8 +1094,14 @@ it('fails the block when the query fails', async () => {
 });
 
 it('falls back to serial order for columns without a query field', () => {
-  expect(sortFromModel([{ colId: 'details', sort: 'asc' }])).toEqual({ field: 'serialNumber', direction: 'asc' });
-  expect(sortFromModel(undefined)).toEqual({ field: 'serialNumber', direction: 'asc' });
+  expect(sortFromModel([{ colId: 'details', sort: 'asc' }])).toEqual({
+    field: 'serialNumber',
+    direction: 'asc',
+  });
+  expect(sortFromModel(undefined)).toEqual({
+    field: 'serialNumber',
+    direction: 'asc',
+  });
 });
 ```
 
@@ -995,7 +1120,8 @@ import type { ICellRendererAngularComp } from 'ag-grid-angular';
 import type { ICellRendererParams } from 'ag-grid-community';
 import type { DeviceRow } from '@campus/application-contracts';
 
-export interface DeviceDetailsCellParams extends ICellRendererParams<DeviceRow> {
+export interface DeviceDetailsCellParams
+  extends ICellRendererParams<DeviceRow> {
   onDetails(row: DeviceRow, index: number): void;
 }
 
@@ -1010,7 +1136,9 @@ export interface DeviceDetailsCellParams extends ICellRendererParams<DeviceRow> 
       [attr.title]="label()"
       (click)="activate()"
     >
-      <span class="material-symbols-outlined" aria-hidden="true">visibility</span>
+      <span class="material-symbols-outlined" aria-hidden="true"
+        >visibility</span
+      >
     </button>
   `,
   styles: `
@@ -1032,7 +1160,9 @@ export class DeviceDetailsCell implements ICellRendererAngularComp {
   private readonly params = signal<DeviceDetailsCellParams | null>(null);
   protected readonly label = computed(() => {
     const data = this.params()?.data;
-    return data ? `Open details for ${data.serialNumber || data.deviceId}` : 'Open details';
+    return data
+      ? `Open details for ${data.serialNumber || data.deviceId}`
+      : 'Open details';
   });
 
   agInit(params: DeviceDetailsCellParams): void {
@@ -1148,8 +1278,12 @@ export function sortFromModel(
   model: readonly { colId: string; sort: 'asc' | 'desc' }[] | undefined,
 ): DeviceSort {
   const first = model?.[0];
-  const field = DEVICE_FIELDS.find((candidate) => candidate.id === first?.colId);
-  return field && first ? { field: field.id, direction: first.sort } : defaultSort;
+  const field = DEVICE_FIELDS.find(
+    (candidate) => candidate.id === first?.colId,
+  );
+  return field && first
+    ? { field: field.id, direction: first.sort }
+    : defaultSort;
 }
 
 /** Adapt LibreGrid block requests to the device query endpoint (GRID-01). */
@@ -1295,18 +1429,28 @@ export class DeviceGrid {
   private reload(): void {
     this.api?.setGridOption(
       'serverSideDatasource',
-      deviceDatasource((offset, limit, sort) => this.load()(offset, limit, sort)),
+      deviceDatasource((offset, limit, sort) =>
+        this.load()(offset, limit, sort),
+      ),
     );
   }
 
   private applyColumns(columns: Record<OptionalDeviceColumn, boolean>): void {
-    this.api?.setColumnsVisible(['annotatedLocation'], columns.annotatedLocation);
+    this.api?.setColumnsVisible(
+      ['annotatedLocation'],
+      columns.annotatedLocation,
+    );
     this.api?.setColumnsVisible(['notes'], columns.notes);
   }
 
   protected updated(): void {
     const index = this.focusIndex();
-    if (!this.focused && index !== null && this.api && this.api.getDisplayedRowCount() > 0) {
+    if (
+      !this.focused &&
+      index !== null &&
+      this.api &&
+      this.api.getDisplayedRowCount() > 0
+    ) {
       this.focused = true;
       this.api.ensureIndexVisible(index, 'middle');
     }
@@ -1340,12 +1484,14 @@ git commit -m "feat: render devices in a LibreGrid server-side grid"
 ### Task 5: Typed device filter
 
 **Files:**
+
 - Create: `frontend/src/app/devices/device-filter.ts`
 - Create: `frontend/src/app/devices/device-filter.html`
 - Create: `frontend/src/app/devices/device-filter.css`
 - Create: `frontend/src/app/devices/device-filter.spec.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2 helpers. `devicePredicateSchema` from contracts.
 - Produces: component `app-device-filter` (`DeviceFilter`) with inputs `orgUnits: readonly DeviceOrgUnit[]` and `editing: DevicePredicate | null`, and outputs `applied: DevicePredicate` and `closed: void`. It renders the dashed Add a filter control, the combobox, and the typed editor.
 
@@ -1355,7 +1501,10 @@ Create `frontend/src/app/devices/device-filter.spec.ts`:
 
 ```ts
 import { TestBed } from '@angular/core/testing';
-import type { DeviceOrgUnit, DevicePredicate } from '@campus/application-contracts';
+import type {
+  DeviceOrgUnit,
+  DevicePredicate,
+} from '@campus/application-contracts';
 import { DeviceFilter } from './device-filter';
 
 function setup(orgUnits: DeviceOrgUnit[] = []) {
@@ -1363,7 +1512,9 @@ function setup(orgUnits: DeviceOrgUnit[] = []) {
   fixture.componentRef.setInput('orgUnits', orgUnits);
   const applied: DevicePredicate[] = [];
   let closed = 0;
-  fixture.componentInstance.applied.subscribe((predicate) => applied.push(predicate));
+  fixture.componentInstance.applied.subscribe((predicate) =>
+    applied.push(predicate),
+  );
   fixture.componentInstance.closed.subscribe(() => closed++);
   fixture.detectChanges();
   const element: HTMLElement = fixture.nativeElement;
@@ -1379,24 +1530,43 @@ function setup(orgUnits: DeviceOrgUnit[] = []) {
     render();
   };
   const button = (name: string) =>
-    [...element.querySelectorAll('button')].find((candidate) => candidate.textContent?.trim() === name)!;
+    [...element.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === name,
+    )!;
   const options = () =>
-    [...element.querySelectorAll('[role="option"]')].map((option) => option.textContent?.trim());
+    [...element.querySelectorAll('[role="option"]')].map((option) =>
+      option.textContent?.trim(),
+    );
   const start = (text: string) => {
     click(element.querySelector('.add-filter'));
     type('[role="combobox"]', text);
   };
-  return { element, applied, closed: () => closed, type, click, button, options, start, render };
+  return {
+    element,
+    applied,
+    closed: () => closed,
+    type,
+    click,
+    button,
+    options,
+    start,
+    render,
+  };
 }
 
 it('lists matched fields before shortcut matches', () => {
   const { element, options, start } = setup();
   start('asset');
-  expect([...element.querySelectorAll('.group-label')].map((label) => label.textContent?.trim())).toEqual([
-    'Matched fields',
-    'Shortcut matches',
+  expect(
+    [...element.querySelectorAll('.group-label')].map((label) =>
+      label.textContent?.trim(),
+    ),
+  ).toEqual(['Matched fields', 'Shortcut matches']);
+  expect(options()).toEqual([
+    'Asset tag',
+    'Asset tag contains "asset"',
+    'Serial contains "asset"',
   ]);
-  expect(options()).toEqual(['Asset tag', 'Asset tag contains "asset"', 'Serial contains "asset"']);
 });
 
 it('opens a prefilled editor for a shortcut and applies only on Apply', () => {
@@ -1405,9 +1575,13 @@ it('opens a prefilled editor for a shortcut and applies only on Apply', () => {
   click(element.querySelectorAll('[role="option"]')[0]);
   expect(applied).toEqual([]);
   expect(element.querySelector('h2')?.textContent?.trim()).toBe('Asset tag');
-  expect(element.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('HS-04');
+  expect(
+    element.querySelector<HTMLInputElement>('input[type="text"]')?.value,
+  ).toBe('HS-04');
   click(button('Apply'));
-  expect(applied).toEqual([{ field: 'assetTag', operator: 'contains', value: 'HS-04' }]);
+  expect(applied).toEqual([
+    { field: 'assetTag', operator: 'contains', value: 'HS-04' },
+  ]);
   expect(element.querySelector('.add-filter')).not.toBeNull();
 });
 
@@ -1422,14 +1596,19 @@ it('keeps Apply disabled for blank text', () => {
 it('selects suggestions with the keyboard', () => {
   const { element, applied, click, button, start, render } = setup();
   start('asset');
-  const combobox = element.querySelector<HTMLInputElement>('[role="combobox"]')!;
+  const combobox =
+    element.querySelector<HTMLInputElement>('[role="combobox"]')!;
   combobox.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
   render();
-  expect(combobox.getAttribute('aria-activedescendant')).toBe(element.querySelectorAll('[role="option"]')[1].id);
+  expect(combobox.getAttribute('aria-activedescendant')).toBe(
+    element.querySelectorAll('[role="option"]')[1].id,
+  );
   combobox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
   render();
   click(button('Apply'));
-  expect(applied).toEqual([{ field: 'assetTag', operator: 'contains', value: 'asset' }]);
+  expect(applied).toEqual([
+    { field: 'assetTag', operator: 'contains', value: 'asset' },
+  ]);
 });
 
 it('applies the chosen battery classes', () => {
@@ -1437,29 +1616,43 @@ it('applies the chosen battery classes', () => {
   start('batt');
   click(element.querySelectorAll('[role="option"]')[0]);
   const box = (label: string) =>
-    [...element.querySelectorAll('label')].find((candidate) => candidate.textContent?.trim() === label)!.querySelector('input');
+    [...element.querySelectorAll('label')]
+      .find((candidate) => candidate.textContent?.trim() === label)!
+      .querySelector('input');
   click(box('Replace soon'));
   click(box('No battery report'));
   click(button('Apply'));
-  expect(applied).toEqual([{ field: 'battery', operator: 'is', values: ['replace-soon', 'no-report'] }]);
+  expect(applied).toEqual([
+    { field: 'battery', operator: 'is', values: ['replace-soon', 'no-report'] },
+  ]);
 });
 
 it('applies an organization unit including its descendants', () => {
-  const { element, applied, click, button, start } = setup([{ path: '/School A/Library', devices: 3 }]);
+  const { element, applied, click, button, start } = setup([
+    { path: '/School A/Library', devices: 3 },
+  ]);
   start('organ');
   click(element.querySelectorAll('[role="option"]')[0]);
-  const labels = [...element.querySelectorAll('.unit')].map((unit) => unit.textContent?.trim());
+  const labels = [...element.querySelectorAll('.unit')].map((unit) =>
+    unit.textContent?.trim(),
+  );
   expect(labels).toEqual(['All organization units', 'School A', 'Library']);
-  expect(element.textContent).toContain('Includes descendant organization units.');
+  expect(element.textContent).toContain(
+    'Includes descendant organization units.',
+  );
   click(element.querySelectorAll('.unit input')[1]);
   click(button('Apply'));
-  expect(applied).toEqual([{ field: 'orgUnitPath', operator: 'within', value: '/School A' }]);
+  expect(applied).toEqual([
+    { field: 'orgUnitPath', operator: 'within', value: '/School A' },
+  ]);
 });
 
 it('closes on Escape without applying', () => {
   const { element, applied, closed, start, render } = setup();
   start('model');
-  element.querySelector('[role="combobox"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+  element
+    .querySelector('[role="combobox"]')!
+    .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
   render();
   expect(applied).toEqual([]);
   expect(closed()).toBe(1);
@@ -1536,7 +1729,8 @@ export class DeviceFilter {
   readonly closed = output<void>();
 
   private readonly injector = inject(Injector);
-  private readonly trigger = viewChild<ElementRef<HTMLButtonElement>>('trigger');
+  private readonly trigger =
+    viewChild<ElementRef<HTMLButtonElement>>('trigger');
   private readonly entry = viewChild<ElementRef<HTMLInputElement>>('entry');
   protected readonly id = `device-filter-${++nextId}`;
   protected readonly entering = signal(false);
@@ -1575,8 +1769,14 @@ export class DeviceFilter {
   /** Empty sections are suppressed (GRID-04). */
   protected readonly groups = computed(() =>
     [
-      { name: 'Matched fields', items: this.suggestions().filter((item) => !item.predicate) },
-      { name: 'Shortcut matches', items: this.suggestions().filter((item) => item.predicate) },
+      {
+        name: 'Matched fields',
+        items: this.suggestions().filter((item) => !item.predicate),
+      },
+      {
+        name: 'Shortcut matches',
+        items: this.suggestions().filter((item) => item.predicate),
+      },
     ].filter((group) => group.items.length > 0),
   );
   protected readonly activeId = computed(
@@ -1592,10 +1792,18 @@ export class DeviceFilter {
       field.kind === 'battery'
         ? { field: field.id, operator: 'is', values: this.battery() }
         : field.kind === 'date'
-          ? { field: field.id, operator: this.operator(), value: dateInputToIso(this.value()) }
+          ? {
+              field: field.id,
+              operator: this.operator(),
+              value: dateInputToIso(this.value()),
+            }
           : this.operator() === 'isEmpty'
             ? { field: field.id, operator: 'isEmpty' }
-            : { field: field.id, operator: this.operator(), value: this.value() };
+            : {
+                field: field.id,
+                operator: this.operator(),
+                value: this.value(),
+              };
     const parsed = devicePredicateSchema.safeParse(candidate);
     return parsed.success ? parsed.data : null;
   });
@@ -1647,7 +1855,11 @@ export class DeviceFilter {
   private openField(field: DeviceField): void {
     this.field.set(field);
     this.operator.set(
-      field.kind === 'orgUnit' ? 'within' : field.kind === 'date' ? 'before' : 'contains',
+      field.kind === 'orgUnit'
+        ? 'within'
+        : field.kind === 'date'
+          ? 'before'
+          : 'contains',
     );
     this.value.set('');
     this.battery.set([]);
@@ -1717,7 +1929,10 @@ Create `frontend/src/app/devices/device-filter.html`:
   } @case ('orgUnit') {
   <label class="field"
     >Operator
-    <select [value]="operator()" (change)="operator.set($any($event.target).value)">
+    <select
+      [value]="operator()"
+      (change)="operator.set($any($event.target).value)"
+    >
       @for (item of orgUnitOperators; track item.id) {
       <option [value]="item.id">{{ item.label }}</option>
       }
@@ -1749,7 +1964,10 @@ Create `frontend/src/app/devices/device-filter.html`:
   } } @case ('date') {
   <label class="field"
     >Operator
-    <select [value]="operator()" (change)="operator.set($any($event.target).value)">
+    <select
+      [value]="operator()"
+      (change)="operator.set($any($event.target).value)"
+    >
       @for (item of dateOperators; track item.id) {
       <option [value]="item.id">{{ item.label }}</option>
       }
@@ -1765,7 +1983,10 @@ Create `frontend/src/app/devices/device-filter.html`:
   } @default {
   <label class="field"
     >Operator
-    <select [value]="operator()" (change)="operator.set($any($event.target).value)">
+    <select
+      [value]="operator()"
+      (change)="operator.set($any($event.target).value)"
+    >
       @for (item of textOperators; track item.id) {
       <option [value]="item.id">{{ item.label }}</option>
       }
@@ -1783,7 +2004,12 @@ Create `frontend/src/app/devices/device-filter.html`:
   } } }
   <div class="editor-actions">
     <button mat-button type="button" (click)="close()">Cancel</button>
-    <button mat-flat-button type="button" [disabled]="!draft()" (click)="apply()">
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="!draft()"
+      (click)="apply()"
+    >
       Apply
     </button>
   </div>
@@ -1803,7 +2029,12 @@ Create `frontend/src/app/devices/device-filter.html`:
     (input)="typed($any($event.target).value)"
     (keydown)="keydown($event)"
   />
-  <div class="suggestions card" [id]="id + '-list'" role="listbox" aria-label="Filter suggestions">
+  <div
+    class="suggestions card"
+    [id]="id + '-list'"
+    role="listbox"
+    aria-label="Filter suggestions"
+  >
     @for (group of groups(); track group.name) {
     <div role="group" [attr.aria-label]="group.name">
       <p class="group-label" aria-hidden="true">{{ group.name }}</p>
@@ -1943,6 +2174,7 @@ git commit -m "feat: add typed device filters with field and shortcut matches"
 ### Task 6: Devices page, route, and navigation
 
 **Files:**
+
 - Create: `frontend/src/app/devices/devices.ts`
 - Create: `frontend/src/app/devices/devices.html`
 - Create: `frontend/src/app/devices/devices.css`
@@ -1952,6 +2184,7 @@ git commit -m "feat: add typed device filters with field and shortcut matches"
 - Modify: `frontend/src/app/shell/shell.html`
 
 **Interfaces:**
+
 - Consumes: `DevicesStore` (Task 3), `DeviceGrid` and `DeviceRange` (Task 4), `DeviceFilter` (Task 5), and `chipLabel`, `syncFailureText`, `telemetryFailureText` (Task 2).
 - Produces: route `/devices` showing `DevicesPage` (`app-devices`), guarded by `devicesReadable`, and a Devices navigation link.
 
@@ -1964,12 +2197,18 @@ import { Component, computed, input, output, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
-import type { DevicePredicate, DeviceSyncState } from '@campus/application-contracts';
+import type {
+  DevicePredicate,
+  DeviceSyncState,
+} from '@campus/application-contracts';
 import { DeviceGrid } from './device-grid';
 import { DevicesPage } from './devices';
 import { DevicesStore } from './devices.store';
 
-@Component({ selector: 'app-device-grid', template: '<p class="grid-stub">grid</p>' })
+@Component({
+  selector: 'app-device-grid',
+  template: '<p class="grid-stub">grid</p>',
+})
 class GridStub {
   readonly load = input<unknown>();
   readonly revision = input(0);
@@ -2031,12 +2270,16 @@ function setup(options: {
   fixture.detectChanges();
   const element: HTMLElement = fixture.nativeElement;
   const button = (name: string) =>
-    [...element.querySelectorAll('button')].find((candidate) => candidate.textContent?.trim() === name);
+    [...element.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === name,
+    );
   return { store, element, button, render: () => fixture.detectChanges() };
 }
 
 it('offers Refresh inventory before the first sync', () => {
-  const { store, element, button } = setup({ sync: ready({ status: 'never', observedAt: null, deviceCount: 0 }) });
+  const { store, element, button } = setup({
+    sync: ready({ status: 'never', observedAt: null, deviceCount: 0 }),
+  });
   expect(element.textContent).toContain('No device inventory yet');
   button('Refresh inventory')!.click();
   expect(store.refreshAll).toHaveBeenCalled();
@@ -2045,7 +2288,11 @@ it('offers Refresh inventory before the first sync', () => {
 
 it('shows the stale banner with the failure cause', () => {
   const { element, button } = setup({
-    sync: ready({ status: 'failed', failure: 'permission-denied', stale: true }),
+    sync: ready({
+      status: 'failed',
+      failure: 'permission-denied',
+      stale: true,
+    }),
     page: { matching: 450, total: 450, observedAt: '2026-10-05T12:00:00.000Z' },
   });
   expect(element.textContent).toContain('Inventory observation is stale');
@@ -2080,20 +2327,32 @@ it('renders filter chips and clears them', () => {
 it('shows counts and the observation time in the footer', () => {
   const { element } = setup({
     sync: ready(),
-    page: { matching: 1234, total: 128431, observedAt: '2026-10-05T12:00:00.000Z' },
+    page: {
+      matching: 1234,
+      total: 128431,
+      observedAt: '2026-10-05T12:00:00.000Z',
+    },
   });
-  expect(element.querySelector('.grid-footer')?.textContent).toContain('1,234 matching devices · 128,431 in district');
-  expect(element.querySelector('.grid-footer')?.textContent).toContain('Inventory observed');
+  expect(element.querySelector('.grid-footer')?.textContent).toContain(
+    '1,234 matching devices · 128,431 in district',
+  );
+  expect(element.querySelector('.grid-footer')?.textContent).toContain(
+    'Inventory observed',
+  );
 });
 
 it('shows no matches when filters exclude every device', () => {
   const { element } = setup({
     sync: ready(),
-    predicates: [{ field: 'serialNumber', operator: 'equals', value: 'ZZ-NOT-FOUND' }],
+    predicates: [
+      { field: 'serialNumber', operator: 'equals', value: 'ZZ-NOT-FOUND' },
+    ],
     page: { matching: 0, total: 450, observedAt: '2026-10-05T12:00:00.000Z' },
   });
   expect(element.textContent).toContain('No devices match these filters');
-  expect(element.textContent).toContain('Check the serial or asset tag, or clear the current filters.');
+  expect(element.textContent).toContain(
+    'Check the serial or asset tag, or clear the current filters.',
+  );
 });
 ```
 
@@ -2133,7 +2392,14 @@ import {
 
 @Component({
   selector: 'app-devices',
-  imports: [DatePipe, RouterLink, MatButtonModule, MatMenuModule, DeviceGrid, DeviceFilter],
+  imports: [
+    DatePipe,
+    RouterLink,
+    MatButtonModule,
+    MatMenuModule,
+    DeviceGrid,
+    DeviceFilter,
+  ],
   templateUrl: './devices.html',
   styleUrl: './devices.css',
 })
@@ -2149,10 +2415,12 @@ export class DevicesPage implements OnInit {
   });
   protected readonly published = computed(() => !!this.sync()?.observedAt);
   protected readonly noMatches = computed(
-    () => this.store.page()?.matching === 0 && this.store.predicates().length > 0,
+    () =>
+      this.store.page()?.matching === 0 && this.store.predicates().length > 0,
   );
   protected readonly emptyInventory = computed(
-    () => this.store.page()?.total === 0 && this.store.predicates().length === 0,
+    () =>
+      this.store.page()?.total === 0 && this.store.predicates().length === 0,
   );
   protected readonly failureText = computed(() =>
     syncFailureText(this.sync()?.failure ?? null),
@@ -2161,7 +2429,11 @@ export class DevicesPage implements OnInit {
     telemetryFailureText(this.sync()?.telemetryFailure ?? null),
   );
   protected readonly label = chipLabel;
-  protected readonly load = (offset: number, limit: number, sort: DeviceSort) => {
+  protected readonly load = (
+    offset: number,
+    limit: number,
+    sort: DeviceSort,
+  ) => {
     this.store.setSort(sort);
     return this.store.rows(offset, limit);
   };
@@ -2235,16 +2507,23 @@ Create `frontend/src/app/devices/devices.html`:
   <section class="banner" aria-labelledby="devices-offline-title">
     <h2 id="devices-offline-title">Cannot reach Campus Commander</h2>
     <p>Cached inventory remains visible.</p>
-    <button mat-stroked-button type="button" (click)="reconnect()">Reconnect</button>
+    <button mat-stroked-button type="button" (click)="reconnect()">
+      Reconnect
+    </button>
   </section>
   } @else if (published() && sync()?.stale) {
   <section class="banner" aria-labelledby="devices-stale-title">
     <h2 id="devices-stale-title">Inventory observation is stale</h2>
     <p>
-      {{ failureText() || 'The inventory is more than 24 hours old.' }} Current data stays
-      visible during refresh.
+      {{ failureText() || 'The inventory is more than 24 hours old.' }} Current
+      data stays visible during refresh.
     </p>
-    <button mat-stroked-button type="button" [disabled]="store.refreshing()" (click)="refresh()">
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="store.refreshing()"
+      (click)="refresh()"
+    >
       Refresh inventory
     </button>
   </section>
@@ -2255,28 +2534,34 @@ Create `frontend/src/app/devices/devices.html`:
   </section>
   } @if (store.error()) {
   <p class="error" role="alert">{{ store.error() }}</p>
-  }
-
-  @if (!store.syncLoaded()) {
-  @if (!store.offline()) {
+  } @if (!store.syncLoaded()) { @if (!store.offline()) {
   <p role="status">Loading device inventory…</p>
   } } @else if (!sync()) {
   <section class="card" aria-labelledby="devices-connect-title">
     <h2 id="devices-connect-title">Connect Google Workspace</h2>
     <p>Devices come from the connected Google Workspace customer.</p>
-    <a mat-flat-button routerLink="/google-connection">Open Google connection</a>
+    <a mat-flat-button routerLink="/google-connection"
+      >Open Google connection</a
+    >
   </section>
   } @else if (!published()) {
-  <section class="card" aria-labelledby="devices-first-title" aria-live="polite">
+  <section
+    class="card"
+    aria-labelledby="devices-first-title"
+    aria-live="polite"
+  >
     @if (store.refreshing()) {
     <h2 id="devices-first-title">Reading devices from Google Workspace</h2>
     <p>The inventory appears here when the refresh finishes.</p>
     } @else {
     <h2 id="devices-first-title">No device inventory yet</h2>
     <p>
-      {{ sync()?.status === 'failed' ? failureText() : 'Refresh inventory to read ChromeOS devices from Google Workspace.' }}
+      {{ sync()?.status === 'failed' ? failureText() : 'Refresh inventory to
+      read ChromeOS devices from Google Workspace.' }}
     </p>
-    <button mat-flat-button type="button" (click)="refresh()">Refresh inventory</button>
+    <button mat-flat-button type="button" (click)="refresh()">
+      Refresh inventory
+    </button>
     }
   </section>
   } @else {
@@ -2284,7 +2569,11 @@ Create `frontend/src/app/devices/devices.html`:
     <div class="filters">
       @for (predicate of store.predicates(); track $index) {
       <span class="chip">
-        <button type="button" class="chip-body" (click)="editingIndex.set($index)">
+        <button
+          type="button"
+          class="chip-body"
+          (click)="editingIndex.set($index)"
+        >
           {{ label(predicate) }}
         </button>
         <button
@@ -2293,7 +2582,9 @@ Create `frontend/src/app/devices/devices.html`:
           [attr.aria-label]="'Remove filter ' + label(predicate)"
           (click)="remove($index)"
         >
-          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >close</span
+          >
         </button>
       </span>
       } @if (store.predicates().length < 20 || editing()) {
@@ -2304,12 +2595,19 @@ Create `frontend/src/app/devices/devices.html`:
         (closed)="editingIndex.set(null)"
       />
       }
-      <button mat-button type="button" [disabled]="!store.predicates().length" (click)="clear()">
+      <button
+        mat-button
+        type="button"
+        [disabled]="!store.predicates().length"
+        (click)="clear()"
+      >
         Clear filters
       </button>
     </div>
     <div class="actions">
-      <button mat-button type="button" [matMenuTriggerFor]="columnsMenu">Columns</button>
+      <button mat-button type="button" [matMenuTriggerFor]="columnsMenu">
+        Columns
+      </button>
       <mat-menu #columnsMenu="matMenu">
         <button
           mat-menu-item
@@ -2318,7 +2616,8 @@ Create `frontend/src/app/devices/devices.html`:
           [attr.aria-checked]="store.optionalColumns().annotatedLocation"
           (click)="toggleColumn('annotatedLocation')"
         >
-          {{ store.optionalColumns().annotatedLocation ? 'Hide' : 'Show' }} Annotated location
+          {{ store.optionalColumns().annotatedLocation ? 'Hide' : 'Show' }}
+          Annotated location
         </button>
         <button
           mat-menu-item
@@ -2339,7 +2638,9 @@ Create `frontend/src/app/devices/devices.html`:
         {{ store.refreshing() ? 'Refreshing…' : 'Refresh' }}
       </button>
       <mat-menu #refreshMenu="matMenu">
-        <button mat-menu-item type="button" (click)="refresh()">Refresh all</button>
+        <button mat-menu-item type="button" (click)="refresh()">
+          Refresh all
+        </button>
       </mat-menu>
     </div>
   </div>
@@ -2352,7 +2653,9 @@ Create `frontend/src/app/devices/devices.html`:
     <div class="grid-message" role="status">
       <h2>No devices match these filters</h2>
       <p>Check the serial or asset tag, or clear the current filters.</p>
-      <button mat-flat-button type="button" (click)="clear()">Clear filters</button>
+      <button mat-flat-button type="button" (click)="clear()">
+        Clear filters
+      </button>
     </div>
     } @else if (emptyInventory()) {
     <div class="grid-message" role="status">
@@ -2373,16 +2676,21 @@ Create `frontend/src/app/devices/devices.html`:
 
   <footer class="grid-footer" aria-live="polite">
     @if (store.page(); as page) {
-    <p>{{ count(page.matching) }} matching devices · {{ count(page.total) }} in district</p>
+    <p>
+      {{ count(page.matching) }} matching devices · {{ count(page.total) }} in
+      district
+    </p>
     <p class="freshness">
-      @if (store.offline()) { Cached inventory: {{ page.observedAt | date: 'MMM d, h:mm a' }} ·
-      Connection unavailable } @else if (sync()?.stale) { Stale inventory · Last complete
-      observation {{ page.observedAt | date: 'MMM d, h:mm a' }} · Refresh required } @else {
-      Inventory observed {{ page.observedAt | date: 'MMM d, h:mm a' }} }
+      @if (store.offline()) { Cached inventory: {{ page.observedAt | date: 'MMM
+      d, h:mm a' }} · Connection unavailable } @else if (sync()?.stale) { Stale
+      inventory · Last complete observation {{ page.observedAt | date: 'MMM d,
+      h:mm a' }} · Refresh required } @else { Inventory observed {{
+      page.observedAt | date: 'MMM d, h:mm a' }} }
     </p>
     @if (range(); as visible) {
     <p class="rows">
-      Rows {{ count(visible.first + 1) }}–{{ count(visible.last + 1) }} of {{ count(page.matching) }}
+      Rows {{ count(visible.first + 1) }}–{{ count(visible.last + 1) }} of {{
+      count(page.matching) }}
     </p>
     } } @else {
     <p>Loading devices…</p>
@@ -2533,17 +2841,17 @@ In `frontend/src/app/shell/shell.ts`, add `readonly devices = inject(DevicesStor
 In `frontend/src/app/shell/shell.html`, replace `} @if (connection.readable()) {` with:
 
 ```html
-    } @if (devices.readable()) {
-    <a
-      routerLink="/devices"
-      routerLinkActive="active"
-      ariaCurrentWhenActive="page"
-      aria-label="Devices"
-    >
-      <mat-icon fontSet="material-symbols-outlined">laptop_chromebook</mat-icon
-      ><span class="nav-label">Devices</span>
-    </a>
-    } @if (connection.readable()) {
+} @if (devices.readable()) {
+<a
+  routerLink="/devices"
+  routerLinkActive="active"
+  ariaCurrentWhenActive="page"
+  aria-label="Devices"
+>
+  <mat-icon fontSet="material-symbols-outlined">laptop_chromebook</mat-icon
+  ><span class="nav-label">Devices</span>
+</a>
+} @if (connection.readable()) {
 ```
 
 - [ ] **Step 6: Build, lint, and test**
@@ -2563,6 +2871,7 @@ git commit -m "feat: add the Devices page with filters, refresh, and inventory s
 ### Task 7: Device details page
 
 **Files:**
+
 - Create: `frontend/src/app/devices/device-detail.ts`
 - Create: `frontend/src/app/devices/device-detail.html`
 - Create: `frontend/src/app/devices/device-detail.css`
@@ -2570,6 +2879,7 @@ git commit -m "feat: add the Devices page with filters, refresh, and inventory s
 - Modify: `frontend/src/app/app.routes.ts`
 
 **Interfaces:**
+
 - Consumes: `DevicesStore.device`, `neighbor`, `position`, `page`, and `offline` (Task 3). `batteryText` and `relativeTime` (Task 2).
 - Produces: route `/devices/:deviceId` showing `DeviceDetailPage` (`app-device-detail`) with a `deviceId` input from route binding.
 
@@ -2595,11 +2905,24 @@ const device = (extra: Partial<DeviceDetail> = {}): DeviceDetail => ({
   lastContact: '2026-10-05T11:58:00.000Z',
   annotatedLocation: 'Science wing',
   notes: null,
-  battery: { status: 'reported', health: 'replace-soon', capacityPercent: 78, reportedAt: '2026-10-05T13:50:00.000Z' },
+  battery: {
+    status: 'reported',
+    health: 'replace-soon',
+    capacityPercent: 78,
+    reportedAt: '2026-10-05T13:50:00.000Z',
+  },
   observedAt: '2026-10-05T14:00:00.000Z',
   batteryReports: [
-    { reportedAt: '2026-10-05T13:50:00.000Z', health: 'replace-soon', capacityPercent: 78 },
-    { reportedAt: '2026-10-04T13:50:00.000Z', health: 'replace-soon', capacityPercent: null },
+    {
+      reportedAt: '2026-10-05T13:50:00.000Z',
+      health: 'replace-soon',
+      capacityPercent: 78,
+    },
+    {
+      reportedAt: '2026-10-04T13:50:00.000Z',
+      health: 'replace-soon',
+      capacityPercent: null,
+    },
   ],
   ...extra,
 });
@@ -2612,9 +2935,17 @@ async function setup(options: {
 }) {
   const store = {
     device: vi.fn().mockResolvedValue(options.detail),
-    neighbor: vi.fn().mockResolvedValue({ ...device(), deviceId: 'synthetic-device-2', serialNumber: 'C0A1-0002' }),
+    neighbor: vi.fn().mockResolvedValue({
+      ...device(),
+      deviceId: 'synthetic-device-2',
+      serialNumber: 'C0A1-0002',
+    }),
     position: signal<number | null>(options.position ?? null),
-    page: signal(options.matching === undefined ? null : { matching: options.matching, total: 450, observedAt: null }),
+    page: signal(
+      options.matching === undefined
+        ? null
+        : { matching: options.matching, total: 450, observedAt: null },
+    ),
     offline: signal(options.offline ?? false),
   };
   TestBed.configureTestingModule({
@@ -2631,7 +2962,9 @@ async function setup(options: {
     expect(element.textContent).not.toContain('Loading device details');
   });
   const button = (name: string) =>
-    [...element.querySelectorAll('button')].find((candidate) => candidate.textContent?.trim() === name);
+    [...element.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === name,
+    );
   return { store, element, navigate, button };
 }
 
@@ -2642,23 +2975,35 @@ it('shows the Google battery class, capacity, and recent reports', async () => {
   expect(element.textContent).toContain('78% of design capacity');
   expect(element.textContent).toContain('Classified by Google');
   expect(element.textContent).toContain('Science wing');
-  expect([...element.querySelectorAll('.reports li')].map((item) => item.textContent?.replace(/\s+/g, ' ').trim())).toHaveLength(2);
+  expect(
+    [...element.querySelectorAll('.reports li')].map((item) =>
+      item.textContent?.replace(/\s+/g, ' ').trim(),
+    ),
+  ).toHaveLength(2);
   expect(element.textContent).toContain('No capacity');
 });
 
 it('names the power-status policy when Google sent no battery report', async () => {
-  const { element } = await setup({ detail: device({ battery: { status: 'no-report' }, batteryReports: [] }) });
+  const { element } = await setup({
+    detail: device({ battery: { status: 'no-report' }, batteryReports: [] }),
+  });
   expect(element.textContent).toContain('No battery report');
   expect(element.textContent).toContain('ReportDevicePowerStatus');
 });
 
 it('explains unavailable battery data', async () => {
-  const { element } = await setup({ detail: device({ battery: { status: 'unavailable' }, batteryReports: [] }) });
+  const { element } = await setup({
+    detail: device({ battery: { status: 'unavailable' }, batteryReports: [] }),
+  });
   expect(element.textContent).toContain('Battery data unavailable');
 });
 
 it('opens the next device in the filtered order', async () => {
-  const { store, navigate, button } = await setup({ detail: device(), position: 0, matching: 2 });
+  const { store, navigate, button } = await setup({
+    detail: device(),
+    position: 0,
+    matching: 2,
+  });
   button('Next device')!.click();
   await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
   expect(store.neighbor).toHaveBeenCalledWith(1);
@@ -2667,7 +3012,11 @@ it('opens the next device in the filtered order', async () => {
 });
 
 it('disables Next device on the last matching row', async () => {
-  const { button } = await setup({ detail: device(), position: 1, matching: 2 });
+  const { button } = await setup({
+    detail: device(),
+    position: 1,
+    matching: 2,
+  });
   expect(button('Next device')!.disabled).toBe(true);
 });
 
@@ -2679,7 +3028,9 @@ it('disables Next device after a deep link', async () => {
 
 it('shows not found for a missing device', async () => {
   const { element } = await setup({ detail: null });
-  expect(element.querySelector('h1')?.textContent?.trim()).toBe('Device not found');
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Device not found',
+  );
 });
 ```
 
@@ -2723,9 +3074,9 @@ export class DeviceDetailPage {
   protected readonly store = inject(DevicesStore);
   private readonly router = inject(Router);
   protected readonly device = signal<DeviceDetail | null>(null);
-  protected readonly status = signal<'loading' | 'ready' | 'missing' | 'offline'>(
-    'loading',
-  );
+  protected readonly status = signal<
+    'loading' | 'ready' | 'missing' | 'offline'
+  >('loading');
   protected readonly hasNext = computed(() => {
     const position = this.store.position();
     const page = this.store.page();
@@ -2745,7 +3096,9 @@ export class DeviceDetailPage {
     const device = await this.store.device(id);
     if (this.deviceId() !== id) return;
     this.device.set(device);
-    this.status.set(device ? 'ready' : this.store.offline() ? 'offline' : 'missing');
+    this.status.set(
+      device ? 'ready' : this.store.offline() ? 'offline' : 'missing',
+    );
   }
 
   protected retry(): void {
@@ -2762,12 +3115,19 @@ export class DeviceDetailPage {
   }
 
   protected identity(device: DeviceDetail): string {
-    return [device.model, device.assetTag].filter(Boolean).join(' · ') || 'ChromeOS device';
+    return (
+      [device.model, device.assetTag].filter(Boolean).join(' · ') ||
+      'ChromeOS device'
+    );
   }
 
   protected healthClass(battery: DeviceBattery): string {
     if (battery.status !== 'reported') return '';
-    return battery.health === 'normal' ? 'normal' : battery.health === 'replace-soon' ? 'soon' : 'now';
+    return battery.health === 'normal'
+      ? 'normal'
+      : battery.health === 'replace-soon'
+        ? 'soon'
+        : 'now';
   }
 
   protected healthLabel(battery: DeviceBattery): string {
@@ -2814,7 +3174,12 @@ Create `frontend/src/app/devices/device-detail.html`:
   </header>
   <div class="actions">
     <a mat-stroked-button routerLink="/devices">Back to devices</a>
-    <button mat-stroked-button type="button" [disabled]="!hasNext()" (click)="next()">
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="!hasNext()"
+      (click)="next()"
+    >
       Next device
     </button>
   </div>
@@ -2839,17 +3204,21 @@ Create `frontend/src/app/devices/device-detail.html`:
     </section>
     <section class="card battery" aria-labelledby="battery-title">
       @switch (current.battery.status) { @case ('reported') {
-      <h2 id="battery-title" class="health" [class]="healthClass(current.battery)">
+      <h2
+        id="battery-title"
+        class="health"
+        [class]="healthClass(current.battery)"
+      >
         Battery health · {{ healthLabel(current.battery) }}
       </h2>
       <p class="capacity">{{ capacityText(current.battery) }}</p>
       <p>
-        Health compares full-charge capacity with design capacity. It does not show
-        current charge.
+        Health compares full-charge capacity with design capacity. It does not
+        show current charge.
       </p>
       <p class="secondary">
-        Classified by Google: Normal above 80%, Replace soon from 75% to 80%, Replace now
-        below 75% of design capacity.
+        Classified by Google: Normal above 80%, Replace soon from 75% to 80%,
+        Replace now below 75% of design capacity.
       </p>
       <p class="secondary">
         Latest report: {{ reportedAt(current.battery) | date: 'MMM d, h:mm a' }}
@@ -2859,7 +3228,10 @@ Create `frontend/src/app/devices/device-detail.html`:
         @for (report of current.batteryReports; track report.reportedAt) {
         <li>
           <span>{{ report.reportedAt | date: 'MMM d' }}</span>
-          <span>{{ report.capacityPercent === null ? 'No capacity' : report.capacityPercent + '%' }}</span>
+          <span
+            >{{ report.capacityPercent === null ? 'No capacity' :
+            report.capacityPercent + '%' }}</span
+          >
         </li>
         }
       </ul>
@@ -2867,12 +3239,14 @@ Create `frontend/src/app/devices/device-detail.html`:
       <h2 id="battery-title">No battery report</h2>
       <p>Google has not reported battery data for this device.</p>
       <p class="secondary">
-        Common causes: the ReportDevicePowerStatus device policy is off, or the device has
-        no battery.
+        Common causes: the ReportDevicePowerStatus device policy is off, or the
+        device has no battery.
       </p>
       } @default {
       <h2 id="battery-title">Battery data unavailable</h2>
-      <p>The last inventory refresh could not read battery telemetry from Google.</p>
+      <p>
+        The last inventory refresh could not read battery telemetry from Google.
+      </p>
       } }
     </section>
   </div>
@@ -2991,6 +3365,7 @@ git commit -m "feat: add device details with Google battery health"
 ### Task 8: Browser check and review guide
 
 **Files:**
+
 - Create: `api-e2e/devices-browser.mjs`
 - Modify: `api-e2e/auth.test.mjs` (run the browser check after `qualifyDevicesApi`)
 - Modify: `docs/testing/client-review.md`
@@ -2998,6 +3373,7 @@ git commit -m "feat: add device details with Google battery health"
 - Modify: `docs/document-index.csv` (status of the two documents)
 
 **Interfaces:**
+
 - Consumes: every earlier task through the real application. `qualifyDevicesApi` leaves the last sync failed and stale, with the fault file removed.
 
 - [ ] **Step 1: Write the failing browser check**
@@ -3022,13 +3398,26 @@ export async function qualifyDevicesBrowser({
   try {
     setSubject('administrator');
     const page = await context.newPage();
-    await qualificationSignIn(page, publicOrigin, evidenceDirectory, 'devices-browser');
+    await qualificationSignIn(
+      page,
+      publicOrigin,
+      evidenceDirectory,
+      'devices-browser',
+    );
     await page.getByRole('link', { name: 'Devices' }).click();
-    await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Inventory observation is stale' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Devices', level: 1 }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Inventory observation is stale' }),
+    ).toBeVisible();
     await page.getByRole('button', { name: 'Refresh inventory' }).click();
-    await expect(page.getByText('450 matching devices · 450 in district')).toBeVisible({ timeout: 120_000 });
-    await expect(page.getByRole('heading', { name: 'Inventory observation is stale' })).toHaveCount(0);
+    await expect(
+      page.getByText('450 matching devices · 450 in district'),
+    ).toBeVisible({ timeout: 120_000 });
+    await expect(
+      page.getByRole('heading', { name: 'Inventory observation is stale' }),
+    ).toHaveCount(0);
     await auditAccessibility(page, 'devices');
 
     await page.locator('.add-filter').click();
@@ -3037,23 +3426,41 @@ export async function qualifyDevicesBrowser({
     await page.getByLabel('Operator').selectOption('startsWith');
     await page.getByLabel('Value').fill('HS-04');
     await page.getByRole('button', { name: 'Apply' }).click();
-    await expect(page.getByRole('button', { name: 'Asset tag starts with: HS-04' })).toBeVisible();
-    await expect(page.getByText('96 matching devices · 450 in district')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Asset tag starts with: HS-04' }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('96 matching devices · 450 in district'),
+    ).toBeVisible();
 
-    await page.getByRole('button', { name: 'Open details for C0A1-0001' }).click();
-    await expect(page.getByRole('heading', { name: 'C0A1-0001', level: 1 })).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Open details for C0A1-0001' })
+      .click();
+    await expect(
+      page.getByRole('heading', { name: 'C0A1-0001', level: 1 }),
+    ).toBeVisible();
     await expect(page.getByText('78% of design capacity')).toBeVisible();
     await expect(page.getByText('Classified by Google')).toBeVisible();
     await auditAccessibility(page, 'device-details');
     await page.getByRole('button', { name: 'Next device' }).click();
-    await expect(page.getByRole('heading', { name: 'C0A1-0002', level: 1 })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'C0A1-0002', level: 1 }),
+    ).toBeVisible();
     await page.getByRole('link', { name: 'Back to devices' }).click();
-    await expect(page.getByRole('button', { name: 'Asset tag starts with: HS-04' })).toBeVisible();
-    await expect(page.getByText('96 matching devices · 450 in district')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Asset tag starts with: HS-04' }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('96 matching devices · 450 in district'),
+    ).toBeVisible();
 
     await page.goto(`${publicOrigin}/devices/synthetic-device-9`);
-    await expect(page.getByRole('heading', { name: 'No battery report' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Next device' })).toBeDisabled();
+    await expect(
+      page.getByRole('heading', { name: 'No battery report' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Next device' }),
+    ).toBeDisabled();
     return [
       'devices page refreshes a stale inventory and shows counts: pass',
       'typed asset tag filter narrows the grid and keeps its chip after details: pass',
@@ -3069,16 +3476,16 @@ export async function qualifyDevicesBrowser({
 In `api-e2e/auth.test.mjs`, import `qualifyDevicesBrowser` from `./devices-browser.mjs`. Add this block directly after the `qualifyDevicesApi` block:
 
 ```js
-      if (applicationPhase === 3)
-        await qualifyDevicesBrowser({
-          browser,
-          auditAccessibility,
-          publicOrigin,
-          evidenceDirectory,
-          setSubject: (value) => {
-            subject = value;
-          },
-        });
+if (applicationPhase === 3)
+  await qualifyDevicesBrowser({
+    browser,
+    auditAccessibility,
+    publicOrigin,
+    evidenceDirectory,
+    setSubject: (value) => {
+      subject = value;
+    },
+  });
 ```
 
 - [ ] **Step 2: Run the check and confirm it fails**

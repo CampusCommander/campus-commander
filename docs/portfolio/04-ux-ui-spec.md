@@ -3,7 +3,6 @@
 > Consolidated reference, subject to the 2026-09-17 owner reset.
 > [Current work](../current-work.md) controls execution. [Workflow gaps](../workflow-gaps.md) identifies disputed scope and missing decisions.
 
-
 **Status:** current interaction design, revised 2026-09-05. Visual tokens remain provisional where marked.
 The contractor review and owner decisions replace conflicting behavior from earlier prototype boards.
 [03](03-architecture.md) defines runtime behavior. [05](05-decisions-and-open-questions.md) records current decisions.

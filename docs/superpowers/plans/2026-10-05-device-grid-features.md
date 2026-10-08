@@ -38,6 +38,7 @@
 ### Task 1: OrgUnit set predicate end to end
 
 **Files:**
+
 - Modify: `libs/application-contracts/src/lib/devices.ts`
 - Modify: `libs/application-contracts/src/lib/devices.test.mjs`
 - Modify: `api/src/app/devices/device-query.ts`
@@ -50,6 +51,7 @@
 - Modify: `api-e2e/devices-api.mjs`
 
 **Interfaces:**
+
 - Produces: the OrgUnit predicate `{ field: 'orgUnitPath'; operator: 'in'; values: string[] }`, with at most 1,000 paths. It matches devices whose OrgUnit path equals one of the values. The `equals` and `within` operators are removed.
 - Produces: battery and OrgUnit predicates accept an empty `values` array. An empty set matches no devices.
 - Produces: in `device-fields.ts`, `unitsWithin(units, path): string[]`, `unitCheck(selected, units, path): 'checked' | 'mixed' | 'unchecked'`, and `withUnit(selected, units, path, checked): string[]`. `ORG_UNIT_OPERATORS` is removed.
@@ -61,35 +63,35 @@ A set filter lists exact values, so the predicate matches exact paths. The OrgUn
 In `libs/application-contracts/src/lib/devices.test.mjs`, in the test `predicates accept only the operators of their field type`, replace these three assertions:
 
 ```js
-  assert.equal(ok({ field: 'battery', operator: 'is', values: [] }), false);
-  assert.equal(
-    ok({ field: 'orgUnitPath', operator: 'within', value: 'School A' }),
-    false,
-  );
-  assert.equal(
-    ok({ field: 'orgUnitPath', operator: 'within', value: '/School A' }),
-    true,
-  );
+assert.equal(ok({ field: 'battery', operator: 'is', values: [] }), false);
+assert.equal(
+  ok({ field: 'orgUnitPath', operator: 'within', value: 'School A' }),
+  false,
+);
+assert.equal(
+  ok({ field: 'orgUnitPath', operator: 'within', value: '/School A' }),
+  true,
+);
 ```
 
 with:
 
 ```js
-  // An empty set filter is valid. It matches no devices.
-  assert.equal(ok({ field: 'battery', operator: 'is', values: [] }), true);
-  assert.equal(
-    ok({ field: 'orgUnitPath', operator: 'in', values: ['School A'] }),
-    false,
-  );
-  assert.equal(
-    ok({ field: 'orgUnitPath', operator: 'in', values: ['/School A', '/'] }),
-    true,
-  );
-  assert.equal(ok({ field: 'orgUnitPath', operator: 'in', values: [] }), true);
-  assert.equal(
-    ok({ field: 'orgUnitPath', operator: 'within', value: '/School A' }),
-    false,
-  );
+// An empty set filter is valid. It matches no devices.
+assert.equal(ok({ field: 'battery', operator: 'is', values: [] }), true);
+assert.equal(
+  ok({ field: 'orgUnitPath', operator: 'in', values: ['School A'] }),
+  false,
+);
+assert.equal(
+  ok({ field: 'orgUnitPath', operator: 'in', values: ['/School A', '/'] }),
+  true,
+);
+assert.equal(ok({ field: 'orgUnitPath', operator: 'in', values: [] }), true);
+assert.equal(
+  ok({ field: 'orgUnitPath', operator: 'within', value: '/School A' }),
+  false,
+);
 ```
 
 In `api/src/app/devices/device-query.test.mjs`, in `filter values never enter the SQL text`, replace the OrgUnit predicate with:
@@ -115,7 +117,10 @@ test('an empty set filter matches no devices', () => {
   const battery = query({
     predicates: [{ field: 'battery', operator: 'is', values: [] }],
   });
-  assert.match(battery.rows.text, /WHERE s\.customer_id=\$1 AND FALSE ORDER BY/);
+  assert.match(
+    battery.rows.text,
+    /WHERE s\.customer_id=\$1 AND FALSE ORDER BY/,
+  );
   const units = query({
     predicates: [{ field: 'orgUnitPath', operator: 'in', values: [] }],
   });
@@ -192,12 +197,7 @@ it('applies an organization unit with the units inside it', () => {
   ];
   expect(button('Apply').disabled).toBe(true);
   click(boxes()[1]);
-  expect(boxes().map((box) => box.checked)).toEqual([
-    false,
-    true,
-    true,
-    false,
-  ]);
+  expect(boxes().map((box) => box.checked)).toEqual([false, true, true, false]);
   expect(boxes()[0].indeterminate).toBe(true);
   click(button('Apply'));
   expect(applied).toEqual([
@@ -251,7 +251,7 @@ In `api/src/app/devices/device-query.ts`, in `deviceWhere`, replace the `orgUnit
 In the battery branch, replace `clauses.push(`(${parts.join(' OR ')})`);` with:
 
 ```ts
-      clauses.push(parts.length ? `(${parts.join(' OR ')})` : 'FALSE');
+clauses.push(parts.length ? `(${parts.join(' OR ')})` : 'FALSE');
 ```
 
 - [ ] **Step 5: Change the chip label and add the OrgUnit tree helpers**
@@ -259,20 +259,20 @@ In the battery branch, replace `clauses.push(`(${parts.join(' OR ')})`);` with:
 In `frontend/src/app/devices/device-fields.ts`, delete `ORG_UNIT_OPERATORS`. In `chipLabel`, replace the battery and OrgUnit lines with:
 
 ```ts
-  if (predicate.field === 'battery')
-    return `${label} · ${
-      predicate.values.length
-        ? predicate.values.map((value) => BATTERY_LABELS[value]).join(', ')
-        : 'none'
-    }`;
-  if (predicate.field === 'orgUnitPath')
-    return `${label} · ${
-      predicate.values.length === 0
-        ? 'none'
-        : predicate.values.length <= 3
-          ? predicate.values.join(', ')
-          : `${predicate.values.length} units`
-    }`;
+if (predicate.field === 'battery')
+  return `${label} · ${
+    predicate.values.length
+      ? predicate.values.map((value) => BATTERY_LABELS[value]).join(', ')
+      : 'none'
+  }`;
+if (predicate.field === 'orgUnitPath')
+  return `${label} · ${
+    predicate.values.length === 0
+      ? 'none'
+      : predicate.values.length <= 3
+        ? predicate.values.join(', ')
+        : `${predicate.values.length} units`
+  }`;
 ```
 
 Append after `orgUnitOptions`:
@@ -369,24 +369,24 @@ In `frontend/src/app/devices/device-filter.ts`:
 5. In `openField`, replace the `this.operator.set(...)` call with the following. After `this.battery.set([]);`, add `this.unitValues.set([]);`.
 
 ```ts
-    this.operator.set(
-      field.kind === 'orgUnit'
-        ? 'in'
-        : field.kind === 'date'
-          ? 'before'
-          : 'contains',
-    );
+this.operator.set(
+  field.kind === 'orgUnit'
+    ? 'in'
+    : field.kind === 'date'
+      ? 'before'
+      : 'contains',
+);
 ```
 
 6. In `open`, replace the value branches with:
 
 ```ts
-    if (predicate.field === 'battery') this.battery.set(predicate.values);
-    else if (predicate.field === 'orgUnitPath')
-      this.unitValues.set(predicate.values);
-    else if (predicate.field === 'lastContact')
-      this.value.set(dateInputValue(predicate.value));
-    else if ('value' in predicate) this.value.set(predicate.value);
+if (predicate.field === 'battery') this.battery.set(predicate.values);
+else if (predicate.field === 'orgUnitPath')
+  this.unitValues.set(predicate.values);
+else if (predicate.field === 'lastContact')
+  this.value.set(dateInputValue(predicate.value));
+else if ('value' in predicate) this.value.set(predicate.value);
 ```
 
 7. After `toggleBattery`, add:
@@ -406,31 +406,31 @@ In `frontend/src/app/devices/device-filter.ts`:
 In `frontend/src/app/devices/device-filter.html`, replace the whole `@case ('orgUnit') { ... }` block with:
 
 ```html
-  } @case ('orgUnit') {
-  <label class="field"
-    >Find an organization unit
-    <input
-      type="search"
-      [value]="unitSearch()"
-      (input)="unitSearch.set($any($event.target).value)"
-  /></label>
-  <fieldset class="units">
-    <legend>Organization units</legend>
-    @for (unit of units(); track unit.path) {
-    <label class="unit" [style.padding-inline-start.px]="unit.depth * 16"
-      ><input
-        type="checkbox"
-        [checked]="unitState(unit.path) === 'checked'"
-        [indeterminate]="unitState(unit.path) === 'mixed'"
-        (change)="chooseUnit(unit.path, $any($event.target).checked)"
-      />{{ unit.label }}</label
-    >
-    } @empty {
-    <p>No organization units match.</p>
-    }
-  </fieldset>
-  <p class="hint">Choosing a unit includes the units inside it.</p>
-  } @case ('date') {
+} @case ('orgUnit') {
+<label class="field"
+  >Find an organization unit
+  <input
+    type="search"
+    [value]="unitSearch()"
+    (input)="unitSearch.set($any($event.target).value)"
+/></label>
+<fieldset class="units">
+  <legend>Organization units</legend>
+  @for (unit of units(); track unit.path) {
+  <label class="unit" [style.padding-inline-start.px]="unit.depth * 16"
+    ><input
+      type="checkbox"
+      [checked]="unitState(unit.path) === 'checked'"
+      [indeterminate]="unitState(unit.path) === 'mixed'"
+      (change)="chooseUnit(unit.path, $any($event.target).checked)"
+    />{{ unit.label }}</label
+  >
+  } @empty {
+  <p>No organization units match.</p>
+  }
+</fieldset>
+<p class="hint">Choosing a unit includes the units inside it.</p>
+} @case ('date') {
 ```
 
 - [ ] **Step 7: Change the API check**
@@ -461,6 +461,7 @@ git commit -m "feat: filter devices by a set of organization units"
 ### Task 2: Selection contracts, selection SQL, and selection state
 
 **Files:**
+
 - Modify: `libs/application-contracts/src/lib/devices.ts`
 - Modify: `libs/application-contracts/src/lib/devices.test.mjs`
 - Modify: `api/src/app/devices/device-query.ts`
@@ -469,6 +470,7 @@ git commit -m "feat: filter devices by a set of organization units"
 - Create: `api/src/app/devices/device-selection.test.mjs`
 
 **Interfaces:**
+
 - Consumes: the Task 1 predicates.
 - Produces: in `@campus/application-contracts`:
   - `deviceSelectionKeySchema` and type `DeviceSelectionKey = { gridId: 'devices'; tabId: string }`. `tabId` is a UUID.
@@ -588,7 +590,9 @@ test('the selected view intersects the selection with the active filters', () =>
 
 test('membership checks bind the device IDs after the customer', () => {
   const among = selectedAmongSql('C0123456', selection, ['d1', 'd2']);
-  assert.ok(among.text.startsWith('SELECT d.device_id FROM cc.device_sync_state s'));
+  assert.ok(
+    among.text.startsWith('SELECT d.device_id FROM cc.device_sync_state s'),
+  );
   assert.ok(among.text.endsWith('AND d.device_id=ANY($2::text[])'));
   assert.deepEqual(among.values.slice(0, 2), ['C0123456', ['d1', 'd2']]);
   const matching = matchingAmongSql(
@@ -631,8 +635,16 @@ test('select and deselect move devices between additions and exceptions', async 
     [{ op: 'select', ids: ['d1', 'd2'] }],
     none,
   );
-  assert.deepEqual(state, { terms: [], additions: ['d1', 'd2'], exceptions: [] });
-  state = await applySelectionOps(state, [{ op: 'deselect', ids: ['d1'] }], none);
+  assert.deepEqual(state, {
+    terms: [],
+    additions: ['d1', 'd2'],
+    exceptions: [],
+  });
+  state = await applySelectionOps(
+    state,
+    [{ op: 'deselect', ids: ['d1'] }],
+    none,
+  );
   assert.deepEqual(state, { terms: [], additions: ['d2'], exceptions: [] });
 });
 
@@ -664,7 +676,11 @@ test('deselecting under a filter term records an exception', async () => {
     ],
     none,
   );
-  assert.deepEqual(state, { terms: [hs04], additions: ['d2'], exceptions: ['d1'] });
+  assert.deepEqual(state, {
+    terms: [hs04],
+    additions: ['d2'],
+    exceptions: ['d1'],
+  });
   assert.deepEqual(
     await applySelectionOps(state, [{ op: 'deselectAll' }], none),
     emptySelection(),
@@ -695,7 +711,10 @@ test('selections belong to one person, grid, and tab', () => {
 test('a missing or unreadable stored selection reads as empty', () => {
   assert.deepEqual(parseSelection(null), emptySelection());
   assert.deepEqual(parseSelection('{bad'), emptySelection());
-  assert.deepEqual(parseSelection(JSON.stringify({ terms: 'x' })), emptySelection());
+  assert.deepEqual(
+    parseSelection(JSON.stringify({ terms: 'x' })),
+    emptySelection(),
+  );
 });
 
 test('a concurrent change makes the write retry from the newer value', async () => {
@@ -730,7 +749,10 @@ test('a selection that keeps changing underneath reports busy', async () => {
 
 test('the spec reports terms and counts without device IDs', () => {
   assert.deepEqual(
-    selectionSpec({ terms: [hs04], additions: ['d2'], exceptions: ['d1', 'd3'] }, 95),
+    selectionSpec(
+      { terms: [hs04], additions: ['d2'], exceptions: ['d1', 'd3'] },
+      95,
+    ),
     {
       terms: [{ type: 'all', predicates: hs04 }],
       added: 1,
@@ -1028,10 +1050,7 @@ const sameTerm = (
 export async function applySelectionOps(
   state: SelectionState,
   ops: readonly DeviceSelectionOp[],
-  matching: (
-    predicates: DevicePredicate[],
-    ids: string[],
-  ) => Promise<string[]>,
+  matching: (predicates: DevicePredicate[], ids: string[]) => Promise<string[]>,
 ): Promise<SelectionState> {
   let { terms, additions, exceptions } = state;
   for (const op of ops) {
@@ -1121,6 +1140,7 @@ git commit -m "feat: evaluate device selections in the device query"
 ### Task 3: Selection endpoints and edge routes
 
 **Files:**
+
 - Modify: `api/src/app/cache/cache.service.ts`
 - Modify: `api/src/app/devices/devices.module.ts`
 - Modify: `api/src/app/devices/devices.service.ts`
@@ -1130,17 +1150,19 @@ git commit -m "feat: evaluate device selections in the device query"
 - Modify: `api-e2e/devices-api.mjs`
 
 **Interfaces:**
+
 - Consumes: the Task 2 contracts, SQL builders, and selection state functions.
 - Produces: `CacheService.swap(key, expected: string | null, value, seconds): Promise<boolean>`. It writes only if the stored value still equals `expected`. A `null` value for `expected` requires the key to be absent.
 - Produces: three endpoints. Each requires `devices:read` and returns status 200.
 
-| Endpoint | Body | Response |
-| --- | --- | --- |
-| `POST /api/devices/selection` | `DeviceSelectionKey` | `{ selection: DeviceSelectionSpec }` |
-| `POST /api/devices/selection/ops` | `deviceSelectionChangeSchema` | `{ selection: DeviceSelectionSpec }` |
+| Endpoint                              | Body                           | Response                                |
+| ------------------------------------- | ------------------------------ | --------------------------------------- |
+| `POST /api/devices/selection`         | `DeviceSelectionKey`           | `{ selection: DeviceSelectionSpec }`    |
+| `POST /api/devices/selection/ops`     | `deviceSelectionChangeSchema`  | `{ selection: DeviceSelectionSpec }`    |
 | `POST /api/devices/selection/resolve` | `deviceSelectionResolveSchema` | `{ selected: Record<string, boolean> }` |
 
-  A too-large selection returns 409 with `{ reason: 'selection-too-large' }`. Repeated concurrent changes return 409 with `{ reason: 'selection-busy' }`.
+A too-large selection returns 409 with `{ reason: 'selection-too-large' }`. Repeated concurrent changes return 409 with `{ reason: 'selection-busy' }`.
+
 - Produces: `POST /api/devices/query` honors `selection`. It limits the rows and the matching count to the selection.
 
 - [ ] **Step 1: Write the failing edge test**
@@ -1165,79 +1187,87 @@ Add to the denied table after `['POST', '/api/devices/synthetic-device-1', 405],
 In `api-e2e/devices-api.mjs`, add `import { randomUUID } from 'node:crypto';` after the `node:assert/strict` import. Insert after the OrgUnit query assertion that expects 150, before `const detail = ...`:
 
 ```js
-    const select = async (path, data) => {
-      const response = await api.post(`${root}/selection${path}`, {
-        headers,
-        data,
-      });
-      assert.equal(response.status(), 200, await response.text());
-      return response.json();
-    };
-    const tab = { gridId: 'devices', tabId: randomUUID() };
-    const hs04 = [{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }];
-    assert.equal((await select('', tab)).selection.selectedCount, 0);
-    assert.equal(
-      (
-        await api.post(`${root}/selection/ops`, {
-          data: { ...tab, ops: [{ op: 'deselectAll' }] },
-        })
-      ).status(),
-      403,
-    );
-    assert.deepEqual(
-      (await select('/ops', { ...tab, ops: [{ op: 'selectAll', predicates: hs04 }] }))
-        .selection,
-      {
-        terms: [{ type: 'all', predicates: hs04 }],
-        added: 0,
-        excluded: 0,
-        selectedCount: 96,
-      },
-    );
-    const changed = await select('/ops', {
+const select = async (path, data) => {
+  const response = await api.post(`${root}/selection${path}`, {
+    headers,
+    data,
+  });
+  assert.equal(response.status(), 200, await response.text());
+  return response.json();
+};
+const tab = { gridId: 'devices', tabId: randomUUID() };
+const hs04 = [{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }];
+assert.equal((await select('', tab)).selection.selectedCount, 0);
+assert.equal(
+  (
+    await api.post(`${root}/selection/ops`, {
+      data: { ...tab, ops: [{ op: 'deselectAll' }] },
+    })
+  ).status(),
+  403,
+);
+assert.deepEqual(
+  (
+    await select('/ops', {
       ...tab,
-      ops: [
-        { op: 'deselect', ids: ['synthetic-device-1'] },
-        { op: 'select', ids: ['synthetic-device-0'] },
+      ops: [{ op: 'selectAll', predicates: hs04 }],
+    })
+  ).selection,
+  {
+    terms: [{ type: 'all', predicates: hs04 }],
+    added: 0,
+    excluded: 0,
+    selectedCount: 96,
+  },
+);
+const changed = await select('/ops', {
+  ...tab,
+  ops: [
+    { op: 'deselect', ids: ['synthetic-device-1'] },
+    { op: 'select', ids: ['synthetic-device-0'] },
+  ],
+});
+assert.equal(changed.selection.selectedCount, 96);
+assert.deepEqual(
+  (
+    await select('/resolve', {
+      ...tab,
+      rowIds: [
+        'synthetic-device-0',
+        'synthetic-device-1',
+        'synthetic-device-2',
       ],
-    });
-    assert.equal(changed.selection.selectedCount, 96);
-    assert.deepEqual(
-      (
-        await select('/resolve', {
-          ...tab,
-          rowIds: ['synthetic-device-0', 'synthetic-device-1', 'synthetic-device-2'],
-          groupRoutes: [],
-        })
-      ).selected,
-      {
-        'synthetic-device-0': true,
-        'synthetic-device-1': false,
-        'synthetic-device-2': true,
-      },
-    );
-    // HS-04 holds 29 Replace soon devices. Device 1 is one of them and is deselected.
-    assert.equal(
-      (
-        await query({
-          selection: tab,
-          predicates: [
-            { field: 'battery', operator: 'is', values: ['replace-soon'] },
-          ],
-        })
-      ).matching,
-      28,
-    );
-    assert.equal(
-      (await select('', { gridId: 'devices', tabId: randomUUID() })).selection
-        .selectedCount,
-      0,
-    );
-    assert.equal(
-      (await select('/ops', { ...tab, ops: [{ op: 'deselectAll' }] })).selection
-        .selectedCount,
-      0,
-    );
+      groupRoutes: [],
+    })
+  ).selected,
+  {
+    'synthetic-device-0': true,
+    'synthetic-device-1': false,
+    'synthetic-device-2': true,
+  },
+);
+// HS-04 holds 29 Replace soon devices. Device 1 is one of them and is deselected.
+assert.equal(
+  (
+    await query({
+      selection: tab,
+      predicates: [
+        { field: 'battery', operator: 'is', values: ['replace-soon'] },
+      ],
+    })
+  ).matching,
+  28,
+);
+assert.equal(
+  (await select('', { gridId: 'devices', tabId: randomUUID() })).selection
+    .selectedCount,
+  0,
+);
+assert.equal(
+  (await select('/ops', { ...tab, ops: [{ op: 'deselectAll' }] })).selection
+    .selectedCount,
+  0,
+);
 ```
 
 Add this line to the returned list after the filter line:
@@ -1321,10 +1351,10 @@ import {
 4. In `page`, replace `const sql = devicePageSql(customerId, query);` with:
 
 ```ts
-        const selection = query.selection
-          ? await this.storedSelection(session, query.selection)
-          : null;
-        const sql = devicePageSql(customerId, query, selection);
+const selection = query.selection
+  ? await this.storedSelection(session, query.selection)
+  : null;
+const sql = devicePageSql(customerId, query, selection);
 ```
 
 5. Append these methods to the class:
@@ -1498,6 +1528,7 @@ git commit -m "feat: keep device selections per tab through the API"
 ### Task 4: LibreGrid packages, filter model mapping, and column filters
 
 **Files:**
+
 - Modify: `package.json`, `package-lock.json`
 - Create: `frontend/src/app/devices/device-filter-model.ts`
 - Create: `frontend/src/app/devices/device-filter-model.spec.ts`
@@ -1505,6 +1536,7 @@ git commit -m "feat: keep device selections per tab through the API"
 - Modify: `frontend/src/app/devices/device-grid.spec.ts`
 
 **Interfaces:**
+
 - Consumes: the Task 1 predicates.
 - Produces: in `device-filter-model.ts`:
   - `predicatesFromFilterModel(model: FilterModel | null | undefined): DevicePredicate[]`. The result is in column order. It throws for a model the query cannot express.
@@ -1628,9 +1660,9 @@ it('places organization units under the root of the filter tree', () => {
 In `frontend/src/app/devices/device-grid.spec.ts`, change the first test's call to:
 
 ```ts
-  const columns = deviceColumnDefs(() => undefined, {
-    now: () => Date.parse('2026-10-05T12:00:00Z'),
-  });
+const columns = deviceColumnDefs(() => undefined, {
+  now: () => Date.parse('2026-10-05T12:00:00Z'),
+});
 ```
 
 Replace the test `opens details with Enter or Space on the details cell` with:
@@ -1951,7 +1983,7 @@ export function deviceColumnDefs(
 6. Change `detailsKeyHandler`. Its comment becomes `/** Enter on a focused details cell opens the device. Space toggles row selection (UI-09). */`. Its key check becomes:
 
 ```ts
-    if (keyboard?.key !== 'Enter') return;
+if (keyboard?.key !== 'Enter') return;
 ```
 
 - [ ] **Step 6: Run the tests to verify they pass**
@@ -1974,10 +2006,12 @@ git commit -m "feat: map device column filters to the device query"
 ### Task 5: Device selection provider
 
 **Files:**
+
 - Create: `frontend/src/app/devices/device-selection.ts`
 - Create: `frontend/src/app/devices/device-selection.spec.ts`
 
 **Interfaces:**
+
 - Consumes: the Task 2 contracts and Task 4 `predicatesFromFilterModel` and `filterModelFromPredicates`.
 - Produces:
   - `DEVICE_GRID_ID = 'devices'`.
@@ -2085,9 +2119,9 @@ it('splits large row batches to the API limit', async () => {
     tabId,
     ops: [{ op: 'select', ids }],
   });
-  expect(call.mock.calls[0][1].ops.map((op: { ids: string[] }) => op.ids.length)).toEqual([
-    2000, 500,
-  ]);
+  expect(
+    call.mock.calls[0][1].ops.map((op: { ids: string[] }) => op.ids.length),
+  ).toEqual([2000, 500]);
 });
 
 it('keeps one selection tab per browser tab', () => {
@@ -2325,6 +2359,7 @@ git commit -m "feat: provide device selections to LibreGrid"
 ### Task 6: Grid filters drive the query, and grid state survives details
 
 **Files:**
+
 - Modify: `frontend/src/app/devices/device-datasource.ts`
 - Modify: `frontend/src/app/devices/device-grid.ts`
 - Modify: `frontend/src/app/devices/device-grid.spec.ts`
@@ -2335,6 +2370,7 @@ git commit -m "feat: provide device selections to LibreGrid"
 - Modify: `frontend/src/app/devices/devices.spec.ts`
 
 **Interfaces:**
+
 - Consumes: the Task 4 mapping and the Task 5 provider.
 - Produces: in `device-datasource.ts`:
   - `interface DeviceView { predicates: DevicePredicate[]; sort: DeviceSort; selection: DeviceSelectionKey | null }`.
@@ -2446,14 +2482,14 @@ In `frontend/src/app/devices/devices.store.spec.ts`, make these changes:
 1. In `queries rows with the active filters and sort and keeps the counts`, replace the `setPredicates` and `setSort` calls with:
 
 ```ts
-  store.setView({
-    predicates: [{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }],
-    sort: { field: 'assetTag', direction: 'desc' },
-    selection: null,
-  });
+store.setView({
+  predicates: [{ field: 'assetTag', operator: 'startsWith', value: 'HS-04' }],
+  sort: { field: 'assetTag', direction: 'desc' },
+  selection: null,
+});
 ```
 
-   Add `selection: null,` after `limit: 100,` in the expected request body.
+Add `selection: null,` after `limit: 100,` in the expected request body.
 
 2. Replace the test `changing filters reloads the grid and forgets the row position` with:
 
@@ -2508,18 +2544,18 @@ it('sends selection requests through the signed-in connection', async () => {
 3. In `ignores counts from a query whose filters changed meanwhile`, replace `store.setPredicates([{ field: 'notes', operator: 'isEmpty' }]);` with:
 
 ```ts
-  store.setView({
-    predicates: [{ field: 'notes', operator: 'isEmpty' }],
-    sort: { field: 'serialNumber', direction: 'asc' },
-    selection: null,
-  });
+store.setView({
+  predicates: [{ field: 'notes', operator: 'isEmpty' }],
+  sort: { field: 'serialNumber', direction: 'asc' },
+  selection: null,
+});
 ```
 
 4. In `clears browsing state when a different person signs in`, add `store.gridState.set({ pagination: { page: 3, pageSize: 100 } });` before the session change. Add these assertions at the end:
 
 ```ts
-  expect(store.gridState()).toBeNull();
-  expect(store.view().predicates).toEqual([]);
+expect(store.gridState()).toBeNull();
+expect(store.view().predicates).toEqual([]);
 ```
 
 In `frontend/src/app/devices/devices.spec.ts`:
@@ -2698,7 +2734,7 @@ import {
 } from './device-selection';
 ```
 
-   Remove `type DeviceQuery` from the contracts import if nothing else uses it.
+Remove `type DeviceQuery` from the contracts import if nothing else uses it.
 
 2. Add before the class:
 
@@ -2726,9 +2762,9 @@ const defaultView = (): DeviceView => ({
 4. In `reset()`, replace the `sort` line with:
 
 ```ts
-    this.view.set(defaultView());
-    this.gridState.set(null);
-    this.selection.spec.set(null);
+this.view.set(defaultView());
+this.gridState.set(null);
+this.selection.spec.set(null);
 ```
 
 5. Replace `rows` with:
@@ -2795,10 +2831,10 @@ In `frontend/src/app/devices/device-grid.ts`:
 3. In the constructor, add:
 
 ```ts
-    effect(() => {
-      const predicates = this.predicates();
-      untracked(() => this.applyPredicates(predicates));
-    });
+effect(() => {
+  const predicates = this.predicates();
+  untracked(() => this.applyPredicates(predicates));
+});
 ```
 
 4. In `ngOnInit`, change these options:
@@ -2885,11 +2921,9 @@ In `frontend/src/app/devices/devices.ts`:
 In `frontend/src/app/devices/devices.html`, replace the `[sort]="store.sort()"` binding on `app-device-grid` with:
 
 ```html
-      [state]="store.gridState()"
-      [saveState]="saveState"
-      [predicates]="store.predicates()"
-      [orgUnits]="store.orgUnits()"
-      (filtersChange)="store.setPredicates($event)"
+[state]="store.gridState()" [saveState]="saveState"
+[predicates]="store.predicates()" [orgUnits]="store.orgUnits()"
+(filtersChange)="store.setPredicates($event)"
 ```
 
 - [ ] **Step 7: Run the tests to verify they pass**
@@ -2912,6 +2946,7 @@ git commit -m "feat: drive the device query from the grid filter model"
 ### Task 7: Paging, column tools, status bar, and selection in the grid
 
 **Files:**
+
 - Create: `frontend/src/app/devices/device-grid-options.ts`
 - Create: `frontend/src/app/devices/device-grid-options.spec.ts`
 - Create: `frontend/src/app/devices/device-status-panel.ts`
@@ -2926,6 +2961,7 @@ git commit -m "feat: drive the device query from the grid filter model"
 - Modify: `frontend/src/app/devices/devices.spec.ts`
 
 **Interfaces:**
+
 - Consumes: the Task 5 provider and `DEVICE_GRID_ID`, plus the Task 6 store and grid.
 - Produces: in `device-grid-options.ts`:
   - `deviceGridFeatures({ provider, tabId, footer }): GridOptions<DeviceRow>`.
@@ -2997,8 +3033,10 @@ it('opens the page that holds a remembered row', () => {
       paginationGetPageSize: () => 100,
       paginationGetCurrentPage: () => 0,
       paginationGoToPage: (page: number) => void calls.push(['page', page]),
-      ensureIndexVisible: (index: number, position?: 'top' | 'bottom' | 'middle' | null) =>
-        void calls.push(['row', index, position]),
+      ensureIndexVisible: (
+        index: number,
+        position?: 'top' | 'bottom' | 'middle' | null,
+      ) => void calls.push(['row', index, position]),
     },
     150,
   );
@@ -3166,21 +3204,26 @@ import { selectionScope } from './device-selection';
   template: `
     <div class="status" aria-live="polite">
       @if (store.page(); as page) {
-      <p>
-        {{ count(page.matching) }} matching devices · {{ count(page.total) }} in
-        district
-      </p>
-      <p>
-        @if (store.offline()) { Cached inventory: {{ page.observedAt | date:
-        'MMM d, h:mm a' }} · Connection unavailable } @else if
-        (store.sync()?.stale) { Stale inventory · Last complete observation {{
-        page.observedAt | date: 'MMM d, h:mm a' }} · Refresh required } @else {
-        Inventory observed {{ page.observedAt | date: 'MMM d, h:mm a' }} }
-      </p>
+        <p>
+          {{ count(page.matching) }} matching devices ·
+          {{ count(page.total) }} in district
+        </p>
+        <p>
+          @if (store.offline()) {
+            Cached inventory: {{ page.observedAt | date: 'MMM d, h:mm a' }} ·
+            Connection unavailable
+          } @else if (store.sync()?.stale) {
+            Stale inventory · Last complete observation
+            {{ page.observedAt | date: 'MMM d, h:mm a' }} · Refresh required
+          } @else {
+            Inventory observed {{ page.observedAt | date: 'MMM d, h:mm a' }}
+          }
+        </p>
       } @else {
-      <p>Loading devices…</p>
-      } @if (scope(); as text) {
-      <p>{{ text }}</p>
+        <p>Loading devices…</p>
+      }
+      @if (scope(); as text) {
+        <p>{{ text }}</p>
       }
     </div>
   `,
@@ -3321,15 +3364,15 @@ export function deviceDatasource(
 ```
 
 ```ts
-      const view: DeviceView = {
-        predicates,
-        sort: sortFromModel(params.request.sortModel),
-        // Show All Selected limits the query to this tab's selection.
-        selection:
-          selection && params.api.getGridOption('ssrmSelectionViewActive')
-            ? selection
-            : null,
-      };
+const view: DeviceView = {
+  predicates,
+  sort: sortFromModel(params.request.sortModel),
+  // Show All Selected limits the query to this tab's selection.
+  selection:
+    selection && params.api.getGridOption('ssrmSelectionViewActive')
+      ? selection
+      : null,
+};
 ```
 
 The `ssrmSelectionViewActive` option type comes from the package's grid option declarations. `device-grid-options.ts` imports the package types, which puts those declarations in the program. If the type check still rejects the option name here, add `import type { SsrmSelectionOptions } from '@libregrid/server-side-selection';` and use it in a type position, then ledger the ruling.
@@ -3354,32 +3397,32 @@ ModuleRegistry.registerModules([
 ]);
 ```
 
-   Import them from `@libregrid/server-side-selection`, `@libregrid/set-filter`, `@libregrid/menu`, `@libregrid/side-bar`, `@libregrid/columns-tool-panel`, `@libregrid/filters-tool-panel`, and `@libregrid/status-bar`. Import `type ServerSideSelectionProvider` from `@libregrid/server-side-selection`. Import `deviceGridFeatures` and `showRow` from `./device-grid-options`, and `DEVICE_GRID_ID` from `./device-selection`.
+Import them from `@libregrid/server-side-selection`, `@libregrid/set-filter`, `@libregrid/menu`, `@libregrid/side-bar`, `@libregrid/columns-tool-panel`, `@libregrid/filters-tool-panel`, and `@libregrid/status-bar`. Import `type ServerSideSelectionProvider` from `@libregrid/server-side-selection`. Import `deviceGridFeatures` and `showRow` from `./device-grid-options`, and `DEVICE_GRID_ID` from `./device-selection`.
 
 2. Change the template to:
 
 ```html
-    <ag-grid-angular
-      class="device-grid"
-      [gridOptions]="options"
-      (gridReady)="ready($event)"
-    />
+<ag-grid-angular
+  class="device-grid"
+  [gridOptions]="options"
+  (gridReady)="ready($event)"
+/>
 ```
 
 3. Add to the styles:
 
 ```css
-    :host ::ng-deep .lgr-ssrm-selection-footer {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: var(--cc-space-md);
-      color: var(--cc-text-primary);
-    }
-    :host ::ng-deep .lgr-ssrm-selection-footer button {
-      color: var(--cc-accent);
-      font: inherit;
-    }
+:host ::ng-deep .lgr-ssrm-selection-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-md);
+  color: var(--cc-text-primary);
+}
+:host ::ng-deep .lgr-ssrm-selection-footer button {
+  color: var(--cc-accent);
+  font: inherit;
+}
 ```
 
 4. Remove the `optionalColumns` input, the `rangeChange` output, `DeviceRange`, the optional-columns effect, `applyColumns`, `updated`, and `emitRange`. Remove the `OptionalDeviceColumn` import.
@@ -3409,8 +3452,8 @@ ModuleRegistry.registerModules([
 9. In `restore`, replace the `setTimeout` line with:
 
 ```ts
-    const api = this.api;
-    if (api) setTimeout(() => showRow(api, index));
+const api = this.api;
+if (api) setTimeout(() => showRow(api, index));
 ```
 
 - [ ] **Step 7: Change the store and the page**
@@ -3477,6 +3520,7 @@ git commit -m "feat: page, select, and arrange devices with LibreGrid tools"
 ### Task 8: Browser check and workflow record
 
 **Files:**
+
 - Modify: `api-e2e/devices-browser.mjs`
 - Modify: `docs/workflows/device-browsing.md`
 - Modify: `docs/current-work.md`
@@ -3484,6 +3528,7 @@ git commit -m "feat: page, select, and arrange devices with LibreGrid tools"
 - Modify: `docs/document-index.csv`
 
 **Interfaces:**
+
 - Consumes: every earlier task through the real application. At the start of the new steps, the grid has the `Asset tag starts with: HS-04` chip and Serial ascending order.
 
 - [ ] **Step 1: Write the browser check**
@@ -3491,89 +3536,83 @@ git commit -m "feat: page, select, and arrange devices with LibreGrid tools"
 In `api-e2e/devices-browser.mjs`, insert after the assertion that shows `96 matching devices · 450 in district` following the return from C0A1-0002, before `await page.goto(... synthetic-device-9)`:
 
 ```js
-    // A column set filter becomes a chip (filtering decision).
-    const batteryHeader = page.getByRole('columnheader', { name: 'Battery' });
-    await batteryHeader.hover();
-    await batteryHeader.locator('.ag-header-cell-filter-button').click();
-    await page
-      .getByRole('checkbox', { name: 'Select all filtered values' })
-      .uncheck();
-    await page
-      .getByRole('checkbox', { name: 'Replace soon', exact: true })
-      .check();
-    await page.getByRole('button', { name: 'Apply', exact: true }).click();
-    await expect(
-      page.getByRole('button', { name: 'Battery · Replace soon', exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByText('29 matching devices · 450 in district'),
-    ).toBeVisible();
+// A column set filter becomes a chip (filtering decision).
+const batteryHeader = page.getByRole('columnheader', { name: 'Battery' });
+await batteryHeader.hover();
+await batteryHeader.locator('.ag-header-cell-filter-button').click();
+await page
+  .getByRole('checkbox', { name: 'Select all filtered values' })
+  .uncheck();
+await page.getByRole('checkbox', { name: 'Replace soon', exact: true }).check();
+await page.getByRole('button', { name: 'Apply', exact: true }).click();
+await expect(
+  page.getByRole('button', { name: 'Battery · Replace soon', exact: true }),
+).toBeVisible();
+await expect(
+  page.getByText('29 matching devices · 450 in district'),
+).toBeVisible();
 
-    // Select All captures the filtered devices and survives filter changes (SELECT-01).
-    await page.getByRole('button', { name: 'Select All (29)' }).click();
-    await expect(page.getByText('Total Selected: 29')).toBeVisible();
-    await expect(
-      page.getByText(
-        'Selected by filter: Asset tag starts with: HS-04 and Battery · Replace soon',
-      ),
-    ).toBeVisible();
-    await page
-      .getByRole('button', { name: 'Remove filter Battery · Replace soon' })
-      .click();
-    await expect(
-      page.getByText('96 matching devices · 450 in district'),
-    ).toBeVisible();
-    await expect(page.getByText('Total Selected: 29')).toBeVisible();
-    await page
-      .getByRole('row', { name: /Open details for C0A1-0001/ })
-      .getByRole('checkbox')
-      .uncheck();
-    await expect(page.getByText('Total Selected: 28')).toBeVisible();
-    await page.getByRole('button', { name: 'Show All Selected (28)' }).click();
-    await expect(
-      page.getByText('28 matching devices · 450 in district'),
-    ).toBeVisible();
-    await auditAccessibility(page, 'devices-selection');
-    await page.getByRole('button', { name: 'Show All Records' }).click();
-    await expect(
-      page.getByText('96 matching devices · 450 in district'),
-    ).toBeVisible();
-    await page.getByRole('button', { name: 'Deselect All' }).click();
-    await expect(page.getByText('Total Selected: 0')).toBeVisible();
+// Select All captures the filtered devices and survives filter changes (SELECT-01).
+await page.getByRole('button', { name: 'Select All (29)' }).click();
+await expect(page.getByText('Total Selected: 29')).toBeVisible();
+await expect(
+  page.getByText(
+    'Selected by filter: Asset tag starts with: HS-04 and Battery · Replace soon',
+  ),
+).toBeVisible();
+await page
+  .getByRole('button', { name: 'Remove filter Battery · Replace soon' })
+  .click();
+await expect(
+  page.getByText('96 matching devices · 450 in district'),
+).toBeVisible();
+await expect(page.getByText('Total Selected: 29')).toBeVisible();
+await page
+  .getByRole('row', { name: /Open details for C0A1-0001/ })
+  .getByRole('checkbox')
+  .uncheck();
+await expect(page.getByText('Total Selected: 28')).toBeVisible();
+await page.getByRole('button', { name: 'Show All Selected (28)' }).click();
+await expect(
+  page.getByText('28 matching devices · 450 in district'),
+).toBeVisible();
+await auditAccessibility(page, 'devices-selection');
+await page.getByRole('button', { name: 'Show All Records' }).click();
+await expect(
+  page.getByText('96 matching devices · 450 in district'),
+).toBeVisible();
+await page.getByRole('button', { name: 'Deselect All' }).click();
+await expect(page.getByText('Total Selected: 0')).toBeVisible();
 
-    // Back to devices returns to the page of the opened device (paging decision).
-    await page
-      .getByRole('button', { name: 'Remove filter Asset tag starts with: HS-04' })
-      .click();
-    const summary = page.locator('.ag-paging-row-summary-panel');
-    await expect(summary).toHaveText(/1\s*to\s*100\s*of\s*450/);
-    await page.getByRole('button', { name: 'Next Page' }).click();
-    await expect(summary).toHaveText(/101\s*to\s*200\s*of\s*450/);
-    await page
-      .getByRole('button', { name: 'Open details for C0A1-0064' })
-      .click();
-    await page.getByRole('button', { name: 'Next device' }).click();
-    await expect(
-      page.getByRole('heading', { name: 'C0A1-0065', level: 1 }),
-    ).toBeVisible();
-    await page.getByRole('link', { name: 'Back to devices' }).click();
-    await expect(summary).toHaveText(/101\s*to\s*200\s*of\s*450/);
-    await expect(
-      page.getByRole('button', { name: 'Open details for C0A1-0065' }),
-    ).toBeInViewport();
+// Back to devices returns to the page of the opened device (paging decision).
+await page
+  .getByRole('button', { name: 'Remove filter Asset tag starts with: HS-04' })
+  .click();
+const summary = page.locator('.ag-paging-row-summary-panel');
+await expect(summary).toHaveText(/1\s*to\s*100\s*of\s*450/);
+await page.getByRole('button', { name: 'Next Page' }).click();
+await expect(summary).toHaveText(/101\s*to\s*200\s*of\s*450/);
+await page.getByRole('button', { name: 'Open details for C0A1-0064' }).click();
+await page.getByRole('button', { name: 'Next device' }).click();
+await expect(
+  page.getByRole('heading', { name: 'C0A1-0065', level: 1 }),
+).toBeVisible();
+await page.getByRole('link', { name: 'Back to devices' }).click();
+await expect(summary).toHaveText(/101\s*to\s*200\s*of\s*450/);
+await expect(
+  page.getByRole('button', { name: 'Open details for C0A1-0065' }),
+).toBeInViewport();
 
-    // The Columns side bar shows and hides columns (column tools decision).
-    // AG Grid renders only the headers in view, so the check hides a visible column.
-    await page.getByRole('tab', { name: 'Columns' }).click();
-    await page.getByRole('checkbox', { name: 'Show Notes' }).check();
-    await expect(
-      page.getByRole('checkbox', { name: 'Show Notes' }),
-    ).toBeChecked();
-    await page.getByRole('checkbox', { name: 'Show Model' }).uncheck();
-    await expect(
-      page.getByRole('columnheader', { name: 'Model', exact: true }),
-    ).toHaveCount(0);
-    await auditAccessibility(page, 'devices-columns');
+// The Columns side bar shows and hides columns (column tools decision).
+// AG Grid renders only the headers in view, so the check hides a visible column.
+await page.getByRole('tab', { name: 'Columns' }).click();
+await page.getByRole('checkbox', { name: 'Show Notes' }).check();
+await expect(page.getByRole('checkbox', { name: 'Show Notes' })).toBeChecked();
+await page.getByRole('checkbox', { name: 'Show Model' }).uncheck();
+await expect(
+  page.getByRole('columnheader', { name: 'Model', exact: true }),
+).toHaveCount(0);
+await auditAccessibility(page, 'devices-columns');
 ```
 
 Add these lines to the returned list before the deep-link line:

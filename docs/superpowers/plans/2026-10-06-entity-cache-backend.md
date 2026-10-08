@@ -37,6 +37,7 @@
 ### Task 1: Freshness contracts, entity sync job, and events
 
 **Files:**
+
 - Create: `libs/application-contracts/src/lib/entity-cache.ts`
 - Create: `libs/application-contracts/src/lib/entity-cache.test.mjs`
 - Modify: `libs/application-contracts/src/lib/devices.ts`
@@ -44,6 +45,7 @@
 - Modify: `libs/application-contracts/src/index.ts`
 
 **Interfaces:**
+
 - Produces, from `@campus/application-contracts`:
   - `entityTypeSchema`, type `EntityType = 'device'`.
   - `ENTITY_FRESHNESS_HOURS: Record<EntityType, number>` (`{ device: 24 }`), `ENTITY_SYNC_BATCH_SIZE = 100`, `ENTITY_INFLIGHT_SECONDS = 120`, `ENTITY_CACHE_SECONDS: Record<EntityType, number>` (`{ device: 86400 }`).
@@ -89,9 +91,18 @@ test('devices are stale 24 hours after their last Google read', () => {
 });
 
 test('redis names carry the entity type and customer', () => {
-  assert.equal(entityKey('device', 'C0123456', 'd1'), 'cc:entity:device:C0123456:d1');
-  assert.equal(queryGenerationKey('device', 'C0123456'), 'cc:query-gen:device:C0123456');
-  assert.equal(inflightKey('device', 'C0123456'), 'cc:entity-inflight:device:C0123456');
+  assert.equal(
+    entityKey('device', 'C0123456', 'd1'),
+    'cc:entity:device:C0123456:d1',
+  );
+  assert.equal(
+    queryGenerationKey('device', 'C0123456'),
+    'cc:query-gen:device:C0123456',
+  );
+  assert.equal(
+    inflightKey('device', 'C0123456'),
+    'cc:entity-inflight:device:C0123456',
+  );
   assert.equal(entityEventsChannel('C0123456'), 'cc:entity-events:C0123456');
 });
 
@@ -103,7 +114,10 @@ test('batch requests coerce the Kestra loop value to a number', () => {
     correlationId: '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6c',
   });
   assert.equal(request.batch, 3);
-  assert.equal(entitySyncBatchRequestSchema.safeParse({ ...request, batch: -1 }).success, false);
+  assert.equal(
+    entitySyncBatchRequestSchema.safeParse({ ...request, batch: -1 }).success,
+    false,
+  );
 });
 
 test('events are a discriminated union', () => {
@@ -119,7 +133,10 @@ test('events are a discriminated union', () => {
     finishedAt: '2026-10-06T12:01:00.000Z',
   };
   assert.deepEqual(entitySyncJobSchema.parse(job), job);
-  assert.equal(entityEventSchema.parse({ type: 'job-finished', job }).type, 'job-finished');
+  assert.equal(
+    entityEventSchema.parse({ type: 'job-finished', job }).type,
+    'job-finished',
+  );
   assert.equal(
     entityEventSchema.parse({
       type: 'entity-batch',
@@ -157,9 +174,19 @@ Append:
 
 ```js
 test('rows carry freshness and details carry removal', () => {
-  const parsed = deviceRowSchema.parse({ ...row, battery: { status: 'no-report' } });
+  const parsed = deviceRowSchema.parse({
+    ...row,
+    battery: { status: 'no-report' },
+  });
   assert.equal(parsed.stale, false);
-  assert.equal(deviceRowSchema.safeParse({ ...row, battery: { status: 'no-report' }, stale: undefined }).success, false);
+  assert.equal(
+    deviceRowSchema.safeParse({
+      ...row,
+      battery: { status: 'no-report' },
+      stale: undefined,
+    }).success,
+    false,
+  );
   const detail = deviceDetailSchema.parse({
     ...row,
     battery: { status: 'no-report' },
@@ -169,7 +196,13 @@ test('rows carry freshness and details carry removal', () => {
   assert.equal(detail.removedAt, null);
   assert.equal('observedAt' in detail, false);
   assert.equal(
-    devicePageSchema.parse({ rows: [], matching: 0, total: 0, observedAt: null, refreshJobId: null }).refreshJobId,
+    devicePageSchema.parse({
+      rows: [],
+      matching: 0,
+      total: 0,
+      observedAt: null,
+      refreshJobId: null,
+    }).refreshJobId,
     null,
   );
 });
@@ -252,7 +285,9 @@ export const entitySyncBatchRequestSchema = z.strictObject({
   batch: z.coerce.number().int().min(0),
   correlationId: z.uuid(),
 });
-export type EntitySyncBatchRequest = z.infer<typeof entitySyncBatchRequestSchema>;
+export type EntitySyncBatchRequest = z.infer<
+  typeof entitySyncBatchRequestSchema
+>;
 
 export const entityEventSchema = z.discriminatedUnion('type', [
   z.strictObject({
@@ -332,11 +367,13 @@ git commit -m "feat: add entity freshness contracts and sync job events"
 ### Task 2: Rewrite migration 016 for one row per device
 
 **Files:**
+
 - Modify: `deployment/postgres/migrations/016-device-inventory.sql` (full rewrite)
 - Modify: `deployment/postgres/index.mjs:249-260` (grants)
 - Modify: `deployment/postgres/device-inventory.integration.mjs` (full rewrite)
 
 **Interfaces:**
+
 - Produces these `cc.*` functions. Unchanged signatures: `device_reader(uuid,integer)`, `device_sync_projection(text)`, `read_device_sync(uuid,integer)`, `request_device_sync(uuid,integer,text,integer,uuid,uuid)`, `abandon_device_sync(uuid,integer,text,uuid,text)`, `claim_device_sync(text,uuid,uuid)`, `device_sync_lease(text,uuid,uuid)`, `stage_devices(text,uuid,uuid,jsonb)`, `stage_device_batteries(text,uuid,uuid,jsonb)`, `finish_device_sync(text,uuid,uuid,text,text)`.
 - New: `device_record(cc.devices,text) RETURNS jsonb` (one `DeviceRecord` plus `removedAt`), `upsert_devices(text,jsonb,timestamptz) RETURNS integer`, `upsert_device_batteries(text,jsonb) RETURNS integer`, `soft_delete_devices(text,jsonb) RETURNS integer`, `read_device_records(text,jsonb) RETURNS jsonb`, `page_device_records(text,text,integer) RETURNS jsonb`, `create_entity_sync_job(uuid,integer,text,text,jsonb,integer,uuid,uuid) RETURNS jsonb`, `abandon_entity_sync_job(uuid,integer,text,uuid) RETURNS jsonb`, `read_entity_sync_batch(text,uuid,integer) RETURNS jsonb`, `finish_entity_sync_batch(text,uuid,integer,text) RETURNS jsonb`, `purge_entity_sync_jobs(text,integer) RETURNS integer`.
 - Removed: `purge_device_syncs`. Tables: `cc.devices(customer_id, device_id, …, last_entity_sync, removed_at)`, `cc.entity_sync_jobs`, `cc.entity_sync_batches`. `cc.device_sync_state` loses `current_sync_id`.
@@ -368,7 +405,11 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       );
     await migrator.query(
       'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
-      [reader, 'devices:read', JSON.stringify({ kind: 'district', customerId: customer })],
+      [
+        reader,
+        'devices:read',
+        JSON.stringify({ kind: 'district', customerId: customer }),
+      ],
     );
     const result = (sql, values) =>
       runtime.query(sql, values).then((r) => r.rows[0].result);
@@ -376,10 +417,18 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       result('SELECT cc.read_device_sync($1,1) AS result', [who]);
     const request = (id = randomUUID()) =>
       result('SELECT cc.request_device_sync($1,1,$2,$3,$4,$5) AS result', [
-        reader, customer, generation, id, randomUUID(),
+        reader,
+        customer,
+        generation,
+        id,
+        randomUUID(),
       ]).then((state) => ({ id, state }));
     const claim = (id, attempt) =>
-      result('SELECT cc.claim_device_sync($1,$2,$3) AS result', [customer, id, attempt]);
+      result('SELECT cc.claim_device_sync($1,$2,$3) AS result', [
+        customer,
+        id,
+        attempt,
+      ]);
     const device = (deviceId, extra = {}) => ({
       deviceId,
       serialNumber: `SN-${deviceId}`,
@@ -394,15 +443,25 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     });
     const stage = (id, attempt, devices) =>
       result('SELECT cc.stage_devices($1,$2,$3,$4) AS result', [
-        customer, id, attempt, JSON.stringify(devices),
+        customer,
+        id,
+        attempt,
+        JSON.stringify(devices),
       ]);
     const batteries = (id, attempt, values) =>
       result('SELECT cc.stage_device_batteries($1,$2,$3,$4) AS result', [
-        customer, id, attempt, JSON.stringify(values),
+        customer,
+        id,
+        attempt,
+        JSON.stringify(values),
       ]);
     const finish = (id, attempt, failure = null, telemetry = null) =>
       result('SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result', [
-        customer, id, attempt, failure, telemetry,
+        customer,
+        id,
+        attempt,
+        failure,
+        telemetry,
       ]);
     const rows = async () =>
       (
@@ -430,9 +489,16 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     const attempt = randomUUID();
     const claimed = await claim(first.id, attempt);
     assert.equal(claimed.generation, generation);
-    await assert.rejects(claim(first.id, randomUUID()), detail('device-sync-claimed'));
+    await assert.rejects(
+      claim(first.id, randomUUID()),
+      detail('device-sync-claimed'),
+    );
     assert.equal(
-      await stage(first.id, attempt, [device('d1'), device('d2'), device('d2', { model: 'HP' })]),
+      await stage(first.id, attempt, [
+        device('d1'),
+        device('d2'),
+        device('d2', { model: 'HP' }),
+      ]),
       2,
       'The last page entry for a device wins and the count is distinct devices.',
     );
@@ -441,10 +507,18 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
         {
           deviceId: 'd1',
           battery: {
-            status: 'reported', health: 'replace-soon', capacityPercent: 78,
+            status: 'reported',
+            health: 'replace-soon',
+            capacityPercent: 78,
             reportedAt: '2026-10-05T13:50:00.000Z',
           },
-          reports: [{ reportedAt: '2026-10-05T13:50:00.000Z', health: 'replace-soon', capacityPercent: 78 }],
+          reports: [
+            {
+              reportedAt: '2026-10-05T13:50:00.000Z',
+              health: 'replace-soon',
+              capacityPercent: 78,
+            },
+          ],
         },
       ]),
       1,
@@ -454,57 +528,94 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     assert.equal(ready.deviceCount, 2);
     assert.equal(ready.stale, false);
     let current = await rows();
-    assert.deepEqual(current.map((row) => [row.device_id, row.model, row.battery_status, row.removed_at]), [
-      ['d1', 'Lenovo 100e Gen 4', 'reported', null],
-      ['d2', 'HP', 'no-report', null],
-    ]);
+    assert.deepEqual(
+      current.map((row) => [
+        row.device_id,
+        row.model,
+        row.battery_status,
+        row.removed_at,
+      ]),
+      [
+        ['d1', 'Lenovo 100e Gen 4', 'reported', null],
+        ['d2', 'HP', 'no-report', null],
+      ],
+    );
     assert.ok(current.every((row) => row.last_entity_sync instanceof Date));
 
     // A full sync without d2 soft-deletes d2 and keeps its row.
     const second = await fullSync([device('d1'), device('d3')]);
     assert.equal(second.deviceCount, 2);
     current = await rows();
-    assert.deepEqual(current.map((row) => [row.device_id, row.removed_at !== null]), [
-      ['d1', false], ['d2', true], ['d3', false],
-    ]);
+    assert.deepEqual(
+      current.map((row) => [row.device_id, row.removed_at !== null]),
+      [
+        ['d1', false],
+        ['d2', true],
+        ['d3', false],
+      ],
+    );
 
     // A failed full sync removes nothing and keeps the publication.
     const failed = await fullSync([device('d1')], 'provider-unavailable');
     assert.equal(failed.status, 'failed');
     assert.equal(failed.stale, true);
     assert.equal(failed.deviceCount, 2);
-    assert.deepEqual((await rows()).map((row) => row.removed_at !== null), [false, true, false]);
+    assert.deepEqual(
+      (await rows()).map((row) => row.removed_at !== null),
+      [false, true, false],
+    );
 
     // Entity sync job: slices, upsert with an explicit read time, soft delete, idempotent finish.
     const jobId = randomUUID();
     const job = await result(
       'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
-      [reader, customer, 'device', JSON.stringify(['d1', 'd2', 'd3']), 2, jobId, randomUUID()],
+      [
+        reader,
+        customer,
+        'device',
+        JSON.stringify(['d1', 'd2', 'd3']),
+        2,
+        jobId,
+        randomUUID(),
+      ],
     );
     assert.equal(job.batchCount, 2);
     assert.equal(job.entityType, 'device');
     assert.equal(job.finishedAt, null);
     await assert.rejects(
-      result('SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result', [
-        outsider, customer, 'device', '["d1"]', 2, randomUUID(), randomUUID(),
-      ]),
+      result(
+        'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+        [outsider, customer, 'device', '["d1"]', 2, randomUUID(), randomUUID()],
+      ),
       (error) => error.code === '42501',
     );
-    const batch0 = await result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [customer, jobId, 0]);
+    const batch0 = await result(
+      'SELECT cc.read_entity_sync_batch($1,$2,$3) AS result',
+      [customer, jobId, 0],
+    );
     assert.deepEqual(batch0.ids, ['d1', 'd2']);
     assert.equal(batch0.batchCount, 2);
     assert.equal(batch0.generation, generation);
     assert.ok(batch0.credentialId);
-    const batch1 = await result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [customer, jobId, 1]);
+    const batch1 = await result(
+      'SELECT cc.read_entity_sync_batch($1,$2,$3) AS result',
+      [customer, jobId, 1],
+    );
     assert.deepEqual(batch1.ids, ['d3']);
     await assert.rejects(
-      result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [customer, jobId, 2]),
+      result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [
+        customer,
+        jobId,
+        2,
+      ]),
       detail('entity-sync-changed'),
     );
     const syncedAt = '2026-10-06T09:00:00.000Z';
     assert.equal(
       await result('SELECT cc.upsert_devices($1,$2,$3) AS result', [
-        customer, JSON.stringify([device('d2', { model: 'Acer' })]), syncedAt,
+        customer,
+        JSON.stringify([device('d2', { model: 'Acer' })]),
+        syncedAt,
       ]),
       1,
     );
@@ -512,47 +623,94 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     assert.equal(d2.removed_at, null, 'An upsert clears removed_at.');
     assert.equal(d2.last_entity_sync.toISOString(), syncedAt);
     assert.equal(
-      await result('SELECT cc.soft_delete_devices($1,$2) AS result', [customer, JSON.stringify(['d3', 'missing'])]),
+      await result('SELECT cc.soft_delete_devices($1,$2) AS result', [
+        customer,
+        JSON.stringify(['d3', 'missing']),
+      ]),
       1,
     );
-    const records = await result('SELECT cc.read_device_records($1,$2) AS result', [
-      customer, JSON.stringify(['d1', 'd2', 'd3']),
-    ]);
-    assert.deepEqual(records.map((record) => record.deviceId), ['d1', 'd2'], 'Removed devices stay out of records.');
+    const records = await result(
+      'SELECT cc.read_device_records($1,$2) AS result',
+      [customer, JSON.stringify(['d1', 'd2', 'd3'])],
+    );
+    assert.deepEqual(
+      records.map((record) => record.deviceId),
+      ['d1', 'd2'],
+      'Removed devices stay out of records.',
+    );
     assert.equal(records[1].model, 'Acer');
     assert.equal(records[1].battery.status, 'no-report');
     assert.equal(typeof records[1].lastEntitySync, 'string');
-    const page = await result('SELECT cc.page_device_records($1,$2,$3) AS result', [customer, '', 1]);
-    assert.deepEqual(page.map((record) => record.deviceId), ['d1']);
+    const page = await result(
+      'SELECT cc.page_device_records($1,$2,$3) AS result',
+      [customer, '', 1],
+    );
     assert.deepEqual(
-      (await result('SELECT cc.page_device_records($1,$2,$3) AS result', [customer, 'd1', 10])).map((r) => r.deviceId),
+      page.map((record) => record.deviceId),
+      ['d1'],
+    );
+    assert.deepEqual(
+      (
+        await result('SELECT cc.page_device_records($1,$2,$3) AS result', [
+          customer,
+          'd1',
+          10,
+        ])
+      ).map((r) => r.deviceId),
       ['d2'],
     );
-    const once = await result('SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result', [customer, jobId, 0, null]);
+    const once = await result(
+      'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+      [customer, jobId, 0, null],
+    );
     assert.equal(once.completedBatches, 1);
     assert.equal(once.finishedAt, null);
-    const twice = await result('SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result', [customer, jobId, 0, null]);
-    assert.equal(twice.completedBatches, 1, 'Finishing a batch twice counts once.');
-    const done = await result('SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result', [customer, jobId, 1, 'quota']);
+    const twice = await result(
+      'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+      [customer, jobId, 0, null],
+    );
+    assert.equal(
+      twice.completedBatches,
+      1,
+      'Finishing a batch twice counts once.',
+    );
+    const done = await result(
+      'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+      [customer, jobId, 1, 'quota'],
+    );
     assert.equal(done.failedBatches, 1);
     assert.equal(done.failure, 'quota');
     assert.ok(done.finishedAt);
     await assert.rejects(
-      result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [customer, jobId, 0]),
+      result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [
+        customer,
+        jobId,
+        0,
+      ]),
       detail('entity-sync-changed'),
     );
     const abandonedId = randomUUID();
-    await result('SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result', [
-      reader, customer, 'device', '["d1"]', 100, abandonedId, randomUUID(),
-    ]);
-    const abandoned = await result('SELECT cc.abandon_entity_sync_job($1,1,$2,$3) AS result', [reader, customer, abandonedId]);
+    await result(
+      'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+      [reader, customer, 'device', '["d1"]', 100, abandonedId, randomUUID()],
+    );
+    const abandoned = await result(
+      'SELECT cc.abandon_entity_sync_job($1,1,$2,$3) AS result',
+      [reader, customer, abandonedId],
+    );
     assert.equal(abandoned.failure, 'orchestration-unavailable');
     assert.ok(abandoned.finishedAt);
     await migrator.query(
       "UPDATE cc.entity_sync_jobs SET finished_at=finished_at-interval '2 days' WHERE job_id=$1",
       [abandonedId],
     );
-    assert.equal(await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [customer, 100]), 1);
+    assert.equal(
+      await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [
+        customer,
+        100,
+      ]),
+      1,
+    );
 
     // Expired leases still report interruption.
     const lost = await request();
@@ -565,15 +723,25 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     const interrupted = await read();
     assert.equal(interrupted.status, 'failed');
     assert.equal(interrupted.failure, 'interrupted');
-    await assert.rejects(stage(lost.id, lostAttempt, [device('d5')]), detail('device-sync-changed'));
-    await assert.rejects(finish(lost.id, lostAttempt), detail('device-sync-changed'));
+    await assert.rejects(
+      stage(lost.id, lostAttempt, [device('d5')]),
+      detail('device-sync-changed'),
+    );
+    await assert.rejects(
+      finish(lost.id, lostAttempt),
+      detail('device-sync-changed'),
+    );
     const next = await request();
-    const abandonedSync = await result('SELECT cc.abandon_device_sync($1,1,$2,$3,$4) AS result', [
-      reader, customer, next.id, 'orchestration-unavailable',
-    ]);
+    const abandonedSync = await result(
+      'SELECT cc.abandon_device_sync($1,1,$2,$3,$4) AS result',
+      [reader, customer, next.id, 'orchestration-unavailable'],
+    );
     assert.equal(abandonedSync.failure, 'orchestration-unavailable');
 
-    await migrator.query('UPDATE cc.application_principals SET permission_version=2 WHERE id=$1', [reader]);
+    await migrator.query(
+      'UPDATE cc.application_principals SET permission_version=2 WHERE id=$1',
+      [reader],
+    );
     await assert.rejects(read(), (error) => error.code === '42501');
     return [
       'device inventory reads require current devices:read authority: pass',
@@ -584,7 +752,9 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       'expired leases report interruption and reject late publication: pass',
     ];
   } finally {
-    await migrator.query('UPDATE cc.google_connection SET active=$1', [wasActive]);
+    await migrator.query('UPDATE cc.google_connection SET active=$1', [
+      wasActive,
+    ]);
   }
 }
 ```
@@ -1053,8 +1223,8 @@ REVOKE ALL ON FUNCTION cc.device_reader(uuid,integer),cc.device_sync_projection(
 In `deployment/postgres/index.mjs`, replace the `016-device-inventory` grant block with:
 
 ```js
-    if (migrations.some(({ id }) => id === '016-device-inventory')) {
-      await client.query(`GRANT SELECT ON cc.devices, cc.device_sync_state, cc.entity_sync_jobs TO ${role};
+if (migrations.some(({ id }) => id === '016-device-inventory')) {
+  await client.query(`GRANT SELECT ON cc.devices, cc.device_sync_state, cc.entity_sync_jobs TO ${role};
         GRANT EXECUTE ON FUNCTION cc.device_reader(uuid,integer),
         cc.read_device_sync(uuid,integer),
         cc.request_device_sync(uuid,integer,text,integer,uuid,uuid),
@@ -1074,7 +1244,7 @@ In `deployment/postgres/index.mjs`, replace the `016-device-inventory` grant blo
         cc.read_entity_sync_batch(text,uuid,integer),
         cc.finish_entity_sync_batch(text,uuid,integer,text),
         cc.purge_entity_sync_jobs(text,integer) TO ${role}`);
-    }
+}
 ```
 
 - [ ] **Step 4: Run the integration and unit tests to verify they pass**
@@ -1094,10 +1264,12 @@ git commit -m "feat: keep one device row with last_entity_sync and entity sync j
 ### Task 3: Read devices by ID through the Directory batch endpoint
 
 **Files:**
+
 - Modify: `libs/google-connection/src/lib/devices.ts`
 - Modify: `libs/google-connection/src/lib/devices.test.mjs`
 
 **Interfaces:**
+
 - Produces, on `GoogleDeviceReader`:
   - `deviceBatch(credential, customerId, deviceIds: readonly string[], signal): Promise<{ devices: DeviceObservation[]; missing: string[] }>`. One POST to `https://www.googleapis.com/batch/admin/directory_v1` with up to 1,000 `GET …/devices/chromeos/{id}` parts. A 404 part puts the ID in `missing`. A 429 part, or a 403 part whose reason is `quotaExceeded`, `rateLimitExceeded`, or `userRateLimitExceeded`, throws `GoogleConnectionError('quota')`. Any other non-200 part throws the `failure()` mapping of that part.
   - `batteryBatch(credential, customerId, deviceIds: readonly string[], signal): Promise<BatteryObservation[]>`. One `GET https://chromemanagement.googleapis.com/v1/customers/{customerId}/telemetry/devices/{id}` per device, four at a time. A 404 yields `{ deviceId, battery: { status: 'no-report' }, reports: [] }`. A 429 throws `GoogleConnectionError('quota')`.
@@ -1123,12 +1295,17 @@ const part = (id, status, body) =>
     '',
   ].join('\r\n');
 const batchBody = (parts) => `${parts.join('\r\n')}\r\n--batch_response--\r\n`;
-const multipart = { 'content-type': 'multipart/mixed; boundary=batch_response' };
+const multipart = {
+  'content-type': 'multipart/mixed; boundary=batch_response',
+};
 
 test('parseBatchResponse splits parts by content id and status', () => {
   const parsed = parseBatchResponse(
     multipart['content-type'],
-    batchBody([part('d1', 200, { deviceId: 'd1' }), part('d2', 404, { error: { code: 404 } })]),
+    batchBody([
+      part('d1', 200, { deviceId: 'd1' }),
+      part('d2', 404, { error: { code: 404 } }),
+    ]),
   );
   assert.deepEqual(parsed, [
     { contentId: 'd1', status: 200, body: { deviceId: 'd1' } },
@@ -1141,8 +1318,14 @@ test('deviceBatch reads each device once and reports missing devices', async (t)
     {
       __multipart: true,
       body: batchBody([
-        part('d1', 200, { deviceId: 'd1', serialNumber: 'C0A1-7F2D', orgUnitPath: '/School A' }),
-        part('d2', 404, { error: { code: 404, message: 'Resource Not Found' } }),
+        part('d1', 200, {
+          deviceId: 'd1',
+          serialNumber: 'C0A1-7F2D',
+          orgUnitPath: '/School A',
+        }),
+        part('d2', 404, {
+          error: { code: 404, message: 'Resource Not Found' },
+        }),
       ]),
     },
   ]);
@@ -1153,12 +1336,24 @@ test('deviceBatch reads each device once and reports missing devices', async (t)
     AbortSignal.timeout(5000),
   );
   assert.deepEqual(scopes, [deviceScope]);
-  assert.equal(calls[0].url, 'https://www.googleapis.com/batch/admin/directory_v1');
+  assert.equal(
+    calls[0].url,
+    'https://www.googleapis.com/batch/admin/directory_v1',
+  );
   assert.equal(calls[0].method, 'POST');
-  assert.match(calls[0].headers['content-type'], /^multipart\/mixed; boundary=/);
-  assert.match(calls[0].body, /GET \/admin\/directory\/v1\/customer\/C0123456\/devices\/chromeos\/d1\?projection=FULL/);
+  assert.match(
+    calls[0].headers['content-type'],
+    /^multipart\/mixed; boundary=/,
+  );
+  assert.match(
+    calls[0].body,
+    /GET \/admin\/directory\/v1\/customer\/C0123456\/devices\/chromeos\/d1\?projection=FULL/,
+  );
   assert.match(calls[0].body, /Content-ID: <item-d2>/);
-  assert.deepEqual(result.devices.map((device) => device.serialNumber), ['C0A1-7F2D']);
+  assert.deepEqual(
+    result.devices.map((device) => device.serialNumber),
+    ['C0A1-7F2D'],
+  );
   assert.deepEqual(result.missing, ['d2']);
 });
 
@@ -1167,12 +1362,19 @@ test('deviceBatch maps a quota part to a quota failure', async (t) => {
     {
       __multipart: true,
       body: batchBody([
-        part('d1', 403, { error: { code: 403, errors: [{ reason: 'userRateLimitExceeded' }] } }),
+        part('d1', 403, {
+          error: { code: 403, errors: [{ reason: 'userRateLimitExceeded' }] },
+        }),
       ]),
     },
   ]);
   await assert.rejects(
-    new GoogleDeviceReader().deviceBatch(credential, 'C0123456', ['d1'], AbortSignal.timeout(5000)),
+    new GoogleDeviceReader().deviceBatch(
+      credential,
+      'C0123456',
+      ['d1'],
+      AbortSignal.timeout(5000),
+    ),
     (error) => error.code === 'quota',
   );
 });
@@ -1182,11 +1384,20 @@ test('deviceBatch fails the batch on any other part error', async (t) => {
   stub(t, [
     {
       __multipart: true,
-      body: batchBody([part('d1', 403, { error: { code: 403, errors: [{ reason: 'forbidden' }] } })]),
+      body: batchBody([
+        part('d1', 403, {
+          error: { code: 403, errors: [{ reason: 'forbidden' }] },
+        }),
+      ]),
     },
   ]);
   await assert.rejects(
-    new GoogleDeviceReader().deviceBatch(credential, 'C0123456', ['d1'], AbortSignal.timeout(5000)),
+    new GoogleDeviceReader().deviceBatch(
+      credential,
+      'C0123456',
+      ['d1'],
+      AbortSignal.timeout(5000),
+    ),
     (error) => error.code === 'permission-denied',
   );
 });
@@ -1199,7 +1410,11 @@ test('batteryBatch reads one telemetry record per device and treats 404 as no re
       deviceId: 'd1',
       batteryInfo: [{ designCapacity: '5000' }],
       batteryStatusReport: [
-        { reportTime: '2026-10-05T13:50:00.000Z', fullChargeCapacity: '3900', batteryHealth: 'BATTERY_REPLACE_SOON' },
+        {
+          reportTime: '2026-10-05T13:50:00.000Z',
+          fullChargeCapacity: '3900',
+          batteryHealth: 'BATTERY_REPLACE_SOON',
+        },
       ],
     },
     missing,
@@ -1211,16 +1426,19 @@ test('batteryBatch reads one telemetry record per device and treats 404 as no re
     AbortSignal.timeout(5000),
   );
   assert.deepEqual(scopes, [telemetryScope]);
+  assert.deepEqual(calls.map((call) => call.url).sort(), [
+    'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/d1',
+    'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/d2',
+  ]);
   assert.deepEqual(
-    calls.map((call) => call.url).sort(),
+    result.map((observation) => [
+      observation.deviceId,
+      observation.battery.status,
+    ]),
     [
-      'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/d1',
-      'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/d2',
+      ['d1', 'reported'],
+      ['d2', 'no-report'],
     ],
-  );
-  assert.deepEqual(
-    result.map((observation) => [observation.deviceId, observation.battery.status]),
-    [['d1', 'reported'], ['d2', 'no-report']],
   );
 });
 ```
@@ -1228,14 +1446,14 @@ test('batteryBatch reads one telemetry record per device and treats 404 as no re
 Update the `stub` helper in that file so a page marked `__multipart` returns the multipart text with its header:
 
 ```js
-  t.mock.method(OAuth2Client.prototype, 'request', async (options) => {
-    calls.push(options);
-    const next = pages.shift();
-    if (next instanceof Error || (next && next.response)) throw next;
-    if (next && next.__multipart)
-      return { data: next.body, headers: multipart, status: 200 };
-    return { data: next };
-  });
+t.mock.method(OAuth2Client.prototype, 'request', async (options) => {
+  calls.push(options);
+  const next = pages.shift();
+  if (next instanceof Error || (next && next.response)) throw next;
+  if (next && next.__multipart)
+    return { data: next.body, headers: multipart, status: 200 };
+  return { data: next };
+});
 ```
 
 Move the `multipart` constant above `stub`.
@@ -1450,15 +1668,20 @@ git commit -m "feat: read devices by ID through the Directory batch endpoint"
 ### Task 4: Worker Redis client and the entity sync batch runner
 
 **Files:**
+
 - Create: `worker/src/entity-cache.ts`
 - Create: `worker/src/entity-sync.ts`
 - Create: `worker/src/entity-sync.test.mjs`
 
 **Interfaces:**
+
 - Produces `worker/src/entity-cache.ts`:
   ```ts
   export interface EntityCache {
-    setRecords(entries: { key: string; value: string }[], seconds: number): Promise<void>;
+    setRecords(
+      entries: { key: string; value: string }[],
+      seconds: number,
+    ): Promise<void>;
     remove(keys: string[]): Promise<void>;
     removeMembers(key: string, members: string[]): Promise<void>;
     increment(key: string): Promise<void>;
@@ -1466,23 +1689,55 @@ git commit -m "feat: read devices by ID through the Directory batch endpoint"
     close(): Promise<void>;
   }
   export class WorkerRedis implements EntityCache {
-    constructor(options: { url: string; password: string; tls: { servername: string; ca?: Buffer } | null });
+    constructor(options: {
+      url: string;
+      password: string;
+      tls: { servername: string; ca?: Buffer } | null;
+    });
   }
   ```
   `WorkerRedis` uses `createClient` from `redis` with `username: 'worker'`, `disableOfflineQueue: true`, `commandOptions: { timeout: 3000 }`, `reconnectStrategy: false`, and connects lazily on first use. Every method throws `EntityCacheError('cache-unavailable')` on a Redis failure.
 - Produces `worker/src/entity-sync.ts`:
+
   ```ts
   export interface EntityReader {
-    deviceBatch(credential, customerId, ids: readonly string[], signal): Promise<{ devices: DeviceObservation[]; missing: string[] }>;
-    batteryBatch(credential, customerId, ids: readonly string[], signal): Promise<BatteryObservation[]>;
+    deviceBatch(
+      credential,
+      customerId,
+      ids: readonly string[],
+      signal,
+    ): Promise<{ devices: DeviceObservation[]; missing: string[] }>;
+    batteryBatch(
+      credential,
+      customerId,
+      ids: readonly string[],
+      signal,
+    ): Promise<BatteryObservation[]>;
   }
-  export interface EntitySyncBatchResult { job: EntitySyncJob; updated: string[]; removed: string[]; failure: string | null }
+  export interface EntitySyncBatchResult {
+    job: EntitySyncJob;
+    updated: string[];
+    removed: string[];
+    failure: string | null;
+  }
   export class EntitySyncBatch {
-    constructor(database: DeviceSyncDatabase, cipher: Pick<CredentialCipher, 'open'>, reader: EntityReader, cache: EntityCache,
-      options?: { backoff?: (attempt: number) => number; sleep?: (ms: number, signal: AbortSignal) => Promise<void> });
-    run(request: EntitySyncBatchRequest, signal: AbortSignal): Promise<EntitySyncBatchResult>;
+    constructor(
+      database: DeviceSyncDatabase,
+      cipher: Pick<CredentialCipher, 'open'>,
+      reader: EntityReader,
+      cache: EntityCache,
+      options?: {
+        backoff?: (attempt: number) => number;
+        sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+      },
+    );
+    run(
+      request: EntitySyncBatchRequest,
+      signal: AbortSignal,
+    ): Promise<EntitySyncBatchResult>;
   }
   ```
+
   `DeviceSyncError` from `./device-sync` is reused for store failures (`entity-sync-changed`, `store-unavailable`). Default backoff: `min(60_000, 1_000 * 2 ** attempt)` plus up to 500 ms jitter.
 
 - [ ] **Step 1: Write the failing batch runner tests**
@@ -1544,7 +1799,11 @@ function database({ fail = {}, finish = job() } = {}) {
     async query(sql, values) {
       const name = /cc\.(\w+)/.exec(sql)[1];
       calls.push({ name, values });
-      if (fail[name]) throw Object.assign(new Error(name), { code: 'P0001', detail: fail[name] });
+      if (fail[name])
+        throw Object.assign(new Error(name), {
+          code: 'P0001',
+          detail: fail[name],
+        });
       if (name === 'read_entity_sync_batch')
         return {
           rows: [
@@ -1561,14 +1820,18 @@ function database({ fail = {}, finish = job() } = {}) {
         };
       if (name === 'read_device_records')
         return { rows: [{ result: JSON.parse(values[1]).map(record) }] };
-      if (name === 'finish_entity_sync_batch') return { rows: [{ result: finish }] };
+      if (name === 'finish_entity_sync_batch')
+        return { rows: [{ result: finish }] };
       return { rows: [{ result: 1 }] };
     },
   };
 }
 function cache() {
   const calls = [];
-  const note = (name) => async (...args) => void calls.push({ name, args });
+  const note =
+    (name) =>
+    async (...args) =>
+      void calls.push({ name, args });
   return {
     calls,
     setRecords: note('setRecords'),
@@ -1579,7 +1842,9 @@ function cache() {
     close: async () => undefined,
   };
 }
-const cipher = { open: () => ({ subject: 'fixture@example.invalid', serviceAccount: {} }) };
+const cipher = {
+  open: () => ({ subject: 'fixture@example.invalid', serviceAccount: {} }),
+};
 function reader({ devices = [], batteries = [] } = {}) {
   const calls = [];
   return {
@@ -1607,7 +1872,9 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
   const result = await new EntitySyncBatch(
     db,
     cipher,
-    reader({ devices: [{ devices: [device('d1'), device('d3')], missing: ['d2'] }] }),
+    reader({
+      devices: [{ devices: [device('d1'), device('d3')], missing: ['d2'] }],
+    }),
     redis,
     noSleep,
   ).run(request, AbortSignal.timeout(5000));
@@ -1619,19 +1886,34 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
     'read_device_records',
     'finish_entity_sync_batch',
   ]);
-  assert.deepEqual(JSON.parse(db.calls[1].values[1]).map((d) => d.deviceId), ['d1', 'd3']);
+  assert.deepEqual(
+    JSON.parse(db.calls[1].values[1]).map((d) => d.deviceId),
+    ['d1', 'd3'],
+  );
   assert.match(db.calls[1].values[2], /^\d{4}-\d{2}-\d{2}T/);
   assert.deepEqual(JSON.parse(db.calls[3].values[1]), ['d2']);
   assert.deepEqual(db.calls[5].values, [customerId, jobId, 0, null]);
-  assert.deepEqual(names(redis.calls), ['setRecords', 'remove', 'removeMembers', 'publish']);
+  assert.deepEqual(names(redis.calls), [
+    'setRecords',
+    'remove',
+    'removeMembers',
+    'publish',
+  ]);
   assert.deepEqual(
     redis.calls[0].args[0].map((entry) => entry.key),
     ['cc:entity:device:C0123456:d1', 'cc:entity:device:C0123456:d3'],
   );
   assert.equal(redis.calls[0].args[1], 86400);
-  assert.equal(JSON.parse(redis.calls[0].args[0][0].value).stale, undefined, 'Redis stores records without stale.');
+  assert.equal(
+    JSON.parse(redis.calls[0].args[0][0].value).stale,
+    undefined,
+    'Redis stores records without stale.',
+  );
   assert.deepEqual(redis.calls[1].args[0], ['cc:entity:device:C0123456:d2']);
-  assert.deepEqual(redis.calls[2].args, ['cc:entity-inflight:device:C0123456', ['d1', 'd2', 'd3']]);
+  assert.deepEqual(redis.calls[2].args, [
+    'cc:entity-inflight:device:C0123456',
+    ['d1', 'd2', 'd3'],
+  ]);
   assert.equal(redis.calls[3].args[0], 'cc:entity-events:C0123456');
   assert.deepEqual(JSON.parse(redis.calls[3].args[1]), {
     type: 'entity-batch',
@@ -1642,17 +1924,31 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
     deviceIds: ['d1', 'd3'],
     removedIds: ['d2'],
   });
-  assert.deepEqual(result, { job: job(), updated: ['d1', 'd3'], removed: ['d2'], failure: null });
+  assert.deepEqual(result, {
+    job: job(),
+    updated: ['d1', 'd3'],
+    removed: ['d2'],
+    failure: null,
+  });
 });
 
 test('the last batch publishes job-finished', async () => {
-  const finished = job({ completedBatches: 2, finishedAt: '2026-10-06T12:01:00.000Z' });
+  const finished = job({
+    completedBatches: 2,
+    finishedAt: '2026-10-06T12:01:00.000Z',
+  });
   const redis = cache();
-  await new EntitySyncBatch(database({ finish: finished }), cipher, reader(), redis, noSleep).run(
-    { ...request, batch: 1 },
-    AbortSignal.timeout(5000),
-  );
-  assert.deepEqual(JSON.parse(redis.calls.at(-1).args[1]), { type: 'job-finished', job: finished });
+  await new EntitySyncBatch(
+    database({ finish: finished }),
+    cipher,
+    reader(),
+    redis,
+    noSleep,
+  ).run({ ...request, batch: 1 }, AbortSignal.timeout(5000));
+  assert.deepEqual(JSON.parse(redis.calls.at(-1).args[1]), {
+    type: 'job-finished',
+    job: finished,
+  });
 });
 
 test('quota errors retry until Google answers', async () => {
@@ -1661,11 +1957,17 @@ test('quota errors retry until Google answers', async () => {
     database(),
     cipher,
     reader({
-      devices: [new GoogleConnectionError('quota'), new GoogleConnectionError('quota')],
+      devices: [
+        new GoogleConnectionError('quota'),
+        new GoogleConnectionError('quota'),
+      ],
       batteries: [new GoogleConnectionError('quota')],
     }),
     cache(),
-    { backoff: (attempt) => attempt * 10, sleep: async (ms) => void waits.push(ms) },
+    {
+      backoff: (attempt) => attempt * 10,
+      sleep: async (ms) => void waits.push(ms),
+    },
   );
   const result = await runner.run(request, AbortSignal.timeout(5000));
   assert.equal(result.failure, null);
@@ -1689,12 +1991,19 @@ test('a quota retry stops when the worker shuts down', async () => {
   );
   await assert.rejects(
     runner.run(request, stopping.signal),
-    (error) => error instanceof DeviceSyncError && error.code === 'worker-stopping',
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'worker-stopping',
   );
 });
 
 test('any other Google error fails the batch and frees the in-flight IDs', async () => {
-  const db = database({ finish: job({ completedBatches: 0, failedBatches: 1, failure: 'scope-mismatch' }) });
+  const db = database({
+    finish: job({
+      completedBatches: 0,
+      failedBatches: 1,
+      failure: 'scope-mismatch',
+    }),
+  });
   const redis = cache();
   const result = await new EntitySyncBatch(
     db,
@@ -1703,18 +2012,32 @@ test('any other Google error fails the batch and frees the in-flight IDs', async
     redis,
     noSleep,
   ).run(request, AbortSignal.timeout(5000));
-  assert.deepEqual(names(db.calls), ['read_entity_sync_batch', 'finish_entity_sync_batch']);
-  assert.deepEqual(db.calls[1].values, [customerId, jobId, 0, 'scope-mismatch']);
+  assert.deepEqual(names(db.calls), [
+    'read_entity_sync_batch',
+    'finish_entity_sync_batch',
+  ]);
+  assert.deepEqual(db.calls[1].values, [
+    customerId,
+    jobId,
+    0,
+    'scope-mismatch',
+  ]);
   assert.deepEqual(names(redis.calls), ['removeMembers']);
   assert.equal(result.failure, 'scope-mismatch');
   assert.deepEqual(result.updated, []);
 });
 
 test('a changed job stops before Google access', async () => {
-  const db = database({ fail: { read_entity_sync_batch: 'entity-sync-changed' } });
+  const db = database({
+    fail: { read_entity_sync_batch: 'entity-sync-changed' },
+  });
   await assert.rejects(
-    new EntitySyncBatch(db, cipher, reader(), cache(), noSleep).run(request, AbortSignal.timeout(5000)),
-    (error) => error instanceof DeviceSyncError && error.code === 'entity-sync-changed',
+    new EntitySyncBatch(db, cipher, reader(), cache(), noSleep).run(
+      request,
+      AbortSignal.timeout(5000),
+    ),
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'entity-sync-changed',
   );
   assert.deepEqual(names(db.calls), ['read_entity_sync_batch']);
 });
@@ -1780,7 +2103,10 @@ export class EntityCacheError extends Error {
 
 /** The worker's view of Redis: records, in-flight IDs, the query generation, and events. */
 export interface EntityCache {
-  setRecords(entries: { key: string; value: string }[], seconds: number): Promise<void>;
+  setRecords(
+    entries: { key: string; value: string }[],
+    seconds: number,
+  ): Promise<void>;
   remove(keys: string[]): Promise<void>;
   removeMembers(key: string, members: string[]): Promise<void>;
   increment(key: string): Promise<void>;
@@ -1826,7 +2152,9 @@ export class WorkerRedis implements EntityCache {
     });
   }
 
-  private async run<T>(work: (client: NonNullable<WorkerRedis['client']>) => Promise<T>): Promise<T> {
+  private async run<T>(
+    work: (client: NonNullable<WorkerRedis['client']>) => Promise<T>,
+  ): Promise<T> {
     try {
       if (!this.client.isReady) {
         this.connecting ??= this.client
@@ -1903,7 +2231,11 @@ import {
   type DelegatedCredential,
 } from '@campus/google-connection';
 import type { EntityCache } from './entity-cache';
-import { DeviceSyncError, callStore, type DeviceSyncDatabase } from './device-sync';
+import {
+  DeviceSyncError,
+  callStore,
+  type DeviceSyncDatabase,
+} from './device-sync';
 
 export interface EntityReader {
   deviceBatch(
@@ -1976,24 +2308,34 @@ export class EntitySyncBatch {
   }
 
   /** Retry only quota answers. A shutdown signal ends the wait with worker-stopping. */
-  private async untilQuotaClears<T>(signal: AbortSignal, read: () => Promise<T>): Promise<T> {
+  private async untilQuotaClears<T>(
+    signal: AbortSignal,
+    read: () => Promise<T>,
+  ): Promise<T> {
     const backoff = this.options.backoff ?? defaultBackoff;
     const sleep = this.options.sleep ?? defaultSleep;
     for (let attempt = 0; ; attempt++) {
       try {
         return await read();
       } catch (error) {
-        if (!(error instanceof GoogleConnectionError) || error.code !== 'quota') throw error;
+        if (!(error instanceof GoogleConnectionError) || error.code !== 'quota')
+          throw error;
         await sleep(backoff(attempt), signal);
       }
     }
   }
 
   private async publish(customerId: string, event: EntityEvent) {
-    await this.cache.publish(entityEventsChannel(customerId), JSON.stringify(event));
+    await this.cache.publish(
+      entityEventsChannel(customerId),
+      JSON.stringify(event),
+    );
   }
 
-  async run(request: EntitySyncBatchRequest, signal: AbortSignal): Promise<EntitySyncBatchResult> {
+  async run(
+    request: EntitySyncBatchRequest,
+    signal: AbortSignal,
+  ): Promise<EntitySyncBatchResult> {
     const input = entitySyncBatchRequestSchema.parse(request);
     const batch = batchSchema.parse(
       await this.call('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [
@@ -2013,7 +2355,12 @@ export class EntitySyncBatch {
         generation: batch.generation,
       });
       const read = await this.untilQuotaClears(signal, () =>
-        this.reader.deviceBatch(credential, input.customerId, batch.ids, signal),
+        this.reader.deviceBatch(
+          credential,
+          input.customerId,
+          batch.ids,
+          signal,
+        ),
       );
       const present = read.devices.map((device) => device.deviceId);
       const batteries = await this.untilQuotaClears(signal, () =>
@@ -2048,7 +2395,9 @@ export class EntitySyncBatch {
         })),
         ENTITY_CACHE_SECONDS.device,
       );
-      await this.cache.remove(removed.map((id) => entityKey('device', input.customerId, id)));
+      await this.cache.remove(
+        removed.map((id) => entityKey('device', input.customerId, id)),
+      );
     } catch (error) {
       if (error instanceof DeviceSyncError) throw error;
       failure =
@@ -2071,14 +2420,13 @@ export class EntitySyncBatch {
         removedIds: removed,
       });
     const job = entitySyncJobSchema.parse(
-      await this.call('SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result', [
-        input.customerId,
-        input.jobId,
-        input.batch,
-        failure,
-      ]),
+      await this.call(
+        'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+        [input.customerId, input.jobId, input.batch, failure],
+      ),
     );
-    if (job.finishedAt) await this.publish(input.customerId, { type: 'job-finished', job });
+    if (job.finishedAt)
+      await this.publish(input.customerId, { type: 'job-finished', job });
     return { job, updated, removed, failure };
   }
 }
@@ -2103,6 +2451,7 @@ git commit -m "feat: run entity sync batches in the worker with Redis records an
 ### Task 5: Full sync fills Redis and signals, and the worker exposes the batch dispatch
 
 **Files:**
+
 - Modify: `worker/src/device-sync.ts`
 - Modify: `worker/src/device-sync.test.mjs`
 - Modify: `worker/src/google-connection.ts`
@@ -2110,6 +2459,7 @@ git commit -m "feat: run entity sync batches in the worker with Redis records an
 - Modify: `worker/src/main.ts`
 
 **Interfaces:**
+
 - `DeviceSync` constructor becomes `(database, cipher, reader, cache: EntityCache)`. After a successful `finish_device_sync` it pages `cc.page_device_records` in 1,000s into Redis with `ENTITY_CACHE_SECONDS.device`, increments `queryGenerationKey('device', customerId)`, then publishes `{ type: 'full-sync', sync }`. After a failed finish it publishes `full-sync` only. The purge loop is gone.
 - `GoogleWorker` gains `syncEntityBatch(input: EntitySyncBatchRequest, signal): Promise<EntitySyncBatchResult>` and a lazily built `WorkerRedis` from `config.services.redis`. `close()` also closes Redis.
 - `POST /dispatch/entity-sync-batch` accepts `entitySyncBatchRequestSchema` plus `executionId`. 200 `{ executionId, correlationId, status: 'completed' | 'failed', failure, job }`. 409 `{ error }` for `DeviceSyncError` codes. 503 `{ error: 'entity-sync-unavailable' }` otherwise.
@@ -2117,10 +2467,13 @@ git commit -m "feat: run entity sync batches in the worker with Redis records an
 - [ ] **Step 1: Update the full sync tests**
 
 In `worker/src/device-sync.test.mjs`:
+
 - Remove the `purged` option and the `purge_device_syncs` branch from `database()`. Add a `page_device_records` branch:
   ```js
-      if (name === 'page_device_records')
-        return { rows: [{ result: values[1] === '' ? [record('d1'), record('d2')] : [] }] };
+  if (name === 'page_device_records')
+    return {
+      rows: [{ result: values[1] === '' ? [record('d1'), record('d2')] : [] }],
+    };
   ```
   and define `record` as in `entity-sync.test.mjs` (same shape with `removedAt: null`).
 - Add the `cache()` fake from `entity-sync.test.mjs` and pass it as the fourth constructor argument in every `new DeviceSync(...)`.
@@ -2130,7 +2483,10 @@ In `worker/src/device-sync.test.mjs`:
 test('stages every page, publishes, fills Redis, and bumps the query generation', async () => {
   const db = database();
   const redis = cache();
-  const result = await new DeviceSync(db, cipher, reader(), redis).run(request, AbortSignal.timeout(5000));
+  const result = await new DeviceSync(db, cipher, reader(), redis).run(
+    request,
+    AbortSignal.timeout(5000),
+  );
   assert.deepEqual(result, state);
   assert.deepEqual(names(db.calls), [
     'claim_device_sync',
@@ -2143,19 +2499,26 @@ test('stages every page, publishes, fills Redis, and bumps the query generation'
   assert.deepEqual(db.calls[4].values, [customerId, '', 1000]);
   assert.deepEqual(db.calls[5].values, [customerId, 'd2', 1000]);
   assert.deepEqual(names(redis.calls), ['setRecords', 'increment', 'publish']);
-  assert.deepEqual(redis.calls[0].args[0].map((entry) => entry.key), [
-    'cc:entity:device:C0123456:d1',
-    'cc:entity:device:C0123456:d2',
-  ]);
+  assert.deepEqual(
+    redis.calls[0].args[0].map((entry) => entry.key),
+    ['cc:entity:device:C0123456:d1', 'cc:entity:device:C0123456:d2'],
+  );
   assert.deepEqual(redis.calls[1].args, ['cc:query-gen:device:C0123456']);
-  assert.deepEqual(JSON.parse(redis.calls[2].args[1]), { type: 'full-sync', sync: state });
+  assert.deepEqual(JSON.parse(redis.calls[2].args[1]), {
+    type: 'full-sync',
+    sync: state,
+  });
 });
 ```
 
 - Add to the `a device page failure records the failure` test:
 
 ```js
-  assert.deepEqual(names(redis.calls), ['publish'], 'A failed sync signals but writes no records.');
+assert.deepEqual(
+  names(redis.calls),
+  ['publish'],
+  'A failed sync signals but writes no records.',
+);
 ```
 
 (create `redis = cache()` in that test and pass it).
@@ -2168,39 +2531,40 @@ Expected: FAIL. `purge_device_syncs` is still called and no Redis calls happen.
 - [ ] **Step 3: Update `DeviceSync`**
 
 In `worker/src/device-sync.ts`:
+
 - Import `ENTITY_CACHE_SECONDS, entityEventsChannel, entityKey, queryGenerationKey` from `@campus/application-contracts` and `type EntityCache` from `./entity-cache`.
 - Remove `const purgeBatch = 5000;`.
 - Add a `cache: EntityCache` constructor parameter and field.
 - Replace the purge loop at the end of `run` with:
 
 ```ts
-    if (failure === null) {
-      const recordPage = z.array(z.object({ deviceId: z.string() }).passthrough());
-      for (let after = ''; ; ) {
-        const records = recordPage.parse(
-          await this.call('SELECT cc.page_device_records($1,$2,$3) AS result', [
-            input.customerId,
-            after,
-            1000,
-          ]),
-        );
-        if (records.length === 0) break;
-        await this.cache.setRecords(
-          records.map(({ removedAt: _removedAt, ...record }) => ({
-            key: entityKey('device', input.customerId, record.deviceId),
-            value: JSON.stringify(record),
-          })),
-          ENTITY_CACHE_SECONDS.device,
-        );
-        after = records[records.length - 1].deviceId;
-      }
-      await this.cache.increment(queryGenerationKey('device', input.customerId));
-    }
-    await this.cache.publish(
-      entityEventsChannel(input.customerId),
-      JSON.stringify({ type: 'full-sync', sync: state }),
+if (failure === null) {
+  const recordPage = z.array(z.object({ deviceId: z.string() }).passthrough());
+  for (let after = ''; ; ) {
+    const records = recordPage.parse(
+      await this.call('SELECT cc.page_device_records($1,$2,$3) AS result', [
+        input.customerId,
+        after,
+        1000,
+      ]),
     );
-    return state;
+    if (records.length === 0) break;
+    await this.cache.setRecords(
+      records.map(({ removedAt: _removedAt, ...record }) => ({
+        key: entityKey('device', input.customerId, record.deviceId),
+        value: JSON.stringify(record),
+      })),
+      ENTITY_CACHE_SECONDS.device,
+    );
+    after = records[records.length - 1].deviceId;
+  }
+  await this.cache.increment(queryGenerationKey('device', input.customerId));
+}
+await this.cache.publish(
+  entityEventsChannel(input.customerId),
+  JSON.stringify({ type: 'full-sync', sync: state }),
+);
+return state;
 ```
 
 Update the class comment to: `/** Run one claimed full sync. Publication soft-deletes untouched devices, fills Redis, and signals. */`
@@ -2208,6 +2572,7 @@ Update the class comment to: `/** Run one claimed full sync. Publication soft-de
 - [ ] **Step 4: Wire Redis and the batch runner into `GoogleWorker`**
 
 In `worker/src/google-connection.ts`:
+
 - Import `GoogleDeviceReader` is already there. Add `import { EntitySyncBatch } from './entity-sync';` and `import { WorkerRedis } from './entity-cache';` and `type EntitySyncBatchRequest` from `@campus/application-contracts`.
 - Add a field `private redis?: WorkerRedis;` and a method:
 
@@ -2260,11 +2625,16 @@ export async function handleEntitySyncDispatch(
   context: DispatchContext,
   google: GoogleWorker,
 ): Promise<boolean> {
-  if (request.method !== 'POST' || request.url !== '/dispatch/entity-sync-batch')
+  if (
+    request.method !== 'POST' ||
+    request.url !== '/dispatch/entity-sync-batch'
+  )
     return false;
   if (rejected(request, response, context)) return true;
   try {
-    const { executionId, ...input } = entitySyncDispatchSchema.parse(await readJson(request));
+    const { executionId, ...input } = entitySyncDispatchSchema.parse(
+      await readJson(request),
+    );
     const result = await google.syncEntityBatch(input, context.signal);
     respond(response, 200, {
       executionId,
@@ -2274,10 +2644,14 @@ export async function handleEntitySyncDispatch(
       job: result.job,
     });
   } catch (error) {
-    if (error instanceof DispatchError) respond(response, error.statusCode, { error: error.code });
-    else if (error instanceof z.ZodError) respond(response, 400, { error: 'invalid-payload' });
-    else if (error instanceof DeviceSyncError) respond(response, 409, { error: error.code });
-    else if (error instanceof EntityCacheError) respond(response, 503, { error: error.code });
+    if (error instanceof DispatchError)
+      respond(response, error.statusCode, { error: error.code });
+    else if (error instanceof z.ZodError)
+      respond(response, 400, { error: 'invalid-payload' });
+    else if (error instanceof DeviceSyncError)
+      respond(response, 409, { error: error.code });
+    else if (error instanceof EntityCacheError)
+      respond(response, 503, { error: error.code });
     else respond(response, 503, { error: 'entity-sync-unavailable' });
   }
   return true;
@@ -2289,15 +2663,15 @@ A Google failure returns 200 with `status: 'failed'`, so Kestra does not retry i
 In `worker/src/main.ts`, import `handleEntitySyncDispatch` and add after the device sync dispatch block:
 
 ```ts
-  if (
-    await handleEntitySyncDispatch(
-      request,
-      response,
-      { secret: dispatchSecret, signal: stopping.signal },
-      google,
-    )
+if (
+  await handleEntitySyncDispatch(
+    request,
+    response,
+    { secret: dispatchSecret, signal: stopping.signal },
+    google,
   )
-    return;
+)
+  return;
 ```
 
 - [ ] **Step 6: Run the worker tests, lint, and build**
@@ -2317,6 +2691,7 @@ git commit -m "feat: fill Redis after a full sync and dispatch entity sync batch
 ### Task 6: Kestra flow, Redis ACL for the worker, secret mounts, and API Redis set operations
 
 **Files:**
+
 - Create: `deployment/kestra/entity-sync.yaml`
 - Modify: `api/src/app/orchestration/orchestration.service.ts`
 - Modify: `deployment/redis/runtime.mjs`
@@ -2329,6 +2704,7 @@ git commit -m "feat: fill Redis after a full sync and dispatch entity sync batch
 - Modify: `api/project.json` (test command also runs `api/src/app/cache/*.test.mjs`)
 
 **Interfaces:**
+
 - `OrchestrationService.startEntitySync({ customerId, jobId, batchCount, correlationId }): Promise<string>` deploys `entity-sync.yaml` as flow `entity_sync` and starts it with inputs `customerId`, `jobId`, `batches` (JSON array string of `0..batchCount-1`), `correlationId`.
 - `CacheService.addMembers(key, members: string[], seconds): Promise<string[]>` returns the members that were not already in the set. `CacheService.removeMembers(key, members: string[]): Promise<void>`.
 - Redis users: `default` (API) adds `+sadd +srem`. New `worker` user: `~cc:entity:* ~cc:query-gen:* ~cc:entity-inflight:* &cc:entity-events:* -@all +ping +set +del +publish +incr +srem +multi +exec`, same password hash.
@@ -2345,7 +2721,10 @@ import { addMembersScript, memberChunks } from './cache-sets.ts';
 test('addMembers chunks members so one EVAL stays small', () => {
   const members = Array.from({ length: 2300 }, (_, index) => `d${index}`);
   const chunks = memberChunks(members);
-  assert.deepEqual(chunks.map((chunk) => chunk.length), [1000, 1000, 300]);
+  assert.deepEqual(
+    chunks.map((chunk) => chunk.length),
+    [1000, 1000, 300],
+  );
 });
 
 test('the add script returns only newly added members and refreshes the expiry', () => {
@@ -2383,7 +2762,10 @@ Create `api/src/app/cache/cache-sets.ts`:
 export const addMembersScript =
   "local added={} for i=2,#ARGV do if redis.call('SADD',KEYS[1],ARGV[i])==1 then added[#added+1]=ARGV[i] end end redis.call('EXPIRE',KEYS[1],tonumber(ARGV[1])) return added";
 
-export function memberChunks(members: readonly string[], size = 1000): string[][] {
+export function memberChunks(
+  members: readonly string[],
+  size = 1000,
+): string[][] {
   const chunks: string[][] = [];
   for (let start = 0; start < members.length; start += size)
     chunks.push(members.slice(start, start + size));
@@ -2560,6 +2942,7 @@ git commit -m "feat: run entity sync batches through Kestra with a worker Redis 
 ### Task 7: API reads one row per device and dispatches stale devices
 
 **Files:**
+
 - Modify: `api/src/app/devices/device-query.ts`
 - Modify: `api/src/app/devices/device-query.test.mjs`
 - Modify: `api/src/app/devices/devices.service.ts`
@@ -2568,6 +2951,7 @@ git commit -m "feat: run entity sync batches through Kestra with a worker Redis 
 - Create: `api/src/app/devices/device-refresh.test.mjs`
 
 **Interfaces:**
+
 - `device-query.ts`: `from` joins on `customer_id`. Every grid `WHERE` includes `d.removed_at IS NULL`. `deviceColumns` adds `d.last_entity_sync`. `deviceRow(row, cutoff: number): DeviceRow` sets `lastEntitySync` and `stale`. `deviceDetail(row, cutoff): DeviceDetail` sets `removedAt`. New `staleIdsSql(customerId, query, selection, cutoff: Date): SqlStatement` selects the device IDs of the whole result set with `last_entity_sync < cutoff`, capped at 100,000.
 - `device-refresh.ts`: `class DeviceRefresh` with `constructor(cache: Pick<CacheService,'addMembers'|'removeMembers'>, orchestration: Pick<OrchestrationService,'startEntitySync'>, store: (sql: string, values: unknown[]) => Promise<unknown>)` and `dispatch(actor: [string, number], customerId: string, ids: string[], correlationId: string): Promise<string | null>`. Returns the job ID, or `null` when nothing new needed a refresh or the refresh could not start.
 - `DevicesService.page(session, query, correlationId)` returns `refreshJobId`.
@@ -2575,9 +2959,10 @@ git commit -m "feat: run entity sync batches through Kestra with a worker Redis 
 - [ ] **Step 1: Write the failing SQL and refresh tests**
 
 In `api/src/app/devices/device-query.test.mjs`:
+
 - Change the first test's regex to:
   ```js
-  /WHERE s\.customer_id=\$1 AND d\.removed_at IS NULL ORDER BY d\.serial_number ASC NULLS LAST,d\.device_id ASC OFFSET \$2 LIMIT \$3$/
+  /WHERE s\.customer_id=\$1 AND d\.removed_at IS NULL ORDER BY d\.serial_number ASC NULLS LAST,d\.device_id ASC OFFSET \$2 LIMIT \$3$/;
   ```
 - Every other assertion that matches `WHERE s.customer_id=$1 AND …` gains `AND d.removed_at IS NULL` right after `$1`. Run the file after the implementation and fix each remaining regex the same way.
 - Add `staleIdsSql` to the import and append:
@@ -2585,24 +2970,59 @@ In `api/src/app/devices/device-query.test.mjs`:
 ```js
 test('stale IDs cover the whole result set below the cutoff', () => {
   const cutoff = new Date('2026-10-05T12:00:00.000Z');
-  const sql = staleIdsSql('C0123456', deviceQuerySchema.parse({ predicates: hs04Selection, offset: 300, limit: 100 }), null, cutoff);
-  assert.match(sql.text, /^SELECT d\.device_id FROM cc\.device_sync_state s JOIN cc\.devices d ON d\.customer_id=s\.customer_id WHERE s\.customer_id=\$1 AND d\.removed_at IS NULL AND d\.asset_tag ILIKE \$2 AND d\.last_entity_sync<\$3::timestamptz ORDER BY d\.device_id LIMIT 100000$/);
+  const sql = staleIdsSql(
+    'C0123456',
+    deviceQuerySchema.parse({
+      predicates: hs04Selection,
+      offset: 300,
+      limit: 100,
+    }),
+    null,
+    cutoff,
+  );
+  assert.match(
+    sql.text,
+    /^SELECT d\.device_id FROM cc\.device_sync_state s JOIN cc\.devices d ON d\.customer_id=s\.customer_id WHERE s\.customer_id=\$1 AND d\.removed_at IS NULL AND d\.asset_tag ILIKE \$2 AND d\.last_entity_sync<\$3::timestamptz ORDER BY d\.device_id LIMIT 100000$/,
+  );
   assert.deepEqual(sql.values, ['C0123456', 'HS-04%', cutoff.toISOString()]);
 });
 
 test('rows report freshness against the cutoff and details report removal', () => {
   const cutoff = Date.parse('2026-10-05T12:00:00.000Z');
   const base = {
-    device_id: 'd1', serial_number: 'S', model: null, asset_tag: null, org_unit_path: '/',
-    last_contact: null, annotated_location: null, notes: null, battery_status: 'no-report',
-    battery_health: null, battery_capacity_percent: null, battery_reported_at: null,
+    device_id: 'd1',
+    serial_number: 'S',
+    model: null,
+    asset_tag: null,
+    org_unit_path: '/',
+    last_contact: null,
+    annotated_location: null,
+    notes: null,
+    battery_status: 'no-report',
+    battery_health: null,
+    battery_capacity_percent: null,
+    battery_reported_at: null,
   };
-  const fresh = deviceRow({ ...base, last_entity_sync: new Date('2026-10-05T12:00:00.000Z') }, cutoff);
+  const fresh = deviceRow(
+    { ...base, last_entity_sync: new Date('2026-10-05T12:00:00.000Z') },
+    cutoff,
+  );
   assert.equal(fresh.stale, false);
   assert.equal(fresh.lastEntitySync, '2026-10-05T12:00:00.000Z');
-  assert.equal(deviceRow({ ...base, last_entity_sync: new Date('2026-10-05T11:00:00.000Z') }, cutoff).stale, true);
+  assert.equal(
+    deviceRow(
+      { ...base, last_entity_sync: new Date('2026-10-05T11:00:00.000Z') },
+      cutoff,
+    ).stale,
+    true,
+  );
   const detail = deviceDetail(
-    { ...base, last_entity_sync: new Date('2026-10-06T00:00:00.000Z'), removed_at: new Date('2026-10-06T01:00:00.000Z'), battery_reports: [] },
+    {
+      ...base,
+      last_entity_sync: new Date('2026-10-06T00:00:00.000Z'),
+      removed_at: new Date('2026-10-06T01:00:00.000Z'),
+      battery_reports: [],
+    },
     cutoff,
   );
   assert.equal(detail.removedAt, '2026-10-06T01:00:00.000Z');
@@ -2663,7 +3083,10 @@ test('stale IDs create one job and start the flow with its batch count', async (
   const { calls, refresh } = fakes();
   const jobId = await refresh.dispatch(actor, 'C0123456', ids, correlation);
   assert.equal(jobId, '33333333-3333-4333-8333-333333333333');
-  assert.deepEqual(calls.map((call) => call.name), ['addMembers', 'create_entity_sync_job', 'startEntitySync']);
+  assert.deepEqual(
+    calls.map((call) => call.name),
+    ['addMembers', 'create_entity_sync_job', 'startEntitySync'],
+  );
   assert.equal(calls[0].key, 'cc:entity-inflight:device:C0123456');
   assert.equal(calls[0].seconds, 120);
   assert.equal(calls[1].values[3], 'device');
@@ -2672,27 +3095,41 @@ test('stale IDs create one job and start the flow with its batch count', async (
 });
 
 test('overlapping stale queries dispatch each device once', async () => {
-  const { calls, refresh } = fakes({ added: (members) => members.filter((id) => id === 'd9') });
+  const { calls, refresh } = fakes({
+    added: (members) => members.filter((id) => id === 'd9'),
+  });
   await refresh.dispatch(actor, 'C0123456', ['d1', 'd9'], correlation);
   assert.deepEqual(JSON.parse(calls[1].values[4]), ['d9']);
 });
 
 test('nothing new means no job', async () => {
   const { calls, refresh } = fakes({ added: () => [] });
-  assert.equal(await refresh.dispatch(actor, 'C0123456', ['d1'], correlation), null);
-  assert.deepEqual(calls.map((call) => call.name), ['addMembers']);
+  assert.equal(
+    await refresh.dispatch(actor, 'C0123456', ['d1'], correlation),
+    null,
+  );
+  assert.deepEqual(
+    calls.map((call) => call.name),
+    ['addMembers'],
+  );
 });
 
 test('a failed flow start abandons the job and frees the IDs', async () => {
   const { calls, refresh } = fakes({ startFails: true });
-  assert.equal(await refresh.dispatch(actor, 'C0123456', ['d1'], correlation), null);
-  assert.deepEqual(calls.map((call) => call.name), [
-    'addMembers',
-    'create_entity_sync_job',
-    'startEntitySync',
-    'abandon_entity_sync_job',
-    'removeMembers',
-  ]);
+  assert.equal(
+    await refresh.dispatch(actor, 'C0123456', ['d1'], correlation),
+    null,
+  );
+  assert.deepEqual(
+    calls.map((call) => call.name),
+    [
+      'addMembers',
+      'create_entity_sync_job',
+      'startEntitySync',
+      'abandon_entity_sync_job',
+      'removeMembers',
+    ],
+  );
 });
 ```
 
@@ -2704,6 +3141,7 @@ Expected: FAIL. `staleIdsSql` is not exported, `deviceRow` ignores the cutoff, a
 - [ ] **Step 3: Update the SQL builders**
 
 In `api/src/app/devices/device-query.ts`:
+
 - `const from = 'FROM cc.device_sync_state s JOIN cc.devices d ON d.customer_id=s.customer_id';`
 - `export const deviceColumns = \`d.device_id,d.serial_number,d.model,d.asset_tag,d.org_unit_path,d.last_contact,d.annotated_location,d.notes,${batteryStatus} AS battery_status,d.battery_health,d.battery_capacity_percent,d.battery_reported_at,d.last_entity_sync\`;`
 - In `deviceWhere`, the base clauses become `['s.customer_id=$1', 'd.removed_at IS NULL', ...]`.
@@ -2731,7 +3169,10 @@ export function staleIdsSql(
 - Replace `deviceRow` and `deviceDetail`:
 
 ```ts
-export function deviceRow(row: Record<string, unknown>, cutoff: number): DeviceRow {
+export function deviceRow(
+  row: Record<string, unknown>,
+  cutoff: number,
+): DeviceRow {
   const lastEntitySync = iso(row['last_entity_sync']);
   return deviceRowSchema.parse({
     deviceId: row['device_id'],
@@ -2752,11 +3193,15 @@ export function deviceRow(row: Record<string, unknown>, cutoff: number): DeviceR
           }
         : { status: row['battery_status'] },
     lastEntitySync,
-    stale: typeof lastEntitySync === 'string' && Date.parse(lastEntitySync) < cutoff,
+    stale:
+      typeof lastEntitySync === 'string' && Date.parse(lastEntitySync) < cutoff,
   });
 }
 
-export function deviceDetail(row: Record<string, unknown>, cutoff: number): DeviceDetail {
+export function deviceDetail(
+  row: Record<string, unknown>,
+  cutoff: number,
+): DeviceDetail {
   return deviceDetailSchema.parse({
     ...deviceRow(row, cutoff),
     removedAt: iso(row['removed_at']),
@@ -2787,8 +3232,14 @@ import type { OrchestrationService } from '../orchestration/orchestration.servic
 export class DeviceRefresh {
   constructor(
     private readonly cache: Pick<CacheService, 'addMembers' | 'removeMembers'>,
-    private readonly orchestration: Pick<OrchestrationService, 'startEntitySync'>,
-    private readonly store: (sql: string, values: unknown[]) => Promise<unknown>,
+    private readonly orchestration: Pick<
+      OrchestrationService,
+      'startEntitySync'
+    >,
+    private readonly store: (
+      sql: string,
+      values: unknown[],
+    ) => Promise<unknown>,
   ) {}
 
   /** Returns the job ID, or null when nothing new needed a refresh or the flow could not start. */
@@ -2811,15 +3262,18 @@ export class DeviceRefresh {
     let created = false;
     try {
       const job = entitySyncJobSchema.parse(
-        await this.store('SELECT cc.create_entity_sync_job($1,$2,$3,$4,$5,$6,$7,$8) AS result', [
-          ...actor,
-          customerId,
-          'device',
-          JSON.stringify(fresh),
-          ENTITY_SYNC_BATCH_SIZE,
-          jobId,
-          correlationId,
-        ]),
+        await this.store(
+          'SELECT cc.create_entity_sync_job($1,$2,$3,$4,$5,$6,$7,$8) AS result',
+          [
+            ...actor,
+            customerId,
+            'device',
+            JSON.stringify(fresh),
+            ENTITY_SYNC_BATCH_SIZE,
+            jobId,
+            correlationId,
+          ],
+        ),
       );
       created = true;
       await this.orchestration.startEntitySync({
@@ -2831,11 +3285,10 @@ export class DeviceRefresh {
       return jobId;
     } catch {
       if (created)
-        await this.store('SELECT cc.abandon_entity_sync_job($1,$2,$3,$4) AS result', [
-          ...actor,
-          customerId,
-          jobId,
-        ]).catch(() => undefined);
+        await this.store(
+          'SELECT cc.abandon_entity_sync_job($1,$2,$3,$4) AS result',
+          [...actor, customerId, jobId],
+        ).catch(() => undefined);
       await this.cache.removeMembers(key, fresh).catch(() => undefined);
       return null;
     }
@@ -2846,6 +3299,7 @@ export class DeviceRefresh {
 - [ ] **Step 5: Use the cutoff and the dispatcher in the service**
 
 In `api/src/app/devices/devices.service.ts`:
+
 - Import `freshnessCutoff` from `@campus/application-contracts`, `staleIdsSql` from `./device-query`, and `DeviceRefresh` from `./device-refresh`.
 - Add a field and assign it in the constructor body. A field initializer would run before the parameter properties exist under ES2022 class-field semantics:
 
@@ -2909,7 +3363,9 @@ In `api/src/app/devices/devices.service.ts`:
 In `api/src/app/devices/devices.controller.ts`, change the query route to pass the correlation ID:
 
 ```ts
-    return { page: await this.devices.page(request.session, input, request.correlationId) };
+return {
+  page: await this.devices.page(request.session, input, request.correlationId),
+};
 ```
 
 - [ ] **Step 6: Run the API tests, lint, and build**
@@ -2929,11 +3385,13 @@ git commit -m "feat: read one row per device and refresh stale devices from grid
 ### Task 8: Adapt the client to the row contract
 
 **Files:**
+
 - Modify: `frontend/src/app/devices/device-detail.html:38-41`
 - Modify: `frontend/src/app/devices/device-detail.spec.ts`
 - Modify: `frontend/src/app/devices/device-grid.spec.ts`, `device-columns.spec.ts` (if present), `devices.store.spec.ts`, `device-selection.spec.ts`, `devices.spec.ts` (row fixtures)
 
 **Interfaces:**
+
 - Consumes `DeviceRow.lastEntitySync`, `DeviceRow.stale`, `DeviceDetail.removedAt` from Task 1. No new UI behavior beyond the two detail lines. The stale banner, per-row marker, and SSE arrive in Plan B.
 
 - [ ] **Step 1: Update the detail template**
@@ -2941,15 +3399,15 @@ git commit -m "feat: read one row per device and refresh stale devices from grid
 In `frontend/src/app/devices/device-detail.html`, replace the "Inventory observed" paragraph with:
 
 ```html
-      <p class="secondary">
-        Read from Google {{ current.lastEntitySync | date: 'MMM d, h:mm a' }}
-      </p>
-      @if (current.removedAt) {
-        <p class="secondary">
-          Google no longer returns this device (since
-          {{ current.removedAt | date: 'MMM d, h:mm a' }}).
-        </p>
-      }
+<p class="secondary">
+  Read from Google {{ current.lastEntitySync | date: 'MMM d, h:mm a' }}
+</p>
+@if (current.removedAt) {
+<p class="secondary">
+  Google no longer returns this device (since {{ current.removedAt | date: 'MMM
+  d, h:mm a' }}).
+</p>
+}
 ```
 
 - [ ] **Step 2: Update the spec fixtures**
@@ -2962,8 +3420,13 @@ In `device-detail.spec.ts`, where the test asserts the "Inventory observed" text
 
 ```ts
 it('names a removed device', async () => {
-  const { fixture } = await setup({ ...detail, removedAt: '2026-10-06T01:00:00.000Z' });
-  expect(fixture.nativeElement.textContent).toContain('Google no longer returns this device');
+  const { fixture } = await setup({
+    ...detail,
+    removedAt: '2026-10-06T01:00:00.000Z',
+  });
+  expect(fixture.nativeElement.textContent).toContain(
+    'Google no longer returns this device',
+  );
 });
 ```
 
@@ -2986,6 +3449,7 @@ git commit -m "feat: show each device's last Google read and removal in details"
 ### Task 9: Simulator, end-to-end checks, and documentation
 
 **Files:**
+
 - Modify: `api-e2e/google-connection-preload.cjs`
 - Modify: `api-e2e/devices-api.mjs`
 - Modify: `api-e2e/auth.test.mjs:2373-2381` (pass `migrator`)
@@ -2993,6 +3457,7 @@ git commit -m "feat: show each device's last Google read and removal in details"
 - Modify: `docs/document-index.csv`
 
 **Interfaces:**
+
 - The simulator answers `POST https://www.googleapis.com/batch/admin/directory_v1` with a multipart response, one part per `GET …/devices/chromeos/{id}` in the body. Unknown IDs get a 404 part. Fault `device-removed` makes `synthetic-device-3` a 404 part. Fault `device-quota` answers the first batch call with a 429 part and later calls normally. It answers `GET https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/{id}` with that device's telemetry or 404.
 - `qualifyDevicesApi` gains an optional `migrator` (a `pg` client on the application database) and uses it to age rows.
 
@@ -3060,43 +3525,80 @@ Declare `let quotaCalls = 0;` near the top of the file, next to `fleet`. Read ho
 In `api-e2e/devices-api.mjs`, add `migrator` to the destructured parameters. After the `first` page assertions, add:
 
 ```js
-    assert.equal(first.refreshJobId, null);
-    assert.equal(first.rows[0].stale, false);
-    assert.match(first.rows[0].lastEntitySync, /^\d{4}-\d{2}-\d{2}T/);
-    const detail = await api.get(`${root}/synthetic-device-0`);
-    assert.equal(detail.status(), 200, await detail.text());
-    assert.equal((await detail.json()).device.removedAt, null);
+assert.equal(first.refreshJobId, null);
+assert.equal(first.rows[0].stale, false);
+assert.match(first.rows[0].lastEntitySync, /^\d{4}-\d{2}-\d{2}T/);
+const detail = await api.get(`${root}/synthetic-device-0`);
+assert.equal(detail.status(), 200, await detail.text());
+assert.equal((await detail.json()).device.removedAt, null);
 ```
 
 After the groups assertions (end of the existing flow, before the `finally`), add:
 
 ```js
-    if (migrator) {
-      await migrator.query(
-        "UPDATE cc.devices SET last_entity_sync=now()-interval '2 days' WHERE device_id IN ('synthetic-device-0','synthetic-device-1','synthetic-device-3')",
-      );
-      await fault('device-removed');
-      const stalePage = await query({ predicates: [{ field: 'orgUnitPath', operator: 'in', values: ['/School A', '/School B', '/'] }], limit: 5 });
-      assert.ok(stalePage.refreshJobId, 'Stale rows start a refresh job.');
-      assert.equal(stalePage.rows.find((row) => row.deviceId === 'synthetic-device-0').stale, true);
-      const again = await query({ limit: 5 });
-      assert.equal(again.refreshJobId, null, 'The in-flight set stops a second dispatch.');
-      let refreshed;
-      for (let attempt = 0; attempt < 120; attempt++) {
-        refreshed = await query({ predicates: [{ field: 'serialNumber', operator: 'equals', value: 'C0A1-0000' }] });
-        if (refreshed.rows[0]?.stale === false) break;
-        await setTimeout(500);
-      }
-      assert.equal(refreshed.rows[0].stale, false, 'The batch refreshed the device.');
-      assert.equal(refreshed.total, 449, 'The 404 device left the inventory count.');
-      const removed = await api.get(`${root}/synthetic-device-3`);
-      assert.equal(removed.status(), 200);
-      assert.ok((await removed.json()).device.removedAt);
-      assert.equal((await query({ predicates: [{ field: 'serialNumber', operator: 'equals', value: 'C0A1-0003' }] })).matching, 0);
-      await fault('none');
-      const restored = await run();
-      assert.equal(restored.deviceCount, 450, 'A full sync returns the device.');
-    }
+if (migrator) {
+  await migrator.query(
+    "UPDATE cc.devices SET last_entity_sync=now()-interval '2 days' WHERE device_id IN ('synthetic-device-0','synthetic-device-1','synthetic-device-3')",
+  );
+  await fault('device-removed');
+  const stalePage = await query({
+    predicates: [
+      {
+        field: 'orgUnitPath',
+        operator: 'in',
+        values: ['/School A', '/School B', '/'],
+      },
+    ],
+    limit: 5,
+  });
+  assert.ok(stalePage.refreshJobId, 'Stale rows start a refresh job.');
+  assert.equal(
+    stalePage.rows.find((row) => row.deviceId === 'synthetic-device-0').stale,
+    true,
+  );
+  const again = await query({ limit: 5 });
+  assert.equal(
+    again.refreshJobId,
+    null,
+    'The in-flight set stops a second dispatch.',
+  );
+  let refreshed;
+  for (let attempt = 0; attempt < 120; attempt++) {
+    refreshed = await query({
+      predicates: [
+        { field: 'serialNumber', operator: 'equals', value: 'C0A1-0000' },
+      ],
+    });
+    if (refreshed.rows[0]?.stale === false) break;
+    await setTimeout(500);
+  }
+  assert.equal(
+    refreshed.rows[0].stale,
+    false,
+    'The batch refreshed the device.',
+  );
+  assert.equal(
+    refreshed.total,
+    449,
+    'The 404 device left the inventory count.',
+  );
+  const removed = await api.get(`${root}/synthetic-device-3`);
+  assert.equal(removed.status(), 200);
+  assert.ok((await removed.json()).device.removedAt);
+  assert.equal(
+    (
+      await query({
+        predicates: [
+          { field: 'serialNumber', operator: 'equals', value: 'C0A1-0003' },
+        ],
+      })
+    ).matching,
+    0,
+  );
+  await fault('none');
+  const restored = await run();
+  assert.equal(restored.deviceCount, 450, 'A full sync returns the device.');
+}
 ```
 
 Read the rest of `devices-api.mjs` first: `total` comes from `device_sync_state.device_count`, which a full sync sets. If the entity batch does not change `total`, drop the `449` assertion and assert `matching` for serial `C0A1-0003` is `0` only. `fault('none')` must match how the simulator reads a cleared fault; use the existing convention in that file (an `rm` of the fault file if that is what the simulator expects).
