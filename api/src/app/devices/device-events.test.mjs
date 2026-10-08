@@ -21,6 +21,12 @@ const batch = (deviceIds = ['d1']) => ({
 });
 const ping = 'event: ping\ndata: {}\n\n';
 
+/** Poll until `done()` holds or two seconds pass. Timers fire late on a loaded runner. */
+async function until(done) {
+  const deadline = Date.now() + 2_000;
+  while (!done() && Date.now() < deadline) await wait(5);
+}
+
 /** Redis subscriber stand-ins. `lost()` reports a dropped connection. */
 function subscribers() {
   const opened = [];
@@ -172,10 +178,13 @@ const fanoutWith = (listeners) => ({
   },
 });
 
-test('a stream starts after the subscription and sends named events and pings', async () => {
+test('a stream starts after the subscription and sends named events and pings', async (t) => {
   const listeners = [];
   const response = sink();
+  // A failed assertion must not leave the ping interval holding the process open.
+  t.after(() => response.disconnect());
   let checks = 0;
+  const pings = () => response.chunks.filter((chunk) => chunk === ping).length;
   const started = await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
@@ -195,16 +204,17 @@ test('a stream starts after the subscription and sends named events and pings', 
   listeners[0].listener.event(batch());
   assert.equal(response.chunks[1], frame('entity-batch', batch()));
   assert.equal(frame('ping', {}), ping);
-  await wait(35);
+  await until(() => checks >= 2 && pings() >= 2);
   assert.ok(checks >= 2);
-  assert.ok(response.chunks.filter((chunk) => chunk === ping).length >= 2);
+  assert.ok(pings() >= 2);
   response.disconnect();
   assert.equal(listeners.length, 0, 'Leaving unsubscribes.');
 });
 
-test('a failed session check ends the stream', async () => {
+test('a failed session check ends the stream', async (t) => {
   const listeners = [];
   const response = sink();
+  t.after(() => response.disconnect());
   await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
@@ -212,7 +222,7 @@ test('a failed session check ends the stream', async () => {
     recheck: async () => false,
     pingMs: 10,
   });
-  await wait(25);
+  await until(() => response.ended);
   assert.equal(response.ended, true);
   assert.equal(listeners.length, 0);
   assert.equal(response.chunks.includes(ping), false);
