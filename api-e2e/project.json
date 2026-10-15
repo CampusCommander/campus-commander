@@ -57,6 +57,14 @@
         }
       }
     },
+    "admin-sdk-mock-fixture-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["deployment:build"],
+      "options": {
+        "command": "node --test api-e2e/admin-sdk-mock-fixture.test.mjs"
+      }
+    },
     "hybrid-integration": {
       "executor": "nx:run-commands",
       "cache": false,
