@@ -20,6 +20,7 @@ The package needs Node 24.11 or later. CI pins Node 24.19.0.
 
 The release tarball holds the built `dist/` and `schema/` directories.
 It declares one lifecycle script, `prepare`. npm skips `prepare` for a tarball install, so no build runs here.
+The `allowScripts` field in `package.json` needs no entry for the mock. `npm ci` installs the tarball and runs no script.
 
 A Git dependency needs `git` and builds the package during install. The image build stages have neither.
 `deployment/images/api.Dockerfile`, `frontend.Dockerfile`, and `worker.Dockerfile` run `npm ci` inside `node:24.19.0-alpine3.23`.
