@@ -104,3 +104,6 @@ secrets/
 
 # Generated local test certificates
 /Test_Environment_Scripts/certs/
+
+# Local admin-sdk-mock data and service account key files
+/.admin-sdk-mock/

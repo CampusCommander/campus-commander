@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/@campuscommander/admin-sdk-mock/schema/config.schema.json",
+  "dataDir": "./.admin-sdk-mock/data",
+  "listen": {
+    "control": { "port": 18080 },
+    "proxy": { "port": 3128 }
+  },
+  "domains": [
+    {
+      "spec": { "tier": "small", "seed": "campus-commander-dev" },
+      "serviceAccounts": [
+        {
+          "out": "./.admin-sdk-mock/credentials/campus-commander-dev.json",
+          "scopes": "read-write"
+        }
+      ]
+    }
+  ]
+}
