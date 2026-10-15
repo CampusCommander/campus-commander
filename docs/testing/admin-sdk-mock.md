@@ -1,0 +1,115 @@
+# Run the Admin SDK mock
+
+The Admin SDK mock is a local stand-in for the Google Admin SDK Directory API and the Chrome Management telemetry API.
+It seeds K-12 domains for scale and quota testing, from an empty domain to the 400,000-device `xlarge` tier.
+The mock is test infrastructure. It never serves production traffic, and it never holds a real Google credential.
+
+The [mock repository](https://github.com/CampusCommander/admin-sdk-mock) holds the guides and the generated reference pages.
+The installed package carries the same `README.md`, `CHANGELOG.md`, and `schema/config.schema.json`.
+
+## The pinned tarball
+
+The root `package.json` pins the release tarball in `devDependencies`:
+
+```text
+https://github.com/CampusCommander/admin-sdk-mock/releases/download/v0.1.0/campuscommander-admin-sdk-mock-0.1.0.tgz
+```
+
+The `package-lock.json` records that URL, the version `0.1.0`, and the sha512 integrity hash.
+The package needs Node 24.11 or later. CI pins Node 24.19.0.
+
+The release tarball holds the built `dist/` and `schema/` directories.
+It declares one lifecycle script, `prepare`. npm skips `prepare` for a tarball install, so no build runs here.
+
+A Git dependency needs `git` and builds the package during install. The image build stages have neither.
+`deployment/images/api.Dockerfile`, `frontend.Dockerfile`, and `worker.Dockerfile` run `npm ci` inside `node:24.19.0-alpine3.23`.
+That image has no `git`. The tarball keeps the three image builds working without a package build step.
+
+The mock is a `devDependency`. The runtime stages install with `npm ci --omit=dev`, so the mock never enters a runtime image.
+
+## Start and stop
+
+Run the mock from the repository root:
+
+```sh
+npm exec -- admin-sdk-mock start
+```
+
+`start` reads `admin-sdk-mock.json` in the working directory. It logs one JSON line per event to standard output.
+The `ready` line names the customer ID, every listener, and the service-account key file.
+`npm exec -- admin-sdk-mock doctor` checks Node, the configuration, the data directory, the CA file, and the ports.
+
+Stop the mock with Ctrl+C or `SIGTERM`. A graceful stop closes every listener.
+
+## Configuration
+
+The committed `admin-sdk-mock.json` at the repository root holds these settings:
+
+| Setting          | Value                                                                            | Reason                                                          |
+| ---------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Domain           | `small`, seed `campus-commander-dev`                                             | The seed decides the customer ID and the district name.         |
+| Service account  | `read-write`, key file `./.admin-sdk-mock/credentials/campus-commander-dev.json` | The key file carries mode 0600.                                 |
+| Data directory   | `./.admin-sdk-mock/data`                                                         | Disposable. Delete it to seed again.                            |
+| Control listener | `127.0.0.1:18080`                                                                | Port 8080 is often taken on a developer machine.                |
+| Proxy            | `127.0.0.1:3128`                                                                 | The client reaches the mock through this port.                  |
+| Google listener  | `127.0.0.1:8443`                                                                 | The default. The proxy tunnels the four Google hostnames to it. |
+
+The seed `campus-commander-dev` always yields the customer ID `C0cmfin9i` and the district `kingston-public-schools.test`.
+The administrator `admin@kingston-public-schools.test` is the delegated subject for the service account.
+
+`.gitignore` excludes `/.admin-sdk-mock/`. The folder holds generated key files and disposable domain data.
+
+Validate the file after an edit:
+
+```sh
+npm exec -- admin-sdk-mock config validate admin-sdk-mock.json
+```
+
+## Client environment
+
+Load the client environment into the shell that runs the client under test:
+
+```sh
+eval "$(npm exec -- admin-sdk-mock env)"
+```
+
+The command exports the proxy, the `NO_PROXY` list, the CA paths, and `ADMIN_SDK_MOCK_CONTROL`.
+It also exports `GOOGLE_APPLICATION_CREDENTIALS`, because the configuration holds one service account.
+
+The proxy variables route every later HTTPS call of that shell through the mock proxy.
+Open a new shell for unrelated work, such as a `docker build` or a package download.
+
+Mint a token and call the Directory API:
+
+```sh
+TOKEN="$(npm exec -- admin-sdk-mock token C0cmfin9i --raw)"
+curl -H "Authorization: Bearer $TOKEN" "https://admin.googleapis.com/admin/directory/v1/customer/my_customer/devices/chromeos?maxResults=5"
+```
+
+The call answers HTTP 200 with five devices. Every Google call in this workflow goes to the mock.
+
+## Upgrade
+
+1. Read the mock `CHANGELOG.md` for the new tag. Any 0.x release can change the configuration, the CLI, or the API.
+2. Change the tag in the tarball URL in the root `package.json`.
+3. Run `npm install`.
+4. Commit `package.json`, `package-lock.json`, and this file.
+5. Run the validation, the start command, and the Directory API call above against the new version.
+
+## License
+
+The mock ships under the PolyForm Noncommercial License 1.0.0.
+It is test infrastructure only. Do not ship the package or its code in a product or a runtime image.
+
+## Verified on 2026-10-15
+
+The install ran on Node 24.19.0 and npm 11.19.1. `npm ci` installed 1,504 packages from a removed `node_modules`.
+The lockfile change added `node_modules/@campuscommander/admin-sdk-mock` and `node_modules/node-forge` 1.4.0, and nothing else.
+`npm exec -- admin-sdk-mock --help` exited 0 from the installed package.
+
+`start` reached ready with the control listener on 18080 and the proxy on 3128.
+`env` and `token` produced a bearer token, and the devices call returned HTTP 200 with five devices.
+`ss -ltnp` showed no listener on 18080 or 3128 after the stop.
+
+The three image builds passed with `npm exec nx run-many -- -t image -p api,frontend,worker --parallel=1`.
+The runtime image held no mock package. A `npm ci` probe inside `node:24.19.0-alpine3.23` installed the mock with no `git` present.
