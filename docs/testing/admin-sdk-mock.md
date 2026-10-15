@@ -43,6 +43,20 @@ The `ready` line names the customer ID, every listener, and the service-account 
 
 Stop the mock with Ctrl+C or `SIGTERM`. A graceful stop closes every listener.
 
+## Failure behavior
+
+The review harness watches the mock container after its ready signal.
+A stopped mock fails the run. The harness prints the container log and exits nonzero.
+The harness never falls back to the in-process simulator.
+
+The fixture checks cover the startup failure and the ready-then-exit case against a real container:
+
+```sh
+npm exec -- nx run api-e2e:admin-sdk-mock-fixture-test
+```
+
+A startup failure prints the mock CLI error, because the log reader keeps stdout and stderr.
+
 ## Configuration
 
 The committed `admin-sdk-mock.json` at the repository root holds these settings:
@@ -121,11 +135,11 @@ The runtime image held no mock package. A `npm ci` probe inside `node:24.19.0-al
 The `large` tier serves 60,000 devices. The integration flow ran against it on 2026-10-15 on Node 24.19.0 with modeled latency on.
 The run finished and published every device. It wrote `dist/client-review/admin-sdk-mock-run.json`.
 
-| Value                            | Observation                                                                                             |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Devices shown                    | 60,000, which equals the device count of the mock domain                                                |
-| Full sync duration               | 493.6 seconds, which is 122 devices per second                                                          |
-| Mock quota counters after the sync | `directory` 0, `chrome` 38, and the control `chrome` bucket 1, each with a limit of 3000 and no flag     |
+| Value                              | Observation                                                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Devices shown                      | 60,000, which equals the device count of the mock domain                                             |
+| Full sync duration                 | 493.6 seconds, which is 122 devices per second                                                       |
+| Mock quota counters after the sync | `directory` 0, `chrome` 38, and the control `chrome` bucket 1, each with a limit of 3000 and no flag |
 
 The sync read the inventory and the telemetry of 60,000 devices in about eight minutes.
 The working tree held no leftover container and no leftover run directory after the run.

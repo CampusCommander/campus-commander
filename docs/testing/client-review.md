@@ -43,6 +43,10 @@ The default is `small`, which serves 600 devices.
 Set `CC_MOCK_DELAYS=off` to remove the modeled latency. The default is `on`.
 The seed is fixed at `campus-commander-review`, so the customer ID and the district are stable.
 
+The harness starts the mock container before the app and watches it during the run.
+A stopped mock prints the container log and fails the command.
+The command never falls back to the in-process simulator.
+
 Connect Google with the printed file and email. Then select **Refresh inventory** on the Devices page.
 The status bar count equals the `Google backend` count printed at startup.
 The battery column shows the classes that the mock reports.
