@@ -6,6 +6,7 @@ The mock is test infrastructure. It never serves production traffic, and it neve
 
 The [mock repository](https://github.com/CampusCommander/admin-sdk-mock) holds the guides and the generated reference pages.
 The installed package carries the same `README.md`, `CHANGELOG.md`, and `schema/config.schema.json`.
+The [client review runbook](client-review.md#review-against-admin-sdk-mock) describes the review environment that runs against this mock.
 
 ## The pinned tarball
 
@@ -114,3 +115,22 @@ The lockfile change added `node_modules/@campuscommander/admin-sdk-mock` and `no
 
 The three image builds passed with `npm exec nx run-many -- -t image -p api,frontend,worker --parallel=1`.
 The runtime image held no mock package. A `npm ci` probe inside `node:24.19.0-alpine3.23` installed the mock with no `git` present.
+
+## Scale observation
+
+The `large` tier serves 60,000 devices. The integration flow ran against it on 2026-10-15 on Node 24.19.0 with modeled latency on.
+The run finished and published every device. It wrote `dist/client-review/admin-sdk-mock-run.json`.
+
+| Value                            | Observation                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Devices shown                    | 60,000, which equals the device count of the mock domain                                                |
+| Full sync duration               | 493.6 seconds, which is 122 devices per second                                                          |
+| Mock quota counters after the sync | `directory` 0, `chrome` 38, and the control `chrome` bucket 1, each with a limit of 3000 and no flag     |
+
+The sync read the inventory and the telemetry of 60,000 devices in about eight minutes.
+The working tree held no leftover container and no leftover run directory after the run.
+Only one device battery class is compared per run, so the record does not describe every device.
+
+The rate of 122 devices per second comes from the modeled latency, which applies 150 ms per call and 3 ms per item.
+A domain of 400,000 devices (`xlarge`) needs about one hour at that rate.
+Run the tiers above `medium` on a dedicated machine, and keep the full sync out of the default CI path.
