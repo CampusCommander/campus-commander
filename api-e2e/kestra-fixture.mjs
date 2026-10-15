@@ -16,6 +16,9 @@ export async function startKestraFixture({
   password,
   nodeImage,
   workerImage,
+  // The in-process Google preload. A mock-backed run turns it off and trusts the CA.
+  inProcessGoogle = config.phase === 3,
+  extraCaCerts,
 }) {
   const workerName = `${network}-worker`,
     kestraName = `${network}-kestra`;
@@ -98,9 +101,10 @@ export async function startKestraFixture({
       `${directory}:${directory}:ro`,
       '-e',
       `WORKER_DISPATCH_SECRET_FILE=${join(directory, 'secrets/worker-dispatch')}`,
+      ...(extraCaCerts ? ['-e', `NODE_EXTRA_CA_CERTS=${extraCaCerts}`] : []),
       workerImage ?? nodeImage,
       'node',
-      ...(config.phase === 3
+      ...(inProcessGoogle
         ? ['--require', join(directory, 'google-connection-preload.cjs')]
         : []),
       '/app/main.js',
