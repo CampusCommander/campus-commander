@@ -121,10 +121,10 @@ async function startReviewSupervisor({ directory, names, network }) {
     ],
     { detached: true, stdio: 'ignore' },
   );
-  child.on('error', () => {});
+  child.on('error', () => undefined);
   child.unref();
   const heartbeat = setInterval(
-    () => writeFile(heartbeatFile, `${Date.now()}\n`).catch(() => {}),
+    () => writeFile(heartbeatFile, `${Date.now()}\n`).catch(() => undefined),
     2000,
   );
   heartbeat.unref();
@@ -229,6 +229,7 @@ test(
     let edgeServer;
     let browser;
     let redis;
+    let mockWatch;
     try {
       docker('network', 'create', network);
       await mkdir(secretRoot, { recursive: true, mode: 0o700 });
@@ -619,6 +620,7 @@ test(
             ...mockReviewSettings(),
           })
         : null;
+      mockWatch = mock?.watch ?? null;
       // One PEM bundle holds the review TLS certificate and the mock CA.
       const trustBundle = mock ? join(directory, 'client-review-ca.pem') : cert;
       if (mock)
@@ -935,19 +937,19 @@ test(
         if (mockIntegration) {
           for (const check of await qualifyAdminSdkMockIntegration({
             mock,
+            watch: mock.watch,
             request,
             ca,
             publicOrigin,
           }))
             process.stdout.write(`${check}\n`);
-          await rm('dist/client-review/runtime.json', { force: true });
           return;
         }
         // A task runner can end this process without its teardown. The
         // supervisor removes the mock environment after this process stops.
         if (mock) await startReviewSupervisor({ directory, names, network });
-        await new Promise((resolve) => {
-          const ignoreStop = () => {};
+        const stopped = new Promise((resolve) => {
+          const ignoreStop = () => undefined;
           const stop = () => {
             process.off('SIGINT', stop);
             process.off('SIGTERM', stop);
@@ -965,7 +967,21 @@ test(
           // The task runner closes its terminal when it ends the target.
           process.once('SIGHUP', stop);
         });
-        await rm('dist/client-review/runtime.json', { force: true });
+        // The review cannot continue against a stopped mock. Print the mock log
+        // and fail the run. The teardown still removes the environment.
+        await Promise.race([
+          stopped,
+          ...(mock
+            ? [
+                mock.watch.failure.then((log) => {
+                  const message = `The Admin SDK mock exited after its ready signal.\n${log}`;
+                  process.stderr.write(`${message}\n`);
+                  process.exitCode = 1;
+                  throw new Error(message);
+                }),
+              ]
+            : []),
+        ]);
         return;
       }
       assert.equal(
@@ -2665,6 +2681,10 @@ test(
         );
       }
     } finally {
+      mockWatch?.stop();
+      // The review environment stopped with its temporary data.
+      if (clientReview)
+        await rm('dist/client-review/runtime.json', { force: true });
       await browser?.close();
       if (edgeServer) {
         edgeServer.closeAllConnections();

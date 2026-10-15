@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -48,17 +48,69 @@ export function mockReviewSettings(env = process.env) {
   return { tier, delays: delays === 'on' };
 }
 
-/** The container log, so a startup failure prints the mock's own reason. */
+/**
+ * The container log from both streams, so a failure prints the mock's own reason.
+ * `docker logs` writes the container stdout and stderr to its own two streams.
+ * A failing call keeps its message on stderr.
+ */
 export function mockLog(name) {
-  try {
-    return execFileSync('docker', ['logs', name], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      maxBuffer: 16 * 1024 * 1024,
-    });
-  } catch (error) {
-    return `${error.stdout ?? ''}${error.stderr ?? ''}`;
-  }
+  const result = spawnSync('docker', ['logs', name], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error)
+    return `docker logs ${name} failed: ${result.error.message}\n`;
+  return `${result.stdout ?? ''}${result.stderr ?? ''}`;
+}
+
+/**
+ * Watch the mock container after its ready signal.
+ *
+ * The mock serves every Google call in mock mode. An exit after readiness must
+ * fail the run, so the harness never continues against a stopped backend.
+ * `failure` resolves with the container log when the mock stops.
+ * `assertRunning` throws that log for callers that check between steps.
+ * `stop` ends the watch after the environment stops.
+ */
+export function watchAdminSdkMock({ docker, name }) {
+  let exited = null;
+  let settle;
+  const failure = new Promise((resolve) => {
+    settle = resolve;
+  });
+  const running = () => {
+    try {
+      return docker('inspect', '-f', '{{.State.Running}}', name).trim();
+    } catch {
+      return 'missing';
+    }
+  };
+  const check = () => {
+    if (exited !== null) return exited;
+    if (running() === 'true') return null;
+    exited = mockLog(name);
+    clearInterval(timer);
+    settle(exited);
+    return exited;
+  };
+  const timer = setInterval(check, 1000);
+  // The watch never holds the process open on its own.
+  timer.unref();
+  return {
+    name,
+    failure,
+    /** Throw the mock log when the container no longer runs. */
+    assertRunning() {
+      const log = check();
+      if (log !== null)
+        throw new Error(
+          `The Admin SDK mock exited after its ready signal.\n${log}`,
+        );
+    },
+    stop() {
+      clearInterval(timer);
+    },
+  };
 }
 
 /**
@@ -77,6 +129,7 @@ export async function startAdminSdkMock({
   nodeImage,
   tier,
   delays,
+  environment = {},
 }) {
   const name = `${network}-mock`;
   names.push(name);
@@ -118,6 +171,10 @@ export async function startAdminSdkMock({
     '--network',
     network,
     ...MOCK_GOOGLE_HOSTS.flatMap((host) => ['--network-alias', host]),
+    ...Object.entries(environment).flatMap(([key, value]) => [
+      '-e',
+      `${key}=${value}`,
+    ]),
     '--user',
     `${process.getuid()}:${process.getgid()}`,
     '--workdir',
@@ -186,7 +243,11 @@ export async function startAdminSdkMock({
     ready,
     `The Admin SDK mock did not become ready within 300 seconds.\n${mockLog(name)}`,
   );
+  // The mock must serve every later call. The watch fails the caller with the
+  // container log when the mock exits after its ready signal.
+  const watch = watchAdminSdkMock({ docker, name });
   const control = async (path) => {
+    watch.assertRunning();
     const response = await fetch(`${controlUrl}${path}`);
     assert.equal(
       response.status,
@@ -209,6 +270,7 @@ export async function startAdminSdkMock({
   const counts = async () => (await control('/domains'))[0].counts;
   const mock = {
     name,
+    watch,
     tier,
     delays,
     version,

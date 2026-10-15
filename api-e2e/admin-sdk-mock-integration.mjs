@@ -157,13 +157,19 @@ async function reviewSignIn({ request, ca, publicOrigin }) {
  */
 export async function qualifyAdminSdkMockIntegration({
   mock,
+  watch,
   request,
   ca,
   publicOrigin,
 }) {
+  // Every step below depends on the running mock. A stopped container fails
+  // this flow with the mock log instead of a later connection error.
+  const check = () => watch?.assertRunning();
+  check();
   let cookie = await reviewSignIn({ request, ca, publicOrigin });
   // The idle window slides on every request. An expired session signs in again.
   const session = async () => {
+    check();
     const response = await request(`${publicOrigin}/api/auth/session`, {
       ca,
       cookie,
@@ -184,8 +190,10 @@ export async function qualifyAdminSdkMockIntegration({
     'x-csrf-token': active.csrfToken,
   });
   // Every call carries the session cookie.
-  const call = (path, options = {}) =>
-    request(`${publicOrigin}${path}`, { ca, cookie, ...options });
+  const call = async (path, options = {}) => {
+    check();
+    return request(`${publicOrigin}${path}`, { ca, cookie, ...options });
+  };
 
   const staged = await call('/api/google-connection/candidates', {
     method: 'POST',
