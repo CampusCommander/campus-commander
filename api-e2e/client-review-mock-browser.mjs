@@ -40,13 +40,25 @@ try {
   await expect(
     page.getByRole('heading', { name: 'Devices', level: 1 }),
   ).toBeVisible();
+  // The Devices page settles on the connect prompt, an empty inventory with a
+  // refresh control, or the published grid. Wait for one settled state before
+  // branching, so the connection response never races the first check.
+  const connectPrompt = page.getByRole('heading', {
+    name: 'Connect Google Workspace',
+  });
+  const refreshInventory = page.getByRole('button', {
+    name: 'Refresh inventory',
+  });
+  const publishedRefresh = page.getByRole('button', {
+    name: 'Refresh',
+    exact: true,
+  });
+  await expect(
+    connectPrompt.or(refreshInventory).or(publishedRefresh),
+  ).toBeVisible({ timeout: 120000 });
   // A fresh review environment starts without a Google connection. Connect the
   // mock credential through the same page a reviewer uses.
-  if (
-    await page
-      .getByRole('heading', { name: 'Connect Google Workspace' })
-      .isVisible()
-  ) {
+  if (await connectPrompt.isVisible()) {
     await page.getByRole('link', { name: 'Open Google connection' }).click();
     await expect(
       page.getByRole('heading', { name: 'Import a service account' }),
@@ -77,8 +89,18 @@ try {
     await expect(
       page.getByRole('heading', { name: 'Devices', level: 1 }),
     ).toBeVisible();
+    await expect(refreshInventory.or(publishedRefresh)).toBeVisible({
+      timeout: 300000,
+    });
   }
-  await page.getByRole('button', { name: 'Refresh inventory' }).click();
+  if (await refreshInventory.isVisible()) {
+    await refreshInventory.click();
+  } else {
+    // The environment already holds a published inventory. Refresh through the
+    // menu the same way a reviewer does.
+    await publishedRefresh.click();
+    await page.getByRole('menuitem', { name: 'Refresh all' }).click();
+  }
   const count = page.getByText(
     `${runtime.deviceCount} matching devices · ${runtime.deviceCount} in district`,
   );
