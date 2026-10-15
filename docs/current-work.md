@@ -14,6 +14,7 @@ On 2026-10-06 the owner authorized per-device freshness as infrastructure under 
 The [entity cache record](superpowers/specs/2026-10-06-entity-cache-decisions.md) holds the confirmed decisions. It is not a new workflow.
 On 2026-10-07 the owner requested a Google batch service for the entity sync job, on branch `codex/batch-service`.
 The [batch service record](superpowers/specs/2026-10-07-google-batch-service-decisions.md) holds the confirmed decisions. It is not a new workflow.
+On 2026-10-15 the owner requested admin-sdk-mock setup for this project, on branch `codex/admin-sdk-mock`. The mock is development infrastructure under this workflow. It is not a new workflow.
 The School column, Bulk Actions, and every device change are excluded.
 Inspect the [linked Figma frames](workflows/device-browsing.md#design) before implementing each screen.
 Use focused `codex/` branches. Do not merge without owner authorization.
