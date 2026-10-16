@@ -128,10 +128,7 @@ const parseInstant = (time: string): Instant | null => {
 };
 
 /** -1, 0, or 1 for `time` against `other`. Every fraction digit counts. A missing time is earliest. */
-const compareInstants = (
-  time: string | null,
-  other: string | null,
-): number => {
+const compareInstants = (time: string | null, other: string | null): number => {
   if (time === null) return other === null ? 0 : -1;
   if (other === null) return 1;
   const left = parseInstant(time);
