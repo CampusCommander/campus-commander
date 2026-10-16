@@ -49,11 +49,28 @@ The review harness watches the mock container after its ready signal.
 A stopped mock fails the run. The harness prints the container log and exits nonzero.
 The harness never falls back to the in-process simulator.
 
+The watch holds for the whole run, not only for startup:
+
+- During startup, a mock exit stops the startup sequence. The harness prints the container log within five seconds of the exit. It prints no ready banner and starts no later container.
+- During the integration flow, every failure path reads the watch before the teardown. The container log reaches the output whatever request failed first.
+- During an interactive review, the run ends with the container log and a nonzero exit code.
+- The harness removes its containers, its network, and its temporary run directory in each case.
+
 The fixture checks cover the startup failure and the ready-then-exit case against a real container:
 
 ```sh
 npm exec -- nx run api-e2e:admin-sdk-mock-fixture-test
 ```
+
+The exit checks cover a mock exit during startup and during an in-flight integration request.
+Each check runs the review harness as its own process and stops the owned container at that moment:
+
+```sh
+npm exec -- nx run api-e2e:admin-sdk-mock-exit-test
+```
+
+`api-e2e/admin-sdk-mock-fault-hook.mjs` stops the container during the in-flight check. The harness source holds no fault-injection code.
+The exit checks start two review environments, so they need Docker and about five minutes.
 
 A startup failure prints the mock CLI error, because the log reader keeps stdout and stderr.
 

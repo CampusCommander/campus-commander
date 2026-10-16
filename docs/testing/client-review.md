@@ -44,8 +44,10 @@ Set `CC_MOCK_DELAYS=off` to remove the modeled latency. The default is `on`.
 The seed is fixed at `campus-commander-review`, so the customer ID and the district are stable.
 
 The harness starts the mock container before the app and watches it during the run.
-A stopped mock prints the container log and fails the command.
+A stopped mock stops startup, prints the container log within five seconds, and fails the command.
 The command never falls back to the in-process simulator.
+The harness never prints the review banner after a mock exit.
+[The mock runbook](admin-sdk-mock.md#failure-behavior) records the behavior and the exit checks.
 
 Connect Google with the printed file and email. Then select **Refresh inventory** on the Devices page.
 The status bar count equals the `Google backend` count printed at startup.
