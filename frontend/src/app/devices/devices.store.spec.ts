@@ -1086,7 +1086,10 @@ describe('the order of status answers', () => {
   it.each(spellings)(
     'keeps the current status when the answer is older in $name',
     async ({ older, newer }) => {
-      const store = await answered(running(LATER, newer), running(LATER, older));
+      const store = await answered(
+        running(LATER, newer),
+        running(LATER, older),
+      );
       expect(store.sync()).toEqual(running(LATER, newer));
     },
   );
@@ -1094,7 +1097,10 @@ describe('the order of status answers', () => {
   it.each(spellings)(
     'replaces the current status when the answer is newer in $name',
     async ({ older, newer }) => {
-      const store = await answered(running(LATER, older), running(LATER, newer));
+      const store = await answered(
+        running(LATER, older),
+        running(LATER, newer),
+      );
       expect(store.sync()).toEqual(running(LATER, newer));
     },
   );
