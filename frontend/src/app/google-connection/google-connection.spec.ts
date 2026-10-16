@@ -228,12 +228,8 @@ it('lists the four setup scopes in order under the Google scopes name', async ()
     '[aria-label="Google scopes"]',
   );
   expect(block?.getAttribute('role')).toBe('group');
-  expect(
-    block
-      ?.textContent?.split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean),
-  ).toEqual(setupScopes);
+  // One scope per line, comma separated for the Admin Console paste.
+  expect(block?.textContent?.trim()).toBe(setupScopes.join(',\n'));
   fixture.destroy();
 });
 
