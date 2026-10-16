@@ -2,6 +2,8 @@ import type {
   CellKeyDownEvent,
   IServerSideGetRowsParams,
 } from 'ag-grid-community';
+import { signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import type { DeviceRow } from '@campus/application-contracts';
 import {
@@ -10,7 +12,9 @@ import {
   DeviceGroupCell,
   deviceGroupColumn,
 } from './device-columns';
+import { DeviceGrid } from './device-grid';
 import { detailsTarget } from './device-grid-options';
+import { DevicesStore } from './devices.store';
 import {
   GROUP_LIMIT,
   defaultGridState,
@@ -394,4 +398,53 @@ it('finds a grouped device by its index inside the group', () => {
     detailsTarget({ rowIndex: 40, sourceRowIndex: 40, parent: null } as never),
   ).toEqual({ index: 40, route: null, count: null });
   expect(detailsTarget({ rowIndex: null, parent: null } as never)).toBeNull();
+});
+
+/** The grid the store's resume signal reaches, without starting a real grid. */
+function mounted() {
+  TestBed.configureTestingModule({
+    providers: [
+      {
+        provide: DevicesStore,
+        useValue: {
+          page: signal(null),
+          offline: signal(false),
+          sync: signal(null),
+          groupLimit: signal(false),
+          selection: { spec: signal(null) },
+        },
+      },
+    ],
+  });
+  TestBed.overrideComponent(DeviceGrid, { set: { template: '' } });
+  const fixture = TestBed.createComponent(DeviceGrid);
+  fixture.componentRef.setInput('load', vi.fn());
+  fixture.componentRef.setInput('loadGroups', vi.fn());
+  fixture.componentRef.setInput('selection', {
+    provider: {} as never,
+    tabId: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  });
+  const retryServerSideLoads = vi.fn();
+  (fixture.componentInstance as unknown as { api: unknown }).api = {
+    setGridOption: vi.fn(),
+    getFilterModel: () => ({}),
+    setFilterModel: vi.fn(),
+    retryServerSideLoads,
+  };
+  fixture.detectChanges();
+  // The mount's first effect run is not a resume.
+  retryServerSideLoads.mockClear();
+  return { fixture, retryServerSideLoads };
+}
+
+// S5: the blocks whose loads failed retry, and the rows that loaded stay in place.
+it('retries the failed server-side blocks when a resumed session asks for it', () => {
+  const { fixture, retryServerSideLoads } = mounted();
+  expect(retryServerSideLoads).not.toHaveBeenCalled();
+  fixture.componentRef.setInput('resumeRevision', 1);
+  fixture.detectChanges();
+  expect(retryServerSideLoads).toHaveBeenCalledTimes(1);
+  fixture.componentRef.setInput('resumeRevision', 2);
+  fixture.detectChanges();
+  expect(retryServerSideLoads).toHaveBeenCalledTimes(2);
 });

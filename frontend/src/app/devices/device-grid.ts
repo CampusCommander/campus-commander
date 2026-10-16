@@ -127,6 +127,8 @@ export class DeviceGrid implements OnInit {
   readonly load = input.required<DeviceLoader>();
   readonly loadGroups = input.required<DeviceGroupLoader>();
   readonly revision = input(0);
+  /** Increments when a resumed session must retry the grid blocks whose loads failed (S5). */
+  readonly resumeRevision = input(0);
   /** Row to scroll into view after the first block loads, such as after Back to devices. */
   readonly focusIndex = input<number | null>(null);
   /** Saved grid state to open with, such as after Back to devices. */
@@ -173,6 +175,10 @@ export class DeviceGrid implements OnInit {
     effect(() => {
       this.revision();
       untracked(() => this.reload());
+    });
+    effect(() => {
+      this.resumeRevision();
+      untracked(() => this.retryFailedBlocks());
     });
     effect(() => {
       const predicates = this.predicates();
@@ -251,6 +257,11 @@ export class DeviceGrid implements OnInit {
         (view) => this.loadGroups()(view),
       ),
     );
+  }
+
+  /** A resumed session retries the blocks whose loads failed. The rows that loaded stay in place. */
+  private retryFailedBlocks(): void {
+    this.api?.retryServerSideLoads();
   }
 
   private applyPredicates(predicates: readonly DevicePredicate[]): void {

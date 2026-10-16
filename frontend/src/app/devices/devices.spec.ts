@@ -29,6 +29,7 @@ class GridStub {
   readonly selection = input<unknown>();
   readonly rowRefresh = input<unknown>();
   readonly selectedView = input(false);
+  readonly resumeRevision = input(0);
   readonly details = output<{
     row: DeviceRow;
     index: number;
@@ -71,6 +72,7 @@ function setup(options: {
     }),
     gridState: signal(null),
     selectedView: signal(false),
+    resumeRevision: signal(0),
     setView: vi.fn(),
     page: signal(options.page ?? null),
     orgUnits: signal([]),
@@ -352,4 +354,14 @@ it('hides the banner when no matching device is stale, even after a day without 
   });
   expect(element.textContent).not.toContain('Inventory observation is stale');
   expect(element.querySelector('#devices-stale-title')).toBeNull();
+});
+
+it('passes the resume of a session to the grid', () => {
+  const { store, fixture, render } = setup({ sync: ready(), page: counted });
+  const grid = fixture.debugElement.query(By.directive(GridStub))
+    .componentInstance as GridStub;
+  expect(grid.resumeRevision()).toBe(0);
+  store.resumeRevision.set(1);
+  render();
+  expect(grid.resumeRevision()).toBe(1);
 });
