@@ -1,6 +1,13 @@
 import { writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect } from '@playwright/test';
+import {
+  isNetworkChangeRequest,
+  requestFailureErrorText,
+} from './network-change.mjs';
+
+const stepAttemptLimit = 3;
+const attemptEventLimit = 100;
 
 export async function qualificationSignIn(
   page,
@@ -22,16 +29,40 @@ export async function qualificationSignIn(
   );
 }
 
+/**
+ * Run a browser step and recover an action that an installation network
+ * change aborts.
+ *
+ * When the action fails, and a request failed with ERR_NETWORK_CHANGED during
+ * that attempt, the step runs the action again. The step runs the action at
+ * most three times. An HTTP error status fails the attempt at once, even when
+ * the same attempt saw a network change. Every other failure fails at once. A
+ * final failure writes a record with the events of every attempt. A passing
+ * step reports every recovered attempt with its failed request routes, the
+ * attempts of a nested reload helper included. A caller passes
+ * `retryOnNetworkChange: false` when the action must not run again, or when
+ * another helper already recovers the action.
+ */
 export async function qualificationBrowserStep(
   page,
   publicOrigin,
   evidenceDirectory,
   label,
   action,
+  { retryOnNetworkChange = true } = {},
 ) {
   const events = [];
+  const recoveries = [];
+  let attempt = 0;
+  let attemptEventCount = 0;
+  let attemptNetworkChange = false;
+  let attemptRoutes = [];
+  let attemptHttpError = null;
   const record = (event) => {
-    if (events.length < 100) events.push(event);
+    if (attemptEventCount < attemptEventLimit) {
+      attemptEventCount++;
+      events.push(event);
+    }
   };
   const resource = (url) => {
     const parsed = new URL(url);
@@ -56,24 +87,33 @@ export async function qualificationBrowserStep(
                       : 'other',
     };
   };
-  const failed = (request) =>
+  const failed = (request) => {
+    const target = resource(request.url());
+    if (isNetworkChangeRequest(request)) {
+      attemptNetworkChange = true;
+      attemptRoutes.push(target.route);
+    }
     record({
       kind: 'request-failed',
-      ...resource(request.url()),
+      ...target,
       error:
-        request.failure()?.errorText.match(/ERR_[A-Z_]+/)?.[0] ??
+        requestFailureErrorText(request).match(/ERR_[A-Z_]+/)?.[0] ??
         'unclassified',
     });
+  };
   const response = (value) => {
+    const status = value.status();
+    if (status >= 400 && !attemptHttpError)
+      attemptHttpError = { status, url: value.url() };
     if (
       value.request().isNavigationRequest() ||
-      value.status() >= 400 ||
+      status >= 400 ||
       new URL(value.url()).pathname.startsWith('/api/')
     )
       record({
         kind: 'response',
         ...resource(value.url()),
-        status: value.status(),
+        status,
       });
   };
   const pageError = (error) =>
@@ -89,8 +129,50 @@ export async function qualificationBrowserStep(
   page.on('response', response);
   page.on('pageerror', pageError);
   try {
-    await action();
-  } catch (error) {
+    let failure = null;
+    for (attempt = 1; attempt <= stepAttemptLimit; attempt++) {
+      attemptEventCount = 0;
+      attemptNetworkChange = false;
+      attemptRoutes = [];
+      attemptHttpError = null;
+      try {
+        await action();
+        if (attemptNetworkChange)
+          // A nested helper recovered the action. The step reports the routes
+          // of that recovery, though the step ran the action once.
+          recoveries.push({ attempt, routes: [...new Set(attemptRoutes)] });
+        if (recoveries.length > 0) {
+          const routes = [
+            ...new Set(recoveries.flatMap((recovery) => recovery.routes)),
+          ];
+          console.log(
+            `${label}: recovered from a network change after ${attempt} attempts, failed request routes: ${routes.join(', ')}`,
+          );
+        }
+        return { attempts: attempt, recoveries };
+      } catch (error) {
+        if (attemptHttpError) {
+          // A server failure fails the attempt at once, even when the same
+          // attempt also saw a network change. The failure record holds the
+          // response event and the request event of the attempt.
+          failure = new Error(
+            `${error.message}. The page answered HTTP ${attemptHttpError.status} for ${attemptHttpError.url}`,
+            { cause: error },
+          );
+          break;
+        }
+        failure = error;
+        if (
+          !retryOnNetworkChange ||
+          !attemptNetworkChange ||
+          attempt === stepAttemptLimit
+        )
+          break;
+        const routes = [...new Set(attemptRoutes)];
+        recoveries.push({ attempt, routes });
+        events.push({ kind: 'network-change-retry', attempt, routes });
+      }
+    }
     const documentState = await Promise.race([
       page
         .evaluate(() => ({
@@ -117,7 +199,7 @@ export async function qualificationBrowserStep(
         2,
       ),
     );
-    throw error;
+    throw failure;
   } finally {
     page.off('requestfailed', failed);
     page.off('response', response);

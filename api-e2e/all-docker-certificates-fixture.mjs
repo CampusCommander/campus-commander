@@ -134,10 +134,12 @@ export async function qualifyAllDockerCertificates({
       id,
     });
     const recoverApplication = async (deadline) => {
-      await reloadAfterNetworkChange(page);
-      await expect(
-        page.getByRole('heading', { name: 'Diagnostics', exact: true }),
-      ).toBeVisible({ timeout: 15000 });
+      await reloadAfterNetworkChange(page, {
+        ready: () =>
+          expect(
+            page.getByRole('heading', { name: 'Diagnostics', exact: true }),
+          ).toBeVisible({ timeout: 15000 }),
+      });
       await checks({
         recoverySeconds: faultRecoveryTimeoutSeconds,
         recoveryDeadline: deadline,
