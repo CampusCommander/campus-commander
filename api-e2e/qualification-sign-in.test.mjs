@@ -268,7 +268,9 @@ test('the step removes its listeners when it returns or throws', async (t) => {
     publicOrigin,
     directory,
     'listeners-return',
-    async () => {},
+    async () => {
+      await returned.goto(`${publicOrigin}/api/auth/login`);
+    },
   );
   for (const event of ['requestfailed', 'response', 'pageerror'])
     assert.equal(
