@@ -249,9 +249,7 @@ const accessFailures = new Set<string>([
 ]);
 
 /** The capability record holds the only copy of a scope string. */
-function capabilityScope(
-  id: 'device-inventory' | 'device-telemetry',
-): string {
+function capabilityScope(id: 'device-inventory' | 'device-telemetry'): string {
   const capability = GOOGLE_CAPABILITIES.find(
     (candidate) => candidate.id === id,
   );

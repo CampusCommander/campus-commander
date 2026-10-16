@@ -5,13 +5,16 @@ import {
   GOOGLE_SETUP_SCOPES,
 } from './google-capabilities.ts';
 
-const CUSTOMER = 'https://www.googleapis.com/auth/admin.directory.customer.readonly';
-const DOMAIN = 'https://www.googleapis.com/auth/admin.directory.domain.readonly';
+const CUSTOMER =
+  'https://www.googleapis.com/auth/admin.directory.customer.readonly';
+const DOMAIN =
+  'https://www.googleapis.com/auth/admin.directory.domain.readonly';
 const INVENTORY =
   'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly';
 const TELEMETRY =
   'https://www.googleapis.com/auth/chrome.management.telemetry.readonly';
-const SCHOOL_OU = 'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
+const SCHOOL_OU =
+  'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
 
 test('the setup scope list holds the connection scopes and the device scopes in order', () => {
   assert.deepEqual(GOOGLE_SETUP_SCOPES, [
