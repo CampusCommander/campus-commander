@@ -45,27 +45,40 @@ const NETWORK_CODES = [
 const ABORT_NAMES = ['AbortError', 'TimeoutError'];
 const causeDepthLimit = 5;
 
+/** The network-code rule is unchanged: the outer code, else the immediate cause code. */
+function networkCodeSignature(error: unknown): boolean {
+  const network = z
+    .object({
+      code: z.unknown().optional(),
+      name: z.string().optional(),
+      cause: z
+        .object({ code: z.unknown().optional() })
+        .optional()
+        .catch(undefined),
+    })
+    .safeParse(error);
+  if (!network.success) return false;
+  const code = network.data.code ?? network.data.cause?.code;
+  return NETWORK_CODES.includes(typeof code === 'string' ? code : '');
+}
+
 /**
- * Detect a network code, an abort, or a timeout at the error or at any cause level.
+ * Detect an abort or a timeout name at a bounded cause level.
  * gaxios reports an aborted request as a GaxiosError with the abort one level down.
  */
-function networkSignature(error: unknown): boolean {
+function abortSignature(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; depth <= causeDepthLimit; depth += 1) {
-    const parsed = z
-      .object({ code: z.unknown().optional(), name: z.string().optional() })
-      .safeParse(current);
-    if (!parsed.success) return false;
-    const code = parsed.data.code;
-    if (NETWORK_CODES.includes(typeof code === 'string' ? code : ''))
-      return true;
-    if (ABORT_NAMES.includes(parsed.data.name ?? '')) return true;
-    const cause = z
-      .object({ cause: z.unknown().optional() })
-      .safeParse(current);
-    current = cause.success ? cause.data.cause : undefined;
+    if (typeof current !== 'object' || current === null) return false;
+    const name = (current as { name?: unknown }).name;
+    if (typeof name === 'string' && ABORT_NAMES.includes(name)) return true;
+    current = (current as { cause?: unknown }).cause;
   }
   return false;
+}
+
+function networkSignature(error: unknown): boolean {
+  return networkCodeSignature(error) || abortSignature(error);
 }
 
 export function failure(
