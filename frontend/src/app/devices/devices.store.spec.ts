@@ -851,7 +851,11 @@ describe('the order of status answers', () => {
   }
 
   const older = [
-    { name: 'an earlier start', current: running(LATER), answer: running(EARLIER) },
+    {
+      name: 'an earlier start',
+      current: running(LATER),
+      answer: running(EARLIER),
+    },
     {
       name: 'the same start and an earlier check',
       current: running(LATER, LATER),
@@ -873,13 +877,21 @@ describe('the order of status answers', () => {
   );
 
   const newer = [
-    { name: 'a later start', current: running(EARLIER), answer: running(LATER) },
+    {
+      name: 'a later start',
+      current: running(EARLIER),
+      answer: running(LATER),
+    },
     {
       name: 'the same start and a later check',
       current: running(EARLIER, EARLIER),
       answer: running(EARLIER, LATER),
     },
-    { name: 'a missing current start', current: running(null), answer: running(LATER) },
+    {
+      name: 'a missing current start',
+      current: running(null),
+      answer: running(LATER),
+    },
   ];
   it.each(newer)(
     'replaces the current status when the answer has $name',
@@ -957,7 +969,9 @@ describe('a status answer with an unreadable body', () => {
   ];
 
   it.each(bodies)('reports $name as a failed status read', async ({ body }) => {
-    const store = setup(vi.fn().mockImplementation(() => Promise.resolve(body())));
+    const store = setup(
+      vi.fn().mockImplementation(() => Promise.resolve(body())),
+    );
     await expect(store.loadSync()).resolves.toBe(false);
     expect(store.error()).toBe('Device inventory status is unavailable.');
     expect(store.sync()).toBeNull();
@@ -979,11 +993,16 @@ describe('a status answer with an unreadable body', () => {
     expect(statusReads(request)).toBe(2);
   });
 
-  it.each(bodies)('reports $name as a failed refresh start', async ({ body }) => {
-    const store = setup(vi.fn().mockImplementation(() => Promise.resolve(body())));
-    await store.refreshAll();
-    expect(store.error()).toBe('The refresh could not start.');
-  });
+  it.each(bodies)(
+    'reports $name as a failed refresh start',
+    async ({ body }) => {
+      const store = setup(
+        vi.fn().mockImplementation(() => Promise.resolve(body())),
+      );
+      await store.refreshAll();
+      expect(store.error()).toBe('The refresh could not start.');
+    },
+  );
 });
 
 describe('a failed post-open read', () => {
@@ -1015,13 +1034,9 @@ describe('a failed post-open read', () => {
   }
 
   it('reloads the grid when the gate read shows the sync ended', async () => {
-    const {
-      request,
-      store,
-      opened,
-      before,
-      failNext,
-    } = await dropped(state('ready', { observedAt: LATER }));
+    const { request, store, opened, before, failNext } = await dropped(
+      state('ready', { observedAt: LATER }),
+    );
     failNext();
     opened[1].open();
     await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
@@ -1042,13 +1057,9 @@ describe('a failed post-open read', () => {
   });
 
   it('compares the next reconnect against the gate read', async () => {
-    const {
-      request,
-      store,
-      opened,
-      before,
-      failNext,
-    } = await dropped(state('ready', { observedAt: LATER }));
+    const { request, store, opened, before, failNext } = await dropped(
+      state('ready', { observedAt: LATER }),
+    );
     failNext();
     opened[1].open();
     await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
@@ -1103,7 +1114,9 @@ describe('the first open after a running status', () => {
 describe('a resumed session', () => {
   function signedIn() {
     let signedIn = true;
-    const session = signal<ReturnType<typeof sessionFor> | null>(sessionFor('actor'));
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
     const request = routes({
       '/api/devices/sync': () =>
         signedIn

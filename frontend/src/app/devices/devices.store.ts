@@ -255,7 +255,9 @@ export class DevicesStore {
     }
     let sync: DeviceSyncState | null;
     try {
-      sync = deviceSyncStateSchema.nullable().parse((await response.json()).sync);
+      sync = deviceSyncStateSchema
+        .nullable()
+        .parse((await response.json()).sync);
     } catch {
       // A 200 answer with an unreadable body counts as a failed read. The reopen then retries.
       this.error.set('Device inventory status is unavailable.');
