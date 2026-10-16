@@ -62,7 +62,7 @@ Device Read permissions scoped by access assignments wait for the [platform-acce
 
 The simulated review environment supplies simulated devices and battery reports for demonstration.
 Live read-only checks use the [Easton fixture](../portfolio/phase-3-google-credentials.md#standing-test-authorization--2026-09-17).
-The owner must add both scopes to the delegation client in the Google Admin Console before those checks.
+The owner added both scopes and enabled the Chrome Management API on 2026-10-16. The live read-only check passed with empty collections. The [sanitized evidence](../../deployment/evidence/device-browsing-live-2026-10-16.json) records the check.
 An empty device collection is a valid live result.
 
 ## Owner decisions — 2026-10-05
