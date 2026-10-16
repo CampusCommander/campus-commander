@@ -66,6 +66,12 @@ export type DeviceEventSource = Pick<
 >;
 const CLOSED = 2;
 
+/** True when `time` is earlier than `other`. A missing time counts as earlier than any time. */
+const before = (time: string | null, other: string | null): boolean =>
+  time === null
+    ? other !== null
+    : other !== null && Date.parse(time) < Date.parse(other);
+
 /** The query whose stale devices the banner counts: the outermost filters and selection. */
 interface CountedQuery {
   predicates: DevicePredicate[];
@@ -127,6 +133,8 @@ export class DevicesStore {
   readonly error = signal('');
   /** Increments when the grid must reload from the first block. */
   readonly revision = signal(0);
+  /** Increments when a resumed session must retry the grid blocks whose loads failed. */
+  readonly resumeRevision = signal(0);
   /** Row index and ID of the last opened device in the current filtered order. */
   readonly position = signal<{
     index: number;
@@ -245,12 +253,38 @@ export class DevicesStore {
         ? 'denied'
         : 'failed';
     }
+    let sync: DeviceSyncState | null;
+    try {
+      sync = deviceSyncStateSchema.nullable().parse((await response.json()).sync);
+    } catch {
+      // A 200 answer with an unreadable body counts as a failed read. The reopen then retries.
+      this.error.set('Device inventory status is unavailable.');
+      return 'failed';
+    }
     this.error.set('');
-    this.sync.set(
-      deviceSyncStateSchema.nullable().parse((await response.json()).sync),
-    );
+    this.setSync(sync);
     this.syncLoaded.set(true);
     return 'read';
+  }
+
+  /** A status answer never replaces a newer current status (S2). */
+  private setSync(answer: DeviceSyncState | null): void {
+    if (this.isOlder(answer)) return;
+    this.sync.set(answer);
+  }
+
+  /** True when `answer` predates the current status of the same customer and generation. */
+  private isOlder(answer: DeviceSyncState | null): boolean {
+    const current = this.sync();
+    if (!answer || !current) return false;
+    if (
+      answer.customerId !== current.customerId ||
+      answer.generation !== current.generation
+    )
+      return false;
+    if (answer.startedAt !== current.startedAt)
+      return before(answer.startedAt, current.startedAt);
+    return before(answer.checkedAt, current.checkedAt);
   }
 
   /** Start a full sync. The full-sync event reports its end (D12). */
@@ -267,8 +301,14 @@ export class DevicesStore {
           : 'The refresh could not start.',
       );
     } else {
+      const started = deviceSyncStateSchema.safeParse(body?.sync);
+      if (!started.success) {
+        // A 200 answer with an unreadable body never starts a refresh.
+        this.error.set('The refresh could not start.');
+        return;
+      }
       this.error.set('');
-      this.sync.set(deviceSyncStateSchema.parse(body.sync));
+      this.setSync(started.data);
     }
   }
 
@@ -386,9 +426,12 @@ export class DevicesStore {
       if (!current()) return;
       this.reopenAttempts = 0;
       this.watch();
-      // The first open follows a fresh status read. It has no earlier stream to reconcile.
       if (this.streamOpened) void this.reconcile();
-      else this.dropped = null;
+      else if (this.sync()?.status === 'running') {
+        // A full sync can end between the gate read and this first open. Reconcile from the gate read.
+        this.dropped = { state: this.sync() };
+        void this.reconcile();
+      } else this.dropped = null;
       this.streamOpened = true;
     });
     stream.addEventListener('error', () => {
@@ -447,6 +490,8 @@ export class DevicesStore {
 
   /** The same person resumed an interrupted session. A stream that a 401 closed opens again. */
   private resume(): void {
+    // The grid retries the blocks whose loads failed while the session was interrupted (S5).
+    this.resumeRevision.update((value) => value + 1);
     if (!this.streamWanted || this.stream) return;
     clearTimeout(this.reopenTimer);
     void this.reopen();
@@ -469,6 +514,8 @@ export class DevicesStore {
       if (event.job.failure) this.jobFailure.set(event.job.failure);
       this.scheduleRecount();
     } else {
+      // An older event reports a sync that the current status already passed. It changes nothing.
+      if (this.isOlder(event.sync)) return;
       this.sync.set(event.sync);
       if (event.sync.status !== 'running')
         this.revision.update((value) => value + 1);
@@ -482,17 +529,25 @@ export class DevicesStore {
     const baseline = this.dropped;
     this.dropped = null;
     const before = baseline ? baseline.state : this.sync();
-    if (!(await this.loadSync())) {
+    const read = await this.loadSync();
+    // A failed read leaves the gate-read status in place, so it answers for the gate read too.
+    const after = this.sync();
+    // A full sync that ended meanwhile reloads every row and count.
+    const ended =
+      (before?.status === 'running' && after?.status !== 'running') ||
+      before?.observedAt !== after?.observedAt;
+    if (!read) {
+      if (ended) {
+        this.revision.update((value) => value + 1);
+        // The gate read is the status that the next reconnect compares against.
+        this.dropped = { state: after };
+        return;
+      }
       // The next reconnect compares against the same status.
       this.dropped = { state: before };
       return;
     }
-    const after = this.sync();
-    // A full sync that ended meanwhile reloads every row and count.
-    if (
-      (before?.status === 'running' && after?.status !== 'running') ||
-      before?.observedAt !== after?.observedAt
-    ) {
+    if (ended) {
       this.revision.update((value) => value + 1);
       return;
     }

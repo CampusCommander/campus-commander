@@ -989,13 +989,16 @@ describe('a status answer with an unreadable body', () => {
 describe('a failed post-open read', () => {
   const failed = () => new Response('{"sync":', { status: 503 });
 
-  /** A store whose stream dropped while a sync ran, and whose gate read reports `current`. */
+  /** A store whose stream dropped while a sync ran. `failNext()` breaks the next status read. */
   async function dropped(current: object) {
     let status = current;
-    let broken = false;
+    let failures = 0;
     const request = routes({
-      '/api/devices/sync': () =>
-        broken ? failed() : Response.json({ sync: status }),
+      '/api/devices/sync': () => {
+        if (failures < 1) return Response.json({ sync: status });
+        failures -= 1;
+        return failed();
+      },
       '/api/devices/freshness': () =>
         Response.json({ freshness: { stale: 0, refreshing: false } }),
     });
@@ -1008,14 +1011,18 @@ describe('a failed post-open read', () => {
     const before = store.revision();
     opened[0].fail(2);
     await vi.waitFor(() => expect(opened).toHaveLength(2));
-    return { request, store, opened, before, break: () => (broken = true) };
+    return { request, store, opened, before, failNext: () => (failures = 1) };
   }
 
   it('reloads the grid when the gate read shows the sync ended', async () => {
-    const { request, store, opened, before, break: broken } = await dropped(
-      state('ready', { observedAt: LATER }),
-    );
-    broken();
+    const {
+      request,
+      store,
+      opened,
+      before,
+      failNext,
+    } = await dropped(state('ready', { observedAt: LATER }));
+    failNext();
     opened[1].open();
     await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
     expect(store.sync()?.status).toBe('ready');
@@ -1024,8 +1031,8 @@ describe('a failed post-open read', () => {
   });
 
   it('keeps the baseline when the gate read matches the status from before the drop', async () => {
-    const { store, opened, before, break: broken } = await dropped(running(null));
-    broken();
+    const { store, opened, before, failNext } = await dropped(running(null));
+    failNext();
     opened[1].open();
     await vi.waitFor(() =>
       expect(store.error()).toBe('Device inventory status is unavailable.'),
@@ -1035,10 +1042,14 @@ describe('a failed post-open read', () => {
   });
 
   it('compares the next reconnect against the gate read', async () => {
-    const { request, store, opened, before, break: broken } = await dropped(
-      state('ready', { observedAt: LATER }),
-    );
-    broken();
+    const {
+      request,
+      store,
+      opened,
+      before,
+      failNext,
+    } = await dropped(state('ready', { observedAt: LATER }));
+    failNext();
     opened[1].open();
     await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
     opened[1].fail(2);
@@ -1091,27 +1102,42 @@ describe('the first open after a running status', () => {
 
 describe('a resumed session', () => {
   function signedIn() {
+    let signedIn = true;
     const session = signal<ReturnType<typeof sessionFor> | null>(sessionFor('actor'));
     const request = routes({
-      '/api/devices/sync': () => Response.json({ sync: state('ready') }),
-      '/api/devices/freshness': () =>
-        Response.json({ freshness: { stale: 0, refreshing: false } }),
+      '/api/devices/sync': () =>
+        signedIn
+          ? Response.json({ sync: state('ready') })
+          : Response.json({ code: 'access-changed' }, { status: 401 }),
     });
     const store = setup(request, session);
     store.reopenDelay = 0;
     const opened = streams(store);
     TestBed.tick();
-    return { session, store, opened };
+    return {
+      session,
+      store,
+      opened,
+      reads: () => statusReads(request),
+      signOut: () => (signedIn = false),
+      signIn: () => (signedIn = true),
+    };
   }
 
   it('asks the grid to retry the failed blocks when the same person resumes', async () => {
-    const { session, store, opened } = signedIn();
+    const { session, store, opened, reads, signOut, signIn } = signedIn();
     await store.init();
     opened[0].open();
+    signOut();
+    opened[0].fail(2);
+    // The gate read denies the ended session, so the stream stays closed.
+    await vi.waitFor(() => expect(reads()).toBe(2));
+    expect(opened).toHaveLength(1);
     const before = store.resumeRevision();
     session.set(null);
     TestBed.tick();
     await new Promise((resolve) => setTimeout(resolve, 20));
+    signIn();
     session.set(sessionFor('actor'));
     TestBed.tick();
     await vi.waitFor(() => expect(store.resumeRevision()).toBe(before + 1));

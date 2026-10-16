@@ -432,6 +432,8 @@ function mounted() {
     retryServerSideLoads,
   };
   fixture.detectChanges();
+  // The mount's first effect run is not a resume.
+  retryServerSideLoads.mockClear();
   return { fixture, retryServerSideLoads };
 }
 
