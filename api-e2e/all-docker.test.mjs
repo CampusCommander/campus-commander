@@ -680,11 +680,16 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
           await lifecycleProof?.verify('restart');
           navigationRecovery.push({
             phase: 'restart',
-            ...(await reloadAfterNetworkChange(page)),
+            ...(await reloadAfterNetworkChange(page, {
+              ready: () =>
+                expect(
+                  page.getByRole('heading', {
+                    name: 'Diagnostics',
+                    exact: true,
+                  }),
+                ).toBeVisible(),
+            })),
           });
-          await expect(
-            page.getByRole('heading', { name: 'Diagnostics', exact: true }),
-          ).toBeVisible();
           await expect(page.locator('html')).toHaveAttribute(
             'data-theme',
             'dark',
@@ -701,12 +706,20 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
               async () => {
                 navigationRecovery.push({
                   phase: `${command}-resume`,
-                  ...(await reloadAfterNetworkChange(page)),
+                  ...(await reloadAfterNetworkChange(page, {
+                    ready: () =>
+                      expect(
+                        page.getByRole('heading', {
+                          name: 'Sign in',
+                          exact: true,
+                        }),
+                      ).toBeVisible(),
+                  })),
                 });
-                await expect(
-                  page.getByRole('heading', { name: 'Sign in', exact: true }),
-                ).toBeVisible();
               },
+              // The action recovers through reloadAfterNetworkChange and
+              // appends its recovery record. A step retry would multiply both.
+              { retryOnNetworkChange: false },
             );
             await page
               .getByRole('link', { name: 'Sign in to Campus Commander' })
