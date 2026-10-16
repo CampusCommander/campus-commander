@@ -33,7 +33,11 @@ test('Phase 3 scope instructions exclude optional OUs and every inventory or mut
         capability.enabled &&
         capability.qualified,
     ).map((capability) => capability.scope),
-    ['https://www.googleapis.com/auth/admin.directory.orgunit.readonly'],
+    [
+      'https://www.googleapis.com/auth/admin.directory.orgunit.readonly',
+      'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly',
+      'https://www.googleapis.com/auth/chrome.management.telemetry.readonly',
+    ],
   );
   assert.ok(
     enabled.every(

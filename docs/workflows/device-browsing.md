@@ -62,7 +62,7 @@ Device Read permissions scoped by access assignments wait for the [platform-acce
 
 The simulated review environment supplies simulated devices and battery reports for demonstration.
 Live read-only checks use the [Easton fixture](../portfolio/phase-3-google-credentials.md#standing-test-authorization--2026-09-17).
-The owner must add both scopes to the delegation client in the Google Admin Console before those checks.
+The owner added both scopes and enabled the Chrome Management API on 2026-10-16. The live read-only check passed with empty collections. The [sanitized evidence](../../deployment/evidence/device-browsing-live-2026-10-16.json) records the check.
 An empty device collection is a valid live result.
 
 ## Owner decisions — 2026-10-05
@@ -112,6 +112,11 @@ This work is infrastructure under this workflow. It is not a new workflow. Devel
 - A full sync marks every device that Google no longer returns as removed, when that sync succeeds.
 - Nothing is deleted from the database.
 
+## Owner decisions — 2026-10-16
+
+**Device scopes during setup.** The owner approved showing the device scopes on the Google connection page.
+The Devices access messages name the scope that Google denied.
+
 ## Implementation defaults — 2026-10-05
 
 These defaults are engineering choices, not owner decisions. Change them when the owner asks.
@@ -158,6 +163,7 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - Other failed reopens retry after 5 seconds. Each failure doubles the wait, up to 60 seconds.
 - After a reconnect, the page reads the sync status again once the stream opens. It refetches rows still marked stale and recounts stale devices.
 - The edge allows the event stream 75 seconds without data. Other application requests keep 45 seconds.
+- The Google connection page lists the two connection scopes, then the inventory and telemetry scopes. Copy scopes copies all four for the Admin Console. The list excludes the School OU scope.
 
 ## States
 

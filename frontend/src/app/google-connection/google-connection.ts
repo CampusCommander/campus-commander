@@ -15,8 +15,8 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { z } from 'zod';
 import {
-  GOOGLE_CUSTOMER_SCOPES,
   GOOGLE_HEALTH_RECOVERY,
+  GOOGLE_SETUP_SCOPES,
   googleCandidateSchema,
   googleCredentialImportSchema,
   type GoogleCandidate,
@@ -53,7 +53,7 @@ export class GoogleConnectionPage implements OnInit, OnDestroy {
   protected readonly fileName = signal('');
   protected readonly clientId = signal('');
   protected readonly now = signal(Date.now());
-  protected readonly scopes = GOOGLE_CUSTOMER_SCOPES;
+  protected readonly scopes = GOOGLE_SETUP_SCOPES;
   protected subject = '';
   protected confirmed = false;
   private file: File | null = null;

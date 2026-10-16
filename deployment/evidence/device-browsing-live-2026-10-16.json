@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "observedAt": "2026-10-16T19:22:03.560Z",
+  "sourceRevision": "b3822467cd9a5002557381038d90bc67e2fe9664",
+  "nodeVersion": "v24.19.0",
+  "clientId": "113794681976879482895",
+  "customerId": "C01zcarnq",
+  "subject": "spencer@easton-consulting.com",
+  "command": "node --import ./libs/application-contracts/test-register.mjs deployment/google-proof/device-live.mjs <key-file>",
+  "methods": [
+    {
+      "name": "GoogleDeviceReader.devicePages",
+      "googleMethod": "chromeosdevices.list",
+      "scope": "https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly",
+      "httpStatus": 200,
+      "statuses": [200],
+      "requests": 1,
+      "pages": 1,
+      "items": 0
+    },
+    {
+      "name": "GoogleDeviceReader.batteryPages",
+      "googleMethod": "customers.telemetry.devices.list",
+      "scope": "https://www.googleapis.com/auth/chrome.management.telemetry.readonly",
+      "httpStatus": 200,
+      "statuses": [200],
+      "requests": 1,
+      "pages": 1,
+      "items": 0
+    },
+    {
+      "name": "GoogleDeviceReader.deviceBatch",
+      "googleMethod": "chromeosdevices.get",
+      "scope": "https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly",
+      "httpStatus": 200,
+      "statuses": [200],
+      "requests": 1,
+      "pages": 0,
+      "items": 0,
+      "partStatuses": [404]
+    },
+    {
+      "name": "GoogleDeviceReader.batteryBatch",
+      "googleMethod": "customers.telemetry.devices.get",
+      "scope": "https://www.googleapis.com/auth/chrome.management.telemetry.readonly",
+      "httpStatus": 404,
+      "statuses": [404],
+      "requests": 1,
+      "pages": 0,
+      "items": 1
+    }
+  ],
+  "counts": {
+    "devicePages": 1,
+    "devices": 0,
+    "batteryPages": 1,
+    "batteryObservations": 0
+  },
+  "probes": {
+    "deviceBatch": {
+      "classification": "not-found",
+      "missing": 1,
+      "devices": 0
+    },
+    "batteryBatch": {
+      "classification": "no-report",
+      "observations": 1
+    }
+  },
+  "durationMs": 2981,
+  "limitations": [
+    "The Easton domain returned no ChromeOS devices. Both collections were empty.",
+    "The check proves the delegated scopes, the wire format, and empty-collection handling.",
+    "The check does not prove field mapping. No device field carried a value.",
+    "Every recorded status is the observed transport answer of that request.",
+    "A batch entry records the outer multipart status in httpStatus. Its partStatuses list the answered GET statuses.",
+    "The missing-device probes classify the answer to one unknown device ID."
+  ]
+}

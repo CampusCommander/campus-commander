@@ -43,30 +43,52 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     requiredForConnection: false,
     label: 'ChromeOS device inventory',
     enabled: true,
-    qualified: false,
+    qualified: true,
     scope:
       'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly',
     method: 'chromeosdevices.list',
     source:
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/list',
     evidence:
-      'Device browsing workflow, 2026-10-05. Live qualification waits for owner scope configuration.',
+      'Live read-only check 2026-10-16 (deployment/evidence/device-browsing-live-2026-10-16.json): HTTP 200, empty collection.',
   },
   {
     id: 'device-telemetry',
     requiredForConnection: false,
     label: 'ChromeOS battery telemetry',
     enabled: true,
-    qualified: false,
+    qualified: true,
     scope:
       'https://www.googleapis.com/auth/chrome.management.telemetry.readonly',
     method: 'customers.telemetry.devices.list',
     source:
       'https://developers.google.com/chrome/management/reference/rest/v1/customers.telemetry.devices/list',
     evidence:
-      'Device browsing workflow, 2026-10-05. Live qualification waits for owner scope configuration.',
+      'Live read-only check 2026-10-16 (deployment/evidence/device-browsing-live-2026-10-16.json): HTTP 200, empty collection.',
   },
 ] as const);
+
+/** Capability ids that the Google connection page lists during setup, in page order. */
+const GOOGLE_SETUP_CAPABILITY_IDS = [
+  'customer-identity',
+  'domain-observations',
+  'device-inventory',
+  'device-telemetry',
+] as const;
+
+/**
+ * The scopes a fresh installation grants, in the order the connection page lists them.
+ * The School OU scope stays out, because the Schools feature remains disputed.
+ */
+export const GOOGLE_SETUP_SCOPES = Object.freeze([
+  ...new Set(
+    GOOGLE_SETUP_CAPABILITY_IDS.flatMap((id) =>
+      GOOGLE_CAPABILITIES.filter((capability) => capability.id === id).map(
+        (capability) => capability.scope,
+      ),
+    ),
+  ),
+]);
 
 export const GOOGLE_CUSTOMER_SCOPES = Object.freeze([
   ...new Set(
