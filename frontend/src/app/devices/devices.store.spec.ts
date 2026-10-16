@@ -834,6 +834,81 @@ const EARLIER = '2026-10-06T11:00:00.000Z';
 const running = (startedAt: string | null, checkedAt: string | null = null) =>
   state('running', { startedAt, checkedAt });
 const unreadable = () => new Response('{"sync":', { status: 200 });
+/** A finished sync with the start and check times of the reviewer probes (F1). */
+const CHECK = '2026-10-06T12:30:00.000Z';
+const finished = (startedAt: string, checkedAt: string) =>
+  state('ready', { observedAt: LATER, startedAt, checkedAt });
+
+/**
+ * Held-out answers that predate the current status (F1).
+ * The first two repeat the start instant in another spelling, so the check decides.
+ * The rest carry precision below a millisecond, which a millisecond parse loses.
+ */
+const earlierProbes = [
+  {
+    name: 'an equal start in the seconds form and an earlier check',
+    current: finished(LATER, CHECK),
+    answer: running('2026-10-06T12:00:00Z', EARLIER),
+  },
+  {
+    name: 'an equal start in an offset form and an earlier check',
+    current: finished(LATER, CHECK),
+    answer: running('2026-10-06T13:00:00.000+01:00', EARLIER),
+  },
+  {
+    name: 'an older finish that repeats the start in the seconds form',
+    current: finished(LATER, CHECK),
+    answer: state('ready', {
+      observedAt: LATER,
+      startedAt: '2026-10-06T12:00:00Z',
+      checkedAt: EARLIER,
+    }),
+  },
+  {
+    name: 'an earlier start below a millisecond',
+    current: running('2026-10-06T12:00:00.456999Z'),
+    answer: running('2026-10-06T12:00:00.456001Z'),
+  },
+  {
+    name: 'an earlier check below a millisecond in another start spelling',
+    current: running(LATER, '2026-10-06T12:30:00.456999+00:00'),
+    answer: running('2026-10-06T12:00:00Z', '2026-10-06T12:30:00.456001+00:00'),
+  },
+  {
+    name: 'an earlier check below a millisecond after the same start',
+    current: running(LATER, '2026-10-06T12:30:00.456999+00:00'),
+    answer: running(LATER, '2026-10-06T12:30:00.456001+00:00'),
+  },
+  {
+    name: 'an earlier check at nanosecond precision',
+    current: running(LATER, '2026-10-06T12:30:00.456001002Z'),
+    answer: running(LATER, '2026-10-06T12:30:00.456001001Z'),
+  },
+];
+
+/** Answers that outdate the current status by less than a millisecond (F1). Each one replaces. */
+const laterProbes = [
+  {
+    name: 'an equal start in the seconds form and a later check below a millisecond',
+    current: running(LATER, '2026-10-06T12:30:00.456001+00:00'),
+    answer: running('2026-10-06T12:00:00Z', '2026-10-06T12:30:00.456999+00:00'),
+  },
+  {
+    name: 'a later start below a millisecond',
+    current: running('2026-10-06T12:00:00.456001Z'),
+    answer: running('2026-10-06T12:00:00.456999Z'),
+  },
+  {
+    name: 'a later check below a millisecond after the same start',
+    current: running(LATER, '2026-10-06T12:30:00.456001+00:00'),
+    answer: running(LATER, '2026-10-06T12:30:00.456999+00:00'),
+  },
+  {
+    name: 'a later check at nanosecond precision',
+    current: running(LATER, '2026-10-06T12:30:00.456001001Z'),
+    answer: running(LATER, '2026-10-06T12:30:00.456001002Z'),
+  },
+];
 
 describe('the order of status answers', () => {
   /** Reads `current`, then `answer`, and returns the store. */
@@ -901,6 +976,22 @@ describe('the order of status answers', () => {
     },
   );
 
+  it.each(earlierProbes)(
+    'keeps the current status when a status read answers with $name',
+    async ({ current, answer }) => {
+      const store = await answered(current, answer);
+      expect(store.sync()).toEqual(current);
+    },
+  );
+
+  it.each(laterProbes)(
+    'replaces the current status when a status read answers with $name',
+    async ({ current, answer }) => {
+      const store = await answered(current, answer);
+      expect(store.sync()).toEqual(answer);
+    },
+  );
+
   it('replaces the current status with an equal answer and its stale value', async () => {
     const store = await answered(
       state('ready', { stale: false }),
@@ -940,6 +1031,39 @@ describe('the order of status answers', () => {
     expect(store.revision()).toBe(before);
   });
 
+  /** Opens a stream on `current` and reports the revision before the event. */
+  async function answeredByEvent(current: object, answer: object) {
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: current }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    const before = store.revision();
+    opened[0].send('full-sync', { type: 'full-sync', sync: answer });
+    return { store, before };
+  }
+
+  it.each(earlierProbes)(
+    'ignores a full-sync event that carries $name and keeps the revision',
+    async ({ current, answer }) => {
+      const { store, before } = await answeredByEvent(current, answer);
+      expect(store.sync()).toEqual(current);
+      expect(store.revision()).toBe(before);
+    },
+  );
+
+  it.each(laterProbes)(
+    'replaces the current status when a full-sync event carries $name',
+    async ({ current, answer }) => {
+      const { store } = await answeredByEvent(current, answer);
+      expect(store.sync()).toEqual(answer);
+    },
+  );
+
   it('keeps the current status when a refresh answer is older', async () => {
     let answer = running(LATER);
     const request = routes({
@@ -957,6 +1081,36 @@ describe('the order of status answers', () => {
     await store.refreshAll();
     expect(store.sync()).toEqual(current);
   });
+
+  /** Reads `current`, then starts a refresh whose answer is `answer`. */
+  async function answeredByRefresh(current: object, answer: object) {
+    const request = routes({
+      '/api/devices/sync': (body) =>
+        body === undefined
+          ? Response.json({ sync: current })
+          : Response.json({ sync: answer }, { status: 201 }),
+    });
+    const store = setup(request);
+    await store.loadSync();
+    await store.refreshAll();
+    return store;
+  }
+
+  it.each(earlierProbes)(
+    'keeps the current status when a refresh answers with $name',
+    async ({ current, answer }) => {
+      const store = await answeredByRefresh(current, answer);
+      expect(store.sync()).toEqual(current);
+    },
+  );
+
+  it.each(laterProbes)(
+    'replaces the current status when a refresh answers with $name',
+    async ({ current, answer }) => {
+      const store = await answeredByRefresh(current, answer);
+      expect(store.sync()).toEqual(answer);
+    },
+  );
 });
 
 describe('a status answer with an unreadable body', () => {
@@ -1108,6 +1262,32 @@ describe('the first open after a running status', () => {
     opened[0].open();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(statusReads(request)).toBe(1);
+  });
+
+  it('reconciles the first open after a refresh started before the stream opened', async () => {
+    let current = state('ready');
+    const request = routes({
+      '/api/devices/sync': (body) =>
+        body === undefined
+          ? Response.json({ sync: current })
+          : Response.json({ sync: running(null) }, { status: 201 }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    expect(statusReads(request)).toBe(1);
+    // Refresh all starts a full sync before the stream subscribes.
+    await store.refreshAll();
+    expect(store.sync()?.status).toBe('running');
+    const before = store.revision();
+    current = state('ready', { observedAt: LATER });
+    opened[0].open();
+    // The current status is running, so the first open reads after the open and reloads the grid.
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    expect(store.sync()?.status).toBe('ready');
+    expect(statusReads(request)).toBe(2);
   });
 });
 
