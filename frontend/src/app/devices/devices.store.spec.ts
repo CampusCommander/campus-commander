@@ -1010,7 +1010,7 @@ describe('a failed post-open read', () => {
 
   /** A store whose stream dropped while a sync ran. `failNext()` breaks the next status read. */
   async function dropped(current: object) {
-    let status = current;
+    const status = current;
     let failures = 0;
     const request = routes({
       '/api/devices/sync': () => {
