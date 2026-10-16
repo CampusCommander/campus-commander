@@ -34,7 +34,8 @@
         "env": {
           "CC_AUTH_PHASE": "3",
           "CC_CLIENT_REVIEW": "1",
-          "CC_CLIENT_REVIEW_GOOGLE": "admin-sdk-mock"
+          "CC_CLIENT_REVIEW_GOOGLE": "admin-sdk-mock",
+          "CC_MOCK_TIER_DEFAULT": "medium"
         }
       }
     },
