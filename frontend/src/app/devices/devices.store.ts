@@ -66,6 +66,94 @@ export type DeviceEventSource = Pick<
 >;
 const CLOSED = 2;
 
+/** An instant as whole seconds from the epoch and the fraction digits that follow. */
+interface Instant {
+  seconds: number;
+  /** Fraction digits without trailing zeros. An empty string means no fraction. */
+  fraction: string;
+}
+
+/**
+ * The timestamp shape of the contract: a `Z` or `±hh:mm` offset, seconds optional,
+ * and any number of fraction digits. A fraction never appears without seconds.
+ */
+const instantPattern =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|([+-])(\d{2}):(\d{2}))$/;
+
+/** Days from 1970-01-01 to the civil date. Exact for every year the contract accepts. */
+const daysFromCivil = (year: number, month: number, day: number): number => {
+  const y = month <= 2 ? year - 1 : year;
+  const era = Math.floor(y / 400);
+  const yearOfEra = y - era * 400;
+  const dayOfYear =
+    Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1;
+  const dayOfEra =
+    yearOfEra * 365 +
+    Math.floor(yearOfEra / 4) -
+    Math.floor(yearOfEra / 100) +
+    dayOfYear;
+  return era * 146097 + dayOfEra - 719468;
+};
+
+/** Split a contract timestamp into its instant. Returns null for any other shape. */
+const parseInstant = (time: string): Instant | null => {
+  const parts = instantPattern.exec(time);
+  if (!parts) return null;
+  const [
+    ,
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    fraction,
+    zone,
+    sign,
+    offsetHours,
+    offsetMinutes,
+  ] = parts;
+  const offset =
+    zone === 'Z'
+      ? 0
+      : (sign === '-' ? -1 : 1) *
+        (Number(offsetHours) * 3600 + Number(offsetMinutes) * 60);
+  return {
+    seconds:
+      daysFromCivil(Number(year), Number(month), Number(day)) * 86_400 +
+      Number(hour) * 3600 +
+      Number(minute) * 60 +
+      // The contract allows a timestamp without seconds. An omitted second is zero.
+      Number(second ?? 0) -
+      offset,
+    // Trailing zeros carry no order, so one instant in two spellings compares as one value.
+    fraction: (fraction ?? '').replace(/0+$/, ''),
+  };
+};
+
+/**
+ * -1, 0, or 1 for `time` against `other`. Every fraction digit counts.
+ * A missing time is earliest. A time without an exact parse returns null.
+ */
+const compareInstants = (
+  time: string | null,
+  other: string | null,
+): number | null => {
+  if (time === null) return other === null ? 0 : -1;
+  if (other === null) return 1;
+  const left = parseInstant(time);
+  const right = parseInstant(other);
+  // The contract schema rejects every other shape. No order means the answer replaces.
+  if (!left || !right) return null;
+  if (left.seconds !== right.seconds)
+    return left.seconds < right.seconds ? -1 : 1;
+  const digits = Math.max(left.fraction.length, right.fraction.length);
+  const leftFraction = left.fraction.padEnd(digits, '0');
+  const rightFraction = right.fraction.padEnd(digits, '0');
+  if (leftFraction === rightFraction) return 0;
+  return leftFraction < rightFraction ? -1 : 1;
+};
+
 /** The query whose stale devices the banner counts: the outermost filters and selection. */
 interface CountedQuery {
   predicates: DevicePredicate[];
@@ -127,6 +215,8 @@ export class DevicesStore {
   readonly error = signal('');
   /** Increments when the grid must reload from the first block. */
   readonly revision = signal(0);
+  /** Increments when a resumed session must retry the grid blocks whose loads failed. */
+  readonly resumeRevision = signal(0);
   /** Row index and ID of the last opened device in the current filtered order. */
   readonly position = signal<{
     index: number;
@@ -245,12 +335,43 @@ export class DevicesStore {
         ? 'denied'
         : 'failed';
     }
+    let answer: DeviceSyncState | null;
+    try {
+      answer = deviceSyncStateSchema
+        .nullable()
+        .parse((await response.json()).sync);
+    } catch {
+      // A 200 answer with an unreadable body counts as a failed read. The reopen then retries.
+      this.error.set('Device inventory status is unavailable.');
+      return 'failed';
+    }
     this.error.set('');
-    this.sync.set(
-      deviceSyncStateSchema.nullable().parse((await response.json()).sync),
-    );
+    this.setSync(answer);
     this.syncLoaded.set(true);
     return 'read';
+  }
+
+  /** A status answer never replaces a newer current status (S2). */
+  private setSync(answer: DeviceSyncState | null): void {
+    if (this.isOlder(answer)) return;
+    this.sync.set(answer);
+  }
+
+  /** True when `answer` predates the current status of the same customer and generation. */
+  private isOlder(answer: DeviceSyncState | null): boolean {
+    const current = this.sync();
+    if (!answer || !current) return false;
+    if (
+      answer.customerId !== current.customerId ||
+      answer.generation !== current.generation
+    )
+      return false;
+    const starts = compareInstants(answer.startedAt, current.startedAt);
+    // An unreadable time has no order. The answer replaces the status, as before S2.
+    if (starts === null) return false;
+    if (starts !== 0) return starts < 0;
+    const checks = compareInstants(answer.checkedAt, current.checkedAt);
+    return checks !== null && checks < 0;
   }
 
   /** Start a full sync. The full-sync event reports its end (D12). */
@@ -267,8 +388,14 @@ export class DevicesStore {
           : 'The refresh could not start.',
       );
     } else {
+      const started = deviceSyncStateSchema.safeParse(body?.sync);
+      if (!started.success) {
+        // A 200 answer with an unreadable body never starts a refresh.
+        this.error.set('The refresh could not start.');
+        return;
+      }
       this.error.set('');
-      this.sync.set(deviceSyncStateSchema.parse(body.sync));
+      this.setSync(started.data);
     }
   }
 
@@ -386,9 +513,12 @@ export class DevicesStore {
       if (!current()) return;
       this.reopenAttempts = 0;
       this.watch();
-      // The first open follows a fresh status read. It has no earlier stream to reconcile.
       if (this.streamOpened) void this.reconcile();
-      else this.dropped = null;
+      else if (this.sync()?.status === 'running') {
+        // A full sync can end between the gate read and this first open. Reconcile from the gate read.
+        this.dropped = { state: this.sync() };
+        void this.reconcile();
+      } else this.dropped = null;
       this.streamOpened = true;
     });
     stream.addEventListener('error', () => {
@@ -447,6 +577,8 @@ export class DevicesStore {
 
   /** The same person resumed an interrupted session. A stream that a 401 closed opens again. */
   private resume(): void {
+    // The grid retries the blocks whose loads failed while the session was interrupted (S5).
+    this.resumeRevision.update((value) => value + 1);
     if (!this.streamWanted || this.stream) return;
     clearTimeout(this.reopenTimer);
     void this.reopen();
@@ -469,6 +601,8 @@ export class DevicesStore {
       if (event.job.failure) this.jobFailure.set(event.job.failure);
       this.scheduleRecount();
     } else {
+      // An older event reports a sync that the current status already passed. It changes nothing.
+      if (this.isOlder(event.sync)) return;
       this.sync.set(event.sync);
       if (event.sync.status !== 'running')
         this.revision.update((value) => value + 1);
@@ -482,17 +616,25 @@ export class DevicesStore {
     const baseline = this.dropped;
     this.dropped = null;
     const before = baseline ? baseline.state : this.sync();
-    if (!(await this.loadSync())) {
+    const read = await this.loadSync();
+    // A failed read leaves the gate-read status in place, so it answers for the gate read too.
+    const after = this.sync();
+    // A full sync that ended meanwhile reloads every row and count.
+    const ended =
+      (before?.status === 'running' && after?.status !== 'running') ||
+      before?.observedAt !== after?.observedAt;
+    if (!read) {
+      if (ended) {
+        this.revision.update((value) => value + 1);
+        // The gate read is the status that the next reconnect compares against.
+        this.dropped = { state: after };
+        return;
+      }
       // The next reconnect compares against the same status.
       this.dropped = { state: before };
       return;
     }
-    const after = this.sync();
-    // A full sync that ended meanwhile reloads every row and count.
-    if (
-      (before?.status === 'running' && after?.status !== 'running') ||
-      before?.observedAt !== after?.observedAt
-    ) {
+    if (ended) {
       this.revision.update((value) => value + 1);
       return;
     }

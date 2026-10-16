@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { AuthStore } from '../auth.store';
 import type { DevicePredicate, DeviceRow } from '@campus/application-contracts';
+import { deviceSyncStateSchema } from '@campus/application-contracts';
 import { DevicesStore } from './devices.store';
 import type { DeviceEventSource } from './devices.store';
 
@@ -826,6 +827,715 @@ it('recounts when a page that scrolling loads starts a refresh job', async () =>
   await vi.waitFor(() =>
     expect(store.freshness()).toEqual({ stale: 12, refreshing: true }),
   );
+});
+
+const LATER = '2026-10-06T12:00:00.000Z';
+const EARLIER = '2026-10-06T11:00:00.000Z';
+/** A running status with the start and check times that order status answers (S2). */
+const running = (startedAt: string | null, checkedAt: string | null = null) =>
+  state('running', { startedAt, checkedAt });
+const unreadable = () => new Response('{"sync":', { status: 200 });
+/** A finished sync with the start and check times of the reviewer probes (F1). */
+const CHECK = '2026-10-06T12:30:00.000Z';
+const finished = (startedAt: string, checkedAt: string) =>
+  state('ready', { observedAt: LATER, startedAt, checkedAt });
+
+/**
+ * Held-out answers that predate the current status (F1).
+ * The first two repeat the start instant in another spelling, so the check decides.
+ * The rest carry precision below a millisecond, which a millisecond parse loses.
+ */
+const earlierProbes = [
+  {
+    name: 'an equal start in the seconds form and an earlier check',
+    current: finished(LATER, CHECK),
+    answer: running('2026-10-06T12:00:00Z', EARLIER),
+  },
+  {
+    name: 'an equal start in an offset form and an earlier check',
+    current: finished(LATER, CHECK),
+    answer: running('2026-10-06T13:00:00.000+01:00', EARLIER),
+  },
+  {
+    name: 'an older finish that repeats the start in the seconds form',
+    current: finished(LATER, CHECK),
+    answer: state('ready', {
+      observedAt: LATER,
+      startedAt: '2026-10-06T12:00:00Z',
+      checkedAt: EARLIER,
+    }),
+  },
+  {
+    name: 'an earlier start below a millisecond',
+    current: running('2026-10-06T12:00:00.456999Z'),
+    answer: running('2026-10-06T12:00:00.456001Z'),
+  },
+  {
+    name: 'an earlier check below a millisecond in another start spelling',
+    current: running(LATER, '2026-10-06T12:30:00.456999+00:00'),
+    answer: running('2026-10-06T12:00:00Z', '2026-10-06T12:30:00.456001+00:00'),
+  },
+  {
+    name: 'an earlier check below a millisecond after the same start',
+    current: running(LATER, '2026-10-06T12:30:00.456999+00:00'),
+    answer: running(LATER, '2026-10-06T12:30:00.456001+00:00'),
+  },
+  {
+    name: 'an earlier check at nanosecond precision',
+    current: running(LATER, '2026-10-06T12:30:00.456001002Z'),
+    answer: running(LATER, '2026-10-06T12:30:00.456001001Z'),
+  },
+  // The F1 review round 2 cases: minute-only timestamps are valid contract values.
+  {
+    name: 'an older start in the minute form against a nanosecond start',
+    current: finished('2026-10-06T12:00:00.000000001Z', CHECK),
+    answer: finished('2026-10-06T12:00Z', CHECK),
+  },
+  {
+    name: 'an older check in the minute form against a nanosecond check',
+    current: running(LATER, '2026-10-06T12:30:00.000000001Z'),
+    answer: running(LATER, '2026-10-06T12:30Z'),
+  },
+  {
+    name: 'an older check in the minute form with an offset',
+    current: running(LATER, '2026-10-06T12:30:00.000000001Z'),
+    answer: running('2026-10-06T12:00:00Z', '2026-10-06T13:30+01:00'),
+  },
+];
+
+/** Answers that outdate the current status by less than a millisecond (F1). Each one replaces. */
+const laterProbes = [
+  {
+    name: 'an equal start in the seconds form and a later check below a millisecond',
+    current: running(LATER, '2026-10-06T12:30:00.456001+00:00'),
+    answer: running('2026-10-06T12:00:00Z', '2026-10-06T12:30:00.456999+00:00'),
+  },
+  {
+    name: 'a later start below a millisecond',
+    current: running('2026-10-06T12:00:00.456001Z'),
+    answer: running('2026-10-06T12:00:00.456999Z'),
+  },
+  {
+    name: 'a later check below a millisecond after the same start',
+    current: running(LATER, '2026-10-06T12:30:00.456001+00:00'),
+    answer: running(LATER, '2026-10-06T12:30:00.456999+00:00'),
+  },
+  {
+    name: 'a later check at nanosecond precision',
+    current: running(LATER, '2026-10-06T12:30:00.456001001Z'),
+    answer: running(LATER, '2026-10-06T12:30:00.456001002Z'),
+  },
+  // The reverse of the F1 review round 2 cases. Each one replaces.
+  {
+    name: 'a newer start in the nanosecond form against a minute start',
+    current: finished('2026-10-06T12:00Z', CHECK),
+    answer: finished('2026-10-06T12:00:00.000000001Z', CHECK),
+  },
+  {
+    name: 'a newer check in the nanosecond form against a minute check',
+    current: running(LATER, '2026-10-06T12:30Z'),
+    answer: running(LATER, '2026-10-06T12:30:00.000000001Z'),
+  },
+  {
+    name: 'a newer check in the nanosecond form against a minute check with an offset',
+    current: running(LATER, '2026-10-06T13:30+01:00'),
+    answer: running('2026-10-06T12:00:00Z', '2026-10-06T12:30:00.000000001Z'),
+  },
+];
+
+describe('the order of status answers', () => {
+  /** Reads `current`, then `answer`, and returns the store. */
+  async function answered(current: object, answer: object) {
+    let status = current;
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: status }),
+    });
+    const store = setup(request);
+    await store.loadSync();
+    expect(store.sync()).toEqual(current);
+    status = answer;
+    await store.loadSync();
+    return store;
+  }
+
+  const older = [
+    {
+      name: 'an earlier start',
+      current: running(LATER),
+      answer: running(EARLIER),
+    },
+    {
+      name: 'the same start and an earlier check',
+      current: running(LATER, LATER),
+      answer: running(LATER, EARLIER),
+    },
+    { name: 'a missing start', current: running(LATER), answer: running(null) },
+    {
+      name: 'a missing check after the same start',
+      current: running(LATER, LATER),
+      answer: running(LATER, null),
+    },
+  ];
+  it.each(older)(
+    'keeps the current status when the answer has $name',
+    async ({ current, answer }) => {
+      const store = await answered(current, answer);
+      expect(store.sync()).toEqual(current);
+    },
+  );
+
+  const newer = [
+    {
+      name: 'a later start',
+      current: running(EARLIER),
+      answer: running(LATER),
+    },
+    {
+      name: 'the same start and a later check',
+      current: running(EARLIER, EARLIER),
+      answer: running(EARLIER, LATER),
+    },
+    {
+      name: 'a missing current start',
+      current: running(null),
+      answer: running(LATER),
+    },
+  ];
+  it.each(newer)(
+    'replaces the current status when the answer has $name',
+    async ({ current, answer }) => {
+      const store = await answered(current, answer);
+      expect(store.sync()).toEqual(answer);
+    },
+  );
+
+  it.each(earlierProbes)(
+    'keeps the current status when a status read answers with $name',
+    async ({ current, answer }) => {
+      const store = await answered(current, answer);
+      expect(store.sync()).toEqual(current);
+    },
+  );
+
+  it.each(laterProbes)(
+    'replaces the current status when a status read answers with $name',
+    async ({ current, answer }) => {
+      const store = await answered(current, answer);
+      expect(store.sync()).toEqual(answer);
+    },
+  );
+
+  /**
+   * Every timestamp spelling that the contract accepts (F1 review round 2).
+   * Both operands use one spelling, so a spelling without an exact parse reaches no
+   * order and the replacing answer fails the rejection case.
+   */
+  const spellings = [
+    {
+      name: 'minutes with Z',
+      older: '2026-10-06T12:30Z',
+      newer: '2026-10-06T12:31Z',
+    },
+    {
+      name: 'minutes with a positive offset',
+      older: '2026-10-06T13:30+01:00',
+      newer: '2026-10-06T13:31+01:00',
+    },
+    {
+      name: 'minutes with a negative offset',
+      older: '2026-10-06T06:30-06:00',
+      newer: '2026-10-06T06:31-06:00',
+    },
+    {
+      name: 'seconds without a fraction',
+      older: '2026-10-06T12:30:00Z',
+      newer: '2026-10-06T12:30:01Z',
+    },
+    {
+      name: 'one fraction digit',
+      older: '2026-10-06T12:30:00.1Z',
+      newer: '2026-10-06T12:30:00.2Z',
+    },
+    {
+      name: 'three fraction digits',
+      older: '2026-10-06T12:30:00.123Z',
+      newer: '2026-10-06T12:30:00.124Z',
+    },
+    {
+      name: 'six fraction digits',
+      older: '2026-10-06T12:30:00.123456Z',
+      newer: '2026-10-06T12:30:00.123457Z',
+    },
+    {
+      name: 'nine fraction digits',
+      older: '2026-10-06T12:30:00.000000001Z',
+      newer: '2026-10-06T12:30:00.000000002Z',
+    },
+    {
+      name: 'seconds with a positive offset',
+      older: '2026-10-06T13:30:00+01:00',
+      newer: '2026-10-06T13:30:01+01:00',
+    },
+    {
+      name: 'nine fraction digits with a negative offset',
+      older: '2026-10-06T06:30:00.000000001-06:00',
+      newer: '2026-10-06T06:30:00.000000002-06:00',
+    },
+  ];
+
+  it.each(spellings)(
+    'keeps the current status when the answer is older in $name',
+    async ({ older, newer }) => {
+      const store = await answered(
+        running(LATER, newer),
+        running(LATER, older),
+      );
+      expect(store.sync()).toEqual(running(LATER, newer));
+    },
+  );
+
+  it.each(spellings)(
+    'replaces the current status when the answer is newer in $name',
+    async ({ older, newer }) => {
+      const store = await answered(
+        running(LATER, older),
+        running(LATER, newer),
+      );
+      expect(store.sync()).toEqual(running(LATER, newer));
+    },
+  );
+
+  it.each([
+    { name: 'the seconds form', answer: '2026-10-06T12:30:00Z' },
+    { name: 'the fraction form', answer: '2026-10-06T12:30:00.000Z' },
+    { name: 'the offset form', answer: '2026-10-06T13:30+01:00' },
+  ])(
+    'replaces a minute-form check with the same instant in $name',
+    async ({ answer }) => {
+      const store = await answered(
+        running(LATER, '2026-10-06T12:30Z'),
+        running(LATER, answer),
+      );
+      expect(store.sync()?.checkedAt).toBe(answer);
+    },
+  );
+
+  it('replaces the current status with an equal answer and its stale value', async () => {
+    const store = await answered(
+      state('ready', { stale: false }),
+      state('ready', { stale: true }),
+    );
+    expect(store.sync()?.stale).toBe(true);
+  });
+
+  it.each([
+    { name: 'another customer', answer: { customerId: 'C0654321' } },
+    { name: 'a new generation', answer: { generation: 3 } },
+  ])('replaces the current status for $name', async ({ answer }) => {
+    const store = await answered(running(LATER), {
+      ...state('ready', { observedAt: LATER, startedAt: EARLIER }),
+      ...answer,
+    });
+    expect(store.sync()?.status).toBe('ready');
+  });
+
+  it('ignores a full-sync event older than the current status', async () => {
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: running(LATER) }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    const current = store.sync();
+    const before = store.revision();
+    opened[0].send('full-sync', {
+      type: 'full-sync',
+      sync: state('ready', { observedAt: LATER, startedAt: EARLIER }),
+    });
+    expect(store.sync()).toEqual(current);
+    expect(store.revision()).toBe(before);
+  });
+
+  /** Opens a stream on `current` and reports the revision before the event. */
+  async function answeredByEvent(current: object, answer: object) {
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: current }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    const before = store.revision();
+    opened[0].send('full-sync', { type: 'full-sync', sync: answer });
+    return { store, before };
+  }
+
+  it.each(earlierProbes)(
+    'ignores a full-sync event that carries $name and keeps the revision',
+    async ({ current, answer }) => {
+      const { store, before } = await answeredByEvent(current, answer);
+      expect(store.sync()).toEqual(current);
+      expect(store.revision()).toBe(before);
+    },
+  );
+
+  it.each(laterProbes)(
+    'replaces the current status when a full-sync event carries $name',
+    async ({ current, answer }) => {
+      const { store } = await answeredByEvent(current, answer);
+      expect(store.sync()).toEqual(answer);
+    },
+  );
+
+  it('keeps the current status when a refresh answer is older', async () => {
+    let answer = running(LATER);
+    const request = routes({
+      '/api/devices/sync': (body) =>
+        body === undefined
+          ? Response.json({ sync: state('ready') })
+          : Response.json({ sync: answer }, { status: 201 }),
+    });
+    const store = setup(request);
+    await store.loadSync();
+    await store.refreshAll();
+    const current = store.sync();
+    expect(current?.status).toBe('running');
+    answer = state('ready', { observedAt: LATER, startedAt: EARLIER });
+    await store.refreshAll();
+    expect(store.sync()).toEqual(current);
+  });
+
+  /** Reads `current`, then starts a refresh whose answer is `answer`. */
+  async function answeredByRefresh(current: object, answer: object) {
+    const request = routes({
+      '/api/devices/sync': (body) =>
+        body === undefined
+          ? Response.json({ sync: current })
+          : Response.json({ sync: answer }, { status: 201 }),
+    });
+    const store = setup(request);
+    await store.loadSync();
+    await store.refreshAll();
+    return store;
+  }
+
+  it.each(earlierProbes)(
+    'keeps the current status when a refresh answers with $name',
+    async ({ current, answer }) => {
+      const store = await answeredByRefresh(current, answer);
+      expect(store.sync()).toEqual(current);
+    },
+  );
+
+  it.each(laterProbes)(
+    'replaces the current status when a refresh answers with $name',
+    async ({ current, answer }) => {
+      const store = await answeredByRefresh(current, answer);
+      expect(store.sync()).toEqual(answer);
+    },
+  );
+});
+
+/**
+ * The status contract decides which timestamp strings the store can receive (F1 review round 2).
+ * The store parses every one of them exactly, so this test pins the grammar.
+ * A Zod upgrade that widens the grammar must fail here instead of reaching the store.
+ */
+describe('the timestamp grammar of the status contract', () => {
+  /** A ready status whose three timestamps all use `timestamp`. */
+  const status = (timestamp: string) =>
+    state('ready', {
+      observedAt: timestamp,
+      startedAt: timestamp,
+      checkedAt: timestamp,
+    });
+
+  const accepted = [
+    // Minutes alone. Zod 4.4.2 accepts a timestamp without seconds.
+    '2026-10-06T12:30Z',
+    '2026-10-06T12:30+01:00',
+    '2026-10-06T12:30-05:30',
+    // Seconds with and without a fraction.
+    '2026-10-06T12:30:00Z',
+    '2026-10-06T12:30:00+01:00',
+    '2026-10-06T12:30:00.1Z',
+    '2026-10-06T12:30:00.12Z',
+    '2026-10-06T12:30:00.123Z',
+    '2026-10-06T12:30:00.1234Z',
+    '2026-10-06T12:30:00.12345Z',
+    '2026-10-06T12:30:00.123456Z',
+    '2026-10-06T12:30:00.1234567Z',
+    '2026-10-06T12:30:00.12345678Z',
+    '2026-10-06T12:30:00.123456789Z',
+    // Zod allows any number of fraction digits. The store keeps every digit.
+    '2026-10-06T12:30:00.000000000000000000000001Z',
+  ];
+
+  const rejected = [
+    '2026-10-06T12:30:00',
+    '2026-10-06T12:30:00z',
+    '2026-10-06T12:30.5Z',
+    '2026-10-06 12:30:00Z',
+    '2026-10-6T12:30Z',
+    '2026-10-06T12:30:00+0100',
+    '2026-10-06T12:30:00.Z',
+    '2026-10-06T12:60:00Z',
+    '2026-10-06T12:30:60Z',
+    '2026-02-30T12:30:00Z',
+  ];
+
+  it.each(accepted)('accepts the status timestamp %s', (timestamp) => {
+    expect(deviceSyncStateSchema.safeParse(status(timestamp)).success).toBe(
+      true,
+    );
+  });
+
+  it.each(rejected)('rejects the status timestamp %s', (timestamp) => {
+    expect(deviceSyncStateSchema.safeParse(status(timestamp)).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('a status answer with an unreadable body', () => {
+  const bodies = [
+    { name: 'a body that is not JSON', body: unreadable },
+    {
+      name: 'a body that fails the status schema',
+      body: () => Response.json({ sync: { status: 'nope' } }),
+    },
+  ];
+
+  it.each(bodies)('reports $name as a failed status read', async ({ body }) => {
+    const store = setup(
+      vi.fn().mockImplementation(() => Promise.resolve(body())),
+    );
+    await expect(store.loadSync()).resolves.toBe(false);
+    expect(store.error()).toBe('Device inventory status is unavailable.');
+    expect(store.sync()).toBeNull();
+  });
+
+  it.each(bodies)('reopens the stream after $name', async ({ body }) => {
+    let bad = true;
+    const request = routes({
+      '/api/devices/sync': () =>
+        bad ? body() : Response.json({ sync: state('ready') }),
+    });
+    const store = setup(request);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    await store.init();
+    expect(opened).toHaveLength(0);
+    bad = false;
+    await vi.waitFor(() => expect(opened).toHaveLength(1));
+    expect(statusReads(request)).toBe(2);
+  });
+
+  it.each(bodies)(
+    'reports $name as a failed refresh start',
+    async ({ body }) => {
+      const store = setup(
+        vi.fn().mockImplementation(() => Promise.resolve(body())),
+      );
+      await store.refreshAll();
+      expect(store.error()).toBe('The refresh could not start.');
+    },
+  );
+});
+
+describe('a failed post-open read', () => {
+  const failed = () => new Response('{"sync":', { status: 503 });
+
+  /** A store whose stream dropped while a sync ran. `failNext()` breaks the next status read. */
+  async function dropped(current: object) {
+    const status = current;
+    let failures = 0;
+    const request = routes({
+      '/api/devices/sync': () => {
+        if (failures < 1) return Response.json({ sync: status });
+        failures -= 1;
+        return failed();
+      },
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    opened[0].send('full-sync', { type: 'full-sync', sync: running(null) });
+    const before = store.revision();
+    opened[0].fail(2);
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    return { request, store, opened, before, failNext: () => (failures = 1) };
+  }
+
+  it('reloads the grid when the gate read shows the sync ended', async () => {
+    const { request, store, opened, before, failNext } = await dropped(
+      state('ready', { observedAt: LATER }),
+    );
+    failNext();
+    opened[1].open();
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    expect(store.sync()?.status).toBe('ready');
+    expect(store.error()).toBe('Device inventory status is unavailable.');
+    expect(statusReads(request)).toBe(3);
+  });
+
+  it('keeps the baseline when the gate read matches the status from before the drop', async () => {
+    const { store, opened, before, failNext } = await dropped(running(null));
+    failNext();
+    opened[1].open();
+    await vi.waitFor(() =>
+      expect(store.error()).toBe('Device inventory status is unavailable.'),
+    );
+    expect(store.revision()).toBe(before);
+    expect(store.sync()?.status).toBe('running');
+  });
+
+  it('compares the next reconnect against the gate read', async () => {
+    const { request, store, opened, before, failNext } = await dropped(
+      state('ready', { observedAt: LATER }),
+    );
+    failNext();
+    opened[1].open();
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    opened[1].fail(2);
+    await vi.waitFor(() => expect(opened).toHaveLength(3));
+    opened[2].open();
+    await vi.waitFor(() =>
+      expect(request).toHaveBeenCalledWith('/api/devices/freshness', {
+        predicates: [],
+        selection: null,
+      }),
+    );
+    expect(store.revision()).toBe(before + 1);
+  });
+});
+
+describe('the first open after a running status', () => {
+  it('reloads the grid when the sync ends before the stream subscribes', async () => {
+    let current = running(null);
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: current }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    expect(opened).toHaveLength(1);
+    const before = store.revision();
+    current = state('ready', { observedAt: LATER });
+    opened[0].open();
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    expect(store.sync()?.status).toBe('ready');
+    expect(statusReads(request)).toBe(2);
+  });
+
+  it('makes no extra status read when the first open follows a ready status', async () => {
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: state('ready') }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(statusReads(request)).toBe(1);
+  });
+
+  it('reconciles the first open after a refresh started before the stream opened', async () => {
+    let current = state('ready');
+    const request = routes({
+      '/api/devices/sync': (body) =>
+        body === undefined
+          ? Response.json({ sync: current })
+          : Response.json({ sync: running(null) }, { status: 201 }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    expect(statusReads(request)).toBe(1);
+    // Refresh all starts a full sync before the stream subscribes.
+    await store.refreshAll();
+    expect(store.sync()?.status).toBe('running');
+    const before = store.revision();
+    current = state('ready', { observedAt: LATER });
+    opened[0].open();
+    // The current status is running, so the first open reads after the open and reloads the grid.
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    expect(store.sync()?.status).toBe('ready');
+    expect(statusReads(request)).toBe(2);
+  });
+});
+
+describe('a resumed session', () => {
+  function signedIn() {
+    let signedIn = true;
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    const request = routes({
+      '/api/devices/sync': () =>
+        signedIn
+          ? Response.json({ sync: state('ready') })
+          : Response.json({ code: 'access-changed' }, { status: 401 }),
+    });
+    const store = setup(request, session);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    TestBed.tick();
+    return {
+      session,
+      store,
+      opened,
+      reads: () => statusReads(request),
+      signOut: () => (signedIn = false),
+      signIn: () => (signedIn = true),
+    };
+  }
+
+  it('asks the grid to retry the failed blocks when the same person resumes', async () => {
+    const { session, store, opened, reads, signOut, signIn } = signedIn();
+    await store.init();
+    opened[0].open();
+    signOut();
+    opened[0].fail(2);
+    // The gate read denies the ended session, so the stream stays closed.
+    await vi.waitFor(() => expect(reads()).toBe(2));
+    expect(opened).toHaveLength(1);
+    const before = store.resumeRevision();
+    session.set(null);
+    TestBed.tick();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    signIn();
+    session.set(sessionFor('actor'));
+    TestBed.tick();
+    await vi.waitFor(() => expect(store.resumeRevision()).toBe(before + 1));
+    // The stream reopens as before.
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+  });
+
+  it('keeps the reset of another sign-in without a retry', () => {
+    const { session, store, opened } = signedIn();
+    const before = store.resumeRevision();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    expect(store.resumeRevision()).toBe(before);
+    expect(store.revision()).toBe(1);
+    expect(opened).toHaveLength(0);
+  });
 });
 
 describe('the stale count of a new query', () => {
