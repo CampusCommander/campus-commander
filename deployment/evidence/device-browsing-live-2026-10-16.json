@@ -14,9 +14,7 @@
       "googleMethod": "chromeosdevices.list",
       "scope": "https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly",
       "httpStatus": 200,
-      "statuses": [
-        200
-      ],
+      "statuses": [200],
       "requests": 1,
       "pages": 1,
       "items": 0
@@ -26,9 +24,7 @@
       "googleMethod": "customers.telemetry.devices.list",
       "scope": "https://www.googleapis.com/auth/chrome.management.telemetry.readonly",
       "httpStatus": 200,
-      "statuses": [
-        200
-      ],
+      "statuses": [200],
       "requests": 1,
       "pages": 1,
       "items": 0
@@ -38,24 +34,18 @@
       "googleMethod": "chromeosdevices.get",
       "scope": "https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly",
       "httpStatus": 200,
-      "statuses": [
-        200
-      ],
+      "statuses": [200],
       "requests": 1,
       "pages": 0,
       "items": 0,
-      "partStatuses": [
-        404
-      ]
+      "partStatuses": [404]
     },
     {
       "name": "GoogleDeviceReader.batteryBatch",
       "googleMethod": "customers.telemetry.devices.get",
       "scope": "https://www.googleapis.com/auth/chrome.management.telemetry.readonly",
       "httpStatus": 404,
-      "statuses": [
-        404
-      ],
+      "statuses": [404],
       "requests": 1,
       "pages": 0,
       "items": 1

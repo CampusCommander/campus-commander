@@ -68,7 +68,10 @@ function batchPartStatuses(url, response) {
   try {
     if (url !== batchEndpoint) return undefined;
     const contentType = headerValue(response?.headers, 'content-type') ?? '';
-    if (!/^multipart\//i.test(contentType) || typeof response?.data !== 'string')
+    if (
+      !/^multipart\//i.test(contentType) ||
+      typeof response?.data !== 'string'
+    )
       return undefined;
     return parseMultipartResponse(contentType, response.data).map(
       (part) => part.status,
