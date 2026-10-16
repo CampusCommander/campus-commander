@@ -131,7 +131,10 @@ const parseInstant = (time: string): Instant | null => {
   };
 };
 
-/** -1, 0, or 1 for `time` against `other`. Every fraction digit counts. A missing time is earliest. */
+/**
+ * -1, 0, or 1 for `time` against `other`. Every fraction digit counts.
+ * A missing time is earliest. A time without an exact parse returns null.
+ */
 const compareInstants = (
   time: string | null,
   other: string | null,
