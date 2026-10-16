@@ -20,6 +20,10 @@ const createAttempt = () => {
       attempt.outcome = outcome;
       decide(outcome);
     },
+    override(outcome) {
+      attempt.outcome = outcome;
+      decide(outcome);
+    },
   };
   return attempt;
 };
@@ -33,8 +37,10 @@ const createAttempt = () => {
  * `ready` function reports that the page reached the state the caller needs.
  * Without `ready`, a resolved reload is ready. A reload error other than a
  * network change, an HTTP error status, and a failed ready function fail at
- * once. A request failure with another error code does not decide the attempt,
- * because a reload cancels the in-flight requests of the previous page.
+ * once. An HTTP error status wins over a network change of the same attempt.
+ * A request failure with another error code does not decide the attempt,
+ * because a reload cancels the in-flight requests of the previous page. No
+ * attempt starts after the deadline `timeoutMs`, the first attempt included.
  */
 export async function reloadAfterNetworkChange(
   page,
@@ -44,6 +50,14 @@ export async function reloadAfterNetworkChange(
   let networkChanges = 0;
   let previousError = null;
   let attempt = null;
+  const expired = () => !Number.isFinite(deadline) || Date.now() >= deadline;
+  const deadlineError = () =>
+    previousError ??
+    new Error(
+      Number.isFinite(timeoutMs)
+        ? `page.reload: the ${timeoutMs} ms timeout expired before a reload started`
+        : `page.reload: invalid timeoutMs ${timeoutMs}`,
+    );
 
   const onRequestFailed = (request) => {
     if (!attempt) return;
@@ -70,11 +84,10 @@ export async function reloadAfterNetworkChange(
       attemptNumber++
     ) {
       if (attemptNumber > 1) {
-        await setTimeout(
-          Math.min(retryDelayMs, Math.max(0, deadline - Date.now())),
-        );
-        if (Date.now() >= deadline) throw previousError;
+        const remaining = Number.isFinite(deadline) ? deadline - Date.now() : 0;
+        await setTimeout(Math.min(retryDelayMs, Math.max(0, remaining)));
       }
+      if (expired()) throw deadlineError();
       const current = createAttempt();
       attempt = current;
       let response = null;
@@ -86,8 +99,10 @@ export async function reloadAfterNetworkChange(
         if (!isNetworkChangeReloadError(error)) throw error;
         current.observe({ retry: true, error });
       }
-      if (!current.outcome && response?.status?.() >= 400)
-        current.observe({
+      // An HTTP error status wins over a request recovery that already
+      // decided the attempt, so that a server failure stays visible.
+      if (response?.status?.() >= 400)
+        current.override({
           retry: false,
           error: new Error(
             `page.reload: HTTP ${response.status()} for ${response.url()}`,

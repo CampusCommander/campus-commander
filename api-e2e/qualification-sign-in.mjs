@@ -35,8 +35,11 @@ export async function qualificationSignIn(
  *
  * When the action fails, and a request failed with ERR_NETWORK_CHANGED during
  * that attempt, the step runs the action again. The step runs the action at
- * most three times. Every other failure fails at once. A final failure writes
- * a record with the events of every attempt. A caller passes
+ * most three times. An HTTP error status fails the attempt at once, even when
+ * the same attempt saw a network change. Every other failure fails at once. A
+ * final failure writes a record with the events of every attempt. A passing
+ * step reports every recovered attempt with its failed request routes, the
+ * attempts of a nested reload helper included. A caller passes
  * `retryOnNetworkChange: false` when the action must not run again, or when
  * another helper already recovers the action.
  */
@@ -54,6 +57,7 @@ export async function qualificationBrowserStep(
   let attemptEventCount = 0;
   let attemptNetworkChange = false;
   let attemptRoutes = [];
+  let attemptHttpError = null;
   const record = (event) => {
     if (attemptEventCount < attemptEventLimit) {
       attemptEventCount++;
@@ -98,15 +102,18 @@ export async function qualificationBrowserStep(
     });
   };
   const response = (value) => {
+    const status = value.status();
+    if (status >= 400 && !attemptHttpError)
+      attemptHttpError = { status, url: value.url() };
     if (
       value.request().isNavigationRequest() ||
-      value.status() >= 400 ||
+      status >= 400 ||
       new URL(value.url()).pathname.startsWith('/api/')
     )
       record({
         kind: 'response',
         ...resource(value.url()),
-        status: value.status(),
+        status,
       });
   };
   const pageError = (error) =>
@@ -127,8 +134,13 @@ export async function qualificationBrowserStep(
       attemptEventCount = 0;
       attemptNetworkChange = false;
       attemptRoutes = [];
+      attemptHttpError = null;
       try {
         await action();
+        if (attemptNetworkChange)
+          // A nested helper recovered the action. The step reports the routes
+          // of that recovery, though the step ran the action once.
+          recoveries.push({ attempt, routes: [...new Set(attemptRoutes)] });
         if (recoveries.length > 0) {
           const routes = [
             ...new Set(recoveries.flatMap((recovery) => recovery.routes)),
@@ -139,6 +151,16 @@ export async function qualificationBrowserStep(
         }
         return { attempts: attempt, recoveries };
       } catch (error) {
+        if (attemptHttpError) {
+          // A server failure fails the attempt at once, even when the same
+          // attempt also saw a network change. The failure record holds the
+          // response event and the request event of the attempt.
+          failure = new Error(
+            `${error.message}. The page answered HTTP ${attemptHttpError.status} for ${attemptHttpError.url}`,
+            { cause: error },
+          );
+          break;
+        }
         failure = error;
         if (
           !retryOnNetworkChange ||
