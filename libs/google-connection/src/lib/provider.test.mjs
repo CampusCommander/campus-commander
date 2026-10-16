@@ -236,6 +236,49 @@ test('aborts and delegation failures retain actionable categories', async (t) =>
   }
 });
 
+/** The three non-abort fixtures from review round 1: the network-code rule is unchanged. */
+test('non-abort causes keep their previous network-code mapping', () => {
+  const mismatches = [];
+  for (const [fixture, expected] of [
+    [{ code: 'ERR_WRAPPER', cause: { code: 'ECONNRESET' } }, 'request-failed'],
+    [{ cause: { cause: { code: 'ECONNRESET' } } }, 'request-failed'],
+    [{ cause: { code: 'ENOTFOUND', name: 123 } }, 'network-failure'],
+  ])
+    for (const stage of ['token', 'read']) {
+      const code = failure(fixture, stage).code;
+      if (code !== expected)
+        mismatches.push({ fixture, stage, code, expected });
+    }
+  assert.deepEqual(mismatches, []);
+});
+
+/** Build a cause chain of `depth` links ending in an error with the given name. */
+function causeChain(depth, name) {
+  let value = { name };
+  for (let level = 0; level < depth; level += 1) value = { cause: value };
+  return value;
+}
+
+test('nested aborts and timeouts map to network-failure inside the depth bound', () => {
+  for (const name of ['AbortError', 'TimeoutError'])
+    for (const depth of [1, 5])
+      for (const stage of ['token', 'read'])
+        assert.equal(
+          failure(causeChain(depth, name), stage).code,
+          'network-failure',
+        );
+});
+
+test('an abort past the depth bound and a cyclic cause stay request-failed', () => {
+  for (const name of ['AbortError', 'TimeoutError'])
+    for (const stage of ['token', 'read'])
+      assert.equal(failure(causeChain(6, name), stage).code, 'request-failed');
+  const cyclic = {};
+  cyclic.cause = cyclic;
+  for (const stage of ['token', 'read'])
+    assert.equal(failure(cyclic, stage).code, 'request-failed');
+});
+
 test('cached tokens within five minutes of expiry do not trigger an uncoordinated refresh', async (t) => {
   const calls = [];
   const transportPrototype = Object.getPrototypeOf(
