@@ -154,14 +154,14 @@
           </li>
           <li>
             Add the service account client ID and the {{ scopes.length }}
-            required read-only scopes below.
+            read-only scopes below.
           </li>
         </ol>
         <pre
           class="scope-text"
           role="group"
           tabindex="0"
-          aria-label="Required Google scopes"
+          aria-label="Google scopes"
         >
 {{ scopes.join(',\n') }}</pre
         >
@@ -170,8 +170,12 @@
           type="button"
           (click)="copy(scopes.join(','))"
         >
-          Copy required scopes
+          Copy scopes
         </button>
+        <p>
+          Campus Commander connects with the customer and domain scopes. Devices
+          also needs the device and telemetry scopes.
+        </p>
         <p>
           Google needs time to apply delegation changes. Check the settings,
           then try again.

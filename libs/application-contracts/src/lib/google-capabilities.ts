@@ -68,6 +68,28 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
   },
 ] as const);
 
+/** Capability ids that the Google connection page lists during setup, in page order. */
+const GOOGLE_SETUP_CAPABILITY_IDS = [
+  'customer-identity',
+  'domain-observations',
+  'device-inventory',
+  'device-telemetry',
+] as const;
+
+/**
+ * The scopes a fresh installation grants, in the order the connection page lists them.
+ * The School OU scope stays out, because the Schools feature remains disputed.
+ */
+export const GOOGLE_SETUP_SCOPES = Object.freeze([
+  ...new Set(
+    GOOGLE_SETUP_CAPABILITY_IDS.flatMap((id) =>
+      GOOGLE_CAPABILITIES.filter((capability) => capability.id === id).map(
+        (capability) => capability.scope,
+      ),
+    ),
+  ),
+]);
+
 export const GOOGLE_CUSTOMER_SCOPES = Object.freeze([
   ...new Set(
     GOOGLE_CAPABILITIES.filter(
