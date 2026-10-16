@@ -268,7 +268,12 @@ test('the 401 rule and the read-stage policy rule keep every other category', ()
   const mismatches = [];
   for (const [status, data, stage, expected] of [
     [401, { error: 'authError' }, 'read', 'credential-rejected'],
-    [401, { error: { errors: [{ reason: 'forbidden' }] } }, 'read', 'credential-rejected'],
+    [
+      401,
+      { error: { errors: [{ reason: 'forbidden' }] } },
+      'read',
+      'credential-rejected',
+    ],
     [401, { error: 'access_denied' }, 'read', 'credential-rejected'],
     [401, '<html>Unauthorized</html>', 'read', 'credential-rejected'],
     [401, undefined, 'token', 'credential-rejected'],
