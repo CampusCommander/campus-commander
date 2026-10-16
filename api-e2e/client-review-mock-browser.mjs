@@ -3,14 +3,16 @@ import { readFile } from 'node:fs/promises';
 import { chromium, expect } from '@playwright/test';
 
 /**
- * Screenshot the Devices grid of a running mock-backed review environment.
+ * Screenshot the Devices grid and the Google connection page of a running
+ * mock-backed review environment.
  *
  * Run `npm exec -- nx run api-e2e:client-review-mock` first, then run this script.
  * It reads `dist/client-review/runtime.json`, signs in as the review administrator,
  * connects the printed mock credential when the environment holds no connection,
- * refreshes the inventory, and saves the grid with the status bar count.
+ * refreshes the inventory, saves the grid with the status bar count, and saves the
+ * connection page with the domains the mock serves.
  *
- * Usage: node api-e2e/client-review-mock-browser.mjs [output.png]
+ * Usage: node api-e2e/client-review-mock-browser.mjs [devices.png] [connection.png]
  */
 const runtime = JSON.parse(
   await readFile('dist/client-review/runtime.json', 'utf8'),
@@ -22,6 +24,8 @@ assert.equal(
 );
 const output =
   process.argv[2] ?? `dist/client-review/devices-${runtime.tier}.png`;
+const connectionOutput =
+  process.argv[3] ?? `dist/client-review/google-connection-${runtime.tier}.png`;
 const browser = await chromium.launch();
 try {
   const context = await browser.newContext({
@@ -93,6 +97,17 @@ try {
       timeout: 300000,
     });
   }
+  // The status bar prints counts with the en-US grouping the component uses.
+  const formattedCount = runtime.deviceCount.toLocaleString('en-US');
+  const readSync = () =>
+    page.evaluate(async () => {
+      const response = await fetch('/api/devices/sync', {
+        headers: { accept: 'application/json' },
+      });
+      return (await response.json()).sync;
+    });
+  const before = await readSync();
+  const refreshStartedAt = Date.now();
   if (await refreshInventory.isVisible()) {
     await refreshInventory.click();
   } else {
@@ -101,16 +116,57 @@ try {
     await publishedRefresh.click();
     await page.getByRole('menuitem', { name: 'Refresh all' }).click();
   }
-  const count = page.getByText(
-    `${runtime.deviceCount} matching devices · ${runtime.deviceCount} in district`,
+  // The grid keeps the published inventory while the next sync runs. The
+  // projection reports a new checkedAt when a sync completes, and the running
+  // state keeps the previous value. Wait for the new one, so the recorded count
+  // and time belong to this refresh.
+  await expect
+    .poll(
+      async () => {
+        const state = await readSync();
+        return (
+          state?.status === 'ready' && state.checkedAt !== before?.checkedAt
+        );
+      },
+      { timeout: 600_000 },
+    )
+    .toBe(true);
+  const refreshSeconds = (Date.now() - refreshStartedAt) / 1000;
+  const sync = await readSync();
+  const syncSeconds =
+    (Date.parse(sync.checkedAt) - Date.parse(sync.startedAt)) / 1000;
+  process.stdout.write(
+    `Sync: status ${sync.status}, generation ${sync.generation}, ${sync.deviceCount} devices, ${syncSeconds.toFixed(1)} s from ${sync.startedAt} to ${sync.checkedAt}\n`,
   );
-  await expect(count).toBeVisible({ timeout: 600_000 });
+  process.stdout.write(
+    `Refresh all: ${refreshSeconds.toFixed(1)} s from the click to the completed sync\n`,
+  );
+  const count = page.getByText(
+    `${formattedCount} matching devices · ${formattedCount} in district`,
+  );
+  await expect(count).toBeVisible({ timeout: 120_000 });
   await count.scrollIntoViewIfNeeded();
   await page.screenshot({ path: output, fullPage: true });
   const statusBar = page.getByText('matching devices');
   await expect(statusBar).toBeVisible();
   process.stdout.write(
     `Saved ${output} with ${runtime.deviceCount} devices from ${runtime.url}\n`,
+  );
+  // The connection page lists the domains the mock serves. Capture it after the
+  // sync, so it holds the connection record a reviewer inspects.
+  await page.getByRole('link', { name: 'Google connection' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Customer connected' }),
+  ).toBeVisible({ timeout: 60000 });
+  const domainRows = page.locator('h3:has-text("Domains") + ul > li');
+  await expect(domainRows.first()).toBeVisible({ timeout: 60000 });
+  await domainRows.first().scrollIntoViewIfNeeded();
+  await page.screenshot({ path: connectionOutput, fullPage: true });
+  const domains = (await domainRows.allInnerTexts()).map((text) =>
+    text.replace(/\s+/g, ' ').trim(),
+  );
+  process.stdout.write(
+    `Saved ${connectionOutput} with domains: ${domains.join(' | ')}\n`,
   );
 } finally {
   await browser.close();
