@@ -437,6 +437,43 @@ test('deviceBatch surfaces a token failure with its own code', async (t) => {
   );
 });
 
+/** Live Google answers an ungranted device scope with HTTP 401 unauthorized_client. */
+test('a device sync records a 401 delegation denial as delegation-not-authorized', async (t) => {
+  t.mock.method(JWT.prototype, 'getAccessToken', async () => {
+    throw Object.assign(new Error('unauthorized_client'), {
+      response: { status: 401, data: { error: 'unauthorized_client' } },
+    });
+  });
+  await assert.rejects(
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceBatch(
+      credential,
+      'C0123456',
+      ['d1'],
+      signal(),
+    ),
+    { name: 'GoogleConnectionError', code: 'delegation-not-authorized' },
+  );
+});
+
+/** The battery read mints its own token. The same 401 must reach the telemetry surface. */
+test('a battery read records a 401 delegation denial as delegation-not-authorized', async (t) => {
+  t.mock.method(JWT.prototype, 'getAccessToken', async function () {
+    assert.deepEqual(this.scopes, [telemetryScope]);
+    throw Object.assign(new Error('unauthorized_client'), {
+      response: { status: 401, data: { error: 'unauthorized_client' } },
+    });
+  });
+  await assert.rejects(
+    new GoogleDeviceReader().batteryBatch(
+      credential,
+      'C0123456',
+      ['d1'],
+      signal(),
+    ),
+    { name: 'GoogleConnectionError', code: 'delegation-not-authorized' },
+  );
+});
+
 test('batteryBatch reads one telemetry record per device and treats 404 as no report', async (t) => {
   const missing = new Error('not found');
   missing.response = { status: 404, data: { error: { code: 404 } } };
