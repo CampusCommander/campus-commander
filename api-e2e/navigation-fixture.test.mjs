@@ -154,6 +154,24 @@ test('no reload attempt starts after the deadline', async () => {
   assert.equal(page.reloads, 1);
 });
 
+test('the first reload does not start after an expired deadline', async () => {
+  const page = fakePage(async () => okResponse());
+  await assert.rejects(
+    reloadAfterNetworkChange(page, { timeoutMs: 0 }),
+    /expired before a reload started/,
+  );
+  assert.equal(page.reloads, 0);
+});
+
+test('an invalid timeout rejects without a reload', async () => {
+  const page = fakePage(async () => okResponse());
+  await assert.rejects(
+    reloadAfterNetworkChange(page, { timeoutMs: Number.NaN }),
+    /invalid timeoutMs/,
+  );
+  assert.equal(page.reloads, 0);
+});
+
 test('the retry delay does not outlast the deadline', async () => {
   const page = fakePage(async () => {
     throw Error('page.reload: net::ERR_NETWORK_CHANGED');
@@ -210,6 +228,27 @@ test('an HTTP error status from the reload fails at once', async () => {
     status: () => 503,
     url: () => 'https://fixture.invalid/',
   }));
+  let readyCalls = 0;
+  await assert.rejects(
+    reloadAfterNetworkChange(page, {
+      retryDelayMs: 0,
+      ready: async () => {
+        readyCalls++;
+      },
+    }),
+    /HTTP 503/,
+  );
+  assert.equal(page.reloads, 1);
+  assert.equal(readyCalls, 0);
+});
+
+test('an HTTP error status fails the attempt when a request also reports a network change', async () => {
+  const page = fakePage(async (reloads) => {
+    if (reloads === 1) failRequest(page, 'net::ERR_NETWORK_CHANGED');
+    return reloads === 1
+      ? { status: () => 503, url: () => 'https://fixture.invalid/' }
+      : okResponse();
+  });
   let readyCalls = 0;
   await assert.rejects(
     reloadAfterNetworkChange(page, {

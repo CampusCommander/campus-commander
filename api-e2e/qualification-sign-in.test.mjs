@@ -4,6 +4,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
 import { qualificationBrowserStep } from './qualification-sign-in.mjs';
 
 const publicOrigin = 'https://qualification.invalid';
@@ -147,6 +148,44 @@ test('an HTTP error status without a network change fails at once', async (t) =>
   ]);
 });
 
+test('an HTTP error status fails the step when a request also reports a network change', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  let runs = 0;
+  await assert.rejects(
+    qualificationBrowserStep(
+      page,
+      publicOrigin,
+      directory,
+      'mixed-http-network-change',
+      async () => {
+        runs++;
+        if (runs > 1) return;
+        respond(page, '/', 503);
+        failRequest(page, '/main.js', 'net::ERR_NETWORK_CHANGED');
+        throw new Error('The "Your account" heading did not appear');
+      },
+    ),
+    /HTTP 503/,
+  );
+  assert.equal(runs, 1);
+  const failure = JSON.parse(
+    await readFile(
+      join(directory, 'mixed-http-network-change-failure.json'),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(failure.events, [
+    { kind: 'response', local: true, route: 'application-root', status: 503 },
+    {
+      kind: 'request-failed',
+      local: true,
+      route: 'script',
+      error: 'ERR_NETWORK_CHANGED',
+    },
+  ]);
+});
+
 test('the step runs the action at most three times', async (t) => {
   const directory = await createEvidenceDirectory(t);
   const page = fakePage();
@@ -258,6 +297,46 @@ test('the step does not retry an action that opts out of the step retry', async 
     /did not appear/,
   );
   assert.equal(runs, 1);
+});
+
+test('an opted-out step reports the routes of a reload that recovered inside the action', async (t) => {
+  // The all-Docker resume step recovers through reloadAfterNetworkChange and
+  // opts out of the step retry. The step then reports the inner recovery.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  const logged = t.mock.method(console, 'log');
+  let reloads = 0;
+  page.reload = async () => {
+    reloads++;
+    if (reloads === 1)
+      failRequest(page, '/main.js', 'net::ERR_NETWORK_CHANGED');
+    return { status: () => 200, url: () => `${publicOrigin}/` };
+  };
+  let navigationRecovery;
+  const result = await qualificationBrowserStep(
+    page,
+    publicOrigin,
+    directory,
+    'resume',
+    async () => {
+      navigationRecovery = await reloadAfterNetworkChange(page, {
+        retryDelayMs: 0,
+        ready: async () => {},
+      });
+    },
+    { retryOnNetworkChange: false },
+  );
+  assert.deepEqual(navigationRecovery, { attempts: 2, networkChanges: 1 });
+  assert.deepEqual(result, {
+    attempts: 1,
+    recoveries: [{ attempt: 1, routes: ['script'] }],
+  });
+  assert.equal(logged.mock.callCount(), 1);
+  assert.match(
+    logged.mock.calls[0].arguments.join(' '),
+    /recovered from a network change after 1 attempts, failed request routes: script/,
+  );
+  assert.deepEqual(await readdir(directory), []);
 });
 
 test('the step removes its listeners when it returns or throws', async (t) => {
