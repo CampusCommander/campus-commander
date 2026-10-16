@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { AuthStore } from '../auth.store';
 import type { DevicePredicate, DeviceRow } from '@campus/application-contracts';
+import { deviceSyncStateSchema } from '@campus/application-contracts';
 import { DevicesStore } from './devices.store';
 import type { DeviceEventSource } from './devices.store';
 
@@ -884,6 +885,22 @@ const earlierProbes = [
     current: running(LATER, '2026-10-06T12:30:00.456001002Z'),
     answer: running(LATER, '2026-10-06T12:30:00.456001001Z'),
   },
+  // The F1 review round 2 cases: minute-only timestamps are valid contract values.
+  {
+    name: 'an older start in the minute form against a nanosecond start',
+    current: finished('2026-10-06T12:00:00.000000001Z', CHECK),
+    answer: finished('2026-10-06T12:00Z', CHECK),
+  },
+  {
+    name: 'an older check in the minute form against a nanosecond check',
+    current: running(LATER, '2026-10-06T12:30:00.000000001Z'),
+    answer: running(LATER, '2026-10-06T12:30Z'),
+  },
+  {
+    name: 'an older check in the minute form with an offset',
+    current: running(LATER, '2026-10-06T12:30:00.000000001Z'),
+    answer: running('2026-10-06T12:00:00Z', '2026-10-06T13:30+01:00'),
+  },
 ];
 
 /** Answers that outdate the current status by less than a millisecond (F1). Each one replaces. */
@@ -907,6 +924,22 @@ const laterProbes = [
     name: 'a later check at nanosecond precision',
     current: running(LATER, '2026-10-06T12:30:00.456001001Z'),
     answer: running(LATER, '2026-10-06T12:30:00.456001002Z'),
+  },
+  // The reverse of the F1 review round 2 cases. Each one replaces.
+  {
+    name: 'a newer start in the nanosecond form against a minute start',
+    current: finished('2026-10-06T12:00Z', CHECK),
+    answer: finished('2026-10-06T12:00:00.000000001Z', CHECK),
+  },
+  {
+    name: 'a newer check in the nanosecond form against a minute check',
+    current: running(LATER, '2026-10-06T12:30Z'),
+    answer: running(LATER, '2026-10-06T12:30:00.000000001Z'),
+  },
+  {
+    name: 'a newer check in the nanosecond form against a minute check with an offset',
+    current: running(LATER, '2026-10-06T13:30+01:00'),
+    answer: running('2026-10-06T12:00:00Z', '2026-10-06T12:30:00.000000001Z'),
   },
 ];
 
@@ -989,6 +1022,95 @@ describe('the order of status answers', () => {
     async ({ current, answer }) => {
       const store = await answered(current, answer);
       expect(store.sync()).toEqual(answer);
+    },
+  );
+
+  /**
+   * Every timestamp spelling that the contract accepts (F1 review round 2).
+   * Both operands use one spelling, so a spelling without an exact parse reaches no
+   * order and the replacing answer fails the rejection case.
+   */
+  const spellings = [
+    {
+      name: 'minutes with Z',
+      older: '2026-10-06T12:30Z',
+      newer: '2026-10-06T12:31Z',
+    },
+    {
+      name: 'minutes with a positive offset',
+      older: '2026-10-06T13:30+01:00',
+      newer: '2026-10-06T13:31+01:00',
+    },
+    {
+      name: 'minutes with a negative offset',
+      older: '2026-10-06T06:30-06:00',
+      newer: '2026-10-06T06:31-06:00',
+    },
+    {
+      name: 'seconds without a fraction',
+      older: '2026-10-06T12:30:00Z',
+      newer: '2026-10-06T12:30:01Z',
+    },
+    {
+      name: 'one fraction digit',
+      older: '2026-10-06T12:30:00.1Z',
+      newer: '2026-10-06T12:30:00.2Z',
+    },
+    {
+      name: 'three fraction digits',
+      older: '2026-10-06T12:30:00.123Z',
+      newer: '2026-10-06T12:30:00.124Z',
+    },
+    {
+      name: 'six fraction digits',
+      older: '2026-10-06T12:30:00.123456Z',
+      newer: '2026-10-06T12:30:00.123457Z',
+    },
+    {
+      name: 'nine fraction digits',
+      older: '2026-10-06T12:30:00.000000001Z',
+      newer: '2026-10-06T12:30:00.000000002Z',
+    },
+    {
+      name: 'seconds with a positive offset',
+      older: '2026-10-06T13:30:00+01:00',
+      newer: '2026-10-06T13:30:01+01:00',
+    },
+    {
+      name: 'nine fraction digits with a negative offset',
+      older: '2026-10-06T06:30:00.000000001-06:00',
+      newer: '2026-10-06T06:30:00.000000002-06:00',
+    },
+  ];
+
+  it.each(spellings)(
+    'keeps the current status when the answer is older in $name',
+    async ({ older, newer }) => {
+      const store = await answered(running(LATER, newer), running(LATER, older));
+      expect(store.sync()).toEqual(running(LATER, newer));
+    },
+  );
+
+  it.each(spellings)(
+    'replaces the current status when the answer is newer in $name',
+    async ({ older, newer }) => {
+      const store = await answered(running(LATER, older), running(LATER, newer));
+      expect(store.sync()).toEqual(running(LATER, newer));
+    },
+  );
+
+  it.each([
+    { name: 'the seconds form', answer: '2026-10-06T12:30:00Z' },
+    { name: 'the fraction form', answer: '2026-10-06T12:30:00.000Z' },
+    { name: 'the offset form', answer: '2026-10-06T13:30+01:00' },
+  ])(
+    'replaces a minute-form check with the same instant in $name',
+    async ({ answer }) => {
+      const store = await answered(
+        running(LATER, '2026-10-06T12:30Z'),
+        running(LATER, answer),
+      );
+      expect(store.sync()?.checkedAt).toBe(answer);
     },
   );
 
@@ -1111,6 +1233,67 @@ describe('the order of status answers', () => {
       expect(store.sync()).toEqual(answer);
     },
   );
+});
+
+/**
+ * The status contract decides which timestamp strings the store can receive (F1 review round 2).
+ * The store parses every one of them exactly, so this test pins the grammar.
+ * A Zod upgrade that widens the grammar must fail here instead of reaching the store.
+ */
+describe('the timestamp grammar of the status contract', () => {
+  /** A ready status whose three timestamps all use `timestamp`. */
+  const status = (timestamp: string) =>
+    state('ready', {
+      observedAt: timestamp,
+      startedAt: timestamp,
+      checkedAt: timestamp,
+    });
+
+  const accepted = [
+    // Minutes alone. Zod 4.4.2 accepts a timestamp without seconds.
+    '2026-10-06T12:30Z',
+    '2026-10-06T12:30+01:00',
+    '2026-10-06T12:30-05:30',
+    // Seconds with and without a fraction.
+    '2026-10-06T12:30:00Z',
+    '2026-10-06T12:30:00+01:00',
+    '2026-10-06T12:30:00.1Z',
+    '2026-10-06T12:30:00.12Z',
+    '2026-10-06T12:30:00.123Z',
+    '2026-10-06T12:30:00.1234Z',
+    '2026-10-06T12:30:00.12345Z',
+    '2026-10-06T12:30:00.123456Z',
+    '2026-10-06T12:30:00.1234567Z',
+    '2026-10-06T12:30:00.12345678Z',
+    '2026-10-06T12:30:00.123456789Z',
+    // Zod allows any number of fraction digits. The store keeps every digit.
+    '2026-10-06T12:30:00.000000000000000000000001Z',
+  ];
+
+  const rejected = [
+    '2026-10-06T12:30:00',
+    '2026-10-06T12:30:00z',
+    '2026-10-06T12:30.5Z',
+    '2026-10-06 12:30:00Z',
+    '2026-10-6T12:30Z',
+    '2026-10-06T12:30:00+0100',
+    '2026-10-06T12:30:00.Z',
+    '2026-10-06T12:60:00Z',
+    '2026-10-06T12:30:60Z',
+    '2026-02-30T12:30:00Z',
+  ];
+
+  it.each(accepted)('accepts the status timestamp %s', (timestamp) => {
+    expect(deviceSyncStateSchema.safeParse(status(timestamp)).success).toBe(
+      true,
+    );
+  });
+
+  it.each(rejected)('rejects the status timestamp %s', (timestamp) => {
+    expect(deviceSyncStateSchema.safeParse(status(timestamp)).success).toBe(
+      false,
+    );
+  });
 });
 
 describe('a status answer with an unreadable body', () => {
