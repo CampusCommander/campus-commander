@@ -35,6 +35,39 @@ export class GoogleConnectionError extends Error {
   }
 }
 
+const NETWORK_CODES = [
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+];
+const ABORT_NAMES = ['AbortError', 'TimeoutError'];
+const causeDepthLimit = 5;
+
+/**
+ * Detect a network code, an abort, or a timeout at the error or at any cause level.
+ * gaxios reports an aborted request as a GaxiosError with the abort one level down.
+ */
+function networkSignature(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth <= causeDepthLimit; depth += 1) {
+    const parsed = z
+      .object({ code: z.unknown().optional(), name: z.string().optional() })
+      .safeParse(current);
+    if (!parsed.success) return false;
+    const code = parsed.data.code;
+    if (NETWORK_CODES.includes(typeof code === 'string' ? code : ''))
+      return true;
+    if (ABORT_NAMES.includes(parsed.data.name ?? '')) return true;
+    const cause = z
+      .object({ cause: z.unknown().optional() })
+      .safeParse(current);
+    current = cause.success ? cause.data.cause : undefined;
+  }
+  return false;
+}
+
 export function failure(
   error: unknown,
   stage: 'token' | 'read' = 'read',
@@ -86,30 +119,7 @@ export function failure(
     )
   )
     return new GoogleConnectionError('policy-restricted');
-  const network = z
-    .object({
-      code: z.unknown().optional(),
-      name: z.string().optional(),
-      cause: z
-        .object({ code: z.unknown().optional() })
-        .optional()
-        .catch(undefined),
-    })
-    .safeParse(error);
-  const networkCode = network.success
-    ? (network.data.code ?? network.data.cause?.code)
-    : undefined;
-  if (
-    network.success &&
-    ([
-      'ETIMEDOUT',
-      'ECONNRESET',
-      'ECONNREFUSED',
-      'ENOTFOUND',
-      'EAI_AGAIN',
-    ].includes(typeof networkCode === 'string' ? networkCode : '') ||
-      ['AbortError', 'TimeoutError'].includes(network.data.name ?? ''))
-  )
+  if (networkSignature(error))
     return new GoogleConnectionError('network-failure');
   if (reason === 'invalid_scope')
     return new GoogleConnectionError('scope-mismatch');
