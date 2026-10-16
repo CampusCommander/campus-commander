@@ -14,6 +14,7 @@ const createAttempt = () => {
   });
   const attempt = {
     outcome: null,
+    httpError: null,
     decided,
     observe(outcome) {
       if (attempt.outcome) return;
@@ -28,6 +29,16 @@ const createAttempt = () => {
   return attempt;
 };
 
+/** Build the failure of an attempt that recorded an HTTP error status. */
+const httpErrorFailure = ({ status, url }, cause) =>
+  new Error(`page.reload: HTTP ${status} for ${url}`, { cause });
+
+/** Read the HTTP error status of a page response. */
+const httpErrorStatus = (response) => {
+  const status = response?.status?.();
+  return Number.isFinite(status) && status >= 400 ? status : null;
+};
+
 /**
  * Reload a page and recover a reload that an installation network change
  * aborts.
@@ -35,12 +46,15 @@ const createAttempt = () => {
  * A request of the page that fails with ERR_NETWORK_CHANGED after a reload
  * starts, and before the page is ready, starts another reload. The optional
  * `ready` function reports that the page reached the state the caller needs.
- * Without `ready`, a resolved reload is ready. A reload error other than a
- * network change, an HTTP error status, and a failed ready function fail at
- * once. An HTTP error status wins over a network change of the same attempt.
- * A request failure with another error code does not decide the attempt,
- * because a reload cancels the in-flight requests of the previous page. No
- * attempt starts after the deadline `timeoutMs`, the first attempt included.
+ * Without `ready`, a resolved reload is ready. The helper observes every
+ * response of the page for the whole attempt, the reload and the ready wait
+ * included. An HTTP error status of the page, or of a request of the page,
+ * ends a failed attempt at once, and that attempt never retries. A passing
+ * ready decides the attempt, with or without a recorded HTTP error. A reload
+ * error other than a network change fails at once. A request failure with
+ * another error code does not decide the attempt, because a reload cancels the
+ * in-flight requests of the previous page. No attempt starts after the
+ * deadline `timeoutMs`, the first attempt included.
  */
 export async function reloadAfterNetworkChange(
   page,
@@ -74,9 +88,22 @@ export async function reloadAfterNetworkChange(
     });
   };
 
+  // The active attempt records every response of the page for the whole
+  // attempt, the reload and the ready wait included. An attempt that fails
+  // with such a record fails at once, and that attempt never retries.
+  const onResponse = (response) => {
+    if (!attempt || attempt.httpError) return;
+    const status = httpErrorStatus(response);
+    if (status === null) return;
+    attempt.httpError = { status, url: response.url?.() ?? 'unknown URL' };
+  };
+
   const listening =
     typeof page.on === 'function' && typeof page.off === 'function';
-  if (listening) page.on('requestfailed', onRequestFailed);
+  if (listening) {
+    page.on('requestfailed', onRequestFailed);
+    page.on('response', onResponse);
+  }
   try {
     for (
       let attemptNumber = 1;
@@ -99,14 +126,15 @@ export async function reloadAfterNetworkChange(
         if (!isNetworkChangeReloadError(error)) throw error;
         current.observe({ retry: true, error });
       }
-      // An HTTP error status wins over a request recovery that already
-      // decided the attempt, so that a server failure stays visible.
-      if (response?.status?.() >= 400)
+      // The document response of the reload belongs to the attempt. An HTTP
+      // error status there ends the attempt at once.
+      if (httpErrorStatus(response) !== null)
         current.override({
           retry: false,
-          error: new Error(
-            `page.reload: HTTP ${response.status()} for ${response.url()}`,
-          ),
+          error: httpErrorFailure({
+            status: response.status(),
+            url: response.url(),
+          }),
         });
       let outcome = current.outcome;
       if (!outcome && ready)
@@ -120,6 +148,14 @@ export async function reloadAfterNetworkChange(
             ),
         ]);
       if (!outcome) return { attempts: attemptNumber, networkChanges };
+      // A retry hides the server failure of the attempt. An HTTP error status
+      // recorded in the attempt, from the reload or the ready wait, ends it at
+      // once. The ready function decides a passing attempt.
+      if (current.httpError)
+        outcome = {
+          retry: false,
+          error: httpErrorFailure(current.httpError, outcome.error),
+        };
       if (!outcome.retry) throw outcome.error;
       if (attemptNumber === reloadAttemptLimit || Date.now() >= deadline)
         throw outcome.error;
@@ -127,6 +163,9 @@ export async function reloadAfterNetworkChange(
       previousError = outcome.error;
     }
   } finally {
-    if (listening) page.off('requestfailed', onRequestFailed);
+    if (listening) {
+      page.off('requestfailed', onRequestFailed);
+      page.off('response', onResponse);
+    }
   }
 }
