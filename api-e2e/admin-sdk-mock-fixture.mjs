@@ -70,6 +70,7 @@ export function mockLog(name) {
  * fail the run, so the harness never continues against a stopped backend.
  * `failure` resolves with the container log when the mock stops.
  * `assertRunning` throws that log for callers that check between steps.
+ * `exitedLog` returns the log without throwing.
  * `stop` ends the watch after the environment stops.
  */
 export function watchAdminSdkMock({ docker, name }) {
@@ -99,16 +100,98 @@ export function watchAdminSdkMock({ docker, name }) {
   return {
     name,
     failure,
+    /** The container log when the mock has exited, otherwise null. */
+    exitedLog() {
+      return check();
+    },
     /** Throw the mock log when the container no longer runs. */
     assertRunning() {
       const log = check();
-      if (log !== null)
-        throw new Error(
-          `The Admin SDK mock exited after its ready signal.\n${log}`,
-        );
+      if (log !== null) throw mockExitedError(log);
     },
     stop() {
       clearInterval(timer);
+    },
+  };
+}
+
+/** The first line of the message a stopped mock raises. */
+export const MOCK_EXIT_MESSAGE =
+  'The Admin SDK mock exited after its ready signal.';
+
+/** The message a stopped mock raises. The harness, the tests, and the runbook match this sentence. */
+export function mockExitedMessage(log) {
+  return `${MOCK_EXIT_MESSAGE}\n${log}`;
+}
+
+/** The error for a stopped mock. `cause` keeps the failure that reached it first. */
+export function mockExitedError(log, cause) {
+  return new Error(
+    mockExitedMessage(log),
+    cause === undefined ? undefined : { cause },
+  );
+}
+
+/**
+ * Fail a mock-backed run when the mock stops.
+ *
+ * The reporter prints the container log once, at the moment the watch detects
+ * the exit, so the diagnostic reaches the run output without waiting for the
+ * run to end. `step` fails the current work and every later step: startup stops
+ * at the exit, and the first request error never hides the stopped backend.
+ * `check` fails callers that only test the state between steps.
+ */
+export function startMockExitGuard({
+  watch,
+  write = (text) => process.stderr.write(text),
+}) {
+  let reported = false;
+  const report = (log = watch.exitedLog()) => {
+    const entry = log ?? null;
+    if (entry === null || reported) return entry;
+    reported = true;
+    write(`${mockExitedMessage(entry)}\n`);
+    return entry;
+  };
+  // The guard reports the exit on its own. A rejected promise with no handler
+  // ends the process, so both derived promises keep a handler.
+  watch.failure.then(
+    (log) => report(log),
+    () => undefined,
+  );
+  const failure = watch.failure.then((log) => {
+    throw mockExitedError(log);
+  });
+  failure.catch(() => undefined);
+  return {
+    /** Print the container log once. Returns the log, or null while the mock runs. */
+    report,
+    /** The failure that ends a guarded step or wait. */
+    failure,
+    /** Fail when the mock has already exited. */
+    check() {
+      watch.assertRunning();
+    },
+    /** True when the mock has exited. Loops use it to release the process. */
+    exited() {
+      return watch.exitedLog() !== null;
+    },
+    /** Fail before `run` starts, and during it, when the mock stops. */
+    async step(run) {
+      watch.assertRunning();
+      // A step may return a value or a promise. Both reach the race.
+      const attempt = Promise.resolve().then(run);
+      // An abandoned step must not raise an unhandled rejection.
+      attempt.catch(() => undefined);
+      try {
+        return await Promise.race([attempt, failure]);
+      } catch (error) {
+        // The abort already carries the log. Otherwise a step failure that
+        // reached the harness first keeps its own error as the cause.
+        if (error?.message?.startsWith(MOCK_EXIT_MESSAGE)) throw error;
+        const log = watch.exitedLog();
+        throw log === null ? error : mockExitedError(log, error);
+      }
     },
   };
 }

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import { setTimeout as delay } from 'node:timers/promises';
+import { mockExitedError } from './admin-sdk-mock-fixture.mjs';
 
 /** Google battery health values as Campus Commander classifies them. */
 const batteryHealth = {
@@ -154,8 +155,22 @@ async function reviewSignIn({ request, ca, publicOrigin }) {
  * Drive the review environment through the same API endpoints as the UI:
  * connect the mock credential, run Refresh all, and check the published devices
  * against the mock's own count and telemetry.
+ *
+ * Every failure path consults the mock watch before the caller tears the
+ * environment down. A stopped mock explains the run, whatever request failed
+ * first, so a request error never hides the container log.
  */
-export async function qualifyAdminSdkMockIntegration({
+export async function qualifyAdminSdkMockIntegration(options) {
+  const { watch } = options;
+  try {
+    return await runAdminSdkMockIntegration(options);
+  } catch (error) {
+    const log = watch?.exitedLog?.() ?? null;
+    throw log === null ? error : mockExitedError(log, error);
+  }
+}
+
+async function runAdminSdkMockIntegration({
   mock,
   watch,
   request,

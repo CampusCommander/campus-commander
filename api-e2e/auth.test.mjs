@@ -61,6 +61,7 @@ import { startKestraFixture } from './kestra-fixture.mjs';
 import {
   mockReviewSettings,
   startAdminSdkMock,
+  startMockExitGuard,
 } from './admin-sdk-mock-fixture.mjs';
 import { qualifyAdminSdkMockIntegration } from './admin-sdk-mock-integration.mjs';
 import { chromium, expect } from '@playwright/test';
@@ -230,6 +231,7 @@ test(
     let browser;
     let redis;
     let mockWatch;
+    let mockExit;
     try {
       docker('network', 'create', network);
       await mkdir(secretRoot, { recursive: true, mode: 0o700 });
@@ -621,28 +623,42 @@ test(
           })
         : null;
       mockWatch = mock?.watch ?? null;
+      // The mock serves every Google call. An exit stops startup: the guard
+      // prints the container log at detection and fails every later step.
+      mockExit = mockWatch ? startMockExitGuard({ watch: mockWatch }) : null;
+      /** Run one startup step. A mock exit fails it and every later step. */
+      const startup = (run) => (mockExit ? mockExit.step(run) : run());
       // One PEM bundle holds the review TLS certificate and the mock CA.
       const trustBundle = mock ? join(directory, 'client-review-ca.pem') : cert;
       if (mock)
-        await writeFile(
-          trustBundle,
-          `${await readFile(cert, 'utf8')}\n${mock.ca}\n`,
-          { mode: 0o600 },
+        await startup(async () =>
+          writeFile(
+            trustBundle,
+            `${await readFile(cert, 'utf8')}\n${mock.ca}\n`,
+            {
+              mode: 0o600,
+            },
+          ),
         );
-      const kestraFixture = await startKestraFixture({
-        docker,
-        directory,
-        network,
-        names,
-        config,
-        secret,
-        password,
-        nodeImage,
-        workerImage: packaged ? applicationImages.worker : undefined,
-        ...(mock ? { inProcessGoogle: false, extraCaCerts: trustBundle } : {}),
-      });
+      const kestraFixture = await startup(() =>
+        startKestraFixture({
+          docker,
+          directory,
+          network,
+          names,
+          config,
+          secret,
+          password,
+          nodeImage,
+          workerImage: packaged ? applicationImages.worker : undefined,
+          ...(mock
+            ? { inProcessGoogle: false, extraCaCerts: trustBundle }
+            : {}),
+          ...(mockExit ? { stopped: () => mockExit.exited() } : {}),
+        }),
+      );
       const configPath = join(directory, 'profile.json');
-      await writeFile(configPath, JSON.stringify(config));
+      await startup(() => writeFile(configPath, JSON.stringify(config)));
       const initialize = {
         action: 'initialize',
         issuer,
@@ -698,7 +714,7 @@ test(
         'operator-authorization',
         `operator:${bootstrapCredential}`,
       );
-      await initializeBootstrap(migrator, bootstrapCredential);
+      await startup(() => initializeBootstrap(migrator, bootstrapCredential));
       let output = '';
       const startApi = async (listenPort = apiPort) => {
         const name = `cc-phase2-api-${id}-${children.length}`;
@@ -776,43 +792,49 @@ test(
           `API probe failed: ${JSON.stringify(lastProbe)}. Output: ${output}`,
         );
       };
-      let api = await startApi();
+      let api = await startup(() => startApi());
       const frontendPort = await freePort();
       const frontendName = `cc-phase2-frontend-${id}`;
       names.push(frontendName);
       const image = (
         await readFile('deployment/images/frontend.Dockerfile', 'utf8')
       ).match(/^FROM (node:\S+)/m)[1];
-      docker(
-        'run',
-        '-d',
-        '--name',
-        frontendName,
-        '--network',
-        network,
-        '-p',
-        `127.0.0.1:${frontendPort}:8080`,
-        ...(packaged
-          ? []
-          : [
-              '-v',
-              `${process.cwd()}/dist/frontend/browser:/app/browser:ro`,
-              '-v',
-              `${process.cwd()}/deployment/images/frontend-server.mjs:/app/server.mjs:ro`,
-            ]),
-        packaged ? applicationImages.frontend : image,
-        'node',
-        '/app/server.mjs',
-      );
-      for (let attempt = 0; attempt < 100; attempt++) {
-        try {
-          if ((await fetch(`http://127.0.0.1:${frontendPort}/health/live`)).ok)
-            break;
-        } catch {
-          /* Await the frontend listener. */
+      await startup(async () => {
+        docker(
+          'run',
+          '-d',
+          '--name',
+          frontendName,
+          '--network',
+          network,
+          '-p',
+          `127.0.0.1:${frontendPort}:8080`,
+          ...(packaged
+            ? []
+            : [
+                '-v',
+                `${process.cwd()}/dist/frontend/browser:/app/browser:ro`,
+                '-v',
+                `${process.cwd()}/deployment/images/frontend-server.mjs:/app/server.mjs:ro`,
+              ]),
+          packaged ? applicationImages.frontend : image,
+          'node',
+          '/app/server.mjs',
+        );
+        for (let attempt = 0; attempt < 100; attempt++) {
+          // A stopped mock ends the run. The loop must not hold the process.
+          if (mockExit?.exited()) break;
+          try {
+            if (
+              (await fetch(`http://127.0.0.1:${frontendPort}/health/live`)).ok
+            )
+              break;
+          } catch {
+            /* Await the frontend listener. */
+          }
+          await delay(100);
         }
-        await delay(100);
-      }
+      });
       const edgeConfig = structuredClone(config);
       edgeConfig.services.frontend.endpoint.url = `http://127.0.0.1:${frontendPort}`;
       edgeConfig.services.api.endpoint = {
@@ -832,28 +854,37 @@ test(
           path: '/run/secrets/synthetic-private-key',
         },
       };
-      edgeServer = await createBootstrapEdge({
-        config: edgeConfig,
-        verify: async () => false,
-        resolveSecret: async (ref) =>
-          ref.path.endsWith('private-key') ? tlsKey : ca,
-      });
-      await new Promise((resolve) =>
-        edgeServer.listen(edgePort, '127.0.0.1', resolve),
+      edgeServer = await startup(() =>
+        createBootstrapEdge({
+          config: edgeConfig,
+          verify: async () => false,
+          resolveSecret: async (ref) =>
+            ref.path.endsWith('private-key') ? tlsKey : ca,
+        }),
+      );
+      await startup(
+        () =>
+          new Promise((resolve) =>
+            edgeServer.listen(edgePort, '127.0.0.1', resolve),
+          ),
       );
       if (clientReview) {
-        const administrator = await callOperator({
-          action: 'initialize',
-          issuer,
-          subject: 'administrator',
-          displayName: 'Review administrator',
-        });
-        await callOperator({
-          action: 'confirm-platform-administrator',
-          principalId: administrator.principalId,
-          expectedVersion: 1,
-          confirmation: 'grant-platform-administrator',
-        });
+        const administrator = await startup(() =>
+          callOperator({
+            action: 'initialize',
+            issuer,
+            subject: 'administrator',
+            displayName: 'Review administrator',
+          }),
+        );
+        await startup(() =>
+          callOperator({
+            action: 'confirm-platform-administrator',
+            principalId: administrator.principalId,
+            expectedVersion: 1,
+            confirmation: 'grant-platform-administrator',
+          }),
+        );
         const key = generateKeyPairSync('rsa', { modulusLength: 2048 });
         const sampleKeyPath = mock
           ? mock.keyFile
@@ -878,6 +909,9 @@ test(
             ),
             { mode: 0o600 },
           );
+        // The banner below announces a review environment that serves every
+        // Google call from the mock. It never prints after a mock exit.
+        mockExit?.check();
         await mkdir('dist/client-review', { recursive: true });
         await writeFile(
           'dist/client-review/runtime.json',
@@ -947,7 +981,10 @@ test(
         }
         // A task runner can end this process without its teardown. The
         // supervisor removes the mock environment after this process stops.
-        if (mock) await startReviewSupervisor({ directory, names, network });
+        if (mock)
+          await startup(() =>
+            startReviewSupervisor({ directory, names, network }),
+          );
         const stopped = new Promise((resolve) => {
           const ignoreStop = () => undefined;
           const stop = () => {
@@ -967,21 +1004,10 @@ test(
           // The task runner closes its terminal when it ends the target.
           process.once('SIGHUP', stop);
         });
-        // The review cannot continue against a stopped mock. Print the mock log
-        // and fail the run. The teardown still removes the environment.
-        await Promise.race([
-          stopped,
-          ...(mock
-            ? [
-                mock.watch.failure.then((log) => {
-                  const message = `The Admin SDK mock exited after its ready signal.\n${log}`;
-                  process.stderr.write(`${message}\n`);
-                  process.exitCode = 1;
-                  throw new Error(message);
-                }),
-              ]
-            : []),
-        ]);
+        // The review cannot continue against a stopped mock. The guard printed
+        // the mock log at detection, and this wait ends the run. The teardown
+        // still removes the environment.
+        await Promise.race([stopped, ...(mockExit ? [mockExit.failure] : [])]);
         return;
       }
       assert.equal(
@@ -2681,6 +2707,9 @@ test(
         );
       }
     } finally {
+      // A failure elsewhere must not hide a stopped mock. The report runs
+      // before the teardown removes the container, and the run stays nonzero.
+      if (mockExit?.report()) process.exitCode = 1;
       mockWatch?.stop();
       // The review environment stopped with its temporary data.
       if (clientReview)
