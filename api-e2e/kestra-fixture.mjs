@@ -16,6 +16,12 @@ export async function startKestraFixture({
   password,
   nodeImage,
   workerImage,
+  // The in-process Google preload. A mock-backed run turns it off and trusts the CA.
+  inProcessGoogle = config.phase === 3,
+  extraCaCerts,
+  // A caller can end the run while this fixture still waits. `stopped` then
+  // returns true, so the wait loops end instead of holding the process.
+  stopped,
 }) {
   const workerName = `${network}-worker`,
     kestraName = `${network}-kestra`;
@@ -98,9 +104,10 @@ export async function startKestraFixture({
       `${directory}:${directory}:ro`,
       '-e',
       `WORKER_DISPATCH_SECRET_FILE=${join(directory, 'secrets/worker-dispatch')}`,
+      ...(extraCaCerts ? ['-e', `NODE_EXTRA_CA_CERTS=${extraCaCerts}`] : []),
       workerImage ?? nodeImage,
       'node',
-      ...(config.phase === 3
+      ...(inProcessGoogle
         ? ['--require', join(directory, 'google-connection-preload.cjs')]
         : []),
       '/app/main.js',
@@ -135,6 +142,8 @@ export async function startKestraFixture({
   const waitReady = async () => {
     let ready = false;
     for (let attempt = 0; attempt < 180; attempt++) {
+      // The caller ended the run. The assertion below reports the stop.
+      if (stopped?.()) break;
       try {
         ready = (
           await fetch(`${origin}/api/v1/main/flows/search?size=1`, {

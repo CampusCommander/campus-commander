@@ -14,7 +14,7 @@ import { qualifyGoogleConnectionApi } from './google-connection-api.mjs';
 import { qualifyAccessRevocationBrowser } from './access-revocation-browser.mjs';
 import { qualifyAccessRevocation } from './access-revocation-api.mjs';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import {
   createHash,
   generateKeyPairSync,
@@ -58,6 +58,12 @@ import { enrollAdministrator } from '../deployment/installer/application-enrollm
 import { startSetupUpload } from '../deployment/installer/setup-upload.mjs';
 import { createBootstrapEdge } from '../deployment/bootstrap/edge.mjs';
 import { startKestraFixture } from './kestra-fixture.mjs';
+import {
+  mockReviewSettings,
+  startAdminSdkMock,
+  startMockExitGuard,
+} from './admin-sdk-mock-fixture.mjs';
+import { qualifyAdminSdkMockIntegration } from './admin-sdk-mock-integration.mjs';
 import { chromium, expect } from '@playwright/test';
 import { auditAccessibility as auditPageAccessibility } from './accessibility.mjs';
 import { qualifyInvitationBrowser } from './invitations-browser.mjs';
@@ -71,8 +77,77 @@ const docker = (...args) =>
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
+// The same call without blocking. Teardown removes containers in parallel.
+const dockerAsync = (...args) =>
+  new Promise((resolve) => {
+    execFile('docker', args, { encoding: 'utf8' }, (error) =>
+      resolve(error ?? null),
+    );
+  });
+
+/**
+ * Start the independent cleaner for a mock-backed review environment.
+ *
+ * The supervisor runs in its own session, so a task runner that ends this
+ * process with a signal does not end the supervisor. It watches a heartbeat
+ * file and the process ID, then removes the containers, the network, and the
+ * run directory.
+ */
+async function startReviewSupervisor({ directory, names, network }) {
+  const heartbeatFile = join(directory, 'review-heartbeat');
+  const specPath = join(directory, 'review-supervisor.json');
+  await writeFile(heartbeatFile, `${Date.now()}\n`);
+  await writeFile(
+    specPath,
+    `${JSON.stringify(
+      {
+        pid: process.pid,
+        heartbeatFile,
+        containers: [...names],
+        network,
+        directory,
+      },
+      null,
+      2,
+    )}\n`,
+    { mode: 0o600 },
+  );
+  const child = spawn(
+    'setsid',
+    [
+      '-f',
+      process.execPath,
+      'api-e2e/client-review-mock-supervisor.mjs',
+      specPath,
+    ],
+    { detached: true, stdio: 'ignore' },
+  );
+  child.on('error', () => undefined);
+  child.unref();
+  const heartbeat = setInterval(
+    () => writeFile(heartbeatFile, `${Date.now()}\n`).catch(() => undefined),
+    2000,
+  );
+  heartbeat.unref();
+  return heartbeat;
+}
 const packaged = process.env.CC_AUTH_PACKAGED_IMAGES === 'true';
 const clientReview = process.env.CC_CLIENT_REVIEW === '1';
+const reviewGoogle = process.env.CC_CLIENT_REVIEW_GOOGLE ?? '';
+assert.ok(
+  ['', 'admin-sdk-mock'].includes(reviewGoogle),
+  'CC_CLIENT_REVIEW_GOOGLE must be unset or admin-sdk-mock.',
+);
+const mockReview = reviewGoogle === 'admin-sdk-mock';
+assert.ok(
+  !mockReview || clientReview,
+  'CC_CLIENT_REVIEW_GOOGLE=admin-sdk-mock requires CC_CLIENT_REVIEW=1.',
+);
+const mockIntegration = process.env.CC_MOCK_INTEGRATION === '1';
+assert.ok(
+  !mockIntegration || mockReview,
+  'CC_MOCK_INTEGRATION=1 requires CC_CLIENT_REVIEW_GOOGLE=admin-sdk-mock.',
+);
 const applicationPhase = Number(process.env.CC_AUTH_PHASE ?? 2);
 assert.ok([2, 3].includes(applicationPhase));
 assert.ok(!clientReview || (applicationPhase === 3 && !packaged));
@@ -155,6 +230,8 @@ test(
     let edgeServer;
     let browser;
     let redis;
+    let mockWatch;
+    let mockExit;
     try {
       docker('network', 'create', network);
       await mkdir(secretRoot, { recursive: true, mode: 0o700 });
@@ -310,6 +387,9 @@ test(
             randomBytes(32),
           ),
         };
+      }
+      // A mock-backed run reaches Google over the network and loads no preload.
+      if (applicationPhase === 3 && !mockReview) {
         await writeFile(
           join(directory, 'google-connection-preload.cjs'),
           await readFile('api-e2e/google-connection-preload.cjs'),
@@ -530,19 +610,55 @@ test(
       const nodeImage = (
         await readFile('deployment/images/api.Dockerfile', 'utf8')
       ).match(/^FROM (node:\S+)/m)[1];
-      const kestraFixture = await startKestraFixture({
-        docker,
-        directory,
-        network,
-        names,
-        config,
-        secret,
-        password,
-        nodeImage,
-        workerImage: packaged ? applicationImages.worker : undefined,
-      });
+      // The mock serves every Google hostname on the harness network. It must be
+      // ready before the worker and the api start.
+      const mock = mockReview
+        ? await startAdminSdkMock({
+            docker,
+            directory,
+            network,
+            names,
+            nodeImage,
+            ...mockReviewSettings(),
+          })
+        : null;
+      mockWatch = mock?.watch ?? null;
+      // The mock serves every Google call. An exit stops startup: the guard
+      // prints the container log at detection and fails every later step.
+      mockExit = mockWatch ? startMockExitGuard({ watch: mockWatch }) : null;
+      /** Run one startup step. A mock exit fails it and every later step. */
+      const startup = (run) => (mockExit ? mockExit.step(run) : run());
+      // One PEM bundle holds the review TLS certificate and the mock CA.
+      const trustBundle = mock ? join(directory, 'client-review-ca.pem') : cert;
+      if (mock)
+        await startup(async () =>
+          writeFile(
+            trustBundle,
+            `${await readFile(cert, 'utf8')}\n${mock.ca}\n`,
+            {
+              mode: 0o600,
+            },
+          ),
+        );
+      const kestraFixture = await startup(() =>
+        startKestraFixture({
+          docker,
+          directory,
+          network,
+          names,
+          config,
+          secret,
+          password,
+          nodeImage,
+          workerImage: packaged ? applicationImages.worker : undefined,
+          ...(mock
+            ? { inProcessGoogle: false, extraCaCerts: trustBundle }
+            : {}),
+          ...(mockExit ? { stopped: () => mockExit.exited() } : {}),
+        }),
+      );
       const configPath = join(directory, 'profile.json');
-      await writeFile(configPath, JSON.stringify(config));
+      await startup(() => writeFile(configPath, JSON.stringify(config)));
       const initialize = {
         action: 'initialize',
         issuer,
@@ -598,7 +714,7 @@ test(
         'operator-authorization',
         `operator:${bootstrapCredential}`,
       );
-      await initializeBootstrap(migrator, bootstrapCredential);
+      await startup(() => initializeBootstrap(migrator, bootstrapCredential));
       let output = '';
       const startApi = async (listenPort = apiPort) => {
         const name = `cc-phase2-api-${id}-${children.length}`;
@@ -640,10 +756,10 @@ test(
             '-e',
             `CC_CONFIG_FILE=${configPath}`,
             '-e',
-            `NODE_EXTRA_CA_CERTS=${cert}`,
+            `NODE_EXTRA_CA_CERTS=${mock ? trustBundle : cert}`,
             packaged ? applicationImages.api : image,
             'node',
-            ...(applicationPhase === 3
+            ...(applicationPhase === 3 && !mock
               ? ['--require', join(directory, 'google-connection-preload.cjs')]
               : []),
             packaged ? 'main.js' : 'dist/api/main.js',
@@ -676,43 +792,49 @@ test(
           `API probe failed: ${JSON.stringify(lastProbe)}. Output: ${output}`,
         );
       };
-      let api = await startApi();
+      let api = await startup(() => startApi());
       const frontendPort = await freePort();
       const frontendName = `cc-phase2-frontend-${id}`;
       names.push(frontendName);
       const image = (
         await readFile('deployment/images/frontend.Dockerfile', 'utf8')
       ).match(/^FROM (node:\S+)/m)[1];
-      docker(
-        'run',
-        '-d',
-        '--name',
-        frontendName,
-        '--network',
-        network,
-        '-p',
-        `127.0.0.1:${frontendPort}:8080`,
-        ...(packaged
-          ? []
-          : [
-              '-v',
-              `${process.cwd()}/dist/frontend/browser:/app/browser:ro`,
-              '-v',
-              `${process.cwd()}/deployment/images/frontend-server.mjs:/app/server.mjs:ro`,
-            ]),
-        packaged ? applicationImages.frontend : image,
-        'node',
-        '/app/server.mjs',
-      );
-      for (let attempt = 0; attempt < 100; attempt++) {
-        try {
-          if ((await fetch(`http://127.0.0.1:${frontendPort}/health/live`)).ok)
-            break;
-        } catch {
-          /* Await the frontend listener. */
+      await startup(async () => {
+        docker(
+          'run',
+          '-d',
+          '--name',
+          frontendName,
+          '--network',
+          network,
+          '-p',
+          `127.0.0.1:${frontendPort}:8080`,
+          ...(packaged
+            ? []
+            : [
+                '-v',
+                `${process.cwd()}/dist/frontend/browser:/app/browser:ro`,
+                '-v',
+                `${process.cwd()}/deployment/images/frontend-server.mjs:/app/server.mjs:ro`,
+              ]),
+          packaged ? applicationImages.frontend : image,
+          'node',
+          '/app/server.mjs',
+        );
+        for (let attempt = 0; attempt < 100; attempt++) {
+          // A stopped mock ends the run. The loop must not hold the process.
+          if (mockExit?.exited()) break;
+          try {
+            if (
+              (await fetch(`http://127.0.0.1:${frontendPort}/health/live`)).ok
+            )
+              break;
+          } catch {
+            /* Await the frontend listener. */
+          }
+          await delay(100);
         }
-        await delay(100);
-      }
+      });
       const edgeConfig = structuredClone(config);
       edgeConfig.services.frontend.endpoint.url = `http://127.0.0.1:${frontendPort}`;
       edgeConfig.services.api.endpoint = {
@@ -732,52 +854,64 @@ test(
           path: '/run/secrets/synthetic-private-key',
         },
       };
-      edgeServer = await createBootstrapEdge({
-        config: edgeConfig,
-        verify: async () => false,
-        resolveSecret: async (ref) =>
-          ref.path.endsWith('private-key') ? tlsKey : ca,
-      });
-      await new Promise((resolve) =>
-        edgeServer.listen(edgePort, '127.0.0.1', resolve),
+      edgeServer = await startup(() =>
+        createBootstrapEdge({
+          config: edgeConfig,
+          verify: async () => false,
+          resolveSecret: async (ref) =>
+            ref.path.endsWith('private-key') ? tlsKey : ca,
+        }),
+      );
+      await startup(
+        () =>
+          new Promise((resolve) =>
+            edgeServer.listen(edgePort, '127.0.0.1', resolve),
+          ),
       );
       if (clientReview) {
-        const administrator = await callOperator({
-          action: 'initialize',
-          issuer,
-          subject: 'administrator',
-          displayName: 'Review administrator',
-        });
-        await callOperator({
-          action: 'confirm-platform-administrator',
-          principalId: administrator.principalId,
-          expectedVersion: 1,
-          confirmation: 'grant-platform-administrator',
-        });
+        const administrator = await startup(() =>
+          callOperator({
+            action: 'initialize',
+            issuer,
+            subject: 'administrator',
+            displayName: 'Review administrator',
+          }),
+        );
+        await startup(() =>
+          callOperator({
+            action: 'confirm-platform-administrator',
+            principalId: administrator.principalId,
+            expectedVersion: 1,
+            confirmation: 'grant-platform-administrator',
+          }),
+        );
         const key = generateKeyPairSync('rsa', { modulusLength: 2048 });
-        const sampleKeyPath = join(
-          directory,
-          'sample-google-service-account.json',
-        );
-        await writeFile(
-          sampleKeyPath,
-          JSON.stringify(
-            {
-              type: 'service_account',
-              client_id: '123456789',
-              client_email: 'fixture@project.iam.gserviceaccount.com',
-              private_key_id: 'client-review-only',
-              private_key: key.privateKey.export({
-                type: 'pkcs8',
-                format: 'pem',
-              }),
-              token_uri: 'https://oauth2.googleapis.com/token',
-            },
-            null,
-            2,
-          ),
-          { mode: 0o600 },
-        );
+        const sampleKeyPath = mock
+          ? mock.keyFile
+          : join(directory, 'sample-google-service-account.json');
+        if (!mock)
+          await writeFile(
+            sampleKeyPath,
+            JSON.stringify(
+              {
+                type: 'service_account',
+                client_id: '123456789',
+                client_email: 'fixture@project.iam.gserviceaccount.com',
+                private_key_id: 'client-review-only',
+                private_key: key.privateKey.export({
+                  type: 'pkcs8',
+                  format: 'pem',
+                }),
+                token_uri: 'https://oauth2.googleapis.com/token',
+              },
+              null,
+              2,
+            ),
+            { mode: 0o600 },
+          );
+        // The banner below announces a review environment that serves every
+        // Google call from the mock. It never prints after a mock exit.
+        mockExit?.check();
         await mkdir('dist/client-review', { recursive: true });
         await writeFile(
           'dist/client-review/runtime.json',
@@ -785,9 +919,21 @@ test(
             {
               url: publicOrigin,
               sampleKeyPath,
-              delegatedEmail: 'administrator@fixture.invalid',
-              googleServices: 'synthetic',
+              delegatedEmail: mock
+                ? mock.adminEmail
+                : 'administrator@fixture.invalid',
+              googleServices: mock ? 'admin-sdk-mock' : 'synthetic',
               data: 'disposable',
+              ...(mock
+                ? {
+                    googleBackend: `admin-sdk-mock ${mock.version}`,
+                    tier: mock.tier,
+                    deviceCount: mock.deviceCount,
+                    customerId: mock.customerId,
+                    controlUrl: mock.controlUrl,
+                    caFile: mock.caFile,
+                  }
+                : {}),
             },
             null,
             2,
@@ -795,23 +941,73 @@ test(
           { mode: 0o600 },
         );
         process.stdout.write(`\nClient review: ${publicOrigin}\n`);
+        if (mock) {
+          process.stdout.write(
+            `Google backend: admin-sdk-mock ${mock.version}, tier ${mock.tier}, ${mock.deviceCount} devices\n`,
+          );
+          process.stdout.write(`Google customer: ${mock.customerId}\n`);
+          process.stdout.write(`Delegated admin email: ${mock.adminEmail}\n`);
+          process.stdout.write(
+            `Mock service-account file to import: ${mock.keyFile}\n`,
+          );
+          process.stdout.write(`Mock control URL: ${mock.controlUrl}\n`);
+          process.stdout.write(
+            'Every Google call goes to the local mock. Do not upload real credentials.\n',
+          );
+        } else {
+          process.stdout.write(
+            'Google sign-in and Workspace responses are synthetic. Do not upload real credentials.\n',
+          );
+          process.stdout.write(
+            `Sample service-account file: ${sampleKeyPath}\n`,
+          );
+          process.stdout.write(
+            'Delegated email: administrator@fixture.invalid\n',
+          );
+        }
         process.stdout.write(
-          'Google sign-in and Workspace responses are synthetic. Do not upload real credentials.\n',
+          'Stop this command to remove the disposable review environment.\n',
         );
-        process.stdout.write(`Sample service-account file: ${sampleKeyPath}\n`);
-        process.stdout.write(
-          'Delegated email: administrator@fixture.invalid\nStop this command to remove the disposable review environment.\n',
-        );
-        await new Promise((resolve) => {
+        if (mockIntegration) {
+          for (const check of await qualifyAdminSdkMockIntegration({
+            mock,
+            watch: mock.watch,
+            request,
+            ca,
+            publicOrigin,
+          }))
+            process.stdout.write(`${check}\n`);
+          return;
+        }
+        // A task runner can end this process without its teardown. The
+        // supervisor removes the mock environment after this process stops.
+        if (mock)
+          await startup(() =>
+            startReviewSupervisor({ directory, names, network }),
+          );
+        const stopped = new Promise((resolve) => {
+          const ignoreStop = () => undefined;
           const stop = () => {
             process.off('SIGINT', stop);
             process.off('SIGTERM', stop);
+            process.off('SIGHUP', stop);
+            // Teardown must finish after the first stop signal. The task runner
+            // and its terminal send further signals while the target ends. The
+            // default action would end this process with the environment up.
+            process.on('SIGINT', ignoreStop);
+            process.on('SIGTERM', ignoreStop);
+            process.on('SIGHUP', ignoreStop);
             resolve();
           };
           process.once('SIGINT', stop);
           process.once('SIGTERM', stop);
+          // The task runner closes its terminal when it ends the target.
+          process.once('SIGHUP', stop);
         });
-        await rm('dist/client-review/runtime.json', { force: true });
+        // The review cannot continue against a stopped mock. The guard printed
+        // the mock log at detection, and this wait ends the run. The teardown
+        // still removes the environment.
+        await Promise.race([stopped, ...(mockExit ? [mockExit.failure] : [])]);
         return;
       }
       assert.equal(
@@ -2511,6 +2707,13 @@ test(
         );
       }
     } finally {
+      // A failure elsewhere must not hide a stopped mock. The report runs
+      // before the teardown removes the container, and the run stays nonzero.
+      if (mockExit?.report()) process.exitCode = 1;
+      mockWatch?.stop();
+      // The review environment stopped with its temporary data.
+      if (clientReview)
+        await rm('dist/client-review/runtime.json', { force: true });
       await browser?.close();
       if (edgeServer) {
         edgeServer.closeAllConnections();
@@ -2526,20 +2729,21 @@ test(
       if (issuerServer)
         await new Promise((resolve) => issuerServer.close(resolve));
       await Promise.allSettled(clients.map((client) => client.end()));
-      for (const name of names) {
-        try {
-          docker('rm', '-f', name);
-        } catch {
-          /* The test records ownership before startup. */
-        }
-      }
-      try {
-        docker('network', 'rm', network);
-      } catch {
-        /* Retain an occupied network for inspection. */
-      }
-      await rm(secretRoot, { recursive: true, force: true });
-      await rm(directory, { recursive: true, force: true });
+      // A task runner can end this process a few seconds after the stop
+      // signal. Remove the containers in parallel and the temporary data at
+      // the same time, so both finish inside that window.
+      const removal = await Promise.allSettled([
+        rm(directory, { recursive: true, force: true }),
+        ...names.map((name) => dockerAsync('rm', '-f', name)),
+      ]);
+      const leftInPlace = removal.filter(
+        (entry) => entry.status === 'rejected' || entry.value instanceof Error,
+      ).length;
+      if (leftInPlace)
+        process.stderr.write(
+          `Teardown left ${leftInPlace} entries in place. Check the review containers and the run directory.\n`,
+        );
+      await dockerAsync('network', 'rm', network);
     }
   },
 );
