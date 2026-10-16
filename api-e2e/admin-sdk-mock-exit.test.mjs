@@ -64,6 +64,7 @@ function startHarness({ root, hook, environment = {}, logPath }) {
   for (const key of [
     'NODE_OPTIONS',
     'CC_MOCK_TIER',
+    'CC_MOCK_TIER_DEFAULT',
     'CC_MOCK_DELAYS',
     'CC_MOCK_INTEGRATION',
     'CC_MOCK_FAULT_REQUEST',

@@ -7,7 +7,12 @@
   },
   "domains": [
     {
-      "spec": { "tier": "small", "seed": "campus-commander-dev" },
+      "spec": {
+        "tier": "medium",
+        "seed": "campus-commander-dev",
+        "name": "Easton Consulting",
+        "primaryDomain": "easton-consulting.com"
+      },
       "serviceAccounts": [
         {
           "out": "./.admin-sdk-mock/credentials/campus-commander-dev.json",

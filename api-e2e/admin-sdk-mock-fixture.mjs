@@ -8,6 +8,10 @@ import { GOOGLE_CAPABILITIES } from '../libs/application-contracts/src/lib/googl
 
 /** The fixed review seed. A seed always yields the same customer ID and district. */
 export const MOCK_SEED = 'campus-commander-review';
+/** The district name every review environment presents. */
+export const MOCK_DISTRICT_NAME = 'Easton Consulting';
+/** The primary domain of the review district. The mock derives its child domains. */
+export const MOCK_PRIMARY_DOMAIN = 'easton-consulting.com';
 /** The tiers that CC_MOCK_TIER accepts. */
 export const MOCK_TIERS = ['small', 'medium', 'large', 'xlarge'];
 /** The hostnames the mock serves. The container carries them as network aliases. */
@@ -33,9 +37,13 @@ export async function installedMockVersion() {
   return manifest.version;
 }
 
-/** Read the mock settings from the environment. The tier defaults to small and delays to on. */
+/**
+ * Read the mock settings from the environment.
+ * `CC_MOCK_TIER` wins. `CC_MOCK_TIER_DEFAULT` holds the default of the running
+ * target. The fallback is small. Delays default to on.
+ */
 export function mockReviewSettings(env = process.env) {
-  const tier = env.CC_MOCK_TIER ?? 'small';
+  const tier = env.CC_MOCK_TIER ?? env.CC_MOCK_TIER_DEFAULT ?? 'small';
   assert.ok(
     MOCK_TIERS.includes(tier),
     `CC_MOCK_TIER must name one of ${MOCK_TIERS.join(', ')}.`,
@@ -236,7 +244,12 @@ export async function startAdminSdkMock({
         timing: { scale: 1, delays },
         domains: [
           {
-            spec: { tier, seed: MOCK_SEED },
+            spec: {
+              tier,
+              seed: MOCK_SEED,
+              name: MOCK_DISTRICT_NAME,
+              primaryDomain: MOCK_PRIMARY_DOMAIN,
+            },
             serviceAccounts: [{ out: keyFile, scopes: MOCK_SCOPES }],
           },
         ],

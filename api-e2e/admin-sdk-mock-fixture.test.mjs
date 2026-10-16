@@ -6,7 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { startAdminSdkMock } from './admin-sdk-mock-fixture.mjs';
+import {
+  mockReviewSettings,
+  startAdminSdkMock,
+} from './admin-sdk-mock-fixture.mjs';
 
 /**
  * Fixture checks against a real mock container.
@@ -98,6 +101,56 @@ test('an exit after readiness fails the watch with the mock log', async (t) => {
       () => mock.watch.assertRunning(),
       /The Admin SDK mock exited after its ready signal/,
     );
+  } finally {
+    mock.watch.stop();
+  }
+});
+
+test('the tier follows the target default and the shell override', async () => {
+  const project = JSON.parse(await readFile('api-e2e/project.json', 'utf8'));
+  const targetEnv = (name) => project.targets[name].options.env ?? {};
+  // The review target seeds the medium district. Every other mock target keeps
+  // the small fallback.
+  assert.equal(targetEnv('client-review-mock').CC_MOCK_TIER_DEFAULT, 'medium');
+  assert.equal(
+    targetEnv('admin-sdk-mock-integration').CC_MOCK_TIER_DEFAULT,
+    undefined,
+  );
+  // No target sets CC_MOCK_TIER itself. A target env overrides the shell, so a
+  // target value there would take the last word away from the shell.
+  for (const [name, target] of Object.entries(project.targets))
+    assert.equal(
+      target.options?.env?.CC_MOCK_TIER,
+      undefined,
+      `${name} sets CC_MOCK_TIER in the target env.`,
+    );
+  assert.equal(mockReviewSettings({}).tier, 'small');
+  assert.equal(
+    mockReviewSettings({ CC_MOCK_TIER_DEFAULT: 'medium' }).tier,
+    'medium',
+  );
+  assert.equal(
+    mockReviewSettings({
+      CC_MOCK_TIER: 'small',
+      CC_MOCK_TIER_DEFAULT: 'medium',
+    }).tier,
+    'small',
+  );
+});
+
+test('the mock seeds the Easton Consulting district', async (t) => {
+  const start = await mockProbe(t);
+  const mock = await start();
+  try {
+    // The written configuration pins the district every review run presents.
+    const config = JSON.parse(await readFile(mock.configFile, 'utf8'));
+    assert.deepEqual(config.domains[0].spec, {
+      tier: 'small',
+      seed: 'campus-commander-review',
+      name: 'Easton Consulting',
+      primaryDomain: 'easton-consulting.com',
+    });
+    assert.match(mock.adminEmail, /@easton-consulting\.com$/);
   } finally {
     mock.watch.stop();
   }

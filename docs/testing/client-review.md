@@ -24,6 +24,7 @@ The **Development review** notice identifies the simulated Google environment on
 The `client-review-mock` target runs the same review environment against the Admin SDK mock.
 The harness runs the mock as a container on the review network, so every Google call goes to it.
 The review environment does not reach Google and does not use the in-process simulator.
+The environment runs the pinned tarball `campuscommander-admin-sdk-mock-0.2.0.tgz`.
 The [Admin SDK mock runbook](admin-sdk-mock.md) describes the package, the settings, and the scale record.
 
 ```sh
@@ -39,9 +40,14 @@ The command prints these values after startup:
 - `Mock control URL`: the control endpoint of the running mock.
 
 Set the tier with `CC_MOCK_TIER`. The tiers are `small`, `medium`, `large`, and `xlarge`.
-The default is `small`, which serves 600 devices.
+The `client-review-mock` target seeds `medium` by default, which serves 7,000 devices.
+The `admin-sdk-mock-integration` and `admin-sdk-mock-exit-test` targets keep the `small` default, which serves 600 devices.
+The `admin-sdk-mock-fixture-test` probes seed `small` directly.
+A shell `CC_MOCK_TIER` overrides every default.
 Set `CC_MOCK_DELAYS=off` to remove the modeled latency. The default is `on`.
 The seed is fixed at `campus-commander-review`, so the customer ID and the district are stable.
+Every mock district is `Easton Consulting` on `easton-consulting.com` from admin-sdk-mock 0.2.0.
+The review seed yields the customer ID `C0mw85f16` and the administrator `admin@easton-consulting.com`.
 
 The harness starts the mock container before the app and watches it during the run.
 A stopped mock stops startup, prints the container log within five seconds, and fails the command.
@@ -56,6 +62,17 @@ The battery column shows the classes that the mock reports.
 `npm exec nx run api-e2e:admin-sdk-mock-integration` runs the same flow without a browser.
 It connects the mock credential, runs Refresh all, compares the device count and one battery class with the mock, and removes the containers.
 It exits 0 on success, so CI can run it.
+
+### Recorded medium review run
+
+The environment reached its ready banner 27 seconds after the command started on 2026-10-16.
+The shared Nx cache held the four build outputs, so the number measures the harness start.
+The banner reported `admin-sdk-mock 0.2.0, tier medium, 7000 devices`.
+
+**Refresh all** published 7,000 devices in 58.8 seconds, from the API sync projection.
+The status bar held `7,000 matching devices · 7,000 in district`.
+`node api-e2e/client-review-mock-browser.mjs` saved `dist/client-review/devices-medium.png` and `dist/client-review/google-connection-medium.png`.
+The connection page listed `easton-consulting.com` as the primary domain and `k12.easton-consulting.com` as a verified alias.
 
 ### Scale run
 
