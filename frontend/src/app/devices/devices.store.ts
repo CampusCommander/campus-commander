@@ -66,11 +66,91 @@ export type DeviceEventSource = Pick<
 >;
 const CLOSED = 2;
 
-/** True when `time` is earlier than `other`. A missing time counts as earlier than any time. */
-const earlier = (time: string | null, other: string | null): boolean =>
-  time === null
-    ? other !== null
-    : other !== null && Date.parse(time) < Date.parse(other);
+/** An instant as whole seconds from the epoch and the fraction digits that follow. */
+interface Instant {
+  seconds: number;
+  /** Fraction digits without trailing zeros. An empty string means no fraction. */
+  fraction: string;
+}
+
+/** The timestamp shape of the contract: `Z` or `±hh:mm`, and fraction digits without a limit. */
+const instantPattern =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/;
+
+/** Days from 1970-01-01 to the civil date. Exact for every year the contract accepts. */
+const daysFromCivil = (year: number, month: number, day: number): number => {
+  const y = month <= 2 ? year - 1 : year;
+  const era = Math.floor(y / 400);
+  const yearOfEra = y - era * 400;
+  const dayOfYear =
+    Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1;
+  const dayOfEra =
+    yearOfEra * 365 +
+    Math.floor(yearOfEra / 4) -
+    Math.floor(yearOfEra / 100) +
+    dayOfYear;
+  return era * 146097 + dayOfEra - 719468;
+};
+
+/** Split a contract timestamp into its instant. Returns null for any other shape. */
+const parseInstant = (time: string): Instant | null => {
+  const parts = instantPattern.exec(time);
+  if (!parts) return null;
+  const [
+    ,
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    fraction,
+    zone,
+    sign,
+    offsetHours,
+    offsetMinutes,
+  ] = parts;
+  const offset =
+    zone === 'Z'
+      ? 0
+      : (sign === '-' ? -1 : 1) *
+        (Number(offsetHours) * 3600 + Number(offsetMinutes) * 60);
+  return {
+    seconds:
+      daysFromCivil(Number(year), Number(month), Number(day)) * 86_400 +
+      Number(hour) * 3600 +
+      Number(minute) * 60 +
+      Number(second) -
+      offset,
+    // Trailing zeros carry no order, so one instant in two spellings compares as one value.
+    fraction: (fraction ?? '').replace(/0+$/, ''),
+  };
+};
+
+/** -1, 0, or 1 for `time` against `other`. Every fraction digit counts. A missing time is earliest. */
+const compareInstants = (
+  time: string | null,
+  other: string | null,
+): number => {
+  if (time === null) return other === null ? 0 : -1;
+  if (other === null) return 1;
+  const left = parseInstant(time);
+  const right = parseInstant(other);
+  if (!left || !right) {
+    // The contract schema rejects every other shape. Keep the old millisecond order rather than guess.
+    const leftMs = Date.parse(time);
+    const rightMs = Date.parse(other);
+    if (Number.isNaN(leftMs) || Number.isNaN(rightMs)) return 0;
+    return leftMs === rightMs ? 0 : leftMs < rightMs ? -1 : 1;
+  }
+  if (left.seconds !== right.seconds)
+    return left.seconds < right.seconds ? -1 : 1;
+  const digits = Math.max(left.fraction.length, right.fraction.length);
+  const leftFraction = left.fraction.padEnd(digits, '0');
+  const rightFraction = right.fraction.padEnd(digits, '0');
+  if (leftFraction === rightFraction) return 0;
+  return leftFraction < rightFraction ? -1 : 1;
+};
 
 /** The query whose stale devices the banner counts: the outermost filters and selection. */
 interface CountedQuery {
@@ -284,9 +364,9 @@ export class DevicesStore {
       answer.generation !== current.generation
     )
       return false;
-    if (answer.startedAt !== current.startedAt)
-      return earlier(answer.startedAt, current.startedAt);
-    return earlier(answer.checkedAt, current.checkedAt);
+    const starts = compareInstants(answer.startedAt, current.startedAt);
+    if (starts !== 0) return starts < 0;
+    return compareInstants(answer.checkedAt, current.checkedAt) < 0;
   }
 
   /** Start a full sync. The full-sync event reports its end (D12). */
