@@ -168,23 +168,41 @@ test('the retry delay does not outlast the deadline', async () => {
   assert.ok(page.reloads <= 2, `the helper reloaded ${page.reloads} times`);
 });
 
-test('a request failure with another error code fails at once', async () => {
+test('a request failure with another error code does not start another reload', async () => {
   const page = fakePage(async (reloads) => {
     if (reloads === 1)
       setImmediate(() => failRequest(page, 'net::ERR_CERT_AUTHORITY_INVALID'));
     return okResponse();
   });
-  const started = Date.now();
   await assert.rejects(
     reloadAfterNetworkChange(page, {
       retryDelayMs: 0,
       ready: delayedReadyFailure,
     }),
-    /ERR_CERT_AUTHORITY_INVALID/,
+    /did not appear within 5 s/,
   );
-  const elapsed = Date.now() - started;
   assert.equal(page.reloads, 1);
-  assert.ok(elapsed < 150, `the request failure surfaced after ${elapsed} ms`);
+});
+
+test('an aborted in-flight request does not fail a ready page', async () => {
+  // The restart phase restarts the containers while the page stays open. The
+  // reload cancels the in-flight requests, and the page still becomes ready.
+  const page = fakePage(async (reloads) => {
+    if (reloads === 1) failRequest(page, 'net::ERR_ABORTED');
+    return okResponse();
+  });
+  let readyCalls = 0;
+  assert.deepEqual(
+    await reloadAfterNetworkChange(page, {
+      retryDelayMs: 0,
+      ready: async () => {
+        readyCalls++;
+      },
+    }),
+    { attempts: 1, networkChanges: 0 },
+  );
+  assert.equal(page.reloads, 1);
+  assert.equal(readyCalls, 1);
 });
 
 test('an HTTP error status from the reload fails at once', async () => {

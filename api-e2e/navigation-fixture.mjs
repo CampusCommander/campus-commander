@@ -25,13 +25,16 @@ const createAttempt = () => {
 };
 
 /**
- * Reload a page and recover a reload that an installation network change aborts.
+ * Reload a page and recover a reload that an installation network change
+ * aborts.
  *
  * A request of the page that fails with ERR_NETWORK_CHANGED after a reload
  * starts, and before the page is ready, starts another reload. The optional
  * `ready` function reports that the page reached the state the caller needs.
- * Without `ready`, a resolved reload is ready. Every other failure fails at
- * once. The `ready` function keeps its own timeout.
+ * Without `ready`, a resolved reload is ready. A reload error other than a
+ * network change, an HTTP error status, and a failed ready function fail at
+ * once. A request failure with another error code does not decide the attempt,
+ * because a reload cancels the in-flight requests of the previous page.
  */
 export async function reloadAfterNetworkChange(
   page,
@@ -44,12 +47,15 @@ export async function reloadAfterNetworkChange(
 
   const onRequestFailed = (request) => {
     if (!attempt) return;
-    const errorText = requestFailureErrorText(request);
-    if (!errorText) return;
+    // Only a network change decides the attempt. Every other request failure,
+    // such as the ERR_ABORTED cancellation of an in-flight request, keeps the
+    // behavior of the reload helper before this change: the reload result and
+    // the ready function decide.
+    if (!isNetworkChangeRequest(request)) return;
     attempt.observe({
-      retry: isNetworkChangeRequest(request),
+      retry: true,
       error: new Error(
-        `page request failed: ${errorText} for ${request.url?.() ?? 'unknown URL'}`,
+        `page request failed: ${requestFailureErrorText(request)} for ${request.url?.() ?? 'unknown URL'}`,
       ),
     });
   };
