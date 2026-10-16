@@ -67,7 +67,7 @@ export type DeviceEventSource = Pick<
 const CLOSED = 2;
 
 /** True when `time` is earlier than `other`. A missing time counts as earlier than any time. */
-const before = (time: string | null, other: string | null): boolean =>
+const earlier = (time: string | null, other: string | null): boolean =>
   time === null
     ? other !== null
     : other !== null && Date.parse(time) < Date.parse(other);
@@ -253,9 +253,9 @@ export class DevicesStore {
         ? 'denied'
         : 'failed';
     }
-    let sync: DeviceSyncState | null;
+    let answer: DeviceSyncState | null;
     try {
-      sync = deviceSyncStateSchema
+      answer = deviceSyncStateSchema
         .nullable()
         .parse((await response.json()).sync);
     } catch {
@@ -264,7 +264,7 @@ export class DevicesStore {
       return 'failed';
     }
     this.error.set('');
-    this.setSync(sync);
+    this.setSync(answer);
     this.syncLoaded.set(true);
     return 'read';
   }
@@ -285,8 +285,8 @@ export class DevicesStore {
     )
       return false;
     if (answer.startedAt !== current.startedAt)
-      return before(answer.startedAt, current.startedAt);
-    return before(answer.checkedAt, current.checkedAt);
+      return earlier(answer.startedAt, current.startedAt);
+    return earlier(answer.checkedAt, current.checkedAt);
   }
 
   /** Start a full sync. The full-sync event reports its end (D12). */
