@@ -186,6 +186,25 @@ test('an HTTP error status fails the step when a request also reports a network 
   ]);
 });
 
+test('a passing action keeps the step after an HTTP error status', async (t) => {
+  // The HTTP rule decides the retry only. A passing action passes, with a
+  // recorded HTTP error, as on origin/main.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  const result = await qualificationBrowserStep(
+    page,
+    publicOrigin,
+    directory,
+    'passing-action-http-error',
+    async () => {
+      respond(page, '/', 503);
+      await page.goto(`${publicOrigin}/api/auth/login`);
+    },
+  );
+  assert.deepEqual(result, { attempts: 1, recoveries: [] });
+  assert.deepEqual(await readdir(directory), []);
+});
+
 test('the step runs the action at most three times', async (t) => {
   const directory = await createEvidenceDirectory(t);
   const page = fakePage();

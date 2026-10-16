@@ -25,6 +25,13 @@ const failRequest = (page, errorText) =>
     failure: () => ({ errorText }),
   });
 
+const respond = (page, status, path = '/api/customer') =>
+  page.emit('response', {
+    url: () => `https://fixture.invalid${path}`,
+    status: () => status,
+    request: () => ({ isNavigationRequest: () => false }),
+  });
+
 /** A ready function that reports the missing heading after 200 ms. */
 const delayedReadyFailure = async () => {
   await new Promise((settle) => setTimeout(settle, 200));
@@ -261,6 +268,48 @@ test('an HTTP error status fails the attempt when a request also reports a netwo
   );
   assert.equal(page.reloads, 1);
   assert.equal(readyCalls, 0);
+});
+
+test('an HTTP error status during the ready wait ends the attempt at once', async () => {
+  // The attempt observes every response of the page, the ready wait included.
+  // The ready check fails, the page answered HTTP 503 for a customer request,
+  // and a script request failed with a network change. The server failure
+  // stays visible, and the helper does not reload again.
+  const page = fakePage(async () => okResponse());
+  let readyCalls = 0;
+  await assert.rejects(
+    reloadAfterNetworkChange(page, {
+      retryDelayMs: 0,
+      ready: async () => {
+        readyCalls++;
+        respond(page, 503);
+        failRequest(page, 'net::ERR_NETWORK_CHANGED');
+        throw new Error('The "Your account" heading did not appear');
+      },
+    }),
+    /HTTP 503/,
+  );
+  assert.equal(page.reloads, 1);
+  assert.equal(readyCalls, 1);
+});
+
+test('a passing ready keeps the attempt after an HTTP error status', async () => {
+  // The HTTP rule decides the retry only. A passing ready passes, with a
+  // recorded HTTP error, as on origin/main.
+  const page = fakePage(async () => okResponse());
+  let readyCalls = 0;
+  assert.deepEqual(
+    await reloadAfterNetworkChange(page, {
+      retryDelayMs: 0,
+      ready: async () => {
+        readyCalls++;
+        respond(page, 503);
+      },
+    }),
+    { attempts: 1, networkChanges: 0 },
+  );
+  assert.equal(page.reloads, 1);
+  assert.equal(readyCalls, 1);
 });
 
 test('a ready failure without a network change fails at once', async () => {
