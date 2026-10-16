@@ -135,7 +135,9 @@ it('shows the stale banner with the failure cause', () => {
     page: { matching: 450, total: 450, observedAt: '2026-10-05T12:00:00.000Z' },
   });
   expect(element.textContent).toContain('Inventory observation is stale');
-  expect(element.textContent).toContain('Add the device scopes');
+  expect(element.textContent).toContain(
+    'Google denied device access. Add https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly to the delegation client in the Google Admin Console.',
+  );
   expect(button('Refresh inventory')).toBeDefined();
   expect(element.querySelector('.grid-stub')).not.toBeNull();
 });

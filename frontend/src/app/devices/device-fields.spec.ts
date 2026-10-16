@@ -1,4 +1,7 @@
-import type { DevicePredicate } from '@campus/application-contracts';
+import type {
+  DevicePredicate,
+  DeviceSyncFailure,
+} from '@campus/application-contracts';
 import {
   batteryText,
   chipLabel,
@@ -114,18 +117,52 @@ describe('device fields', () => {
     expect(dateInputToIso('2026-13-45')).toBeNull();
   });
 
-  it('explains Google access failures with the scope action', () => {
-    expect(syncFailureText('delegation-not-authorized')).toContain(
-      'Add the device scopes',
+  it('names the denied device scope in every device access failure', () => {
+    for (const failure of [
+      'delegation-not-authorized',
+      'scope-mismatch',
+      'permission-denied',
+      'policy-restricted',
+    ] as const) {
+      expect(syncFailureText(failure)).toBe(
+        'Google denied device access. Add https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly to the delegation client in the Google Admin Console.',
+      );
+      expect(telemetryFailureText(failure)).toBe(
+        'Google denied battery telemetry access. Add https://www.googleapis.com/auth/chrome.management.telemetry.readonly to the delegation client in the Google Admin Console.',
+      );
+    }
+  });
+
+  it('keeps every other failure message word for word', () => {
+    expect(syncFailureText(null)).toBe('');
+    expect(syncFailureText('api-not-enabled')).toBe(
+      'Enable the Admin SDK API in the Google Cloud project of the service account.',
     );
+    expect(syncFailureText('quota')).toBe(
+      'Google limited the requests. Refresh again later.',
+    );
+    for (const failure of ['network-failure', 'provider-unavailable'] as const)
+      expect(syncFailureText(failure)).toBe(
+        'Campus Commander could not reach Google. Refresh again.',
+      );
+    for (const failure of ['credential-rejected', 'key-unavailable'] as const)
+      expect(syncFailureText(failure)).toBe(
+        'The Google credential needs attention. Open the Google connection page.',
+      );
     expect(syncFailureText('interrupted')).toBe(
       'The last refresh stopped before it finished.',
     );
-    expect(syncFailureText(null)).toBe('');
-    expect(telemetryFailureText('permission-denied')).toContain(
-      'Add the telemetry scope',
+    expect(syncFailureText('orchestration-unavailable')).toBe(
+      'Campus Commander could not start the refresh. Check Diagnostics.',
     );
+    expect(
+      syncFailureText('unknown-code' as unknown as DeviceSyncFailure),
+    ).toBe('The last refresh failed.');
     expect(telemetryFailureText(null)).toBeNull();
+    for (const failure of ['quota', 'invalid-response'] as const)
+      expect(telemetryFailureText(failure)).toBe(
+        'Campus Commander could not read battery telemetry during the last refresh.',
+      );
   });
 });
 

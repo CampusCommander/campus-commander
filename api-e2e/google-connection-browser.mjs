@@ -93,11 +93,17 @@ export async function stageGoogleConnectionBrowser({
     .click();
   await expect(page.getByRole('alert')).toHaveCount(0);
   await page.getByText('Configure Google delegation', { exact: true }).click();
-  await expect(page.getByLabel('Required Google scopes')).toContainText(
+  await expect(page.getByLabel('Google scopes')).toContainText(
     'admin.directory.customer.readonly',
   );
-  await expect(page.getByLabel('Required Google scopes')).toContainText(
+  await expect(page.getByLabel('Google scopes')).toContainText(
     'admin.directory.domain.readonly',
+  );
+  await expect(page.getByLabel('Google scopes')).toContainText(
+    'admin.directory.device.chromeos.readonly',
+  );
+  await expect(page.getByLabel('Google scopes')).toContainText(
+    'chrome.management.telemetry.readonly',
   );
   for (const theme of ['light', 'dark']) {
     await selectTheme(page, theme);

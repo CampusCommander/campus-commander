@@ -174,3 +174,85 @@ it.each([201, 400])(
     sessionStorage.clear();
   },
 );
+
+const setupScopes = [
+  'https://www.googleapis.com/auth/admin.directory.customer.readonly',
+  'https://www.googleapis.com/auth/admin.directory.domain.readonly',
+  'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly',
+  'https://www.googleapis.com/auth/chrome.management.telemetry.readonly',
+];
+
+async function setupImportPage() {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText },
+    configurable: true,
+  });
+  await TestBed.configureTestingModule({
+    imports: [GoogleConnectionPage],
+    providers: [
+      {
+        provide: AuthStore,
+        useValue: {
+          request: vi.fn(),
+          metadata: () => ({ phase: 3 }),
+          session: () => ({ identity, csrfToken: 'session' }),
+          interrupted: () => false,
+          can: () => true,
+        },
+      },
+      {
+        provide: ConnectionStore,
+        useValue: {
+          connection: signal(null),
+          loaded: signal(true),
+          loading: signal(false),
+          stale: signal(false),
+          error: signal(''),
+        },
+      },
+    ],
+  }).compileComponents();
+  const fixture = TestBed.createComponent(GoogleConnectionPage);
+  fixture.detectChanges();
+  return {
+    fixture,
+    element: fixture.nativeElement as HTMLElement,
+    writeText,
+  };
+}
+
+it('lists the four setup scopes in order under the Google scopes name', async () => {
+  const { fixture, element } = await setupImportPage();
+  const block = element.querySelector<HTMLElement>(
+    '[aria-label="Google scopes"]',
+  );
+  expect(block?.getAttribute('role')).toBe('group');
+  expect(
+    block
+      ?.textContent?.split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean),
+  ).toEqual(setupScopes);
+  fixture.destroy();
+});
+
+it('names the four scopes in step 3 and copies them for the Admin Console', async () => {
+  const { fixture, element, writeText } = await setupImportPage();
+  const text = element.textContent!.replace(/\s+/g, ' ');
+  expect(text).toContain(
+    'Add the service account client ID and the 4 read-only scopes below.',
+  );
+  expect(text).toContain(
+    'Campus Commander connects with the customer and domain scopes. Devices also needs the device and telemetry scopes.',
+  );
+  const copy = [...element.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Copy scopes',
+  );
+  expect(copy).toBeDefined();
+  copy!.click();
+  await vi.waitFor(() =>
+    expect(writeText).toHaveBeenCalledWith(setupScopes.join(',')),
+  );
+  fixture.destroy();
+});
