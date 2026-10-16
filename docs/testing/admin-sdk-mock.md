@@ -13,11 +13,20 @@ The [client review runbook](client-review.md#review-against-admin-sdk-mock) desc
 The root `package.json` pins the release tarball in `devDependencies`:
 
 ```text
-https://github.com/CampusCommander/admin-sdk-mock/releases/download/v0.1.0/campuscommander-admin-sdk-mock-0.1.0.tgz
+https://github.com/CampusCommander/admin-sdk-mock/releases/download/v0.2.0/campuscommander-admin-sdk-mock-0.2.0.tgz
 ```
 
-The `package-lock.json` records that URL, the version `0.1.0`, and the sha512 integrity hash.
+The `package-lock.json` records that URL, the version `0.2.0`, and this sha512 integrity hash:
+
+```text
+sha512-zwUl0MR5ludnJYq7CwqlhnepRvGDT62UMJR87jertYhkDEhNj+RaLlATfjlqmGBtNmZFDYD4Kqh748EkiBnEPQ==
+```
+
 The package needs Node 24.11 or later. CI pins Node 24.19.0.
+
+Version 0.2.0 adds the seed specification field `primaryDomain`.
+The mock serves the given domain as the primary domain and derives the student and alias domains under it.
+A specification without `primaryDomain` keeps the 0.1.0 seed data byte for byte.
 
 The release tarball holds the built `dist/` and `schema/` directories.
 It declares one lifecycle script, `prepare`. npm skips `prepare` for a tarball install, so no build runs here.
@@ -80,15 +89,18 @@ The committed `admin-sdk-mock.json` at the repository root holds these settings:
 
 | Setting          | Value                                                                            | Reason                                                          |
 | ---------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Domain           | `small`, seed `campus-commander-dev`                                             | The seed decides the customer ID and the district name.         |
+| Domain           | `medium`, seed `campus-commander-dev`                                            | The seed decides the customer ID and the district name.         |
+| District name    | `Easton Consulting`                                                              | The name every mock run presents.                               |
+| Primary domain   | `easton-consulting.com`                                                          | The mock derives the child domains under this domain.           |
 | Service account  | `read-write`, key file `./.admin-sdk-mock/credentials/campus-commander-dev.json` | The key file carries mode 0600.                                 |
 | Data directory   | `./.admin-sdk-mock/data`                                                         | Disposable. Delete it to seed again.                            |
 | Control listener | `127.0.0.1:18080`                                                                | Port 8080 is often taken on a developer machine.                |
 | Proxy            | `127.0.0.1:3128`                                                                 | The client reaches the mock through this port.                  |
 | Google listener  | `127.0.0.1:8443`                                                                 | The default. The proxy tunnels the four Google hostnames to it. |
 
-The seed `campus-commander-dev` always yields the customer ID `C0cmfin9i` and the district `kingston-public-schools.test`.
-The administrator `admin@kingston-public-schools.test` is the delegated subject for the service account.
+The seed `campus-commander-dev` always yields the customer ID `C0cmfin9i` and the district `Easton Consulting` on `easton-consulting.com`.
+The mock derives `k12.easton-consulting.com` as an alias domain, and `students.easton-consulting.com` when the seed picks a separate student domain.
+The administrator `admin@easton-consulting.com` is the delegated subject for the service account.
 
 `.gitignore` excludes `/.admin-sdk-mock/`. The folder holds generated key files and disposable domain data.
 
@@ -127,7 +139,18 @@ The call answers HTTP 200 with five devices. Every Google call in this workflow 
 2. Change the tag in the tarball URL in the root `package.json`.
 3. Run `npm install`.
 4. Commit `package.json`, `package-lock.json`, and this file.
-5. Run the validation, the start command, and the Directory API call above against the new version.
+5. Delete `.admin-sdk-mock/` when the specification changed, for example a new district name or primary domain.
+   The mock keeps the existing data and refuses a changed specification.
+   The next start seeds the new specification into the empty directory.
+6. Run the validation, the start command, and the Directory API call above against the new version.
+
+## The mock tenant and the real tenant
+
+The mock tenant uses the domain `easton-consulting.com` with mock customer IDs.
+Review, integration, and standalone runs reach only the local mock.
+The real Easton tenant is customer `C01zcarnq`.
+Only the read-only live checks in `AGENTS.md` use the real tenant.
+Never upload a real credential to a mock review environment.
 
 ## License
 
@@ -146,6 +169,16 @@ The lockfile change added `node_modules/@campuscommander/admin-sdk-mock` and `no
 
 The three image builds passed with `npm exec nx run-many -- -t image -p api,frontend,worker --parallel=1`.
 The runtime image held no mock package. A `npm ci` probe inside `node:24.19.0-alpine3.23` installed the mock with no `git` present.
+
+## Verified on 2026-10-16
+
+The 0.2.0 pin installed with `npm ci` on Node 24.19.0 and npm 11.19.1.
+The lockfile entry holds the tarball URL, the version `0.2.0`, and the integrity hash above.
+`npm exec -- admin-sdk-mock config validate admin-sdk-mock.json` printed `admin-sdk-mock.json is valid.`
+
+The standalone `start` reported the customer `C0cmfin9i`, the primary domain `easton-consulting.com`, and the administrator `admin@easton-consulting.com`.
+The `medium` tier served 180 organizational units, 6,703 users, 7,000 devices, and 1,161 groups.
+A `SIGTERM` closed every listener. Ports 8443, 18080, and 3128 were free after the stop.
 
 ## Scale observation
 

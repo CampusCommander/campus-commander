@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-07.
+Updated: 2026-10-16.
 
 ## Authorized now
 
@@ -15,6 +15,7 @@ The [entity cache record](superpowers/specs/2026-10-06-entity-cache-decisions.md
 On 2026-10-07 the owner requested a Google batch service for the entity sync job, on branch `codex/batch-service`.
 The [batch service record](superpowers/specs/2026-10-07-google-batch-service-decisions.md) holds the confirmed decisions. It is not a new workflow.
 On 2026-10-15 the owner requested admin-sdk-mock setup for this project, on branch `codex/admin-sdk-mock`. The mock is development infrastructure under this workflow. It is not a new workflow.
+On 2026-10-16 the mock presents `Easton Consulting` on `easton-consulting.com` with the `medium` tier by default, on branch `codex/easton-review-tenant`.
 The School column, Bulk Actions, and every device change are excluded.
 Inspect the [linked Figma frames](workflows/device-browsing.md#design) before implementing each screen.
 Use focused `codex/` branches. Do not merge without owner authorization.
