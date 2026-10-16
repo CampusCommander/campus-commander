@@ -1,4 +1,5 @@
 import {
+  GOOGLE_CAPABILITIES,
   batteryFilterValueSchema,
   type DeviceBattery,
   type DeviceGroupField,
@@ -247,10 +248,24 @@ const accessFailures = new Set<string>([
   'policy-restricted',
 ]);
 
+/** The capability record holds the only copy of a scope string. */
+function capabilityScope(
+  id: 'device-inventory' | 'device-telemetry',
+): string {
+  const capability = GOOGLE_CAPABILITIES.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!capability) throw new Error(`Unknown Google capability ${id}`);
+  return capability.scope;
+}
+
+const inventoryScope = capabilityScope('device-inventory');
+const telemetryScope = capabilityScope('device-telemetry');
+
 export function syncFailureText(failure: DeviceSyncFailure | null): string {
   if (!failure) return '';
   if (accessFailures.has(failure))
-    return 'Google denied device access. Add the device scopes to the delegation client in the Google Admin Console.';
+    return `Google denied device access. Add ${inventoryScope} to the delegation client in the Google Admin Console.`;
   switch (failure) {
     case 'api-not-enabled':
       return 'Enable the Admin SDK API in the Google Cloud project of the service account.';
@@ -276,7 +291,7 @@ export function telemetryFailureText(
 ): string | null {
   if (!failure) return null;
   return accessFailures.has(failure)
-    ? 'Google denied battery telemetry access. Add the telemetry scope to the delegation client in the Google Admin Console.'
+    ? `Google denied battery telemetry access. Add ${telemetryScope} to the delegation client in the Google Admin Console.`
     : 'Campus Commander could not read battery telemetry during the last refresh.';
 }
 
