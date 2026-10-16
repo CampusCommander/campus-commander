@@ -73,9 +73,12 @@ interface Instant {
   fraction: string;
 }
 
-/** The timestamp shape of the contract: `Z` or `±hh:mm`, and fraction digits without a limit. */
+/**
+ * The timestamp shape of the contract: a `Z` or `±hh:mm` offset, seconds optional,
+ * and any number of fraction digits. A fraction never appears without seconds.
+ */
 const instantPattern =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|([+-])(\d{2}):(\d{2}))$/;
 
 /** Days from 1970-01-01 to the civil date. Exact for every year the contract accepts. */
 const daysFromCivil = (year: number, month: number, day: number): number => {
@@ -120,7 +123,8 @@ const parseInstant = (time: string): Instant | null => {
       daysFromCivil(Number(year), Number(month), Number(day)) * 86_400 +
       Number(hour) * 3600 +
       Number(minute) * 60 +
-      Number(second) -
+      // The contract allows a timestamp without seconds. An omitted second is zero.
+      Number(second ?? 0) -
       offset,
     // Trailing zeros carry no order, so one instant in two spellings compares as one value.
     fraction: (fraction ?? '').replace(/0+$/, ''),
@@ -128,18 +132,16 @@ const parseInstant = (time: string): Instant | null => {
 };
 
 /** -1, 0, or 1 for `time` against `other`. Every fraction digit counts. A missing time is earliest. */
-const compareInstants = (time: string | null, other: string | null): number => {
+const compareInstants = (
+  time: string | null,
+  other: string | null,
+): number | null => {
   if (time === null) return other === null ? 0 : -1;
   if (other === null) return 1;
   const left = parseInstant(time);
   const right = parseInstant(other);
-  if (!left || !right) {
-    // The contract schema rejects every other shape. Keep the old millisecond order rather than guess.
-    const leftMs = Date.parse(time);
-    const rightMs = Date.parse(other);
-    if (Number.isNaN(leftMs) || Number.isNaN(rightMs)) return 0;
-    return leftMs === rightMs ? 0 : leftMs < rightMs ? -1 : 1;
-  }
+  // The contract schema rejects every other shape. No order means the answer replaces.
+  if (!left || !right) return null;
   if (left.seconds !== right.seconds)
     return left.seconds < right.seconds ? -1 : 1;
   const digits = Math.max(left.fraction.length, right.fraction.length);
@@ -362,8 +364,11 @@ export class DevicesStore {
     )
       return false;
     const starts = compareInstants(answer.startedAt, current.startedAt);
+    // An unreadable time has no order. The answer replaces the status, as before S2.
+    if (starts === null) return false;
     if (starts !== 0) return starts < 0;
-    return compareInstants(answer.checkedAt, current.checkedAt) < 0;
+    const checks = compareInstants(answer.checkedAt, current.checkedAt);
+    return checks !== null && checks < 0;
   }
 
   /** Start a full sync. The full-sync event reports its end (D12). */
