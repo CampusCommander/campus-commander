@@ -321,7 +321,7 @@ test('an opted-out step reports the routes of a reload that recovered inside the
     async () => {
       navigationRecovery = await reloadAfterNetworkChange(page, {
         retryDelayMs: 0,
-        ready: async () => {},
+        ready: () => Promise.resolve(),
       });
     },
     { retryOnNetworkChange: false },
