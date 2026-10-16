@@ -19,6 +19,56 @@ Sign-in returns you to the application as **Review administrator**.
 No password or real Google login is required.
 The **Development review** notice identifies the simulated Google environment on every signed-in page.
 
+## Review against admin-sdk-mock
+
+The `client-review-mock` target runs the same review environment against the Admin SDK mock.
+The harness runs the mock as a container on the review network, so every Google call goes to it.
+The review environment does not reach Google and does not use the in-process simulator.
+The [Admin SDK mock runbook](admin-sdk-mock.md) describes the package, the settings, and the scale record.
+
+```sh
+npm exec -- nx run api-e2e:client-review-mock
+```
+
+The command prints these values after startup:
+
+- `Google backend`: the mock version, the tier, and the device count.
+- `Google customer`: the mock customer ID.
+- `Delegated admin email`: the mock administrator. Use this value as the delegated email.
+- `Mock service-account file to import`: the credential file for the Google connection page.
+- `Mock control URL`: the control endpoint of the running mock.
+
+Set the tier with `CC_MOCK_TIER`. The tiers are `small`, `medium`, `large`, and `xlarge`.
+The default is `small`, which serves 600 devices.
+Set `CC_MOCK_DELAYS=off` to remove the modeled latency. The default is `on`.
+The seed is fixed at `campus-commander-review`, so the customer ID and the district are stable.
+
+The harness starts the mock container before the app and watches it during the run.
+A stopped mock stops startup, prints the container log within five seconds, and fails the command.
+The command never falls back to the in-process simulator.
+The harness never prints the review banner after a mock exit.
+[The mock runbook](admin-sdk-mock.md#failure-behavior) records the behavior and the exit checks.
+
+Connect Google with the printed file and email. Then select **Refresh inventory** on the Devices page.
+The status bar count equals the `Google backend` count printed at startup.
+The battery column shows the classes that the mock reports.
+
+`npm exec nx run api-e2e:admin-sdk-mock-integration` runs the same flow without a browser.
+It connects the mock credential, runs Refresh all, compares the device count and one battery class with the mock, and removes the containers.
+It exits 0 on success, so CI can run it.
+
+### Scale run
+
+`CC_MOCK_TIER=large` serves 60,000 devices. Run the integration target to observe the full sync:
+
+```sh
+CC_MOCK_TIER=large npm exec -- nx run api-e2e:admin-sdk-mock-integration
+```
+
+The recorded run published 60,000 devices in 493.6 seconds.
+The run writes `dist/client-review/admin-sdk-mock-run.json` with the tier, the device count, the sync duration, the checked battery, and the mock quota counters.
+[The scale record](admin-sdk-mock.md#scale-observation) holds the numbers and the quota counters.
+
 ## Review the features
 
 - **Your account:** Follow the task links. Change the theme and collapse the navigation.
