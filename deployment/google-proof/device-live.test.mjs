@@ -82,9 +82,12 @@ const answerFor = (url) => {
   throw httpError(404, 'notFound');
 };
 
-/** The reader with a retry wait that does not slow the test. */
+/** The reader keeps its own retry rules. Only the retry wait is immediate, so the test stays fast. */
 function fastReader() {
-  return new GoogleDeviceReader({ sleep: async () => {}, backoff: () => 1 });
+  return new GoogleDeviceReader({
+    sleep: (milliseconds) => Promise.resolve(milliseconds),
+    backoff: () => 1,
+  });
 }
 
 async function run(t, reader) {
