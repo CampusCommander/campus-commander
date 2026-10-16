@@ -61,9 +61,15 @@ export async function qualifyInvitationBrowser({
     .getByRole('button', { name: 'Refresh invitations', exact: true })
     .click();
   await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Create invitation', exact: true }),
+  ).toBeEnabled();
   await page
     .getByRole('button', { name: 'Create invitation', exact: true })
     .focus();
+  await expect(
+    page.getByRole('button', { name: 'Create invitation', exact: true }),
+  ).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(
     page.getByLabel('Invitation link', { exact: true }),
