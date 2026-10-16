@@ -828,6 +828,308 @@ it('recounts when a page that scrolling loads starts a refresh job', async () =>
   );
 });
 
+const LATER = '2026-10-06T12:00:00.000Z';
+const EARLIER = '2026-10-06T11:00:00.000Z';
+/** A running status with the start and check times that order status answers (S2). */
+const running = (startedAt: string | null, checkedAt: string | null = null) =>
+  state('running', { startedAt, checkedAt });
+const unreadable = () => new Response('{"sync":', { status: 200 });
+
+describe('the order of status answers', () => {
+  /** Reads `current`, then `answer`, and returns the store. */
+  async function answered(current: object, answer: object) {
+    let status = current;
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: status }),
+    });
+    const store = setup(request);
+    await store.loadSync();
+    expect(store.sync()).toEqual(current);
+    status = answer;
+    await store.loadSync();
+    return store;
+  }
+
+  const older = [
+    { name: 'an earlier start', current: running(LATER), answer: running(EARLIER) },
+    {
+      name: 'the same start and an earlier check',
+      current: running(LATER, LATER),
+      answer: running(LATER, EARLIER),
+    },
+    { name: 'a missing start', current: running(LATER), answer: running(null) },
+    {
+      name: 'a missing check after the same start',
+      current: running(LATER, LATER),
+      answer: running(LATER, null),
+    },
+  ];
+  it.each(older)(
+    'keeps the current status when the answer has $name',
+    async ({ current, answer }) => {
+      const store = await answered(current, answer);
+      expect(store.sync()).toEqual(current);
+    },
+  );
+
+  const newer = [
+    { name: 'a later start', current: running(EARLIER), answer: running(LATER) },
+    {
+      name: 'the same start and a later check',
+      current: running(EARLIER, EARLIER),
+      answer: running(EARLIER, LATER),
+    },
+    { name: 'a missing current start', current: running(null), answer: running(LATER) },
+  ];
+  it.each(newer)(
+    'replaces the current status when the answer has $name',
+    async ({ current, answer }) => {
+      const store = await answered(current, answer);
+      expect(store.sync()).toEqual(answer);
+    },
+  );
+
+  it('replaces the current status with an equal answer and its stale value', async () => {
+    const store = await answered(
+      state('ready', { stale: false }),
+      state('ready', { stale: true }),
+    );
+    expect(store.sync()?.stale).toBe(true);
+  });
+
+  it.each([
+    { name: 'another customer', answer: { customerId: 'C0654321' } },
+    { name: 'a new generation', answer: { generation: 3 } },
+  ])('replaces the current status for $name', async ({ answer }) => {
+    const store = await answered(running(LATER), {
+      ...state('ready', { observedAt: LATER, startedAt: EARLIER }),
+      ...answer,
+    });
+    expect(store.sync()?.status).toBe('ready');
+  });
+
+  it('ignores a full-sync event older than the current status', async () => {
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: running(LATER) }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    const current = store.sync();
+    const before = store.revision();
+    opened[0].send('full-sync', {
+      type: 'full-sync',
+      sync: state('ready', { observedAt: LATER, startedAt: EARLIER }),
+    });
+    expect(store.sync()).toEqual(current);
+    expect(store.revision()).toBe(before);
+  });
+
+  it('keeps the current status when a refresh answer is older', async () => {
+    let answer = running(LATER);
+    const request = routes({
+      '/api/devices/sync': (body) =>
+        body === undefined
+          ? Response.json({ sync: state('ready') })
+          : Response.json({ sync: answer }, { status: 201 }),
+    });
+    const store = setup(request);
+    await store.loadSync();
+    await store.refreshAll();
+    const current = store.sync();
+    expect(current?.status).toBe('running');
+    answer = state('ready', { observedAt: LATER, startedAt: EARLIER });
+    await store.refreshAll();
+    expect(store.sync()).toEqual(current);
+  });
+});
+
+describe('a status answer with an unreadable body', () => {
+  const bodies = [
+    { name: 'a body that is not JSON', body: unreadable },
+    {
+      name: 'a body that fails the status schema',
+      body: () => Response.json({ sync: { status: 'nope' } }),
+    },
+  ];
+
+  it.each(bodies)('reports $name as a failed status read', async ({ body }) => {
+    const store = setup(vi.fn().mockImplementation(() => Promise.resolve(body())));
+    await expect(store.loadSync()).resolves.toBe(false);
+    expect(store.error()).toBe('Device inventory status is unavailable.');
+    expect(store.sync()).toBeNull();
+  });
+
+  it.each(bodies)('reopens the stream after $name', async ({ body }) => {
+    let bad = true;
+    const request = routes({
+      '/api/devices/sync': () =>
+        bad ? body() : Response.json({ sync: state('ready') }),
+    });
+    const store = setup(request);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    await store.init();
+    expect(opened).toHaveLength(0);
+    bad = false;
+    await vi.waitFor(() => expect(opened).toHaveLength(1));
+    expect(statusReads(request)).toBe(2);
+  });
+
+  it.each(bodies)('reports $name as a failed refresh start', async ({ body }) => {
+    const store = setup(vi.fn().mockImplementation(() => Promise.resolve(body())));
+    await store.refreshAll();
+    expect(store.error()).toBe('The refresh could not start.');
+  });
+});
+
+describe('a failed post-open read', () => {
+  const failed = () => new Response('{"sync":', { status: 503 });
+
+  /** A store whose stream dropped while a sync ran, and whose gate read reports `current`. */
+  async function dropped(current: object) {
+    let status = current;
+    let broken = false;
+    const request = routes({
+      '/api/devices/sync': () =>
+        broken ? failed() : Response.json({ sync: status }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    opened[0].send('full-sync', { type: 'full-sync', sync: running(null) });
+    const before = store.revision();
+    opened[0].fail(2);
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    return { request, store, opened, before, break: () => (broken = true) };
+  }
+
+  it('reloads the grid when the gate read shows the sync ended', async () => {
+    const { request, store, opened, before, break: broken } = await dropped(
+      state('ready', { observedAt: LATER }),
+    );
+    broken();
+    opened[1].open();
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    expect(store.sync()?.status).toBe('ready');
+    expect(store.error()).toBe('Device inventory status is unavailable.');
+    expect(statusReads(request)).toBe(3);
+  });
+
+  it('keeps the baseline when the gate read matches the status from before the drop', async () => {
+    const { store, opened, before, break: broken } = await dropped(running(null));
+    broken();
+    opened[1].open();
+    await vi.waitFor(() =>
+      expect(store.error()).toBe('Device inventory status is unavailable.'),
+    );
+    expect(store.revision()).toBe(before);
+    expect(store.sync()?.status).toBe('running');
+  });
+
+  it('compares the next reconnect against the gate read', async () => {
+    const { request, store, opened, before, break: broken } = await dropped(
+      state('ready', { observedAt: LATER }),
+    );
+    broken();
+    opened[1].open();
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    opened[1].fail(2);
+    await vi.waitFor(() => expect(opened).toHaveLength(3));
+    opened[2].open();
+    await vi.waitFor(() =>
+      expect(request).toHaveBeenCalledWith('/api/devices/freshness', {
+        predicates: [],
+        selection: null,
+      }),
+    );
+    expect(store.revision()).toBe(before + 1);
+  });
+});
+
+describe('the first open after a running status', () => {
+  it('reloads the grid when the sync ends before the stream subscribes', async () => {
+    let current = running(null);
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: current }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    expect(opened).toHaveLength(1);
+    const before = store.revision();
+    current = state('ready', { observedAt: LATER });
+    opened[0].open();
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    expect(store.sync()?.status).toBe('ready');
+    expect(statusReads(request)).toBe(2);
+  });
+
+  it('makes no extra status read when the first open follows a ready status', async () => {
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: state('ready') }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    opened[0].open();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(statusReads(request)).toBe(1);
+  });
+});
+
+describe('a resumed session', () => {
+  function signedIn() {
+    const session = signal<ReturnType<typeof sessionFor> | null>(sessionFor('actor'));
+    const request = routes({
+      '/api/devices/sync': () => Response.json({ sync: state('ready') }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+    const store = setup(request, session);
+    store.reopenDelay = 0;
+    const opened = streams(store);
+    TestBed.tick();
+    return { session, store, opened };
+  }
+
+  it('asks the grid to retry the failed blocks when the same person resumes', async () => {
+    const { session, store, opened } = signedIn();
+    await store.init();
+    opened[0].open();
+    const before = store.resumeRevision();
+    session.set(null);
+    TestBed.tick();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    session.set(sessionFor('actor'));
+    TestBed.tick();
+    await vi.waitFor(() => expect(store.resumeRevision()).toBe(before + 1));
+    // The stream reopens as before.
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+  });
+
+  it('keeps the reset of another sign-in without a retry', () => {
+    const { session, store, opened } = signedIn();
+    const before = store.resumeRevision();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    expect(store.resumeRevision()).toBe(before);
+    expect(store.revision()).toBe(1);
+    expect(opened).toHaveLength(0);
+  });
+});
+
 describe('the stale count of a new query', () => {
   const notes = {
     predicates: [{ field: 'notes' as const, operator: 'isEmpty' as const }],
