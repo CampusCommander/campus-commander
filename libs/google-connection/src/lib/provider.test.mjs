@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
+import { createServer } from 'node:http';
 import test from 'node:test';
+import { GaxiosError, request } from 'gaxios';
 import { JWT, OAuth2Client } from 'google-auth-library';
 import {
+  failure,
   GoogleCustomerVerifier,
   GOOGLE_CONNECTION_SCOPES,
 } from './provider.ts';
@@ -233,6 +236,49 @@ test('aborts and delegation failures retain actionable categories', async (t) =>
   }
 });
 
+/** The three non-abort fixtures from review round 1: the network-code rule is unchanged. */
+test('non-abort causes keep their previous network-code mapping', () => {
+  const mismatches = [];
+  for (const [fixture, expected] of [
+    [{ code: 'ERR_WRAPPER', cause: { code: 'ECONNRESET' } }, 'request-failed'],
+    [{ cause: { cause: { code: 'ECONNRESET' } } }, 'request-failed'],
+    [{ cause: { code: 'ENOTFOUND', name: 123 } }, 'network-failure'],
+  ])
+    for (const stage of ['token', 'read']) {
+      const code = failure(fixture, stage).code;
+      if (code !== expected)
+        mismatches.push({ fixture, stage, code, expected });
+    }
+  assert.deepEqual(mismatches, []);
+});
+
+/** Build a cause chain of `depth` links ending in an error with the given name. */
+function causeChain(depth, name) {
+  let value = { name };
+  for (let level = 0; level < depth; level += 1) value = { cause: value };
+  return value;
+}
+
+test('nested aborts and timeouts map to network-failure inside the depth bound', () => {
+  for (const name of ['AbortError', 'TimeoutError'])
+    for (const depth of [1, 5])
+      for (const stage of ['token', 'read'])
+        assert.equal(
+          failure(causeChain(depth, name), stage).code,
+          'network-failure',
+        );
+});
+
+test('an abort past the depth bound and a cyclic cause stay request-failed', () => {
+  for (const name of ['AbortError', 'TimeoutError'])
+    for (const stage of ['token', 'read'])
+      assert.equal(failure(causeChain(6, name), stage).code, 'request-failed');
+  const cyclic = {};
+  cyclic.cause = cyclic;
+  for (const stage of ['token', 'read'])
+    assert.equal(failure(cyclic, stage).code, 'request-failed');
+});
+
 test('cached tokens within five minutes of expiry do not trigger an uncoordinated refresh', async (t) => {
   const calls = [];
   const transportPrototype = Object.getPrototypeOf(
@@ -261,4 +307,67 @@ test('cached tokens within five minutes of expiry do not trigger an uncoordinate
   );
   assert.equal(result.customerId, customer.id);
   assert.equal(calls.length, 2);
+});
+
+/** Accept the connection and never answer, as the production token mint observed. */
+async function silentServer(t) {
+  const server = createServer(() => undefined);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  });
+  return `http://127.0.0.1:${server.address().port}/token`;
+}
+
+/** The request options of `boundClient` (provider.ts:224-233), with a local URL and a short test bound. */
+function boundedOptions(url, overrides) {
+  return {
+    url,
+    method: 'GET',
+    retry: false,
+    retryConfig: { retry: 0 },
+    maxRedirects: 0,
+    maxContentLength: 262144,
+    size: 262144,
+    ...overrides,
+  };
+}
+
+async function rejection(pending) {
+  try {
+    await pending;
+  } catch (reason) {
+    return reason;
+  }
+  assert.fail('The request must fail.');
+}
+
+/** Record the shape from the production token mint. gaxios wraps the abort below the outer error. */
+function assertWrappedAbort(error) {
+  assert.equal(error instanceof GaxiosError, true);
+  assert.equal(error.name, 'Error');
+  assert.equal(error.code, undefined);
+  assert.equal(error.cause.name, 'AbortError');
+}
+
+test('a gaxios request timeout maps to network-failure at both stages', async (t) => {
+  const url = await silentServer(t);
+  const error = await rejection(request(boundedOptions(url, { timeout: 100 })));
+  assertWrappedAbort(error);
+  for (const stage of ['token', 'read'])
+    assert.equal(failure(error, stage).code, 'network-failure');
+});
+
+test('a caller abort maps to network-failure at both stages', async (t) => {
+  const url = await silentServer(t);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 100);
+  const error = await rejection(
+    request(boundedOptions(url, { signal: controller.signal, timeout: 5000 })),
+  );
+  clearTimeout(timer);
+  assertWrappedAbort(error);
+  for (const stage of ['token', 'read'])
+    assert.equal(failure(error, stage).code, 'network-failure');
 });

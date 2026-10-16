@@ -35,6 +35,52 @@ export class GoogleConnectionError extends Error {
   }
 }
 
+const NETWORK_CODES = [
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+];
+const ABORT_NAMES = ['AbortError', 'TimeoutError'];
+const causeDepthLimit = 5;
+
+/** The network-code rule is unchanged: the outer code, else the immediate cause code. */
+function networkCodeSignature(error: unknown): boolean {
+  const network = z
+    .object({
+      code: z.unknown().optional(),
+      name: z.string().optional(),
+      cause: z
+        .object({ code: z.unknown().optional() })
+        .optional()
+        .catch(undefined),
+    })
+    .safeParse(error);
+  if (!network.success) return false;
+  const code = network.data.code ?? network.data.cause?.code;
+  return NETWORK_CODES.includes(typeof code === 'string' ? code : '');
+}
+
+/**
+ * Detect an abort or a timeout name at a bounded cause level.
+ * gaxios reports an aborted request as a GaxiosError with the abort one level down.
+ */
+function abortSignature(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth <= causeDepthLimit; depth += 1) {
+    if (typeof current !== 'object' || current === null) return false;
+    const name = (current as { name?: unknown }).name;
+    if (typeof name === 'string' && ABORT_NAMES.includes(name)) return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+function networkSignature(error: unknown): boolean {
+  return networkCodeSignature(error) || abortSignature(error);
+}
+
 export function failure(
   error: unknown,
   stage: 'token' | 'read' = 'read',
@@ -86,30 +132,7 @@ export function failure(
     )
   )
     return new GoogleConnectionError('policy-restricted');
-  const network = z
-    .object({
-      code: z.unknown().optional(),
-      name: z.string().optional(),
-      cause: z
-        .object({ code: z.unknown().optional() })
-        .optional()
-        .catch(undefined),
-    })
-    .safeParse(error);
-  const networkCode = network.success
-    ? (network.data.code ?? network.data.cause?.code)
-    : undefined;
-  if (
-    network.success &&
-    ([
-      'ETIMEDOUT',
-      'ECONNRESET',
-      'ECONNREFUSED',
-      'ENOTFOUND',
-      'EAI_AGAIN',
-    ].includes(typeof networkCode === 'string' ? networkCode : '') ||
-      ['AbortError', 'TimeoutError'].includes(network.data.name ?? ''))
-  )
+  if (networkSignature(error))
     return new GoogleConnectionError('network-failure');
   if (reason === 'invalid_scope')
     return new GoogleConnectionError('scope-mismatch');
