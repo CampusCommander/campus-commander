@@ -57,7 +57,10 @@ async function rawTelemetry() {
     const url = new URL(
       `https://chromemanagement.googleapis.com/v1/customers/${encodeURIComponent(domain.customerId)}/telemetry/devices`,
     );
-    url.searchParams.set('readMask', 'deviceId,batteryInfo,batteryStatusReport');
+    url.searchParams.set(
+      'readMask',
+      'deviceId,batteryInfo,batteryStatusReport',
+    );
     url.searchParams.set('pageSize', '200');
     if (pageToken) url.searchParams.set('pageToken', pageToken);
     const { data } = await auth.request({
@@ -224,7 +227,11 @@ test('the per-device telemetry read keeps an unknown device apart', async () => 
     );
   assert.deepEqual(
     batch.find((entry) => entry.deviceId === unknownDeviceId),
-    { deviceId: unknownDeviceId, battery: { status: 'no-report' }, reports: [] },
+    {
+      deviceId: unknownDeviceId,
+      battery: { status: 'no-report' },
+      reports: [],
+    },
   );
 });
 
@@ -246,7 +253,9 @@ test('a batch get resolves known devices and reports an unknown device as remove
     devices.map((device) => device.deviceId).sort(),
     [...known].sort(),
   );
-  const expected = new Map(inventory.map((device) => [device.deviceId, device]));
+  const expected = new Map(
+    inventory.map((device) => [device.deviceId, device]),
+  );
   for (const device of devices)
     assert.deepEqual(device, expected.get(device.deviceId));
 });
