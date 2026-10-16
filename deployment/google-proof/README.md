@@ -69,6 +69,17 @@ A file lock rejects concurrent writers without waiting indefinitely.
 After an interrupted write, verify that no proof process remains before removing the private `.lock` file.
 Never remove a lock held by a running process.
 
+## Device and battery read-only check
+
+```bash
+node --import ./libs/application-contracts/test-register.mjs deployment/google-proof/device-live.mjs <key-file>
+```
+
+The script reads every device page and every battery page through the production readers.
+It calls each batch method once with one missing device ID.
+It writes sanitized evidence to `deployment/evidence/device-browsing-live-2026-10-16.json`.
+The key file stays outside the repository.
+
 ## Repeatable checks
 
 ```bash

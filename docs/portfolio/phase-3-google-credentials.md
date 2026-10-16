@@ -21,7 +21,8 @@ Use this fixture for read-only checks whenever development needs live Google API
 The owner reports one user account. Empty entity collections do not block API plumbing tests.
 An Education domain is not required for the enabled customer, domain, and organizational-unit reads.
 Keep entity coverage, Education capability evidence, and minimum-role evidence separate from successful API connectivity.
-The configured scopes below remain the current test boundary. User or device inventory requires its own enabled scopes and implementation.
+The configured scopes below remain the current test boundary. User inventory requires its own enabled scope and implementation.
+Device inventory and battery telemetry passed a separate read-only check on 2026-10-16.
 This authorization does not include Google mutations, DWD revocation, or service-account key disablement.
 
 The application provider passed a live read-only check on 2026-09-17 using this fixture.
@@ -57,17 +58,20 @@ CC-46, CC-49, and CC-56 retain those implementation and validation responsibilit
 
 All scopes use the `https://www.googleapis.com/auth/` prefix.
 
-| Capability                    | Method                                                                                                   | Scope suffix                        | Live result |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------- |
-| Customer identity             | [customers.get](https://developers.google.com/workspace/admin/directory/reference/rest/v1/customers/get) | `admin.directory.customer.readonly` | HTTP 200    |
-| Domain observations           | [domains.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/domains/list)   | `admin.directory.domain.readonly`   | HTTP 200    |
-| Optional school OU references | [orgunits.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/orgunits/list) | `admin.directory.orgunit.readonly`  | HTTP 200    |
+| Capability                    | Method                                                                                                                                 | Scope suffix                               | Live result                             |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------- |
+| Customer identity             | [customers.get](https://developers.google.com/workspace/admin/directory/reference/rest/v1/customers/get)                               | `admin.directory.customer.readonly`        | HTTP 200                                |
+| Domain observations           | [domains.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/domains/list)                                 | `admin.directory.domain.readonly`          | HTTP 200                                |
+| Optional school OU references | [orgunits.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/orgunits/list)                               | `admin.directory.orgunit.readonly`         | HTTP 200                                |
+| ChromeOS device inventory     | [chromeosdevices.list](https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/list)                 | `admin.directory.device.chromeos.readonly` | HTTP 200, empty collection (2026-10-16) |
+| ChromeOS battery telemetry    | [customers.telemetry.devices.list](https://developers.google.com/chrome/management/reference/rest/v1/customers.telemetry.devices/list) | `chrome.management.telemetry.readonly`     | HTTP 200, empty collection (2026-10-16) |
 
 The controlled customer returned one primary domain, zero secondary domains, zero alias domains, and two OUs.
 Google returned exactly the three requested scopes.
 Secondary-domain and alias-domain live coverage remains untested because this customer has no such fixtures.
 The simulator covers primary, secondary, and alias domain counts separately.
-User inventory, device inventory, and every Google mutation remain outside this proof.
+User inventory and every Google mutation remain outside this proof.
+Device inventory and battery telemetry passed a separate read-only check on 2026-10-16.
 The historical four-capability experiment does not authorize additional Phase 3 scopes.
 
 ## Revised acceptance gates
