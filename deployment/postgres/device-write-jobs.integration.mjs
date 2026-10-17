@@ -5055,6 +5055,335 @@ export async function qualifyDeviceWriteJobs({
         await endJob(job.jobId);
       },
     );
+
+    // Round 6: the superseded and ineligible calls of R6-1 to R6-7 reject under the header lock
+    // before they touch a descendant row. A holder takes that row, so a call that still waits
+    // returns the 55P03 lock timeout instead of its defined answer.
+    const descendantHeld = async ({ rows, sql, values, expect }) => {
+      const holder = await connect('cc-migrator', 'cc-app');
+      const caller = await connect('cc-app', 'cc-app');
+      try {
+        await holder.query('BEGIN');
+        for (const [text, args] of rows) await holder.query(text, args);
+        await caller.query("SET lock_timeout='300ms'");
+        const answer = await caller.query(sql, values).then(
+          (queried) => ({ rows: queried.rows }),
+          (error) => ({
+            code: error.code,
+            detail: error.detail,
+            message: error.message,
+          }),
+        );
+        await expect(answer);
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        await Promise.allSettled([holder.end(), caller.end()]);
+      }
+    };
+    const heldBatchRow = (jobId) => [
+      'SELECT 1 FROM cc.device_update_batches WHERE job_id=$1 AND batch=0 FOR UPDATE',
+      [jobId],
+    ];
+    const heldDetailRow = (jobId) => [
+      'SELECT 1 FROM cc.device_update_jobs WHERE job_id=$1 FOR UPDATE',
+      [jobId],
+    ];
+    const heldOperationRow = (jobId) => [
+      'SELECT 1 FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1 FOR UPDATE',
+      [jobId],
+    ];
+
+    // R6-2: the claim reads the batch ownership and its lease eligibility under the header.
+    await ruleCheck(
+      'R6-2 the batch claim answers busy before it waits on the claimed batch',
+      async () => {
+        const job = await heldJob('r62-a');
+        await descendantHeld({
+          rows: [heldBatchRow(job.jobId)],
+          sql: 'SELECT cc.claim_device_update_batch($1,$2,$3,$4,$5,$6) AS result',
+          values: [
+            customer,
+            job.jobId,
+            job.token,
+            0,
+            randomUUID(),
+            'r62-duplicate',
+          ],
+          expect: (answer) => {
+            assert.equal(
+              answer.code,
+              undefined,
+              'A duplicate claim must answer under the header fence, not wait on the batch row.',
+            );
+            assert.equal(answer.rows[0].result.outcome, 'busy');
+          },
+        });
+        await endJob(job.jobId);
+      },
+    );
+
+    // R6-3: the renewal reads the attempt and the live lease under the header.
+    await ruleCheck(
+      'R6-3 the renewal rejects a wrong attempt before it waits on the batch',
+      async () => {
+        const job = await heldJob('r63-a');
+        await descendantHeld({
+          rows: [heldBatchRow(job.jobId)],
+          sql: 'SELECT cc.renew_device_update_batch($1,$2,$3,$4,$5) AS result',
+          values: [customer, job.jobId, job.token, 0, randomUUID()],
+          expect: (answer) => {
+            assert.notEqual(
+              answer.code,
+              '55P03',
+              'A wrong-attempt renewal must not wait on the batch row.',
+            );
+            assert.equal(answer.detail, 'attempt-fenced');
+          },
+        });
+        await endJob(job.jobId);
+      },
+    );
+
+    // R6-1 prefix: the settlement decides eligibility under the header before any descendant lock.
+    await ruleCheck(
+      'R6-1 the settlement decides eligibility under the header before it waits on an operation',
+      async () => {
+        const job = await heldJob('r61p-a');
+        await descendantHeld({
+          rows: [heldOperationRow(job.jobId)],
+          sql: 'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+          values: [
+            customer,
+            job.jobId,
+            job.token,
+            randomUUID(),
+            'write',
+            JSON.stringify([
+              {
+                operationNumber: 1,
+                outcome: 'succeeded',
+                value: 'Room 12',
+                verifiedBy: 'write-response',
+              },
+            ]),
+            new Date(),
+          ],
+          expect: (answer) => {
+            assert.notEqual(
+              answer.code,
+              '55P03',
+              'An already-fenced result must not wait on its operation row.',
+            );
+            assert.equal(answer.rows[0].result.publication, null);
+          },
+        });
+        await endJob(job.jobId);
+      },
+    );
+
+    // R6-4: the verification claim decides eligibility under the header before the operation locks.
+    await ruleCheck(
+      'R6-4 the verification claim rejects a live reservation before it waits on the operation',
+      async () => {
+        const job = await heldJob('r64-a');
+        await settle(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              outcomeReason: 'open-request',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        await descendantHeld({
+          rows: [heldOperationRow(job.jobId)],
+          sql: 'SELECT cc.claim_device_update_verification($1,$2,$3,$4) AS result',
+          values: [customer, job.jobId, JSON.stringify([1]), randomUUID()],
+          expect: (answer) => {
+            assert.notEqual(
+              answer.code,
+              '55P03',
+              'A live read-back reservation must be checked before the operation lock.',
+            );
+            assert.deepEqual(answer.rows[0].result, []);
+          },
+        });
+        await endJob(job.jobId);
+      },
+    );
+
+    // R6-5: the start reads the clock and validates under the header before the detail lock.
+    await ruleCheck(
+      'R6-5 a start rejects an old token before it waits on the detail row',
+      async () => {
+        const job = await heldJob('r65-a');
+        await descendantHeld({
+          rows: [heldDetailRow(job.jobId)],
+          sql: 'SELECT cc.record_device_update_start($1,$2,$3,$4) AS result',
+          values: [customer, job.jobId, randomUUID(), 'r65-late-execution'],
+          expect: (answer) => {
+            assert.notEqual(
+              answer.code,
+              '55P03',
+              'A superseded start must not wait on the detail row.',
+            );
+            assert.equal(answer.detail, 'attempt-fenced');
+          },
+        });
+        await endJob(job.jobId);
+      },
+    );
+
+    // R6-6: an abandoned start rejects a missing scoped header and an old token before the detail lock.
+    await ruleCheck(
+      'R6-6 an abandoned start rejects before it waits on the detail row',
+      async () => {
+        const job = await heldJob('r66-a');
+        await descendantHeld({
+          rows: [heldDetailRow(job.jobId)],
+          sql: 'SELECT cc.abandon_device_update_start($1,$2,$3) AS result',
+          values: [customer, job.jobId, randomUUID()],
+          expect: (answer) => {
+            assert.notEqual(
+              answer.code,
+              '55P03',
+              'A superseded abandonment must not wait on the detail row.',
+            );
+          },
+        });
+        await descendantHeld({
+          rows: [heldDetailRow(job.jobId)],
+          sql: 'SELECT cc.abandon_device_update_start($1,$2,$3) AS result',
+          values: ['C-missing', job.jobId, job.token],
+          expect: (answer) => {
+            assert.notEqual(
+              answer.code,
+              '55P03',
+              'A missing scoped header must reject before the detail lock.',
+            );
+          },
+        });
+        await endJob(job.jobId);
+      },
+    );
+
+    // R6-7: the backoff report reads its validation rows without a lock before the detail lock.
+    await ruleCheck(
+      'R6-7 a backoff report with an old token reaches no detail lock',
+      async () => {
+        const job = await heldJob('r67-a');
+        await descendantHeld({
+          rows: [heldDetailRow(job.jobId)],
+          sql: 'SELECT cc.report_device_update_backoff($1,$2,$3,0,$4,1) AS result',
+          values: [customer, job.jobId, randomUUID(), randomUUID()],
+          expect: (answer) => {
+            assert.notEqual(
+              answer.code,
+              '55P03',
+              'A superseded report must not wait on the detail row.',
+            );
+            assert.equal(answer.rows[0].result, false);
+          },
+        });
+        await endJob(job.jobId);
+      },
+    );
+
+    // R6-1: a read-back accepts the three verified outcomes only, and a terminal job stays unchanged.
+    await ruleCheck(
+      'R6-1 a read-back rejects an outcome other than succeeded, failed, or unknown',
+      async () => {
+        const job = await heldJob('r61r-a');
+        await settle(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              outcomeReason: 'open-request',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        assert.equal(
+          (await prepareFinish(job.jobId, job.token)).outcome,
+          'ready',
+        );
+        assert.equal(
+          (await finishWithToken(job.jobId, job.token)).status,
+          'needs-review',
+        );
+        const before = await jobRow(job.jobId);
+        const rows = await operations(job.jobId);
+        const published = await publications(job.jobId);
+        for (const invalid of ['pending', 'skipped']) {
+          await rejects(
+            result(
+              'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+              [
+                customer,
+                job.jobId,
+                null,
+                job.attempt,
+                'read-back',
+                JSON.stringify([
+                  {
+                    operationNumber: 1,
+                    outcome: invalid,
+                    verifiedBy: 'read-back',
+                  },
+                ]),
+                new Date(),
+              ],
+            ),
+            '22023',
+          );
+        }
+        assert.deepEqual(
+          await jobRow(job.jobId),
+          before,
+          'An invalid read-back outcome must leave the header alone.',
+        );
+        assert.deepEqual(
+          await operations(job.jobId),
+          rows,
+          'An invalid read-back outcome must leave the operations alone.',
+        );
+        assert.equal(
+          await publications(job.jobId),
+          published,
+          'An invalid read-back outcome must record no publication.',
+        );
+        // The valid read-back settlement of the same reservation still settles the review.
+        await settle(
+          job.jobId,
+          null,
+          job.attempt,
+          'read-back',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'read-back',
+            },
+          ],
+          new Date(),
+        );
+        assert.equal((await jobRow(job.jobId)).status, 'completed');
+        assert.equal((await operations(job.jobId))[0].status, 'succeeded');
+      },
+    );
   } finally {
     await migrator.query('UPDATE cc.google_connection SET active=$1', [
       wasActive,
