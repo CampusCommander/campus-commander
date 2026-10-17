@@ -5130,6 +5130,869 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    // Round 2 of B2b: review findings R1-F1 to R1-F6 and the eng-lead lock-order ruling. Within one
+    // transaction, every sync-state lock comes before any connection lock, including the key-share
+    // lock of a publication insert. After every blocking wait, a writer reads the clock again and
+    // rejects an expired lease or a changed connection before any committed change. A holder takes
+    // the named rows, the caller waits on them, and `during` lets time pass or changes a row in the
+    // holder transaction before the holder ends.
+    const syncWait = async ({
+      rows,
+      sql,
+      values,
+      prepare = null,
+      during = null,
+      commit = false,
+    }) => {
+      const holder = await connect('cc-migrator', 'cc-app');
+      const caller = await connect('cc-app', 'cc-app');
+      let pending = null;
+      try {
+        if (prepare) await prepare(caller);
+        await holder.query('BEGIN');
+        for (const [text, args] of rows) await holder.query(text, args);
+        const holderPid = await pidOf(holder);
+        const callerPid = await pidOf(caller);
+        pending = caller.query(sql, values).then(
+          (queried) => ({ rows: queried.rows }),
+          (error) => ({
+            code: error.code,
+            detail: error.detail,
+            message: error.message,
+          }),
+        );
+        assert.equal(
+          await waitsFor(callerPid, holderPid),
+          true,
+          'The call waits on the held row.',
+        );
+        if (during) await during(holder);
+        const releasedAt = (
+          await holder.query('SELECT clock_timestamp() AS at')
+        ).rows[0].at;
+        await holder.query(commit ? 'COMMIT' : 'ROLLBACK');
+        return { answer: await pending, releasedAt };
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        if (pending) await pending;
+        await Promise.allSettled([holder.end(), caller.end()]);
+      }
+    };
+    const stateSnapshot = () =>
+      adminRow('SELECT * FROM cc.device_sync_state WHERE customer_id=$1', [
+        customer,
+      ]);
+    const heldSyncState = () => [
+      'SELECT 1 FROM cc.device_sync_state WHERE customer_id=$1 FOR UPDATE',
+      [customer],
+    ];
+    const heldConnection = () => [
+      'SELECT 1 FROM cc.google_connection WHERE customer_id=$1 FOR UPDATE',
+      [customer],
+    ];
+    const heldDevice = (deviceId) => [
+      'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE',
+      [customer, deviceId],
+    ];
+    const disableConnection = (holder) =>
+      holder.query(
+        'UPDATE cc.google_connection SET active=false WHERE customer_id=$1',
+        [customer],
+      );
+    const restoreConnection = () =>
+      migrator.query('UPDATE cc.google_connection SET active=true');
+    const shortSyncLease = () =>
+      migrator.query(
+        "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '1200 milliseconds' WHERE customer_id=$1",
+        [customer],
+      );
+    const syncLeaseLapses = async () =>
+      assert.equal(
+        await until(
+          'SELECT clock_timestamp()>sync_expires_at AS lapsed FROM cc.device_sync_state WHERE customer_id=$1',
+          [customer],
+        ),
+        true,
+        'The sync lease lapses in the wait.',
+      );
+    const requestSql =
+      'SELECT cc.request_device_sync($1,$2,$3,$4,$5,$6) AS result';
+    const createSql =
+      'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result';
+    const purgeSql = 'SELECT cc.purge_jobs($1,$2) AS result';
+    // Every running full-sync header ends first, so only the schedule of a check decides its waits.
+    const closeRunningSyncs = async () => {
+      await migrator.query(
+        `UPDATE cc.jobs SET status='failed',finished_at=COALESCE(finished_at,clock_timestamp())
+          WHERE customer_id=$1 AND kind='inventory-refresh' AND scope_kind='all-devices'
+            AND status='running'`,
+        [customer],
+      );
+      await resetSync();
+    };
+
+    // R1-F1 (P1): the purge publishes an interrupted ID-list refresh, and that publication takes a
+    // key-share lock on the connection row. A full-sync claim holds the sync state while it waits for
+    // its header, and it then takes the connection row FOR UPDATE. At f002b94 the purge requested the
+    // sync state after its publication, so the two calls deadlocked (40P01). The purge now takes the
+    // sync state before any header lock or publication, so it waits for the claim instead.
+    const purgeAgainstClaim = async (prepare) => {
+      await closeRunningSyncs();
+      const interrupted = await makeRefresh(['r1f1-closed'], 1);
+      await migrator.query(
+        "UPDATE cc.jobs SET created_at=clock_timestamp()-interval '3 hours' WHERE job_id=$1",
+        [interrupted],
+      );
+      const prepared = await prepare();
+      const sync = await requestAs(reader);
+      const holder = await connect('cc-migrator', 'cc-app');
+      const claimant = await connect('cc-app', 'cc-app');
+      const purger = await connect('cc-app', 'cc-app');
+      // The claim answer carries a credential envelope. Only its outcome enters the result.
+      const outcomeOf = (promise) =>
+        promise.then(
+          () => ({ accepted: true }),
+          (error) => ({
+            accepted: false,
+            code: error.code,
+            message: error.message,
+          }),
+        );
+      let claimRun = null;
+      let purgeRun = null;
+      try {
+        const holderPid = await pidOf(holder);
+        const claimPid = await pidOf(claimant);
+        const purgePid = await pidOf(purger);
+        await holder.query('BEGIN');
+        await holder.query('SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE', [
+          sync.id,
+        ]);
+        claimRun = outcomeOf(
+          claimant.query('SELECT cc.claim_device_sync($1,$2,$3) AS result', [
+            customer,
+            sync.id,
+            randomUUID(),
+          ]),
+        );
+        assert.equal(
+          await waitsFor(claimPid, holderPid),
+          true,
+          'The claim holds the sync state and waits for its header.',
+        );
+        purgeRun = outcomeOf(purger.query(purgeSql, [customer, 100]));
+        assert.equal(
+          await waitsFor(purgePid, claimPid),
+          true,
+          'The purge waits for the sync state that the claim holds.',
+        );
+        await holder.query('COMMIT');
+        const [claimed, purged] = await Promise.all([claimRun, purgeRun]);
+        assert.notEqual(
+          claimed.code,
+          '40P01',
+          'The claim must not deadlock against the purge.',
+        );
+        assert.notEqual(
+          purged.code,
+          '40P01',
+          'The purge must not deadlock against the claim.',
+        );
+        assert.equal(claimed.accepted, true, claimed.message);
+        assert.equal(purged.accepted, true, purged.message);
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        if (claimRun) await claimRun;
+        if (purgeRun) await purgeRun;
+        await Promise.allSettled([holder.end(), claimant.end(), purger.end()]);
+      }
+      const closed = await jobRow(interrupted);
+      assert.equal(closed.status, 'failed');
+      assert.equal(closed.failure, 'interrupted');
+      await resetSync();
+      return prepared;
+    };
+
+    await ruleCheck(
+      'R1-F1 a purge that closes and deletes refresh jobs does not deadlock a full-sync claim',
+      async () => {
+        const retained = await purgeAgainstClaim(async () => {
+          const old = await makeRefresh(['r1f1-old'], 1);
+          await result(
+            'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+            [customer, old, 0, null],
+          );
+          await migrator.query(
+            "UPDATE cc.jobs SET finished_at=clock_timestamp()-interval '8 days' WHERE job_id=$1",
+            [old],
+          );
+          return old;
+        });
+        assert.equal(
+          await jobRow(retained),
+          undefined,
+          'Retention still deletes the old refresh job.',
+        );
+      },
+    );
+
+    await ruleCheck(
+      'R1-F1 a purge that closes a refresh job and an unnamed full sync does not deadlock a full-sync claim',
+      async () => {
+        const orphan = await purgeAgainstClaim(async () => {
+          // A running full-sync header that the sync state no longer names.
+          const unnamed = await requestAs(reader);
+          await resetSync();
+          return unnamed.id;
+        });
+        const closed = await jobRow(orphan);
+        assert.equal(closed.status, 'failed');
+        assert.equal(closed.failure, 'interrupted');
+      },
+    );
+
+    // R1-F2: a replacement request locks the customer-scoped header of the sync it replaces and
+    // rejects a missing header at once. Retention keeps the header that the sync state still names,
+    // so only a direct deletion leaves such a pointer, and a normal expired sync stays replaceable.
+    await ruleCheck(
+      'R1-F2 a replacement request rejects a sync pointer whose scoped header is missing',
+      async () => {
+        await closeRunningSyncs();
+        const sync = await requestAs(reader);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()-interval '1 second' WHERE customer_id=$1",
+          [customer],
+        );
+        await migrator.query('DELETE FROM cc.jobs WHERE job_id=$1', [sync.id]);
+        const before = await stateSnapshot();
+        const replacement = randomUUID();
+        await rejects(
+          result(requestSql, [
+            reader,
+            1,
+            customer,
+            generation,
+            replacement,
+            randomUUID(),
+          ]),
+          null,
+          'device-sync-changed',
+        );
+        assert.deepEqual(await stateSnapshot(), before);
+        assert.equal(await jobRow(replacement), undefined);
+        await resetSync();
+      },
+    );
+
+    await ruleCheck(
+      'R1-F2 retention keeps the full-sync header that the sync state names, and a replacement request succeeds',
+      async () => {
+        await closeRunningSyncs();
+        const sync = await requestAs(reader);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()-interval '1 second' WHERE customer_id=$1",
+          [customer],
+        );
+        await result(purgeSql, [customer, 100]);
+        const closed = await jobRow(sync.id);
+        assert.equal(closed.status, 'failed');
+        assert.equal(closed.failure, 'interrupted');
+        assert.equal(
+          (await syncStateRow()).sync_id,
+          sync.id,
+          'The closure keeps the expired state pointer.',
+        );
+        await migrator.query(
+          "UPDATE cc.jobs SET finished_at=clock_timestamp()-interval '8 days' WHERE job_id=$1",
+          [sync.id],
+        );
+        await result(purgeSql, [customer, 100]);
+        assert.ok(
+          await jobRow(sync.id),
+          'Retention keeps the header that the sync state still names.',
+        );
+        const replacement = await requestAs(reader);
+        assert.equal(replacement.state.status, 'running');
+        assert.equal((await syncStateRow()).sync_id, replacement.id);
+        await result(purgeSql, [customer, 100]);
+        assert.equal(
+          await jobRow(sync.id),
+          undefined,
+          'Retention deletes the old header once the state names its replacement.',
+        );
+        await closeRunningSyncs();
+      },
+    );
+
+    for (const [label, held] of [
+      ['sync-state', heldSyncState],
+      ['connection', heldConnection],
+    ])
+      await ruleCheck(
+        `R1-F2 a request revalidates a connection disabled in its ${label} wait`,
+        async () => {
+          await closeRunningSyncs();
+          const id = randomUUID();
+          let observed;
+          try {
+            observed = await syncWait({
+              rows: [held()],
+              sql: requestSql,
+              values: [reader, 1, customer, generation, id, randomUUID()],
+              during: disableConnection,
+              commit: true,
+            });
+          } finally {
+            await restoreConnection();
+          }
+          assert.equal(
+            observed.answer.detail,
+            'connection-changed',
+            `A request must revalidate the connection after its ${label} wait: ${observed.answer.message ?? 'accepted'}`,
+          );
+          assert.equal(await jobRow(id), undefined);
+          assert.equal((await syncStateRow()).sync_id, null);
+        },
+      );
+
+    await ruleCheck(
+      'S1 a request that waits on the connection row stamps its sync after the wait',
+      async () => {
+        await closeRunningSyncs();
+        const id = randomUUID();
+        const { answer, releasedAt } = await syncWait({
+          rows: [heldConnection()],
+          sql: requestSql,
+          values: [reader, 1, customer, generation, id, randomUUID()],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        const header = await jobRow(id);
+        assert.ok(
+          header.started_at >= releasedAt,
+          'The request stamps started_at after the wait.',
+        );
+        assert.ok(
+          (await stateSnapshot()).sync_started_at >= releasedAt,
+          'The request stamps the sync state after the wait.',
+        );
+        await closeRunningSyncs();
+      },
+    );
+
+    // The credential functions take the advisory lock, then the principal row of their actor FOR UPDATE,
+    // and then the connection row FOR UPDATE (007 cc.google_connection_actor, 011
+    // cc.google_bound_generation). A writer that references a principal row takes it before the
+    // connection row, so it never holds the connection row while it waits for that principal. At
+    // f002b94 the header insert of a request and of a refresh job checked its customer key first.
+    const againstCredentialAction = async ({ actor, sql, values }) => {
+      const action = await connect('cc-migrator', 'cc-app');
+      const caller = await connect('cc-app', 'cc-app');
+      let pending = null;
+      try {
+        await action.query('BEGIN');
+        await action.query('SELECT pg_advisory_xact_lock(7240173008)');
+        await action.query(
+          'SELECT 1 FROM cc.application_principals WHERE id=$1 FOR UPDATE',
+          [actor],
+        );
+        const actionPid = await pidOf(action);
+        const callerPid = await pidOf(caller);
+        pending = caller.query(sql, values).then(
+          () => ({ accepted: true }),
+          (error) => ({
+            accepted: false,
+            code: error.code,
+            message: error.message,
+          }),
+        );
+        assert.equal(
+          await waitsFor(callerPid, actionPid),
+          true,
+          'The call waits for the principal row of its actor.',
+        );
+        const locked = await action
+          .query(
+            'SELECT 1 FROM cc.google_connection WHERE customer_id=$1 FOR UPDATE',
+            [customer],
+          )
+          .then(
+            () => ({ accepted: true }),
+            (error) => ({
+              accepted: false,
+              code: error.code,
+              message: error.message,
+            }),
+          );
+        await action.query(locked.accepted ? 'COMMIT' : 'ROLLBACK');
+        const answer = await pending;
+        assert.notEqual(
+          answer.code,
+          '40P01',
+          'The call must not deadlock against a credential action.',
+        );
+        assert.notEqual(
+          locked.code,
+          '40P01',
+          'A credential action must not deadlock against the call.',
+        );
+        assert.equal(answer.accepted, true, answer.message);
+        assert.equal(locked.accepted, true, locked.message);
+      } finally {
+        await action.query('ROLLBACK').catch(() => undefined);
+        if (pending) await pending;
+        await Promise.allSettled([action.end(), caller.end()]);
+      }
+    };
+
+    await ruleCheck(
+      'S1 a request takes its principal rows before the connection row',
+      async () => {
+        await closeRunningSyncs();
+        await againstCredentialAction({
+          actor: reader,
+          sql: requestSql,
+          values: [reader, 1, customer, generation, randomUUID(), randomUUID()],
+        });
+        await closeRunningSyncs();
+      },
+    );
+
+    await ruleCheck(
+      'S1 a refresh job creation takes its principal row before the connection row',
+      async () => {
+        await againstCredentialAction({
+          actor: reader,
+          sql: createSql,
+          values: [
+            reader,
+            customer,
+            'device',
+            JSON.stringify(['r2p-a']),
+            1,
+            randomUUID(),
+            randomUUID(),
+          ],
+        });
+      },
+    );
+
+    // Controls: the two writers that record a failure requester and publish keep the principal row
+    // before the connection row on both revisions.
+    await ruleCheck(
+      'S1 control: a failed full-sync finish takes its principal row before the connection row',
+      async () => {
+        const sync = await makeSync();
+        await againstCredentialAction({
+          actor: reader,
+          sql: 'SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result',
+          values: [customer, sync.id, sync.attempt, 'quota', null],
+        });
+        assert.equal((await jobRow(sync.id)).status, 'failed');
+        await resetSync();
+      },
+    );
+
+    await ruleCheck(
+      'S1 control: an abandoned full sync takes its principal row before the connection row',
+      async () => {
+        await closeRunningSyncs();
+        const sync = await requestAs(reader);
+        await againstCredentialAction({
+          actor: reader,
+          sql: 'SELECT cc.abandon_device_sync($1,$2,$3,$4,$5) AS result',
+          values: [reader, 1, customer, sync.id, 'orchestration-unavailable'],
+        });
+        assert.equal((await jobRow(sync.id)).status, 'failed');
+        await resetSync();
+      },
+    );
+
+    // R1-F3: the generation helper of a claim waits on the advisory lock and on the connection row.
+    // After those waits the claim reads the clock again and rejects the lease that lapsed in them.
+    for (const [label, held] of [
+      ['connection', heldConnection],
+      ['advisory', () => ['SELECT pg_advisory_xact_lock(7240173008)', []]],
+    ])
+      await ruleCheck(
+        `R1-F3 a sync claim rejects a lease that lapses in its ${label} wait`,
+        async () => {
+          await closeRunningSyncs();
+          const sync = await requestAs(reader);
+          await shortSyncLease();
+          const before = await stateSnapshot();
+          const { answer } = await syncWait({
+            rows: [held()],
+            sql: 'SELECT cc.claim_device_sync($1,$2,$3) AS result',
+            values: [customer, sync.id, randomUUID()],
+            during: syncLeaseLapses,
+          });
+          assert.equal(
+            answer.detail,
+            'device-sync-changed',
+            `A claim whose lease lapsed in its ${label} wait must reject: ${answer.message ?? 'accepted'}`,
+          );
+          assert.equal(
+            answer.rows,
+            undefined,
+            'A rejected claim returns no credential envelope.',
+          );
+          assert.deepEqual(await stateSnapshot(), before);
+          await resetSync();
+        },
+      );
+
+    // R1-F4 and R1-F5: the staging lease helper renews the lease for ten minutes before a page waits
+    // on its device rows. A test trigger caps that renewal at 1.2 seconds for the one session that sets
+    // cc.test_short_lease, so the lease lapses within a short device wait. The trigger leaves with the
+    // check. The round-1 review measured the same order with the real ten-minute lease.
+    const withShortStagingLease = async (body) => {
+      await migrator.query(`CREATE FUNCTION cc.test_short_sync_lease() RETURNS trigger
+        LANGUAGE plpgsql AS $f$
+        BEGIN
+          IF current_setting('cc.test_short_lease',true)='on' AND NEW.sync_expires_at IS NOT NULL THEN
+            NEW.sync_expires_at:=LEAST(NEW.sync_expires_at,clock_timestamp()+interval '1200 milliseconds');
+          END IF;
+          RETURN NEW;
+        END
+        $f$`);
+      try {
+        await migrator.query(`CREATE TRIGGER test_short_sync_lease BEFORE UPDATE ON cc.device_sync_state
+          FOR EACH ROW EXECUTE FUNCTION cc.test_short_sync_lease()`);
+        return await body();
+      } finally {
+        await migrator.query(
+          'DROP TRIGGER IF EXISTS test_short_sync_lease ON cc.device_sync_state',
+        );
+        await migrator.query(
+          'DROP FUNCTION IF EXISTS cc.test_short_sync_lease()',
+        );
+      }
+    };
+    const shortLeaseSession = (caller) =>
+      caller.query("SET cc.test_short_lease='on'");
+
+    await ruleCheck(
+      'R1-F4 a staged device page rejects a lease that lapses in its device wait',
+      async () => {
+        await closeRunningSyncs();
+        await upsert(
+          [device('r1f4-a', { annotatedLocation: 'Before' })],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const sync = await makeSync();
+        const snapshot = async () => ({
+          state: await stateSnapshot(),
+          header: await jobRow(sync.id),
+          published: await publications(sync.id),
+          device: await adminRow(
+            'SELECT * FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+            [customer, 'r1f4-a'],
+          ),
+          targets: await admin('SELECT * FROM cc.job_targets WHERE job_id=$1', [
+            sync.id,
+          ]),
+        });
+        const before = await snapshot();
+        const { answer } = await withShortStagingLease(() =>
+          syncWait({
+            rows: [heldDevice('r1f4-a')],
+            prepare: shortLeaseSession,
+            sql: 'SELECT cc.stage_devices($1,$2,$3,$4) AS result',
+            values: [
+              customer,
+              sync.id,
+              sync.attempt,
+              JSON.stringify([
+                device('r1f4-a', { annotatedLocation: 'After' }),
+              ]),
+            ],
+            during: () => sleep(1600),
+          }),
+        );
+        assert.equal(
+          answer.detail,
+          'device-sync-changed',
+          `A page whose lease lapsed in its device wait must reject: ${answer.message ?? 'accepted'}`,
+        );
+        assert.deepEqual(
+          await snapshot(),
+          before,
+          'An expired page changes no target, device, state, revision, or publication.',
+        );
+        await resetSync();
+      },
+    );
+
+    await ruleCheck(
+      'R1-F5 a staged battery page rejects a lease that lapses in its device wait',
+      async () => {
+        await closeRunningSyncs();
+        await upsert([device('r1f5-a')], new Date(Date.now() - 60 * 60 * 1000));
+        const sync = await makeSync();
+        const page = (capacity) =>
+          JSON.stringify([
+            {
+              deviceId: 'r1f5-a',
+              battery: {
+                status: 'reported',
+                health: 'normal',
+                capacityPercent: capacity,
+                reportedAt: '2026-10-17T12:00:00.000Z',
+              },
+              reports: [],
+            },
+          ]);
+        await result(
+          'SELECT cc.stage_device_batteries($1,$2,$3,$4) AS result',
+          [customer, sync.id, sync.attempt, page(90)],
+        );
+        const snapshot = async () => ({
+          state: await stateSnapshot(),
+          device: await adminRow(
+            'SELECT * FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+            [customer, 'r1f5-a'],
+          ),
+        });
+        const before = await snapshot();
+        assert.equal(before.device.battery_capacity_percent, 90);
+        const { answer } = await withShortStagingLease(() =>
+          syncWait({
+            rows: [heldDevice('r1f5-a')],
+            prepare: shortLeaseSession,
+            sql: 'SELECT cc.stage_device_batteries($1,$2,$3,$4) AS result',
+            values: [customer, sync.id, sync.attempt, page(77)],
+            during: () => sleep(1600),
+          }),
+        );
+        assert.equal(
+          answer.detail,
+          'device-sync-changed',
+          `A battery page whose lease lapsed in its device wait must reject: ${answer.message ?? 'accepted'}`,
+        );
+        assert.deepEqual(
+          await snapshot(),
+          before,
+          'An expired battery page changes no battery and no lease.',
+        );
+        await resetSync();
+      },
+    );
+
+    // R1-F6: a failed finish reads no generation, so its publication insert waited on the connection
+    // row after its last lease fence. It now locks that row before its last clock read.
+    await ruleCheck(
+      'R1-F6 a failed full-sync finish rejects a lease that lapses in its connection wait',
+      async () => {
+        await closeRunningSyncs();
+        const sync = await makeSync();
+        await shortSyncLease();
+        const before = {
+          state: await stateSnapshot(),
+          header: await jobRow(sync.id),
+          published: await publications(sync.id),
+        };
+        const { answer } = await syncWait({
+          rows: [heldConnection()],
+          sql: 'SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result',
+          values: [customer, sync.id, sync.attempt, 'quota', null],
+          during: syncLeaseLapses,
+        });
+        assert.equal(
+          answer.detail,
+          'device-sync-changed',
+          `A failed finish whose lease lapsed in its connection wait must reject: ${answer.message ?? 'accepted'}`,
+        );
+        assert.deepEqual(
+          {
+            state: await stateSnapshot(),
+            header: await jobRow(sync.id),
+            published: await publications(sync.id),
+          },
+          before,
+          'A rejected failed finish changes no state, status, revision, or publication.',
+        );
+        await resetSync();
+      },
+    );
+
+    // The class of R1-F2 and R1-F6 in the other writers of this card: a refresh job creation
+    // revalidates the connection after its connection wait, and every publishing writer stamps its
+    // writes after that wait.
+    await ruleCheck(
+      'S1 a refresh job creation revalidates a connection disabled in its connection wait',
+      async () => {
+        const job = randomUUID();
+        let observed;
+        try {
+          observed = await syncWait({
+            rows: [heldConnection()],
+            sql: createSql,
+            values: [
+              reader,
+              customer,
+              'device',
+              JSON.stringify(['r2c-a']),
+              1,
+              job,
+              randomUUID(),
+            ],
+            during: disableConnection,
+            commit: true,
+          });
+        } finally {
+          await restoreConnection();
+        }
+        assert.equal(
+          observed.answer.detail,
+          'connection-changed',
+          `A refresh job creation must revalidate the connection after its wait: ${observed.answer.message ?? 'accepted'}`,
+        );
+        assert.equal(await jobRow(job), undefined);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a refresh batch that waits on the connection row stamps its writes after the wait',
+      async () => {
+        const refresh = await makeRefresh(['r2c-b'], 1);
+        const { answer, releasedAt } = await syncWait({
+          rows: [heldConnection()],
+          sql: 'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+          values: [customer, refresh, 0, null],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        const header = await jobRow(refresh);
+        assert.equal(header.status, 'completed');
+        assert.ok(
+          header.finished_at >= releasedAt,
+          'The batch stamps finished_at after the wait.',
+        );
+      },
+    );
+
+    await ruleCheck(
+      'S1 an abandoned refresh that waits on the connection row stamps its writes after the wait',
+      async () => {
+        const refresh = await makeRefresh(['r2c-c'], 1);
+        const { answer, releasedAt } = await syncWait({
+          rows: [heldConnection()],
+          sql: 'SELECT cc.abandon_entity_sync_job($1,$2,$3,$4) AS result',
+          values: [reader, 1, customer, refresh],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        const header = await jobRow(refresh);
+        assert.equal(header.status, 'failed');
+        assert.ok(
+          header.finished_at >= releasedAt,
+          'The abandonment stamps finished_at after the wait.',
+        );
+      },
+    );
+
+    await ruleCheck(
+      'S1 an abandoned full sync that waits on the connection row stamps its writes after the wait',
+      async () => {
+        await closeRunningSyncs();
+        const sync = await requestAs(reader);
+        const { answer, releasedAt } = await syncWait({
+          rows: [heldConnection()],
+          sql: 'SELECT cc.abandon_device_sync($1,$2,$3,$4,$5) AS result',
+          values: [reader, 1, customer, sync.id, 'orchestration-unavailable'],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        const header = await jobRow(sync.id);
+        assert.equal(header.status, 'failed');
+        assert.ok(
+          header.finished_at >= releasedAt,
+          'The abandonment stamps finished_at after the wait.',
+        );
+        assert.ok(
+          (await stateSnapshot()).checked_at >= releasedAt,
+          'The abandonment stamps the sync state after the wait.',
+        );
+        await resetSync();
+      },
+    );
+
+    await ruleCheck(
+      'S1 a purge that waits on the connection row stamps its closures after the wait',
+      async () => {
+        await closeRunningSyncs();
+        const refresh = await makeRefresh(['r2c-d'], 1);
+        await migrator.query(
+          "UPDATE cc.jobs SET created_at=clock_timestamp()-interval '3 hours' WHERE job_id=$1",
+          [refresh],
+        );
+        const unnamed = await requestAs(reader);
+        await resetSync();
+        const { answer, releasedAt } = await syncWait({
+          rows: [heldConnection()],
+          sql: purgeSql,
+          values: [customer, 100],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        for (const jobId of [refresh, unnamed.id]) {
+          const closed = await jobRow(jobId);
+          assert.equal(closed.failure, 'interrupted');
+          assert.ok(
+            closed.finished_at >= releasedAt,
+            'The purge stamps finished_at after the wait.',
+          );
+        }
+      },
+    );
+
+    // Section 5.8: every function that changes an overlay locks its device row first. The purge
+    // deletes expired overlays, so it locks their device rows in device_id order before the deletion.
+    await ruleCheck(
+      'S1 the purge locks the device row of an expired overlay before it deletes the overlay',
+      async () => {
+        await upsert([device('r2o-a')], new Date());
+        const job = await makeJob({ devices: ['r2o-a'] });
+        await finalize(job.jobId);
+        await admin(
+          `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
+            VALUES($1,'r2o-a','annotatedLocation','Room 12',clock_timestamp()-interval '40 hours','write-response',$2,
+              clock_timestamp()-interval '1 hour')`,
+          [customer, job.jobId],
+        );
+        const holder = await connect('cc-migrator', 'cc-app');
+        const purge = await connect('cc-app', 'cc-app');
+        try {
+          await holder.query('BEGIN');
+          await holder.query(...heldDevice('r2o-a'));
+          await purge.query("SET lock_timeout='300ms'");
+          const answer = await purge.query(purgeSql, [customer, 100]).then(
+            () => ({ accepted: true }),
+            (error) => ({ code: error.code }),
+          );
+          assert.equal(
+            answer.code,
+            '55P03',
+            'The purge must lock the device row before it deletes its overlay.',
+          );
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await Promise.allSettled([holder.end(), purge.end()]);
+        }
+        assert.ok(
+          await overlay('r2o-a'),
+          'The overlay stays while its device row is held.',
+        );
+        await result(purgeSql, [customer, 100]);
+        assert.equal(await overlay('r2o-a'), undefined);
+      },
+    );
+
+    await ruleCheck('S2 the purge rejects a null customer', async () => {
+      await rejects(result(purgeSql, [null, 100]), '22023');
+    });
+
     await ruleCheck(
       'S1 the write-job finalizer rejects a full-sync header',
       async () => {
