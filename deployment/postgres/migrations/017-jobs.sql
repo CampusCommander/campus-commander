@@ -1297,6 +1297,7 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.complete_job_publications(text,jsonb),cc.refresh_device_update_counters(uuid),
   cc.device_update_terminal_status(uuid),cc.fence_device_update_operations(uuid,uuid,jsonb,timestamptz,interval),
   cc.skip_device_update_pending(uuid,text),cc.close_refresh_job(uuid,text),cc.write_capable(uuid,text),
+  cc.device_update_stop_reason(text,uuid,integer,integer),
   cc.admit_device_update_job(text,boolean),cc.record_device_update_start(text,uuid,uuid,text),
   cc.abandon_device_update_start(text,uuid,uuid),cc.recover_device_update_jobs(text),
   cc.claim_device_update_batch(text,uuid,uuid,integer,uuid,text),
