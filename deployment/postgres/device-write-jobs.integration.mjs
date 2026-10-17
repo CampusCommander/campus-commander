@@ -4866,9 +4866,9 @@ export async function qualifyDeviceWriteJobs({
               () => ({ accepted: true }),
               (error) => ({ code: error.code, detail: error.detail }),
             );
-          assert.equal(
+          assert.notEqual(
             answer.code,
-            undefined,
+            '55P03',
             'An abandoned completed refresh must not wait on its detail row.',
           );
           assert.equal(answer.detail, 'entity-sync-changed');
