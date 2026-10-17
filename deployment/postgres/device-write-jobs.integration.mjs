@@ -418,6 +418,19 @@ export async function qualifyDeviceWriteJobs({
       return false;
     };
 
+    // A bounded version of waitsFor, for a probe whose wait must not outlast a short lease.
+    const waitsBriefly = async (blockedPid, holderPid) => {
+      for (let round = 0; round < 80; round += 1) {
+        const state = await adminRow(
+          'SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS held',
+          [blockedPid, holderPid],
+        );
+        if (state?.held === true) return true;
+        await sleep(25);
+      }
+      return false;
+    };
+
     // A waiting lease fence is only meaningful once its lease really lapsed.
     const until = async (text, values) => {
       for (let round = 0; round < 400; round += 1) {
@@ -1786,6 +1799,22 @@ export async function qualifyDeviceWriteJobs({
             if (!waiting) await sleep(20);
           }
           assert.equal(waiting, true, 'The removal waits for rf-a.');
+          // The waiting removal already holds its header lock (section 1.8, review F11).
+          await prober.query("SET lock_timeout='750ms'");
+          const headerProbe = await prober
+            .query(
+              'SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR NO KEY UPDATE NOWAIT',
+              [sync.id],
+            )
+            .then(
+              () => 'taken',
+              (error) => (error.code === '55P03' ? 'locked' : error.message),
+            );
+          assert.equal(
+            headerProbe,
+            'locked',
+            'The removal locks its header before its device rows.',
+          );
           // The waiting removal holds no lock on the later devices.
           const probe = async (deviceId) => {
             await prober.query("SET lock_timeout='750ms'");
@@ -1833,6 +1862,399 @@ export async function qualifyDeviceWriteJobs({
             )
             .catch(() => undefined);
           await Promise.allSettled([finisher.end()]);
+        }
+      },
+    );
+
+    // Section 1.2 and review F13: a failed full-sync finish records its own observed target paths.
+    await check(
+      'a failed full sync records its observed target paths, with and without staged devices',
+      async () => {
+        await resetSync();
+        const partial = await requestAs(reader);
+        const partialAttempt = randomUUID();
+        await claimSync(partial.id, partialAttempt);
+        await stage(partial.id, partialAttempt, [
+          device('fs-a', { orgUnitPath: '/School A' }),
+          device('fs-b', { orgUnitPath: '/School B' }),
+        ]);
+        const before = await publications(partial.id);
+        await finishSync(partial.id, partialAttempt, 'quota');
+        const header = await jobRow(partial.id);
+        assert.equal(header.status, 'failed');
+        assert.equal(header.failure, 'quota');
+        assert.equal(header.target_count, 2);
+        assert.equal(header.succeeded, 2);
+        assert.deepEqual(header.target_org_unit_paths, [
+          '/School A',
+          '/School B',
+        ]);
+        assert.ok(
+          header.finished_at,
+          'A failed full sync records its finish time.',
+        );
+        assert.equal(await publications(partial.id), before + 1);
+        const empty = await requestAs(reader);
+        const emptyAttempt = randomUUID();
+        await claimSync(empty.id, emptyAttempt);
+        await finishSync(empty.id, emptyAttempt, 'quota');
+        const emptyHeader = await jobRow(empty.id);
+        assert.equal(emptyHeader.status, 'failed');
+        assert.equal(emptyHeader.target_count, 0);
+        assert.deepEqual(emptyHeader.target_org_unit_paths, []);
+        await resetSync();
+      },
+    );
+
+    // Section 1.5 and review F12: the purge closes no header that finished or renewed in its wait.
+    await check(
+      'the purge leaves a full sync that finished in its wait completed',
+      async () => {
+        await resetSync();
+        const sync = await requestAs(reader);
+        const attempt = randomUUID();
+        await claimSync(sync.id, attempt);
+        // The committed lease lapses, so the purge selects the header. The worker renews the lease in
+        // the transaction that finishes the sync, before the purge revalidates.
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()-interval '1 minute' WHERE customer_id=$1",
+          [customer],
+        );
+        const finisher = await connect('cc-migrator', 'cc-app');
+        const purge = await connect('cc-migrator', 'cc-app');
+        let purgeRun = null;
+        try {
+          const finisherPid = (
+            await finisher.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const purgePid = (await purge.query('SELECT pg_backend_pid() AS pid'))
+            .rows[0].pid;
+          await finisher.query('BEGIN');
+          await finisher.query(
+            "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '10 minutes' WHERE customer_id=$1",
+            [customer],
+          );
+          const finished = await finisher.query(
+            'SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result',
+            [customer, sync.id, attempt, null, null],
+          );
+          assert.equal(finished.rows[0].result.status, 'ready');
+          assert.equal(
+            (
+              await finisher.query(
+                'SELECT status FROM cc.jobs WHERE job_id=$1',
+                [sync.id],
+              )
+            ).rows[0].status,
+            'completed',
+          );
+          purgeRun = purge.query('SELECT cc.purge_jobs($1,$2) AS result', [
+            customer,
+            100,
+          ]);
+          purgeRun.catch(() => undefined);
+          assert.equal(
+            await waitsFor(purgePid, finisherPid),
+            true,
+            'The purge waits for the finishing sync.',
+          );
+          await finisher.query('COMMIT');
+          const settled = await jobRow(sync.id);
+          const published = await publications(sync.id);
+          await purgeRun;
+          const header = await jobRow(sync.id);
+          assert.equal(header.status, 'completed');
+          assert.equal(header.failure, null);
+          assert.equal(header.revision, settled.revision);
+          assert.equal(await publications(sync.id), published);
+        } finally {
+          await finisher.query('ROLLBACK').catch(() => undefined);
+          if (purgeRun) await purgeRun.catch(() => undefined);
+          await Promise.allSettled([finisher.end(), purge.end()]);
+          await resetSync();
+        }
+      },
+    );
+
+    await check(
+      'the purge leaves a full sync that renewed its lease in the wait running',
+      async () => {
+        await resetSync();
+        const sync = await requestAs(reader);
+        const attempt = randomUUID();
+        await claimSync(sync.id, attempt);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()-interval '1 minute' WHERE customer_id=$1",
+          [customer],
+        );
+        const renewer = await connect('cc-migrator', 'cc-app');
+        const purge = await connect('cc-migrator', 'cc-app');
+        let purgeRun = null;
+        let waited = false;
+        try {
+          const renewerPid = (
+            await renewer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const purgePid = (await purge.query('SELECT pg_backend_pid() AS pid'))
+            .rows[0].pid;
+          await renewer.query('BEGIN');
+          await renewer.query(
+            "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '10 minutes' WHERE customer_id=$1",
+            [customer],
+          );
+          purgeRun = purge.query('SELECT cc.purge_jobs($1,$2) AS result', [
+            customer,
+            100,
+          ]);
+          purgeRun.catch(() => undefined);
+          waited = await waitsBriefly(purgePid, renewerPid);
+          await renewer.query('COMMIT');
+          await purgeRun;
+        } finally {
+          await renewer.query('ROLLBACK').catch(() => undefined);
+          if (purgeRun) await purgeRun.catch(() => undefined);
+          await Promise.allSettled([renewer.end(), purge.end()]);
+        }
+        const header = await jobRow(sync.id);
+        assert.equal(header.status, 'running');
+        assert.equal(header.finished_at, null);
+        assert.equal(
+          waited,
+          true,
+          'The purge waits for the renewed sync lease.',
+        );
+        await resetSync();
+      },
+    );
+
+    await check(
+      'the purge leaves a refresh job that finished in its wait completed',
+      async () => {
+        const refresh = randomUUID();
+        await result(
+          'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+          [
+            reader,
+            customer,
+            'device',
+            '["a1","a2"]',
+            100,
+            refresh,
+            randomUUID(),
+          ],
+        );
+        // An unfinished refresh job older than two hours is closable.
+        await migrator.query(
+          "UPDATE cc.jobs SET created_at=created_at-interval '3 hours' WHERE job_id=$1",
+          [refresh],
+        );
+        const finisher = await connect('cc-migrator', 'cc-app');
+        const purge = await connect('cc-migrator', 'cc-app');
+        let purgeRun = null;
+        try {
+          const finisherPid = (
+            await finisher.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const purgePid = (await purge.query('SELECT pg_backend_pid() AS pid'))
+            .rows[0].pid;
+          await finisher.query('BEGIN');
+          const batch = await finisher.query(
+            'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+            [customer, refresh, 0, null],
+          );
+          assert.ok(batch.rows[0].result.finishedAt);
+          purgeRun = purge.query('SELECT cc.purge_jobs($1,$2) AS result', [
+            customer,
+            100,
+          ]);
+          purgeRun.catch(() => undefined);
+          assert.equal(
+            await waitsFor(purgePid, finisherPid),
+            true,
+            'The purge waits for the finishing refresh job.',
+          );
+          await finisher.query('COMMIT');
+          const settled = await jobRow(refresh);
+          const published = await publications(refresh);
+          await purgeRun;
+          const header = await jobRow(refresh);
+          assert.equal(header.status, 'completed');
+          assert.equal(header.revision, settled.revision);
+          assert.equal(await publications(refresh), published);
+        } finally {
+          await finisher.query('ROLLBACK').catch(() => undefined);
+          if (purgeRun) await purgeRun.catch(() => undefined);
+          await Promise.allSettled([finisher.end(), purge.end()]);
+          await resetSync();
+        }
+      },
+    );
+
+    // Rule 2 of the round-4 audit: a lease fence reads the clock after its row lock.
+    await check(
+      'a request that waited for the state lock replaces the sync whose lease lapsed in the wait',
+      async () => {
+        await resetSync();
+        const sync = await requestAs(reader);
+        const attempt = randomUUID();
+        await claimSync(sync.id, attempt);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '2 seconds' WHERE customer_id=$1",
+          [customer],
+        );
+        const holder = await connect('cc-migrator', 'cc-app');
+        const requester = await connect('cc-app', 'cc-app');
+        let requestRun = null;
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const requesterPid = (
+            await requester.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.device_sync_state WHERE customer_id=$1 FOR UPDATE',
+            [customer],
+          );
+          const replacement = randomUUID();
+          requestRun = requester
+            .query(
+              'SELECT cc.request_device_sync($1,$2,$3,$4,$5,$6) AS result',
+              [reader, 1, customer, generation, replacement, randomUUID()],
+            )
+            .then(
+              (answer) => ({ state: answer.rows[0].result }),
+              (error) => ({ error }),
+            );
+          assert.equal(
+            await waitsFor(requesterPid, holderPid),
+            true,
+            'The request waits for the state lock.',
+          );
+          await sleep(2200);
+          await holder.query('COMMIT');
+          const answer = await requestRun;
+          assert.equal(answer.error?.message ?? 'no error', 'no error');
+          assert.equal(answer.state.status, 'running');
+          assert.equal((await syncState()).sync_id, replacement);
+          const replaced = await jobRow(sync.id);
+          assert.equal(replaced.status, 'failed');
+          assert.equal(replaced.failure, 'interrupted');
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (requestRun) await requestRun.catch(() => undefined);
+          await Promise.allSettled([holder.end(), requester.end()]);
+          await resetSync();
+        }
+      },
+    );
+
+    await check('a lease that waited past its expiry is rejected', async () => {
+      await resetSync();
+      const sync = await requestAs(reader);
+      const attempt = randomUUID();
+      await claimSync(sync.id, attempt);
+      await migrator.query(
+        "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '2 seconds' WHERE customer_id=$1",
+        [customer],
+      );
+      const holder = await connect('cc-migrator', 'cc-app');
+      const renewer = await connect('cc-migrator', 'cc-app');
+      let renewal = null;
+      try {
+        const holderPid = (await holder.query('SELECT pg_backend_pid() AS pid'))
+          .rows[0].pid;
+        const renewerPid = (
+          await renewer.query('SELECT pg_backend_pid() AS pid')
+        ).rows[0].pid;
+        await holder.query('BEGIN');
+        await holder.query(
+          'SELECT 1 FROM cc.device_sync_state WHERE customer_id=$1 FOR UPDATE',
+          [customer],
+        );
+        renewal = renewer
+          .query('SELECT cc.device_sync_lease($1,$2,$3)', [
+            customer,
+            sync.id,
+            attempt,
+          ])
+          .then(
+            () => 'renewed',
+            (error) => error.detail ?? error.message,
+          );
+        assert.equal(
+          await waitsFor(renewerPid, holderPid),
+          true,
+          'The renewal waits for the state lock.',
+        );
+        await sleep(2200);
+        await holder.query('COMMIT');
+        const answer = await renewal;
+        assert.equal(answer, 'device-sync-changed');
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        if (renewal) await renewal.catch(() => undefined);
+        await Promise.allSettled([holder.end(), renewer.end()]);
+        await resetSync();
+      }
+    });
+
+    await check(
+      'a finish that waited past its expiry is rejected',
+      async () => {
+        await resetSync();
+        const sync = await requestAs(reader);
+        const attempt = randomUUID();
+        await claimSync(sync.id, attempt);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '2 seconds' WHERE customer_id=$1",
+          [customer],
+        );
+        const holder = await connect('cc-migrator', 'cc-app');
+        const finisher = await connect('cc-migrator', 'cc-app');
+        let finishRun = null;
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const finisherPid = (
+            await finisher.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.device_sync_state WHERE customer_id=$1 FOR UPDATE',
+            [customer],
+          );
+          finishRun = finisher
+            .query('SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result', [
+              customer,
+              sync.id,
+              attempt,
+              null,
+              null,
+            ])
+            .then(
+              (answer) => ({ status: answer.rows[0].result.status }),
+              (error) => ({ error: error.detail ?? error.message }),
+            );
+          assert.equal(
+            await waitsFor(finisherPid, holderPid),
+            true,
+            'The finish waits for the state lock.',
+          );
+          await sleep(2200);
+          await holder.query('COMMIT');
+          const answer = await finishRun;
+          assert.equal(
+            answer.error ?? answer.status ?? 'no answer',
+            'device-sync-changed',
+          );
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (finishRun) await finishRun.catch(() => undefined);
+          await Promise.allSettled([holder.end(), finisher.end()]);
+          await resetSync();
         }
       },
     );
