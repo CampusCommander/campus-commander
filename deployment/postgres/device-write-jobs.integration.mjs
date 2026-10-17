@@ -399,6 +399,33 @@ export async function qualifyDeviceWriteJobs({
           [customer, deviceId],
         )
       )[0];
+    const publications = (jobId) =>
+      result(
+        'SELECT count(*)::int AS result FROM cc.job_publications WHERE job_id=$1',
+        [jobId],
+      );
+    // A waiting statement reports its blocker. The poll reads the wait through pg_blocking_pids,
+    // because the runtime and migration roles cannot read the wait event of another session.
+    const waitsFor = async (blockedPid, holderPid) => {
+      for (let round = 0; round < 200; round += 1) {
+        const state = await adminRow(
+          'SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS held',
+          [blockedPid, holderPid],
+        );
+        if (state?.held === true) return true;
+        await sleep(25);
+      }
+      return false;
+    };
+
+    // A waiting lease fence is only meaningful once its lease really lapsed.
+    const until = async (text, values) => {
+      for (let round = 0; round < 400; round += 1) {
+        if ((await adminRow(text, values))?.lapsed === true) return true;
+        await sleep(25);
+      }
+      return false;
+    };
 
     // The display format, the one-running index, and the admission order.
     await check(
@@ -1718,6 +1745,98 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    // Section 1.8: the full-sync removal locks its candidates in device_id order before the update.
+    await check(
+      'a full sync that removes devices waits without a lock on the later device',
+      async () => {
+        await resetSync();
+        // The later devices land first, so an unordered removal reaches them before it waits.
+        await upsert([device('rf-c')], new Date(Date.now() - 60 * 60 * 1000));
+        await upsert([device('rf-b')], new Date(Date.now() - 60 * 60 * 1000));
+        await upsert([device('rf-a')], new Date(Date.now() - 60 * 60 * 1000));
+        const sync = await requestAs(reader);
+        const attempt = randomUUID();
+        await claimSync(sync.id, attempt);
+        await stage(sync.id, attempt, [device('rf-kept')]);
+        const holder = await connect('cc-app', 'cc-app');
+        const finisher = await connect('cc-app', 'cc-app');
+        const prober = await connect('cc-app', 'cc-app');
+        let finish = null;
+        try {
+          const finisherPid = (
+            await finisher.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE',
+            [customer, 'rf-a'],
+          );
+          finish = finisher.query(
+            'SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result',
+            [customer, sync.id, attempt, null, null],
+          );
+          finish.catch(() => undefined);
+          let waiting = false;
+          for (let round = 0; round < 200 && !waiting; round += 1) {
+            const state = await adminRow(
+              'SELECT cardinality(pg_blocking_pids($1))>0 AS blocked',
+              [finisherPid],
+            );
+            waiting = state?.blocked === true;
+            if (!waiting) await sleep(20);
+          }
+          assert.equal(waiting, true, 'The removal waits for rf-a.');
+          // The waiting removal holds no lock on the later devices.
+          const probe = async (deviceId) => {
+            await prober.query("SET lock_timeout='750ms'");
+            try {
+              await prober.query(
+                'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE',
+                [customer, deviceId],
+              );
+              return 'taken';
+            } catch (error) {
+              if (error.code === '55P03') return 'locked';
+              throw error;
+            }
+          };
+          assert.equal(await probe('rf-b'), 'taken');
+          assert.equal(await probe('rf-c'), 'taken');
+          await holder.query('COMMIT');
+          assert.equal((await finish).rows[0].result.status, 'ready');
+          assert.deepEqual(
+            (
+              await admin(
+                `SELECT device_id FROM cc.devices WHERE customer_id=$1 AND device_id LIKE 'rf-%'
+                  AND removed_at IS NOT NULL ORDER BY device_id`,
+                [customer],
+              )
+            ).map((row) => row.device_id),
+            ['rf-a', 'rf-b', 'rf-c'],
+          );
+          assert.equal((await deviceRow('rf-kept')).removed_at, null);
+        } finally {
+          // An abandoned finish may keep the full-sync lease. Let it run out, then clear the lease.
+          await Promise.allSettled([holder.end(), prober.end()]);
+          if (finish)
+            await Promise.allSettled([
+              finish.then(
+                () => undefined,
+                () => undefined,
+              ),
+            ]);
+          await migrator
+            .query(
+              `UPDATE cc.device_sync_state SET sync_id=NULL,sync_actor=NULL,sync_generation=NULL,
+                sync_attempt=NULL,sync_expires_at=NULL WHERE customer_id=$1`,
+              [customer],
+            )
+            .catch(() => undefined);
+          await Promise.allSettled([finisher.end()]);
+        }
+      },
+    );
+
     // The publication outbox of section 3.6.
     await check(
       'each job change commits one publication row and a rollback leaves none',
@@ -2129,6 +2248,393 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    // Sections 5.4, 5.7, and 5.10: a lease fence reads its clock after the lock waits (review F3).
+    await check(
+      'a settlement that waits on the job row fences on the lease that lapsed in the wait',
+      async () => {
+        await upsert([device('w1')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({ devices: ['w1'] });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        const holder = await connect('cc-app', 'cc-app');
+        const writer = await connect('cc-app', 'cc-app');
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const writerPid = (
+            await writer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const before = await jobRow(job.jobId);
+          const recorded = await publications(job.jobId);
+          // The lease lives when the settlement starts, and lapses while it waits.
+          await migrator.query(
+            `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()+interval '1500 milliseconds'
+              WHERE job_id=$1`,
+            [job.jobId],
+          );
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE',
+            [job.jobId],
+          );
+          const pending = writer.query(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              attempt,
+              'write',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'succeeded',
+                  value: 'Room 12',
+                  verifiedBy: 'write-response',
+                },
+              ]),
+              new Date(),
+            ],
+          );
+          pending.catch(() => undefined);
+          assert.equal(
+            await waitsFor(writerPid, holderPid),
+            true,
+            'The settlement waits for the job row.',
+          );
+          assert.equal(
+            await until(
+              `SELECT clock_timestamp()>lease_expires_at AS lapsed FROM cc.device_update_batches
+                WHERE job_id=$1 AND batch=0`,
+              [job.jobId],
+            ),
+            true,
+            'The batch lease lapses in the wait.',
+          );
+          await holder.query('COMMIT');
+          const late = (await pending).rows[0].result;
+          assert.deepEqual(late.settled, []);
+          assert.equal(late.publication, null);
+          const after = await jobRow(job.jobId);
+          assert.deepEqual(
+            [
+              after.succeeded,
+              after.unknown,
+              Number(after.revision),
+              after.changed_at.getTime(),
+            ],
+            [
+              before.succeeded,
+              before.unknown,
+              Number(before.revision),
+              before.changed_at.getTime(),
+            ],
+          );
+          assert.equal(await publications(job.jobId), recorded);
+          assert.deepEqual(
+            (await operations(job.jobId)).map((row) => row.status),
+            ['dispatched'],
+          );
+          assert.equal((await deviceRow('w1')).annotated_location, null);
+          assert.equal(await overlay('w1'), undefined);
+          await stop(job.jobId, admitted.dispatchToken, 0, attempt);
+          await endJob(job.jobId);
+        } finally {
+          await Promise.allSettled([holder.end(), writer.end()]);
+          await migrator
+            .query(
+              'UPDATE cc.device_update_batches SET lease_expires_at=NULL WHERE job_id=$1',
+              [job.jobId],
+            )
+            .catch(() => undefined);
+        }
+      },
+    );
+
+    await check(
+      'a settlement that waits on the device row fences on the lease that lapsed in the wait',
+      async () => {
+        await upsert([device('w2')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({ devices: ['w2'] });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        const holder = await connect('cc-app', 'cc-app');
+        const writer = await connect('cc-app', 'cc-app');
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const writerPid = (
+            await writer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const before = await jobRow(job.jobId);
+          const recorded = await publications(job.jobId);
+          // The lease lives when the settlement starts, and lapses while it waits.
+          await migrator.query(
+            `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()+interval '1500 milliseconds'
+              WHERE job_id=$1`,
+            [job.jobId],
+          );
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE',
+            [customer, 'w2'],
+          );
+          const pending = writer.query(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              attempt,
+              'write',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'succeeded',
+                  value: 'Room 12',
+                  verifiedBy: 'write-response',
+                },
+              ]),
+              new Date(),
+            ],
+          );
+          pending.catch(() => undefined);
+          assert.equal(
+            await waitsFor(writerPid, holderPid),
+            true,
+            'The settlement waits for the device row.',
+          );
+          assert.equal(
+            await until(
+              `SELECT clock_timestamp()>lease_expires_at AS lapsed FROM cc.device_update_batches
+                WHERE job_id=$1 AND batch=0`,
+              [job.jobId],
+            ),
+            true,
+            'The batch lease lapses in the wait.',
+          );
+          await holder.query('COMMIT');
+          const late = (await pending).rows[0].result;
+          assert.deepEqual(late.settled, []);
+          assert.equal(late.publication, null);
+          const after = await jobRow(job.jobId);
+          assert.deepEqual(
+            [
+              after.succeeded,
+              after.unknown,
+              Number(after.revision),
+              after.changed_at.getTime(),
+            ],
+            [
+              before.succeeded,
+              before.unknown,
+              Number(before.revision),
+              before.changed_at.getTime(),
+            ],
+          );
+          assert.equal(await publications(job.jobId), recorded);
+          assert.deepEqual(
+            (await operations(job.jobId)).map((row) => row.status),
+            ['dispatched'],
+          );
+          assert.equal((await deviceRow('w2')).annotated_location, null);
+          assert.equal(await overlay('w2'), undefined);
+          await stop(job.jobId, admitted.dispatchToken, 0, attempt);
+          await endJob(job.jobId);
+        } finally {
+          await Promise.allSettled([holder.end(), writer.end()]);
+          await migrator
+            .query(
+              'UPDATE cc.device_update_batches SET lease_expires_at=NULL WHERE job_id=$1',
+              [job.jobId],
+            )
+            .catch(() => undefined);
+        }
+      },
+    );
+
+    await check(
+      'a read-back that waits on the device row fences on the read-back lease that lapsed in the wait',
+      async () => {
+        await upsert([device('w3')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({ devices: ['w3'] });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              outcomeReason: 'interrupted',
+            },
+          ],
+          new Date(),
+        );
+        const holder = await connect('cc-app', 'cc-app');
+        const writer = await connect('cc-app', 'cc-app');
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const writerPid = (
+            await writer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const recorded = await publications(job.jobId);
+          // The read-back lease lives when the settlement starts, and lapses while it waits.
+          await migrator.query(
+            `UPDATE cc.device_update_operations
+              SET verify_lease_expires_at=clock_timestamp()+interval '1500 milliseconds' WHERE job_id=$1`,
+            [job.jobId],
+          );
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE',
+            [customer, 'w3'],
+          );
+          const pending = writer.query(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              null,
+              attempt,
+              'read-back',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'succeeded',
+                  value: 'Room 12',
+                  verifiedBy: 'read-back',
+                },
+              ]),
+              new Date(),
+            ],
+          );
+          pending.catch(() => undefined);
+          assert.equal(
+            await waitsFor(writerPid, holderPid),
+            true,
+            'The read-back waits for the device row.',
+          );
+          assert.equal(
+            await until(
+              `SELECT clock_timestamp()>verify_lease_expires_at AS lapsed FROM cc.device_update_operations
+                WHERE job_id=$1`,
+              [job.jobId],
+            ),
+            true,
+            'The read-back lease lapses in the wait.',
+          );
+          await holder.query('COMMIT');
+          const late = (await pending).rows[0].result;
+          assert.deepEqual(late.settled, []);
+          assert.equal(late.publication, null);
+          const operation = (await operations(job.jobId))[0];
+          assert.equal(operation.status, 'unknown');
+          assert.equal(operation.verified_by, null);
+          assert.equal(await publications(job.jobId), recorded);
+          assert.equal((await deviceRow('w3')).annotated_location, null);
+          assert.equal(await overlay('w3'), undefined);
+          await stop(job.jobId, admitted.dispatchToken, 0, attempt);
+          await endJob(job.jobId);
+        } finally {
+          await Promise.allSettled([holder.end(), writer.end()]);
+          await migrator
+            .query(
+              'UPDATE cc.device_update_batches SET lease_expires_at=NULL WHERE job_id=$1',
+              [job.jobId],
+            )
+            .catch(() => undefined);
+        }
+      },
+    );
+
+    await check(
+      'a renewal that waits on the job row does not revive the lease that lapsed in the wait',
+      async () => {
+        await upsert([device('w4')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({ devices: ['w4'] });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        const holder = await connect('cc-app', 'cc-app');
+        const writer = await connect('cc-app', 'cc-app');
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const writerPid = (
+            await writer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          // The lease lives when the renewal starts, and lapses while it waits.
+          await migrator.query(
+            `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()+interval '1500 milliseconds'
+              WHERE job_id=$1`,
+            [job.jobId],
+          );
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE',
+            [job.jobId],
+          );
+          const pending = writer.query(
+            'SELECT cc.renew_device_update_batch($1,$2,$3,$4,$5) AS result',
+            [customer, job.jobId, admitted.dispatchToken, 0, attempt],
+          );
+          pending.catch(() => undefined);
+          assert.equal(
+            await waitsFor(writerPid, holderPid),
+            true,
+            'The renewal waits for the job row.',
+          );
+          assert.equal(
+            await until(
+              `SELECT clock_timestamp()>lease_expires_at AS lapsed FROM cc.device_update_batches
+                WHERE job_id=$1 AND batch=0`,
+              [job.jobId],
+            ),
+            true,
+            'The batch lease lapses in the wait.',
+          );
+          await holder.query('COMMIT');
+          const answer = await pending.then(
+            (result) => result.rows[0].result,
+            (error) => error,
+          );
+          assert.equal(answer.detail, 'attempt-fenced');
+          const held = await adminRow(
+            `SELECT clock_timestamp()>lease_expires_at AS lapsed FROM cc.device_update_batches
+              WHERE job_id=$1 AND batch=0`,
+            [job.jobId],
+          );
+          assert.equal(
+            held.lapsed,
+            true,
+            'The renewal leaves the lapsed lease alone.',
+          );
+          await stop(job.jobId, admitted.dispatchToken, 0, attempt);
+          await endJob(job.jobId);
+        } finally {
+          await Promise.allSettled([holder.end(), writer.end()]);
+          await migrator
+            .query(
+              'UPDATE cc.device_update_batches SET lease_expires_at=NULL WHERE job_id=$1',
+              [job.jobId],
+            )
+            .catch(() => undefined);
+        }
+      },
+    );
+
     // Section 5.10: the reaper never acts while a lease lives, and it waits out the grace.
     await check(
       'the reaper leaves a live attempt, honors the grace, and then finalizes',
@@ -2301,16 +2807,20 @@ export async function qualifyDeviceWriteJobs({
             [job.jobId],
           );
         const before = await jobRow(job.jobId);
-        const publications = await count();
+        const recorded = await count();
         assert.equal(before.started_at, null);
         const claimed = await claim(job.jobId, token, 0, attempt);
         assert.equal(claimed.outcome, 'claimed');
         const afterClaim = await jobRow(job.jobId);
         assert.notEqual(afterClaim.started_at, null);
         assert.equal(Number(afterClaim.revision), Number(before.revision) + 1);
-        assert.equal(await count(), publications + 1);
+        assert.equal(await count(), recorded + 1);
         const first = await claim(job.jobId, token, 1, attempt);
         assert.equal(first.outcome, 'claimed');
+        // The second batch changes the public operation timestamps, so it records a change (review F8).
+        const afterSecond = await jobRow(job.jobId);
+        assert.ok(Number(afterSecond.revision) > Number(afterClaim.revision));
+        assert.equal(await count(), recorded + 2);
         await migrator.query(
           `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '60 seconds'
             WHERE job_id=$1 AND batch=1`,
@@ -2321,8 +2831,10 @@ export async function qualifyDeviceWriteJobs({
         assert.equal(takeover.readBack.length, 1);
         const afterTakeover = await jobRow(job.jobId);
         assert.equal(afterTakeover.unknown, 1);
-        assert.ok(Number(afterTakeover.revision) > Number(afterClaim.revision));
-        assert.equal(await count(), publications + 2);
+        assert.ok(
+          Number(afterTakeover.revision) > Number(afterSecond.revision),
+        );
+        assert.equal(await count(), recorded + 3);
         await endJob(job.jobId);
         // A rolled-back claim leaves no publication row.
         await upsert([device('k3')], new Date(Date.now() - 60 * 60 * 1000));
