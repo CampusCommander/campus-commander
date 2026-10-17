@@ -348,10 +348,15 @@ BEGIN
 END;
 $$;
 
+-- Every pending operation of a job becomes skipped. The complete set locks first, in operation_number
+-- order, so the update never waits and its clock reads after every wait (round 3, R2-F2). Every caller
+-- locks the same set before its first write, so this lock never waits either.
 CREATE FUNCTION cc.skip_device_update_pending(p_job uuid,p_reason text) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE skipped integer;
 BEGIN
+  PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='pending'
+    ORDER BY o.operation_number FOR UPDATE;
   UPDATE cc.device_update_operations SET status='skipped',outcome_reason=COALESCE(outcome_reason,p_reason),
     updated_at=clock_timestamp()
   WHERE job_id=p_job AND status='pending';
@@ -403,6 +408,16 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   END;
 $$;
 
+-- The job failure codes: the codes of the cc.jobs failure CHECK. A finish, a preparation, and the reaper
+-- reject any other code before their first lock (round 3, eng-lead ruling 2). A null input yields null.
+CREATE FUNCTION cc.job_failure_known(p_failure text) RETURNS boolean
+LANGUAGE sql IMMUTABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+  SELECT p_failure IN ('credential-rejected','delegation-not-authorized','api-not-enabled','policy-restricted',
+    'network-failure','scope-mismatch','permission-denied','quota','provider-unavailable','invalid-response',
+    'wrong-customer','request-failed','key-unavailable','interrupted','orchestration-unavailable',
+    'permission-changed','connection-changed');
+$$;
+
 -- Admission order: smallest target count, then oldest creation, then lowest display ID.
 CREATE FUNCTION cc.admit_device_update_job(p_customer text,p_held boolean) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -420,10 +435,22 @@ BEGIN
       AND j.status IN ('accepted','queued','held') ORDER BY j.target_count,j.created_at,j.display_id FOR UPDATE LOOP
     candidates:=candidates||job;
   END LOOP;
+  -- S1 (round 3, R2-F3): the clock reads after every header wait, before the validation and before the
+  -- detail lock, on every path. The admitted path reads it again after its detail wait below.
+  now_at:=clock_timestamp();
   -- S1 (round 2): the one-running flag reads after every header wait, so a job that ended in a wait
   -- leaves the write slot free for this admission.
   SELECT EXISTS(SELECT 1 FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND j.status='running')
     INTO running;
+  -- S1 (round 3): a status change publishes, and the publication row references the connection row. A
+  -- credential read holds that row FOR UPDATE (008), so the connection row locks here, after the validation,
+  -- and no publication insert waits on it. After that wait the clock and the one-running flag read again.
+  IF cardinality(candidates)>0 THEN
+    PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+    now_at:=clock_timestamp();
+    SELECT EXISTS(SELECT 1 FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND
+      j.status='running') INTO running;
+  END IF;
   label:=CASE WHEN p_held THEN 'held' ELSE 'queued' END;
   FOREACH job IN ARRAY candidates LOOP
     IF running OR p_held THEN
@@ -432,8 +459,8 @@ BEGIN
         PERFORM cc.record_job_change(job.job_id,true);
       END IF;
     ELSIF admitted IS NULL THEN
-      -- S1: the detail row locks before the clock, and the clock reads after the header and detail waits,
-      -- so a long wait never consumes the start window (round 2).
+      -- S1: the detail row locks after the validation. The clock reads again after the header, connection, and
+      -- detail waits, so a long wait never consumes the start window (round 2, round 3).
       PERFORM 1 FROM cc.device_update_jobs u WHERE u.job_id=job.job_id FOR UPDATE;
       now_at:=clock_timestamp();
       UPDATE cc.jobs SET status='running',admitted_at=now_at WHERE job_id=job.job_id;
@@ -460,6 +487,11 @@ BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_token IS NULL THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
   END IF;
+  -- S2 (round 3): the start records the execution that runs the job. A null execution rejects before
+  -- any lock.
+  IF p_execution IS NULL THEN
+    RAISE EXCEPTION 'The device update execution is invalid.' USING ERRCODE='22023';
+  END IF;
   -- S1: the header row locks before the detail row, as every other write-job writer takes them.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL OR job.kind<>'device-update' THEN
@@ -474,9 +506,10 @@ BEGIN
   IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
   END IF;
-  -- S1: the detail row locks after the fence. The post-wait recheck repeats the fence. The start writes no
-  -- time value, so the lifecycle and token recheck on the locked row is the whole post-wait check.
+  -- S1: the detail row locks after the fence. After that wait the clock reads again (round 3, R2-F4), and
+  -- the lifecycle and the token repeat on the locked row before the write.
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
   IF job.status<>'running' OR job.finished_at IS NOT NULL THEN RETURN; END IF;
   IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
@@ -514,9 +547,11 @@ BEGIN
     RETURN;
   END IF;
   -- S1 (round 2): the pending operation rows lock after the recheck, so no write below waits. The header and
-  -- detail locks hold every value that the fence read, and the closure clock reads after this wait.
+  -- detail locks hold every value that the fence read, and the closure clock reads after this wait. The
+  -- connection row locks last, so the publication insert never waits on it (round 3).
   PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='pending'
     ORDER BY o.operation_number FOR UPDATE;
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   now_at:=clock_timestamp();
   UPDATE cc.jobs SET status='failed',failure='orchestration-unavailable',finished_at=now_at WHERE job_id=p_job;
   PERFORM cc.skip_device_update_pending(p_job,'orchestration-unavailable');
@@ -593,6 +628,11 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; held cc.device_update_batches; connection cc.google_connection;
   now_at timestamptz; stopped text:=NULL; lost uuid:=NULL; claim jsonb:='[]'::jsonb; readback jsonb:='[]'::jsonb;
 BEGIN
+  -- S2 (round 3): a claim records the execution that runs its batch. A null execution rejects before
+  -- any lock.
+  IF p_execution IS NULL THEN
+    RAISE EXCEPTION 'The device update execution is invalid.' USING ERRCODE='22023';
+  END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
@@ -653,6 +693,19 @@ BEGIN
     now_at:=clock_timestamp();
   END IF;
   IF stopped IS NOT NULL THEN
+    -- S1 (round 3, R2-F2): the stop skips every pending operation of the job, so that complete set locks
+    -- first, in operation_number order, and no write below waits. After that wait the clock reads again,
+    -- and the token repeats on a fresh read, so a call that the wait superseded changes nothing (S3). A
+    -- stop stays a stop: access that returns during the wait reopens no dispatch (section 5.6). The connection
+    -- row locks last, so the publication insert never waits on it.
+    PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='pending'
+      ORDER BY o.operation_number FOR UPDATE;
+    PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+    now_at:=clock_timestamp();
+    SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
+    IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
+      RETURN jsonb_build_object('outcome','superseded');
+    END IF;
     UPDATE cc.jobs SET failure=COALESCE(failure,stopped) WHERE job_id=p_job;
     PERFORM cc.skip_device_update_pending(p_job,stopped);
     PERFORM cc.refresh_device_update_counters(p_job);
@@ -787,7 +840,7 @@ $$;
 CREATE FUNCTION cc.settle_device_update_operations(p_customer text,p_job uuid,p_token uuid,p_attempt uuid,
   p_kind text,p_results jsonb,p_observed_at timestamptz) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz:=clock_timestamp(); bad integer;
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; bad integer; provenance text;
   before text; after text; first_batch integer; element jsonb:=NULL; candidates integer[];
   settled jsonb:='[]'::jsonb; devices jsonb:='[]'::jsonb; removed jsonb:='[]'::jsonb;
 BEGIN
@@ -796,13 +849,37 @@ BEGIN
     p_observed_at IS NULL OR p_attempt IS NULL THEN
     RAISE EXCEPTION 'The settlement is invalid.' USING ERRCODE='22023';
   END IF;
-  -- S2/R6-1: a write settlement accepts pending and skipped. A read-back accepts the three verified
-  -- outcomes of section 5.5 only, and every other outcome is rejected before any lock or mutation. An
-  -- absent or null outcome rejects explicitly, because NOT IN never rejects SQL null (round 2, F2).
+  -- The observation source of each kind: a 2xx write answer (section 7.1) or a read (section 5.7).
+  provenance:=CASE p_kind WHEN 'write' THEN 'write-response' ELSE 'read-back' END;
+  -- S2/R6-1, round 2 F2, round 3 R2-F1: every result field holds a value of its domain, or the call rejects
+  -- before any lock and changes nothing. No cast or CHECK below can then fail after a lock.
+  -- 1. The operation number is a whole number from 1 to the integer limit.
+  -- 2. The outcome is a transition of its kind (section 5.5). A write also accepts pending and skipped.
+  -- 3. A present provenance names the source of its kind, and a success always names it (eng-lead ruling 1).
+  -- 4. A value is null or a string that fits the device field (016 annotated_location CHECK).
+  -- 5. The Google status and the retry counts are whole numbers. The retry counts are not negative.
+  -- 6. A read-back delay is a timestamp.
+  -- Each CASE tests the type before its cast, so the validation itself never fails.
   SELECT count(*) INTO bad FROM jsonb_array_elements(p_results) r
-    WHERE r->>'operationNumber' IS NULL OR r->>'outcome' IS NULL OR
+    WHERE jsonb_typeof(r) IS DISTINCT FROM 'object' OR
+      CASE WHEN jsonb_typeof(r->'operationNumber')='number' AND pg_input_is_valid(r->>'operationNumber','integer')
+        THEN (r->>'operationNumber')::integer<1 ELSE true END OR
+      jsonb_typeof(r->'outcome') IS DISTINCT FROM 'string' OR
       (p_kind='write' AND r->>'outcome' NOT IN ('succeeded','failed','unknown','pending','skipped')) OR
-      (p_kind='read-back' AND r->>'outcome' NOT IN ('succeeded','failed','unknown'));
+      (p_kind='read-back' AND r->>'outcome' NOT IN ('succeeded','failed','unknown')) OR
+      (r->>'verifiedBy' IS NOT NULL AND r->'verifiedBy' IS DISTINCT FROM to_jsonb(provenance)) OR
+      (r->>'outcome'='succeeded' AND r->'verifiedBy' IS DISTINCT FROM to_jsonb(provenance)) OR
+      (r->>'value' IS NOT NULL AND (jsonb_typeof(r->'value')<>'string' OR length(r->>'value')>4096)) OR
+      CASE WHEN r->>'googleStatus' IS NULL THEN false
+        ELSE jsonb_typeof(r->'googleStatus')<>'number' OR NOT pg_input_is_valid(r->>'googleStatus','integer') END OR
+      CASE WHEN r->>'quotaRetries' IS NULL THEN false
+        WHEN jsonb_typeof(r->'quotaRetries')='number' AND pg_input_is_valid(r->>'quotaRetries','integer')
+        THEN (r->>'quotaRetries')::integer<0 ELSE true END OR
+      CASE WHEN r->>'transientRetries' IS NULL THEN false
+        WHEN jsonb_typeof(r->'transientRetries')='number' AND pg_input_is_valid(r->>'transientRetries','integer')
+        THEN (r->>'transientRetries')::integer<0 ELSE true END OR
+      CASE WHEN r->>'verifyAfter' IS NULL THEN false
+        ELSE jsonb_typeof(r->'verifyAfter')<>'string' OR NOT pg_input_is_valid(r->>'verifyAfter','timestamptz') END;
   IF bad>0 THEN
     RAISE EXCEPTION 'The settlement results are invalid.' USING ERRCODE='22023';
   END IF;
@@ -856,15 +933,30 @@ BEGIN
   IF candidates IS NULL THEN
     RETURN jsonb_build_object('outcome','settled','settled',settled,'publication',NULL);
   END IF;
+  -- S1 (round 3): the overlay and publication rows reference the connection row, so their insert checks
+  -- take a key-share lock on it. That lock comes here, before the device rows: a full-sync finish takes the
+  -- connection row first and its device rows second (016, cc.finish_device_sync), so the two calls never
+  -- form a lock cycle.
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   -- Every overlay writer locks its device rows in device_id order after the operation rows. Only the device
-  -- rows that an eligible result changes lock: a published success and a read-back not-found (round 2, F2).
+  -- rows that an eligible result changes lock: a published success and a read-back 404 (round 2, F2). The
+  -- settlement kind decides the 404 removal, so an optional provenance never skips it (round 3, class of
+  -- R2-F1, design sections 5.7 and 5.8 rule 7).
   PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND d.device_id IN (
       SELECT o.device_id FROM cc.device_update_operations o JOIN jsonb_array_elements(p_results) r
         ON o.operation_number=(r->>'operationNumber')::integer
       WHERE o.job_id=p_job AND o.operation_number=ANY(candidates) AND (
         (r->>'outcome'='succeeded' AND r->>'verifiedBy' IN ('write-response','read-back')) OR
-        (r->>'outcome'='failed' AND r->>'verifiedBy'='read-back' AND r->>'outcomeReason'='not-found')))
+        (p_kind='read-back' AND r->>'outcome'='failed' AND r->>'outcomeReason'='not-found')))
     ORDER BY d.device_id FOR UPDATE;
+  -- S1 (round 3): a published success replaces the overlay of its device. The overlay rows lock in device_id
+  -- order after the device rows, as every overlay writer takes them. No write below then waits, so the clock
+  -- below reads after every wait of this call.
+  PERFORM 1 FROM cc.device_write_overlays w WHERE w.customer_id=p_customer AND w.field='annotatedLocation' AND
+      w.device_id IN (SELECT o.device_id FROM cc.device_update_operations o JOIN jsonb_array_elements(p_results) r
+        ON o.operation_number=(r->>'operationNumber')::integer
+      WHERE o.job_id=p_job AND o.operation_number=ANY(candidates) AND r->>'outcome'='succeeded')
+    ORDER BY w.device_id FOR UPDATE;
   -- The write and read-back lease fences below read the clock after every row lock (review F3, F15).
   now_at:=clock_timestamp();
   WITH results AS (
@@ -913,7 +1005,7 @@ BEGIN
       expires_at=EXCLUDED.expires_at
     RETURNING device_id
   ), missing AS (
-    SELECT DISTINCT a.device_id FROM applied a WHERE a.status='failed' AND a.verified_by='read-back' AND
+    SELECT DISTINCT a.device_id FROM applied a WHERE p_kind='read-back' AND a.status='failed' AND
       a.outcome_reason='not-found'
   ), soft AS (
     UPDATE cc.devices d SET removed_at=COALESCE(d.removed_at,now_at) FROM missing m
@@ -950,8 +1042,11 @@ BEGIN
   IF p_attempt IS NULL OR (p_operations IS NOT NULL AND jsonb_typeof(p_operations) IS DISTINCT FROM 'array') THEN
     RAISE EXCEPTION 'The read-back claim is invalid.' USING ERRCODE='22023';
   END IF;
-  -- S2 (round 2): every named operation is a number. A null or other element rejects before any lock.
-  IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_operations) e WHERE jsonb_typeof(e.value)<>'number') THEN
+  -- S2 (round 2, round 3): every named operation is a whole number from 1 to the integer limit. A null, a
+  -- fraction, or any other element rejects before any lock, so no cast after the header lock rounds or fails.
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_operations) e WHERE
+      CASE WHEN jsonb_typeof(e.value)='number' AND pg_input_is_valid(e.value::text,'integer')
+        THEN (e.value::text)::integer<1 ELSE true END) THEN
     RAISE EXCEPTION 'The read-back claim is invalid.' USING ERRCODE='22023';
   END IF;
   -- S1: the header row locks first, then the operation rows in operation_number order, and the
@@ -997,6 +1092,11 @@ RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz;
 BEGIN
+  -- S2 (round 3, eng-lead ruling 2): a failure outside its enumeration rejects before any lock. A null
+  -- failure names no failure.
+  IF p_failure IS NOT NULL AND NOT cc.job_failure_known(p_failure) THEN
+    RAISE EXCEPTION 'The device update failure is invalid.' USING ERRCODE='22023';
+  END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
@@ -1017,9 +1117,11 @@ BEGIN
   END IF;
   -- S1 (round 2): the dispatched and pending operation rows lock in operation_number order, so the fence and
   -- the skip below never wait. After that wait the clock reads again. The token and the grace repeat on fresh
-  -- reads, and the fence time comes from the post-wait clock.
+  -- reads, and the fence time comes from the post-wait clock. The connection row locks last, so the
+  -- publication insert never waits on it (round 3).
   PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status IN ('dispatched','pending')
     ORDER BY o.operation_number FOR UPDATE;
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   now_at:=clock_timestamp();
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
   IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
@@ -1047,6 +1149,11 @@ RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; before text; after text;
 BEGIN
+  -- S2 (round 3, eng-lead ruling 2): a failure outside its enumeration rejects before any lock. A null
+  -- failure names no failure.
+  IF p_failure IS NOT NULL AND NOT cc.job_failure_known(p_failure) THEN
+    RAISE EXCEPTION 'The device update failure is invalid.' USING ERRCODE='22023';
+  END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
@@ -1072,6 +1179,19 @@ BEGIN
     RETURN jsonb_build_object('outcome','not-prepared','jobId',p_job,'status',job.status);
   END IF;
   before:=job.status;
+  -- S1 (round 3): the finish locks no descendant row. The connection row locks after the validation, so the
+  -- publication insert never waits on it. After that wait the clock reads again, and the token and the
+  -- grace repeat on fresh reads, as in the preparation. A call that the wait superseded changes nothing (S3).
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  now_at:=clock_timestamp();
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
+  IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
+    RETURN jsonb_build_object('outcome','superseded','jobId',p_job,'status',job.status);
+  END IF;
+  IF EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=p_job AND
+      b.lease_expires_at+interval '30 seconds'>now_at) THEN
+    RETURN jsonb_build_object('outcome','busy','jobId',p_job,'status',job.status);
+  END IF;
   IF p_failure IS NOT NULL THEN
     UPDATE cc.jobs SET failure=COALESCE(failure,p_failure) WHERE job_id=p_job;
   END IF;
@@ -1093,16 +1213,21 @@ CREATE FUNCTION cc.finalize_device_update_job(p_customer text,p_job uuid,p_failu
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; now_at timestamptz; before text; after text;
 BEGIN
+  -- S2 (round 3, eng-lead ruling 2): a failure outside its enumeration rejects before any lock. A null
+  -- failure names no failure.
+  IF p_failure IS NOT NULL AND NOT cc.job_failure_known(p_failure) THEN
+    RAISE EXCEPTION 'The device update failure is invalid.' USING ERRCODE='22023';
+  END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   -- S1: the finalizer validates the job kind under the header lock. A refresh header stays untouched.
   IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
+  -- S1: the clock reads after the header lock, before the lifecycle and grace validation (review F3, round 3).
+  now_at:=clock_timestamp();
   IF job.finished_at IS NOT NULL THEN
     RETURN jsonb_build_object('outcome','finished','jobId',p_job,'status',job.status);
   END IF;
-  -- The grace fence reads the clock after the job row lock (review F3).
-  now_at:=clock_timestamp();
   -- The reaper never acts while a batch lease or its grace lives (section 5.10, review F4).
   IF EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=p_job AND
       b.lease_expires_at+interval '30 seconds'>now_at) THEN
@@ -1110,9 +1235,11 @@ BEGIN
   END IF;
   -- S1 (round 2): the dispatched and pending operation rows lock in operation_number order, so the fence and
   -- the skip below never wait. After that wait the clock reads again and the grace repeats. The fence time
-  -- and finished_at come from the post-wait clock.
+  -- and finished_at come from the post-wait clock. The connection row locks last, so the publication insert
+  -- never waits on it (round 3).
   PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status IN ('dispatched','pending')
     ORDER BY o.operation_number FOR UPDATE;
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   now_at:=clock_timestamp();
   IF EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=p_job AND
       b.lease_expires_at+interval '30 seconds'>now_at) THEN
@@ -1297,7 +1424,7 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.complete_job_publications(text,jsonb),cc.refresh_device_update_counters(uuid),
   cc.device_update_terminal_status(uuid),cc.fence_device_update_operations(uuid,uuid,jsonb,timestamptz,interval),
   cc.skip_device_update_pending(uuid,text),cc.close_refresh_job(uuid,text),cc.write_capable(uuid,text),
-  cc.device_update_stop_reason(text,uuid,integer,integer),
+  cc.device_update_stop_reason(text,uuid,integer,integer),cc.job_failure_known(text),
   cc.admit_device_update_job(text,boolean),cc.record_device_update_start(text,uuid,uuid,text),
   cc.abandon_device_update_start(text,uuid,uuid),cc.recover_device_update_jobs(text),
   cc.claim_device_update_batch(text,uuid,uuid,integer,uuid,text),
