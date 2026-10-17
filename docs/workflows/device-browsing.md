@@ -117,6 +117,8 @@ This work is infrastructure under this workflow. It is not a new workflow. Devel
 **Device scopes during setup.** The owner approved showing the device scopes on the Google connection page.
 The Devices access messages name the scope that Google denied.
 
+**Sign-off.** The owner signed off this workflow on 2026-10-16 after a walkthrough. The owner chose the answer "Yes: device browsing is signed off".
+
 ## Implementation defaults — 2026-10-05
 
 These defaults are engineering choices, not owner decisions. Change them when the owner asks.
