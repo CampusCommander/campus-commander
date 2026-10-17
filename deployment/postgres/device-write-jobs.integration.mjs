@@ -1758,9 +1758,9 @@ export async function qualifyDeviceWriteJobs({
         const attempt = randomUUID();
         await claimSync(sync.id, attempt);
         await stage(sync.id, attempt, [device('rf-kept')]);
-        const holder = await connect('cc-app', 'cc-app');
+        const holder = await connect('cc-migrator', 'cc-app');
         const finisher = await connect('cc-app', 'cc-app');
-        const prober = await connect('cc-app', 'cc-app');
+        const prober = await connect('cc-migrator', 'cc-app');
         let finish = null;
         try {
           const finisherPid = (
@@ -2257,7 +2257,7 @@ export async function qualifyDeviceWriteJobs({
         const admitted = await admit(false);
         const attempt = randomUUID();
         await claim(job.jobId, admitted.dispatchToken, 0, attempt);
-        const holder = await connect('cc-app', 'cc-app');
+        const holder = await connect('cc-migrator', 'cc-app');
         const writer = await connect('cc-app', 'cc-app');
         try {
           const holderPid = (
@@ -2361,7 +2361,7 @@ export async function qualifyDeviceWriteJobs({
         const admitted = await admit(false);
         const attempt = randomUUID();
         await claim(job.jobId, admitted.dispatchToken, 0, attempt);
-        const holder = await connect('cc-app', 'cc-app');
+        const holder = await connect('cc-migrator', 'cc-app');
         const writer = await connect('cc-app', 'cc-app');
         try {
           const holderPid = (
@@ -2479,7 +2479,7 @@ export async function qualifyDeviceWriteJobs({
           ],
           new Date(),
         );
-        const holder = await connect('cc-app', 'cc-app');
+        const holder = await connect('cc-migrator', 'cc-app');
         const writer = await connect('cc-app', 'cc-app');
         try {
           const holderPid = (
@@ -2566,7 +2566,7 @@ export async function qualifyDeviceWriteJobs({
         const admitted = await admit(false);
         const attempt = randomUUID();
         await claim(job.jobId, admitted.dispatchToken, 0, attempt);
-        const holder = await connect('cc-app', 'cc-app');
+        const holder = await connect('cc-migrator', 'cc-app');
         const writer = await connect('cc-app', 'cc-app');
         try {
           const holderPid = (
