@@ -4781,6 +4781,347 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    // Round 6, R6-8: the clock reads and the header lifecycle validates before the detail and batch
+    // locks. A repeat on a completed refresh never waits on a descendant row.
+    await ruleCheck(
+      'S1 a completed refresh repeat does not wait on its detail row',
+      async () => {
+        const refresh = await makeRefresh(['r6h-a'], 1);
+        await result(
+          'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+          [customer, refresh, 0, null],
+        );
+        const before = await jobRow(refresh);
+        assert.equal(before.status, 'completed');
+        const holder = await connect('cc-migrator', 'cc-app');
+        const caller = await connect('cc-app', 'cc-app');
+        try {
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.entity_sync_jobs WHERE job_id=$1 FOR UPDATE',
+            [refresh],
+          );
+          await caller.query("SET lock_timeout='300ms'");
+          const answer = await caller
+            .query(
+              'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+              [customer, refresh, 0, 'quota'],
+            )
+            .then(
+              (rows) => ({ result: rows.rows[0].result }),
+              (error) => ({ code: error.code, message: error.message }),
+            );
+          assert.equal(
+            answer.code,
+            undefined,
+            `A completed refresh must check its header before its detail lock: ${answer.message ?? ''}`,
+          );
+          assert.ok(answer.result, 'The repeat returns the job projection.');
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await Promise.allSettled([holder.end(), caller.end()]);
+        }
+        assert.deepEqual(await jobRow(refresh), before);
+        assert.equal(
+          (
+            await admin(
+              'SELECT count(*)::int AS result FROM cc.entity_sync_batches WHERE job_id=$1',
+              [refresh],
+            )
+          )[0].result,
+          1,
+          'A completed refresh keeps its one batch record.',
+        );
+      },
+    );
+
+    // Round 6, R6-9: the clock reads and the header lifecycle validates before the detail lock.
+    await ruleCheck(
+      'S1 an abandoned completed refresh rejects before its detail lock',
+      async () => {
+        const refresh = await makeRefresh(['r6i-a'], 1);
+        await result(
+          'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+          [customer, refresh, 0, null],
+        );
+        const before = await jobRow(refresh);
+        const published = await publications(refresh);
+        const holder = await connect('cc-migrator', 'cc-app');
+        const caller = await connect('cc-app', 'cc-app');
+        try {
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.entity_sync_jobs WHERE job_id=$1 FOR UPDATE',
+            [refresh],
+          );
+          await caller.query("SET lock_timeout='300ms'");
+          const answer = await caller
+            .query('SELECT cc.abandon_entity_sync_job($1,$2,$3,$4) AS result', [
+              reader,
+              1,
+              customer,
+              refresh,
+            ])
+            .then(
+              () => ({ accepted: true }),
+              (error) => ({ code: error.code, detail: error.detail }),
+            );
+          assert.equal(
+            answer.code,
+            undefined,
+            'An abandoned completed refresh must not wait on its detail row.',
+          );
+          assert.equal(answer.detail, 'entity-sync-changed');
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await Promise.allSettled([holder.end(), caller.end()]);
+        }
+        assert.deepEqual(await jobRow(refresh), before);
+        assert.equal(await publications(refresh), published);
+      },
+    );
+
+    const syncStateRow = () =>
+      adminRow(
+        `SELECT sync_id,sync_attempt,sync_expires_at FROM cc.device_sync_state
+          WHERE customer_id=$1`,
+        [customer],
+      );
+
+    // Round 6, R6-10: the claim loads the scoped full-sync header, so its fence sees a terminal or
+    // missing header before it renews the state tuple. The reviewer found this by inspection.
+    await ruleCheck(
+      'S1 a sync claim validates the full-sync header before it mutates',
+      async () => {
+        await resetSync();
+        const sync = await requestAs(reader);
+        const attempt = randomUUID();
+        await claimSync(sync.id, attempt);
+        await migrator.query(
+          "UPDATE cc.jobs SET status='failed',finished_at=clock_timestamp() WHERE job_id=$1",
+          [sync.id],
+        );
+        // The state tuple keeps a live lease while its header is terminal.
+        await migrator.query(
+          `UPDATE cc.device_sync_state SET sync_attempt=NULL,
+            sync_expires_at=clock_timestamp()+interval '5 minutes' WHERE customer_id=$1`,
+          [customer],
+        );
+        const before = await syncStateRow();
+        await rejects(
+          claimSync(sync.id, randomUUID()),
+          null,
+          'device-sync-changed',
+        );
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT sync_attempt FROM cc.device_sync_state WHERE customer_id=$1',
+              [customer],
+            )
+          ).sync_attempt,
+          null,
+          'A rejected claim writes no attempt.',
+        );
+        assert.deepEqual(await syncStateRow(), before);
+        // A state tuple whose header is missing rejects too.
+        await migrator.query('DELETE FROM cc.jobs WHERE job_id=$1', [sync.id]);
+        await rejects(
+          claimSync(sync.id, randomUUID()),
+          null,
+          'device-sync-changed',
+        );
+        assert.deepEqual(await syncStateRow(), before);
+        await resetSync();
+      },
+    );
+
+    // Round 6, R6-11: the lease helper loads the scoped full-sync header, so both staging entry
+    // points share its complete fence. The reviewer found this by inspection.
+    await ruleCheck(
+      'S1 a sync lease validates the full-sync header before it renews',
+      async () => {
+        await resetSync();
+        const sync = await requestAs(reader);
+        const attempt = randomUUID();
+        await claimSync(sync.id, attempt);
+        await migrator.query(
+          "UPDATE cc.jobs SET status='failed',finished_at=clock_timestamp() WHERE job_id=$1",
+          [sync.id],
+        );
+        const before = await syncStateRow();
+        // The lease helper carries no execute grant for the runtime role.
+        const renewer = await connect('cc-migrator', 'cc-app');
+        try {
+          await rejects(
+            renewer.query('SELECT cc.device_sync_lease($1,$2,$3)', [
+              customer,
+              sync.id,
+              attempt,
+            ]),
+            null,
+            'device-sync-changed',
+          );
+        } finally {
+          await renewer.end();
+        }
+        assert.deepEqual(await syncStateRow(), before);
+        // The staging entry point shares the helper's fence, so it writes no page either.
+        await rejects(
+          stage(sync.id, attempt, [device('r6k-a')]),
+          null,
+          'device-sync-changed',
+        );
+        assert.deepEqual(await syncStateRow(), before);
+        assert.equal(
+          await result(
+            'SELECT count(*)::int AS result FROM cc.job_targets WHERE job_id=$1',
+            [sync.id],
+          ),
+          0,
+        );
+        assert.equal(
+          await result(
+            'SELECT count(*)::int AS result FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+            [customer, 'r6k-a'],
+          ),
+          0,
+        );
+        // A state tuple whose header is missing rejects and renews nothing.
+        await migrator.query('DELETE FROM cc.jobs WHERE job_id=$1', [sync.id]);
+        const gone = await connect('cc-migrator', 'cc-app');
+        try {
+          await rejects(
+            gone.query('SELECT cc.device_sync_lease($1,$2,$3)', [
+              customer,
+              sync.id,
+              attempt,
+            ]),
+            null,
+            'device-sync-changed',
+          );
+        } finally {
+          await gone.end();
+        }
+        assert.deepEqual(await syncStateRow(), before);
+        await resetSync();
+      },
+    );
+
+    // A completed full sync that left the seven-day retention window.
+    const makeRetentionSync = async () => {
+      await resetSync();
+      const sync = await requestAs(reader);
+      const attempt = randomUUID();
+      await claimSync(sync.id, attempt);
+      await finishSync(sync.id, attempt);
+      await migrator.query(
+        "UPDATE cc.jobs SET finished_at=clock_timestamp()-interval '8 days' WHERE job_id=$1",
+        [sync.id],
+      );
+      await resetSync();
+      return sync.id;
+    };
+
+    // Round 6, R6-12: retention takes the sync state before the header, and the deletion itself
+    // stays allowed.
+    await ruleCheck(
+      'S1 full-sync retention takes the sync state before it deletes the header',
+      async () => {
+        const candidate = await makeRetentionSync();
+        const before = await jobRow(candidate);
+        const holder = await connect('cc-migrator', 'cc-app');
+        const purge = await connect('cc-migrator', 'cc-app');
+        try {
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.device_sync_state WHERE customer_id=$1 FOR UPDATE',
+            [customer],
+          );
+          await purge.query("SET lock_timeout='300ms'");
+          const answer = await purge
+            .query('SELECT cc.purge_jobs($1,$2) AS result', [customer, 100])
+            .then(
+              () => ({ accepted: true }),
+              (error) => ({ code: error.code }),
+            );
+          assert.equal(
+            answer.code,
+            '55P03',
+            'A full-sync retention writer must take the sync state before the header.',
+          );
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await Promise.allSettled([holder.end(), purge.end()]);
+        }
+        assert.deepEqual(await jobRow(candidate), before);
+        // The control: with the state row free, retention still deletes the completed sync.
+        await result('SELECT cc.purge_jobs($1,$2) AS result', [customer, 100]);
+        assert.equal(
+          await result(
+            'SELECT count(*)::int AS result FROM cc.jobs WHERE job_id=$1',
+            [candidate],
+          ),
+          0,
+          'Retention still deletes a completed full sync after seven days.',
+        );
+      },
+    );
+
+    // Round 6, R6-12: the candidate reads again after its wait, so a row that a concurrent
+    // retention session removed is not counted twice and no error follows.
+    await ruleCheck(
+      'S1 full-sync retention rechecks its candidate after the state wait',
+      async () => {
+        const candidate = await makeRetentionSync();
+        const holder = await connect('cc-migrator', 'cc-app');
+        const purge = await connect('cc-migrator', 'cc-app');
+        let run = null;
+        let removed = null;
+        try {
+          const holderPid = await pidOf(holder);
+          const purgePid = await pidOf(purge);
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.device_sync_state WHERE customer_id=$1 FOR UPDATE',
+            [customer],
+          );
+          run = purge.query('SELECT cc.purge_jobs($1,$2) AS result', [
+            customer,
+            100,
+          ]);
+          run.catch(() => undefined);
+          assert.equal(
+            await waitsFor(purgePid, holderPid),
+            true,
+            'The purge waits for the sync state row.',
+          );
+          // A concurrent retention session removes the candidate during the wait.
+          await holder.query('DELETE FROM cc.jobs WHERE job_id=$1', [
+            candidate,
+          ]);
+          await holder.query('COMMIT');
+          removed = (await run).rows[0].result;
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (run) await run.catch(() => undefined);
+          await Promise.allSettled([holder.end(), purge.end()]);
+        }
+        assert.equal(
+          removed,
+          0,
+          'A candidate removed in the wait is not deleted or counted again.',
+        );
+        assert.equal(
+          await result(
+            'SELECT count(*)::int AS result FROM cc.jobs WHERE job_id=$1',
+            [candidate],
+          ),
+          0,
+        );
+      },
+    );
+
     await ruleCheck(
       'S1 the write-job finalizer rejects a full-sync header',
       async () => {
