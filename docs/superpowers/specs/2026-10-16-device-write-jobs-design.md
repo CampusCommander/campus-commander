@@ -1,12 +1,12 @@
 # Technical design: annotated-location writes, write jobs, the admission hold, and the jobs API
 
-Status: proposed technical design, revision 6, 2026-10-17. Author: architect. Not owner-approved product behavior.
+Status: approved technical design, revision 6, 2026-10-17. Author: architect. The reviewer approved it at `057b990`.
 Slice: development order step 4 (`docs/current-work.md:58`). The intake brief (eng-lead, 2026-10-16, revision 3) is the contract.
 Owner decisions D1 to D6 in that brief are binding. This record invents no product behavior.
 The owner merged the workflow record `docs/workflows/update-device-annotated-location.md` through PR #36 as commit `3eab39a`, on 2026-10-16 at 23:39 EDT.
 The eng-lead note of 23:39 states that the merge confirms the record. This design follows that record on origin/main.
 Section 10.2 records the eng-lead rulings on the open questions of revision 1 and the questions that stay open.
-This design changes seven owner-confirmed decisions of the entity cache record. Six need the owner gate. Reviewer approval does not authorize those six.
+This design changes seven owner-confirmed decisions of the entity cache record. Six need the owner gate. Reviewer approval does not authorize those six. The owner confirmed all six on 2026-10-17.
 The section "Owner decision gate" states the gate. D10 stays outside the gate by the OQ10 ruling.
 
 ## Conventions
@@ -161,7 +161,7 @@ The release PR is the PR of this design. The main chat opens it after approval a
 | D13      | The worker ACL user covers `cc:entity:*`, `cc:query-gen:*`, `cc:entity-inflight:*`, and "the publish channel". "The API stays out of the job path." (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:122-123`)                   | The worker user also publishes on `cc:job-events:*` (section 3.2). The job service in the API admits, starts, and recovers write jobs (sections 5.3 and 6.5). Its relay publishes job events (section 3.6).                                                                                                                                                                                                       | P1, B5   |
 
 - Reviewer approval confirms this document. It does not authorize these six decision changes.
-- The main chat asks the owner together with OQ9 (section 10.2). The owner confirms before the release PR merges.
+- The main chat asks the owner together with OQ9 (section 10.2). The owner confirms before the release PR merges. The owner confirmed all six changes and answered OQ9 on 2026-10-17.
 - Cards P1, B4, B5, and P3 build the changes. None of them dispatches before the owner confirms its changes. Their dependent cards wait through their dependencies (section 9).
 - After the owner confirms, the main chat updates the decision record in the release PR. This card changes only this design file.
 - If the owner rejects a change, that change needs a new design revision. The main chat decides whether its card dispatches without that change or waits for the revision.
@@ -1667,7 +1667,7 @@ The shell routes hold neither page today (`frontend/src/app/app.routes.ts:57-168
 Owner gate (section "Owner decision gate"). The main chat accepted it on 2026-10-17 and extended it at 03:10 (OQ10):
 
 - P1 builds the D1 and D13 changes. B4 builds the D6, D7, and D12 changes. B5 builds the D6 and D13 changes. P3 builds the D9 change.
-- None of these four cards dispatches before the owner confirms its changes. The table below calls them "all four".
+- None of these four cards dispatches before the owner confirms its changes. The table below calls them "all four". The owner confirmed the changes on 2026-10-17. The four cards can dispatch.
 - P2, F1, F2, F3, F4, F5, F6, and Q1 depend on a gated card. They wait through their dependencies.
 - B1, B2, B3, and B6 build no gated change and depend on no gated card.
 
@@ -1769,7 +1769,7 @@ The grid follows `docs/ui/jobs-grid.json` and JOB-03 (`docs/ui/patterns.md:273-2
 
 F4. Frames `104:209`, `231:4707`, and `228:4524`. The detail shows identity, counts, the attention filter, operations, Inspect failure for failed rows, and Reconcile for unknown rows.
 It shows the Latest activity section below the operations grid from `latestActivity` (section 2.5): the sample line and the counter line.
-The sentence for a failure other than a permission failure waits for OQ9. The eng-lead carries that copy gate into this card.
+The owner answered OQ9 on 2026-10-17 (section 10.2). F4 drafts each missing sentence in the style of its frames. The owner reviews the strings in the F4 PR.
 It shows no Cancel, Retry, Pause, or download (eng-lead ruling 20). Live state follows section 3.4.
 
 F5. Source: the approved mockup `main@3eab39a:docs/ui/designs/2026-10-16-jobs-activity-area.html` and `.png` (D6). Its states are Idle, Running, and Needs attention (`main@3eab39a:docs/ui/designs/2026-10-16-jobs-activity-area.html:141-143`).
@@ -1778,7 +1778,7 @@ The panel lists Running, Waiting, and Recent from `GET /api/jobs/activity` with 
 F5 therefore depends on F4, which brings F3. Its tests check both actions (section 8.3).
 The activity reader rereads after `seen` succeeds and at `recent.nextExpiryAt` (section 3.4).
 
-F6. The Devices grid applies `entity-batch` events from write jobs in place. It keeps drafts, selection, and focus (JOB-02). It shows the accepted value and no verification indicator (OQ2 ruling).
+F6. The Devices grid applies `entity-batch` events from write jobs in place. It keeps drafts, selection, and focus (JOB-02). It shows the accepted value and no verification indicator (OQ2 ruling). The owner confirmed that ruling on 2026-10-17.
 
 Q1. Runs the tests of section 8.3 for Q1. It attacks the green suites with the policy acceptance scenarios, duplicate submission, duplicate dispatch, and stale attempts.
 It also stops a worker between a settle commit and its publication, and interleaves a refresh with a write. It restarts Redis during a write job.
@@ -1839,7 +1839,7 @@ This revision inspected both captures. Cancel stays out of this slice, although 
 Owner gate (section "Owner decision gate"):
 
 - The main chat asks the owner about the D1, D6, D7, D9, D12, and D13 changes together with OQ9.
-- Reviewer approval does not authorize those changes. The owner confirms them before the release PR merges and before cards P1, B4, B5, and P3 dispatch.
+- Reviewer approval does not authorize those changes. The owner confirms them before the release PR merges and before cards P1, B4, B5, and P3 dispatch. The owner confirmed them on 2026-10-17.
 - After the owner confirms, the main chat updates `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md` in the release PR. This card changes only this design file.
 
 The main chat ruled on OQ10 on 2026-10-17 at 03:10:
@@ -1857,7 +1857,13 @@ The main chat ruled on OQ10 on 2026-10-17 at 03:10:
 
 Open:
 
-| ID  | Question                                                                                                                                                                                                                                                  | Owner of the answer                                                           |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| OQ8 | Do Prepend and Append in the next slice need an operation precondition before a repeat? Section 7.3 holds only for absolute values.                                                                                                                       | next slice design                                                             |
-| OQ9 | Which Latest activity sentence names a failed sample whose reason is not a permission failure: `not-found`, `value-differs`, `quota`, or another Google rejection such as `invalid`? Which line shows a refresh job, or a job without pending operations? | The owner. The main chat (eng-lead) asks and carries the answer into card F4. |
+| ID  | Question                                                                                                                            | Owner of the answer |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| OQ8 | Do Prepend and Append in the next slice need an operation precondition before a repeat? Section 7.3 holds only for absolute values. | next slice design   |
+
+The owner answered on 2026-10-17:
+
+- OQ9: card F4 drafts each missing Latest activity sentence in the style of frames `104:209`, `228:4524`, and `231:4707`. The owner reviews the strings in the F4 PR.
+- OQ2: the job detail is enough. The Devices grid shows no verification indicator in this slice.
+- Permission labels: `devices:write` reads "Update devices", `devices:bulk-actions` reads "Run device bulk actions", and `jobs:read` reads "View jobs".
+- Owner gate: the owner confirmed the D1, D6, D7, D9, D12, and D13 changes. The release PR records them in the entity cache decision record.
