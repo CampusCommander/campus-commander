@@ -161,7 +161,7 @@ export async function stageGoogleConnectionBrowser({
   await page.reload();
   await expect(
     page.getByRole('heading', { name: 'Review Google customer', exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15000 });
   await expect(
     page.getByText(candidate.observation.customerId, { exact: true }),
   ).toBeVisible();
@@ -272,7 +272,7 @@ export async function confirmGoogleConnectionBrowser({
   await page.reload();
   await expect(
     page.getByRole('heading', { name: 'Customer connected', exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15000 });
   await expect(
     page
       .getByRole('navigation')

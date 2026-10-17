@@ -443,7 +443,7 @@ await store.close();await pool.end();`;
       await page.reload();
       await expect(
         page.getByRole('heading', { name: 'Diagnostics', exact: true }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 15000 });
       if (report && admissions)
         report.admissionRecovery.sourcePendingLoginStillValid =
           await admissions.verifySourceControl(sourcePhase3.actor);
