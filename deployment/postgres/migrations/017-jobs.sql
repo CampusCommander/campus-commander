@@ -361,11 +361,20 @@ END;
 $$;
 
 -- A refresh header that ends without its live sync lease ends as failed.
+-- A full-sync closure records the targets it observed before its one publication (section 1.2, review F19).
 CREATE FUNCTION cc.close_refresh_job(p_job uuid,p_failure text) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 BEGIN
   UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,p_failure),
-    finished_at=COALESCE(finished_at,clock_timestamp())
+    finished_at=COALESCE(finished_at,clock_timestamp()),
+    target_count=CASE WHEN scope_kind='all-devices'
+      THEN (SELECT count(*) FROM cc.job_targets t WHERE t.job_id=p_job) ELSE target_count END,
+    succeeded=CASE WHEN scope_kind='all-devices'
+      THEN (SELECT count(*) FROM cc.job_targets t WHERE t.job_id=p_job) ELSE succeeded END,
+    target_org_unit_paths=CASE WHEN scope_kind='all-devices'
+      THEN (SELECT COALESCE(array_agg(DISTINCT t.org_unit_path ORDER BY t.org_unit_path)
+        FILTER (WHERE t.org_unit_path IS NOT NULL),'{}'::text[]) FROM cc.job_targets t WHERE t.job_id=p_job)
+      ELSE target_org_unit_paths END
   WHERE job_id=p_job AND finished_at IS NULL;
   IF FOUND THEN PERFORM cc.record_job_change(p_job,true); END IF;
 END;
@@ -416,8 +425,13 @@ $$;
 -- The tick records the Kestra execution of one admitted job.
 CREATE FUNCTION cc.record_device_update_start(p_customer text,p_job uuid,p_token uuid,p_execution text) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE detail cc.device_update_jobs;
+DECLARE job cc.jobs; detail cc.device_update_jobs;
 BEGIN
+  -- S1: the header row locks before the detail row, as every other write-job writer takes them.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL THEN
+    RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
+  END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
   IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
@@ -634,12 +648,17 @@ BEGIN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   before:=job.status;
-  -- Every overlay writer locks its device rows in device_id order first.
+  -- S1: the operation rows lock after the header row and before the device rows, in operation_number
+  -- order, so a concurrent verification claim serializes with the fences below (review F15).
+  PERFORM 1 FROM cc.device_update_operations o JOIN jsonb_array_elements(p_results) r
+      ON o.operation_number=(r->>'operationNumber')::integer
+    WHERE o.job_id=p_job ORDER BY o.operation_number FOR UPDATE OF o;
+  -- Every overlay writer locks its device rows in device_id order after the operation rows.
   PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND d.device_id IN (
       SELECT o.device_id FROM cc.device_update_operations o JOIN jsonb_array_elements(p_results) r
         ON o.operation_number=(r->>'operationNumber')::integer WHERE o.job_id=p_job)
     ORDER BY d.device_id FOR UPDATE;
-  -- The write and read-back lease fences below read the clock after the device row locks (review F3).
+  -- The write and read-back lease fences below read the clock after every row lock (review F3, F15).
   now_at:=clock_timestamp();
   WITH results AS (
     SELECT (r->>'operationNumber')::integer AS operation_number,r FROM jsonb_array_elements(p_results) r
@@ -718,20 +737,27 @@ $$;
 CREATE FUNCTION cc.claim_device_update_verification(p_customer text,p_job uuid,p_operations jsonb,p_attempt uuid)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; claimed jsonb:='[]'::jsonb;
+DECLARE job cc.jobs; claimed jsonb:='[]'::jsonb; now_at timestamptz; lease_until timestamptz;
 BEGIN
   IF p_attempt IS NULL OR (p_operations IS NOT NULL AND jsonb_typeof(p_operations) IS DISTINCT FROM 'array') THEN
     RAISE EXCEPTION 'The read-back claim is invalid.' USING ERRCODE='22023';
   END IF;
-  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer;
+  -- S1: the header row locks first, then the operation rows in operation_number order, then the clock
+  -- and the fence. A settlement cannot slip between the fence and the claim (review F15).
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
+  PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='unknown' AND
+      (p_operations IS NULL OR o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e))
+    ORDER BY o.operation_number FOR UPDATE;
+  now_at:=clock_timestamp();
+  lease_until:=now_at+interval '120 seconds';
   WITH picked AS (
     UPDATE cc.device_update_operations o SET verify_attempt=p_attempt,
-      verify_lease_expires_at=clock_timestamp()+interval '120 seconds'
+      verify_lease_expires_at=lease_until
     WHERE o.job_id=p_job AND o.status='unknown' AND
-      (o.verify_lease_expires_at IS NULL OR o.verify_lease_expires_at<=clock_timestamp()) AND
+      (o.verify_lease_expires_at IS NULL OR o.verify_lease_expires_at<=now_at) AND
       (p_operations IS NULL OR o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e))
     RETURNING o.operation_number,o.device_id,o.serial_number,o.baseline_value,o.requested_value,o.verify_after)
   SELECT COALESCE(jsonb_agg(jsonb_build_object('operationNumber',c.operation_number,'deviceId',c.device_id,
@@ -778,14 +804,24 @@ END;
 $$;
 
 -- Finish steps 6 and 7. The status rule reads only the counters.
-CREATE FUNCTION cc.finish_device_update_job(p_customer text,p_job uuid,p_failure text DEFAULT NULL) RETURNS jsonb
+CREATE FUNCTION cc.finish_device_update_job(p_customer text,p_job uuid,p_token uuid,p_failure text DEFAULT NULL)
+RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; now_at timestamptz:=clock_timestamp(); before text; after text;
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; before text; after text;
 BEGIN
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
+  -- S2: a null token never matches. S3: a superseded or terminal call changes nothing (review F14).
+  IF p_token IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
+    RETURN jsonb_build_object('outcome','superseded','jobId',p_job,'status',job.status);
+  END IF;
+  IF job.finished_at IS NOT NULL OR job.status NOT IN ('accepted','queued','held','running') THEN
+    RETURN jsonb_build_object('outcome','finished','jobId',p_job,'status',job.status);
+  END IF;
+  now_at:=clock_timestamp();
   before:=job.status;
   IF p_failure IS NOT NULL THEN
     UPDATE cc.jobs SET failure=COALESCE(failure,p_failure) WHERE job_id=p_job;
@@ -930,7 +966,12 @@ BEGIN
     SELECT * INTO state FROM cc.device_sync_state s WHERE s.customer_id=job.customer_id FOR UPDATE;
     now_at:=clock_timestamp();
     IF state.sync_id=job.job_id AND state.sync_expires_at>now_at THEN CONTINUE; END IF;
-    UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,'interrupted'),finished_at=now_at
+    -- The closure records the targets the interrupted sync observed (section 1.2, review F19).
+    UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,'interrupted'),finished_at=now_at,
+      target_count=(SELECT count(*) FROM cc.job_targets t WHERE t.job_id=job.job_id),
+      succeeded=(SELECT count(*) FROM cc.job_targets t WHERE t.job_id=job.job_id),
+      target_org_unit_paths=(SELECT COALESCE(array_agg(DISTINCT t.org_unit_path ORDER BY t.org_unit_path)
+        FILTER (WHERE t.org_unit_path IS NOT NULL),'{}'::text[]) FROM cc.job_targets t WHERE t.job_id=job.job_id)
     WHERE job_id=job.job_id AND status='running' AND finished_at IS NULL;
     IF FOUND THEN PERFORM cc.record_job_change(job.job_id,true); END IF;
   END LOOP;
@@ -965,7 +1006,7 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.release_device_update_batch(text,uuid,uuid,integer,uuid),
   cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz),
   cc.claim_device_update_verification(text,uuid,jsonb,uuid),
-  cc.prepare_device_update_finish(text,uuid,uuid,text),cc.finish_device_update_job(text,uuid,text),
+  cc.prepare_device_update_finish(text,uuid,uuid,text),cc.finish_device_update_job(text,uuid,uuid,text),
   cc.finalize_device_update_job(text,uuid,text),
   cc.report_device_update_backoff(text,uuid,uuid,integer,uuid,integer),cc.accept_device_update_hold(text),
   cc.purge_jobs(text,integer) FROM PUBLIC;

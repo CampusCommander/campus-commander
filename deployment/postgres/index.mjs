@@ -288,7 +288,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz),
         cc.claim_device_update_verification(text,uuid,jsonb,uuid),
         cc.prepare_device_update_finish(text,uuid,uuid,text),
-        cc.finish_device_update_job(text,uuid,text),
+        cc.finish_device_update_job(text,uuid,uuid,text),
         cc.finalize_device_update_job(text,uuid,text),
         cc.report_device_update_backoff(text,uuid,uuid,integer,uuid,integer),
         cc.accept_device_update_hold(text),

@@ -214,7 +214,9 @@ DECLARE pending cc.device_sync_state;
 BEGIN
   SELECT * INTO pending FROM cc.device_sync_state s WHERE s.customer_id=p_customer FOR UPDATE;
   -- The lease fence and the new lease read the clock after the state row lock (review F12).
-  IF pending.sync_id IS DISTINCT FROM p_id OR pending.sync_attempt IS DISTINCT FROM p_attempt OR
+  -- A null sync or attempt is rejected before the comparison (section 5.4, review F16).
+  IF p_id IS NULL OR p_attempt IS NULL OR pending.sync_id IS DISTINCT FROM p_id OR
+    pending.sync_attempt IS DISTINCT FROM p_attempt OR
     pending.sync_expires_at<=clock_timestamp() THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
@@ -349,8 +351,9 @@ BEGIN
   IF jsonb_typeof(p_ids) IS DISTINCT FROM 'array' OR jsonb_array_length(p_ids)>1000 THEN
     RAISE EXCEPTION 'The device list is invalid.' USING ERRCODE='22023';
   END IF;
-  -- Lock the written rows in device_id order first, so concurrent writers cannot deadlock.
-  PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND d.removed_at IS NULL AND
+  -- Lock the requested rows in device_id order first, so concurrent writers cannot deadlock.
+  -- Every requested row takes the lock, including a removed row that a refresh can revive (review F20).
+  PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND
       d.device_id IN (SELECT jsonb_array_elements_text(p_ids))
     ORDER BY d.device_id FOR UPDATE;
   UPDATE cc.devices SET removed_at=clock_timestamp()
@@ -430,10 +433,8 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE pending cc.device_sync_state; now_at timestamptz; staged integer;
 BEGIN
   SELECT * INTO pending FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
-  -- The lease fence reads the clock after the state row lock (review F12).
-  now_at:=clock_timestamp();
   IF p_id IS NULL OR p_attempt IS NULL OR pending.sync_id IS DISTINCT FROM p_id OR
-    pending.sync_attempt IS DISTINCT FROM p_attempt OR pending.sync_expires_at<=now_at THEN
+    pending.sync_attempt IS DISTINCT FROM p_attempt THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
   -- The header lock comes after the state lock and before the device locks (section 1.8, review F11).
@@ -441,10 +442,18 @@ BEGIN
   SELECT count(*) INTO staged FROM cc.job_targets t WHERE t.job_id=p_id;
   IF p_failure IS NULL THEN
     PERFORM cc.google_current_generation(p_customer,pending.sync_generation);
-    -- The removal locks its candidates in device_id order first (section 1.8, review F11).
-    PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND d.removed_at IS NULL AND
+    -- The removal locks every candidate row in device_id order first (section 1.8, review F11).
+    -- A removed row that a refresh revives stays in the set, so the prelock covers the UPDATE (review F20).
+    PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND
         d.last_entity_sync<pending.sync_started_at
       ORDER BY d.device_id FOR UPDATE;
+  END IF;
+  -- The lease fence reads the database clock after the header lock and the device locks (review F17).
+  now_at:=clock_timestamp();
+  IF pending.sync_expires_at<=now_at THEN
+    RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+  END IF;
+  IF p_failure IS NULL THEN
     UPDATE cc.devices SET removed_at=now_at
     WHERE customer_id=p_customer AND removed_at IS NULL AND last_entity_sync<pending.sync_started_at;
     UPDATE cc.device_sync_state SET generation=pending.sync_generation,observed_at=now_at,
@@ -571,6 +580,12 @@ BEGIN
   SELECT * INTO job FROM cc.entity_sync_jobs WHERE job_id=p_job AND customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL OR p_batch IS NULL OR p_batch<0 OR p_batch>=job.batch_count THEN
     RAISE EXCEPTION 'The entity sync job changed.' USING DETAIL='entity-sync-changed';
+  END IF;
+  -- The purge or an abandon closes a job before all batches record. A late batch keeps that closure
+  -- (section 1.5, review F18). A replacement of a normally recorded batch still records.
+  IF job.finished_at IS NOT NULL AND
+    (SELECT count(*) FROM cc.entity_sync_batches b WHERE b.job_id=p_job)<job.batch_count THEN
+    RETURN cc.entity_sync_job_projection(job);
   END IF;
   INSERT INTO cc.entity_sync_batches(job_id,batch,status,failure,finished_at)
   VALUES(p_job,p_batch,CASE WHEN p_failure IS NULL THEN 'completed' ELSE 'failed' END,p_failure,now_at)
