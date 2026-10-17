@@ -190,6 +190,8 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE pending cc.device_sync_state; connection cc.google_connection; now_at timestamptz:=clock_timestamp();
 BEGIN
   SELECT * INTO pending FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
+  -- The lease fence reads the clock after the state row lock (review F3).
+  now_at:=clock_timestamp();
   IF p_id IS NULL OR p_attempt IS NULL OR pending.sync_id IS DISTINCT FROM p_id OR pending.sync_expires_at<=now_at THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
@@ -206,10 +208,9 @@ $$;
 
 CREATE FUNCTION cc.device_sync_lease(p_customer text,p_id uuid,p_attempt uuid) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE now_at timestamptz:=clock_timestamp();
 BEGIN
-  UPDATE cc.device_sync_state SET sync_expires_at=now_at+interval '10 minutes'
-  WHERE customer_id=p_customer AND sync_id=p_id AND sync_attempt=p_attempt AND sync_expires_at>now_at;
+  UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '10 minutes'
+  WHERE customer_id=p_customer AND sync_id=p_id AND sync_attempt=p_attempt AND sync_expires_at>clock_timestamp();
   IF NOT FOUND THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
@@ -428,6 +429,10 @@ BEGIN
   SELECT count(*) INTO staged FROM cc.job_targets t WHERE t.job_id=p_id;
   IF p_failure IS NULL THEN
     PERFORM cc.google_current_generation(p_customer,pending.sync_generation);
+    -- The removal locks its candidates in device_id order first (section 1.8, review F11).
+    PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND d.removed_at IS NULL AND
+        d.last_entity_sync<pending.sync_started_at
+      ORDER BY d.device_id FOR UPDATE;
     UPDATE cc.devices SET removed_at=now_at
     WHERE customer_id=p_customer AND removed_at IS NULL AND last_entity_sync<pending.sync_started_at;
     UPDATE cc.device_sync_state SET generation=pending.sync_generation,observed_at=now_at,

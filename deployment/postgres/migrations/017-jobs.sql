@@ -452,6 +452,8 @@ DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz:=clock_tim
 BEGIN
   FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND j.status='running'
       ORDER BY j.created_at FOR UPDATE LOOP
+    -- The tick reads its clock after the job row lock (review F3).
+    now_at:=clock_timestamp();
     SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=job.job_id;
     SELECT EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=job.job_id AND b.lease_expires_at>now_at)
       INTO live;
@@ -523,6 +525,8 @@ BEGIN
     RETURN jsonb_build_object('outcome','stopped','failure',stopped);
   END IF;
   SELECT * INTO held FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch FOR UPDATE;
+  -- The lease fence reads the clock after the job row lock and the batch row lock (review F3).
+  now_at:=clock_timestamp();
   live:=held.lease_expires_at IS NOT NULL AND held.lease_expires_at+interval '30 seconds'>now_at;
   IF held.attempt_id IS NOT NULL AND held.attempt_id<>p_attempt THEN
     IF live THEN RETURN jsonb_build_object('outcome','busy'); END IF;
@@ -553,7 +557,8 @@ BEGIN
     UPDATE cc.jobs SET started_at=now_at WHERE job_id=p_job;
   END IF;
   -- Every reader-visible claim change records one publication row (section 3.6, review F8).
-  IF job.started_at IS NULL OR jsonb_array_length(readback)>0 THEN
+  -- A later batch changes the public operation timestamps, so it records its change too.
+  IF job.started_at IS NULL OR jsonb_array_length(claim)>0 OR jsonb_array_length(readback)>0 THEN
     PERFORM cc.record_job_change(p_job,false);
   END IF;
   connection:=cc.google_current_generation(p_customer,job.generation);
@@ -573,6 +578,8 @@ BEGIN
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
   SELECT * INTO batch FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch FOR UPDATE;
+  -- The lease fence and the new lease read the clock after the row locks (review F3).
+  now_at:=clock_timestamp();
   IF job.status<>'running' OR detail.dispatch_token IS DISTINCT FROM p_token OR
     batch.attempt_id IS DISTINCT FROM p_attempt OR batch.lease_expires_at IS NULL OR batch.lease_expires_at<=now_at THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
@@ -632,6 +639,8 @@ BEGIN
       SELECT o.device_id FROM cc.device_update_operations o JOIN jsonb_array_elements(p_results) r
         ON o.operation_number=(r->>'operationNumber')::integer WHERE o.job_id=p_job)
     ORDER BY d.device_id FOR UPDATE;
+  -- The write and read-back lease fences below read the clock after the device row locks (review F3).
+  now_at:=clock_timestamp();
   WITH results AS (
     SELECT (r->>'operationNumber')::integer AS operation_number,r FROM jsonb_array_elements(p_results) r
   ), eligible AS (
@@ -709,7 +718,7 @@ $$;
 CREATE FUNCTION cc.claim_device_update_verification(p_customer text,p_job uuid,p_operations jsonb,p_attempt uuid)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; now_at timestamptz:=clock_timestamp(); claimed jsonb:='[]'::jsonb;
+DECLARE job cc.jobs; claimed jsonb:='[]'::jsonb;
 BEGIN
   IF p_attempt IS NULL OR (p_operations IS NOT NULL AND jsonb_typeof(p_operations) IS DISTINCT FROM 'array') THEN
     RAISE EXCEPTION 'The read-back claim is invalid.' USING ERRCODE='22023';
@@ -720,9 +729,9 @@ BEGIN
   END IF;
   WITH picked AS (
     UPDATE cc.device_update_operations o SET verify_attempt=p_attempt,
-      verify_lease_expires_at=now_at+interval '120 seconds'
+      verify_lease_expires_at=clock_timestamp()+interval '120 seconds'
     WHERE o.job_id=p_job AND o.status='unknown' AND
-      (o.verify_lease_expires_at IS NULL OR o.verify_lease_expires_at<=now_at) AND
+      (o.verify_lease_expires_at IS NULL OR o.verify_lease_expires_at<=clock_timestamp()) AND
       (p_operations IS NULL OR o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e))
     RETURNING o.operation_number,o.device_id,o.serial_number,o.baseline_value,o.requested_value,o.verify_after)
   SELECT COALESCE(jsonb_agg(jsonb_build_object('operationNumber',c.operation_number,'deviceId',c.device_id,
@@ -744,6 +753,8 @@ BEGIN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
+  -- The grace fence reads the clock after the job row lock (review F3).
+  now_at:=clock_timestamp();
   IF detail.dispatch_token IS DISTINCT FROM p_token THEN
     RETURN jsonb_build_object('outcome','superseded');
   END IF;
@@ -804,6 +815,8 @@ BEGIN
   IF job.finished_at IS NOT NULL THEN
     RETURN jsonb_build_object('outcome','finished','jobId',p_job,'status',job.status);
   END IF;
+  -- The grace fence reads the clock after the job row lock (review F3).
+  now_at:=clock_timestamp();
   -- The reaper never acts while a batch lease or its grace lives (section 5.10, review F4).
   IF EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=p_job AND
       b.lease_expires_at+interval '30 seconds'>now_at) THEN
@@ -841,6 +854,8 @@ BEGIN
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
   SELECT * INTO batch FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch;
+  -- The lease fence reads the clock after the row locks (review F3).
+  now_at:=clock_timestamp();
   IF job.job_id IS NULL OR job.status<>'running' OR detail.dispatch_token IS DISTINCT FROM p_token OR
     batch.attempt_id IS DISTINCT FROM p_attempt OR batch.lease_expires_at IS NULL OR
     batch.lease_expires_at<=now_at THEN
@@ -864,6 +879,8 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext('cc.job-admission:'||p_customer)::bigint);
   FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND
       j.status='running' ORDER BY j.created_at FOR UPDATE LOOP
+    -- The lease fence reads the clock after the job row lock (review F3).
+    now_at:=clock_timestamp();
     SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=job.job_id;
     IF detail.backoff_reported_at IS NULL OR detail.backoff_reported_at<now_at-interval '30 seconds' THEN
       CONTINUE;
