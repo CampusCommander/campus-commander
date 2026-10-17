@@ -4,7 +4,15 @@ Updated: 2026-10-16.
 
 ## Authorized now
 
-Build one active workflow: [browse ChromeOS devices](workflows/device-browsing.md).
+On 2026-10-16 the owner signed off the [device browsing workflow](workflows/device-browsing.md) after a walkthrough.
+The owner authorized development order step 4 to start after that sign-off. The owner chose the first device edit: "Update the annotated location".
+Step 4 builds that edit on selected devices through preview, confirmation, a job, and visible results.
+The owner chose to build the jobs UI as part of this first edit. The [owner decisions of 2026-10-16](workflow-gaps.md#owner-decisions--2026-10-16) record the jobs scope.
+The [workflow record](workflows/update-device-annotated-location.md) defines this edit and the jobs UI. The owner resolves its open decisions before dependent implementation.
+Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
+
+### Device browsing record (signed off 2026-10-16)
+
 Source: development order steps 2 and 3 below, and owner decisions on 2026-10-05.
 The owner authorized implementation on 2026-10-05, after the workflow record.
 
@@ -66,7 +74,7 @@ Read-only device work does not depend on school creation, invitations, or comple
 Device-specific Google scopes and method support still require verification before real provider access.
 The existing test authorization does not include device writes.
 
-Steps 2 and 3 are active, as the owner authorized on 2026-10-05. Later steps require their own authorization.
+Steps 2 and 3 are complete. The owner signed off device browsing on 2026-10-16. Step 4 is active. Later steps require their own authorization.
 Keep one workflow active. Finish its usable result before expanding the feature surface.
 
 ## How to choose and finish a task

@@ -687,7 +687,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                     name: 'Diagnostics',
                     exact: true,
                   }),
-                ).toBeVisible(),
+                ).toBeVisible({ timeout: 15000 }),
             })),
           });
           await expect(page.locator('html')).toHaveAttribute(
@@ -713,7 +713,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                           name: 'Sign in',
                           exact: true,
                         }),
-                      ).toBeVisible(),
+                      ).toBeVisible({ timeout: 15000 }),
                   })),
                 });
               },

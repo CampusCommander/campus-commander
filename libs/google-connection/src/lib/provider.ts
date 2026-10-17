@@ -112,6 +112,12 @@ export function failure(
   const reason =
     typeof provider === 'string' ? provider : provider?.errors?.[0]?.reason;
   const status = response?.status;
+  // Google answers an ungranted scope with 401 unauthorized_client (calibration 2026-10-09).
+  if (
+    reason === 'unauthorized_client' ||
+    (stage === 'token' && reason === 'access_denied')
+  )
+    return new GoogleConnectionError('delegation-not-authorized');
   if (
     ['invalid_grant', 'invalid_client', 'deleted_client'].includes(
       reason ?? '',
@@ -119,11 +125,6 @@ export function failure(
     status === 401
   )
     return new GoogleConnectionError('credential-rejected');
-  if (
-    reason === 'unauthorized_client' ||
-    (stage === 'token' && reason === 'access_denied')
-  )
-    return new GoogleConnectionError('delegation-not-authorized');
   if (reason === 'accessNotConfigured')
     return new GoogleConnectionError('api-not-enabled');
   if (

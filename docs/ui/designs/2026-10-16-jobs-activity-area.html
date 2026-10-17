@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Proposal: jobs activity area (Campus Commander)</title>
+<style>
+  :root {
+    --cc-surface-app: #F8FAFC; --cc-surface-card: #FFFFFF; --cc-surface-hover: #F1F5F9;
+    --cc-border: #E2E8F0; --cc-accent: #1A73E8; --cc-text-primary: #202124; --cc-text-secondary: #5F6368;
+    --cc-surface-selected: rgba(26,115,232,0.08); --cc-status-success: #188038; --cc-status-warning: #F9AB00;
+    --cc-status-error: #D93025; --cc-status-info: #1A73E8; --cc-status-warning-text: #7A4E00;
+    --cc-status-error-text: #B3261E; --cc-text-link: #1556B0; --cc-text-disabled: #9AA0A6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cc-surface-app); color: var(--cc-text-primary);
+         font: 400 14px/20px Roboto, "Segoe UI", Arial, sans-serif; }
+  .frame { width: 1440px; height: 900px; position: relative; background: var(--cc-surface-app);
+           border: 1px solid var(--cc-border); overflow: hidden; }
+  nav { position: absolute; left: 0; top: 0; bottom: 40px; width: 240px; background: var(--cc-surface-card);
+        border-right: 1px solid var(--cc-border); padding: 24px 12px; }
+  .brand { padding: 0 12px 24px; border-bottom: 1px solid var(--cc-border); margin-bottom: 8px; }
+  .brand b { display: block; font: 500 16px/24px Roboto, Arial, sans-serif; }
+  .brand span { font-size: 12px; line-height: 16px; color: var(--cc-text-secondary); }
+  .nav-item { display: flex; align-items: center; gap: 16px; height: 40px; padding: 0 12px; border-radius: 4px;
+              margin: 8px 0; color: var(--cc-text-primary); }
+  .nav-item.active { background: var(--cc-surface-selected); color: var(--cc-text-link); }
+  header { position: absolute; left: 240px; right: 0; top: 0; height: 64px; background: var(--cc-surface-card);
+           border-bottom: 1px solid var(--cc-border); display: flex; align-items: center; padding: 0 24px; }
+  header .title b { display: block; font: 700 24px/32px Roboto, Arial, sans-serif; }
+  header .title span { font-size: 12px; line-height: 16px; color: var(--cc-text-secondary); }
+  .actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .icon-btn { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; position: relative;
+              color: var(--cc-text-secondary); }
+  .icon-btn.open { background: var(--cc-surface-selected); color: var(--cc-accent); }
+  .user { display: flex; align-items: center; gap: 12px; margin-left: 8px; }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--cc-surface-selected); color: var(--cc-accent);
+            display: grid; place-items: center; font: 500 12px/16px Roboto, Arial, sans-serif; }
+  .user b { display: block; font-weight: 400; }
+  .user span { font-size: 12px; color: var(--cc-text-secondary); }
+  .ring { position: absolute; inset: 3px; border-radius: 50%; border: 2px solid rgba(26,115,232,0.18);
+          border-top-color: var(--cc-status-info); animation: spin 1.1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .badge { position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+           background: var(--cc-accent); color: #fff; font: 500 11px/16px Roboto, Arial, sans-serif; text-align: center; }
+  .dot { position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%;
+         background: var(--cc-status-warning); border: 2px solid var(--cc-surface-card); }
+  main { position: absolute; left: 264px; top: 88px; right: 24px; bottom: 64px; background: var(--cc-surface-card);
+         border: 1px solid var(--cc-border); opacity: 0.45; }
+  main .rows div { height: 32px; border-bottom: 1px solid var(--cc-border); }
+  footer { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: var(--cc-surface-card);
+           border-top: 1px solid var(--cc-border); display: flex; align-items: center; padding: 0 24px;
+           font-size: 12px; color: var(--cc-text-secondary); }
+  footer .ok { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  footer .ok i { width: 8px; height: 8px; border-radius: 50%; background: var(--cc-status-success); display: inline-block; }
+  .panel { position: absolute; top: 58px; right: 236px; width: 420px; background: var(--cc-surface-card);
+           border: 1px solid var(--cc-border); border-radius: 8px; box-shadow: 0 8px 24px rgba(32,33,36,0.18); }
+  .panel-head { display: flex; align-items: baseline; padding: 16px 16px 8px; }
+  .panel-head b { font: 500 16px/24px Roboto, Arial, sans-serif; }
+  .panel-head span { margin-left: 8px; font-size: 12px; color: var(--cc-text-secondary); }
+  .section { padding: 8px 16px 4px; font: 500 12px/16px Roboto, Arial, sans-serif; color: var(--cc-text-secondary);
+             text-transform: uppercase; letter-spacing: 0.4px; }
+  .item { display: grid; grid-template-columns: 24px 1fr auto; gap: 12px; padding: 10px 16px; align-items: start; }
+  .item:hover { background: var(--cc-surface-hover); }
+  .item b { font-weight: 500; display: block; }
+  .item .sub { font-size: 12px; line-height: 16px; color: var(--cc-text-secondary); }
+  .item .time { font-size: 12px; color: var(--cc-text-secondary); white-space: nowrap; }
+  .bar { height: 4px; border-radius: 2px; background: rgba(26,115,232,0.16); margin-top: 6px; }
+  .bar i { display: block; height: 4px; border-radius: 2px; background: var(--cc-status-info); }
+  .spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(26,115,232,0.2);
+          border-top-color: var(--cc-status-info); animation: spin 1.1s linear infinite; margin-top: 1px; }
+  .warn-text { color: var(--cc-status-warning-text); }
+  .err-text { color: var(--cc-status-error-text); }
+  .panel-foot { border-top: 1px solid var(--cc-border); padding: 12px 16px; display: flex; align-items: center; }
+  .panel-foot a { color: var(--cc-text-link); text-decoration: none; font-weight: 500; }
+  .panel-foot span { margin-left: auto; font-size: 12px; color: var(--cc-text-secondary); }
+  .notes { position: absolute; top: 96px; left: 288px; width: 470px; background: #FFFDF5;
+           border: 1px dashed #C9A227; border-radius: 8px; padding: 16px 20px; color: var(--cc-text-primary); }
+  .notes h2 { margin: 0 0 8px; font: 500 16px/24px Roboto, Arial, sans-serif; }
+  .notes ol { margin: 0; padding-left: 20px; }
+  .notes li { margin: 6px 0; }
+  .states { position: absolute; top: 560px; left: 288px; width: 470px; background: var(--cc-surface-card);
+            border: 1px dashed #C9A227; border-radius: 8px; padding: 16px 20px; }
+  .states h2 { margin: 0 0 12px; font: 500 16px/24px Roboto, Arial, sans-serif; }
+  .state-row { display: flex; flex-direction: column; gap: 12px; }
+  .state { display: flex; align-items: center; gap: 12px; }
+  .state .icon-btn { background: var(--cc-surface-app); }
+  .state small { display: block; color: var(--cc-text-secondary); font-size: 12px; line-height: 16px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="bell" viewBox="0 0 24 24"><path fill="currentColor" d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6V11c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2Zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6Z"/></symbol>
+  <symbol id="help" viewBox="0 0 24 24"><path fill="currentColor" d="M11 18h2v-2h-2v2Zm1-16a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm0-14a4 4 0 0 0-4 4h2a2 2 0 1 1 4 0c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5a4 4 0 0 0-4-4Z"/></symbol>
+  <symbol id="moon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36A5.39 5.39 0 0 1 12.36 3.1C11.92 3.04 11.46 3 12 3Zm0 16a7 7 0 0 1-2.03-13.7 7.4 7.4 0 0 0 8.73 8.73A7 7 0 0 1 12 19Z"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path fill="#188038" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9Z"/></symbol>
+  <symbol id="warn" viewBox="0 0 24 24"><path fill="#F9AB00" d="M1 21h22L12 2 1 21Zm12-3h-2v-2h2v2Zm0-4h-2v-4h2v4Z"/></symbol>
+  <symbol id="error" viewBox="0 0 24 24"><path fill="#D93025" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z"/></symbol>
+  <symbol id="clock" viewBox="0 0 24 24"><path fill="#5F6368" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7Z"/></symbol>
+  <symbol id="laptop" viewBox="0 0 24 24"><path fill="currentColor" d="M20 18a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2H0v2h24v-2h-4ZM4 6h16v10H4V6Z"/></symbol>
+  <symbol id="history" viewBox="0 0 24 24"><path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3Zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12Z"/></symbol>
+  <symbol id="gear" viewBox="0 0 24 24"><path fill="currentColor" d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54a7 7 0 0 0-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L2.71 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.61.22l2.39-.96c.5.39 1.04.7 1.62.94l.36 2.54c.05.24.25.42.49.42h3.8c.24 0 .45-.18.49-.42l.36-2.54a7 7 0 0 0 1.62-.94l2.39.96c.22.08.48 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></symbol>
+</svg>
+
+<div class="frame">
+  <nav>
+    <div class="brand"><b>Campus Commander</b><span>North District · example.edu</span></div>
+    <div class="nav-item active"><svg width="20" height="20"><use href="#laptop"/></svg>Devices</div>
+    <div class="nav-item"><svg width="20" height="20"><use href="#history"/></svg>Jobs</div>
+    <div class="nav-item"><svg width="20" height="20"><use href="#gear"/></svg>Settings</div>
+  </nav>
+
+  <header>
+    <div class="title"><b>Devices</b><span>ChromeOS inventory · District scope</span></div>
+    <div class="actions">
+      <div class="icon-btn open" title="Activity: 2 jobs running">
+        <span class="ring"></span><svg width="22" height="22"><use href="#bell"/></svg><span class="badge">2</span>
+      </div>
+      <div class="icon-btn"><svg width="22" height="22"><use href="#help"/></svg></div>
+      <div class="icon-btn"><svg width="22" height="22"><use href="#moon"/></svg></div>
+      <div class="user"><div class="avatar">DA</div><div><b>District Admin</b><span>District operator</span></div></div>
+    </div>
+  </header>
+
+  <main><div class="rows"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></main>
+
+  <div class="notes">
+    <h2>Proposal: jobs activity area (not in Figma yet)</h2>
+    <ol>
+      <li><b>At a glance.</b> A new Activity button sits left of Help. While jobs run, a progress ring circles it and the badge counts running jobs.</li>
+      <li><b>Attention.</b> An amber dot marks finished jobs that need review or ended with errors. It clears when you open the panel.</li>
+      <li><b>Summary.</b> The panel lists running jobs, waiting jobs, and jobs that finished in the last 24 hours (at most 10).</li>
+      <li><b>Navigation.</b> Each row opens that job's detail page. "View all jobs" opens the Jobs page.</li>
+      <li><b>Truth rules.</b> Updates arrive live. Held jobs never promise a start time. Unknown outcomes say "Needs review", never success.</li>
+      <li><b>Record.</b> The panel is a summary. The Jobs page and job detail stay the durable record.</li>
+    </ol>
+  </div>
+
+  <div class="states">
+    <h2>Activity button states</h2>
+    <div class="state-row">
+      <div class="state"><div class="icon-btn"><svg width="22" height="22"><use href="#bell"/></svg></div><div>Idle<small>No running jobs</small></div></div>
+      <div class="state"><div class="icon-btn"><span class="ring"></span><svg width="22" height="22"><use href="#bell"/></svg><span class="badge">2</span></div><div>Running<small>Ring and count of running jobs</small></div></div>
+      <div class="state"><div class="icon-btn"><svg width="22" height="22"><use href="#bell"/></svg><span class="dot"></span></div><div>Needs attention<small>Unseen review or error</small></div></div>
+    </div>
+  </div>
+
+  <div class="panel" role="dialog" aria-label="Activity">
+    <div class="panel-head"><b>Activity</b><span>District activity</span></div>
+
+    <div class="section">Running · 2</div>
+    <div class="item"><div class="spin"></div>
+      <div><b>UPD-014 · Update device annotations</b><div class="sub">36 of 48 devices · Maya Chen</div><div class="bar"><i style="width:75%"></i></div></div>
+      <div class="time">2m 08s</div></div>
+    <div class="item"><div class="spin"></div>
+      <div><b>REF-031 · Refresh inventory</b><div class="sub">3,200 of 7,000 devices · District Admin</div><div class="bar"><i style="width:46%"></i></div></div>
+      <div class="time">1m 12s</div></div>
+
+    <div class="section">Waiting · 1</div>
+    <div class="item"><svg width="20" height="20"><use href="#clock"/></svg>
+      <div><b>UPD-013 · Update device annotations</b><div class="sub">Held · Google backoff · Starts when Google allows</div></div>
+      <div class="time">24 devices</div></div>
+
+    <div class="section">Recent · last 24 hours</div>
+    <div class="item"><svg width="20" height="20"><use href="#warn"/></svg>
+      <div><b>UPD-006 · Update device annotations</b><div class="sub warn-text">Needs review · 4 succeeded · 1 failed · 1 unknown</div></div>
+      <div class="time">10:36 AM</div></div>
+    <div class="item"><svg width="20" height="20"><use href="#check"/></svg>
+      <div><b>REF-030 · Refresh inventory</b><div class="sub">Completed · 7,000 devices</div></div>
+      <div class="time">10:28 AM</div></div>
+    <div class="item"><svg width="20" height="20"><use href="#error"/></svg>
+      <div><b>UPD-003 · Update device annotations</b><div class="sub err-text">Completed with errors · 5 succeeded · 1 failed</div></div>
+      <div class="time">9:58 AM</div></div>
+
+    <div class="panel-foot"><a href="#">View all jobs</a><span>Updated live</span></div>
+  </div>
+
+  <footer>Campus Commander · Proposal for owner review<div class="ok"><i></i>All systems connected</div></footer>
+</div>
+</body>
+</html>

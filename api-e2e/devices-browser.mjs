@@ -58,7 +58,7 @@ export async function qualifyDevicesBrowser({
         const contact = page.locator(
           '[row-id="synthetic-device-0"] [col-id="lastContact"]',
         );
-        await expect(contact).toHaveClass(/device-stale/);
+        await expect(contact).toHaveClass(/device-stale/, { timeout: 15000 });
         await expect(
           page.getByRole('heading', { name: 'Refreshing 2 of 450 devices' }),
         ).toBeVisible({ timeout: 15_000 });

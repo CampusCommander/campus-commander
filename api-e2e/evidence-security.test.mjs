@@ -577,6 +577,98 @@ test('guarded closure bounds active requests and closes on timeout', async (t) =
   assert.equal(closed, true);
 });
 
+test('context closure skips stalled font requests that Chromium never completes', async () => {
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  let closed = false;
+  context.close = async () => {
+    closed = true;
+    context.emit('close');
+  };
+  context.emit('request', {
+    url: () => 'https://fixture.invalid/stalled.woff2',
+    resourceType: () => 'font',
+    frame: () => ({ page: () => ({ isClosed: () => false }) }),
+  });
+  await security.close(context);
+  assert.equal(closed, true);
+});
+
+test('guarded page closure still bounds stalled font requests on timeout', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const security = new EvidenceSecurity();
+  const context = new EventEmitter();
+  await security.newContext({ newContext: async () => context }, {});
+  let closed = false;
+  const page = {
+    isClosed: () => closed,
+    close: async () => {
+      closed = true;
+    },
+  };
+  context.emit('request', {
+    url: () => 'https://fixture.invalid/stalled.woff2',
+    resourceType: () => 'font',
+    frame: () => ({ page: () => page }),
+  });
+  const closing = assert.rejects(security.close(page), (error) => {
+    assert.match(
+      error.message,
+      /Browser requests did not finish before closure/,
+    );
+    const observations = JSON.parse(error.observations);
+    assert.equal(observations.activeRequestCount, 1);
+    assert.equal(observations.activeRequests[0].resourceType, 'font');
+    assert.equal(observations.activeRequests[0].headersObserved, false);
+    return true;
+  });
+  await new Promise((done) => setImmediate(done));
+  assert.equal(closed, false);
+  t.mock.timers.tick(5000);
+  await closing;
+  assert.equal(closed, true);
+});
+
+test('closed contexts retire excluded font requests so they cannot accumulate', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const security = new EvidenceSecurity();
+  const fontContext = new EventEmitter();
+  await security.newContext({ newContext: async () => fontContext }, {});
+  fontContext.close = async () => fontContext.emit('close');
+  fontContext.emit('request', {
+    url: () => 'https://fixture.invalid/retired.woff2',
+    resourceType: () => 'font',
+    frame: () => ({ page: () => ({ isClosed: () => false }) }),
+  });
+  const fontClosing = assert.doesNotReject(security.close(fontContext));
+  await new Promise((done) => setImmediate(done));
+  t.mock.timers.tick(5000);
+  await fontClosing;
+
+  const fetchContext = new EventEmitter();
+  await security.newContext({ newContext: async () => fetchContext }, {});
+  fetchContext.close = async () => fetchContext.emit('close');
+  fetchContext.emit('request', {
+    url: () => `https://fixture.invalid/${secret}`,
+    resourceType: () => 'fetch',
+    frame: () => {
+      throw new Error('Worker request');
+    },
+  });
+  const fetchClosing = assert.rejects(security.close(fetchContext), (error) => {
+    assert.equal(error.observations.includes(secret), false);
+    const observations = JSON.parse(error.observations);
+    assert.equal(observations.activeRequestCount, 1);
+    assert.equal(observations.activeRequests[0].contextId, 2);
+    assert.equal(observations.activeRequests[0].resourceType, 'fetch');
+    return true;
+  });
+  await new Promise((done) => setImmediate(done));
+  t.mock.timers.tick(5000);
+  await fetchClosing;
+});
+
 test('page closure blocks new requests without waiting for another page', async () => {
   const security = new EvidenceSecurity();
   const context = new EventEmitter();
