@@ -5008,8 +5008,16 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
-    // A completed full sync that left the seven-day retention window.
+    // A completed full sync that left the seven-day retention window. Every other closure candidate
+    // of the customer ends first, so a wait on the sync state in these checks comes from the
+    // retention pass and not from the interrupted-sync pass.
     const makeRetentionSync = async () => {
+      await migrator.query(
+        `UPDATE cc.jobs SET status='failed',finished_at=COALESCE(finished_at,clock_timestamp())
+          WHERE customer_id=$1 AND kind='inventory-refresh' AND scope_kind='all-devices'
+            AND status='running'`,
+        [customer],
+      );
       await resetSync();
       const sync = await requestAs(reader);
       const attempt = randomUUID();
