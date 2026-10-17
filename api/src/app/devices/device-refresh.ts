@@ -37,7 +37,7 @@ export class DeviceRefresh {
   ): Promise<string | null> {
     if (ids.length === 0) return null;
     // Reaping old jobs is housekeeping. A store fault here must not block the refresh.
-    await this.store('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [
+    await this.store('SELECT cc.purge_jobs($1,$2) AS result', [
       customerId,
       100,
     ]).catch(() => undefined);

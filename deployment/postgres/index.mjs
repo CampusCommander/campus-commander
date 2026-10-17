@@ -113,6 +113,7 @@ export async function loadMigrations() {
       '014-school-grants',
       '015-restore-revalidation',
       '016-device-inventory',
+      '017-jobs',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -254,7 +255,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.abandon_device_sync(uuid,integer,text,uuid,text),
         cc.claim_device_sync(text,uuid,uuid),
         cc.device_record(cc.devices,text),
-        cc.upsert_devices(text,jsonb,timestamptz),
+        cc.upsert_devices(text,jsonb,timestamptz,text),
         cc.upsert_device_batteries(text,jsonb),
         cc.soft_delete_devices(text,jsonb),
         cc.read_device_records(text,jsonb),
@@ -266,8 +267,32 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.create_entity_sync_job(uuid,integer,text,text,jsonb,integer,uuid,uuid),
         cc.abandon_entity_sync_job(uuid,integer,text,uuid),
         cc.read_entity_sync_batch(text,uuid,integer),
-        cc.finish_entity_sync_batch(text,uuid,integer,text),
-        cc.purge_entity_sync_jobs(text,integer) TO ${role}`);
+        cc.finish_entity_sync_batch(text,uuid,integer,text) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '017-jobs')) {
+      await client.query(`GRANT SELECT ON cc.jobs, cc.job_targets, cc.device_update_previews,
+        cc.device_update_preview_targets, cc.device_update_jobs, cc.device_update_batches,
+        cc.device_update_operations, cc.device_write_overlays, cc.job_activity_seen,
+        cc.job_publications TO ${role};
+        GRANT EXECUTE ON FUNCTION cc.job_visible(uuid,integer,text,uuid),
+        cc.record_job_change(uuid,boolean,jsonb,jsonb,integer),
+        cc.read_job_publications(text,integer),
+        cc.complete_job_publications(text,jsonb),
+        cc.admit_device_update_job(text,boolean),
+        cc.record_device_update_start(text,uuid,uuid,text),
+        cc.abandon_device_update_start(text,uuid,uuid),
+        cc.recover_device_update_jobs(text),
+        cc.claim_device_update_batch(text,uuid,uuid,integer,uuid,text),
+        cc.renew_device_update_batch(text,uuid,uuid,integer,uuid),
+        cc.release_device_update_batch(text,uuid,uuid,integer,uuid),
+        cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz),
+        cc.claim_device_update_verification(text,uuid,jsonb,uuid),
+        cc.prepare_device_update_finish(text,uuid,uuid,text),
+        cc.finish_device_update_job(text,uuid,text),
+        cc.finalize_device_update_job(text,uuid,text),
+        cc.report_device_update_backoff(text,uuid,uuid,integer,uuid,integer),
+        cc.accept_device_update_hold(text),
+        cc.purge_jobs(text,integer) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);
