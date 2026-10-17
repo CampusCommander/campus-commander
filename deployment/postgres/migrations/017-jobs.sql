@@ -1357,7 +1357,7 @@ $$;
 -- The purge keeps write jobs. Refresh jobs leave after seven days, previews and overlays when they lapse.
 CREATE FUNCTION cc.purge_jobs(p_customer text,p_limit integer) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE removed integer; job cc.jobs; candidate uuid; state cc.device_sync_state; now_at timestamptz;
+DECLARE removed integer:=0; job cc.jobs; candidate uuid; state cc.device_sync_state; now_at timestamptz;
 BEGIN
   IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 10000 THEN
     RAISE EXCEPTION 'The purge limit is invalid.' USING ERRCODE='22023';
@@ -1401,11 +1401,20 @@ BEGIN
   END LOOP;
   now_at:=clock_timestamp();
   -- Refresh jobs leave with their detail, batch, and target rows. A write job never leaves.
-  DELETE FROM cc.jobs WHERE job_id IN (
-    SELECT j.job_id FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND
+  -- S1 (round 6, R6-12): every retention candidate takes the sync state row first, then its header,
+  -- then the clock, and it rechecks its eligibility under those locks. The deletion itself stays
+  -- allowed.
+  FOR candidate IN SELECT j.job_id FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND
       j.finished_at IS NOT NULL AND j.finished_at<now_at-interval '7 days'
-    ORDER BY j.finished_at LIMIT p_limit);
-  GET DIAGNOSTICS removed=ROW_COUNT;
+      ORDER BY j.finished_at LIMIT p_limit LOOP
+    PERFORM 1 FROM cc.device_sync_state s WHERE s.customer_id=p_customer FOR UPDATE;
+    SELECT * INTO job FROM cc.jobs j WHERE j.job_id=candidate FOR UPDATE;
+    IF job.job_id IS NULL OR job.finished_at IS NULL THEN CONTINUE; END IF;
+    now_at:=clock_timestamp();
+    IF job.finished_at>=now_at-interval '7 days' THEN CONTINUE; END IF;
+    DELETE FROM cc.jobs WHERE job_id=candidate;
+    removed:=removed+1;
+  END LOOP;
   -- An unconfirmed preview leaves 24 hours after its expiry, with its targets.
   DELETE FROM cc.device_update_previews WHERE customer_id=p_customer AND job_id IS NULL AND
     expires_at<now_at-interval '24 hours';

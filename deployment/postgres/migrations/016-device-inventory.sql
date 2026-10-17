@@ -211,18 +211,26 @@ $$;
 
 CREATE FUNCTION cc.claim_device_sync(p_customer text,p_id uuid,p_attempt uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE pending cc.device_sync_state; connection cc.google_connection; now_at timestamptz;
+DECLARE pending cc.device_sync_state; header record; connection cc.google_connection; now_at timestamptz;
 BEGIN
   -- S2: the fence rejects a null identifier, token, or attempt explicitly.
   IF p_customer IS NULL OR p_id IS NULL OR p_attempt IS NULL THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
   SELECT * INTO pending FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
-  -- S1: the job header locks after the state row and before the clock and the fence.
-  PERFORM 1 FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
-  -- The lease fence reads the clock after the state row lock and the header lock (review F3, S1).
+  -- S1: the state row locks first, the scoped header second, and the clock third. The header loads
+  -- here, so the fence validates its presence and its running, unfinished lifecycle under the lock
+  -- (round 6, R6-10).
+  SELECT * INTO header FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
+  -- S1: a missing scoped header returns the rejection at once, before the clock and the state fence.
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+  END IF;
+  -- The lease and lifecycle fence reads the clock after the state row lock and the header lock
+  -- (review F3, S1).
   now_at:=clock_timestamp();
-  IF pending.sync_id IS DISTINCT FROM p_id OR pending.sync_expires_at IS NULL OR pending.sync_expires_at<=now_at THEN
+  IF header.status<>'running' OR header.finished_at IS NOT NULL OR
+    pending.sync_id IS DISTINCT FROM p_id OR pending.sync_expires_at IS NULL OR pending.sync_expires_at<=now_at THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
   IF pending.sync_attempt IS NOT NULL AND pending.sync_attempt<>p_attempt THEN
@@ -238,14 +246,22 @@ $$;
 
 CREATE FUNCTION cc.device_sync_lease(p_customer text,p_id uuid,p_attempt uuid) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE pending cc.device_sync_state; now_at timestamptz;
+DECLARE pending cc.device_sync_state; header record; now_at timestamptz;
 BEGIN
   SELECT * INTO pending FROM cc.device_sync_state s WHERE s.customer_id=p_customer FOR UPDATE;
-  -- S1: the state row locks first, the job header second, and the clock third. The fence follows all three.
-  PERFORM 1 FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
+  -- S1: the state row locks first, the scoped header second, and the clock third. The header loads
+  -- here, so the fence validates its presence and its running, unfinished lifecycle under the lock
+  -- (round 6, R6-11).
+  SELECT * INTO header FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
+  -- S1: a missing scoped header returns the rejection at once, before the clock and the state fence.
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+  END IF;
   now_at:=clock_timestamp();
   -- A null sync or attempt is rejected before the comparison (section 5.4, review F16, S2).
-  IF p_id IS NULL OR p_attempt IS NULL OR pending.sync_id IS DISTINCT FROM p_id OR
+  -- The header lifecycle fence follows the same locks (round 6, R6-11).
+  IF header.status<>'running' OR header.finished_at IS NOT NULL OR
+    p_id IS NULL OR p_attempt IS NULL OR pending.sync_id IS DISTINCT FROM p_id OR
     pending.sync_attempt IS DISTINCT FROM p_attempt OR pending.sync_expires_at IS NULL OR
     pending.sync_expires_at<=now_at THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
@@ -588,10 +604,22 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'The job changed.' USING DETAIL='entity-sync-changed';
   END IF;
+  -- S1: the clock reads after the header lock and the header lifecycle fence follows it, before any
+  -- detail lock (round 6, R6-9). The detail row and the batch records read here without a lock.
+  now_at:=clock_timestamp();
+  IF header.kind<>'inventory-refresh' OR header.finished_at IS NOT NULL THEN
+    RAISE EXCEPTION 'The job changed.' USING DETAIL='entity-sync-changed';
+  END IF;
+  SELECT * INTO job FROM cc.entity_sync_jobs u WHERE u.job_id=p_job;
+  IF job.job_id IS NULL OR job.finished_at IS NOT NULL OR
+    EXISTS(SELECT 1 FROM cc.entity_sync_batches b WHERE b.job_id=p_job) THEN
+    RAISE EXCEPTION 'The job changed.' USING DETAIL='entity-sync-changed';
+  END IF;
+  -- S1: only after that validation does the detail row lock. The clock reads again after the wait
+  -- and the fences repeat on the fresh rows (S1 rule 6).
   SELECT * INTO job FROM cc.entity_sync_jobs u WHERE u.job_id=p_job FOR UPDATE;
   now_at:=clock_timestamp();
-  IF header.kind<>'inventory-refresh' OR header.finished_at IS NOT NULL OR
-    job.job_id IS NULL OR job.finished_at IS NOT NULL OR
+  IF job.job_id IS NULL OR job.finished_at IS NOT NULL OR
     EXISTS(SELECT 1 FROM cc.entity_sync_batches b WHERE b.job_id=p_job) THEN
     RAISE EXCEPTION 'The job changed.' USING DETAIL='entity-sync-changed';
   END IF;
@@ -637,7 +665,10 @@ BEGIN
   IF header.kind<>'inventory-refresh' THEN
     RAISE EXCEPTION 'The entity sync job changed.' USING DETAIL='entity-sync-changed';
   END IF;
-  SELECT * INTO job FROM cc.entity_sync_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  -- S1: the clock reads after the header lock and the validation follows it, before any detail or
+  -- batch lock (round 6, R6-8). The detail row reads here without a lock.
+  now_at:=clock_timestamp();
+  SELECT * INTO job FROM cc.entity_sync_jobs u WHERE u.job_id=p_job;
   IF job.job_id IS NULL OR p_batch IS NULL OR p_batch<0 OR p_batch>=job.batch_count THEN
     RAISE EXCEPTION 'The entity sync job changed.' USING DETAIL='entity-sync-changed';
   END IF;
@@ -646,7 +677,16 @@ BEGIN
   IF header.finished_at IS NOT NULL THEN
     RETURN cc.entity_sync_job_projection(job);
   END IF;
+  -- S1: only after that validation does the detail row lock. The clock reads again after the wait
+  -- and the fences repeat on the fresh row (S1 rule 6).
+  SELECT * INTO job FROM cc.entity_sync_jobs u WHERE u.job_id=p_job FOR UPDATE;
   now_at:=clock_timestamp();
+  IF job.job_id IS NULL THEN
+    RAISE EXCEPTION 'The entity sync job changed.' USING DETAIL='entity-sync-changed';
+  END IF;
+  IF job.finished_at IS NOT NULL THEN
+    RETURN cc.entity_sync_job_projection(job);
+  END IF;
   INSERT INTO cc.entity_sync_batches(job_id,batch,status,failure,finished_at)
   VALUES(p_job,p_batch,CASE WHEN p_failure IS NULL THEN 'completed' ELSE 'failed' END,p_failure,now_at)
   ON CONFLICT(job_id,batch) DO UPDATE SET status=EXCLUDED.status,failure=EXCLUDED.failure,finished_at=EXCLUDED.finished_at;
