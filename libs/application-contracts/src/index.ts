@@ -20,3 +20,5 @@ export {
 export * from './lib/school-scopes';
 export * from './lib/devices';
 export * from './lib/entity-cache';
+export * from './lib/jobs';
+export * from './lib/device-updates';
