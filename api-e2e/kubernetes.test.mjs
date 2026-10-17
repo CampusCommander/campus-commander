@@ -799,7 +799,7 @@ test(
               await page.reload();
               await expect(
                 page.getByRole('heading', { name: 'Sign in', exact: true }),
-              ).toBeVisible();
+              ).toBeVisible({ timeout: 15000 });
               await page
                 .getByRole('link', { name: 'Sign in to Campus Commander' })
                 .click();

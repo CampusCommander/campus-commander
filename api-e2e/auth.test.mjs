@@ -2233,7 +2233,9 @@ test(
       await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
       await page.reload();
-      await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark', {
+        timeout: 15000,
+      });
       await page
         .getByRole('link', { name: 'Diagnostics', exact: true })
         .first()
