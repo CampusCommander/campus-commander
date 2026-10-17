@@ -8,7 +8,7 @@ On 2026-10-16 the owner signed off the [device browsing workflow](workflows/devi
 The owner authorized development order step 4 to start after that sign-off. The owner chose the first device edit: "Update the annotated location".
 Step 4 builds that edit on selected devices through preview, confirmation, a job, and visible results.
 The owner chose to build the jobs UI as part of this first edit. The [owner decisions of 2026-10-16](workflow-gaps.md#owner-decisions--2026-10-16) record the jobs scope.
-The next task is a short workflow record for this edit. The owner resolves its open decisions before dependent implementation.
+The [workflow record](workflows/update-device-annotated-location.md) defines this edit and the jobs UI. The owner resolves its open decisions before dependent implementation.
 Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
 
 ### Device browsing record (signed off 2026-10-16)
