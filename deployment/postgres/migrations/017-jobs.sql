@@ -431,7 +431,7 @@ $$;
 -- The tick records the Kestra execution of one admitted job.
 CREATE FUNCTION cc.record_device_update_start(p_customer text,p_job uuid,p_token uuid,p_execution text) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs;
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz;
 BEGIN
   -- S2: a null identifier never matches a header.
   IF p_customer IS NULL OR p_job IS NULL OR p_token IS NULL THEN
@@ -442,13 +442,19 @@ BEGIN
   IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
-  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
-  IF detail.job_id IS NULL THEN
-    RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
-  END IF;
+  -- S1: the clock reads after the header lock. The first fence reads the detail row without a lock,
+  -- so a superseded call rejects before it waits on that row (round 6, R6-5).
+  now_at:=clock_timestamp();
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
   -- S3: a terminal or superseded call changes no metadata.
   IF job.status<>'running' OR job.finished_at IS NOT NULL THEN RETURN; END IF;
-  IF detail.dispatch_token IS DISTINCT FROM p_token THEN
+  IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
+    RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
+  END IF;
+  -- S1: the detail row locks after the fence. The post-wait recheck repeats the fence.
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  IF job.status<>'running' OR job.finished_at IS NOT NULL THEN RETURN; END IF;
+  IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
   END IF;
   UPDATE cc.device_update_jobs SET kestra_execution_id=p_execution WHERE job_id=p_job;
@@ -465,12 +471,21 @@ BEGIN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
   END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
-  -- S1: the closure clock reads after the header lock and the detail lock.
+  -- S1: a missing scoped header returns at once, before the unscoped detail lock (round 6, R6-6).
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN RETURN; END IF;
+  -- S1: the closure clock reads after the header lock, and the fence reads the detail row without a
+  -- lock, so a superseded call rejects before it waits on that row.
   now_at:=clock_timestamp();
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
   -- S3: a terminal job and a superseded call change nothing.
-  IF job.job_id IS NULL OR job.kind<>'device-update' OR detail.job_id IS NULL OR
-    job.status<>'running' OR job.finished_at IS NOT NULL OR
+  IF detail.job_id IS NULL OR job.status<>'running' OR job.finished_at IS NOT NULL OR
+    detail.dispatch_token IS DISTINCT FROM p_token OR detail.first_claimed_at IS NOT NULL THEN
+    RETURN;
+  END IF;
+  -- S1: the detail row locks after the fence. The post-wait clock and recheck follow the wait.
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF detail.job_id IS NULL OR job.status<>'running' OR job.finished_at IS NOT NULL OR
     detail.dispatch_token IS DISTINCT FROM p_token OR detail.first_claimed_at IS NOT NULL THEN
     RETURN;
   END IF;
@@ -569,6 +584,13 @@ BEGIN
     PERFORM cc.record_job_change(p_job,false);
     RETURN jsonb_build_object('outcome','stopped','failure',stopped);
   END IF;
+  -- S1/R6-2: the batch ownership and its lease eligibility read under the header, before the batch
+  -- lock. A duplicate claim answers busy instead of waiting on the held batch row.
+  SELECT * INTO held FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch;
+  IF held.attempt_id IS NOT NULL AND held.attempt_id<>p_attempt AND
+    held.lease_expires_at IS NOT NULL AND held.lease_expires_at+interval '30 seconds'>now_at THEN
+    RETURN jsonb_build_object('outcome','busy');
+  END IF;
   SELECT * INTO held FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch FOR UPDATE;
   -- The lease fence reads the clock after the job row lock and the batch row lock (review F3).
   now_at:=clock_timestamp();
@@ -634,6 +656,12 @@ BEGIN
   IF job.status<>'running' OR job.finished_at IS NOT NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
   END IF;
+  -- S1/R6-3: the attempt and the live lease read under the header, before the batch lock.
+  SELECT * INTO batch FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch;
+  IF batch.attempt_id IS DISTINCT FROM p_attempt OR batch.lease_expires_at IS NULL OR
+    batch.lease_expires_at<=now_at THEN
+    RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
+  END IF;
   SELECT * INTO batch FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch FOR UPDATE;
   -- The post-batch-wait recheck keeps a lease that lapsed in the wait fenced (review F3).
   now_at:=clock_timestamp();
@@ -680,15 +708,19 @@ CREATE FUNCTION cc.settle_device_update_operations(p_customer text,p_job uuid,p_
   p_kind text,p_results jsonb,p_observed_at timestamptz) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz:=clock_timestamp(); bad integer;
-  before text; after text; first_batch integer; element jsonb:=NULL;
+  before text; after text; first_batch integer; element jsonb:=NULL; eligible boolean;
   settled jsonb:='[]'::jsonb; devices jsonb:='[]'::jsonb; removed jsonb:='[]'::jsonb;
 BEGIN
   IF p_kind NOT IN ('write','read-back') OR jsonb_typeof(p_results) IS DISTINCT FROM 'array' OR
     p_observed_at IS NULL OR p_attempt IS NULL THEN
     RAISE EXCEPTION 'The settlement is invalid.' USING ERRCODE='22023';
   END IF;
+  -- S2/R6-1: a write settlement accepts pending and skipped. A read-back accepts the three verified
+  -- outcomes of section 5.5 only, and every other outcome is rejected before any mutation.
   SELECT count(*) INTO bad FROM jsonb_array_elements(p_results) r
-    WHERE r->>'outcome' NOT IN ('succeeded','failed','unknown','pending','skipped') OR r->>'operationNumber' IS NULL;
+    WHERE r->>'operationNumber' IS NULL OR
+      (p_kind='write' AND r->>'outcome' NOT IN ('succeeded','failed','unknown','pending','skipped')) OR
+      (p_kind='read-back' AND r->>'outcome' NOT IN ('succeeded','failed','unknown'));
   IF bad>0 THEN
     RAISE EXCEPTION 'The settlement results are invalid.' USING ERRCODE='22023';
   END IF;
@@ -706,6 +738,20 @@ BEGIN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   before:=job.status;
+  -- S1/R6-1: the eligibility of the named operations is decided under the header, before the
+  -- operation and device locks. A fenced result never waits on its operation row.
+  SELECT EXISTS(
+    SELECT 1 FROM cc.device_update_operations o JOIN jsonb_array_elements(p_results) r
+        ON o.operation_number=(r->>'operationNumber')::integer
+      WHERE o.job_id=p_job AND (
+        (p_kind='write' AND o.status='dispatched' AND o.attempt_id=p_attempt AND
+          EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=o.job_id AND b.batch=o.batch AND
+            b.attempt_id=p_attempt AND b.lease_expires_at>now_at)) OR
+        (p_kind='read-back' AND o.status='unknown' AND o.verify_attempt=p_attempt AND
+          o.verify_lease_expires_at>now_at))) INTO eligible;
+  IF NOT eligible THEN
+    RETURN jsonb_build_object('outcome','settled','settled',settled,'publication',NULL);
+  END IF;
   -- S1: the operation rows lock after the header row and before the device rows, in operation_number
   -- order, so a concurrent verification claim serializes with the fences below (review F15).
   PERFORM 1 FROM cc.device_update_operations o JOIN jsonb_array_elements(p_results) r
@@ -806,9 +852,17 @@ BEGIN
   IF job.job_id IS NULL THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
-  -- S1: the header prefix reads the clock before the operation locks.
+  -- S1: the header prefix reads the clock, and eligibility is decided under the header before the
+  -- operation locks (round 6, R6-4). A live reservation or a non-unknown operation is not eligible.
   now_at:=clock_timestamp();
+  IF NOT EXISTS(SELECT 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='unknown' AND
+      (o.verify_lease_expires_at IS NULL OR o.verify_lease_expires_at<=now_at) AND
+      (p_operations IS NULL OR o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e))) THEN
+    RETURN claimed;
+  END IF;
+  -- S1: only the eligible operations lock, in operation_number order.
   PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='unknown' AND
+      (o.verify_lease_expires_at IS NULL OR o.verify_lease_expires_at<=now_at) AND
       (p_operations IS NULL OR o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e))
     ORDER BY o.operation_number FOR UPDATE;
   -- The eligibility fence reads the clock again after the operation locks (review F15).
@@ -963,13 +1017,30 @@ BEGIN
   END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL OR job.kind<>'device-update' THEN RETURN false; END IF;
-  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
-  SELECT * INTO batch FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch;
-  -- The lease fence reads the clock after the job and detail locks (review F3, S1).
+  -- S1/R6-7: the clock reads after the header lock, and the fence reads the detail and batch rows
+  -- without a lock, so a superseded report rejects before it waits on the detail row.
   now_at:=clock_timestamp();
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
+  SELECT * INTO batch FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch;
   IF job.status<>'running' OR job.finished_at IS NOT NULL OR detail.job_id IS NULL OR
     detail.dispatch_token IS DISTINCT FROM p_token OR
     batch.attempt_id IS DISTINCT FROM p_attempt OR batch.lease_expires_at IS NULL OR
+    batch.lease_expires_at<=now_at THEN
+    RETURN false;
+  END IF;
+  IF detail.backoff_attempt=p_attempt AND detail.backoff_sequence IS NOT NULL AND
+    p_sequence<=detail.backoff_sequence THEN
+    RETURN false;
+  END IF;
+  -- S1: the detail row locks after the fence. The post-wait clock and recheck follow the wait.
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR detail.job_id IS NULL OR
+    detail.dispatch_token IS DISTINCT FROM p_token THEN
+    RETURN false;
+  END IF;
+  SELECT * INTO batch FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch;
+  IF batch.attempt_id IS DISTINCT FROM p_attempt OR batch.lease_expires_at IS NULL OR
     batch.lease_expires_at<=now_at THEN
     RETURN false;
   END IF;
