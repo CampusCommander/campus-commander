@@ -810,12 +810,20 @@ export async function qualifyDeviceWriteJobs({
         assert.equal(claimed.outcome, 'claimed');
         assert.equal(claimed.operations.length, 2);
         const revision = (await jobRow(job.jobId)).revision;
+        // The success carries its provenance, so the call reaches the token fence (round 3, R2-F1).
         const fenced = await settle(
           job.jobId,
           randomUUID(),
           attempt,
           'write',
-          [{ operationNumber: 1, outcome: 'succeeded', value: 'Room 12' }],
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'write-response',
+            },
+          ],
           new Date(),
         );
         assert.equal(fenced.outcome, 'fenced');
@@ -6551,6 +6559,722 @@ export async function qualifyDeviceWriteJobs({
             `${signature} grants EXECUTE to its owner only.`,
           );
         }
+      },
+    );
+
+    // Round 3 of B2a (review findings R2-F1 to R2-F4 and the eng-lead rulings of round 3). A success
+    // names the provenance of its settlement kind. Every enumerated or typed input rejects before any
+    // lock. A writer locks every row that it writes before its last clock read, so no write waits.
+    const settlementValues = (job, kind, entries) => [
+      customer,
+      job.jobId,
+      kind === 'write' ? job.token : null,
+      job.attempt,
+      kind,
+      JSON.stringify(entries),
+      new Date(),
+    ];
+    // A write job holds its operation under a live lease. A read-back job ended as needs-review, and its
+    // unknown operation keeps the live read-back lease of the same attempt.
+    const provenanceJob = async (deviceId, kind) => {
+      await upsert(
+        [device(deviceId, { annotatedLocation: 'Old' })],
+        new Date(Date.now() - 60 * 60 * 1000),
+      );
+      const job = await heldJob(deviceId);
+      if (kind === 'read-back') {
+        await settle(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          JSON.parse(writeResult('unknown')),
+          new Date(),
+        );
+        await prepareFinish(job.jobId, job.token);
+        assert.equal((await finishJob(job.jobId)).status, 'needs-review');
+      }
+      return job;
+    };
+    // Every row that a writer can change for one job and one device.
+    const jobState = async (jobId, deviceId) => ({
+      operations: await admin(
+        `SELECT operation_number,status,attempt_id,verified_by,observed_value,outcome_reason,verify_attempt,
+          verify_lease_expires_at,updated_at FROM cc.device_update_operations WHERE job_id=$1
+          ORDER BY operation_number`,
+        [jobId],
+      ),
+      header: await adminRow(
+        `SELECT status,failure,succeeded,failed,unknown,skipped,revision,changed_at,finished_at
+          FROM cc.jobs WHERE job_id=$1`,
+        [jobId],
+      ),
+      detail: await detailRow(jobId),
+      batch: (await batchRow(jobId)) ?? null,
+      device: (await deviceRow(deviceId)) ?? null,
+      overlay: (await overlay(deviceId)) ?? null,
+      publications: await publications(jobId),
+    });
+    // An invalid input rejects while another session holds the job header, so it rejects before the
+    // header lock. The same call without that holder rejects too, and it changes nothing.
+    const rejectsBeforeLocks = async ({ jobId, deviceId, sql, values }) => {
+      const before = await jobState(jobId, deviceId);
+      await descendantHeld({
+        rows: [heldHeaderRow(jobId)],
+        sql,
+        values,
+        expect: (answer) =>
+          assert.equal(
+            answer.code,
+            '22023',
+            'An invalid input rejects before the header lock.',
+          ),
+      });
+      await rejects(result(sql, values), '22023');
+      assert.deepEqual(
+        await jobState(jobId, deviceId),
+        before,
+        'An invalid input changes nothing.',
+      );
+    };
+
+    // R2-F1: a success without the provenance of its kind (design sections 5.7 and 7.1, eng-lead
+    // ruling 1). At 768f8c3 it reached the locks and committed a success that published no device.
+    for (const kind of ['write', 'read-back'])
+      for (const [label, provenance] of [
+        ['an absent', {}],
+        ['a null', { verifiedBy: null }],
+      ])
+        await ruleCheck(
+          `R2-F1 a ${kind} success with ${label} verifiedBy rejects before any lock and changes nothing`,
+          async () => {
+            const deviceId = `r3p-${kind}-${label.split(' ')[1]}`;
+            const job = await provenanceJob(deviceId, kind);
+            await rejectsBeforeLocks({
+              jobId: job.jobId,
+              deviceId,
+              sql: settleSql,
+              values: settlementValues(job, kind, [
+                {
+                  operationNumber: 1,
+                  outcome: 'succeeded',
+                  value: 'Room 12',
+                  ...provenance,
+                },
+              ]),
+            });
+            await endJob(job.jobId);
+          },
+        );
+
+    for (const kind of ['write', 'read-back'])
+      await ruleCheck(
+        `R2-F1 control: a ${kind} success with the provenance of its kind publishes its device`,
+        async () => {
+          const deviceId = `r3p-${kind}-control`;
+          const job = await provenanceJob(deviceId, kind);
+          const source = kind === 'write' ? 'write-response' : 'read-back';
+          const answer = await result(
+            settleSql,
+            settlementValues(job, kind, [
+              {
+                operationNumber: 1,
+                outcome: 'succeeded',
+                value: 'Room 12',
+                verifiedBy: source,
+              },
+            ]),
+          );
+          assert.deepEqual(answer.published, [deviceId]);
+          assert.equal(
+            (await deviceRow(deviceId)).annotated_location,
+            'Room 12',
+          );
+          assert.equal((await overlay(deviceId)).source, source);
+          await endJob(job.jobId);
+        },
+      );
+
+    // Eng-lead rulings 1 and 2: a provenance names the source of its settlement kind, and no other value
+    // reaches a lock. At 768f8c3 these results reached the locks, and a CHECK rejected the last one there.
+    for (const [index, [label, kind, entry]] of [
+      [
+        'a write success with read-back provenance',
+        'write',
+        {
+          operationNumber: 1,
+          outcome: 'succeeded',
+          value: 'Room 12',
+          verifiedBy: 'read-back',
+        },
+      ],
+      [
+        'a read-back success with write-response provenance',
+        'read-back',
+        {
+          operationNumber: 1,
+          outcome: 'succeeded',
+          value: 'Room 12',
+          verifiedBy: 'write-response',
+        },
+      ],
+      [
+        'a write 404 with read-back provenance',
+        'write',
+        {
+          operationNumber: 1,
+          outcome: 'failed',
+          googleStatus: 404,
+          verifiedBy: 'read-back',
+          outcomeReason: 'not-found',
+        },
+      ],
+      [
+        'a provenance outside its enumeration',
+        'read-back',
+        {
+          operationNumber: 1,
+          outcome: 'unknown',
+          verifiedBy: 'manual',
+          outcomeReason: 'verification-failed',
+        },
+      ],
+    ].entries())
+      await ruleCheck(`S2 ${label} rejects before any lock`, async () => {
+        const deviceId = `r3k-${index}`;
+        const job = await provenanceJob(deviceId, kind);
+        await rejectsBeforeLocks({
+          jobId: job.jobId,
+          deviceId,
+          sql: settleSql,
+          values: settlementValues(job, kind, [entry]),
+        });
+        await endJob(job.jobId);
+      });
+
+    // The result fields that the settlement casts, or that a CHECK bounds, reject before any lock. At
+    // 768f8c3 a cast or a CHECK rejected them after the locks, or the cast accepted another value.
+    for (const [index, [label, entry]] of [
+      [
+        'a fractional operation number',
+        { operationNumber: 1.5, outcome: 'unknown' },
+      ],
+      [
+        'an operation number outside the integer range',
+        { operationNumber: 1e10, outcome: 'unknown' },
+      ],
+      [
+        'an operation number that is a string',
+        { operationNumber: '1', outcome: 'unknown' },
+      ],
+      [
+        'a fractional Google status',
+        { operationNumber: 1, outcome: 'failed', googleStatus: 404.5 },
+      ],
+      [
+        'a negative retry count',
+        {
+          operationNumber: 1,
+          outcome: 'failed',
+          googleStatus: 429,
+          quotaRetries: -1,
+        },
+      ],
+      [
+        'a read-back delay that is not a timestamp',
+        { operationNumber: 1, outcome: 'unknown', verifyAfter: 'later' },
+      ],
+      [
+        'a value longer than the device field',
+        {
+          operationNumber: 1,
+          outcome: 'succeeded',
+          value: 'x'.repeat(4097),
+          verifiedBy: 'write-response',
+        },
+      ],
+      [
+        'a value that is not a string',
+        {
+          operationNumber: 1,
+          outcome: 'succeeded',
+          value: 12,
+          verifiedBy: 'write-response',
+        },
+      ],
+    ].entries())
+      await ruleCheck(
+        `S2 a write settlement with ${label} rejects before any lock`,
+        async () => {
+          const deviceId = `r3t-${index}`;
+          const job = await provenanceJob(deviceId, 'write');
+          await rejectsBeforeLocks({
+            jobId: job.jobId,
+            deviceId,
+            sql: settleSql,
+            values: settlementValues(job, 'write', [entry]),
+          });
+          await endJob(job.jobId);
+        },
+      );
+
+    // A verification claim names whole operation numbers. At 768f8c3 a fraction rounded to another
+    // operation after the header lock, and a number outside the integer range failed after it.
+    for (const [index, [label, named]] of [
+      ['a fractional operation number', [1.5]],
+      ['an operation number outside the integer range', [1e10]],
+      ['an operation number below one', [0]],
+    ].entries())
+      await ruleCheck(
+        `S2 a verification claim with ${label} rejects before any lock`,
+        async () => {
+          const deviceId = `r3v-${index}`;
+          const job = await provenanceJob(deviceId, 'read-back');
+          await rejectsBeforeLocks({
+            jobId: job.jobId,
+            deviceId,
+            sql: 'SELECT cc.claim_device_update_verification($1,$2,$3,$4) AS result',
+            values: [customer, job.jobId, JSON.stringify(named), randomUUID()],
+          });
+          await endJob(job.jobId);
+        },
+      );
+
+    // Eng-lead ruling 2: the failure of a finish rejects outside its enumeration before any lock. At
+    // 768f8c3 the cc.jobs CHECK rejected it after the locks.
+    for (const [index, [label, sql, values]] of [
+      [
+        'a finish preparation',
+        prepareSql,
+        (job) => [customer, job.jobId, job.token, 'unlisted-failure'],
+      ],
+      [
+        'a final finish',
+        'SELECT cc.finish_device_update_job($1,$2,$3,$4) AS result',
+        (job) => [customer, job.jobId, job.token, 'unlisted-failure'],
+      ],
+      [
+        'the reaper',
+        'SELECT cc.finalize_device_update_job($1,$2,$3) AS result',
+        (job) => [customer, job.jobId, 'unlisted-failure'],
+      ],
+    ].entries())
+      await ruleCheck(
+        `S2 ${label} rejects a failure outside its enumeration before any lock`,
+        async () => {
+          const deviceId = `r3f-${index}`;
+          const job = await heldJob(deviceId);
+          await expireBatches(job.jobId);
+          await rejectsBeforeLocks({
+            jobId: job.jobId,
+            deviceId,
+            sql,
+            values: values(job),
+          });
+          await endJob(job.jobId);
+        },
+      );
+
+    // A start and a batch claim record the execution that runs them. A null execution rejects before
+    // any lock. At 768f8c3 the start stored the null, and the claim stored it on the batch row.
+    await ruleCheck(
+      'S2 a start with a null execution rejects before any lock',
+      async () => {
+        const job = await makeJob({ devices: ['r3e-a'] });
+        const admitted = await admit(false);
+        assert.equal(
+          admitted.jobId,
+          job.jobId,
+          'The admission picks this job.',
+        );
+        await rejectsBeforeLocks({
+          jobId: job.jobId,
+          deviceId: 'r3e-a',
+          sql: 'SELECT cc.record_device_update_start($1,$2,$3,$4) AS result',
+          values: [customer, job.jobId, admitted.dispatchToken, null],
+        });
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S2 a batch claim with a null execution rejects before any lock',
+      async () => {
+        const job = await releasedBatch('r3e-b');
+        await rejectsBeforeLocks({
+          jobId: job.jobId,
+          deviceId: 'r3e-b',
+          sql: claimSql,
+          values: [customer, job.jobId, job.token, 0, randomUUID(), null],
+        });
+        await endJob(job.jobId);
+      },
+    );
+
+    // Design sections 5.7 and 5.8 rule 7: a read-back 404 removes its device. The optional provenance
+    // does not decide that removal (the class of R2-F1). At 768f8c3 a 404 without verifiedBy kept it.
+    await ruleCheck(
+      'S2 a read-back 404 without verifiedBy removes its device',
+      async () => {
+        const deviceId = 'r3g-a';
+        const job = await provenanceJob(deviceId, 'read-back');
+        const answer = await result(
+          settleSql,
+          settlementValues(job, 'read-back', [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              googleStatus: 404,
+              googleReason: 'notFound',
+              outcomeReason: 'not-found',
+            },
+          ]),
+        );
+        assert.deepEqual(
+          answer.removed,
+          [deviceId],
+          'A read-back 404 removes its device without verifiedBy.',
+        );
+        assert.deepEqual(answer.publication.removedIds, [deviceId]);
+        assert.ok((await deviceRow(deviceId)).removed_at instanceof Date);
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck('S2 control: a write 404 keeps its device', async () => {
+      const deviceId = 'r3g-b';
+      const job = await provenanceJob(deviceId, 'write');
+      const answer = await result(
+        settleSql,
+        settlementValues(job, 'write', [
+          {
+            operationNumber: 1,
+            outcome: 'failed',
+            googleStatus: 404,
+            googleReason: 'notFound',
+            verifiedBy: 'write-response',
+            outcomeReason: 'not-found',
+          },
+        ]),
+      );
+      assert.deepEqual(answer.removed, []);
+      assert.equal((await deviceRow(deviceId)).removed_at, null);
+      await endJob(job.jobId);
+    });
+
+    // A settlement that publishes writes an overlay row, and the overlay and publication rows reference
+    // the connection row. The settlement locks both before its last clock read, so no write waits on
+    // them. At 768f8c3 the overlay insert waited inside its statement, and later writes used the clock
+    // from before that wait.
+    const publishingSettlement = (job) =>
+      settlementValues(job, 'write', [
+        {
+          operationNumber: 1,
+          outcome: 'succeeded',
+          value: 'Room 12',
+          verifiedBy: 'write-response',
+        },
+      ]);
+    const stampedAfter = async (job, deviceId, answer, releasedAt) => {
+      assert.equal(answer.code, undefined, answer.message);
+      assert.deepEqual(answer.rows[0].result.published, [deviceId]);
+      const settled = await adminRow(
+        'SELECT status,updated_at FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1',
+        [job.jobId],
+      );
+      assert.equal(settled.status, 'succeeded');
+      assert.ok(
+        settled.updated_at >= releasedAt,
+        'The settlement stamps its operation after the wait.',
+      );
+      assert.ok(
+        (await detailRow(job.jobId)).heartbeat_at >= releasedAt,
+        'The settlement stamps its heartbeat after the wait.',
+      );
+      assert.equal((await overlay(deviceId)).value, 'Room 12');
+    };
+
+    await ruleCheck(
+      'S1 a settlement that waits on the connection row stamps its writes after the wait',
+      async () => {
+        const deviceId = 'r3c-a';
+        const job = await provenanceJob(deviceId, 'write');
+        const { answer, releasedAt } = await waitedOn({
+          rows: [heldConnectionRow()],
+          sql: settleSql,
+          values: publishingSettlement(job),
+          during: () => sleep(200),
+        });
+        await stampedAfter(job, deviceId, answer, releasedAt);
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a settlement that waits on the overlay row stamps its writes after the wait',
+      async () => {
+        const deviceId = 'r3c-b';
+        const job = await provenanceJob(deviceId, 'write');
+        // An earlier write left a live overlay on the device.
+        await migrator.query(
+          `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,
+            operation_number,expires_at) VALUES($1,$2,'annotatedLocation','Earlier',
+            clock_timestamp()-interval '1 hour','write-response',$3,1,clock_timestamp()+interval '35 hours')`,
+          [customer, deviceId, job.jobId],
+        );
+        const { answer, releasedAt } = await waitedOn({
+          rows: [
+            [
+              'SELECT 1 FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id=$2 FOR UPDATE',
+              [customer, deviceId],
+            ],
+          ],
+          sql: settleSql,
+          values: publishingSettlement(job),
+          during: () => sleep(200),
+        });
+        await stampedAfter(job, deviceId, answer, releasedAt);
+        await endJob(job.jobId);
+      },
+    );
+
+    // R2-F2: a stopped claim locks every pending operation of its job first. After that wait it reads a
+    // fresh clock and rechecks its token before it writes. At 768f8c3 the skip update waited on its rows
+    // and stamped them with the clock from before that wait.
+    const skipStamps = (jobId) =>
+      admin(
+        `SELECT operation_number,status,outcome_reason,updated_at FROM cc.device_update_operations
+          WHERE job_id=$1 ORDER BY operation_number`,
+        [jobId],
+      );
+
+    await ruleCheck(
+      'R2-F2 an initial stop stamps its skipped operation after the operation wait',
+      async () => {
+        const job = await releasedBatch('r3s-a');
+        await disable(job)();
+        const { answer, releasedAt } = await waitedOn({
+          rows: [heldOperationRow(job.jobId)],
+          ...nextClaim(job),
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(answer.rows[0].result.outcome, 'stopped');
+        assert.equal(answer.rows[0].result.failure, 'permission-changed');
+        assert.equal(answer.rows[0].result.envelope, undefined);
+        const rows = await skipStamps(job.jobId);
+        assert.deepEqual(
+          rows.map((row) => [row.status, row.outcome_reason]),
+          [['skipped', 'permission-changed']],
+        );
+        assert.ok(
+          rows[0].updated_at >= releasedAt,
+          'A skip stamps its operation from the clock after the operation wait.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'R2-F2 a stop found after another wait stamps every skipped operation after the skip wait',
+      async () => {
+        const owner = await principal(`${randomUUID()}`, [
+          ['devices:read', district()],
+          ['devices:write', district()],
+          ['devices:bulk-actions', district()],
+        ]);
+        const job = await makeJob({
+          devices: ['r3s-b1', 'r3s-b2'],
+          batchSize: 1,
+          createdBy: owner,
+        });
+        const admitted = await admit(false);
+        assert.equal(
+          admitted.jobId,
+          job.jobId,
+          'The admission picks this job.',
+        );
+        const first = await connect('cc-migrator', 'cc-app');
+        const second = await connect('cc-migrator', 'cc-app');
+        const caller = await connect('cc-app', 'cc-app');
+        let pending = null;
+        try {
+          // The claim of batch 0 waits on its own operation. The confirmer loses access in that wait.
+          // The other batch keeps a pending operation that a second session holds.
+          await first.query('BEGIN');
+          await first.query(...heldOperation(job.jobId, 1));
+          await second.query('BEGIN');
+          await second.query(...heldOperation(job.jobId, 2));
+          const firstPid = await pidOf(first);
+          const secondPid = await pidOf(second);
+          const callerPid = await pidOf(caller);
+          pending = caller
+            .query(claimSql, [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              0,
+              randomUUID(),
+              'r3-next',
+            ])
+            .then(
+              (queried) => ({ rows: queried.rows }),
+              (error) => ({ code: error.code, message: error.message }),
+            );
+          assert.equal(
+            await waitsFor(callerPid, firstPid),
+            true,
+            'The claim waits on the operation of its batch.',
+          );
+          await migrator.query(
+            'UPDATE cc.application_principals SET enabled=false WHERE id=$1',
+            [owner],
+          );
+          await first.query('ROLLBACK');
+          assert.equal(
+            await waitsFor(callerPid, secondPid),
+            true,
+            'The stopped claim waits on the pending operation of the other batch.',
+          );
+          await sleep(200);
+          const releasedAt = (
+            await second.query('SELECT clock_timestamp() AS at')
+          ).rows[0].at;
+          await second.query('ROLLBACK');
+          const answer = await pending;
+          assert.equal(answer.code, undefined, answer.message);
+          assert.equal(answer.rows[0].result.outcome, 'stopped');
+          assert.equal(answer.rows[0].result.failure, 'permission-changed');
+          const rows = await skipStamps(job.jobId);
+          assert.deepEqual(
+            rows.map((row) => row.status),
+            ['skipped', 'skipped'],
+          );
+          for (const row of rows)
+            assert.ok(
+              row.updated_at >= releasedAt,
+              `Operation ${row.operation_number} takes its skip stamp after the skip wait.`,
+            );
+        } finally {
+          await first.query('ROLLBACK').catch(() => undefined);
+          await second.query('ROLLBACK').catch(() => undefined);
+          if (pending) await pending;
+          await Promise.allSettled([first.end(), second.end(), caller.end()]);
+        }
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'R2-F2 a stopped claim returns superseded when the token rotates in the skip wait',
+      async () => {
+        const job = await releasedBatch('r3s-c');
+        await disable(job)();
+        const before = await jobState(job.jobId, 'r3s-c');
+        const { answer } = await waitedOn({
+          rows: [heldOperationRow(job.jobId)],
+          ...nextClaim(job),
+          during: () => rotateToken(job.jobId),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(
+          answer.rows[0].result.outcome,
+          'superseded',
+          'A stopped claim rechecks its token after the skip wait.',
+        );
+        const after = await jobState(job.jobId, 'r3s-c');
+        assert.notEqual(
+          after.detail.dispatch_token,
+          before.detail.dispatch_token,
+        );
+        assert.deepEqual(
+          { ...after, detail: null },
+          { ...before, detail: null },
+          'A superseded stop changes nothing.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // R2-F3 and R2-F4 name the source order of two writers. Neither function stores the clock that the
+    // rule adds, so these checks read the function source from the catalog.
+    const sourceLines = async (signature) =>
+      (
+        await adminRow(
+          'SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure($1)',
+          [signature],
+        )
+      ).prosrc.split('\n');
+    const linesOf = (lines, pattern) =>
+      lines.flatMap((line, index) => (pattern.test(line) ? [index] : []));
+    const clockRead = /:=\s*clock_timestamp\(\)/;
+    const detailLock = /FROM cc\.device_update_jobs\b.*FOR UPDATE/;
+
+    await ruleCheck(
+      'R2-F3 admission reads its clock after the header locks and before the detail lock',
+      async () => {
+        const lines = await sourceLines(
+          'cc.admit_device_update_job(text,boolean)',
+        );
+        const headerLoop = linesOf(lines, /FOR UPDATE LOOP/);
+        assert.equal(
+          headerLoop.length,
+          1,
+          'The admission locks its pending headers in one loop.',
+        );
+        const loopEnd = linesOf(lines, /END LOOP/).find(
+          (index) => index > headerLoop[0],
+        );
+        const details = linesOf(lines, detailLock);
+        assert.equal(details.length, 1, 'The admission locks one detail row.');
+        const clocks = linesOf(lines, clockRead);
+        assert.ok(
+          clocks.some((index) => index > loopEnd && index < details[0]),
+          'A clock read follows every header wait and precedes the detail lock.',
+        );
+        assert.ok(
+          clocks.some((index) => index > details[0]),
+          'A clock read follows the detail wait.',
+        );
+      },
+    );
+
+    await ruleCheck(
+      'R2-F4 a start reads its clock after the detail lock and before its write',
+      async () => {
+        const lines = await sourceLines(
+          'cc.record_device_update_start(text,uuid,uuid,text)',
+        );
+        const details = linesOf(lines, detailLock);
+        const writes = linesOf(lines, /UPDATE cc\.device_update_jobs/);
+        assert.equal(details.length, 1, 'The start locks its detail row once.');
+        assert.equal(writes.length, 1, 'The start writes its detail row once.');
+        const clocks = linesOf(lines, clockRead);
+        assert.ok(
+          clocks.some((index) => index > details[0] && index < writes[0]),
+          'A clock read follows the detail wait and precedes the write.',
+        );
+      },
+    );
+
+    // The failure enumeration reads no table, but it stays an internal helper like the claim revalidation.
+    await ruleCheck(
+      'S2 the failure enumeration helper is not executable by PUBLIC or the application role',
+      async () => {
+        const signature = 'cc.job_failure_known(text)';
+        const privileges = await adminRow(
+          `SELECT count(p.oid)=1 AS present,
+            bool_and(p.proacl IS NOT NULL AND NOT EXISTS(SELECT 1 FROM aclexplode(p.proacl) a
+              WHERE a.privilege_type='EXECUTE' AND a.grantee<>p.proowner)) AS owner_only
+           FROM pg_proc p WHERE p.oid=to_regprocedure($1)`,
+          [signature],
+        );
+        assert.equal(privileges.present, true, `${signature} exists.`);
+        assert.equal(
+          privileges.owner_only,
+          true,
+          `${signature} grants EXECUTE to its owner only.`,
+        );
       },
     );
   } finally {
