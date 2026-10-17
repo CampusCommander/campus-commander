@@ -135,7 +135,7 @@ $$;
 CREATE FUNCTION cc.request_device_sync(p_actor uuid,p_version integer,p_customer text,p_generation integer,
   p_id uuid,p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE connection cc.google_connection; prior cc.device_sync_state; now_at timestamptz:=clock_timestamp();
+DECLARE connection cc.google_connection; prior cc.device_sync_state; now_at timestamptz;
 BEGIN
   connection:=cc.device_reader(p_actor,p_version);
   IF connection.customer_id IS DISTINCT FROM p_customer OR connection.generation IS DISTINCT FROM p_generation OR
@@ -148,6 +148,8 @@ BEGIN
   -- An unclaimed sync expires quickly. A worker claim extends the lease while pages stage.
   INSERT INTO cc.device_sync_state(customer_id) VALUES(p_customer) ON CONFLICT(customer_id) DO NOTHING;
   SELECT * INTO prior FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
+  -- The lease fence reads the clock after the state row lock (review F12).
+  now_at:=clock_timestamp();
   IF prior.sync_id IS NOT NULL AND prior.sync_expires_at>now_at THEN
     RAISE EXCEPTION 'A device sync is running.' USING DETAIL='device-sync-running';
   END IF;
@@ -208,12 +210,16 @@ $$;
 
 CREATE FUNCTION cc.device_sync_lease(p_customer text,p_id uuid,p_attempt uuid) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE pending cc.device_sync_state;
 BEGIN
-  UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '10 minutes'
-  WHERE customer_id=p_customer AND sync_id=p_id AND sync_attempt=p_attempt AND sync_expires_at>clock_timestamp();
-  IF NOT FOUND THEN
+  SELECT * INTO pending FROM cc.device_sync_state s WHERE s.customer_id=p_customer FOR UPDATE;
+  -- The lease fence and the new lease read the clock after the state row lock (review F12).
+  IF pending.sync_id IS DISTINCT FROM p_id OR pending.sync_attempt IS DISTINCT FROM p_attempt OR
+    pending.sync_expires_at<=clock_timestamp() THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
+  UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '10 minutes'
+  WHERE customer_id=p_customer;
 END;
 $$;
 
@@ -391,6 +397,8 @@ BEGIN
   IF jsonb_typeof(p_devices) IS DISTINCT FROM 'array' OR jsonb_array_length(p_devices)>1000 THEN
     RAISE EXCEPTION 'The device page is invalid.' USING ERRCODE='22023';
   END IF;
+  -- The header lock comes after the state lock of the lease and before the device locks (section 1.8, review F11).
+  PERFORM 1 FROM cc.jobs j WHERE j.job_id=p_id FOR UPDATE;
   -- Each staged device records its listed OrgUnit path on the job (section 1.3).
   -- The staged path wins over the cached device path, because the upsert below follows the list.
   INSERT INTO cc.job_targets(job_id,device_id,org_unit_path,observed_at)
@@ -419,13 +427,17 @@ $$;
 CREATE FUNCTION cc.finish_device_sync(p_customer text,p_id uuid,p_attempt uuid,p_failure text,p_telemetry_failure text)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE pending cc.device_sync_state; now_at timestamptz:=clock_timestamp(); staged integer;
+DECLARE pending cc.device_sync_state; now_at timestamptz; staged integer;
 BEGIN
   SELECT * INTO pending FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
+  -- The lease fence reads the clock after the state row lock (review F12).
+  now_at:=clock_timestamp();
   IF p_id IS NULL OR p_attempt IS NULL OR pending.sync_id IS DISTINCT FROM p_id OR
     pending.sync_attempt IS DISTINCT FROM p_attempt OR pending.sync_expires_at<=now_at THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
+  -- The header lock comes after the state lock and before the device locks (section 1.8, review F11).
+  PERFORM 1 FROM cc.jobs j WHERE j.job_id=p_id FOR UPDATE;
   SELECT count(*) INTO staged FROM cc.job_targets t WHERE t.job_id=p_id;
   IF p_failure IS NULL THEN
     PERFORM cc.google_current_generation(p_customer,pending.sync_generation);
@@ -449,7 +461,11 @@ BEGIN
   ELSE
     UPDATE cc.device_sync_state SET failure=p_failure,failure_requested_by=pending.sync_actor
     WHERE customer_id=p_customer;
-    UPDATE cc.jobs SET target_count=staged,status='failed',failure=p_failure WHERE job_id=p_id;
+    -- A failed finish records its observed target paths too (section 1.2, review F13).
+    UPDATE cc.jobs SET target_count=staged,
+      target_org_unit_paths=(SELECT COALESCE(array_agg(DISTINCT t.org_unit_path)
+        FILTER (WHERE t.org_unit_path IS NOT NULL),'{}'::text[]) FROM cc.job_targets t WHERE t.job_id=p_id),
+      status='failed',failure=p_failure WHERE job_id=p_id;
   END IF;
   UPDATE cc.device_sync_state SET checked_at=now_at,sync_id=NULL,sync_actor=NULL,sync_generation=NULL,
     sync_attempt=NULL,sync_expires_at=NULL

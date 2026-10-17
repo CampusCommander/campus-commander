@@ -904,7 +904,7 @@ $$;
 -- The purge keeps write jobs. Refresh jobs leave after seven days, previews and overlays when they lapse.
 CREATE FUNCTION cc.purge_jobs(p_customer text,p_limit integer) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE removed integer; job cc.jobs; now_at timestamptz:=clock_timestamp();
+DECLARE removed integer; job cc.jobs; state cc.device_sync_state; now_at timestamptz:=clock_timestamp();
 BEGIN
   IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 10000 THEN
     RAISE EXCEPTION 'The purge limit is invalid.' USING ERRCODE='22023';
@@ -912,19 +912,27 @@ BEGIN
   -- An ID-list refresh that stays unfinished for two hours ends as interrupted.
   FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND
       j.scope_kind='devices' AND j.finished_at IS NULL AND j.created_at<now_at-interval '2 hours' LOOP
-    UPDATE cc.entity_sync_jobs SET failure=COALESCE(failure,'interrupted'),finished_at=now_at
+    -- The detail row lock comes first, as the refresh writers take it. A batch runner that closed the
+    -- job during the wait keeps its header (review F12). The detail lock re-checks its own condition.
+    UPDATE cc.entity_sync_jobs SET failure=COALESCE(failure,'interrupted'),finished_at=clock_timestamp()
     WHERE job_id=job.job_id AND finished_at IS NULL;
-    UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,'interrupted'),finished_at=now_at
-    WHERE job_id=job.job_id;
-    PERFORM cc.record_job_change(job.job_id,true);
+    IF FOUND THEN
+      UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,'interrupted'),finished_at=clock_timestamp()
+      WHERE job_id=job.job_id AND status='running' AND finished_at IS NULL;
+      IF FOUND THEN PERFORM cc.record_job_change(job.job_id,true); END IF;
+    END IF;
   END LOOP;
-  -- A full-sync header without a live sync lease ends as interrupted.
+  -- A full-sync header without a live sync lease ends as interrupted. The state row lock comes first,
+  -- as the sync writers take it, and the lease check reads the clock after that lock (review F12).
   FOR job IN SELECT j.* FROM cc.jobs j LEFT JOIN cc.device_sync_state s ON s.customer_id=j.customer_id
       WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND j.scope_kind='all-devices' AND
         j.status='running' AND (s.sync_id IS DISTINCT FROM j.job_id OR s.sync_expires_at<=now_at) LOOP
+    SELECT * INTO state FROM cc.device_sync_state s WHERE s.customer_id=job.customer_id FOR UPDATE;
+    now_at:=clock_timestamp();
+    IF state.sync_id=job.job_id AND state.sync_expires_at>now_at THEN CONTINUE; END IF;
     UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,'interrupted'),finished_at=now_at
-    WHERE job_id=job.job_id;
-    PERFORM cc.record_job_change(job.job_id,true);
+    WHERE job_id=job.job_id AND status='running' AND finished_at IS NULL;
+    IF FOUND THEN PERFORM cc.record_job_change(job.job_id,true); END IF;
   END LOOP;
   -- Refresh jobs leave with their detail, batch, and target rows. A write job never leaves.
   DELETE FROM cc.jobs WHERE job_id IN (
