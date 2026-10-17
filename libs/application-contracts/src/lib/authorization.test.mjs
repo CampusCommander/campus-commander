@@ -77,6 +77,21 @@ test('school grants require the exact school and customer without path inference
   assert.equal(isAuthorized(grants, 'schools:manage', school), false);
 });
 
+test('the device write actions take platform and district scopes', () => {
+  for (const action of ['devices:write', 'devices:bulk-actions', 'jobs:read']) {
+    assert.ok(
+      actionSchema.options.includes(action),
+      `${action} is a declared action`,
+    );
+    for (const scope of [platform, district])
+      assert.equal(grantSchema.safeParse({ action, scope }).success, true);
+    assert.equal(
+      grantSchema.safeParse({ action, scope: school }).success,
+      false,
+    );
+  }
+});
+
 test('viewers have only explicit read grants and presets reject broader scopes', () => {
   for (const scope of [district, school]) {
     const grants = grantsForPreset('viewer', scope);

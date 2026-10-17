@@ -40,6 +40,33 @@ export async function qualifyDeviceWriteJobs({
     }
     throw new Error(`expected a rejection ${code ?? ''} ${detail ?? ''}`);
   };
+  // A failed check can leave a job running. Release it, so the next check measures its own behavior
+  // instead of the leftover. Failures here stay silent: the next check reports the state.
+  const releaseLeftovers = async () => {
+    try {
+      await migrator.query(
+        `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '60 seconds'
+          WHERE lease_expires_at>clock_timestamp()`,
+      );
+      const rows = await admin(
+        "SELECT job_id FROM cc.jobs WHERE kind='device-update' AND status='running' ORDER BY created_at",
+      );
+      for (const row of rows)
+        await migrator.query('SELECT cc.finalize_device_update_job($1,$2,$3)', [
+          customer,
+          row.job_id,
+          null,
+        ]);
+      await migrator.query(
+        `UPDATE cc.device_sync_state SET sync_id=NULL,sync_actor=NULL,sync_generation=NULL,sync_attempt=NULL,
+          sync_expires_at=NULL,failure=NULL,failure_requested_by=NULL,telemetry_failure=NULL,
+          telemetry_failure_requested_by=NULL WHERE customer_id=$1`,
+        [customer],
+      );
+    } catch {
+      // The failing check already recorded its own result.
+    }
+  };
   const check = async (name, body) => {
     try {
       await body();
@@ -47,6 +74,7 @@ export async function qualifyDeviceWriteJobs({
     } catch (error) {
       failures.push(name);
       results.push(`${name}: FAIL ${error.message}`);
+      await releaseLeftovers();
     }
     process.stderr.write(`check ${results.at(-1)}\n`);
   };
@@ -70,6 +98,26 @@ export async function qualifyDeviceWriteJobs({
     customerId,
   });
   try {
+    // The three actions of section 2.1 come from the 017 producer. This check runs before the
+    // principal and grant fixtures, so it measures the schema alone (review F10).
+    await check(
+      'the three action contracts register with their producer',
+      async () => {
+        assert.deepEqual(
+          await admin(
+            "SELECT action,scope_kinds FROM cc.application_actions WHERE action IN ('devices:write','devices:bulk-actions','jobs:read') ORDER BY action",
+          ),
+          [
+            {
+              action: 'devices:bulk-actions',
+              scope_kinds: ['platform', 'district'],
+            },
+            { action: 'devices:write', scope_kinds: ['platform', 'district'] },
+            { action: 'jobs:read', scope_kinds: ['platform', 'district'] },
+          ],
+        );
+      },
+    );
     const reader = await principal(`${randomUUID()}`, [
       ['devices:read', district()],
     ]);
@@ -326,6 +374,11 @@ export async function qualifyDeviceWriteJobs({
           WHERE job_id=$1`,
         [jobId],
       );
+    // The reaper never acts while a batch lease lives (section 5.10). Cleanup lapses the lease first.
+    const endJob = async (jobId) => {
+      await expireBatches(jobId);
+      return finalize(jobId);
+    };
     const operations = (jobId) =>
       admin(
         `SELECT operation_number,device_id,status,attempt_id,observed_value,observed_at,verified_by,outcome_reason,
@@ -713,7 +766,7 @@ export async function qualifyDeviceWriteJobs({
           (await prepareFinish(job.jobId, randomUUID())).outcome,
           'superseded',
         );
-        await finalize(job.jobId);
+        await endJob(job.jobId);
       },
     );
 
@@ -739,7 +792,7 @@ export async function qualifyDeviceWriteJobs({
           randomUUID(),
         );
         assert.equal(again.outcome, 'busy');
-        await finalize(job.jobId);
+        await endJob(job.jobId);
       },
     );
 
@@ -773,7 +826,7 @@ export async function qualifyDeviceWriteJobs({
             ['unknown', 'interrupted', fresh],
           ],
         );
-        await finalize(job.jobId);
+        await endJob(job.jobId);
       },
     );
 
@@ -839,7 +892,7 @@ export async function qualifyDeviceWriteJobs({
         );
         assert.equal((await deviceRow('b1')).annotated_location, 'listed');
         assert.equal(await overlay('b1'), undefined);
-        await finalize(job.jobId);
+        await endJob(job.jobId);
       },
     );
 
@@ -1073,7 +1126,7 @@ export async function qualifyDeviceWriteJobs({
             ['skipped', 'permission-changed'],
           ],
         );
-        await finalize(versioned.jobId);
+        await endJob(versioned.jobId);
         await migrator.query(
           'UPDATE cc.application_principals SET permission_version=1 WHERE id=$1',
           [confirmer],
@@ -1821,26 +1874,484 @@ export async function qualifyDeviceWriteJobs({
         assert.deepEqual(settled.publication.removedIds, ['gone1']);
         assert.ok((await deviceRow('gone1')).removed_at instanceof Date);
         assert.equal(await overlay('gone1'), undefined);
-        await finalize(job.jobId);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Section 5.8: a lock-contended observation waits for the settlement and then sees its overlay.
+    await check(
+      'a list blocked behind a settlement keeps the accepted value and its overlay',
+      async () => {
+        await upsert(
+          [device('n1', { annotatedLocation: 'Old' })],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const job = await makeJob({ devices: ['n1'] });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        const writer = await connect('cc-app', 'cc-app');
+        const lister = await connect('cc-app', 'cc-app');
+        try {
+          await writer.query('BEGIN');
+          const settled = await writer.query(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              attempt,
+              'write',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'succeeded',
+                  value: 'Room 12',
+                  verifiedBy: 'write-response',
+                },
+              ]),
+              new Date(),
+            ],
+          );
+          assert.equal(settled.rows[0].result.settled.length, 1);
+          const pid = (await lister.query('SELECT pg_backend_pid() AS pid'))
+            .rows[0].pid;
+          const pending = lister.query(
+            'SELECT cc.upsert_devices($1,$2,$3,$4) AS result',
+            [
+              customer,
+              JSON.stringify([device('n1', { annotatedLocation: 'Old' })]),
+              new Date(),
+              'list',
+            ],
+          );
+          let waiting = false;
+          for (let round = 0; round < 100 && !waiting; round += 1) {
+            const state = await adminRow(
+              'SELECT wait_event_type FROM pg_stat_activity WHERE pid=$1',
+              [pid],
+            );
+            waiting = state?.wait_event_type === 'Lock';
+            if (!waiting) await sleep(20);
+          }
+          assert.equal(waiting, true, 'The list waits for the settlement.');
+          await writer.query('COMMIT');
+          await pending;
+          assert.equal((await deviceRow('n1')).annotated_location, 'Room 12');
+          assert.equal((await overlay('n1')).value, 'Room 12');
+        } finally {
+          await Promise.allSettled([writer.end(), lister.end()]);
+        }
+        await endJob(job.jobId);
+      },
+    );
+
+    // The read passes rule 2 with its stamp and moves the overlay it waited on.
+    await check(
+      'a read blocked behind a settlement applies its newer stamp to the row and the overlay',
+      async () => {
+        await upsert(
+          [device('n2', { annotatedLocation: 'Old' })],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const job = await makeJob({ devices: ['n2'] });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        const settledAt = new Date();
+        const readAt = new Date(settledAt.getTime() + 5000);
+        const writer = await connect('cc-app', 'cc-app');
+        const readerSession = await connect('cc-app', 'cc-app');
+        try {
+          await writer.query('BEGIN');
+          const settled = await writer.query(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              attempt,
+              'write',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'succeeded',
+                  value: 'Room 12',
+                  verifiedBy: 'write-response',
+                },
+              ]),
+              settledAt,
+            ],
+          );
+          assert.equal(settled.rows[0].result.settled.length, 1);
+          const pid = (
+            await readerSession.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const pending = readerSession.query(
+            'SELECT cc.upsert_devices($1,$2,$3,$4) AS result',
+            [
+              customer,
+              JSON.stringify([device('n2', { annotatedLocation: 'Room 9' })]),
+              readAt,
+              'read',
+            ],
+          );
+          let waiting = false;
+          for (let round = 0; round < 100 && !waiting; round += 1) {
+            const state = await adminRow(
+              'SELECT wait_event_type FROM pg_stat_activity WHERE pid=$1',
+              [pid],
+            );
+            waiting = state?.wait_event_type === 'Lock';
+            if (!waiting) await sleep(20);
+          }
+          assert.equal(waiting, true, 'The read waits for the settlement.');
+          await writer.query('COMMIT');
+          await pending;
+          const row = await deviceRow('n2');
+          assert.equal(row.annotated_location, 'Room 9');
+          assert.equal(
+            row.annotated_location_observed_at.getTime(),
+            readAt.getTime(),
+          );
+          const written = await overlay('n2');
+          assert.equal(written.value, 'Room 9');
+          assert.equal(written.source, 'refresh-read');
+          assert.equal(written.observed_at.getTime(), readAt.getTime());
+        } finally {
+          await Promise.allSettled([writer.end(), readerSession.end()]);
+        }
+        await endJob(job.jobId);
+      },
+    );
+
+    // Section 5.4: the write recording needs the batch row of the attempt with a live lease.
+    await check(
+      'a settlement after the batch lease expires changes no outcome, counter, or publication',
+      async () => {
+        await upsert(
+          [device('f1'), device('f2')],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const job = await makeJob({ devices: ['f1', 'f2'], batchSize: 1 });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        await expireBatches(job.jobId);
+        const before = await jobRow(job.jobId);
+        const late = await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        assert.deepEqual(late.settled, []);
+        assert.equal(late.publication, null);
+        const after = await jobRow(job.jobId);
+        assert.deepEqual(
+          [
+            after.succeeded,
+            after.failed,
+            after.unknown,
+            after.skipped,
+            after.revision,
+          ],
+          [
+            before.succeeded,
+            before.failed,
+            before.unknown,
+            before.skipped,
+            before.revision,
+          ],
+        );
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['dispatched', 'pending'],
+        );
+        assert.equal((await deviceRow('f1')).annotated_location, null);
+        assert.equal(await overlay('f1'), undefined);
+        await endJob(job.jobId);
       },
     );
 
     await check(
-      'the three action contracts register with their producer',
+      'a settlement from an attempt that lost its batch changes nothing',
       async () => {
-        assert.deepEqual(
-          await admin(
-            "SELECT action,scope_kinds FROM cc.application_actions WHERE action IN ('devices:write','devices:bulk-actions','jobs:read') ORDER BY action",
-          ),
+        await upsert([device('f3')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({ devices: ['f3'] });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        await stop(job.jobId, admitted.dispatchToken, 0, attempt);
+        const before = await jobRow(job.jobId);
+        const late = await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
           [
             {
-              action: 'devices:bulk-actions',
-              scope_kinds: ['platform', 'district'],
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'write-response',
             },
-            { action: 'devices:write', scope_kinds: ['platform', 'district'] },
-            { action: 'jobs:read', scope_kinds: ['platform', 'district'] },
           ],
+          new Date(),
         );
+        assert.deepEqual(late.settled, []);
+        assert.equal(late.publication, null);
+        const after = await jobRow(job.jobId);
+        assert.deepEqual(
+          [after.succeeded, after.unknown, after.revision],
+          [before.succeeded, before.unknown, before.revision],
+        );
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['dispatched'],
+        );
+        assert.equal((await deviceRow('f3')).annotated_location, null);
+        assert.equal(await overlay('f3'), undefined);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Section 5.10: the reaper never acts while a lease lives, and it waits out the grace.
+    await check(
+      'the reaper leaves a live attempt, honors the grace, and then finalizes',
+      async () => {
+        await upsert(
+          [device('g1'), device('g2')],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const job = await makeJob({ devices: ['g1', 'g2'], batchSize: 1 });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        assert.equal((await finalize(job.jobId)).outcome, 'busy');
+        assert.equal((await jobRow(job.jobId)).status, 'running');
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['dispatched', 'pending'],
+        );
+        await migrator.query(
+          `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '10 seconds'
+            WHERE job_id=$1`,
+          [job.jobId],
+        );
+        assert.equal((await finalize(job.jobId)).outcome, 'busy');
+        assert.equal((await jobRow(job.jobId)).status, 'running');
+        await migrator.query(
+          `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '31 seconds'
+            WHERE job_id=$1`,
+          [job.jobId],
+        );
+        const done = await finalize(job.jobId);
+        assert.equal(done.status, 'needs-review');
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['unknown', 'skipped'],
+        );
+      },
+    );
+
+    // Section 5.7: the write recording claims the read-back and keeps the open-request delay.
+    await check(
+      'an unknown write result reserves its read-back for the same attempt and keeps the delay',
+      async () => {
+        await upsert([device('h1')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({ devices: ['h1'] });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        const settledAt = new Date();
+        const verifyAfter = new Date(settledAt.getTime() + 30 * 1000);
+        const settled = await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              outcomeReason: 'interrupted',
+              verifyAfter: verifyAfter.toISOString(),
+            },
+          ],
+          settledAt,
+        );
+        assert.equal(settled.settled[0].status, 'unknown');
+        const reserved = await adminRow(
+          `SELECT verify_attempt,verify_after,verify_lease_expires_at FROM cc.device_update_operations
+            WHERE job_id=$1`,
+          [job.jobId],
+        );
+        assert.equal(reserved.verify_attempt, attempt);
+        assert.equal(reserved.verify_after.getTime(), verifyAfter.getTime());
+        assert.ok(
+          reserved.verify_lease_expires_at.getTime() > settledAt.getTime(),
+        );
+        assert.deepEqual(
+          await claimVerification(job.jobId, null, randomUUID()),
+          [],
+        );
+        await migrator.query(
+          `UPDATE cc.device_update_operations SET verify_lease_expires_at=clock_timestamp()-interval '1 second'
+            WHERE job_id=$1`,
+          [job.jobId],
+        );
+        const claimed = await claimVerification(job.jobId, null, attempt);
+        assert.equal(claimed.length, 1);
+        assert.equal(
+          new Date(claimed[0].verifyAfter).getTime(),
+          verifyAfter.getTime(),
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // Section 1.3: a full sync records the path it listed, not the cached device path.
+    await check(
+      'a full sync target records the listed OrgUnit path of a moved device',
+      async () => {
+        await upsert(
+          [device('m1', { orgUnitPath: '/Old' })],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        await resetSync();
+        const sync = await requestAs(reader);
+        const attempt = randomUUID();
+        await claimSync(sync.id, attempt);
+        await stage(sync.id, attempt, [device('m1', { orgUnitPath: '/New' })]);
+        await finishSync(sync.id, attempt);
+        const target = (
+          await admin(
+            `SELECT t.org_unit_path AS target,d.org_unit_path AS device FROM cc.job_targets t
+              JOIN cc.devices d ON d.customer_id=$1 AND d.device_id=t.device_id
+              WHERE t.job_id=$2`,
+            [customer, sync.id],
+          )
+        )[0];
+        assert.equal(target.target, '/New');
+        assert.equal(target.device, '/New');
+        assert.deepEqual((await jobRow(sync.id)).target_org_unit_paths, [
+          '/New',
+        ]);
+      },
+    );
+
+    // Section 1.3: the header derives its failure from the current batch records.
+    await check(
+      'a successful replacement of a failed refresh batch clears the failure',
+      async () => {
+        const refresh = randomUUID();
+        await result(
+          'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+          [reader, customer, 'device', '["j1","j2"]', 1, refresh, randomUUID()],
+        );
+        await result(
+          'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+          [customer, refresh, 0, 'quota'],
+        );
+        await result(
+          'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+          [customer, refresh, 0, null],
+        );
+        await result(
+          'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+          [customer, refresh, 1, null],
+        );
+        const header = await jobRow(refresh);
+        assert.equal(header.status, 'completed');
+        assert.equal(header.failure, null);
+        assert.equal(header.failed, 0);
+        assert.equal(header.succeeded, 2);
+      },
+    );
+
+    // Section 3.6: claims record their visible change, and the takeover refreshes its counters.
+    await check(
+      'a first claim and a takeover record their visible changes',
+      async () => {
+        await upsert(
+          [device('k1'), device('k2')],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const job = await makeJob({ devices: ['k1', 'k2'], batchSize: 1 });
+        const admitted = await admit(false);
+        const token = admitted.dispatchToken;
+        const attempt = randomUUID();
+        const count = () =>
+          result(
+            'SELECT count(*)::int AS result FROM cc.job_publications WHERE job_id=$1',
+            [job.jobId],
+          );
+        const before = await jobRow(job.jobId);
+        const publications = await count();
+        assert.equal(before.started_at, null);
+        const claimed = await claim(job.jobId, token, 0, attempt);
+        assert.equal(claimed.outcome, 'claimed');
+        const afterClaim = await jobRow(job.jobId);
+        assert.notEqual(afterClaim.started_at, null);
+        assert.equal(Number(afterClaim.revision), Number(before.revision) + 1);
+        assert.equal(await count(), publications + 1);
+        const first = await claim(job.jobId, token, 1, attempt);
+        assert.equal(first.outcome, 'claimed');
+        await migrator.query(
+          `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '60 seconds'
+            WHERE job_id=$1 AND batch=1`,
+          [job.jobId],
+        );
+        const takeover = await claim(job.jobId, token, 1, randomUUID());
+        assert.equal(takeover.outcome, 'claimed');
+        assert.equal(takeover.readBack.length, 1);
+        const afterTakeover = await jobRow(job.jobId);
+        assert.equal(afterTakeover.unknown, 1);
+        assert.ok(Number(afterTakeover.revision) > Number(afterClaim.revision));
+        assert.equal(await count(), publications + 2);
+        await endJob(job.jobId);
+        // A rolled-back claim leaves no publication row.
+        await upsert([device('k3')], new Date(Date.now() - 60 * 60 * 1000));
+        const rolled = await makeJob({ devices: ['k3'] });
+        const rolledAdmit = await admit(false);
+        const session = await connect('cc-app', 'cc-app');
+        try {
+          await session.query('BEGIN');
+          const inFlight = await session.query(
+            'SELECT cc.claim_device_update_batch($1,$2,$3,$4,$5,$6) AS result',
+            [
+              customer,
+              rolled.jobId,
+              rolledAdmit.dispatchToken,
+              0,
+              randomUUID(),
+              'rollback',
+            ],
+          );
+          assert.equal(inFlight.rows[0].result.outcome, 'claimed');
+          await session.query('ROLLBACK');
+        } finally {
+          await session.end();
+        }
+        assert.equal((await jobRow(rolled.jobId)).started_at, null);
+        assert.equal(
+          await result(
+            'SELECT count(*)::int AS result FROM cc.job_publications WHERE job_id=$1',
+            [rolled.jobId],
+          ),
+          1,
+        );
+        await endJob(rolled.jobId);
       },
     );
 
@@ -1924,6 +2435,32 @@ export async function qualifyDeviceWriteJobs({
         assert.equal(clean.telemetry_failure, null);
         assert.equal(clean.telemetry_failure_requested_by, null);
         assert.equal((await jobRow(replacement.id)).status, 'completed');
+      },
+    );
+
+    // Section 2.1: the expired sync names its actor. The retained failure keeps its own requester.
+    await check(
+      'an expired sync names its actor, not the retained failure requester',
+      async () => {
+        await resetSync();
+        const failed = await requestAs(other);
+        const failedAttempt = randomUUID();
+        await claimSync(failed.id, failedAttempt);
+        await finishSync(failed.id, failedAttempt, 'quota');
+        assert.equal((await syncState()).failure, 'quota');
+        assert.equal((await syncState()).failure_requested_by, other);
+        const lapsed = await requestAs(reader);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()-interval '1 second' WHERE customer_id=$1",
+          [customer],
+        );
+        assert.equal((await readAs(reader)).failure, 'interrupted');
+        assert.equal((await readAs(other)).failure, null);
+        assert.equal((await readAs(auditor)).failure, 'interrupted');
+        const header = await jobRow(lapsed.id);
+        assert.equal(header.requested_by, reader);
+        assert.equal(header.status, 'running');
+        await resetSync();
       },
     );
 
