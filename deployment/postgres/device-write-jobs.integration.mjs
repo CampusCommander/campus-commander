@@ -7064,6 +7064,63 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    // A full-sync finish takes the connection row first and its device rows second
+    // (016-device-inventory.sql, cc.finish_device_sync). A settlement takes the connection row before its
+    // device rows, so it holds no device row while it waits on the connection row, and the two calls never
+    // form a lock cycle. At 768f8c3 the overlay insert took the connection row after the device row.
+    await ruleCheck(
+      'S1 a settlement that waits on the connection row holds no device row in that wait',
+      async () => {
+        const deviceId = 'r3c-c';
+        const job = await provenanceJob(deviceId, 'write');
+        const holder = await connect('cc-migrator', 'cc-app');
+        const caller = await connect('cc-app', 'cc-app');
+        const probe = await connect('cc-migrator', 'cc-app');
+        let pending = null;
+        try {
+          await holder.query('BEGIN');
+          await holder.query(...heldConnectionRow());
+          const holderPid = await pidOf(holder);
+          const callerPid = await pidOf(caller);
+          pending = caller.query(settleSql, publishingSettlement(job)).then(
+            (queried) => ({ rows: queried.rows }),
+            (error) => ({ code: error.code, message: error.message }),
+          );
+          assert.equal(
+            await waitsFor(callerPid, holderPid),
+            true,
+            'The settlement waits on the connection row.',
+          );
+          await probe.query('BEGIN');
+          const free = await probe
+            .query(
+              'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE NOWAIT',
+              [customer, deviceId],
+            )
+            .then(
+              () => true,
+              (error) => error.code,
+            );
+          await probe.query('ROLLBACK');
+          assert.equal(
+            free,
+            true,
+            'The device row stays free while the settlement waits on the connection row.',
+          );
+          await holder.query('ROLLBACK');
+          const answer = await pending;
+          assert.equal(answer.code, undefined, answer.message);
+          assert.deepEqual(answer.rows[0].result.published, [deviceId]);
+        } finally {
+          await probe.query('ROLLBACK').catch(() => undefined);
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (pending) await pending;
+          await Promise.allSettled([probe.end(), holder.end(), caller.end()]);
+        }
+        await endJob(job.jobId);
+      },
+    );
+
     // R2-F2: a stopped claim locks every pending operation of its job first. After that wait it reads a
     // fresh clock and rechecks its token before it writes. At 768f8c3 the skip update waited on its rows
     // and stamped them with the clock from before that wait.
