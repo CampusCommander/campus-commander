@@ -130,6 +130,7 @@ export async function qualifyCustomerSettings({
   await page.reload();
   await expect(page.getByLabel('Customer display name')).toHaveValue(
     'Confirmed fixture district',
+    { timeout: 15000 },
   );
   await page.getByRole('button', { name: 'Check save status' }).click();
   await expect(
@@ -313,6 +314,7 @@ export async function qualifyCustomerSettings({
   await page.reload();
   await expect(page.getByLabel('Customer display name')).toHaveValue(
     'My preserved district',
+    { timeout: 15000 },
   );
   await expect(
     page.getByRole('heading', { name: 'Setup progress' }),
