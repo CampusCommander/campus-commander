@@ -77,10 +77,18 @@ export class EvidenceSecurity {
         return;
       }
       const finished = Promise.withResolvers();
+      // Playwright sends no completion event for an in-flight font when a context closes.
+      let fontRequest = false;
+      try {
+        fontRequest = request.resourceType?.() === 'font';
+      } catch {
+        // An untyped request keeps the strict path.
+      }
       const active = {
         context,
         page,
         finished,
+        fontRequest,
         headersObserved: false,
         describe: () => ({
           ...stateFor(
@@ -265,8 +273,11 @@ export class EvidenceSecurity {
       await Promise.race([
         (async () => {
           for (;;) {
+            // A context close skips fonts. A page close waits for every resource type.
             const active = [...this.#requests.values()].filter(
-              ({ page, context }) => page === resource || context === resource,
+              ({ page, context, fontRequest }) =>
+                (page === resource || context === resource) &&
+                !(context === resource && fontRequest),
             );
             if (!active.length) return;
             await Promise.all(active.map(({ finished }) => finished.promise));
