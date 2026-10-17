@@ -110,7 +110,8 @@
   </nav>
   <header>
     <span class="header-title"
-      >{{ router.url.startsWith('/schools') ? 'Schools' :
+      >{{ router.url.startsWith('/devices') ? 'Devices' :
+      router.url.startsWith('/schools') ? 'Schools' :
       router.url.startsWith('/customer-settings') ? 'Customer settings' :
       router.url.startsWith('/google-connection') ? 'Google customer connection'
       : router.url.startsWith('/platform-users') ? 'Platform access' :
