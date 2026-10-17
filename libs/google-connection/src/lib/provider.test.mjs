@@ -236,6 +236,57 @@ test('aborts and delegation failures retain actionable categories', async (t) =>
   }
 });
 
+/** Live Google answers an ungranted scope with HTTP 401 unauthorized_client. */
+test('a 401 token answer separates a delegation denial from a credential rejection', async (t) => {
+  for (const [data, expected] of [
+    [{ error: 'unauthorized_client' }, 'delegation-not-authorized'],
+    [
+      { error: { errors: [{ reason: 'unauthorized_client' }] } },
+      'delegation-not-authorized',
+    ],
+    [{ error: 'access_denied' }, 'delegation-not-authorized'],
+    [{ error: 'invalid_client' }, 'credential-rejected'],
+    [{ error: 'invalid_grant' }, 'credential-rejected'],
+    [{ error: 'deleted_client' }, 'credential-rejected'],
+    [{ error: 'authError' }, 'credential-rejected'],
+    ['<html>Unauthorized</html>', 'credential-rejected'],
+    [undefined, 'credential-rejected'],
+  ]) {
+    t.mock.method(JWT.prototype, 'getAccessToken', async () => {
+      throw { response: { status: 401, data } };
+    });
+    await assert.rejects(
+      new GoogleCustomerVerifier().renew(credential, AbortSignal.timeout(5000)),
+      { code: expected },
+    );
+    t.mock.restoreAll();
+  }
+});
+
+/** The delegation rules run first. Every other answer keeps its previous category. */
+test('the 401 rule and the read-stage policy rule keep every other category', () => {
+  const mismatches = [];
+  for (const [status, data, stage, expected] of [
+    [401, { error: 'authError' }, 'read', 'credential-rejected'],
+    [
+      401,
+      { error: { errors: [{ reason: 'forbidden' }] } },
+      'read',
+      'credential-rejected',
+    ],
+    [401, { error: 'access_denied' }, 'read', 'credential-rejected'],
+    [401, '<html>Unauthorized</html>', 'read', 'credential-rejected'],
+    [401, undefined, 'token', 'credential-rejected'],
+    [403, { error: 'access_denied' }, 'read', 'policy-restricted'],
+    [403, { error: 'domainPolicy' }, 'token', 'policy-restricted'],
+  ]) {
+    const code = failure({ response: { status, data } }, stage).code;
+    if (code !== expected)
+      mismatches.push({ status, data, stage, code, expected });
+  }
+  assert.deepEqual(mismatches, []);
+});
+
 /** The three non-abort fixtures from review round 1: the network-code rule is unchanged. */
 test('non-abort causes keep their previous network-code mapping', () => {
   const mismatches = [];

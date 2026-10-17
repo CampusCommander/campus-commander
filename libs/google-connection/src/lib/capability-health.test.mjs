@@ -114,6 +114,22 @@ test('DWD scope denial and policy restriction remain separate from credential re
   }
 });
 
+/** Live Google answers an ungranted scope with HTTP 401 unauthorized_client. */
+test('a 401 token refusal records a delegation denial for the denied capability', async (t) => {
+  stub(t, {
+    tokenFailure: {
+      response: { status: 401, data: { error: 'unauthorized_client' } },
+    },
+  });
+  assert.deepEqual((await check(['domain-observations'])).results, [
+    {
+      capability: 'domain-observations',
+      scopeVerified: false,
+      failure: 'delegation-not-authorized',
+    },
+  ]);
+});
+
 test('API quota and network errors do not become authorization or license claims', async (t) => {
   for (const [readFailure, failure] of [
     [
