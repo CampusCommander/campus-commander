@@ -4456,10 +4456,12 @@ export async function qualifyDeviceWriteJobs({
       return { ...job, token: admitted.dispatchToken, attempt };
     };
     // The admission picks the oldest accepted job, so every rule check starts from closed jobs.
+    // A lease that lapsed inside its 30-second grace moves past the grace too, so a failed check
+    // never leaves a busy job that the finalizer cannot close.
     const closeOpenWriteJobs = async () => {
       await migrator.query(
         `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '60 seconds'
-          WHERE lease_expires_at>clock_timestamp()`,
+          WHERE lease_expires_at>clock_timestamp()-interval '60 seconds'`,
       );
       const open = await admin(
         `SELECT job_id FROM cc.jobs WHERE kind='device-update'
@@ -5382,6 +5384,1145 @@ export async function qualifyDeviceWriteJobs({
         );
         assert.equal((await jobRow(job.jobId)).status, 'completed');
         assert.equal((await operations(job.jobId))[0].status, 'succeeded');
+      },
+    );
+
+    // Round 2 of B2a (review findings F1 to F3 and the eng-lead ruling on their class). After every
+    // wait, a writer reads a fresh clock and rechecks every value that can change before it writes.
+    // A lock set holds only the rows of eligible results. An enumerated input rejects an absent or
+    // null value before any lock. A holder takes the named rows, the call waits on them, and `during`
+    // commits a change or lets time pass before the holder releases. A holder that changes a row
+    // stands in for a writer that skips the header lock.
+    const waitedOn = async ({ rows, sql, values, during }) => {
+      const holder = await connect('cc-migrator', 'cc-app');
+      const caller = await connect('cc-app', 'cc-app');
+      let pending = null;
+      try {
+        await holder.query('BEGIN');
+        for (const [text, args] of rows) await holder.query(text, args);
+        const holderPid = await pidOf(holder);
+        const callerPid = await pidOf(caller);
+        pending = caller.query(sql, values).then(
+          (queried) => ({ rows: queried.rows }),
+          (error) => ({
+            code: error.code,
+            detail: error.detail,
+            message: error.message,
+          }),
+        );
+        assert.equal(
+          await waitsFor(callerPid, holderPid),
+          true,
+          'The call waits on the held row.',
+        );
+        if (during) await during();
+        const releasedAt = (
+          await holder.query('SELECT clock_timestamp() AS at')
+        ).rows[0].at;
+        await holder.query('ROLLBACK');
+        return { answer: await pending, releasedAt };
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        if (pending) await pending;
+        await Promise.allSettled([holder.end(), caller.end()]);
+      }
+    };
+    const heldHeaderRow = (jobId) => [
+      'SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE',
+      [jobId],
+    ];
+    const heldDeviceRow = (deviceId) => [
+      'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE',
+      [customer, deviceId],
+    ];
+    const heldOperation = (jobId, operationNumber) => [
+      'SELECT 1 FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=$2 FOR UPDATE',
+      [jobId, operationNumber],
+    ];
+    const heldConnectionRow = () => [
+      'SELECT 1 FROM cc.google_connection WHERE customer_id=$1 FOR UPDATE',
+      [customer],
+    ];
+    const shortLease = (jobId) =>
+      migrator.query(
+        `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()+interval '1500 milliseconds'
+          WHERE job_id=$1`,
+        [jobId],
+      );
+    const leaseLapses = async (jobId) =>
+      assert.equal(
+        await until(
+          `SELECT clock_timestamp()>lease_expires_at AS lapsed FROM cc.device_update_batches
+            WHERE job_id=$1 AND batch=0`,
+          [jobId],
+        ),
+        true,
+        'The batch lease lapses in the wait.',
+      );
+    const leaseLapsed = async (jobId) =>
+      (
+        await adminRow(
+          `SELECT clock_timestamp()>lease_expires_at AS lapsed FROM cc.device_update_batches
+            WHERE job_id=$1 AND batch=0`,
+          [jobId],
+        )
+      ).lapsed;
+    const rotateToken = (jobId) =>
+      migrator.query(
+        'UPDATE cc.device_update_jobs SET dispatch_token=gen_random_uuid() WHERE job_id=$1',
+        [jobId],
+      );
+    const claimSql =
+      'SELECT cc.claim_device_update_batch($1,$2,$3,$4,$5,$6) AS result';
+    const settleSql =
+      'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result';
+    const writeResult = (outcome = 'succeeded') =>
+      JSON.stringify([
+        outcome === 'succeeded'
+          ? {
+              operationNumber: 1,
+              outcome,
+              value: 'Room 12',
+              verifiedBy: 'write-response',
+            }
+          : {
+              operationNumber: 1,
+              outcome,
+              outcomeReason: 'open-request',
+              verifiedBy: 'write-response',
+            },
+      ]);
+
+    // F1: a confirmer of its own, and a batch whose first attempt returned its operation to pending
+    // and released the batch. The next claim then has one pending operation to dispatch.
+    const releasedBatch = async (deviceId) => {
+      const owner = await principal(`${randomUUID()}`, [
+        ['devices:read', district()],
+        ['devices:write', district()],
+        ['devices:bulk-actions', district()],
+      ]);
+      const job = await makeJob({ devices: [deviceId], createdBy: owner });
+      const admitted = await admit(false);
+      assert.equal(admitted.jobId, job.jobId, 'The admission picks this job.');
+      const attempt = randomUUID();
+      assert.equal(
+        (await claim(job.jobId, admitted.dispatchToken, 0, attempt)).outcome,
+        'claimed',
+      );
+      await settle(
+        job.jobId,
+        admitted.dispatchToken,
+        attempt,
+        'write',
+        [{ operationNumber: 1, outcome: 'pending' }],
+        new Date(),
+      );
+      assert.equal((await batchRow(job.jobId)).attempt_id, null);
+      return { ...job, token: admitted.dispatchToken, owner };
+    };
+    const nextClaim = (job) => ({
+      sql: claimSql,
+      values: [customer, job.jobId, job.token, 0, randomUUID(), 'f1-next'],
+    });
+    const stoppedInWait = async (job, answer, failure) => {
+      assert.equal(
+        answer.code,
+        undefined,
+        `The claim answers instead of failing: ${answer.message}`,
+      );
+      assert.equal(
+        answer.rows[0].result.outcome,
+        'stopped',
+        'A claim revalidates access after its wait, before dispatch and credential return.',
+      );
+      assert.equal(answer.rows[0].result.failure, failure);
+      assert.equal(answer.rows[0].result.envelope, undefined);
+      assert.equal((await jobRow(job.jobId)).failure, failure);
+      assert.deepEqual(
+        (await operations(job.jobId)).map((row) => [
+          row.status,
+          row.outcome_reason,
+        ]),
+        [['skipped', failure]],
+      );
+      await endJob(job.jobId);
+    };
+    const disable = (job) => () =>
+      migrator.query(
+        'UPDATE cc.application_principals SET enabled=false WHERE id=$1',
+        [job.owner],
+      );
+
+    await ruleCheck(
+      'F1 a claim that waits on its batch row stops when the confirmer is disabled in the wait',
+      async () => {
+        const job = await releasedBatch('f1-a');
+        const { answer } = await waitedOn({
+          rows: [heldBatchRow(job.jobId)],
+          ...nextClaim(job),
+          during: disable(job),
+        });
+        await stoppedInWait(job, answer, 'permission-changed');
+      },
+    );
+
+    await ruleCheck(
+      'F1 a claim that waits on its batch row stops when the permission version changes in the wait',
+      async () => {
+        const job = await releasedBatch('f1-b');
+        const { answer } = await waitedOn({
+          rows: [heldBatchRow(job.jobId)],
+          ...nextClaim(job),
+          during: () =>
+            migrator.query(
+              'UPDATE cc.application_principals SET permission_version=permission_version+1 WHERE id=$1',
+              [job.owner],
+            ),
+        });
+        await stoppedInWait(job, answer, 'permission-changed');
+      },
+    );
+
+    await ruleCheck(
+      'F1 a claim that waits on its batch row stops when a write grant is revoked in the wait',
+      async () => {
+        const job = await releasedBatch('f1-c');
+        const { answer } = await waitedOn({
+          rows: [heldBatchRow(job.jobId)],
+          ...nextClaim(job),
+          during: () =>
+            migrator.query(
+              "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='devices:bulk-actions'",
+              [job.owner],
+            ),
+        });
+        await stoppedInWait(job, answer, 'permission-changed');
+      },
+    );
+
+    await ruleCheck(
+      'F1 a claim that waits on its batch row stops when the connection changes in the wait',
+      async () => {
+        const job = await releasedBatch('f1-d');
+        let replaced = null;
+        try {
+          const { answer } = await waitedOn({
+            rows: [heldBatchRow(job.jobId)],
+            ...nextClaim(job),
+            during: async () => {
+              replaced = await adminRow(
+                `INSERT INTO cc.google_credentials(id,generation,customer_id,envelope,client_id,delegated_subject)
+                SELECT gen_random_uuid(),(SELECT max(generation)+1 FROM cc.google_credentials),customer_id,envelope,
+                  client_id,delegated_subject FROM cc.google_credentials WHERE id=$1
+                RETURNING id,generation`,
+                [connection.credential_id],
+              );
+              await migrator.query(
+                'UPDATE cc.google_connection SET credential_id=$2,generation=$3 WHERE customer_id=$1',
+                [customer, replaced.id, replaced.generation],
+              );
+            },
+          });
+          await stoppedInWait(job, answer, 'connection-changed');
+        } finally {
+          await migrator.query(
+            'UPDATE cc.google_connection SET credential_id=$2,generation=$3 WHERE customer_id=$1',
+            [customer, connection.credential_id, generation],
+          );
+          if (replaced)
+            await migrator.query(
+              'DELETE FROM cc.google_credentials WHERE id=$1',
+              [replaced.id],
+            );
+        }
+      },
+    );
+
+    await ruleCheck(
+      'F1 a claim that waits on its operation row stops when the confirmer is disabled in the wait',
+      async () => {
+        const job = await releasedBatch('f1-e');
+        const { answer } = await waitedOn({
+          rows: [heldOperationRow(job.jobId)],
+          ...nextClaim(job),
+          during: disable(job),
+        });
+        await stoppedInWait(job, answer, 'permission-changed');
+      },
+    );
+
+    await ruleCheck(
+      'F1 a claim that waits on the detail row stops when the confirmer is disabled in the wait',
+      async () => {
+        const job = await releasedBatch('f1-f');
+        const { answer } = await waitedOn({
+          rows: [heldDetailRow(job.jobId)],
+          ...nextClaim(job),
+          during: disable(job),
+        });
+        await stoppedInWait(job, answer, 'permission-changed');
+      },
+    );
+
+    await ruleCheck(
+      'F1 a claim that waits on the connection row stops when the confirmer is disabled in the wait',
+      async () => {
+        const job = await releasedBatch('f1-g');
+        const { answer } = await waitedOn({
+          rows: [heldConnectionRow()],
+          ...nextClaim(job),
+          during: disable(job),
+        });
+        await stoppedInWait(job, answer, 'permission-changed');
+      },
+    );
+
+    await ruleCheck(
+      'F1 a claim that waits on its batch row returns superseded when the token rotates in the wait',
+      async () => {
+        const job = await releasedBatch('f1-h');
+        const recorded = await publications(job.jobId);
+        const { answer } = await waitedOn({
+          rows: [heldBatchRow(job.jobId)],
+          ...nextClaim(job),
+          during: () => rotateToken(job.jobId),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(
+          answer.rows[0].result.outcome,
+          'superseded',
+          'A claim rechecks its token after the batch wait.',
+        );
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['pending'],
+        );
+        assert.equal(await publications(job.jobId), recorded);
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'F1 control: a claim that waits on its batch row without an access change claims its batch',
+      async () => {
+        const job = await releasedBatch('f1-i');
+        const { answer } = await waitedOn({
+          rows: [heldBatchRow(job.jobId)],
+          ...nextClaim(job),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(answer.rows[0].result.outcome, 'claimed');
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['dispatched'],
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // F2: two unknown operations under two different live read-back attempts. A settlement names both
+    // under the first attempt, so only the first result is eligible.
+    const mixedReadBacks = async (prefix) => {
+      const ids = [`${prefix}-1`, `${prefix}-2`];
+      await upsert(
+        ids.map((id) => device(id)),
+        new Date(Date.now() - 60 * 60 * 1000),
+      );
+      const job = await makeJob({ devices: ids });
+      const admitted = await admit(false);
+      assert.equal(admitted.jobId, job.jobId, 'The admission picks this job.');
+      const attempt = randomUUID();
+      await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+      await settle(
+        job.jobId,
+        admitted.dispatchToken,
+        attempt,
+        'write',
+        [1, 2].map((operationNumber) => ({
+          operationNumber,
+          outcome: 'unknown',
+          outcomeReason: 'interrupted',
+        })),
+        new Date(),
+      );
+      await migrator.query(
+        `UPDATE cc.device_update_operations SET verify_lease_expires_at=clock_timestamp()-interval '1 second'
+          WHERE job_id=$1`,
+        [job.jobId],
+      );
+      const first = randomUUID();
+      assert.equal((await claimVerification(job.jobId, [1], first)).length, 1);
+      assert.equal(
+        (await claimVerification(job.jobId, [2], randomUUID())).length,
+        1,
+      );
+      return { ...job, ids, first };
+    };
+    const mixedSettlement = (job) => [
+      customer,
+      job.jobId,
+      null,
+      job.first,
+      'read-back',
+      JSON.stringify(
+        [1, 2].map((operationNumber) => ({
+          operationNumber,
+          outcome: 'succeeded',
+          value: 'Room 12',
+          verifiedBy: 'read-back',
+        })),
+      ),
+      new Date(),
+    ];
+    const settlesOnlyFirst = (answer) => {
+      assert.equal(
+        answer.code,
+        undefined,
+        'An eligible result must not make a fenced result wait on its descendant rows.',
+      );
+      assert.deepEqual(
+        answer.rows[0].result.settled.map((row) => row.operationNumber),
+        [1],
+      );
+    };
+
+    await ruleCheck(
+      'F2 a mixed settlement does not wait on the operation row of its fenced result',
+      async () => {
+        const job = await mixedReadBacks('f2o');
+        await descendantHeld({
+          rows: [heldOperation(job.jobId, 2)],
+          sql: settleSql,
+          values: mixedSettlement(job),
+          expect: settlesOnlyFirst,
+        });
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['succeeded', 'unknown'],
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'F2 a mixed settlement does not wait on the device row of its fenced result',
+      async () => {
+        const job = await mixedReadBacks('f2d');
+        await descendantHeld({
+          rows: [heldDeviceRow(job.ids[1])],
+          sql: settleSql,
+          values: mixedSettlement(job),
+          expect: settlesOnlyFirst,
+        });
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['succeeded', 'unknown'],
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    for (const [label, entry] of [
+      [
+        'a null',
+        { operationNumber: 1, outcome: null, verifiedBy: 'read-back' },
+      ],
+      ['an absent', { operationNumber: 1, verifiedBy: 'read-back' }],
+    ])
+      await ruleCheck(
+        `F2 a read-back with ${label} outcome rejects before any lock`,
+        async () => {
+          const job = await heldJob(`f2-${label.split(' ')[1]}`);
+          await settle(
+            job.jobId,
+            job.token,
+            job.attempt,
+            'write',
+            JSON.parse(writeResult('unknown')),
+            new Date(),
+          );
+          const before = await operations(job.jobId);
+          await descendantHeld({
+            rows: [heldHeaderRow(job.jobId), heldOperationRow(job.jobId)],
+            sql: settleSql,
+            values: [
+              customer,
+              job.jobId,
+              null,
+              job.attempt,
+              'read-back',
+              JSON.stringify([entry]),
+              new Date(),
+            ],
+            expect: (answer) =>
+              assert.equal(
+                answer.code,
+                '22023',
+                'An absent or null outcome rejects before the header lock.',
+              ),
+          });
+          assert.deepEqual(await operations(job.jobId), before);
+          await endJob(job.jobId);
+        },
+      );
+
+    await ruleCheck(
+      'S2 a settlement with a null kind rejects before any lock',
+      async () => {
+        const job = await heldJob('f2k-a');
+        await descendantHeld({
+          rows: [heldHeaderRow(job.jobId)],
+          sql: settleSql,
+          values: [
+            customer,
+            job.jobId,
+            job.token,
+            job.attempt,
+            null,
+            writeResult(),
+            new Date(),
+          ],
+          expect: (answer) =>
+            assert.equal(
+              answer.code,
+              '22023',
+              'A null settlement kind rejects before the header lock.',
+            ),
+        });
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['dispatched'],
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a write settlement that waits on the detail row fences on the lease that lapsed in the wait',
+      async () => {
+        await upsert([device('f2w-a')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await heldJob('f2w-a');
+        const before = await jobRow(job.jobId);
+        const recorded = await publications(job.jobId);
+        await shortLease(job.jobId);
+        const { answer } = await waitedOn({
+          rows: [heldDetailRow(job.jobId)],
+          sql: settleSql,
+          values: [
+            customer,
+            job.jobId,
+            job.token,
+            job.attempt,
+            'write',
+            writeResult(),
+            new Date(),
+          ],
+          during: () => leaseLapses(job.jobId),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.deepEqual(
+          answer.rows[0].result.settled,
+          [],
+          'A lease that lapsed in the detail wait fences the result.',
+        );
+        assert.equal(answer.rows[0].result.publication, null);
+        assert.equal(
+          Number((await jobRow(job.jobId)).revision),
+          Number(before.revision),
+        );
+        assert.equal(await publications(job.jobId), recorded);
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['dispatched'],
+        );
+        assert.equal((await deviceRow('f2w-a')).annotated_location, null);
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a write settlement that waits on its operation row returns fenced when the token rotates in the wait',
+      async () => {
+        const job = await heldJob('f2t-a');
+        const recorded = await publications(job.jobId);
+        const { answer } = await waitedOn({
+          rows: [heldOperationRow(job.jobId)],
+          sql: settleSql,
+          values: [
+            customer,
+            job.jobId,
+            job.token,
+            job.attempt,
+            'write',
+            writeResult(),
+            new Date(),
+          ],
+          during: () => rotateToken(job.jobId),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(
+          answer.rows[0].result.outcome,
+          'fenced',
+          'A write settlement rechecks its token after the operation wait.',
+        );
+        assert.equal(await publications(job.jobId), recorded);
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['dispatched'],
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a settlement of an unknown result does not wait on its device row',
+      async () => {
+        await upsert([device('f2u-a')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await heldJob('f2u-a');
+        await descendantHeld({
+          rows: [heldDeviceRow('f2u-a')],
+          sql: settleSql,
+          values: [
+            customer,
+            job.jobId,
+            job.token,
+            job.attempt,
+            'write',
+            writeResult('unknown'),
+            new Date(),
+          ],
+          expect: (answer) => {
+            assert.equal(
+              answer.code,
+              undefined,
+              'A result that changes no device row must not wait on that row.',
+            );
+            assert.deepEqual(
+              answer.rows[0].result.settled.map((row) => row.status),
+              ['unknown'],
+            );
+          },
+        });
+        await endJob(job.jobId);
+      },
+    );
+
+    // F3: hold acceptance after a detail-row wait. The lease or the report window lapses in the wait.
+    const reportedJob = async (deviceId) => {
+      const job = await heldJob(deviceId);
+      assert.equal(
+        await result(
+          'SELECT cc.report_device_update_backoff($1,$2,$3,0,$4,1) AS result',
+          [customer, job.jobId, job.token, job.attempt],
+        ),
+        true,
+      );
+      return job;
+    };
+    const acceptSql = 'SELECT cc.accept_device_update_hold($1) AS result';
+    const noHold = async (job, answer) => {
+      assert.equal(answer.code, undefined, answer.message);
+      assert.equal(
+        answer.rows[0].result,
+        null,
+        'A report that lapsed in the detail wait takes no hold.',
+      );
+      assert.deepEqual(
+        await adminRow(
+          'SELECT hold_attempt,hold_sequence,hold_written_at FROM cc.device_update_jobs WHERE job_id=$1',
+          [job.jobId],
+        ),
+        { hold_attempt: null, hold_sequence: null, hold_written_at: null },
+      );
+      await endJob(job.jobId);
+    };
+
+    await ruleCheck(
+      'F3 hold acceptance rechecks the lease that lapsed during its detail wait',
+      async () => {
+        const job = await reportedJob('f3-a');
+        await shortLease(job.jobId);
+        const { answer } = await waitedOn({
+          rows: [heldDetailRow(job.jobId)],
+          sql: acceptSql,
+          values: [customer],
+          during: () => leaseLapses(job.jobId),
+        });
+        await noHold(job, answer);
+      },
+    );
+
+    await ruleCheck(
+      'S1 hold acceptance rechecks the report window that lapsed during its detail wait',
+      async () => {
+        const job = await reportedJob('f3-b');
+        await migrator.query(
+          "UPDATE cc.device_update_jobs SET backoff_reported_at=clock_timestamp()-interval '28 seconds' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const { answer } = await waitedOn({
+          rows: [heldDetailRow(job.jobId)],
+          sql: acceptSql,
+          values: [customer],
+          during: async () =>
+            assert.equal(
+              await until(
+                `SELECT clock_timestamp()-backoff_reported_at>interval '30 seconds' AS lapsed
+                  FROM cc.device_update_jobs WHERE job_id=$1`,
+                [job.jobId],
+              ),
+              true,
+              'The report window lapses in the wait.',
+            ),
+        });
+        await noHold(job, answer);
+      },
+    );
+
+    // The class checks: the renewal, the release, the admission, the tick, the abandoned start, the
+    // finish preparation, the reaper, and the read-back claim.
+    const renewSql =
+      'SELECT cc.renew_device_update_batch($1,$2,$3,$4,$5) AS result';
+    const releaseSql =
+      'SELECT cc.release_device_update_batch($1,$2,$3,$4,$5) AS result';
+
+    await ruleCheck(
+      'S1 a renewal that waits on the detail row does not revive the lease that lapsed in the wait',
+      async () => {
+        const job = await heldJob('rn2-a');
+        await shortLease(job.jobId);
+        const { answer } = await waitedOn({
+          rows: [heldDetailRow(job.jobId)],
+          sql: renewSql,
+          values: [customer, job.jobId, job.token, 0, job.attempt],
+          during: () => leaseLapses(job.jobId),
+        });
+        assert.equal(
+          answer.detail,
+          'attempt-fenced',
+          'A lease that lapsed in the detail wait fences the renewal.',
+        );
+        assert.equal(
+          await leaseLapsed(job.jobId),
+          true,
+          'The renewal leaves the lapsed lease alone.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a renewal that waits on its batch row rejects the token rotated in the wait',
+      async () => {
+        const job = await heldJob('rn2-b');
+        const before = await batchRow(job.jobId);
+        const { answer } = await waitedOn({
+          rows: [heldBatchRow(job.jobId)],
+          sql: renewSql,
+          values: [customer, job.jobId, job.token, 0, job.attempt],
+          during: () => rotateToken(job.jobId),
+        });
+        assert.equal(
+          answer.detail,
+          'attempt-fenced',
+          'A renewal rechecks its token after the batch wait.',
+        );
+        assert.deepEqual(await batchRow(job.jobId), before);
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a release stamps settled_at after its batch wait',
+      async () => {
+        const job = await heldJob('rl2-a');
+        const { answer, releasedAt } = await waitedOn({
+          rows: [heldBatchRow(job.jobId)],
+          sql: releaseSql,
+          values: [customer, job.jobId, job.token, 0, job.attempt],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        const batch = await batchRow(job.jobId);
+        assert.equal(batch.attempt_id, null);
+        assert.ok(
+          batch.settled_at >= releasedAt,
+          'A release stamps settled_at from its post-wait clock.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a release that waits on its batch row rejects the token rotated in the wait',
+      async () => {
+        const job = await heldJob('rl2-b');
+        const before = await batchRow(job.jobId);
+        const { answer } = await waitedOn({
+          rows: [heldBatchRow(job.jobId)],
+          sql: releaseSql,
+          values: [customer, job.jobId, job.token, 0, job.attempt],
+          during: () => rotateToken(job.jobId),
+        });
+        assert.equal(
+          answer.detail,
+          'attempt-fenced',
+          'A release rechecks its token after the batch wait.',
+        );
+        assert.deepEqual(await batchRow(job.jobId), before);
+        await endJob(job.jobId);
+      },
+    );
+
+    const admitSql = 'SELECT cc.admit_device_update_job($1,$2) AS result';
+
+    await ruleCheck(
+      'S2 admission rejects a null hold flag before it admits a job',
+      async () => {
+        const job = await makeJob({ devices: ['ad2-h'] });
+        await rejects(result(admitSql, [customer, null]), '22023');
+        assert.equal(
+          (await jobRow(job.jobId)).status,
+          'accepted',
+          'A null hold flag admits nothing.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 admission reads the running job after its header wait',
+      async () => {
+        const active = await makeJob({ devices: ['ad2-r'] });
+        assert.equal((await admit(false)).jobId, active.jobId);
+        const next = await makeJob({ devices: ['ad2-n'] });
+        const { answer } = await waitedOn({
+          rows: [heldHeaderRow(next.jobId)],
+          sql: admitSql,
+          values: [customer, false],
+          during: () => endJob(active.jobId),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(
+          answer.rows[0].result?.jobId,
+          next.jobId,
+          'A job that ended in the header wait leaves the write slot free.',
+        );
+        await endJob(next.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 admission sets the start deadline after its detail wait',
+      async () => {
+        const job = await makeJob({ devices: ['ad2-d'] });
+        const { answer, releasedAt } = await waitedOn({
+          rows: [heldDetailRow(job.jobId)],
+          sql: admitSql,
+          values: [customer, false],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(answer.rows[0].result?.jobId, job.jobId);
+        const saved = await adminRow(
+          `SELECT j.admitted_at,u.start_deadline_at FROM cc.jobs j
+            JOIN cc.device_update_jobs u ON u.job_id=j.job_id WHERE j.job_id=$1`,
+          [job.jobId],
+        );
+        assert.ok(
+          saved.start_deadline_at.getTime() >= releasedAt.getTime() + 120000,
+          'A detail wait must not consume the start window.',
+        );
+        assert.ok(saved.admitted_at >= releasedAt);
+        await endJob(job.jobId);
+      },
+    );
+
+    const recoverSql = 'SELECT cc.recover_device_update_jobs($1) AS result';
+
+    await ruleCheck(
+      'S1 a start rotation sets its start deadline after its detail wait',
+      async () => {
+        const job = await makeJob({ devices: ['rc2-u'] });
+        const admitted = await admit(false);
+        assert.equal(admitted.jobId, job.jobId);
+        await migrator.query(
+          "UPDATE cc.device_update_jobs SET start_deadline_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const { answer, releasedAt } = await waitedOn({
+          rows: [heldDetailRow(job.jobId)],
+          sql: recoverSql,
+          values: [customer],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.ok(
+          answer.rows[0].result.starts.some(
+            (start) => start.jobId === job.jobId,
+          ),
+          'The tick rotates the unclaimed start.',
+        );
+        const saved = await adminRow(
+          'SELECT dispatch_count,dispatch_token,start_deadline_at FROM cc.device_update_jobs WHERE job_id=$1',
+          [job.jobId],
+        );
+        assert.equal(saved.dispatch_count, 2);
+        assert.notEqual(saved.dispatch_token, admitted.dispatchToken);
+        assert.ok(
+          saved.start_deadline_at.getTime() >= releasedAt.getTime() + 120000,
+          'A detail wait must not consume the new start window.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a runner-loss rotation stamps its heartbeat and start deadline after its detail wait',
+      async () => {
+        const job = await heldJob('rc2-l');
+        await stop(job.jobId, job.token, 0, job.attempt);
+        await migrator.query(
+          "UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '11 minutes' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const { answer, releasedAt } = await waitedOn({
+          rows: [heldDetailRow(job.jobId)],
+          sql: recoverSql,
+          values: [customer],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.ok(
+          answer.rows[0].result.starts.some(
+            (start) => start.jobId === job.jobId,
+          ),
+          'The tick rotates the lost runner.',
+        );
+        const saved = await adminRow(
+          'SELECT dispatch_count,heartbeat_at,start_deadline_at FROM cc.device_update_jobs WHERE job_id=$1',
+          [job.jobId],
+        );
+        assert.equal(saved.dispatch_count, 2);
+        assert.ok(
+          saved.heartbeat_at >= releasedAt,
+          'The rotation stamps its heartbeat after the detail wait.',
+        );
+        assert.ok(
+          saved.start_deadline_at.getTime() >= releasedAt.getTime() + 120000,
+          'A detail wait must not consume the new start window.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 an abandoned start stamps finished_at after its operation wait',
+      async () => {
+        const job = await makeJob({ devices: ['ab2-a'] });
+        const admitted = await admit(false);
+        assert.equal(admitted.jobId, job.jobId);
+        const { answer, releasedAt } = await waitedOn({
+          rows: [heldOperationRow(job.jobId)],
+          sql: 'SELECT cc.abandon_device_update_start($1,$2,$3) AS result',
+          values: [customer, job.jobId, admitted.dispatchToken],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        const saved = await jobRow(job.jobId);
+        assert.equal(saved.status, 'failed');
+        assert.equal(saved.failure, 'orchestration-unavailable');
+        assert.ok(
+          saved.finished_at >= releasedAt,
+          'The closure stamps finished_at from its post-wait clock.',
+        );
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => row.status),
+          ['skipped'],
+        );
+      },
+    );
+
+    const prepareSql =
+      'SELECT cc.prepare_device_update_finish($1,$2,$3,$4) AS result';
+    const fenceTime = (jobId) =>
+      adminRow(
+        'SELECT status,verify_after FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1',
+        [jobId],
+      );
+
+    await ruleCheck(
+      'S1 a finish preparation fences at its post-wait time',
+      async () => {
+        const job = await heldJob('pf2-a');
+        await expireBatches(job.jobId);
+        const { answer, releasedAt } = await waitedOn({
+          rows: [heldOperationRow(job.jobId)],
+          sql: prepareSql,
+          values: [customer, job.jobId, job.token, null],
+          during: () => sleep(200),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(answer.rows[0].result.outcome, 'ready');
+        const fenced = await fenceTime(job.jobId);
+        assert.equal(fenced.status, 'unknown');
+        assert.ok(
+          fenced.verify_after >= releasedAt,
+          'The fence time comes from the post-wait clock.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a finish preparation that waits on an operation row returns superseded when the token rotates in the wait',
+      async () => {
+        const job = await heldJob('pf2-b');
+        await expireBatches(job.jobId);
+        const before = await jobRow(job.jobId);
+        const { answer } = await waitedOn({
+          rows: [heldOperationRow(job.jobId)],
+          sql: prepareSql,
+          values: [customer, job.jobId, job.token, null],
+          during: () => rotateToken(job.jobId),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(
+          answer.rows[0].result.outcome,
+          'superseded',
+          'A preparation rechecks its token after the operation wait.',
+        );
+        assert.equal(
+          Number((await jobRow(job.jobId)).revision),
+          Number(before.revision),
+        );
+        assert.equal((await fenceTime(job.jobId)).status, 'dispatched');
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck('S1 the reaper fences at its post-wait time', async () => {
+      const job = await heldJob('fz2-a');
+      await expireBatches(job.jobId);
+      const { answer, releasedAt } = await waitedOn({
+        rows: [heldOperationRow(job.jobId)],
+        sql: 'SELECT cc.finalize_device_update_job($1,$2,$3) AS result',
+        values: [customer, job.jobId, null],
+        during: () => sleep(200),
+      });
+      assert.equal(answer.code, undefined, answer.message);
+      assert.equal(answer.rows[0].result.outcome, 'finalized');
+      const fenced = await fenceTime(job.jobId);
+      assert.equal(fenced.status, 'unknown');
+      assert.ok(
+        fenced.verify_after >= releasedAt,
+        'The fence time comes from the post-wait clock.',
+      );
+    });
+
+    await ruleCheck(
+      'S1 a verification claim locks only the operations it found eligible',
+      async () => {
+        const ids = ['cv2-1', 'cv2-2'];
+        const job = await makeJob({ devices: ids });
+        const admitted = await admit(false);
+        assert.equal(admitted.jobId, job.jobId);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
+          [1, 2].map((operationNumber) => ({
+            operationNumber,
+            outcome: 'unknown',
+            outcomeReason: 'interrupted',
+          })),
+          new Date(),
+        );
+        // Operation 1 has no live reservation. The reservation of operation 2 lapses in the wait.
+        await migrator.query(
+          `UPDATE cc.device_update_operations SET verify_lease_expires_at=CASE WHEN operation_number=1
+            THEN clock_timestamp()-interval '1 second' ELSE clock_timestamp()+interval '1500 milliseconds' END
+            WHERE job_id=$1`,
+          [job.jobId],
+        );
+        const first = await connect('cc-migrator', 'cc-app');
+        const second = await connect('cc-migrator', 'cc-app');
+        const caller = await connect('cc-app', 'cc-app');
+        let pending = null;
+        try {
+          await first.query('BEGIN');
+          await first.query(...heldOperation(job.jobId, 1));
+          const firstPid = await pidOf(first);
+          const secondPid = await pidOf(second);
+          const callerPid = await pidOf(caller);
+          pending = caller
+            .query(
+              'SELECT cc.claim_device_update_verification($1,$2,$3,$4) AS result',
+              [customer, job.jobId, JSON.stringify([1, 2]), randomUUID()],
+            )
+            .then(
+              (queried) => ({ rows: queried.rows }),
+              (error) => ({ code: error.code, message: error.message }),
+            );
+          assert.equal(
+            await waitsFor(callerPid, firstPid),
+            true,
+            'The claim waits on its eligible operation.',
+          );
+          assert.equal(
+            await until(
+              `SELECT clock_timestamp()>verify_lease_expires_at AS lapsed FROM cc.device_update_operations
+                WHERE job_id=$1 AND operation_number=2`,
+              [job.jobId],
+            ),
+            true,
+            'The second reservation lapses in the wait.',
+          );
+          await second.query('BEGIN');
+          await second.query(...heldOperation(job.jobId, 2));
+          await first.query('ROLLBACK');
+          const waited = await waitsBriefly(callerPid, secondPid);
+          await second.query('ROLLBACK');
+          const answer = await pending;
+          assert.equal(
+            waited,
+            false,
+            'A claim locks no operation that was not eligible under the header.',
+          );
+          assert.equal(answer.code, undefined, answer.message);
+          assert.deepEqual(
+            answer.rows[0].result.map((row) => row.operationNumber),
+            [1],
+          );
+        } finally {
+          await first.query('ROLLBACK').catch(() => undefined);
+          await second.query('ROLLBACK').catch(() => undefined);
+          if (pending) await pending;
+          await Promise.allSettled([first.end(), second.end(), caller.end()]);
+        }
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S2 a verification claim rejects a null operation number before any lock',
+      async () => {
+        const job = await heldJob('cv2-n');
+        await descendantHeld({
+          rows: [heldHeaderRow(job.jobId)],
+          sql: 'SELECT cc.claim_device_update_verification($1,$2,$3,$4) AS result',
+          values: [customer, job.jobId, JSON.stringify([null]), randomUUID()],
+          expect: (answer) =>
+            assert.equal(
+              answer.code,
+              '22023',
+              'A null operation number rejects before the header lock.',
+            ),
+        });
+        await endJob(job.jobId);
       },
     );
   } finally {
