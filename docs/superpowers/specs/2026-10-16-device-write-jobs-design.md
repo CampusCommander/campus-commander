@@ -1,13 +1,13 @@
 # Technical design: annotated-location writes, write jobs, the admission hold, and the jobs API
 
-Status: proposed technical design, revision 5, 2026-10-17. Author: architect. Not owner-approved product behavior.
+Status: proposed technical design, revision 6, 2026-10-17. Author: architect. Not owner-approved product behavior.
 Slice: development order step 4 (`docs/current-work.md:58`). The intake brief (eng-lead, 2026-10-16, revision 3) is the contract.
 Owner decisions D1 to D6 in that brief are binding. This record invents no product behavior.
 The owner merged the workflow record `docs/workflows/update-device-annotated-location.md` through PR #36 as commit `3eab39a`, on 2026-10-16 at 23:39 EDT.
 The eng-lead note of 23:39 states that the merge confirms the record. This design follows that record on origin/main.
 Section 10.2 records the eng-lead rulings on the open questions of revision 1 and the questions that stay open.
-This design changes three owner-confirmed decisions of the entity cache record. Reviewer approval does not authorize those changes.
-The section "Owner decision gate" states the gate.
+This design changes seven owner-confirmed decisions of the entity cache record. Six need the owner gate. Reviewer approval does not authorize those six.
+The section "Owner decision gate" states the gate. D10 stays outside the gate by the OQ10 ruling.
 
 ## Conventions
 
@@ -19,7 +19,8 @@ The section "Owner decision gate" states the gate.
   The record and the mockup do not exist at `72cd2c3`.
 - origin/main moves lines in four cited files. In `libs/google-connection/src/lib/provider.ts`, lines 115-121 move to 121-127.
   Lines 122-126 move to 116-120. Lines after 126 move down by one. `docs/current-work.md:58` moves to line 66.
-  `docs/workflows/device-browsing.md:141` moves to line 143. `frontend/src/app/shell/shell.html:121-127` moves to lines 122-128.
+  In `docs/workflows/device-browsing.md`, lines after 119 move down by two. Line 141 moves to 143. Line 155 moves to 157.
+  `frontend/src/app/shell/shell.html:121-127` moves to lines 122-128.
   No other file cited at `72cd2c3` differs between `72cd2c3` and `3eab39a`.
 - origin/main moved to `4311a9b` after `3eab39a`. That merge changes only `api-e2e/all-docker.test.mjs`. This record cites no line of that file.
 - "Job service" names the logical owner of admission, hold updates, and terminal cleanup (`docs/portfolio/03-architecture.md:63-67`). Section 6.5 places it.
@@ -48,10 +49,11 @@ Terms. Each term names one thing in this record.
 | Stream event         | An event that a browser stream sends to the browser. Section 3.1.                                                                                                    |
 | Visibility predicate | The rule of section 2.1 that decides whether a caller sees a job.                                                                                                    |
 | Failure requester    | The requester of the full sync that recorded a failure of the sync state. The predicate checks each retained failure against it. Section 1.3.                        |
-| Owner gate           | The owner confirmation that the D7, D9, and D12 changes need. Section "Owner decision gate".                                                                         |
+| Owner gate           | The owner confirmation that the D1, D6, D7, D9, D12, and D13 changes need. Section "Owner decision gate".                                                            |
 | Publication row      | A row of `cc.job_publications`. It holds one committed job change until Redis carries it. Section 3.6.                                                               |
-| Publisher            | The code path that committed a publication row. The relay is not a publisher. Section 3.6.                                                                           |
-| Relay                | The job service timer that publishes progress-only publication rows and the rows that their publisher left. Section 3.6.                                             |
+| Refresh row          | A publication row of a refresh job. It carries no devices and has no publisher. Section 3.6.                                                                         |
+| Publisher            | The code path that committed a publication row of a write job. The relay is not a publisher. Section 3.6.                                                            |
+| Relay                | The job service timer that publishes progress-only rows, refresh rows, and the rows that their publisher left. Section 3.6.                                          |
 
 ## Revision 2 changes
 
@@ -124,43 +126,60 @@ The reviewer recorded the gate in comment 118. The main chat accepted the gate a
 | Gate, B1         | Card B4 adds `deviceStreamEventSchema`. Card P3 adds `entityEntrySchema`. B1 therefore builds no gated change.                                                                  | 2.2, 8.3, 9                  |
 | OQ10             | This revision found five more record lines and one workflow line that the design extends. The main chat decides whether the owner gate covers them.                             | Owner decision gate, 10.2    |
 
+## Revision 6 changes
+
+The review of revision 5 (comment 123) raised finding F1 and notes N1 and N2. This document calls them Rev-5 F1, Rev-5 N1, and Rev-5 N2.
+The main chat ruled on OQ10 on 2026-10-17 at 03:10. Section 10.2 records the ruling.
+
+| Finding              | Change                                                                                                                                                      | Sections                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Rev-5 F1             | Refresh batches keep their direct `entity-batch` publication. Refresh rows carry no devices and have no publisher. The relay publishes their `job-changed`. | Terms, 1.3, 3.2, 3.6, 9, 10.1                         |
+| Rev-5 F1, tests      | Card P2 adds a guard: a successful refresh still invalidates its updated and removed rows. Card B5 tests the relay of refresh rows.                         | 8.3                                                   |
+| Rev-5 N1             | F5 depends on F4, which brings F3. F5 tests both navigation actions.                                                                                        | 8.3, 9                                                |
+| Rev-5 N2             | The Q1 telemetry fault records `permission-denied`. Cards B2 and B4 keep the `quota` case.                                                                  | 8.3, 9                                                |
+| OQ10, gate           | The owner gate adds D1, D6, and D13. Cards P1, B4, and B5 carry their marks.                                                                                | Owner decision gate, 9, 10.1, 10.2                    |
+| OQ10, D3             | A change to a 016 object edits 016. 017 holds only new objects and one dependency-forced foreign key. P3 adds no file.                                      | 1.1, 1.3, 1.5, 1.7, 1.8, 2.1, 5.8, 5.11, 8.3, 9, 10.1 |
+| OQ10, D10 and banner | Both stay outside the gate. The release PR updates their records.                                                                                           | Owner decision gate, 10.2                             |
+| Citation             | Main moves line 155 of the device browsing record to line 157.                                                                                              | Conventions                                           |
+
+Refresh functions keep their result shapes (section 3.2). Their callers therefore hold no publication element. Refresh rows therefore need the relay.
+Revision 6 supersedes the migration placement of revisions 4 and 5. Their change tables above stay as history.
+
 ## Owner decision gate
 
-The entity cache decision record is owner-confirmed (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:3`). This design changes three of its decisions.
+The entity cache decision record is owner-confirmed (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:3`). This design changes seven of its decisions. Six need this gate.
+The eng-lead report of 01:49 named D7, D9, and D12. The OQ10 ruling of 03:10 added D1, D6, and D13 (section 10.2).
+The release PR is the PR of this design. The main chat opens it after approval and makes every record edit below in it.
 
-| Decision | Record                                                                                                                                                                                           | Change in this design                                                                                                                                                                                                                                                                                                                                                                                             | Built by |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| D7       | `entity-batch` carries `{jobId, entityType, batch, batchCount, deviceIds}` (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:82`).                                                   | The Devices stream event drops `jobId`, `batch`, and `batchCount`. The channel event keeps them (section 3.1).                                                                                                                                                                                                                                                                                                    | B4       |
-| D12      | The stream carries `entity-batch`, `full-sync`, and `job-finished`. As built, `job-finished` nests the job as `{ job }` (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:112-113`). | `job-finished` becomes `{ type, failure }` without the job record. `entity-batch` drops the job fields of D7. `full-sync` keeps its shape, and its failure fields follow the caller (sections 2.1 and 3.1).                                                                                                                                                                                                       | B4       |
-| D9       | The worker stores the full row projection with a TTL. "Redis TTL is the Redis staleness tool." (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:93-94`)                             | Each entry holds an entry version and the record. A reader serves an entry only at the current entry version in Postgres. The TTL bounds memory only (section 5.11). The entity row of D1 changes with it (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:34`). `by-ids` of D7 reads Postgres for every ID, not only for misses (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:84`). | P3       |
+| Decision | Record                                                                                                                                                                                                                                        | Change in this design                                                                                                                                                                                                                                                                                                                                                                                             | Built by |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| D1       | The application Redis user gains `mget`, `llen`, `lrange`, `rpush`, `subscribe`, and `unsubscribe`, owner-approved on 2026-10-07. District-operated Redis grants the same (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:38`). | The application user also gains `+publish` and `+incr` for the job service and the relay (section 3.2). District-operated Redis then grants them too.                                                                                                                                                                                                                                                             | P1       |
+| D6       | The worker publishes to `cc:entity-events:{customer}`. Each API instance holds one subscriber client and fans out to open SSE responses (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:76`).                                   | The API subscriber also listens on the job channel and feeds the Jobs stream (sections 3.1 and 3.3). The relay in the API publishes `job-changed` and `entity-batch` from publication rows (section 3.6).                                                                                                                                                                                                         | B4, B5   |
+| D7       | `entity-batch` carries `{jobId, entityType, batch, batchCount, deviceIds}` (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:82`).                                                                                                | The Devices stream event drops `jobId`, `batch`, and `batchCount`. The channel event keeps them (section 3.1).                                                                                                                                                                                                                                                                                                    | B4       |
+| D9       | The worker stores the full row projection with a TTL. "Redis TTL is the Redis staleness tool." (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:93-94`)                                                                          | Each entry holds an entry version and the record. A reader serves an entry only at the current entry version in Postgres. The TTL bounds memory only (section 5.11). The entity row of D1 changes with it (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:34`). `by-ids` of D7 reads Postgres for every ID, not only for misses (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:84`). | P3       |
+| D12      | The stream carries `entity-batch`, `full-sync`, and `job-finished`. As built, `job-finished` nests the job as `{ job }` (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:112-113`).                                              | `job-finished` becomes `{ type, failure }` without the job record. `entity-batch` drops the job fields of D7. `full-sync` keeps its shape. Its failure fields follow the caller (sections 2.1 and 3.1).                                                                                                                                                                                                           | B4       |
+| D13      | The worker ACL user covers `cc:entity:*`, `cc:query-gen:*`, `cc:entity-inflight:*`, and "the publish channel". "The API stays out of the job path." (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:122-123`)                   | The worker user also publishes on `cc:job-events:*` (section 3.2). The job service in the API admits, starts, and recovers write jobs (sections 5.3 and 6.5). Its relay publishes job events (section 3.6).                                                                                                                                                                                                       | P1, B5   |
 
-- Reviewer approval confirms this document. It does not authorize these three decision changes.
-- The main chat asks the owner together with OQ9 (section 10.2). The owner confirms before the design PR merges.
-- Cards B4 and P3 build the changes. Neither card dispatches before the owner confirms. Their dependent cards wait through their dependencies (section 9).
-- After the owner confirms, the main chat updates the decision record in the same PR. This card changes only this design file.
+- Reviewer approval confirms this document. It does not authorize these six decision changes.
+- The main chat asks the owner together with OQ9 (section 10.2). The owner confirms before the release PR merges.
+- Cards P1, B4, B5, and P3 build the changes. None of them dispatches before the owner confirms its changes. Their dependent cards wait through their dependencies (section 9).
+- After the owner confirms, the main chat updates the decision record in the release PR. This card changes only this design file.
 - If the owner rejects a change, that change needs a new design revision. The main chat decides whether its card dispatches without that change or waits for the revision.
-  Card B4 keeps the `full-sync` projection in both cases, because that projection changes no decision of this gate.
+  Card B4 keeps the `full-sync` projection in every case, because that projection changes no decision of this gate.
 - The failure projection of section 2.1 applies default 15 of the owner-confirmed workflow record. `GET` and `POST /api/devices/sync` keep their shape.
   The `full-sync` event keeps its D12 shape `{ sync }` under the same projection. Card B4 builds the stream part, because B4 changes the same stream code.
   Until B4 merges, the Devices stream forwards `full-sync` as today (`api/src/app/devices/devices.controller.ts:167-206`).
 
-This revision found five more record lines and one workflow line that the design extends. The report of 01:49 does not name them:
+The OQ10 ruling keeps three more extensions outside the gate:
 
-- D1 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:38`): the owner approved the commands of the application Redis user on 2026-10-07. District-operated Redis grants the same commands.
-  Card P1 adds `+publish` and `+incr` to that user (section 3.2).
-- D3 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:50`): "Migration 016 is rewritten, not patched." Migrations 017 and 018 replace functions of 016 instead (section 1.1).
-  Cards B2 and P3 build that. Both sync kinds keep one upsert, but rule 4 of section 5.8 changes it for refresh reads.
-  A refresh read newer than the current-value stamp then sets `annotated_location`, also when the row rule rejects the row. Card B2 builds that.
-- D6 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:76`): "The worker publishes to Redis channel `cc:entity-events:{customer}`."
-  The relay in the API also publishes `entity-batch` events from publication rows (section 3.6). Card B5 builds that.
-- The device browsing workflow (`docs/workflows/device-browsing.md:155`): the stale text "names the stale count and the last failure".
-  For a principal without `jobs:read`, section 2.1 omits each failure whose failure requester is another principal. Cards B2 and B4 build that.
+- D3 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:50`): "Full sync and get-by-IDs sync use one upsert. Migration 016 is rewritten, not patched." Sections 1.1 and 5.8 follow both rules.
+  Rule 4 of section 5.8 adds the observation kind to the one upsert. Card B2 builds that.
+  A refresh read newer than the current-value stamp then sets `annotated_location`, also when the row rule rejects the row.
 - D10 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:99`): a completed full sync increments the query generation. Entity syncs use the TTL only.
-  Write settlements also increment it (section 5.8). Cards P2 and B5 build that.
-- D13 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:122-123`): the worker user covers the entity keys and "the publish channel". The record states "The API stays out of the job path."
-  Card P1 adds the job channel to the worker user. The API publishes job events and relays publication rows (sections 3.2 and 3.6, cards B4 and B5).
-
-OQ10 asks the main chat whether the owner gate covers these lines (section 10.2).
+  Write settlements also increment it (section 5.8). Cards P2 and B5 build that. The release PR updates that record line.
+- The device browsing workflow (`docs/workflows/device-browsing.md:155`) says that the stale text "names the stale count and the last failure".
+  For a principal without `jobs:read`, section 2.1 omits each failure whose failure requester is another principal. Default 15 of the workflow record requires that.
+  The single administrator sees no change. Cards B2 and B4 build the omission. The release PR adds one sentence to the device browsing record.
 
 ## Design sources for the screens
 
@@ -196,11 +215,42 @@ Do not widen `cc.entity_sync_jobs` into the write-job table. The reasons:
 - The Jobs grid sorts and filters every kind together (`docs/ui/jobs-grid.json:24-33`, `docs/ui/jobs-grid.json:84-121`). One header table gives one index and one keyset. A union of unlike tables does not.
 - A full sync keeps no history. Its actor clears at abandon and at finish (`deployment/postgres/migrations/016-device-inventory.sql:166`, `deployment/postgres/migrations/016-device-inventory.sql:342`). A header row records each Refresh all with its requester.
 
-Migration placement: `017-jobs.sql` creates the new objects. It also changes 016 objects with `ALTER TABLE` and `CREATE OR REPLACE FUNCTION`.
-The runner rejects an edited applied migration (`deployment/postgres/index.mjs:151-156`). A new file keeps 016 intact. The current definition of a changed function is the one in 017.
-Card P3 adds `deployment/postgres/migrations/018-entity-entry-versions.sql` for the versions of sections 1.8 and 5.11. They build the D9 change of the owner gate, so 017 omits them.
-018 follows 017 in the explicit list. No function changes in both files.
-017 and 018 assume a fresh installation. Developers recreate their databases. Rollback: revert the commit and recreate the database. No down migration exists, by owner direction (`AGENTS.md:27-29`).
+Migration placement follows entity cache decision D3: "Migration 016 is rewritten, not patched." (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:50`).
+The OQ10 ruling of 2026-10-17 at 03:10 applies it as two rules (section 10.2):
+
+- A change to a table or function that 016 defines edits `deployment/postgres/migrations/016-device-inventory.sql` itself.
+- A new migration file holds only new objects. Owner direction also forbids incremental upgrades (`AGENTS.md:28`).
+
+Card B2 edits 016 for the job model:
+
+- `cc.device_sync_state` gains the two failure requesters and their check constraints (section 1.3). `cc.devices` gains the current-value stamp (section 1.8).
+- B2 changes `cc.read_device_sync`, `cc.request_device_sync`, `cc.abandon_device_sync`, `cc.finish_device_sync`, `cc.stage_devices`, and `cc.upsert_devices`.
+- B2 also changes `cc.upsert_device_batteries`, `cc.soft_delete_devices`, `cc.create_entity_sync_job`, `cc.abandon_entity_sync_job`, and `cc.finish_entity_sync_batch`.
+- B2 deletes `cc.purge_entity_sync_jobs`. `cc.purge_jobs` of 017 replaces it (section 1.5).
+- B2 changes the 016 grant block for the changed signature and the deleted function (section 1.7).
+
+Card B2 adds `017-jobs.sql`. It holds the new tables, sequences, and functions of sections 1 to 6, and the three actions of section 2.1.
+
+A changed 016 function names 017 objects, for example `cc.jobs` and `cc.record_job_change`. All eleven changed functions are PL/pgSQL today.
+For example, `cc.upsert_devices` declares `LANGUAGE plpgsql` (`deployment/postgres/migrations/016-device-inventory.sql:217-218`).
+PL/pgSQL resolves the names of a statement when that statement first runs, not at `CREATE FUNCTION`.
+The PostgreSQL manual states that only trivial syntax errors surface before execution (https://www.postgresql.org/docs/18/plpgsql-implementation.html, "Plan Caching").
+The runner qualifies PostgreSQL 18.6 (`deployment/postgres/index.mjs:80`).
+The runner applies each file in list order, each in its own transaction (`deployment/postgres/index.mjs:146-172`). Readiness requires every file (`deployment/postgres/index.mjs:284-291`).
+No call of a changed 016 function therefore precedes 017. Each such function names 017 objects only inside its statements.
+Its signature, its result type, and its declarations name no 017 type, because Postgres resolves those at `CREATE FUNCTION`.
+
+The dependency-forced split: the foreign key from `cc.entity_sync_jobs.job_id` to `cc.jobs(job_id)` (section 1.3).
+Postgres needs the referenced table when it creates the constraint. `cc.jobs` is a new object of 017. 017 therefore adds the constraint with `ALTER TABLE`.
+No other statement of 017 alters, replaces, or drops a 016 object.
+
+Card P3 edits 016 for the D9 change of the owner gate. It adds the version columns and their triggers (section 1.8).
+It also changes `cc.read_device_records` and `cc.page_device_records` (section 5.11).
+Each trigger function maintains one column of a 016 table. A later file that adds such a trigger patches that table. Each trigger therefore stays in 016 with its column.
+P3 adds no migration file. The D9 work stays separable, because P3 is its own card and branch.
+
+Editing 016 changes its checksum. The runner then rejects a database that applied an earlier 016 (`deployment/postgres/index.mjs:151-156`).
+Developers recreate their databases. Rollback: revert the commit and recreate the database. No down migration exists, by owner direction (`AGENTS.md:27-29`).
 
 ### 1.2 `cc.jobs`
 
@@ -237,7 +287,7 @@ ID-list refresh (the stale-page refresh):
 - `cc.create_entity_sync_job` (`deployment/postgres/migrations/016-device-inventory.sql:358-382`) inserts the header first. It sets `kind='inventory-refresh'`, `scope_kind='devices'`, status `running`, `target_count` to the ID count, and `started_at` to `created_at`.
 - The same transaction inserts one `cc.job_targets` row per ID. The row takes the OrgUnit path from `cc.devices.org_unit_path` (`deployment/postgres/migrations/016-device-inventory.sql:34`).
   Device rows are never deleted (`deployment/postgres/migrations/016-device-inventory.sql:3`), so every requested ID has a path.
-- 017 adds a foreign key from `cc.entity_sync_jobs.job_id` to `cc.jobs(job_id) ON DELETE CASCADE`.
+- 017 adds a foreign key from `cc.entity_sync_jobs.job_id` to `cc.jobs(job_id) ON DELETE CASCADE`. Section 1.1 states why 017 holds it.
 - `cc.finish_entity_sync_batch` (`deployment/postgres/migrations/016-device-inventory.sql:419-437`) recomputes the header counters from the batch records.
   A redispatched batch replaces its record (`deployment/postgres/migrations/016-device-inventory.sql:429`), so the counters never count a batch twice.
   `succeeded` counts the devices of completed batches. `failed` counts the devices of failed batches. Batch `i` holds `min(batch_size, n - i*batch_size)` devices.
@@ -262,7 +312,7 @@ Failure requesters of the sync state:
 
 - The state keeps a failure across later syncs. A new request leaves `telemetry_failure` unchanged, and `failure` too unless it replaces an expired sync (`deployment/postgres/migrations/016-device-inventory.sql:149-154`).
   A failed finish changes only `failure` (`deployment/postgres/migrations/016-device-inventory.sql:339-341`). The newest Refresh all therefore does not always own a retained failure.
-- 017 adds `failure_requested_by` and `telemetry_failure_requested_by` to `cc.device_sync_state` (`deployment/postgres/migrations/016-device-inventory.sql:6-26`).
+- B2 adds `failure_requested_by` and `telemetry_failure_requested_by` to `cc.device_sync_state` in 016 (`deployment/postgres/migrations/016-device-inventory.sql:6-26`).
   Both are `uuid` columns that reference `cc.application_principals(id)`, like `sync_actor` (`deployment/postgres/migrations/016-device-inventory.sql:19`).
 - Each column holds the failure requester of its failure: the `sync_actor` of the sync that recorded the failure. A check constraint keeps each failure and its failure requester both null or both set.
 - `cc.request_device_sync` records `interrupted` for the expired sync that it replaces (`deployment/postgres/migrations/016-device-inventory.sql:150`). It sets `failure_requested_by` to the `sync_actor` of that sync.
@@ -277,6 +327,7 @@ Failure requesters of the sync state:
 Progress: an ID-list refresh reports `total` as `target_count`. A running full sync reports `total` null and `pending` null. Its `succeeded` counts the devices observed so far.
 Refresh jobs carry no confirmer. They read Google and change nothing in Google.
 Every header change above records itself through `cc.record_job_change` in its transaction (section 3.6).
+These refresh rows carry no devices. No refresh caller publishes them. The relay publishes their `job-changed` (sections 3.2 and 3.6).
 
 ### 1.4 Write-job tables
 
@@ -353,8 +404,8 @@ It records the OrgUnit path of each refresh target (D5). Write jobs record the p
 
 ### 1.5 Retention
 
-`cc.purge_jobs(p_customer, p_limit)` replaces `cc.purge_entity_sync_jobs` (`deployment/postgres/migrations/016-device-inventory.sql:439-456`).
-017 drops the old function. Card B2 moves its API caller to `cc.purge_jobs` and removes its grant (`deployment/postgres/index.mjs:270`).
+`cc.purge_jobs(p_customer, p_limit)` of 017 replaces `cc.purge_entity_sync_jobs` (`deployment/postgres/migrations/016-device-inventory.sql:439-456`).
+Card B2 deletes the old function from 016. It moves its API caller to `cc.purge_jobs` and removes its grant (`deployment/postgres/index.mjs:270`).
 `DeviceRefresh.dispatch` calls it where it calls the old purge (`api/src/app/devices/device-refresh.ts:39-43`). The job service also calls it on its tick.
 
 - It keeps the interruption rule. An ID-list refresh unfinished after 2 hours ends with `interrupted` (`deployment/postgres/migrations/016-device-inventory.sql:447-448`).
@@ -376,16 +427,18 @@ It records the OrgUnit path of each refresh target (D5). Write jobs record the p
 
 ### 1.7 Grants
 
-- Grant `SELECT` on the new tables and `EXECUTE` on the new functions to the runtime role, as the 016 block does (`deployment/postgres/index.mjs:249-271`).
+- A new 017 block grants `SELECT` on the new tables and `EXECUTE` on the new functions to the runtime role. The 016 block shows the pattern (`deployment/postgres/index.mjs:249-271`).
+- B2 changes the 016 block for the new signature of `cc.upsert_devices` and the deleted purge (`deployment/postgres/index.mjs:257`, `deployment/postgres/index.mjs:270`).
+  B2 changes the `REVOKE` list of 016 the same way (`deployment/postgres/migrations/016-device-inventory.sql:458-470`).
 - Every function is `SECURITY DEFINER` with `search_path=pg_catalog,cc`, as `cc.device_reader` is (`deployment/postgres/migrations/016-device-inventory.sql:86-87`).
   Every function is revoked from `PUBLIC`, as `deployment/postgres/migrations/016-device-inventory.sql:458-470` does.
 - Functions that the API calls for a person take `(p_actor, p_version)` and check grants, as `cc.device_reader` does (`deployment/postgres/migrations/016-device-inventory.sql:86-100`).
 
 ### 1.8 Device row additions
 
-017 adds `annotated_location_observed_at timestamptz NULL` to `cc.devices` (`deployment/postgres/migrations/016-device-inventory.sql:28-49`). It is the current-value stamp of section 5.8.
+B2 adds `annotated_location_observed_at timestamptz NULL` to `cc.devices` in 016 (`deployment/postgres/migrations/016-device-inventory.sql:28-49`). It is the current-value stamp of section 5.8.
 
-Migration 018 of card P3 adds the two versions of section 5.11. They build the D9 change of the owner gate (section 1.1):
+Card P3 adds the two versions of section 5.11 to 016. They build the D9 change of the owner gate (section 1.1):
 
 - `cc.devices` gains `record_version bigint NOT NULL DEFAULT 1`. A `BEFORE UPDATE` row trigger sets it to the old value plus 1 when any other column changes.
   The trigger covers every writer: refresh upserts, list upserts, battery updates, soft deletes, full-sync removals, and settlements.
@@ -398,8 +451,8 @@ Migration 018 of card P3 adds the two versions of section 5.11. They build the D
 - Concurrent updates of one row wait on its row lock. The trigger then reads the committed version. Versions of one device therefore grow in commit order.
   The telemetry version of one customer grows the same way.
 
-Each 017 function that changes several device rows first locks them in `device_id` order. A function that also locks a job row locks it before the device rows.
-017 therefore replaces `cc.upsert_device_batteries` and `cc.soft_delete_devices` (`deployment/postgres/migrations/016-device-inventory.sql:241-274`) with ordered versions.
+Every multi-row device writer that B2 writes or changes first locks its rows in `device_id` order. A function that also locks a job row locks it before the device rows.
+B2 therefore changes `cc.upsert_device_batteries` and `cc.soft_delete_devices` in 016 to lock in that order (`deployment/postgres/migrations/016-device-inventory.sql:241-274`).
 The device record schema stays unchanged (`libs/application-contracts/src/lib/devices.ts:60-75`). No new column reaches the browser.
 
 ## 2. API contracts
@@ -435,7 +488,7 @@ The failure projection of the sync state:
   An expired sync reports `interrupted` (`deployment/postgres/migrations/016-device-inventory.sql:106`). The failure requester of that value is the `sync_actor` of the expired sync.
 - `telemetryFailure` reads null unless the predicate passes for `telemetry_failure_requested_by`.
 - Every other field of the projection stays unchanged. The shape stays `deviceSyncStateSchema` (`libs/application-contracts/src/lib/devices.ts:313-324`).
-- 017 changes each function that returns the state to the API. Each returns `cc.visible_device_sync` for its own caller:
+- B2 changes, in 016, each function that returns the state to the API. Each returns `cc.visible_device_sync` for its own caller:
   - `cc.read_device_sync` (`deployment/postgres/migrations/016-device-inventory.sql:120-128`) serves `GET /api/devices/sync` (`api/src/app/devices/devices.controller.ts:54-57`, `api/src/app/devices/devices.service.ts:119-128`).
   - `cc.request_device_sync` (`deployment/postgres/migrations/016-device-inventory.sql:155`) serves `POST /api/devices/sync` (`api/src/app/devices/devices.service.ts:136-147`, `api/src/app/devices/devices.service.ts:168`).
   - `cc.abandon_device_sync` (`deployment/postgres/migrations/016-device-inventory.sql:169`). The API discards its result today (`api/src/app/devices/devices.service.ts:155-166`).
@@ -673,15 +726,21 @@ Card B4 changes the Devices stream (`api/src/app/devices/devices.controller.ts:1
 
 ### 3.2 Publishers
 
-| Change                                                                            | Publisher                                                                         | Events                                                  |
-| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| A write job is accepted, labeled, admitted, abandoned, or finalized by the reaper | The job service (API)                                                             | `job-changed`                                           |
-| A refresh job is created                                                          | The API (`api/src/app/devices/device-refresh.ts:52-76`) and the full-sync request | `job-changed`                                           |
-| A write batch or a read-back settles, or a job finishes                           | The worker, after its commit                                                      | `job-changed`, and `entity-batch` for published devices |
+| A write job is labeled, admitted, abandoned, or finalized by the reaper | The job service (API) | `job-changed` |
+| A write job is accepted by confirmation (card B3) | None. The relay publishes the row after its grace (section 3.6). | `job-changed` |
+| A write batch or a read-back settles, or a write job finishes | The worker, after its commit | `job-changed`, and `entity-batch` for published devices |
+| A refresh job is created, progresses, finishes, or ends by the purge | None. The relay publishes the row (section 3.6). | `job-changed` |
 
 - Every change commits one publication row in its own transaction (section 3.6). Every publisher publishes after the commit, with the committed `revision`.
 - A publisher publishes a row with a status change or with published devices at once. It leaves a progress-only row to the relay.
-- The relay of section 3.6 publishes progress-only rows on its next run, once per job. It also publishes every row that its publisher left for 5 s.
+- Confirmation commits its row and publishes nothing. Card B3 therefore needs no Redis publish right from card P1.
+  The admission after the commit labels or admits the job. The job service publishes that row at once (section 6.5).
+- Refresh rows have no publisher. The refresh functions keep their result shapes. No refresh caller therefore holds a publication element.
+  The callers are the refresh dispatch (`api/src/app/devices/device-refresh.ts:55-68`), the full-sync request (`api/src/app/devices/devices.service.ts:136-147`), and the worker.
+  The worker reads the batch finish and the full-sync finish (`worker/src/entity-sync.ts:282-287`, `worker/src/device-sync.ts:160-165`).
+- The worker keeps the direct refresh events of today: `entity-batch` before the batch finish, `job-finished`, and `full-sync` (`worker/src/entity-sync.ts:272-293`, `worker/src/device-sync.ts:217-224`).
+  Section 3.6 states why refresh rows carry no devices.
+- The relay of section 3.6 publishes progress-only rows and refresh rows on its next run, once per job. It also publishes every row that its publisher left for 5 s.
 - The API Redis rule allows neither `publish` nor `incr` (`deployment/redis/runtime.mjs:10-11`). Card P1 adds `+publish` and `+incr`.
 - The worker rule allows `publish` only on `cc:entity-events:*` (`deployment/redis/runtime.mjs:12-14`). Card P1 adds `&cc:job-events:*`.
 - Keys and channels stay under `cc:*` (`deployment/redis/README.md:20`).
@@ -738,12 +797,19 @@ The architecture commits results, overlays, and the notification outbox together
   It returns the publication element of the row.
 - Every function that changes what a reader sees calls it in its own transaction. The callers are confirmation, refresh creation, admission, labels, starts, claims, settlements, finishes, refresh batches, full-sync pages, and purges.
   A rolled-back change leaves no row.
-- Only write-path settlements carry device IDs. Refresh batches keep their current device publication before the batch finish (`worker/src/entity-sync.ts:237-281`).
+- Only write-path settlements carry device IDs. A refresh row carries none.
+- A refresh batch keeps its direct `entity-batch` publication before its batch finish (`worker/src/entity-sync.ts:272-287`).
+  Its `batch` comes from the request. Its positive `batchCount` comes from the batch read (`worker/src/entity-sync.ts:163-170`, `worker/src/entity-sync.ts:277-278`, `libs/application-contracts/src/lib/entity-cache.ts:86-95`).
+  The Devices store reloads its updated and removed rows (`frontend/src/app/devices/devices.store.ts:597-599`).
+- A worker exit before that publication leaves the batch unfinished. The flow retries the batch request (`deployment/kestra/entity-sync.yaml:42-47`).
+  A successful retry publishes the event. A batch whose retries all fail leaves its rows without an event, as today (section 10.1).
+  Refresh device invalidation therefore needs no publication row.
+- Refresh rows have no publisher (section 3.2). The relay publishes their `job-changed`.
 - A publication element holds `publicationId`, `jobId`, `displayId`, `requestedBy`, `revision`, `statusChanged`, `deviceIds`, `removedIds`, `batch`, and `batchCount`.
   `revision` is the job revision when the function returns. `batchCount` is the write batch count of the job, or null without devices.
-- The channel event `entity-batch` takes `jobId`, `batch`, and `batchCount` from the element (`libs/application-contracts/src/lib/entity-cache.ts:86-95`).
+- An `entity-batch` event from a publication row takes `jobId`, `batch`, and `batchCount` from the element (`libs/application-contracts/src/lib/entity-cache.ts:86-95`).
   The Devices stream drops those three fields (section 3.1). The Devices store reloads rows by ID (`frontend/src/app/devices/devices.store.ts:597-599`).
-- The publisher of a row is the code path that committed it. The relay is not a publisher.
+- The publisher of a write-job row is the code path that committed it. A refresh row has no publisher. The relay is not a publisher.
 
 After its commit, the publisher handles each row that changed the status or published devices:
 
@@ -756,7 +822,7 @@ The publisher leaves progress-only rows to the relay. The relay runs on its own 
 A Kestra start deploys its flow and then starts the execution (`api/src/app/orchestration/orchestration.service.ts:54-98`). Each request waits up to 5 s (`api/src/app/configuration/service-http.ts:77-80`).
 A slow tick therefore never delays the relay. One relay run executes at a time:
 
-1. `cc.read_job_publications(p_customer, p_limit)` returns up to 500 elements: every progress-only row, and every other row older than 5 s.
+1. `cc.read_job_publications(p_customer, p_limit)` returns up to 500 elements: every progress-only row, every refresh row, and every other row older than 5 s.
 2. For each element with devices, the relay increments the query generation. It then publishes `entity-batch` with the `deviceIds` and `removedIds` of the element.
    The relay runs in the API, so it never touches an entity key (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:37`).
 3. For each job, it publishes one `job-changed` with the current revision of the job.
@@ -766,7 +832,7 @@ Bounds:
 
 - A row that its publisher left reaches Redis within 10 s plus one relay run: 5 s of grace and one 5-second period. Tests allow 15 s.
   The bound holds while the API process, Postgres, and Redis run.
-- A progress-only row reaches Redis within one period plus one run.
+- A progress-only row or a refresh row reaches Redis within one period plus one run.
 - A lost subscriber connection closes every stream (`api/src/app/devices/device-events.ts:30-33`, `api/src/app/devices/device-events.ts:103-114`). The browsers then reopen and reread every resource (section 3.4).
 - After an API restart, streams reopen, and the tick relays every row that waited.
 
@@ -1017,11 +1083,11 @@ Rules:
    Other fields of the device body follow the existing row rule (`deployment/postgres/migrations/016-device-inventory.sql:235`).
 4. A refresh read that passes rule 2 sets the field and the current-value stamp. With a live overlay, it also moves the overlay to its value and stamp.
    The row rule decides only the other fields (`deployment/postgres/migrations/016-device-inventory.sql:235`). A refresh read never creates or deletes an overlay.
-   017 replaces `cc.upsert_devices` (`deployment/postgres/migrations/016-device-inventory.sql:217-239`) with one upsert that takes the observation kind.
-   Refresh reads pass `read` for this rule.
+   B2 changes `cc.upsert_devices` in 016 (`deployment/postgres/migrations/016-device-inventory.sql:217-239`). A fourth parameter takes the observation kind.
+   Refresh reads pass `read` for this rule. B2 changes that call (`worker/src/entity-sync.ts:223-227`) and the grant (`deployment/postgres/index.mjs:257`) with the signature.
 5. A list observation with a live overlay: an equal value deletes the overlay. This is list convergence. A different value leaves the overlay value in place.
    Without a live overlay, the list sets the field, as today. The other fields follow the list. Lists never change the current-value stamp.
-   017 replaces `cc.stage_devices` (`deployment/postgres/migrations/016-device-inventory.sql:304-310`) to pass `list` to the same upsert.
+   B2 changes `cc.stage_devices` in 016 (`deployment/postgres/migrations/016-device-inventory.sql:304-310`) to pass `list` to the same upsert.
    Both sync kinds therefore still write through one upsert (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:50`).
 6. An expired overlay has no effect. `cc.purge_jobs` deletes it. The current-value stamp stays.
 7. A read-back that answers 404 publishes a soft delete (section 5.7) and no overlay.
@@ -1104,7 +1170,7 @@ Decision: the reader compares every entry with Postgres. Postgres holds the acce
 
 - Each entry is `{ version, record }` (`entityEntrySchema`). `version` is the entry version of section 1.8.
   `record` is a device record without `removedAt` (`libs/application-contracts/src/lib/devices.ts:73-75`).
-- Migration 018 of card P3 replaces `cc.read_device_records` and `cc.page_device_records` (`deployment/postgres/migrations/016-device-inventory.sql:276-292`). Each element gains `version`.
+- Card P3 changes `cc.read_device_records` and `cc.page_device_records` in 016 (`deployment/postgres/migrations/016-device-inventory.sql:276-292`). Each element gains `version`.
   One statement reads each record and both versions from one device row and one sync-state row. The signatures stay, so the grants of `deployment/postgres/index.mjs:260-261` still apply.
 - Card P3 changes both functions, both writers, and the reader together. No merged revision therefore stores an entry that its reader cannot parse.
   Before P3, Redis holds bare records, as today.
@@ -1376,7 +1442,8 @@ B2, Postgres integration (pattern: `deployment/postgres/device-inventory.integra
   The row keeps C with stamp t3, and no overlay exists.
 - Lock order: while another session locks device A, a battery update for B and A waits without a lock on B.
 - F3 publication rows: each job-changing function inserts one row in its transaction. A rolled-back change leaves none.
-  `cc.read_job_publications` returns progress-only rows at once and other rows after 5 s. Elements carry `displayId`, `requestedBy`, and `batchCount`.
+  `cc.read_job_publications` returns progress-only rows and refresh rows at once, and other rows after 5 s. Elements carry `displayId`, `requestedBy`, and `batchCount`.
+  A refresh row carries no devices and a null `batchCount`.
   A read-back 404 puts its device into `removedIds`.
 - Contracts with their producer: the three actions exist in `cc.application_actions`.
 - Rev-4 F1 failure requesters, failing first: run the sequence of section 2.1. After step 1, `telemetry_failure_requested_by` is B.
@@ -1418,6 +1485,7 @@ B4, jobs API, refresh jobs, and streams:
 - R6 revision: each status, counter, and operation change increments `revision`.
 - R5: a stale-page refresh and a Refresh all show as REF- jobs with requesters. An empty inventory shows `completed` with 0 devices. A large inventory shows its full count.
 - R1 forwarding: the Devices stream never sends `job-changed`, even when one arrives on the entity channel. The Jobs stream sends only `job-changed`.
+- B4 publishes no event (section 3.2). Its stream tests publish channel events through a test Redis client.
 - R1 denied access: `GET /api/jobs/events` without `jobs:read` and `devices:read` answers 403. Removing both actions closes an open stream at the next ping.
 - Default 15 visibility: a principal with `devices:read` and without `jobs:read` lists, reads, and streams only the jobs that it requested.
   The activity counts and the requesters route of that principal cover only those jobs. Removing `jobs:read` from a holder closes its open stream at the next ping.
@@ -1461,6 +1529,9 @@ B5, job service with a real Redis:
 - F3: a row with devices increments the query generation and publishes `entity-batch` with its device IDs and removed IDs. The relay writes no `cc:entity:*` key.
   A Redis error keeps the row for the next run. Progress-only rows publish once per job per run.
 - F3 timer: a tick that waits on a 5 s Kestra timeout leaves the relay bound unchanged.
+- Rev-5 F1 refresh rows, failing first: the rows of a refresh creation, a refresh batch finish, and a full-sync finish reach the job channel.
+  Each reaches it on the next relay run, without the 5 s grace. The relay publishes no `entity-batch` for a refresh row.
+  The parent revision has no relay. The test therefore fails there.
 - The policy acceptance scenarios that apply (`docs/reviews/2026-09-04-job-admission-policy.md:77-91`).
 
 B6, capability:
@@ -1507,15 +1578,21 @@ P2, worker, with a fake batch client and on the mock:
 - A recording that fails once with `40P01` settles on its second run.
 - F3 commit before publish: stop the worker after a settle commit and before its Redis work. The publication row stays with its devices and revision.
   Card B5 tests the relay. Card Q1 runs the whole path.
+- Rev-5 F1 refresh publication, a guard: a successful ID-list refresh batch reads one present device and one missing device.
+  Before its batch finish, the worker publishes one `entity-batch` on the entity channel. The event holds the present ID in `deviceIds`.
+  It holds the missing ID in `removedIds`, its `batch`, and a positive `batchCount`. `entityEventSchema` parses it.
+  The batch finish row carries no devices. The worker publishes no `job-changed` for it.
+  Its faulty variant lacks the direct publication (`worker/src/entity-sync.ts:272-281`). That variant sends no `entity-batch`. The test therefore fails on it.
+  Card P3 adds this guard first, because P3 changes the refresh writer (`worker/src/entity-sync.ts:237-258`). P2 keeps it.
 - F2 write path: a Redis command log shows no `SET` on a `cc:entity:*` key from the write path. A read-back 404 deletes the key of its device.
 - R9: reports arrive every 60 s during quota waits. A report after the lease ends is rejected.
 - N1, moved from P1: Kestra runs `device_update` against the real worker on the mock stack. The job reaches its terminal status.
 
 P3, entity entries and the read check, with a real Redis and Postgres:
 
-- Migration 018: each device writer raises `record_version` by 1 per changed row. An update without a change keeps it.
+- 016 versions: each device writer raises `record_version` by 1 per changed row. An update without a change keeps it.
   A soft delete raises it. `cc.read_device_records` and `cc.page_device_records` add `version` to each element and still return present devices only.
-- Migration 018: a finish that changes the telemetry failure raises `telemetry_version` by 1. Each element carries the sum of both versions.
+- 016 versions: a finish that changes the telemetry failure raises `telemetry_version` by 1. Each element carries the sum of both versions.
 - Requester only, failing first: a finish that keeps the telemetry failure and records another failure requester keeps `telemetry_version` (section 1.3).
   On the parent revision `telemetry_version` does not exist, so the test fails there.
   Its faulty variant raises the version on any change of the sync state row.
@@ -1551,6 +1628,7 @@ F1 to F6, component and browser tests against the named frames:
 - F5, N2: after `seen` succeeds, the dot clears without a job event or a reconnect.
 - F5, N2: a fake clock moves a Recent job past its 24 hours. The job leaves the panel within 60 s, without a stream event.
 - F5, R6: the panel shows at most 50 running, 50 waiting, and 10 recent rows, with View all jobs. A reconnect rereads the summary.
+- F5, Rev-5 N1: a panel row opens its job detail. View all jobs opens the Jobs page. Neither action lands on the account page.
 - F5, finding F3: a relayed terminal `job-changed` without a reconnect moves the badge.
 - F6, R4: Replace, then Clear, updates an open grid in place. A read-back success updates the row. Drafts, selection, and focus stay (JOB-02).
 - F6, finding F3: a relayed `entity-batch` updates the grid row.
@@ -1562,7 +1640,11 @@ Q1, end to end on the mock in one fresh installation:
 - Adversarial runs: a worker stopped between a settle commit and its publication, and a refresh interleaved with a write.
 - Adversarial runs: a Redis restart during a write job keeps the accepted values in the grid. A second principal without `jobs:read` receives no job record on the Devices stream.
 - Adversarial runs: the sequence of section 2.1 on the mock. A `status` fault of 403 (`mock@v0.2.0:docs/guide/configuration.md:318`) on the route `chrome.telemetry.devices.list` fails the telemetry read of B.
-  A never receives that retained failure through `GET`, `POST`, or the Devices stream.
+  The mock answers a Chrome fault with an RPC error that holds no `errors` list (`mock@v0.2.0:src/faults/faults.ts:170-172`, `mock@v0.2.0:src/http/errors.ts:52-68`).
+  `failure()` then finds no reason and maps the 403 to `permission-denied` (`main@3eab39a:libs/google-connection/src/lib/provider.ts:99-113`, `main@3eab39a:libs/google-connection/src/lib/provider.ts:147`).
+  The pager retries only `quota` (`libs/google-connection/src/lib/devices.ts:248-254`). The worker stores the code as the telemetry failure (`worker/src/device-sync.ts:147-150`).
+  The retained failure of B is therefore `permission-denied`, not the `quota` of the table. The visibility rule does not depend on the code.
+  A never receives that retained failure through `GET`, `POST`, or the Devices stream. Cards B2 and B4 keep the `quota` case.
 - The policy acceptance scenarios.
 - The latency of a 250-part write batch against the 10 s client timeout.
 - Live write behavior recorded as not verified.
@@ -1576,45 +1658,53 @@ Card order rule: B1 adds new contracts only. A change to an existing strict cont
 B2 adds the three actions with 017. B3 adds `expiredAt` with the selection route. Main therefore never parses a contract that its producer does not yet fill.
 A new contract of a gated change lands in its gated card: `deviceStreamEventSchema` in B4, and `entityEntrySchema` in P3.
 B6 depends on B2, because the write-access routes require `devices:write` (section 2.1).
-B4 depends on P1, because the API publishes job events only after P1 changes its Redis rule (section 3.2).
-B5 depends on P2, because its dispatch tests assert answers of the worker handlers. F1, F3, and F5 depend on P1, because the edge serves their pages and routes.
+B4 depends on P1 for the edge. The edge allows the Jobs routes and gives the Jobs stream its idle timeout (section 3.3). B4 publishes no event (section 3.2).
+B5 depends on P2, because its dispatch tests assert answers of the worker handlers. F1 and F3 depend on P1, because the edge serves their pages and routes.
+F2 depends on F3 and F4. Its View job link opens the job detail of F4 under the Jobs item of F3.
+F5 depends on F4, which brings F3. A panel row opens the job detail of F4. View all jobs opens the Jobs page of F3.
+The shell routes hold neither page today (`frontend/src/app/app.routes.ts:57-168`). An unmatched path redirects (`frontend/src/app/app.routes.ts:169`).
 
-Owner gate (section "Owner decision gate"). The main chat accepted it on 2026-10-17:
+Owner gate (section "Owner decision gate"). The main chat accepted it on 2026-10-17 and extended it at 03:10 (OQ10):
 
-- B4 builds the D7 and D12 changes. P3 builds the D9 change. Neither card dispatches before the owner confirms its changes.
-- P2, B5, F2, F3, F4, F5, F6, and Q1 depend on B4 or P3. They wait through their dependencies.
-  F2 depends on F3 and F4. Its View job link opens the job detail of F4 under the Jobs item of F3.
-- B1, B2, B3, B6, P1, and F1 build no D7, D9, or D12 change and depend on no gated card.
-- B1 can start after design approval. OQ10 names more record lines that B2, P1, P2, P3, B4, and B5 extend (section 10.2).
-  B2 and P1 start after design approval and the OQ10 ruling of the main chat. B3, B6, and F1 wait through them.
-  If that ruling adds a line to the owner gate, its cards also wait for the owner.
+- P1 builds the D1 and D13 changes. B4 builds the D6, D7, and D12 changes. B5 builds the D6 and D13 changes. P3 builds the D9 change.
+- None of these four cards dispatches before the owner confirms its changes. The table below calls them "all four".
+- P2, F1, F2, F3, F4, F5, F6, and Q1 depend on a gated card. They wait through their dependencies.
+- B1, B2, B3, and B6 build no gated change and depend on no gated card.
 
-| ID  | Profile  | Title                                                                                                                             | Depends on     | Owner gate         |
-| --- | -------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------ |
-| B1  | backend  | New contracts for device updates, jobs, and job events                                                                            | none           | none               |
-| B2  | backend  | Migration 017: jobs, refresh job model, write tables, fenced functions, overlays, device rows, failure requesters, purge, actions | B1             | none, pending OQ10 |
-| B3  | backend  | Preview, confirmation, selection expiry, and the evidence manifest                                                                | B2             | none               |
-| B4  | backend  | Jobs API, Latest activity, activity, visibility, REF- jobs, the job channel, and the Devices stream mapping                       | B2, P1         | builds D7 and D12  |
-| B5  | backend  | Job service: admission, dispatch recovery, hold, cleanup, reaper, relay, Reconcile, result file                                   | B3, B4, P1, P2 | waits on B4 and P2 |
-| B6  | backend  | Device write capability and write-access state                                                                                    | B2             | none               |
-| P1  | platform | Kestra flows, orchestration starts, Redis ACL, and edge routes                                                                    | B1             | none, pending OQ10 |
-| P2  | platform | Worker writes, leases, classification, read-back, publication, events, and reports                                                | B2, P1, P3     | waits on P3        |
-| P3  | platform | Migration 018, versioned entity entries, and the read check                                                                       | B2             | builds D9          |
-| F1  | frontend | Bulk Actions, the Update device entry, the draft page, and the expired selection                                                  | B3, B6, P1     | none               |
-| F2  | frontend | Preview, confirmation, and receipt pages                                                                                          | F1, F3, F4     | waits on F3 and F4 |
-| F3  | frontend | Jobs navigation item and Jobs page                                                                                                | B4, P1         | waits on B4        |
-| F4  | frontend | Job detail, Latest activity, operations, Inspect failure, and Reconcile                                                           | F3, B5         | waits on F3 and B5 |
-| F5  | frontend | Jobs activity area                                                                                                                | B4, P1         | waits on B4        |
-| F6  | frontend | In-place grid updates for written values                                                                                          | P2             | waits on P2        |
-| Q1  | qa       | Mock demonstration and adversarial verification of the slice                                                                      | all above      | waits on B4 and P3 |
+Start order:
+
+- After design approval: B1, then B2, then B3 and B6.
+- After the owner confirms: P1 and P3. Then B4, P2, and F1. Then F3, B5, and F6. Then F4. Then F2 and F5. Q1 runs last.
+- The edge routes of P1 build no gated change. The main chat can move them into an ungated card, so that F1 starts before the owner answers.
+
+| ID  | Profile  | Title                                                                                                                                      | Depends on     | Owner gate         |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------- | ------------------ |
+| B1  | backend  | New contracts for device updates, jobs, and job events                                                                                     | none           | none               |
+| B2  | backend  | Migrations 016 and 017: jobs, refresh job model, write tables, fenced functions, overlays, device rows, failure requesters, purge, actions | B1             | none               |
+| B3  | backend  | Preview, confirmation, selection expiry, and the evidence manifest                                                                         | B2             | none               |
+| B4  | backend  | Jobs API, Latest activity, activity, visibility, REF- jobs, the job channel, and the Devices stream mapping                                | B2, P1         | builds D6, D7, D12 |
+| B5  | backend  | Job service: admission, dispatch recovery, hold, cleanup, reaper, relay, Reconcile, result file                                            | B3, B4, P1, P2 | builds D6, D13     |
+| B6  | backend  | Device write capability and write-access state                                                                                             | B2             | none               |
+| P1  | platform | Kestra flows, orchestration starts, Redis ACL, and edge routes                                                                             | B1             | builds D1, D13     |
+| P2  | platform | Worker writes, leases, classification, read-back, publication, events, and reports                                                         | B2, P1, P3     | waits on P1, P3    |
+| P3  | platform | Entry versions in 016, versioned entity entries, and the read check                                                                        | B2             | builds D9          |
+| F1  | frontend | Bulk Actions, the Update device entry, the draft page, and the expired selection                                                           | B3, B6, P1     | waits on P1        |
+| F2  | frontend | Preview, confirmation, and receipt pages                                                                                                   | F1, F3, F4     | waits on all four  |
+| F3  | frontend | Jobs navigation item and Jobs page                                                                                                         | B4, P1         | waits on P1, B4    |
+| F4  | frontend | Job detail, Latest activity, operations, Inspect failure, and Reconcile                                                                    | F3, B5         | waits on all four  |
+| F5  | frontend | Jobs activity area                                                                                                                         | F4             | waits on all four  |
+| F6  | frontend | In-place grid updates for written values                                                                                                   | P2             | waits on P1, P3    |
+| Q1  | qa       | Mock demonstration and adversarial verification of the slice                                                                               | all above      | waits on all four  |
 
 B1. Scope: the new files and schemas of section 2.2, and `jobLatestActivitySchema` of section 2.5. It also covers `jobEventSchema` of section 3.1.
 Acceptance: `npm exec nx test application-contracts` passes with the B1 tests. No existing schema changes.
 
-B2. Scope: section 1 without migration 018, and the SQL functions of sections 3.6, 5.3 to 5.10, and 6.3.
-It adds the failure requesters of section 1.3, and `cc.job_visible` and `cc.visible_device_sync` of section 2.1.
+B2. Scope: section 1 without the entry versions, and the SQL functions of sections 3.6, 5.3 to 5.10, and 6.3. Card P3 owns the entry versions.
+It edits 016 and adds 017, as section 1.1 states. It adds the failure requesters of section 1.3, and `cc.job_visible` and `cc.visible_device_sync` of section 2.1.
 It adds the three actions of section 2.1 to `actionSchema`, `actionScopeKinds`, and 017.
+It changes the refresh call of `cc.upsert_devices` and the 016 grants with the new signature (sections 1.7 and 5.8).
 Acceptance: a fresh installation applies 001 to 017. The B2 integration tests pass. `checkReadiness` reports ready (`deployment/postgres/index.mjs:277-296`).
+017 holds only new objects and the foreign key of section 1.1. Every other change to a 016 object edits 016.
 Every job-changing function inserts its publication row. Every multi-row device writer locks its rows in `device_id` order.
 `cc.read_device_sync` and `cc.request_device_sync` return the projection of section 2.1 for their caller.
 
@@ -1625,15 +1715,18 @@ Acceptance: the B3 tests pass. A duplicate confirmation never creates a second j
 B4. Scope: sections 1.3 (API side), the visibility of section 2.1, sections 2.5, 3.1, and 3.3, and section 3.4 (server side). It adds a `jobs` module under `api/src/app/jobs/`.
 It includes the `EventFanout` and `streamEvents` changes in `api/src/app/devices/device-events.ts` and the Devices stream forwarding (`api/src/app/devices/devices.controller.ts:167-206`).
 It adds `deviceStreamEventSchema` (section 3.1). It also changes the Devices store parse (`frontend/src/app/devices/devices.store.ts:587-610`), because the stream events change shape. A frontend reviewer checks that file.
-Owner gate: B4 builds the D7 and D12 changes. It dispatches only after the owner confirms them.
+It subscribes the API to the job channel for the Jobs stream (sections 3.1 and 3.3). It publishes no event (section 3.2).
+Owner gate: B4 builds the D6, D7, and D12 changes. It dispatches only after the owner confirms them.
 Acceptance: the B4 tests pass. A stale-page refresh and a Refresh all both show in `GET /api/jobs` with REF- IDs and requesters.
 Latest activity names failed and unknown operations from the whole job. No Devices stream event carries a job ID, a job record, or a requester.
 No Devices route carries a failure whose requester fails the predicate for the caller. No stream event carries one after the next ping of its stream.
 
 B5. Scope: section 6, section 2.6, and the job service parts of sections 5.3 and 5.10.
 It also covers the relay of section 3.6 and the result file of section 5.9. The result file uses the `StorageService` method of card B3.
+The job service publishes its write-job rows. The relay publishes progress-only rows, refresh rows, and the rows that a publisher left (section 3.6).
+Owner gate: B5 builds the D6 and D13 changes. It dispatches only after the owner confirms them.
 Acceptance: the B5 tests pass. A second write job reads `held` while the hold exists and `running` after cleanup or expiry. Refresh jobs run during a hold.
-A change whose publisher exits reaches Redis within 15 s. The relay writes no entity key.
+A change whose publisher exits reaches Redis within 15 s. A refresh row reaches Redis within one relay period plus one run. The relay writes no entity key.
 
 B6. Scope: section 4 and the write-access routes of section 2.7.
 Acceptance: the B6 tests pass. The connection page lists the write scope. Removing the scope in the mock disables Update device with the exact message.
@@ -1643,21 +1736,22 @@ The API rule gains `+publish` and `+incr`. The worker rule gains `&cc:job-events
 The edge adds the API routes of sections 2.3 to 2.7 to its allowlists (`deployment/bootstrap/application-edge.mjs:109-129`).
 It adds the pages `/jobs`, `/jobs/{displayId}`, `/jobs/{displayId}/receipt`, `/devices/update`, `/devices/update/previews/{previewId}`, and `/devices/update/previews/{previewId}/confirm` (`deployment/bootstrap/application-edge.mjs:33-41`, `deployment/bootstrap/application-edge.mjs:131-133`).
 It gives `/api/jobs/events` the event idle timeout (`deployment/bootstrap/application-edge.mjs:196-197`).
+Owner gate: P1 builds the D1 and D13 changes, through the two ACL lines. It dispatches only after the owner confirms them.
 Acceptance: the P1 tests pass. Kestra runs both flows against the stub endpoint. The run against the real worker belongs to card P2.
 
 P2. Scope: sections 5.2 to 5.8, 6.3 (worker side), 7, and the worker side of section 3.6, in new worker modules beside `worker/src/entity-sync.ts`.
 It includes `patchAnnotatedLocations`, `deviceStates`, and the `onSend` hook in `libs/google-connection/src/lib/`. The write batch size is a setting with 250 as its ceiling.
 P2 depends on P3, because the write path stores no entity entry and relies on the read check.
-P2 moves the `entity-batch` publications of refresh batches onto publication rows, which also publish `job-changed` (section 3.6).
-The worker keeps its direct `job-finished` and `full-sync` publications (`worker/src/entity-sync.ts:282-293`, `worker/src/device-sync.ts:217-224`). Section 3.1 reads both events.
+P2 keeps the direct refresh publications: `entity-batch` before the batch finish, `job-finished`, and `full-sync` (`worker/src/entity-sync.ts:272-293`, `worker/src/device-sync.ts:217-224`).
+Section 3.1 reads all three. Refresh rows carry no devices. The relay of card B5 publishes their `job-changed` (section 3.6).
 Acceptance: the P2 tests pass. No code path sends a PATCH part without a committed claim and a live lease. Every write-path settlement publishes through its publication row.
-Kestra runs `device_update` against the real worker on the mock stack.
+A successful refresh batch still publishes `entity-batch` with its updated and removed devices. Kestra runs `device_update` against the real worker on the mock stack.
 
-P3. Scope: section 5.11, migration 018 of section 1.8, and `entityEntrySchema`. It changes the refresh writer (`worker/src/entity-sync.ts:237-258`) and the full-sync writer (`worker/src/device-sync.ts:166-209`) to store entries.
+P3. Scope: section 5.11, the entry versions of section 1.8 in 016, and `entityEntrySchema`. It changes the refresh writer (`worker/src/entity-sync.ts:237-258`) and the full-sync writer (`worker/src/device-sync.ts:166-209`) to store entries.
 It adds the read check to `DevicePager.hydrateWith` (`api/src/app/devices/device-pager.ts:109-150`) and to `deviceRowsByIdSql` (`api/src/app/devices/device-query.ts:217-226`).
-018, the writers, and the reader change in one card, because the entry format changes every side.
+The 016 versions, the writers, and the reader change in one card, because the entry format changes every side.
 Owner gate: P3 builds the D9 change. It dispatches only after the owner confirms it.
-Acceptance: a fresh installation applies 001 to 018. The P3 tests pass. Every device writer raises the record version.
+Acceptance: a fresh installation applies 001 to 017 with the versions in 016. P3 adds no migration file. The P3 tests pass. Every device writer raises the record version.
 Every API read of an entity entry passes the version check. The handoff records the latency budget of section 5.11.
 
 F1. Frames `94:3`, `213:4199`, `216:4309`, `94:75`, and `105:189`. Bulk Actions shows one item, "Update device".
@@ -1680,7 +1774,8 @@ It shows no Cancel, Retry, Pause, or download (eng-lead ruling 20). Live state f
 
 F5. Source: the approved mockup `main@3eab39a:docs/ui/designs/2026-10-16-jobs-activity-area.html` and `.png` (D6). Its states are Idle, Running, and Needs attention (`main@3eab39a:docs/ui/designs/2026-10-16-jobs-activity-area.html:141-143`).
 The Activity button sits left of Help (`frontend/src/app/shell/shell.html:121-127`) with the running count and ring. The attention dot clears through `POST /api/jobs/activity/seen`.
-The panel lists Running, Waiting, and Recent from `GET /api/jobs/activity` with the caps of section 2.5. Each row opens its job detail. "View all jobs" opens the Jobs page.
+The panel lists Running, Waiting, and Recent from `GET /api/jobs/activity` with the caps of section 2.5. Each row opens the job detail of card F4. "View all jobs" opens the Jobs page of card F3.
+F5 therefore depends on F4, which brings F3. Its tests check both actions (section 8.3).
 The activity reader rereads after `seen` succeeds and at `recent.nextExpiryAt` (section 3.4).
 
 F6. The Devices grid applies `entity-batch` events from write jobs in place. It keeps drafts, selection, and focus (JOB-02). It shows the accepted value and no verification indicator (OQ2 ruling).
@@ -1688,6 +1783,7 @@ F6. The Devices grid applies `entity-batch` events from write jobs in place. It 
 Q1. Runs the tests of section 8.3 for Q1. It attacks the green suites with the policy acceptance scenarios, duplicate submission, duplicate dispatch, and stale attempts.
 It also stops a worker between a settle commit and its publication, and interleaves a refresh with a write. It restarts Redis during a write job.
 It checks the Devices stream of a second principal without `jobs:read`. It runs the retained-failure sequence of section 2.1 on the mock.
+In that run the telemetry failure of B is `permission-denied` (section 8.3).
 It records live write behavior as not verified.
 
 ## 10. Risks and open questions
@@ -1717,8 +1813,11 @@ It records live write behavior as not verified.
 | A database recreated under a running Redis restarts the versions. An old entry with an equal version then serves a record of the old database.                                                                                          | Development databases are disposable (`AGENTS.md:27-29`). Recreate Redis with Postgres. The local Redis keeps no data across a restart (`deployment/redis/runtime.mjs:40-41`).                                                                                          |
 | A principal without `jobs:read` loses the failure sentences of syncs and refresh jobs that other people requested. This covers a retained telemetry failure of an earlier sync.                                                         | The visibility predicate requires it (sections 2.1 and 3.1). Battery cells keep `unavailable` for every reader. The single administrator of this slice holds `jobs:read`, so the banner stays unchanged.                                                                |
 | A failed `forward` read on the Devices stream drops the failure fields of one event for one caller.                                                                                                                                     | The event still invalidates rows and counts. The stream then ends. The status read of the reopen returns the visible failures of that caller (section 3.1). No unchecked failure reaches the browser.                                                                   |
-| The owner rejects a D7, D9, or D12 change (section "Owner decision gate").                                                                                                                                                              | Only B4 and P3 build those changes. The cards without a gate stay valid. The rejected change needs a new design revision. B4 keeps the `full-sync` projection in every case.                                                                                            |
+| The owner rejects a gated change (section "Owner decision gate").                                                                                                                                                                       | Only P1, B4, B5, and P3 build gated changes. B1, B2, B3, and B6 stay valid. The rejected change needs a new design revision. B4 keeps the `full-sync` projection in every case.                                                                                         |
 | The relay runs in the API process. While the API is down, committed changes wait in publication rows.                                                                                                                                   | No stream exists while the API is down. Streams reopen with the API, and readers reread every resource (section 3.4). The tick then relays the waiting rows.                                                                                                            |
+| A refresh job reaches the Jobs UI through the relay. Its `job-changed` arrives up to one relay period plus one run late.                                                                                                                | The Devices page keeps the direct refresh events (section 3.2). The bound of section 3.6 holds while the API, Postgres, and Redis run.                                                                                                                                  |
+| A changed 016 function names a 017 object. A database without 017 fails at the first call of that function.                                                                                                                             | The runner applies every file in order, and readiness requires every file (`deployment/postgres/index.mjs:146-172`, `deployment/postgres/index.mjs:284-291`).                                                                                                           |
+| Each edit of 016 invalidates every development database that applied an earlier 016 (`deployment/postgres/index.mjs:151-156`).                                                                                                          | Development databases are disposable (`AGENTS.md:27-29`). Developers recreate them.                                                                                                                                                                                     |
 
 ### 10.2 Open questions
 
@@ -1739,14 +1838,26 @@ This revision inspected both captures. Cancel stays out of this slice, although 
 
 Owner gate (section "Owner decision gate"):
 
-- The main chat asks the owner about the D7, D9, and D12 changes together with OQ9.
-- Reviewer approval does not authorize those changes. The owner confirms them before the design PR merges and before cards B4 and P3 dispatch.
-- After the owner confirms, the main chat updates `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md` in the same PR. This card changes only this design file.
+- The main chat asks the owner about the D1, D6, D7, D9, D12, and D13 changes together with OQ9.
+- Reviewer approval does not authorize those changes. The owner confirms them before the release PR merges and before cards P1, B4, B5, and P3 dispatch.
+- After the owner confirms, the main chat updates `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md` in the release PR. This card changes only this design file.
+
+The main chat ruled on OQ10 on 2026-10-17 at 03:10:
+
+| ID   | Question                                                                                                                                 | Ruling                                                                                                                                                                                                                                                                                                                                          | Applied in                  |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| OQ10 | Does the owner gate also cover the record lines D1, D3, D6, D10, and D13? Does it cover the banner line of the device browsing workflow? | D1, D6, and D13 join the gate. P1, B4, and B5 carry the marks. D3 stays outside the gate: change 016 objects in 016, and put only new objects in new files. D10 stays outside the gate, and the release PR updates its record line. The banner omission follows default 15, and the release PR adds one sentence to the device browsing record. | Owner decision gate, 1.1, 9 |
+
+- The ruling names B4 and B5 for D6 and D13 together. After Rev-5 F1, B4 publishes no event (section 3.2).
+  B4 therefore builds the D6 part of the change: the API subscriber listens on the job channel for the Jobs stream. B4 stays gated by D6, D7, and D12.
+- B5 builds the D6 publications and the D13 job path: the job service and the relay. P1 builds D1 and the D13 worker channel.
+- The record lines: D1 at `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:38`, D3 at `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:50`, and D6 at `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:76`.
+  D10 is at `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:99`, and D13 at `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:122-123`.
+  The banner line is `docs/workflows/device-browsing.md:155`. It moves to line 157 on origin/main (Conventions).
 
 Open:
 
-| ID   | Question                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Owner of the answer                                                                               |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| OQ8  | Do Prepend and Append in the next slice need an operation precondition before a repeat? Section 7.3 holds only for absolute values.                                                                                                                                                                                                                                                                                                                                                                                                                                            | next slice design                                                                                 |
-| OQ9  | Which Latest activity sentence names a failed sample whose reason is not a permission failure: `not-found`, `value-differs`, `quota`, or another Google rejection such as `invalid`? Which line shows a refresh job, or a job without pending operations?                                                                                                                                                                                                                                                                                                                      | The owner. The main chat (eng-lead) asks and carries the answer into card F4.                     |
-| OQ10 | Does the owner gate also cover the record lines D1 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:38`), D3 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:50`), D6 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:76`), D10 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:99`), and D13 (`docs/superpowers/specs/2026-10-06-entity-cache-decisions.md:122-123`)? Does it cover the banner line of the device browsing workflow? The section "Owner decision gate" lists the extension of each line and its cards. | The main chat. If it adds them to the gate, it asks the owner together with D7, D9, D12, and OQ9. |
+| ID  | Question                                                                                                                                                                                                                                                  | Owner of the answer                                                           |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| OQ8 | Do Prepend and Append in the next slice need an operation precondition before a repeat? Section 7.3 holds only for absolute values.                                                                                                                       | next slice design                                                             |
+| OQ9 | Which Latest activity sentence names a failed sample whose reason is not a permission failure: `not-found`, `value-differs`, `quota`, or another Google rejection such as `invalid`? Which line shows a refresh job, or a job without pending operations? | The owner. The main chat (eng-lead) asks and carries the answer into card F4. |
