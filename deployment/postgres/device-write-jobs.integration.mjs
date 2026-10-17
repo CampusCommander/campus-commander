@@ -346,12 +346,34 @@ export async function qualifyDeviceWriteJobs({
         token,
         failure,
       ]);
-    const finishJob = (jobId, failure = null) =>
-      result('SELECT cc.finish_device_update_job($1,$2,$3) AS result', [
-        customer,
-        jobId,
-        failure,
-      ]);
+    // The final finish carries the current token on the revision that fences it (review F14). The
+    // arity probe keeps one module working against the fenced revision and the parent revision.
+    const finishFence = await result(
+      `SELECT count(*)::int AS result FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='cc' AND p.proname='finish_device_update_job' AND p.pronargs=4`,
+    );
+    const finishWithToken = (jobId, token, failure = null) =>
+      finishFence > 0
+        ? result('SELECT cc.finish_device_update_job($1,$2,$3,$4) AS result', [
+            customer,
+            jobId,
+            token,
+            failure,
+          ])
+        : result('SELECT cc.finish_device_update_job($1,$2,$3) AS result', [
+            customer,
+            jobId,
+            failure,
+          ]);
+    const finishJob = async (jobId, failure = null) => {
+      const token = (
+        await adminRow(
+          'SELECT dispatch_token FROM cc.device_update_jobs WHERE job_id=$1',
+          [jobId],
+        )
+      )?.dispatch_token;
+      return finishWithToken(jobId, token ?? null, failure);
+    };
     const finalize = (jobId, failure = null) =>
       result('SELECT cc.finalize_device_update_job($1,$2,$3) AS result', [
         customer,
@@ -3572,6 +3594,725 @@ export async function qualifyDeviceWriteJobs({
         await expireBatches(job.jobId);
         assert.equal(await accept(), null);
         await finalize(job.jobId);
+      },
+    );
+    // S2 and review F16: the shared sync lease rejects a null attempt at each of its callers.
+    await check(
+      'a renewal with a null attempt changes no lease and no sync',
+      async () => {
+        await resetSync();
+        const sync = await requestAs(reader);
+        const before = await adminRow(
+          'SELECT sync_id,sync_attempt,sync_expires_at FROM cc.device_sync_state WHERE customer_id=$1',
+          [customer],
+        );
+        // The runtime role holds no execute grant on the lease helper, so the check runs as the
+        // migration role that the renewal tests use.
+        const renewer = await connect('cc-migrator', 'cc-app');
+        try {
+          await rejects(
+            renewer.query('SELECT cc.device_sync_lease($1,$2,$3)', [
+              customer,
+              sync.id,
+              null,
+            ]),
+            null,
+            'device-sync-changed',
+          );
+        } finally {
+          await renewer.end();
+        }
+        const after = await adminRow(
+          'SELECT sync_id,sync_attempt,sync_expires_at FROM cc.device_sync_state WHERE customer_id=$1',
+          [customer],
+        );
+        assert.equal(after.sync_id, before.sync_id);
+        assert.equal(
+          after.sync_expires_at.toISOString(),
+          before.sync_expires_at.toISOString(),
+        );
+        await resetSync();
+      },
+    );
+
+    await check(
+      'a staged device page with a null attempt changes no target, device, or header',
+      async () => {
+        await resetSync();
+        const sync = await requestAs(reader);
+        const before = await jobRow(sync.id);
+        const published = await publications(sync.id);
+        await rejects(
+          result('SELECT cc.stage_devices($1,$2,$3,$4) AS result', [
+            customer,
+            sync.id,
+            null,
+            JSON.stringify([device('null-a')]),
+          ]),
+          null,
+          'device-sync-changed',
+        );
+        const after = await jobRow(sync.id);
+        assert.equal(after.succeeded, before.succeeded);
+        assert.equal(after.revision, before.revision);
+        assert.equal(await publications(sync.id), published);
+        assert.equal(
+          await result(
+            'SELECT count(*)::int AS result FROM cc.job_targets WHERE job_id=$1',
+            [sync.id],
+          ),
+          0,
+        );
+        assert.equal(
+          await result(
+            'SELECT count(*)::int AS result FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+            [customer, 'null-a'],
+          ),
+          0,
+        );
+        await resetSync();
+      },
+    );
+
+    await check(
+      'a staged battery page with a null attempt changes no battery row',
+      async () => {
+        await resetSync();
+        await upsert([device('null-b')], new Date(Date.now() - 60 * 60 * 1000));
+        const sync = await requestAs(reader);
+        await rejects(
+          result('SELECT cc.stage_device_batteries($1,$2,$3,$4) AS result', [
+            customer,
+            sync.id,
+            null,
+            JSON.stringify([
+              {
+                deviceId: 'null-b',
+                battery: {
+                  status: 'reported',
+                  health: 'normal',
+                  capacityPercent: 90,
+                  reportedAt: '2026-10-17T12:00:00.000Z',
+                },
+                reports: [],
+              },
+            ]),
+          ]),
+          null,
+          'device-sync-changed',
+        );
+        const stored = await adminRow(
+          'SELECT battery_status FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+          [customer, 'null-b'],
+        );
+        assert.equal(stored.battery_status, 'no-report');
+        await resetSync();
+      },
+    );
+
+    // S1 and review F17: the finish reads the clock after its header lock and its device locks.
+    await check(
+      'a finish that waited for the header row revalidates the lease that lapsed in the wait',
+      async () => {
+        await resetSync();
+        await upsert([device('fh-a')], new Date(Date.now() - 60 * 60 * 1000));
+        const sync = await requestAs(reader);
+        const attempt = randomUUID();
+        await claimSync(sync.id, attempt);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '1200 milliseconds' WHERE customer_id=$1",
+          [customer],
+        );
+        const holder = await connect('cc-migrator', 'cc-app');
+        const finisher = await connect('cc-migrator', 'cc-app');
+        let finish = null;
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const finisherPid = (
+            await finisher.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE',
+            [sync.id],
+          );
+          finish = finisher.query(
+            'SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result',
+            [customer, sync.id, attempt, null, null],
+          );
+          finish.catch(() => undefined);
+          assert.equal(
+            await waitsFor(finisherPid, holderPid),
+            true,
+            'The finish waits for the header row.',
+          );
+          assert.equal(
+            await until(
+              'SELECT clock_timestamp()>sync_expires_at AS lapsed FROM cc.device_sync_state WHERE customer_id=$1',
+              [customer],
+            ),
+            true,
+            'The lease lapses in the wait.',
+          );
+          await holder.query('COMMIT');
+          await rejects(finish, null, 'device-sync-changed');
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (finish) await finish.catch(() => undefined);
+          await Promise.allSettled([holder.end(), finisher.end()]);
+          await resetSync();
+        }
+        const header = await jobRow(sync.id);
+        assert.equal(header.status, 'running');
+        assert.equal(header.finished_at, null);
+        assert.equal((await deviceRow('fh-a')).removed_at, null);
+      },
+    );
+
+    await check(
+      'a finish that waited for a device row revalidates the lease that lapsed in the wait',
+      async () => {
+        await resetSync();
+        await upsert([device('fd-a')], new Date(Date.now() - 60 * 60 * 1000));
+        const sync = await requestAs(reader);
+        const attempt = randomUUID();
+        await claimSync(sync.id, attempt);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '1200 milliseconds' WHERE customer_id=$1",
+          [customer],
+        );
+        const holder = await connect('cc-migrator', 'cc-app');
+        const finisher = await connect('cc-migrator', 'cc-app');
+        let finish = null;
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const finisherPid = (
+            await finisher.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE',
+            [customer, 'fd-a'],
+          );
+          finish = finisher.query(
+            'SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result',
+            [customer, sync.id, attempt, null, null],
+          );
+          finish.catch(() => undefined);
+          assert.equal(
+            await waitsFor(finisherPid, holderPid),
+            true,
+            'The finish waits for the device row.',
+          );
+          assert.equal(
+            await until(
+              'SELECT clock_timestamp()>sync_expires_at AS lapsed FROM cc.device_sync_state WHERE customer_id=$1',
+              [customer],
+            ),
+            true,
+            'The lease lapses in the wait.',
+          );
+          await holder.query('COMMIT');
+          await rejects(finish, null, 'device-sync-changed');
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (finish) await finish.catch(() => undefined);
+          await Promise.allSettled([holder.end(), finisher.end()]);
+          await resetSync();
+        }
+        const header = await jobRow(sync.id);
+        assert.equal(header.status, 'running');
+        assert.equal((await deviceRow('fd-a')).removed_at, null);
+      },
+    );
+
+    // S1 to S3 and review F14: the final finish keeps its dispatch-token fence and it is harmless.
+    await check(
+      'a finish with a rotated token changes no status, revision, or publication',
+      async () => {
+        const job = await makeJob({ devices: ['fr-a'] });
+        const admitted = await admit(false);
+        const token = admitted.dispatchToken;
+        const attempt = randomUUID();
+        await claim(job.jobId, token, 0, attempt);
+        // The runner records its page and stops, so the finish sees no live lease.
+        await stop(job.jobId, token, 0, attempt);
+        assert.equal((await prepareFinish(job.jobId, token)).outcome, 'ready');
+        // The runner lapses, so the tick rotates the token before the prepared finish lands.
+        await migrator.query(
+          "UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '20 minutes' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const recovered = await recover();
+        const start = recovered.starts.find((row) => row.jobId === job.jobId);
+        assert.ok(start, 'The tick rotates the token of the lapsed runner.');
+        assert.notEqual(start.dispatchToken, token);
+        const before = await jobRow(job.jobId);
+        const published = await publications(job.jobId);
+        const stale = await finishWithToken(job.jobId, token);
+        if (finishFence > 0) assert.equal(stale.outcome, 'superseded');
+        const after = await jobRow(job.jobId);
+        assert.equal(after.status, before.status);
+        assert.equal(after.finished_at, null);
+        assert.equal(after.revision, before.revision);
+        assert.equal(await publications(job.jobId), published);
+        assert.equal(after.unknown, before.unknown);
+        await finalize(job.jobId);
+      },
+    );
+
+    await check(
+      'a finish after the reaper closed the job changes no revision or publication',
+      async () => {
+        const job = await makeJob({ devices: ['fr-b'] });
+        const admitted = await admit(false);
+        const token = admitted.dispatchToken;
+        const attempt = randomUUID();
+        await claim(job.jobId, token, 0, attempt);
+        // The runner records its page and stops, so the finish sees no live lease.
+        await stop(job.jobId, token, 0, attempt);
+        assert.equal((await prepareFinish(job.jobId, token)).outcome, 'ready');
+        await expireBatches(job.jobId);
+        assert.equal((await finalize(job.jobId)).outcome, 'finalized');
+        const before = await jobRow(job.jobId);
+        const published = await publications(job.jobId);
+        const repeat = await finishWithToken(job.jobId, token, 'quota');
+        if (finishFence > 0) assert.equal(repeat.outcome, 'finished');
+        const after = await jobRow(job.jobId);
+        assert.equal(after.status, before.status);
+        assert.equal(after.failure, before.failure);
+        assert.equal(
+          after.finished_at.toISOString(),
+          before.finished_at.toISOString(),
+        );
+        assert.equal(after.revision, before.revision);
+        assert.equal(await publications(job.jobId), published);
+      },
+    );
+
+    // S1 and review F15: the settlement locks its operation rows before it reads the clock.
+    await check(
+      'a settlement that waited for its operation row fences on the read-back lease that lapsed in the wait',
+      async () => {
+        await upsert([device('fe-a')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({ devices: ['fe-a'] });
+        const admitted = await admit(false);
+        const token = admitted.dispatchToken;
+        const writer = randomUUID();
+        await claim(job.jobId, token, 0, writer);
+        await settle(
+          job.jobId,
+          token,
+          writer,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              outcomeReason: 'open-request',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        const readBack = randomUUID();
+        // The write reservation of the same attempt lapses, and the read-back claim takes it over.
+        await migrator.query(
+          "UPDATE cc.device_update_operations SET verify_lease_expires_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const claimedReadBack = await claimVerification(
+          job.jobId,
+          [1],
+          readBack,
+        );
+        assert.equal(claimedReadBack.length, 1);
+        await migrator.query(
+          "UPDATE cc.device_update_operations SET verify_lease_expires_at=clock_timestamp()+interval '3 seconds' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const holder = await connect('cc-migrator', 'cc-app');
+        const settler = await connect('cc-app', 'cc-app');
+        let settlement = null;
+        const beforeRow = await jobRow(job.jobId);
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const settlerPid = (
+            await settler.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1 FOR UPDATE',
+            [job.jobId],
+          );
+          settlement = settler.query(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              token,
+              readBack,
+              'read-back',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'succeeded',
+                  value: 'Room 12',
+                  verifiedBy: 'read-back',
+                },
+              ]),
+              new Date(),
+            ],
+          );
+          settlement.catch(() => undefined);
+          assert.equal(
+            await waitsFor(settlerPid, holderPid),
+            true,
+            'The settlement waits for the operation row.',
+          );
+          assert.equal(
+            await until(
+              'SELECT clock_timestamp()>verify_lease_expires_at AS lapsed FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1',
+              [job.jobId],
+            ),
+            true,
+            'The read-back lease lapses in the wait.',
+          );
+          await holder.query('COMMIT');
+          const settled = (await settlement).rows[0].result;
+          assert.deepEqual(settled.settled, []);
+          assert.equal(settled.publication, null);
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (settlement) await settlement.catch(() => undefined);
+          await Promise.allSettled([holder.end(), settler.end()]);
+        }
+        const row = (await operations(job.jobId))[0];
+        assert.equal(row.status, 'unknown');
+        assert.equal(row.verify_attempt, readBack);
+        assert.equal((await deviceRow('fe-a')).annotated_location, null);
+        assert.equal((await jobRow(job.jobId)).revision, beforeRow.revision);
+        await endJob(job.jobId);
+      },
+    );
+
+    await check(
+      'a settlement that waited for its operation row keeps a replacement read-back claim',
+      async () => {
+        await upsert([device('fc-a')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({ devices: ['fc-a'] });
+        const admitted = await admit(false);
+        const token = admitted.dispatchToken;
+        const writer = randomUUID();
+        await claim(job.jobId, token, 0, writer);
+        await settle(
+          job.jobId,
+          token,
+          writer,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              outcomeReason: 'open-request',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        const readBack = randomUUID();
+        const replacement = randomUUID();
+        // The write reservation of the same attempt lapses, and the read-back claim takes it over.
+        await migrator.query(
+          "UPDATE cc.device_update_operations SET verify_lease_expires_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const claimedReadBack = await claimVerification(
+          job.jobId,
+          [1],
+          readBack,
+        );
+        assert.equal(claimedReadBack.length, 1);
+        await migrator.query(
+          "UPDATE cc.device_update_operations SET verify_lease_expires_at=clock_timestamp()+interval '3 seconds' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const holder = await connect('cc-migrator', 'cc-app');
+        const settler = await connect('cc-app', 'cc-app');
+        let settlement = null;
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const settlerPid = (
+            await settler.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1 FOR UPDATE',
+            [job.jobId],
+          );
+          settlement = settler.query(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              token,
+              readBack,
+              'read-back',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'succeeded',
+                  value: 'Room 12',
+                  verifiedBy: 'read-back',
+                },
+              ]),
+              new Date(),
+            ],
+          );
+          settlement.catch(() => undefined);
+          assert.equal(
+            await waitsFor(settlerPid, holderPid),
+            true,
+            'The settlement waits for the operation row.',
+          );
+          // The claim of another attempt reserves the operation before the settlement proceeds.
+          await holder.query(
+            "UPDATE cc.device_update_operations SET verify_attempt=$2,verify_lease_expires_at=clock_timestamp()+interval '120 minutes' WHERE job_id=$1 AND operation_number=1",
+            [job.jobId, replacement],
+          );
+          await holder.query('COMMIT');
+          const settled = (await settlement).rows[0].result;
+          assert.deepEqual(settled.settled, []);
+          assert.equal(settled.publication, null);
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (settlement) await settlement.catch(() => undefined);
+          await Promise.allSettled([holder.end(), settler.end()]);
+        }
+        const row = (await operations(job.jobId))[0];
+        assert.equal(row.status, 'unknown');
+        assert.equal(row.verify_attempt, replacement);
+        assert.equal((await deviceRow('fc-a')).annotated_location, null);
+        await endJob(job.jobId);
+      },
+    );
+
+    // S3 and review F18: a batch that loses the race to the purge records nothing.
+    await check(
+      'the purge keeps its interrupted refresh header against a late batch finisher',
+      async () => {
+        const refresh = randomUUID();
+        await result(
+          'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+          [
+            reader,
+            customer,
+            'device',
+            '["pl-a","pl-b"]',
+            1,
+            refresh,
+            randomUUID(),
+          ],
+        );
+        await migrator.query(
+          "UPDATE cc.jobs SET created_at=created_at-interval '3 hours' WHERE job_id=$1",
+          [refresh],
+        );
+        const before = await publications(refresh);
+        const purge = await connect('cc-migrator', 'cc-app');
+        const finisher = await connect('cc-migrator', 'cc-app');
+        let finishRun = null;
+        try {
+          const purgePid = (await purge.query('SELECT pg_backend_pid() AS pid'))
+            .rows[0].pid;
+          const finisherPid = (
+            await finisher.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await purge.query('BEGIN');
+          await purge.query('SELECT cc.purge_jobs($1,$2) AS result', [
+            customer,
+            100,
+          ]);
+          finishRun = finisher.query(
+            'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+            [customer, refresh, 0, null],
+          );
+          finishRun.catch(() => undefined);
+          assert.equal(
+            await waitsFor(finisherPid, purgePid),
+            true,
+            'The late batch waits for the purged detail row.',
+          );
+          await purge.query('COMMIT');
+          await finishRun;
+        } finally {
+          await purge.query('ROLLBACK').catch(() => undefined);
+          if (finishRun) await finishRun.catch(() => undefined);
+          await Promise.allSettled([purge.end(), finisher.end()]);
+        }
+        const header = await jobRow(refresh);
+        assert.equal(header.status, 'failed');
+        assert.equal(header.failure, 'interrupted');
+        assert.ok(header.finished_at, 'The purge records the finish time.');
+        assert.equal(await publications(refresh), before + 1);
+        assert.equal(
+          (
+            await admin(
+              'SELECT count(*)::int AS result FROM cc.entity_sync_batches WHERE job_id=$1',
+              [refresh],
+            )
+          )[0].result,
+          0,
+        );
+      },
+    );
+
+    // S3 and review F19: an interrupted full-sync closure keeps its observed target metadata.
+    await check(
+      'an interrupted full sync records its observed target count and paths',
+      async () => {
+        await resetSync();
+        const replaced = await requestAs(reader);
+        const replacedAttempt = randomUUID();
+        await claimSync(replaced.id, replacedAttempt);
+        await stage(replaced.id, replacedAttempt, [
+          device('im-a', { orgUnitPath: '/Audit' }),
+        ]);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()-interval '1 second' WHERE customer_id=$1",
+          [customer],
+        );
+        await requestAs(reader);
+        const replacedHeader = await jobRow(replaced.id);
+        assert.equal(replacedHeader.status, 'failed');
+        assert.equal(replacedHeader.failure, 'interrupted');
+        assert.equal(replacedHeader.target_count, 1);
+        assert.equal(replacedHeader.succeeded, 1);
+        assert.deepEqual(replacedHeader.target_org_unit_paths, ['/Audit']);
+        // The purge closes a full sync without a live lease.
+        const replacement = await adminRow(
+          'SELECT sync_id FROM cc.device_sync_state WHERE customer_id=$1',
+          [customer],
+        );
+        const purgeAttempt = randomUUID();
+        await claimSync(replacement.sync_id, purgeAttempt);
+        await stage(replacement.sync_id, purgeAttempt, [
+          device('im-b', { orgUnitPath: '/School B' }),
+          device('im-c', { orgUnitPath: '/Audit' }),
+        ]);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()-interval '1 second' WHERE customer_id=$1",
+          [customer],
+        );
+        await result('SELECT cc.purge_jobs($1,$2) AS result', [customer, 100]);
+        const purgedHeader = await jobRow(replacement.sync_id);
+        assert.equal(purgedHeader.status, 'failed');
+        assert.equal(purgedHeader.failure, 'interrupted');
+        assert.equal(purgedHeader.target_count, 2);
+        assert.equal(purgedHeader.succeeded, 2);
+        assert.deepEqual(purgedHeader.target_org_unit_paths, [
+          '/Audit',
+          '/School B',
+        ]);
+        // A closure without staged devices records an empty observation.
+        const empty = await requestAs(reader);
+        const emptyAttempt = randomUUID();
+        await claimSync(empty.id, emptyAttempt);
+        await migrator.query(
+          "UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()-interval '1 second' WHERE customer_id=$1",
+          [customer],
+        );
+        await result('SELECT cc.purge_jobs($1,$2) AS result', [customer, 100]);
+        const emptyHeader = await jobRow(empty.id);
+        assert.equal(emptyHeader.status, 'failed');
+        assert.equal(emptyHeader.target_count, 0);
+        assert.equal(emptyHeader.succeeded, 0);
+        assert.deepEqual(emptyHeader.target_org_unit_paths, []);
+        await resetSync();
+      },
+    );
+
+    // S1 and review F20: the soft delete prelocks every requested row in device_id order.
+    await check(
+      'the soft delete prelock covers a removed row that a refresh revived',
+      async () => {
+        await upsert([device('sd-a')], new Date(Date.now() - 60 * 60 * 1000));
+        await upsert([device('sd-b')], new Date(Date.now() - 60 * 60 * 1000));
+        await result('SELECT cc.soft_delete_devices($1,$2) AS result', [
+          customer,
+          JSON.stringify(['sd-a']),
+        ]);
+        const holder = await connect('cc-migrator', 'cc-app');
+        const deleter = await connect('cc-migrator', 'cc-app');
+        const reviver = await connect('cc-migrator', 'cc-app');
+        let deletion = null;
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const deleterPid = (
+            await deleter.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE',
+            [customer, 'sd-b'],
+          );
+          deletion = deleter.query(
+            'SELECT cc.soft_delete_devices($1,$2) AS result',
+            [customer, JSON.stringify(['sd-a', 'sd-b'])],
+          );
+          deletion.catch(() => undefined);
+          assert.equal(
+            await waitsFor(deleterPid, holderPid),
+            true,
+            'The deletion waits for the present row.',
+          );
+          // The prelock holds the removed row too, so a revival waits instead of racing it.
+          await reviver.query("SET lock_timeout='750ms'");
+          const revived = await reviver
+            .query(
+              "UPDATE cc.devices SET removed_at=NULL WHERE customer_id=$1 AND device_id='sd-a'",
+              [customer],
+            )
+            .then(
+              () => 'taken',
+              (error) => (error.code === '55P03' ? 'locked' : error.message),
+            );
+          assert.equal(
+            revived,
+            'locked',
+            'The deletion holds the removed row in the prelock.',
+          );
+          await holder.query('COMMIT');
+          await deletion;
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (deletion) await deletion.catch(() => undefined);
+          await Promise.allSettled([
+            holder.end(),
+            deleter.end(),
+            reviver.end(),
+          ]);
+        }
+        assert.deepEqual(
+          (
+            await admin(
+              `SELECT device_id FROM cc.devices WHERE customer_id=$1 AND device_id LIKE 'sd-%'
+                AND removed_at IS NOT NULL ORDER BY device_id`,
+              [customer],
+            )
+          ).map((row) => row.device_id),
+          ['sd-a', 'sd-b'],
+        );
       },
     );
   } finally {
