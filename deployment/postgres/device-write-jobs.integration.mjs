@@ -6527,7 +6527,9 @@ export async function qualifyDeviceWriteJobs({
     );
 
     // The claim revalidation reads the confirmer and the connection as their definer. Like
-    // cc.write_capable, it stays an internal helper: no PUBLIC grant and no application grant.
+    // cc.write_capable, it stays an internal helper: only its owner holds EXECUTE. The ACL is read
+    // directly, because a superuser session bypasses EXECUTE checks. A null ACL is the default
+    // grant to PUBLIC.
     await ruleCheck(
       'S2 the claim revalidation helper is not executable by PUBLIC or the application role',
       async () => {
@@ -6536,25 +6538,19 @@ export async function qualifyDeviceWriteJobs({
           'cc.device_update_stop_reason(text,uuid,integer,integer)',
         ]) {
           const privileges = await adminRow(
-            `SELECT to_regprocedure($1) IS NOT NULL AS present,
-              to_regprocedure($1) IS NOT NULL AND has_function_privilege('public',to_regprocedure($1),'EXECUTE')
-                AS public_execute`,
+            `SELECT count(p.oid)=1 AS present,
+              bool_and(p.proacl IS NOT NULL AND NOT EXISTS(SELECT 1 FROM aclexplode(p.proacl) a
+                WHERE a.privilege_type='EXECUTE' AND a.grantee<>p.proowner)) AS owner_only
+             FROM pg_proc p WHERE p.oid=to_regprocedure($1)`,
             [signature],
           );
           assert.equal(privileges.present, true, `${signature} exists.`);
           assert.equal(
-            privileges.public_execute,
-            false,
-            `${signature} grants no EXECUTE to PUBLIC.`,
+            privileges.owner_only,
+            true,
+            `${signature} grants EXECUTE to its owner only.`,
           );
         }
-        await rejects(
-          statement(
-            'SELECT cc.device_update_stop_reason($1,$2,$3,$4) AS result',
-            [customer, randomUUID(), 1, generation],
-          ),
-          '42501',
-        );
       },
     );
   } finally {
