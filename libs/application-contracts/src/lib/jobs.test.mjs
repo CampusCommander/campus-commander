@@ -86,15 +86,31 @@ test('display IDs and statuses carry the job vocabulary', () => {
 
 test('job summaries are strict objects', () => {
   assert.deepEqual(jobSummarySchema.parse(summary), summary);
-  assert.equal(jobSummarySchema.safeParse({ ...summary, extra: true }).success, false);
-  assert.equal(jobSummarySchema.safeParse({ ...summary, status: 'cancelled' }).success, false);
-  assert.equal(jobSummarySchema.safeParse({ ...summary, revision: 0 }).success, false);
   assert.equal(
-    jobSummarySchema.safeParse({ ...summary, failure: 'permission-changed' }).success,
+    jobSummarySchema.safeParse({ ...summary, extra: true }).success,
+    false,
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({ ...summary, status: 'cancelled' }).success,
+    false,
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({ ...summary, revision: 0 }).success,
+    false,
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({ ...summary, failure: 'permission-changed' })
+      .success,
     true,
   );
-  assert.equal(jobSummarySchema.safeParse({ ...summary, failure: 'interrupted' }).success, true);
-  assert.equal(jobSummarySchema.safeParse({ ...summary, failure: 'unknown-code' }).success, false);
+  assert.equal(
+    jobSummarySchema.safeParse({ ...summary, failure: 'interrupted' }).success,
+    true,
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({ ...summary, failure: 'unknown-code' }).success,
+    false,
+  );
   const missing = { ...summary };
   delete missing.displayId;
   assert.equal(jobSummarySchema.safeParse(missing).success, false);
@@ -110,19 +126,49 @@ test('progress counts total and pending together', () => {
     pending: null,
   };
   assert.equal(jobProgressSchema.safeParse(running).success, true);
-  assert.equal(jobProgressSchema.safeParse({ ...running, pending: 0 }).success, false);
-  assert.equal(jobProgressSchema.safeParse({ ...running, total: 6 }).success, false);
-  assert.equal(jobProgressSchema.safeParse({ ...running, total: 6, pending: 1 }).success, true);
-  assert.equal(jobProgressSchema.safeParse({ ...running, extra: 1 }).success, false);
+  assert.equal(
+    jobProgressSchema.safeParse({ ...running, pending: 0 }).success,
+    false,
+  );
+  assert.equal(
+    jobProgressSchema.safeParse({ ...running, total: 6 }).success,
+    false,
+  );
+  assert.equal(
+    jobProgressSchema.safeParse({ ...running, total: 6, pending: 1 }).success,
+    true,
+  );
+  assert.equal(
+    jobProgressSchema.safeParse({ ...running, extra: 1 }).success,
+    false,
+  );
 });
 
 test('operations report the API outcome vocabulary', () => {
   assert.deepEqual(jobOperationSchema.parse(operation), operation);
-  assert.equal(jobOperationSchema.safeParse({ ...operation, outcome: 'dispatched' }).success, false);
-  assert.equal(jobOperationSchema.safeParse({ ...operation, verifiedBy: 'read-back' }).success, true);
-  assert.equal(jobOperationSchema.safeParse({ ...operation, operationId: 'REF-031-1' }).success, false);
-  assert.equal(jobOperationSchema.safeParse({ ...operation, updatedAt: null }).success, false);
-  assert.equal(jobOperationSchema.safeParse({ ...operation, extra: true }).success, false);
+  assert.equal(
+    jobOperationSchema.safeParse({ ...operation, outcome: 'dispatched' })
+      .success,
+    false,
+  );
+  assert.equal(
+    jobOperationSchema.safeParse({ ...operation, verifiedBy: 'read-back' })
+      .success,
+    true,
+  );
+  assert.equal(
+    jobOperationSchema.safeParse({ ...operation, operationId: 'REF-031-1' })
+      .success,
+    false,
+  );
+  assert.equal(
+    jobOperationSchema.safeParse({ ...operation, updatedAt: null }).success,
+    false,
+  );
+  assert.equal(
+    jobOperationSchema.safeParse({ ...operation, extra: true }).success,
+    false,
+  );
 });
 
 test('job detail extends the summary with the write fields', () => {
@@ -142,8 +188,15 @@ test('job detail extends the summary with the write fields', () => {
     },
   };
   assert.deepEqual(jobDetailSchema.parse(detail), detail);
-  assert.equal(jobDetailSchema.safeParse({ ...detail, extra: true }).success, false);
-  assert.equal(jobDetailSchema.safeParse({ ...detail, previewDisplayId: 'UPD-006' }).success, false);
+  assert.equal(
+    jobDetailSchema.safeParse({ ...detail, extra: true }).success,
+    false,
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({ ...detail, previewDisplayId: 'UPD-006' })
+      .success,
+    false,
+  );
   const refresh = {
     ...detail,
     displayId: 'REF-031',
@@ -196,7 +249,10 @@ test('activity caps rows and reports a null window', () => {
     }).success,
     false,
   );
-  assert.equal(jobActivitySchema.safeParse({ ...activity, extra: true }).success, false);
+  assert.equal(
+    jobActivitySchema.safeParse({ ...activity, extra: true }).success,
+    false,
+  );
 });
 
 test('latest activity stops at three samples per outcome', () => {
@@ -206,7 +262,12 @@ test('latest activity stops at three samples per outcome', () => {
     serialNumber: 'C0A1-7F2D',
     updatedAt: at,
   };
-  const failedSample = { ...sample, outcomeReason: 'quota', googleStatus: 403, googleReason: 'forbidden' };
+  const failedSample = {
+    ...sample,
+    outcomeReason: 'quota',
+    googleStatus: 403,
+    googleReason: 'forbidden',
+  };
   const latest = {
     at,
     failed: { count: 9, operations: Array(3).fill(failedSample) },
@@ -257,7 +318,10 @@ test('job events accept only job-changed and require a requester', () => {
     requestedBy: requesterId,
   };
   assert.deepEqual(jobEventSchema.parse(event), event);
-  assert.equal(jobEventSchema.safeParse({ type: 'other', jobId }).success, false);
+  assert.equal(
+    jobEventSchema.safeParse({ type: 'other', jobId }).success,
+    false,
+  );
   const withoutRequester = { ...event };
   delete withoutRequester.requestedBy;
   assert.equal(jobEventSchema.safeParse(withoutRequester).success, false);

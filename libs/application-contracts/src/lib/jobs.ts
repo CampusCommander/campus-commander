@@ -50,9 +50,12 @@ export const jobProgressSchema = z
     skipped: count,
     pending: count.nullable(),
   })
-  .refine((progress) => (progress.total === null) === (progress.pending === null), {
-    message: 'Total and pending count together.',
-  });
+  .refine(
+    (progress) => (progress.total === null) === (progress.pending === null),
+    {
+      message: 'Total and pending count together.',
+    },
+  );
 export type JobProgress = z.infer<typeof jobProgressSchema>;
 
 /** The job failure codes of section 1.2: the sync codes plus the two revalidation codes. */

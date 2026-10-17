@@ -72,12 +72,18 @@ export const deviceUpdatePreviewSchema = z
   })
   .refine(
     (preview) =>
-      preview.selected === preview.eligible + preview.unchanged + preview.excluded,
-    { message: 'Selected equals the sum of eligible, unchanged, and excluded.' },
+      preview.selected ===
+      preview.eligible + preview.unchanged + preview.excluded,
+    {
+      message: 'Selected equals the sum of eligible, unchanged, and excluded.',
+    },
   )
-  .refine((preview) => (preview.mode === 'clear') === (preview.value === null), {
-    message: 'Only a clear preview holds a null value.',
-  });
+  .refine(
+    (preview) => (preview.mode === 'clear') === (preview.value === null),
+    {
+      message: 'Only a clear preview holds a null value.',
+    },
+  );
 export type DeviceUpdatePreview = z.infer<typeof deviceUpdatePreviewSchema>;
 
 /** One frozen preview target (section 2.3). A removed device stays as an exclusion. */
@@ -94,7 +100,9 @@ export const deviceUpdateTargetSchema = z.strictObject({
 export type DeviceUpdateTarget = z.infer<typeof deviceUpdateTargetSchema>;
 
 /** One targets page. The route caps a page at 1,000 rows. */
-export const deviceUpdateTargetsSchema = z.array(deviceUpdateTargetSchema).max(1000);
+export const deviceUpdateTargetsSchema = z
+  .array(deviceUpdateTargetSchema)
+  .max(1000);
 
 /** The confirmation body of section 2.4. */
 export const deviceUpdateConfirmRequestSchema = z.strictObject({
@@ -124,7 +132,9 @@ export const deviceWriteAccessStateSchema = z.enum([
   'unavailable',
   'unchecked',
 ]);
-export type DeviceWriteAccessState = z.infer<typeof deviceWriteAccessStateSchema>;
+export type DeviceWriteAccessState = z.infer<
+  typeof deviceWriteAccessStateSchema
+>;
 
 /** The write-access projection of section 2.7. */
 export const deviceWriteAccessSchema = z.strictObject({

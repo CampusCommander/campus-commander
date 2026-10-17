@@ -43,7 +43,10 @@ test('a clear preview takes no value', () => {
   assert.equal(ok({ ...key, mode: 'clear' }), true);
   assert.equal(ok({ ...key, mode: 'clear', value: 'Room 12' }), false);
   assert.equal(ok({ ...key, mode: 'replace' }), false);
-  assert.equal(ok({ ...key, mode: 'replace', value: 'Room 12', extra: true }), false);
+  assert.equal(
+    ok({ ...key, mode: 'replace', value: 'Room 12', extra: true }),
+    false,
+  );
   assert.equal(ok({ gridId: 'users', tabId, mode: 'clear' }), false);
 });
 
@@ -64,15 +67,36 @@ test('preview summaries carry the counts and the digest', () => {
     manifestDigest: digest,
   };
   assert.deepEqual(deviceUpdatePreviewSchema.parse(preview), preview);
-  assert.equal(deviceUpdatePreviewSchema.safeParse({ ...preview, selected: 11 }).success, false);
-  assert.equal(deviceUpdatePreviewSchema.safeParse({ ...preview, displayId: 'UPD-006' }).success, false);
-  assert.equal(deviceUpdatePreviewSchema.safeParse({ ...preview, manifestDigest: 'abc' }).success, false);
-  assert.equal(deviceUpdatePreviewSchema.safeParse({ ...preview, mode: 'clear' }).success, false);
   assert.equal(
-    deviceUpdatePreviewSchema.safeParse({ ...preview, mode: 'clear', value: null }).success,
+    deviceUpdatePreviewSchema.safeParse({ ...preview, selected: 11 }).success,
+    false,
+  );
+  assert.equal(
+    deviceUpdatePreviewSchema.safeParse({ ...preview, displayId: 'UPD-006' })
+      .success,
+    false,
+  );
+  assert.equal(
+    deviceUpdatePreviewSchema.safeParse({ ...preview, manifestDigest: 'abc' })
+      .success,
+    false,
+  );
+  assert.equal(
+    deviceUpdatePreviewSchema.safeParse({ ...preview, mode: 'clear' }).success,
+    false,
+  );
+  assert.equal(
+    deviceUpdatePreviewSchema.safeParse({
+      ...preview,
+      mode: 'clear',
+      value: null,
+    }).success,
     true,
   );
-  assert.equal(deviceUpdatePreviewSchema.safeParse({ ...preview, extra: true }).success, false);
+  assert.equal(
+    deviceUpdatePreviewSchema.safeParse({ ...preview, extra: true }).success,
+    false,
+  );
 });
 
 test('preview targets carry the frozen rows', () => {
@@ -86,11 +110,24 @@ test('preview targets carry the frozen rows', () => {
     exclusionReason: null,
   };
   assert.deepEqual(deviceUpdateTargetSchema.parse(target), target);
-  assert.equal(deviceUpdateTargetSchema.safeParse({ ...target, disposition: 'pending' }).success, false);
-  assert.equal(deviceUpdateTargetSchema.safeParse({ ...target, extra: true }).success, false);
+  assert.equal(
+    deviceUpdateTargetSchema.safeParse({ ...target, disposition: 'pending' })
+      .success,
+    false,
+  );
+  assert.equal(
+    deviceUpdateTargetSchema.safeParse({ ...target, extra: true }).success,
+    false,
+  );
   assert.equal(deviceUpdateTargetsSchema.safeParse([target]).success, true);
-  assert.equal(deviceUpdateTargetsSchema.safeParse(Array(1000).fill(target)).success, true);
-  assert.equal(deviceUpdateTargetsSchema.safeParse(Array(1001).fill(target)).success, false);
+  assert.equal(
+    deviceUpdateTargetsSchema.safeParse(Array(1000).fill(target)).success,
+    true,
+  );
+  assert.equal(
+    deviceUpdateTargetsSchema.safeParse(Array(1001).fill(target)).success,
+    false,
+  );
 });
 
 test('confirmation requires the digest and the acknowledgment', () => {
@@ -98,7 +135,10 @@ test('confirmation requires the digest and the acknowledgment', () => {
   assert.equal(ok({ manifestDigest: digest, acknowledged: true }), true);
   assert.equal(ok({ manifestDigest: digest, acknowledged: false }), false);
   assert.equal(ok({ acknowledged: true }), false);
-  assert.equal(ok({ manifestDigest: digest, acknowledged: true, extra: 1 }), false);
+  assert.equal(
+    ok({ manifestDigest: digest, acknowledged: true, extra: 1 }),
+    false,
+  );
   const receipt = {
     jobId,
     displayId: 'UPD-006',
@@ -107,7 +147,11 @@ test('confirmation requires the digest and the acknowledgment', () => {
     updateCount: 10,
   };
   assert.deepEqual(deviceUpdateJobReceiptSchema.parse(receipt), receipt);
-  assert.equal(deviceUpdateJobReceiptSchema.safeParse({ ...receipt, status: 'queued' }).success, false);
+  assert.equal(
+    deviceUpdateJobReceiptSchema.safeParse({ ...receipt, status: 'queued' })
+      .success,
+    false,
+  );
 });
 
 test('write access reports the four states', () => {
