@@ -146,6 +146,11 @@ BEGIN
     RAISE EXCEPTION 'The sync identifier is required.' USING ERRCODE='22023';
   END IF;
   -- An unclaimed sync expires quickly. A worker claim extends the lease while pages stage.
+  -- S1 (B2b round 2): the first request of a customer creates the state row, and the customer key of that
+  -- row takes the connection KEY SHARE lock. The requester principal row therefore locks before the state
+  -- insert, as the credential functions take a principal row before the connection row (007
+  -- cc.google_connection_actor).
+  PERFORM 1 FROM cc.application_principals p WHERE p.id=p_actor FOR KEY SHARE;
   INSERT INTO cc.device_sync_state(customer_id) VALUES(p_customer) ON CONFLICT(customer_id) DO NOTHING;
   SELECT * INTO prior FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
   -- S1: the sync state row locks first. The customer-scoped header of the sync it replaces locks second,
@@ -158,11 +163,12 @@ BEGIN
     END IF;
   END IF;
   -- S1 (R1-F2): the new header and the state reference the requester and the replaced sync actor, and the
-  -- header and the publications reference the connection row. Those rows lock here, the principal rows
-  -- before the connection row, as the credential functions take them (007 cc.google_connection_actor).
-  -- No insert or update below then waits. The clock reads after these waits, and the authority, the
-  -- connection, and the replaced lease revalidate on fresh reads.
-  PERFORM 1 FROM cc.application_principals p WHERE p.id IN (p_actor,prior.sync_actor) ORDER BY p.id FOR KEY SHARE;
+  -- header and the publications reference the connection row. The actor of the replaced sync locks here.
+  -- A new state row has no sync actor, and an existing state row took no connection lock at the insert
+  -- above. This principal lock therefore precedes every connection lock as well. No insert or update below
+  -- then waits. The clock reads after these waits, and the authority, the connection, and the replaced
+  -- lease revalidate on fresh reads.
+  PERFORM 1 FROM cc.application_principals p WHERE p.id=prior.sync_actor FOR KEY SHARE;
   PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   now_at:=clock_timestamp();
   connection:=cc.device_reader(p_actor,p_version);
