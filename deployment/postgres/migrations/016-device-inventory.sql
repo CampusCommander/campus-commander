@@ -239,6 +239,12 @@ BEGIN
     p_synced_at IS NULL OR p_observation NOT IN ('read','list') THEN
     RAISE EXCEPTION 'The device page is invalid.' USING ERRCODE='22023';
   END IF;
+  -- Every function that reads or changes an overlay locks the device rows first (section 5.8).
+  -- The lock waits for a concurrent settlement. The upsert statement then takes a fresh snapshot
+  -- and sees the overlay that the settlement committed (review F1).
+  PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND d.device_id IN (
+      SELECT e.value->>'deviceId' FROM jsonb_array_elements(p_devices) e)
+    ORDER BY d.device_id FOR UPDATE;
   WITH incoming AS (
     SELECT DISTINCT ON (e.value->>'deviceId') e.value->>'deviceId' AS device_id,e.value AS row_value
     FROM jsonb_array_elements(p_devices) WITH ORDINALITY e(value,position)
@@ -384,14 +390,14 @@ BEGIN
   IF jsonb_typeof(p_devices) IS DISTINCT FROM 'array' OR jsonb_array_length(p_devices)>1000 THEN
     RAISE EXCEPTION 'The device page is invalid.' USING ERRCODE='22023';
   END IF;
-  -- Each staged device records its OrgUnit path on the job (section 1.3).
+  -- Each staged device records its listed OrgUnit path on the job (section 1.3).
+  -- The staged path wins over the cached device path, because the upsert below follows the list.
   INSERT INTO cc.job_targets(job_id,device_id,org_unit_path,observed_at)
-  SELECT p_id,t.device_id,COALESCE(d.org_unit_path,t.listed_path),clock_timestamp()
+  SELECT p_id,t.device_id,t.listed_path,clock_timestamp()
   FROM (SELECT DISTINCT ON (e.value->>'deviceId') e.value->>'deviceId' AS device_id,
       e.value->>'orgUnitPath' AS listed_path
     FROM jsonb_array_elements(p_devices) WITH ORDINALITY e(value,position)
     ORDER BY e.value->>'deviceId',e.position DESC) t
-  LEFT JOIN cc.devices d ON d.customer_id=p_customer AND d.device_id=t.device_id
   ON CONFLICT(job_id,device_id) DO UPDATE SET org_unit_path=EXCLUDED.org_unit_path,observed_at=EXCLUDED.observed_at;
   staged:=cc.upsert_devices(p_customer,p_devices,clock_timestamp(),'list');
   UPDATE cc.jobs SET succeeded=(SELECT count(*) FROM cc.job_targets t WHERE t.job_id=p_id) WHERE job_id=p_id;
@@ -549,8 +555,10 @@ BEGIN
   VALUES(p_job,p_batch,CASE WHEN p_failure IS NULL THEN 'completed' ELSE 'failed' END,p_failure,now_at)
   ON CONFLICT(job_id,batch) DO UPDATE SET status=EXCLUDED.status,failure=EXCLUDED.failure,finished_at=EXCLUDED.finished_at;
   SELECT count(*) INTO recorded FROM cc.entity_sync_batches WHERE job_id=p_job;
+  -- The failure derives from the current batch records, so a replaced batch clears its failure.
   UPDATE cc.entity_sync_jobs SET
-    failure=COALESCE(failure,p_failure),
+    failure=(SELECT b.failure FROM cc.entity_sync_batches b WHERE b.job_id=p_job AND b.status='failed'
+      ORDER BY b.batch DESC LIMIT 1),
     finished_at=CASE WHEN recorded>=batch_count THEN now_at ELSE finished_at END
   WHERE job_id=p_job RETURNING * INTO job;
   -- The header counters recompute from the batch records. A replaced batch counts once.
@@ -561,7 +569,8 @@ BEGIN
   UPDATE cc.jobs SET succeeded=succeeded_units,failed=failed_units,failure=job.failure,
     finished_at=CASE WHEN recorded>=job.batch_count THEN now_at ELSE finished_at END,
     status=CASE WHEN recorded<job.batch_count THEN status
-      WHEN job.failure IS NULL THEN 'completed'
+      WHEN NOT EXISTS(SELECT 1 FROM cc.entity_sync_batches b WHERE b.job_id=p_job AND b.status='failed')
+        THEN 'completed'
       WHEN succeeded_units>0 THEN 'completed-with-errors' ELSE 'failed' END
   WHERE job_id=p_job;
   PERFORM cc.record_job_change(p_job,true);

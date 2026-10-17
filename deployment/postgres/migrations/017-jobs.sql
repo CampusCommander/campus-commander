@@ -547,7 +547,15 @@ BEGIN
     lease_expires_at=EXCLUDED.lease_expires_at,claimed_at=EXCLUDED.claimed_at,settled_at=NULL;
   UPDATE cc.device_update_jobs SET heartbeat_at=now_at,first_claimed_at=COALESCE(first_claimed_at,now_at)
   WHERE job_id=p_job;
-  UPDATE cc.jobs SET started_at=COALESCE(started_at,now_at) WHERE job_id=p_job;
+  -- A claim that fences a lost attempt refreshes the counters of its fenced operations.
+  IF jsonb_array_length(readback)>0 THEN PERFORM cc.refresh_device_update_counters(p_job); END IF;
+  IF job.started_at IS NULL THEN
+    UPDATE cc.jobs SET started_at=now_at WHERE job_id=p_job;
+  END IF;
+  -- Every reader-visible claim change records one publication row (section 3.6, review F8).
+  IF job.started_at IS NULL OR jsonb_array_length(readback)>0 THEN
+    PERFORM cc.record_job_change(p_job,false);
+  END IF;
   connection:=cc.google_current_generation(p_customer,job.generation);
   RETURN jsonb_build_object('outcome','claimed','generation',connection.generation,
     'credentialId',connection.credential_id,
@@ -630,7 +638,10 @@ BEGIN
     SELECT res.operation_number,res.r,o.batch,o.device_id,
       CASE WHEN res.r ? 'value' THEN res.r->>'value' ELSE o.requested_value END AS value
     FROM results res JOIN cc.device_update_operations o ON o.job_id=p_job AND o.operation_number=res.operation_number
-    WHERE (p_kind='write' AND o.status='dispatched' AND o.attempt_id=p_attempt) OR
+    WHERE (p_kind='write' AND o.status='dispatched' AND o.attempt_id=p_attempt AND
+        -- The attempt owns the batch of the operation with a live lease (section 5.4, review F3).
+        EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=o.job_id AND b.batch=o.batch AND
+          b.attempt_id=p_attempt AND b.lease_expires_at>now_at)) OR
       (p_kind='read-back' AND o.status='unknown' AND o.verify_attempt=p_attempt AND
         o.verify_lease_expires_at>now_at)
   ), applied AS (
@@ -641,7 +652,12 @@ BEGIN
       observed_value=e.value,
       observed_at=CASE WHEN e.r->>'outcome'='succeeded' THEN p_observed_at ELSE o.observed_at END,
       verified_by=e.r->>'verifiedBy',outcome_reason=e.r->>'outcomeReason',updated_at=now_at,
-      verify_attempt=NULL,verify_lease_expires_at=NULL,verify_after=NULL
+      -- An open request keeps the read-back of this attempt and its delay (section 5.7, review F5).
+      verify_attempt=CASE WHEN p_kind='write' AND e.r->>'outcome'='unknown' THEN p_attempt END,
+      verify_lease_expires_at=CASE WHEN p_kind='write' AND e.r->>'outcome'='unknown'
+        THEN p_observed_at+interval '120 seconds' END,
+      verify_after=CASE WHEN p_kind='write' AND e.r->>'outcome'='unknown'
+        THEN COALESCE((e.r->>'verifyAfter')::timestamptz,p_observed_at+interval '30 seconds') END
     FROM eligible e WHERE o.job_id=p_job AND o.operation_number=e.operation_number
     RETURNING o.operation_number,o.device_id,o.batch,o.status,e.value,e.r->>'verifiedBy' AS verified_by,
       e.r->>'outcomeReason' AS outcome_reason
@@ -786,7 +802,12 @@ BEGIN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   IF job.finished_at IS NOT NULL THEN
-    RETURN jsonb_build_object('jobId',p_job,'status',job.status);
+    RETURN jsonb_build_object('outcome','finished','jobId',p_job,'status',job.status);
+  END IF;
+  -- The reaper never acts while a batch lease or its grace lives (section 5.10, review F4).
+  IF EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=p_job AND
+      b.lease_expires_at+interval '30 seconds'>now_at) THEN
+    RETURN jsonb_build_object('outcome','busy','jobId',p_job,'status',job.status);
   END IF;
   before:=job.status;
   IF p_failure IS NOT NULL THEN
@@ -798,7 +819,7 @@ BEGIN
   after:=cc.device_update_terminal_status(p_job);
   UPDATE cc.jobs SET status=after,finished_at=now_at WHERE job_id=p_job;
   PERFORM cc.record_job_change(p_job,true);
-  RETURN jsonb_build_object('jobId',p_job,'status',after,
+  RETURN jsonb_build_object('outcome','finalized','jobId',p_job,'status',after,
     'succeeded',(SELECT j.succeeded FROM cc.jobs j WHERE j.job_id=p_job),
     'failed',(SELECT j.failed FROM cc.jobs j WHERE j.job_id=p_job),
     'unknown',(SELECT j.unknown FROM cc.jobs j WHERE j.job_id=p_job),

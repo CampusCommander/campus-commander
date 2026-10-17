@@ -220,10 +220,12 @@ export class EntitySyncBatch {
         )
           throw error;
       }
-      await this.call('SELECT cc.upsert_devices($1,$2,$3) AS result', [
+      // A refresh read is a current observation. The kind orders it against a live overlay (5.8).
+      await this.call('SELECT cc.upsert_devices($1,$2,$3,$4) AS result', [
         input.customerId,
         JSON.stringify(read.devices),
         syncedAt,
+        'read',
       ]);
       if (batteries)
         await this.call('SELECT cc.upsert_device_batteries($1,$2) AS result', [
