@@ -7390,6 +7390,38 @@ export async function qualifyDeviceWriteJobs({
     );
 
     await ruleCheck(
+      'S1 a final finish that waits on the connection row returns superseded when the token rotates in the wait',
+      async () => {
+        const job = await heldJob('r3n-h');
+        await expireBatches(job.jobId);
+        assert.equal(
+          (await prepareFinish(job.jobId, job.token)).outcome,
+          'ready',
+        );
+        const before = await jobRow(job.jobId);
+        const published = await publications(job.jobId);
+        const { answer } = await waitedOn({
+          rows: [heldConnectionRow()],
+          sql: 'SELECT cc.finish_device_update_job($1,$2,$3,$4) AS result',
+          values: [customer, job.jobId, job.token, null],
+          during: () => rotateToken(job.jobId),
+        });
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(
+          answer.rows[0].result.outcome,
+          'superseded',
+          'A finish rechecks its token after the connection wait.',
+        );
+        const after = await jobRow(job.jobId);
+        assert.equal(after.status, 'running');
+        assert.equal(after.finished_at, null);
+        assert.equal(Number(after.revision), Number(before.revision));
+        assert.equal(await publications(job.jobId), published);
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
       'S1 the reaper that waits on the connection row stamps its writes after the wait',
       async () => {
         const job = await heldJob('r3n-g');
