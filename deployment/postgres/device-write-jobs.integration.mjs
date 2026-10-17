@@ -6975,7 +6975,30 @@ export async function qualifyDeviceWriteJobs({
           verifiedBy: 'write-response',
         },
       ]);
-    const stampedAfter = async (job, deviceId, answer, releasedAt) => {
+    // Every publication of a call and the change stamp of its header follow the waits of that call.
+    const lastPublication = async () =>
+      (
+        await adminRow(
+          'SELECT COALESCE(max(publication_id),0)::text AS id FROM cc.job_publications',
+        )
+      ).id;
+    const publishedAfter = async (jobId, since, releasedAt) => {
+      assert.ok(
+        (await jobRow(jobId)).changed_at >= releasedAt,
+        'The call stamps its header change after the wait.',
+      );
+      const rows = await admin(
+        'SELECT created_at FROM cc.job_publications WHERE job_id=$1 AND publication_id>$2::bigint',
+        [jobId, since],
+      );
+      assert.ok(rows.length > 0, 'The call records a publication.');
+      for (const row of rows)
+        assert.ok(
+          row.created_at >= releasedAt,
+          'The call records its publication after the wait.',
+        );
+    };
+    const stampedAfter = async (job, deviceId, answer, releasedAt, since) => {
       assert.equal(answer.code, undefined, answer.message);
       assert.deepEqual(answer.rows[0].result.published, [deviceId]);
       const settled = await adminRow(
@@ -6992,6 +7015,7 @@ export async function qualifyDeviceWriteJobs({
         'The settlement stamps its heartbeat after the wait.',
       );
       assert.equal((await overlay(deviceId)).value, 'Room 12');
+      await publishedAfter(job.jobId, since, releasedAt);
     };
 
     await ruleCheck(
@@ -6999,13 +7023,14 @@ export async function qualifyDeviceWriteJobs({
       async () => {
         const deviceId = 'r3c-a';
         const job = await provenanceJob(deviceId, 'write');
+        const since = await lastPublication();
         const { answer, releasedAt } = await waitedOn({
           rows: [heldConnectionRow()],
           sql: settleSql,
           values: publishingSettlement(job),
           during: () => sleep(200),
         });
-        await stampedAfter(job, deviceId, answer, releasedAt);
+        await stampedAfter(job, deviceId, answer, releasedAt, since);
         await endJob(job.jobId);
       },
     );
@@ -7022,6 +7047,7 @@ export async function qualifyDeviceWriteJobs({
             clock_timestamp()-interval '1 hour','write-response',$3,1,clock_timestamp()+interval '35 hours')`,
           [customer, deviceId, job.jobId],
         );
+        const since = await lastPublication();
         const { answer, releasedAt } = await waitedOn({
           rows: [
             [
@@ -7033,7 +7059,7 @@ export async function qualifyDeviceWriteJobs({
           values: publishingSettlement(job),
           during: () => sleep(200),
         });
-        await stampedAfter(job, deviceId, answer, releasedAt);
+        await stampedAfter(job, deviceId, answer, releasedAt, since);
         await endJob(job.jobId);
       },
     );
@@ -7193,6 +7219,197 @@ export async function qualifyDeviceWriteJobs({
           'A superseded stop changes nothing.',
         );
         await endJob(job.jobId);
+      },
+    );
+
+    // The class of the connection wait: every writer that publishes inserts a publication row, and that row
+    // references the connection row. A credential or token read holds the connection row FOR UPDATE
+    // (008-google-token-coordination.sql), so the insert check waits on it. Each writer locks the connection
+    // row before its last clock read, so no write waits on it (round 3). At 768f8c3 the publication insert
+    // waited, and the writes of the call used the clock from before that wait.
+    const connectionWait = (sql, values) =>
+      waitedOn({
+        rows: [heldConnectionRow()],
+        sql,
+        values,
+        during: () => sleep(200),
+      });
+
+    await ruleCheck(
+      'S1 an admission that waits on the connection row stamps its writes after the wait',
+      async () => {
+        const job = await makeJob({ devices: ['r3n-a'] });
+        const since = await lastPublication();
+        const { answer, releasedAt } = await connectionWait(admitSql, [
+          customer,
+          false,
+        ]);
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(answer.rows[0].result?.jobId, job.jobId);
+        const saved = await adminRow(
+          `SELECT j.admitted_at,u.start_deadline_at FROM cc.jobs j
+            JOIN cc.device_update_jobs u ON u.job_id=j.job_id WHERE j.job_id=$1`,
+          [job.jobId],
+        );
+        assert.ok(
+          saved.admitted_at >= releasedAt,
+          'The admission stamps admitted_at after the wait.',
+        );
+        assert.ok(
+          saved.start_deadline_at.getTime() >= releasedAt.getTime() + 120000,
+          'A connection wait must not consume the start window.',
+        );
+        await publishedAfter(job.jobId, since, releasedAt);
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a held admission that waits on the connection row stamps its change after the wait',
+      async () => {
+        const job = await makeJob({ devices: ['r3n-b'] });
+        const since = await lastPublication();
+        const { answer, releasedAt } = await connectionWait(admitSql, [
+          customer,
+          true,
+        ]);
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal((await jobRow(job.jobId)).status, 'held');
+        await publishedAfter(job.jobId, since, releasedAt);
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 an abandoned start that waits on the connection row stamps its writes after the wait',
+      async () => {
+        const job = await makeJob({ devices: ['r3n-c'] });
+        const admitted = await admit(false);
+        assert.equal(
+          admitted.jobId,
+          job.jobId,
+          'The admission picks this job.',
+        );
+        const since = await lastPublication();
+        const { answer, releasedAt } = await connectionWait(
+          'SELECT cc.abandon_device_update_start($1,$2,$3) AS result',
+          [customer, job.jobId, admitted.dispatchToken],
+        );
+        assert.equal(answer.code, undefined, answer.message);
+        const saved = await jobRow(job.jobId);
+        assert.equal(saved.status, 'failed');
+        assert.ok(
+          saved.finished_at >= releasedAt,
+          'The closure stamps finished_at after the wait.',
+        );
+        const rows = await skipStamps(job.jobId);
+        assert.deepEqual(
+          rows.map((row) => row.status),
+          ['skipped'],
+        );
+        assert.ok(
+          rows[0].updated_at >= releasedAt,
+          'The closure stamps its skip after the wait.',
+        );
+        await publishedAfter(job.jobId, since, releasedAt);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a stopped claim that waits on the connection row stamps its writes after the wait',
+      async () => {
+        const job = await releasedBatch('r3n-d');
+        await disable(job)();
+        const since = await lastPublication();
+        const { sql, values } = nextClaim(job);
+        const { answer, releasedAt } = await connectionWait(sql, values);
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(answer.rows[0].result.outcome, 'stopped');
+        assert.equal(answer.rows[0].result.envelope, undefined);
+        const rows = await skipStamps(job.jobId);
+        assert.deepEqual(
+          rows.map((row) => row.status),
+          ['skipped'],
+        );
+        assert.ok(
+          rows[0].updated_at >= releasedAt,
+          'The stop stamps its skip after the wait.',
+        );
+        await publishedAfter(job.jobId, since, releasedAt);
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a finish preparation that waits on the connection row stamps its writes after the wait',
+      async () => {
+        const job = await heldJob('r3n-e');
+        await expireBatches(job.jobId);
+        const since = await lastPublication();
+        const { answer, releasedAt } = await connectionWait(prepareSql, [
+          customer,
+          job.jobId,
+          job.token,
+          null,
+        ]);
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(answer.rows[0].result.outcome, 'ready');
+        const fenced = await fenceTime(job.jobId);
+        assert.equal(fenced.status, 'unknown');
+        assert.ok(
+          fenced.verify_after >= releasedAt,
+          'The fence time comes from the clock after the wait.',
+        );
+        await publishedAfter(job.jobId, since, releasedAt);
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck(
+      'S1 a final finish that waits on the connection row stamps its writes after the wait',
+      async () => {
+        const job = await heldJob('r3n-f');
+        await expireBatches(job.jobId);
+        assert.equal(
+          (await prepareFinish(job.jobId, job.token)).outcome,
+          'ready',
+        );
+        const since = await lastPublication();
+        const { answer, releasedAt } = await connectionWait(
+          'SELECT cc.finish_device_update_job($1,$2,$3,$4) AS result',
+          [customer, job.jobId, job.token, null],
+        );
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(answer.rows[0].result.status, 'needs-review');
+        assert.ok(
+          (await jobRow(job.jobId)).finished_at >= releasedAt,
+          'The finish stamps finished_at after the wait.',
+        );
+        await publishedAfter(job.jobId, since, releasedAt);
+      },
+    );
+
+    await ruleCheck(
+      'S1 the reaper that waits on the connection row stamps its writes after the wait',
+      async () => {
+        const job = await heldJob('r3n-g');
+        await expireBatches(job.jobId);
+        const since = await lastPublication();
+        const { answer, releasedAt } = await connectionWait(
+          'SELECT cc.finalize_device_update_job($1,$2,$3) AS result',
+          [customer, job.jobId, null],
+        );
+        assert.equal(answer.code, undefined, answer.message);
+        assert.equal(answer.rows[0].result.outcome, 'finalized');
+        assert.ok(
+          (await jobRow(job.jobId)).finished_at >= releasedAt,
+          'The reaper stamps finished_at after the wait.',
+        );
+        assert.ok(
+          (await fenceTime(job.jobId)).verify_after >= releasedAt,
+          'The fence time comes from the clock after the wait.',
+        );
+        await publishedAfter(job.jobId, since, releasedAt);
       },
     );
 
