@@ -1358,10 +1358,22 @@ $$;
 CREATE FUNCTION cc.purge_jobs(p_customer text,p_limit integer) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE removed integer:=0; job cc.jobs; candidate uuid; state cc.device_sync_state; now_at timestamptz;
+  locked text[];
 BEGIN
+  -- S2: a null customer never matches a job.
+  IF p_customer IS NULL THEN
+    RAISE EXCEPTION 'The customer is required.' USING ERRCODE='22023';
+  END IF;
   IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 10000 THEN
     RAISE EXCEPTION 'The purge limit is invalid.' USING ERRCODE='22023';
   END IF;
+  -- S1 (B2b round 2, R1-F1): the sync state row locks once, before every header lock and every connection
+  -- lock of this transaction. That includes the implicit KEY SHARE lock of each publication insert. The
+  -- lock holds to the end of the transaction, so every loop below reads one stable state.
+  SELECT * INTO state FROM cc.device_sync_state s WHERE s.customer_id=p_customer FOR UPDATE;
+  -- Every closure publishes, and each publication references the connection row. That row locks after the
+  -- state row and before the first clock read, so no closure below waits on it after its clock.
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   -- The candidate filter reads a clock. Every closure below re-reads the clock after its header locks.
   now_at:=clock_timestamp();
   -- An ID-list refresh that stays unfinished for two hours ends as interrupted.
@@ -1369,7 +1381,7 @@ BEGIN
   FOR candidate IN SELECT j.job_id FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND
       j.scope_kind='devices' AND j.finished_at IS NULL AND j.created_at<now_at-interval '2 hours'
       ORDER BY j.job_id LOOP
-    SELECT * INTO job FROM cc.jobs j WHERE j.job_id=candidate FOR UPDATE;
+    SELECT * INTO job FROM cc.jobs j WHERE j.job_id=candidate AND j.customer_id=p_customer FOR UPDATE;
     IF job.job_id IS NULL OR job.finished_at IS NOT NULL THEN CONTINUE; END IF;
     now_at:=clock_timestamp();
     IF job.status<>'running' THEN CONTINUE; END IF;
@@ -1379,14 +1391,13 @@ BEGIN
     WHERE job_id=job.job_id AND status='running' AND finished_at IS NULL;
     IF FOUND THEN PERFORM cc.record_job_change(job.job_id,true); END IF;
   END LOOP;
-  -- A full-sync header without a live sync lease ends as interrupted. S1: the state row locks first,
-  -- the header second, and the clock third. The lease check follows both locks (review F12).
+  -- A full-sync header without a live sync lease ends as interrupted. S1: the state row is already held,
+  -- the header locks second, and the clock reads third. The lease check follows both locks (review F12).
   FOR candidate IN SELECT j.job_id FROM cc.jobs j LEFT JOIN cc.device_sync_state s ON s.customer_id=j.customer_id
       WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND j.scope_kind='all-devices' AND
         j.status='running' AND (s.sync_id IS DISTINCT FROM j.job_id OR s.sync_expires_at<=now_at)
       ORDER BY j.job_id LOOP
-    SELECT * INTO state FROM cc.device_sync_state s WHERE s.customer_id=p_customer FOR UPDATE;
-    SELECT * INTO job FROM cc.jobs j WHERE j.job_id=candidate FOR UPDATE;
+    SELECT * INTO job FROM cc.jobs j WHERE j.job_id=candidate AND j.customer_id=p_customer FOR UPDATE;
     IF job.job_id IS NULL OR job.status<>'running' OR job.finished_at IS NOT NULL THEN CONTINUE; END IF;
     now_at:=clock_timestamp();
     IF state.sync_id=job.job_id AND state.sync_expires_at>now_at THEN CONTINUE; END IF;
@@ -1401,14 +1412,14 @@ BEGIN
   END LOOP;
   now_at:=clock_timestamp();
   -- Refresh jobs leave with their detail, batch, and target rows. A write job never leaves.
-  -- S1 (round 6, R6-12): every retention candidate takes the sync state row first, then its header,
-  -- then the clock, and it rechecks its eligibility under those locks. The deletion itself stays
-  -- allowed.
+  -- S1 (round 6, R6-12): the state row is already held. Every retention candidate takes its header, then
+  -- the clock, and it rechecks its eligibility under those locks. The deletion itself stays allowed.
+  -- R1-F2 (B2b round 2): the header that the sync state names stays. A replacement request locks and
+  -- validates that header, so a purge never leaves the state naming a missing header.
   FOR candidate IN SELECT j.job_id FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND
-      j.finished_at IS NOT NULL AND j.finished_at<now_at-interval '7 days'
+      j.finished_at IS NOT NULL AND j.finished_at<now_at-interval '7 days' AND j.job_id IS DISTINCT FROM state.sync_id
       ORDER BY j.finished_at LIMIT p_limit LOOP
-    PERFORM 1 FROM cc.device_sync_state s WHERE s.customer_id=p_customer FOR UPDATE;
-    SELECT * INTO job FROM cc.jobs j WHERE j.job_id=candidate FOR UPDATE;
+    SELECT * INTO job FROM cc.jobs j WHERE j.job_id=candidate AND j.customer_id=p_customer FOR UPDATE;
     IF job.job_id IS NULL OR job.finished_at IS NULL THEN CONTINUE; END IF;
     now_at:=clock_timestamp();
     IF job.finished_at>=now_at-interval '7 days' THEN CONTINUE; END IF;
@@ -1418,8 +1429,17 @@ BEGIN
   -- An unconfirmed preview leaves 24 hours after its expiry, with its targets.
   DELETE FROM cc.device_update_previews WHERE customer_id=p_customer AND job_id IS NULL AND
     expires_at<now_at-interval '24 hours';
-  -- An expired overlay leaves. The current-value stamp stays.
-  DELETE FROM cc.device_write_overlays WHERE customer_id=p_customer AND expires_at<=now_at;
+  -- An expired overlay leaves. The current-value stamp stays. Section 5.8: every function that changes an
+  -- overlay locks its device row first. The device rows of the expired overlays lock in device_id order,
+  -- after the header and connection locks, as every overlay writer takes them. Only the overlays of the
+  -- locked rows leave. An overlay without a device row has no row to lock, and it leaves as well.
+  SELECT COALESCE(array_agg(l.device_id),'{}'::text[]) INTO locked FROM (
+    SELECT d.device_id FROM cc.devices d WHERE d.customer_id=p_customer AND d.device_id IN (
+        SELECT o.device_id FROM cc.device_write_overlays o WHERE o.customer_id=p_customer AND o.expires_at<=now_at)
+      ORDER BY d.device_id FOR UPDATE) l;
+  DELETE FROM cc.device_write_overlays o WHERE o.customer_id=p_customer AND o.expires_at<=now_at AND
+    (o.device_id=ANY(locked) OR NOT EXISTS(SELECT 1 FROM cc.devices d WHERE d.customer_id=p_customer AND
+      d.device_id=o.device_id));
   RETURN removed;
 END;
 $$;

@@ -135,7 +135,7 @@ $$;
 CREATE FUNCTION cc.request_device_sync(p_actor uuid,p_version integer,p_customer text,p_generation integer,
   p_id uuid,p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE connection cc.google_connection; prior cc.device_sync_state; now_at timestamptz;
+DECLARE connection cc.google_connection; prior cc.device_sync_state; header record; now_at timestamptz;
 BEGIN
   connection:=cc.device_reader(p_actor,p_version);
   IF connection.customer_id IS DISTINCT FROM p_customer OR connection.generation IS DISTINCT FROM p_generation OR
@@ -148,12 +148,28 @@ BEGIN
   -- An unclaimed sync expires quickly. A worker claim extends the lease while pages stage.
   INSERT INTO cc.device_sync_state(customer_id) VALUES(p_customer) ON CONFLICT(customer_id) DO NOTHING;
   SELECT * INTO prior FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
-  -- S1: the sync state row locks first. The header of the sync it replaces locks second.
+  -- S1: the sync state row locks first. The customer-scoped header of the sync it replaces locks second,
+  -- and a missing header rejects at once (B2b round 2, R1-F2). The purge keeps the header that the state
+  -- names (017 cc.purge_jobs), so an expired sync stays replaceable.
   IF prior.sync_id IS NOT NULL THEN
-    PERFORM 1 FROM cc.jobs j WHERE j.job_id=prior.sync_id FOR UPDATE;
+    SELECT * INTO header FROM cc.jobs j WHERE j.job_id=prior.sync_id AND j.customer_id=p_customer FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+    END IF;
   END IF;
-  -- The lease fence reads the clock after the state row lock and the header lock (review F12, S1).
+  -- S1 (R1-F2): the new header and the state reference the requester and the replaced sync actor, and the
+  -- header and the publications reference the connection row. Those rows lock here, the principal rows
+  -- before the connection row, as the credential functions take them (007 cc.google_connection_actor).
+  -- No insert or update below then waits. The clock reads after these waits, and the authority, the
+  -- connection, and the replaced lease revalidate on fresh reads.
+  PERFORM 1 FROM cc.application_principals p WHERE p.id IN (p_actor,prior.sync_actor) ORDER BY p.id FOR KEY SHARE;
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   now_at:=clock_timestamp();
+  connection:=cc.device_reader(p_actor,p_version);
+  IF connection.customer_id IS DISTINCT FROM p_customer OR connection.generation IS DISTINCT FROM p_generation OR
+    connection.active IS NOT TRUE THEN
+    RAISE EXCEPTION 'The Google connection changed.' USING DETAIL='connection-changed';
+  END IF;
   IF prior.sync_id IS NOT NULL AND prior.sync_expires_at>now_at THEN
     RAISE EXCEPTION 'A device sync is running.' USING DETAIL='device-sync-running';
   END IF;
@@ -192,15 +208,23 @@ BEGIN
   -- S1: the state row locks first, the header second, and the clock third.
   -- The header type stays dynamic here, because 016 runs before 017 creates cc.jobs.
   SELECT * INTO header FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
-  now_at:=clock_timestamp();
-  -- S3: a superseded call changes nothing.
+  -- S3: a superseded call changes nothing. A missing scoped header returns at once.
   IF NOT FOUND THEN
     RETURN cc.visible_device_sync(p_actor,p_version,p_customer);
   END IF;
+  now_at:=clock_timestamp();
   IF pending.sync_id IS DISTINCT FROM p_id OR pending.sync_attempt IS NOT NULL OR
     header.status<>'running' OR header.finished_at IS NOT NULL THEN
     RETURN cc.visible_device_sync(p_actor,p_version,p_customer);
   END IF;
+  -- S1 (B2b round 2): the state write references the failure requester, and the closure publication
+  -- references the connection row. Those rows lock here, the principal row before the connection row, as
+  -- the credential functions take them (007 cc.google_connection_actor), so no write below waits. The
+  -- state and header locks hold every value that the fence read, and the clock reads again after these
+  -- waits.
+  PERFORM 1 FROM cc.application_principals p WHERE p.id=pending.sync_actor FOR KEY SHARE;
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  now_at:=clock_timestamp();
   UPDATE cc.device_sync_state SET failure=p_failure,failure_requested_by=sync_actor,checked_at=now_at,
     sync_id=NULL,sync_actor=NULL,sync_generation=NULL,sync_attempt=NULL,sync_expires_at=NULL
   WHERE customer_id=p_customer;
@@ -237,6 +261,13 @@ BEGIN
     RAISE EXCEPTION 'Another worker claimed this device sync.' USING DETAIL='device-sync-claimed';
   END IF;
   connection:=cc.google_current_generation(p_customer,pending.sync_generation);
+  -- S1 rule 6 (B2b round 2, R1-F3): the generation helper waits on the advisory lock and on the connection
+  -- row. After those waits the clock reads again, and the lease repeats before the claim writes its attempt
+  -- or returns the credential envelope. The state and header locks hold every other value of the fence.
+  now_at:=clock_timestamp();
+  IF pending.sync_expires_at<=now_at THEN
+    RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+  END IF;
   UPDATE cc.device_sync_state SET sync_attempt=p_attempt,sync_expires_at=now_at+interval '10 minutes'
   WHERE customer_id=p_customer;
   RETURN jsonb_build_object('generation',connection.generation,'credentialId',connection.credential_id,
@@ -440,7 +471,7 @@ $$;
 
 CREATE FUNCTION cc.stage_devices(p_customer text,p_id uuid,p_attempt uuid,p_devices jsonb) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE staged integer;
+DECLARE staged integer; lease timestamptz; now_at timestamptz;
 BEGIN
   -- S1: the lease helper locks the state row, then the header, then reads the clock and fences the attempt.
   PERFORM cc.device_sync_lease(p_customer,p_id,p_attempt);
@@ -449,6 +480,19 @@ BEGIN
   END IF;
   -- The header lock is already held by the lease helper. The device locks follow it (section 1.8, review F11).
   PERFORM 1 FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
+  -- S1 (B2b round 2, R1-F4): the device inserts and the publication reference the connection row, so it
+  -- locks after the header and before the device rows, as every writer takes them. The device rows of the
+  -- page then lock in device_id order, the set that cc.upsert_devices locks. After those waits the clock
+  -- reads again, and the renewed lease repeats before any write.
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND d.device_id IN (
+      SELECT e.value->>'deviceId' FROM jsonb_array_elements(p_devices) e)
+    ORDER BY d.device_id FOR UPDATE;
+  SELECT s.sync_expires_at INTO lease FROM cc.device_sync_state s WHERE s.customer_id=p_customer;
+  now_at:=clock_timestamp();
+  IF lease IS NULL OR lease<=now_at THEN
+    RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+  END IF;
   -- Each staged device records its listed OrgUnit path on the job (section 1.3).
   -- The staged path wins over the cached device path, because the upsert below follows the list.
   INSERT INTO cc.job_targets(job_id,device_id,org_unit_path,observed_at)
@@ -459,6 +503,13 @@ BEGIN
     ORDER BY e.value->>'deviceId',e.position DESC) t
   ON CONFLICT(job_id,device_id) DO UPDATE SET org_unit_path=EXCLUDED.org_unit_path,observed_at=EXCLUDED.observed_at;
   staged:=cc.upsert_devices(p_customer,p_devices,clock_timestamp(),'list');
+  -- S1 rule 6: a device that another session inserts in the same moment has no row to lock above, so the
+  -- upsert can still wait on it. The lease repeats after the upsert and before the header and publication
+  -- writes. A lapse in that wait raises, and the transaction commits no target or device change.
+  now_at:=clock_timestamp();
+  IF lease<=now_at THEN
+    RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+  END IF;
   UPDATE cc.jobs SET succeeded=(SELECT count(*) FROM cc.job_targets t WHERE t.job_id=p_id) WHERE job_id=p_id;
   PERFORM cc.record_job_change(p_id,false);
   RETURN staged;
@@ -467,8 +518,23 @@ $$;
 
 CREATE FUNCTION cc.stage_device_batteries(p_customer text,p_id uuid,p_attempt uuid,p_batteries jsonb) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE lease timestamptz; now_at timestamptz;
 BEGIN
   PERFORM cc.device_sync_lease(p_customer,p_id,p_attempt);
+  IF jsonb_typeof(p_batteries) IS DISTINCT FROM 'array' OR jsonb_array_length(p_batteries)>1000 THEN
+    RAISE EXCEPTION 'The battery page is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- S1 (B2b round 2, R1-F5): the device rows of the page lock in device_id order, the set that
+  -- cc.upsert_device_batteries locks. After that wait the clock reads again, and the renewed lease repeats
+  -- before any battery write. The battery update changes no key, so it takes no other lock.
+  PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND d.device_id IN (
+      SELECT x."deviceId" FROM jsonb_to_recordset(p_batteries) AS x("deviceId" text,battery jsonb,reports jsonb))
+    ORDER BY d.device_id FOR UPDATE;
+  SELECT s.sync_expires_at INTO lease FROM cc.device_sync_state s WHERE s.customer_id=p_customer;
+  now_at:=clock_timestamp();
+  IF lease IS NULL OR lease<=now_at THEN
+    RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+  END IF;
   RETURN cc.upsert_device_batteries(p_customer,p_batteries);
 END;
 $$;
@@ -496,13 +562,26 @@ BEGIN
   SELECT count(*) INTO staged FROM cc.job_targets t WHERE t.job_id=p_id;
   IF p_failure IS NULL THEN
     PERFORM cc.google_current_generation(p_customer,pending.sync_generation);
+    -- The state write can name the sync actor as the telemetry failure requester. That principal row locks
+    -- here, under the advisory lock of the generation helper, which every principal FOR UPDATE caller takes
+    -- first (004, 007, 013), so the state write never waits on it.
+    PERFORM 1 FROM cc.application_principals p WHERE p.id=pending.sync_actor FOR KEY SHARE;
     -- The removal locks every candidate row in device_id order first (section 1.8, review F11).
     -- A removed row that a refresh revives stays in the set, so the prelock covers the UPDATE (review F20).
     PERFORM 1 FROM cc.devices d WHERE d.customer_id=p_customer AND
         d.last_entity_sync<pending.sync_started_at
       ORDER BY d.device_id FOR UPDATE;
+  ELSE
+    -- S1 (B2b round 2, R1-F6): a failed finish reads no generation, so it holds no connection lock yet. Its
+    -- state write names the failure requester, and its publication references the connection row. Those
+    -- rows lock here, the principal row before the connection row, as the credential functions take them
+    -- (007 cc.google_connection_actor), so no write below waits. A disconnected generation still records
+    -- the failure, because this lock reads no generation.
+    PERFORM 1 FROM cc.application_principals p WHERE p.id=pending.sync_actor FOR KEY SHARE;
+    PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   END IF;
-  -- The lease fence reads the database clock again after the device locks (review F17).
+  -- The lease fence reads the database clock again after the device and connection locks (review F17,
+  -- R1-F6).
   now_at:=clock_timestamp();
   IF pending.sync_expires_at<=now_at THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
@@ -551,7 +630,7 @@ $$;
 CREATE FUNCTION cc.create_entity_sync_job(p_actor uuid,p_version integer,p_customer text,p_type text,p_ids jsonb,
   p_batch_size integer,p_job uuid,p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE connection cc.google_connection; job cc.entity_sync_jobs; now_at timestamptz:=clock_timestamp();
+DECLARE connection cc.google_connection; job cc.entity_sync_jobs; now_at timestamptz;
 BEGIN
   connection:=cc.device_reader(p_actor,p_version);
   IF connection.customer_id IS DISTINCT FROM p_customer OR connection.active IS NOT TRUE THEN
@@ -565,6 +644,18 @@ BEGIN
   IF jsonb_array_length(p_ids)=0 OR EXISTS(SELECT 1 FROM jsonb_array_elements(p_ids) e
       WHERE jsonb_typeof(e.value)<>'string' OR (e.value#>>'{}')!~'^[A-Za-z0-9_-]{1,128}$') THEN
     RAISE EXCEPTION 'The job IDs are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- S1 (B2b round 2, class of R1-F2): the header and the detail row reference the requester and the
+  -- connection row, and the publication references the connection row. Those rows lock here, the principal
+  -- row before the connection row, as the credential functions take them (007 cc.google_connection_actor),
+  -- so no insert below waits. The clock reads after these waits, and the authority and the connection
+  -- revalidate on a fresh read. The job records the generation of that read.
+  PERFORM 1 FROM cc.application_principals p WHERE p.id=p_actor FOR KEY SHARE;
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  now_at:=clock_timestamp();
+  connection:=cc.device_reader(p_actor,p_version);
+  IF connection.customer_id IS DISTINCT FROM p_customer OR connection.active IS NOT TRUE THEN
+    RAISE EXCEPTION 'The Google connection changed.' USING DETAIL='connection-changed';
   END IF;
   -- The header lands first. The refresh detail row shares its identity.
   INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
@@ -618,6 +709,9 @@ BEGIN
   -- S1: only after that validation does the detail row lock. The clock reads again after the wait
   -- and the fences repeat on the fresh rows (S1 rule 6).
   SELECT * INTO job FROM cc.entity_sync_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  -- S1 (B2b round 2): the closure publication references the connection row, so that row locks after the
+  -- header and detail rows and before the clock. No write below then waits.
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   now_at:=clock_timestamp();
   IF job.job_id IS NULL OR job.finished_at IS NOT NULL OR
     EXISTS(SELECT 1 FROM cc.entity_sync_batches b WHERE b.job_id=p_job) THEN
@@ -680,6 +774,9 @@ BEGIN
   -- S1: only after that validation does the detail row lock. The clock reads again after the wait
   -- and the fences repeat on the fresh row (S1 rule 6).
   SELECT * INTO job FROM cc.entity_sync_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  -- S1 (B2b round 2): the batch publication references the connection row, so that row locks after the
+  -- header and detail rows and before the clock. No write below then waits.
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   now_at:=clock_timestamp();
   IF job.job_id IS NULL THEN
     RAISE EXCEPTION 'The entity sync job changed.' USING DETAIL='entity-sync-changed';
