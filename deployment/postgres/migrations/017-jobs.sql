@@ -392,15 +392,21 @@ $$;
 -- Admission order: smallest target count, then oldest creation, then lowest display ID.
 CREATE FUNCTION cc.admit_device_update_job(p_customer text,p_held boolean) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; admitted jsonb:=NULL; now_at timestamptz:=clock_timestamp(); running boolean; token uuid;
+DECLARE job cc.jobs; admitted jsonb:=NULL; now_at timestamptz; running boolean; token uuid;
   label text;
 BEGIN
+  -- S2: the admission holds no fence without its customer.
+  IF p_customer IS NULL THEN
+    RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
+  END IF;
   PERFORM pg_advisory_xact_lock(hashtext('cc.job-admission:'||p_customer)::bigint);
   SELECT EXISTS(SELECT 1 FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND j.status='running')
     INTO running;
   label:=CASE WHEN p_held THEN 'held' ELSE 'queued' END;
   FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update'
       AND j.status IN ('accepted','queued','held') ORDER BY j.target_count,j.created_at,j.display_id FOR UPDATE LOOP
+    -- S1: the clock reads after the header row lock, so a long wait never consumes the start window.
+    now_at:=clock_timestamp();
     IF running OR p_held THEN
       IF job.status<>label THEN
         UPDATE cc.jobs SET status=label WHERE job_id=job.job_id;
@@ -427,13 +433,22 @@ CREATE FUNCTION cc.record_device_update_start(p_customer text,p_job uuid,p_token
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs;
 BEGIN
+  -- S2: a null identifier never matches a header.
+  IF p_customer IS NULL OR p_job IS NULL OR p_token IS NULL THEN
+    RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
+  END IF;
   -- S1: the header row locks before the detail row, as every other write-job writer takes them.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL THEN
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
-  IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
+  IF detail.job_id IS NULL THEN
+    RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
+  END IF;
+  -- S3: a terminal or superseded call changes no metadata.
+  IF job.status<>'running' OR job.finished_at IS NOT NULL THEN RETURN; END IF;
+  IF detail.dispatch_token IS DISTINCT FROM p_token THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
   END IF;
   UPDATE cc.device_update_jobs SET kestra_execution_id=p_execution WHERE job_id=p_job;
@@ -443,12 +458,20 @@ $$;
 -- A refused start ends the job. The fence is the current token and no first claim.
 CREATE FUNCTION cc.abandon_device_update_start(p_customer text,p_job uuid,p_token uuid) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz:=clock_timestamp();
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz;
 BEGIN
+  -- S2: a null identifier or token never matches a header.
+  IF p_customer IS NULL OR p_job IS NULL OR p_token IS NULL THEN
+    RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
+  END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
-  IF job.job_id IS NULL OR job.status<>'running' OR detail.dispatch_token IS DISTINCT FROM p_token OR
-    detail.first_claimed_at IS NOT NULL THEN
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  -- S1: the closure clock reads after the header lock and the detail lock.
+  now_at:=clock_timestamp();
+  -- S3: a terminal job and a superseded call change nothing.
+  IF job.job_id IS NULL OR job.kind<>'device-update' OR detail.job_id IS NULL OR
+    job.status<>'running' OR job.finished_at IS NOT NULL OR
+    detail.dispatch_token IS DISTINCT FROM p_token OR detail.first_claimed_at IS NOT NULL THEN
     RETURN;
   END IF;
   UPDATE cc.jobs SET status='failed',failure='orchestration-unavailable',finished_at=now_at WHERE job_id=p_job;
@@ -461,12 +484,16 @@ $$;
 -- The tick resolves an unclaimed start and a lost runner. At three executions the job ends.
 CREATE FUNCTION cc.recover_device_update_jobs(p_customer text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz:=clock_timestamp(); token uuid;
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; token uuid;
   starts jsonb:='[]'::jsonb; reconciles jsonb:='[]'::jsonb; live boolean;
 BEGIN
+  -- S2: the tick holds no fence without its customer.
+  IF p_customer IS NULL THEN
+    RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
+  END IF;
   FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND j.status='running'
       ORDER BY j.created_at FOR UPDATE LOOP
-    -- The tick reads its clock after the job row lock (review F3).
+    -- S1: the tick reads its clock after the job row lock (review F3).
     now_at:=clock_timestamp();
     SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=job.job_id;
     SELECT EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=job.job_id AND b.lease_expires_at>now_at)
@@ -510,11 +537,15 @@ DECLARE job cc.jobs; detail cc.device_update_jobs; held cc.device_update_batches
   claim jsonb:='[]'::jsonb; readback jsonb:='[]'::jsonb; live boolean;
 BEGIN
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL THEN
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
-  IF job.status<>'running' OR detail.dispatch_token IS DISTINCT FROM p_token OR p_attempt IS NULL THEN
+  -- S1: the clock and the fence read under the header lock, before the batch and operation locks.
+  now_at:=clock_timestamp();
+  -- S2: a null token or attempt never matches (review F1, F14).
+  IF p_token IS NULL OR p_attempt IS NULL OR detail.job_id IS NULL OR job.status<>'running' OR
+    job.finished_at IS NOT NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
     RETURN jsonb_build_object('outcome','superseded');
   END IF;
   IF p_batch IS NULL OR p_batch<0 OR p_batch>=detail.batch_count THEN
@@ -586,16 +617,27 @@ $$;
 CREATE FUNCTION cc.renew_device_update_batch(p_customer text,p_job uuid,p_token uuid,p_batch integer,p_attempt uuid)
 RETURNS timestamptz
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs; batch cc.device_update_batches;
-  now_at timestamptz:=clock_timestamp();
+DECLARE job cc.jobs; detail cc.device_update_jobs; batch cc.device_update_batches; now_at timestamptz;
 BEGIN
+  -- S2: a null identifier, token, or attempt never matches a batch.
+  IF p_job IS NULL OR p_token IS NULL OR p_attempt IS NULL OR p_batch IS NULL THEN
+    RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
+  END IF;
+  -- S1: the customer-scoped header locks first. A missing scoped header blocks the renewal.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+    RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
+  END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
-  SELECT * INTO batch FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch FOR UPDATE;
-  -- The lease fence and the new lease read the clock after the row locks (review F3).
+  -- The fence reads the clock after the header lock (review F3, S1).
   now_at:=clock_timestamp();
-  IF job.status<>'running' OR detail.dispatch_token IS DISTINCT FROM p_token OR
-    batch.attempt_id IS DISTINCT FROM p_attempt OR batch.lease_expires_at IS NULL OR batch.lease_expires_at<=now_at THEN
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
+    RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
+  END IF;
+  SELECT * INTO batch FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch FOR UPDATE;
+  -- The post-batch-wait recheck keeps a lease that lapsed in the wait fenced (review F3).
+  now_at:=clock_timestamp();
+  IF batch.attempt_id IS DISTINCT FROM p_attempt OR batch.lease_expires_at IS NULL OR batch.lease_expires_at<=now_at THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
   END IF;
   UPDATE cc.device_update_batches b SET lease_expires_at=now_at+interval '180 seconds'
@@ -609,15 +651,26 @@ $$;
 CREATE FUNCTION cc.release_device_update_batch(p_customer text,p_job uuid,p_token uuid,p_batch integer,p_attempt uuid)
 RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs;
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz;
 BEGIN
+  -- S2: a null identifier, token, or attempt never matches a batch.
+  IF p_job IS NULL OR p_token IS NULL OR p_attempt IS NULL OR p_batch IS NULL THEN
+    RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
+  END IF;
+  -- S1: the customer-scoped header locks first. A missing scoped header blocks the release.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+    RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
+  END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
+  now_at:=clock_timestamp();
+  -- S3: a terminal job keeps its batch rows, and a superseded call changes nothing (review F1).
+  IF job.status<>'running' OR job.finished_at IS NOT NULL THEN RETURN; END IF;
   IF detail.dispatch_token IS DISTINCT FROM p_token THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
   END IF;
   UPDATE cc.device_update_batches b SET attempt_id=NULL,execution_id=NULL,lease_expires_at=NULL,
-    settled_at=clock_timestamp()
+    settled_at=now_at
   WHERE b.job_id=p_job AND b.batch=p_batch AND b.attempt_id=p_attempt;
 END;
 $$;
@@ -644,7 +697,12 @@ BEGIN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
-  IF p_kind='write' AND (job.status<>'running' OR detail.dispatch_token IS DISTINCT FROM p_token) THEN
+  -- S1: the clock and the header fence read under the header lock, before the descendant locks.
+  now_at:=clock_timestamp();
+  -- S2: a write settlement rejects a null token explicitly. A read-back settlement stays
+  -- attempt-fenced and token-independent, so a terminal job can settle its review (section 5.7).
+  IF p_kind='write' AND (p_token IS NULL OR detail.job_id IS NULL OR job.kind<>'device-update' OR
+      job.status<>'running' OR job.finished_at IS NOT NULL OR detail.dispatch_token IS DISTINCT FROM p_token) THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   before:=job.status;
@@ -742,15 +800,18 @@ BEGIN
   IF p_attempt IS NULL OR (p_operations IS NOT NULL AND jsonb_typeof(p_operations) IS DISTINCT FROM 'array') THEN
     RAISE EXCEPTION 'The read-back claim is invalid.' USING ERRCODE='22023';
   END IF;
-  -- S1: the header row locks first, then the operation rows in operation_number order, then the clock
-  -- and the fence. A settlement cannot slip between the fence and the claim (review F15).
+  -- S1: the header row locks first, then the operation rows in operation_number order, and the
+  -- clock reads after the header lock. A settlement cannot slip between the fence and the claim.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
+  -- S1: the header prefix reads the clock before the operation locks.
+  now_at:=clock_timestamp();
   PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='unknown' AND
       (p_operations IS NULL OR o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e))
     ORDER BY o.operation_number FOR UPDATE;
+  -- The eligibility fence reads the clock again after the operation locks (review F15).
   now_at:=clock_timestamp();
   lease_until:=now_at+interval '120 seconds';
   WITH picked AS (
@@ -772,19 +833,20 @@ $$;
 CREATE FUNCTION cc.prepare_device_update_finish(p_customer text,p_job uuid,p_token uuid,p_failure text DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz:=clock_timestamp();
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz;
 BEGIN
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL THEN
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
   -- The grace fence reads the clock after the job row lock (review F3).
   now_at:=clock_timestamp();
-  IF detail.dispatch_token IS DISTINCT FROM p_token THEN
+  -- S2: a null token never matches. S3: a terminal job and a superseded call change nothing.
+  IF p_token IS NULL OR detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
     RETURN jsonb_build_object('outcome','superseded');
   END IF;
-  IF job.finished_at IS NOT NULL THEN
+  IF job.finished_at IS NOT NULL OR job.status<>'running' THEN
     RETURN jsonb_build_object('outcome','finished','status',job.status);
   END IF;
   IF EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=p_job AND
@@ -810,18 +872,29 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; before text; after text;
 BEGIN
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL THEN
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
+  -- The readiness fences read the clock after the header lock (review F3, S1).
+  now_at:=clock_timestamp();
   -- S2: a null token never matches. S3: a superseded or terminal call changes nothing (review F14).
-  IF p_token IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
+  IF p_token IS NULL OR detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
     RETURN jsonb_build_object('outcome','superseded','jobId',p_job,'status',job.status);
   END IF;
   IF job.finished_at IS NOT NULL OR job.status NOT IN ('accepted','queued','held','running') THEN
     RETURN jsonb_build_object('outcome','finished','jobId',p_job,'status',job.status);
   END IF;
-  now_at:=clock_timestamp();
+  -- Section 5.10 step 2: a batch lease within its grace answers busy.
+  IF EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=p_job AND
+      b.lease_expires_at+interval '30 seconds'>now_at) THEN
+    RETURN jsonb_build_object('outcome','busy','jobId',p_job,'status',job.status);
+  END IF;
+  -- Section 5.5 and 5.10 steps 3 and 4: the final finish never runs before the preparation fenced
+  -- every dispatched and pending operation. A terminal job holds neither.
+  IF EXISTS(SELECT 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status IN ('dispatched','pending')) THEN
+    RETURN jsonb_build_object('outcome','not-prepared','jobId',p_job,'status',job.status);
+  END IF;
   before:=job.status;
   IF p_failure IS NOT NULL THEN
     UPDATE cc.jobs SET failure=COALESCE(failure,p_failure) WHERE job_id=p_job;
@@ -842,10 +915,11 @@ $$;
 -- The reaper applies steps 1 to 4, 6, and 7 in one transaction. It never acts while a lease lives.
 CREATE FUNCTION cc.finalize_device_update_job(p_customer text,p_job uuid,p_failure text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; now_at timestamptz:=clock_timestamp(); before text; after text;
+DECLARE job cc.jobs; now_at timestamptz; before text; after text;
 BEGIN
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL THEN
+  -- S1: the finalizer validates the job kind under the header lock. A refresh header stays untouched.
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   IF job.finished_at IS NOT NULL THEN
@@ -881,18 +955,20 @@ $$;
 CREATE FUNCTION cc.report_device_update_backoff(p_customer text,p_job uuid,p_token uuid,p_batch integer,
   p_attempt uuid,p_sequence integer) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs; batch cc.device_update_batches;
-  now_at timestamptz:=clock_timestamp();
+DECLARE job cc.jobs; detail cc.device_update_jobs; batch cc.device_update_batches; now_at timestamptz;
 BEGIN
-  IF p_sequence IS NULL THEN
+  -- S2: the fence rejects a null identifier, token, or attempt explicitly.
+  IF p_job IS NULL OR p_token IS NULL OR p_attempt IS NULL OR p_batch IS NULL OR p_sequence IS NULL THEN
     RAISE EXCEPTION 'The backoff report is invalid.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN RETURN false; END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
   SELECT * INTO batch FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch;
-  -- The lease fence reads the clock after the row locks (review F3).
+  -- The lease fence reads the clock after the job and detail locks (review F3, S1).
   now_at:=clock_timestamp();
-  IF job.job_id IS NULL OR job.status<>'running' OR detail.dispatch_token IS DISTINCT FROM p_token OR
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR detail.job_id IS NULL OR
+    detail.dispatch_token IS DISTINCT FROM p_token OR
     batch.attempt_id IS DISTINCT FROM p_attempt OR batch.lease_expires_at IS NULL OR
     batch.lease_expires_at<=now_at THEN
     RETURN false;
@@ -910,8 +986,12 @@ $$;
 -- The job service applies the newest accepted report. The registry entry exists before the Redis write.
 CREATE FUNCTION cc.accept_device_update_hold(p_customer text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz:=clock_timestamp();
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz;
 BEGIN
+  -- S2: the hold reader holds no fence without its customer.
+  IF p_customer IS NULL THEN
+    RAISE EXCEPTION 'The hold report is invalid.' USING ERRCODE='22023';
+  END IF;
   PERFORM pg_advisory_xact_lock(hashtext('cc.job-admission:'||p_customer)::bigint);
   FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND
       j.status='running' ORDER BY j.created_at FOR UPDATE LOOP
@@ -940,30 +1020,37 @@ $$;
 -- The purge keeps write jobs. Refresh jobs leave after seven days, previews and overlays when they lapse.
 CREATE FUNCTION cc.purge_jobs(p_customer text,p_limit integer) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE removed integer; job cc.jobs; state cc.device_sync_state; now_at timestamptz:=clock_timestamp();
+DECLARE removed integer; job cc.jobs; candidate uuid; state cc.device_sync_state; now_at timestamptz;
 BEGIN
   IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 10000 THEN
     RAISE EXCEPTION 'The purge limit is invalid.' USING ERRCODE='22023';
   END IF;
+  -- The candidate filter reads a clock. Every closure below re-reads the clock after its header locks.
+  now_at:=clock_timestamp();
   -- An ID-list refresh that stays unfinished for two hours ends as interrupted.
-  FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND
-      j.scope_kind='devices' AND j.finished_at IS NULL AND j.created_at<now_at-interval '2 hours' LOOP
-    -- The detail row lock comes first, as the refresh writers take it. A batch runner that closed the
-    -- job during the wait keeps its header (review F12). The detail lock re-checks its own condition.
-    UPDATE cc.entity_sync_jobs SET failure=COALESCE(failure,'interrupted'),finished_at=clock_timestamp()
+  -- S1: the header locks before the detail row and before the clock, as every refresh writer takes them.
+  FOR candidate IN SELECT j.job_id FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND
+      j.scope_kind='devices' AND j.finished_at IS NULL AND j.created_at<now_at-interval '2 hours'
+      ORDER BY j.job_id LOOP
+    SELECT * INTO job FROM cc.jobs j WHERE j.job_id=candidate FOR UPDATE;
+    IF job.job_id IS NULL OR job.finished_at IS NOT NULL THEN CONTINUE; END IF;
+    now_at:=clock_timestamp();
+    IF job.status<>'running' THEN CONTINUE; END IF;
+    UPDATE cc.entity_sync_jobs SET failure=COALESCE(failure,'interrupted'),finished_at=now_at
     WHERE job_id=job.job_id AND finished_at IS NULL;
-    IF FOUND THEN
-      UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,'interrupted'),finished_at=clock_timestamp()
-      WHERE job_id=job.job_id AND status='running' AND finished_at IS NULL;
-      IF FOUND THEN PERFORM cc.record_job_change(job.job_id,true); END IF;
-    END IF;
+    UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,'interrupted'),finished_at=now_at
+    WHERE job_id=job.job_id AND status='running' AND finished_at IS NULL;
+    IF FOUND THEN PERFORM cc.record_job_change(job.job_id,true); END IF;
   END LOOP;
-  -- A full-sync header without a live sync lease ends as interrupted. The state row lock comes first,
-  -- as the sync writers take it, and the lease check reads the clock after that lock (review F12).
-  FOR job IN SELECT j.* FROM cc.jobs j LEFT JOIN cc.device_sync_state s ON s.customer_id=j.customer_id
+  -- A full-sync header without a live sync lease ends as interrupted. S1: the state row locks first,
+  -- the header second, and the clock third. The lease check follows both locks (review F12).
+  FOR candidate IN SELECT j.job_id FROM cc.jobs j LEFT JOIN cc.device_sync_state s ON s.customer_id=j.customer_id
       WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND j.scope_kind='all-devices' AND
-        j.status='running' AND (s.sync_id IS DISTINCT FROM j.job_id OR s.sync_expires_at<=now_at) LOOP
-    SELECT * INTO state FROM cc.device_sync_state s WHERE s.customer_id=job.customer_id FOR UPDATE;
+        j.status='running' AND (s.sync_id IS DISTINCT FROM j.job_id OR s.sync_expires_at<=now_at)
+      ORDER BY j.job_id LOOP
+    SELECT * INTO state FROM cc.device_sync_state s WHERE s.customer_id=p_customer FOR UPDATE;
+    SELECT * INTO job FROM cc.jobs j WHERE j.job_id=candidate FOR UPDATE;
+    IF job.job_id IS NULL OR job.status<>'running' OR job.finished_at IS NOT NULL THEN CONTINUE; END IF;
     now_at:=clock_timestamp();
     IF state.sync_id=job.job_id AND state.sync_expires_at>now_at THEN CONTINUE; END IF;
     -- The closure records the targets the interrupted sync observed (section 1.2, review F19).
@@ -975,6 +1062,7 @@ BEGIN
     WHERE job_id=job.job_id AND status='running' AND finished_at IS NULL;
     IF FOUND THEN PERFORM cc.record_job_change(job.job_id,true); END IF;
   END LOOP;
+  now_at:=clock_timestamp();
   -- Refresh jobs leave with their detail, batch, and target rows. A write job never leaves.
   DELETE FROM cc.jobs WHERE job_id IN (
     SELECT j.job_id FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='inventory-refresh' AND

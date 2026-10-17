@@ -148,7 +148,11 @@ BEGIN
   -- An unclaimed sync expires quickly. A worker claim extends the lease while pages stage.
   INSERT INTO cc.device_sync_state(customer_id) VALUES(p_customer) ON CONFLICT(customer_id) DO NOTHING;
   SELECT * INTO prior FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
-  -- The lease fence reads the clock after the state row lock (review F12).
+  -- S1: the sync state row locks first. The header of the sync it replaces locks second.
+  IF prior.sync_id IS NOT NULL THEN
+    PERFORM 1 FROM cc.jobs j WHERE j.job_id=prior.sync_id FOR UPDATE;
+  END IF;
+  -- The lease fence reads the clock after the state row lock and the header lock (review F12, S1).
   now_at:=clock_timestamp();
   IF prior.sync_id IS NOT NULL AND prior.sync_expires_at>now_at THEN
     RAISE EXCEPTION 'A device sync is running.' USING DETAIL='device-sync-running';
@@ -174,27 +178,51 @@ $$;
 
 CREATE FUNCTION cc.abandon_device_sync(p_actor uuid,p_version integer,p_customer text,p_id uuid,p_failure text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE pending cc.device_sync_state; header record; now_at timestamptz;
 BEGIN
   PERFORM cc.device_reader(p_actor,p_version);
   IF p_failure IS DISTINCT FROM 'orchestration-unavailable' THEN
     RAISE EXCEPTION 'Only an undispatched sync can be abandoned.' USING ERRCODE='22023';
   END IF;
-  UPDATE cc.device_sync_state SET failure=p_failure,failure_requested_by=sync_actor,checked_at=clock_timestamp(),
+  -- S2: a null identifier never matches a state row or a header.
+  IF p_customer IS NULL OR p_id IS NULL THEN
+    RAISE EXCEPTION 'The sync identifier is required.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO pending FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
+  -- S1: the state row locks first, the header second, and the clock third.
+  -- The header type stays dynamic here, because 016 runs before 017 creates cc.jobs.
+  SELECT * INTO header FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
+  now_at:=clock_timestamp();
+  -- S3: a superseded call changes nothing.
+  IF NOT FOUND THEN
+    RETURN cc.visible_device_sync(p_actor,p_version,p_customer);
+  END IF;
+  IF pending.sync_id IS DISTINCT FROM p_id OR pending.sync_attempt IS NOT NULL OR
+    header.status<>'running' OR header.finished_at IS NOT NULL THEN
+    RETURN cc.visible_device_sync(p_actor,p_version,p_customer);
+  END IF;
+  UPDATE cc.device_sync_state SET failure=p_failure,failure_requested_by=sync_actor,checked_at=now_at,
     sync_id=NULL,sync_actor=NULL,sync_generation=NULL,sync_attempt=NULL,sync_expires_at=NULL
-  WHERE customer_id=p_customer AND sync_id=p_id AND sync_attempt IS NULL;
-  IF FOUND THEN PERFORM cc.close_refresh_job(p_id,'orchestration-unavailable'); END IF;
+  WHERE customer_id=p_customer;
+  PERFORM cc.close_refresh_job(p_id,'orchestration-unavailable');
   RETURN cc.visible_device_sync(p_actor,p_version,p_customer);
 END;
 $$;
 
 CREATE FUNCTION cc.claim_device_sync(p_customer text,p_id uuid,p_attempt uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE pending cc.device_sync_state; connection cc.google_connection; now_at timestamptz:=clock_timestamp();
+DECLARE pending cc.device_sync_state; connection cc.google_connection; now_at timestamptz;
 BEGIN
+  -- S2: the fence rejects a null identifier, token, or attempt explicitly.
+  IF p_customer IS NULL OR p_id IS NULL OR p_attempt IS NULL THEN
+    RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+  END IF;
   SELECT * INTO pending FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
-  -- The lease fence reads the clock after the state row lock (review F3).
+  -- S1: the job header locks after the state row and before the clock and the fence.
+  PERFORM 1 FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
+  -- The lease fence reads the clock after the state row lock and the header lock (review F3, S1).
   now_at:=clock_timestamp();
-  IF p_id IS NULL OR p_attempt IS NULL OR pending.sync_id IS DISTINCT FROM p_id OR pending.sync_expires_at<=now_at THEN
+  IF pending.sync_id IS DISTINCT FROM p_id OR pending.sync_expires_at IS NULL OR pending.sync_expires_at<=now_at THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
   IF pending.sync_attempt IS NOT NULL AND pending.sync_attempt<>p_attempt THEN
@@ -210,17 +238,19 @@ $$;
 
 CREATE FUNCTION cc.device_sync_lease(p_customer text,p_id uuid,p_attempt uuid) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE pending cc.device_sync_state;
+DECLARE pending cc.device_sync_state; now_at timestamptz;
 BEGIN
   SELECT * INTO pending FROM cc.device_sync_state s WHERE s.customer_id=p_customer FOR UPDATE;
-  -- The lease fence and the new lease read the clock after the state row lock (review F12).
-  -- A null sync or attempt is rejected before the comparison (section 5.4, review F16).
+  -- S1: the state row locks first, the job header second, and the clock third. The fence follows all three.
+  PERFORM 1 FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
+  now_at:=clock_timestamp();
+  -- A null sync or attempt is rejected before the comparison (section 5.4, review F16, S2).
   IF p_id IS NULL OR p_attempt IS NULL OR pending.sync_id IS DISTINCT FROM p_id OR
-    pending.sync_attempt IS DISTINCT FROM p_attempt OR
-    pending.sync_expires_at<=clock_timestamp() THEN
+    pending.sync_attempt IS DISTINCT FROM p_attempt OR pending.sync_expires_at IS NULL OR
+    pending.sync_expires_at<=now_at THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
-  UPDATE cc.device_sync_state SET sync_expires_at=clock_timestamp()+interval '10 minutes'
+  UPDATE cc.device_sync_state SET sync_expires_at=now_at+interval '10 minutes'
   WHERE customer_id=p_customer;
 END;
 $$;
@@ -396,12 +426,13 @@ CREATE FUNCTION cc.stage_devices(p_customer text,p_id uuid,p_attempt uuid,p_devi
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE staged integer;
 BEGIN
+  -- S1: the lease helper locks the state row, then the header, then reads the clock and fences the attempt.
   PERFORM cc.device_sync_lease(p_customer,p_id,p_attempt);
   IF jsonb_typeof(p_devices) IS DISTINCT FROM 'array' OR jsonb_array_length(p_devices)>1000 THEN
     RAISE EXCEPTION 'The device page is invalid.' USING ERRCODE='22023';
   END IF;
-  -- The header lock comes after the state lock of the lease and before the device locks (section 1.8, review F11).
-  PERFORM 1 FROM cc.jobs j WHERE j.job_id=p_id FOR UPDATE;
+  -- The header lock is already held by the lease helper. The device locks follow it (section 1.8, review F11).
+  PERFORM 1 FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
   -- Each staged device records its listed OrgUnit path on the job (section 1.3).
   -- The staged path wins over the cached device path, because the upsert below follows the list.
   INSERT INTO cc.job_targets(job_id,device_id,org_unit_path,observed_at)
@@ -430,15 +461,22 @@ $$;
 CREATE FUNCTION cc.finish_device_sync(p_customer text,p_id uuid,p_attempt uuid,p_failure text,p_telemetry_failure text)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE pending cc.device_sync_state; now_at timestamptz; staged integer;
+DECLARE pending cc.device_sync_state; header record; now_at timestamptz; staged integer;
 BEGIN
   SELECT * INTO pending FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
-  IF p_id IS NULL OR p_attempt IS NULL OR pending.sync_id IS DISTINCT FROM p_id OR
-    pending.sync_attempt IS DISTINCT FROM p_attempt THEN
+  -- S1: the sync state row locks first, the header second, and the clock third (section 1.8, review F11).
+  -- The header type stays dynamic here, because 016 runs before 017 creates cc.jobs.
+  SELECT * INTO header FROM cc.jobs j WHERE j.job_id=p_id AND j.customer_id=p_customer FOR UPDATE;
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
-  -- The header lock comes after the state lock and before the device locks (section 1.8, review F11).
-  PERFORM 1 FROM cc.jobs j WHERE j.job_id=p_id FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF p_id IS NULL OR p_attempt IS NULL OR pending.sync_id IS DISTINCT FROM p_id OR
+    pending.sync_attempt IS DISTINCT FROM p_attempt OR pending.sync_expires_at IS NULL OR
+    pending.sync_expires_at<=now_at OR header.status<>'running' OR
+    header.finished_at IS NOT NULL THEN
+    RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+  END IF;
   SELECT count(*) INTO staged FROM cc.job_targets t WHERE t.job_id=p_id;
   IF p_failure IS NULL THEN
     PERFORM cc.google_current_generation(p_customer,pending.sync_generation);
@@ -448,7 +486,7 @@ BEGIN
         d.last_entity_sync<pending.sync_started_at
       ORDER BY d.device_id FOR UPDATE;
   END IF;
-  -- The lease fence reads the database clock after the header lock and the device locks (review F17).
+  -- The lease fence reads the database clock again after the device locks (review F17).
   now_at:=clock_timestamp();
   IF pending.sync_expires_at<=now_at THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
@@ -537,16 +575,28 @@ $$;
 
 CREATE FUNCTION cc.abandon_entity_sync_job(p_actor uuid,p_version integer,p_customer text,p_job uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.entity_sync_jobs; now_at timestamptz:=clock_timestamp();
+DECLARE header record; job cc.entity_sync_jobs; now_at timestamptz;
 BEGIN
   PERFORM cc.device_reader(p_actor,p_version);
-  UPDATE cc.entity_sync_jobs SET failure='orchestration-unavailable',finished_at=now_at
-  WHERE job_id=p_job AND customer_id=p_customer AND finished_at IS NULL
-    AND NOT EXISTS(SELECT 1 FROM cc.entity_sync_batches b WHERE b.job_id=p_job)
-  RETURNING * INTO job;
-  IF job.job_id IS NULL THEN
+  -- S2: a null identifier never matches a header.
+  IF p_customer IS NULL OR p_job IS NULL THEN
     RAISE EXCEPTION 'The job changed.' USING DETAIL='entity-sync-changed';
   END IF;
+  -- S1: the job header locks before the detail row and before the clock. A header waiter holds no detail lock.
+  -- The header type stays dynamic here, because 016 runs before 017 creates cc.jobs.
+  SELECT * INTO header FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'The job changed.' USING DETAIL='entity-sync-changed';
+  END IF;
+  SELECT * INTO job FROM cc.entity_sync_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF header.kind<>'inventory-refresh' OR header.finished_at IS NOT NULL OR
+    job.job_id IS NULL OR job.finished_at IS NOT NULL OR
+    EXISTS(SELECT 1 FROM cc.entity_sync_batches b WHERE b.job_id=p_job) THEN
+    RAISE EXCEPTION 'The job changed.' USING DETAIL='entity-sync-changed';
+  END IF;
+  UPDATE cc.entity_sync_jobs SET failure='orchestration-unavailable',finished_at=now_at
+  WHERE job_id=p_job RETURNING * INTO job;
   UPDATE cc.jobs SET status='failed',failure='orchestration-unavailable',finished_at=now_at WHERE job_id=p_job;
   PERFORM cc.record_job_change(p_job,true);
   RETURN cc.entity_sync_job_projection(job);
@@ -574,19 +624,29 @@ $$;
 
 CREATE FUNCTION cc.finish_entity_sync_batch(p_customer text,p_job uuid,p_batch integer,p_failure text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.entity_sync_jobs; recorded integer; now_at timestamptz:=clock_timestamp();
+DECLARE header record; job cc.entity_sync_jobs; recorded integer; now_at timestamptz;
   succeeded_units integer:=0; failed_units integer:=0;
 BEGIN
-  SELECT * INTO job FROM cc.entity_sync_jobs WHERE job_id=p_job AND customer_id=p_customer FOR UPDATE;
+  -- S1: the job header locks before the detail row, the clock, and the batch records. A waiter
+  -- on this header therefore holds no detail lock (review round 5).
+  -- The header type stays dynamic here, because 016 runs before 017 creates cc.jobs.
+  SELECT * INTO header FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'The entity sync job changed.' USING DETAIL='entity-sync-changed';
+  END IF;
+  IF header.kind<>'inventory-refresh' THEN
+    RAISE EXCEPTION 'The entity sync job changed.' USING DETAIL='entity-sync-changed';
+  END IF;
+  SELECT * INTO job FROM cc.entity_sync_jobs u WHERE u.job_id=p_job FOR UPDATE;
   IF job.job_id IS NULL OR p_batch IS NULL OR p_batch<0 OR p_batch>=job.batch_count THEN
     RAISE EXCEPTION 'The entity sync job changed.' USING DETAIL='entity-sync-changed';
   END IF;
-  -- The purge or an abandon closes a job before all batches record. A late batch keeps that closure
-  -- (section 1.5, review F18). A replacement of a normally recorded batch still records.
-  IF job.finished_at IS NOT NULL AND
-    (SELECT count(*) FROM cc.entity_sync_batches b WHERE b.job_id=p_job)<job.batch_count THEN
+  -- S3: a closed job keeps its outcome. The purge and an abandon close a job before all batches
+  -- record, and a late batch never revives it (section 1.5, review F18).
+  IF header.finished_at IS NOT NULL THEN
     RETURN cc.entity_sync_job_projection(job);
   END IF;
+  now_at:=clock_timestamp();
   INSERT INTO cc.entity_sync_batches(job_id,batch,status,failure,finished_at)
   VALUES(p_job,p_batch,CASE WHEN p_failure IS NULL THEN 'completed' ELSE 'failed' END,p_failure,now_at)
   ON CONFLICT(job_id,batch) DO UPDATE SET status=EXCLUDED.status,failure=EXCLUDED.failure,finished_at=EXCLUDED.finished_at;
