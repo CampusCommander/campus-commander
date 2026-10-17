@@ -8,6 +8,26 @@ import {
 
 const stepAttemptLimit = 3;
 const attemptEventLimit = 100;
+// A failed navigation makes the browser commit its own error page. The commit
+// arrives as a navigation of its own, and it interrupts a navigation that
+// starts before it.
+const errorPageInterruption =
+  'is interrupted by another navigation to "chrome-error://chromewebdata/"';
+const pendingNavigationTimeoutMs = 1000;
+
+/**
+ * Wait for a pending navigation of the page, so the next action starts from a
+ * settled document. The wait ends at the timeout when the page has no pending
+ * navigation.
+ */
+const settlePendingNavigation = async (page) => {
+  const wait = page.waitForNavigation?.bind(page);
+  if (!wait) return;
+  await wait({
+    waitUntil: 'commit',
+    timeout: pendingNavigationTimeoutMs,
+  }).catch(() => null);
+};
 
 export async function qualificationSignIn(
   page,
@@ -34,14 +54,15 @@ export async function qualificationSignIn(
  * change aborts.
  *
  * When the action fails, and a request failed with ERR_NETWORK_CHANGED during
- * that attempt, the step runs the action again. The step runs the action at
- * most three times. An HTTP error status fails the attempt at once, even when
- * the same attempt saw a network change. Every other failure fails at once. A
- * final failure writes a record with the events of every attempt. A passing
- * step reports every recovered attempt with its failed request routes, the
- * attempts of a nested reload helper included. A caller passes
- * `retryOnNetworkChange: false` when the action must not run again, or when
- * another helper already recovers the action.
+ * that attempt, the step runs the action again. An attempt that the error page
+ * of an earlier failed navigation interrupts is recoverable in the same way.
+ * The step runs the action at most three times. An HTTP error status fails the
+ * attempt at once, even when the same attempt saw a network change. Every other
+ * failure fails at once. A final failure writes a record with the events of
+ * every attempt. A passing step reports every recovered attempt with its failed
+ * request routes, the attempts of a nested reload helper included. A caller
+ * passes `retryOnNetworkChange: false` when the action must not run again, or
+ * when another helper already recovers the action.
  */
 export async function qualificationBrowserStep(
   page,
@@ -162,15 +183,24 @@ export async function qualificationBrowserStep(
           break;
         }
         failure = error;
+        const interruption =
+          error?.message?.includes(errorPageInterruption) === true;
         if (
           !retryOnNetworkChange ||
-          !attemptNetworkChange ||
+          (!attemptNetworkChange && !interruption) ||
           attempt === stepAttemptLimit
         )
           break;
         const routes = [...new Set(attemptRoutes)];
         recoveries.push({ attempt, routes });
-        events.push({ kind: 'network-change-retry', attempt, routes });
+        events.push({
+          kind: interruption
+            ? 'error-page-interruption'
+            : 'network-change-retry',
+          attempt,
+          routes,
+        });
+        await settlePendingNavigation(page);
       }
     }
     const documentState = await Promise.race([

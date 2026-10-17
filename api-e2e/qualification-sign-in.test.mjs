@@ -396,3 +396,124 @@ test('the step removes its listeners when it returns or throws', async (t) => {
       `the ${event} listener stayed after the throw`,
     );
 });
+
+test('recovers a step that the error page of a failed navigation interrupts', async (t) => {
+  // The log of main run 39020551892 holds this error verbatim. The first
+  // navigation failed with a network change. The error page of that navigation
+  // then interrupted the navigation of the retry.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  const interruption = new Error(
+    'page.goto: Navigation to "https://127.0.0.1:44995/api/auth/login" is interrupted by another navigation to "chrome-error://chromewebdata/"',
+  );
+  let runs = 0;
+  const result = await qualificationBrowserStep(
+    page,
+    publicOrigin,
+    directory,
+    'error-page-interruption',
+    async () => {
+      runs++;
+      if (runs === 1) {
+        failRequest(page, '/api/auth/login', 'net::ERR_NETWORK_CHANGED');
+        throw new Error(
+          'page.goto: net::ERR_NETWORK_CHANGED at https://127.0.0.1:44995/api/auth/login',
+        );
+      }
+      if (runs === 2) throw interruption;
+      await page.goto(`${publicOrigin}/api/auth/login`);
+    },
+  );
+  assert.equal(runs, 3);
+  assert.deepEqual(result, {
+    attempts: 3,
+    recoveries: [
+      { attempt: 1, routes: ['authentication'] },
+      { attempt: 2, routes: [] },
+    ],
+  });
+  assert.deepEqual(await readdir(directory), []);
+});
+
+test('an interrupted step waits for the pending navigation before the retry', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  const order = [];
+  const settleOptions = [];
+  page.waitForNavigation = async (options) => {
+    settleOptions.push(options);
+    order.push('settle');
+    return { status: () => 200, url: () => `${publicOrigin}/api/auth/login` };
+  };
+  let runs = 0;
+  const result = await qualificationBrowserStep(
+    page,
+    publicOrigin,
+    directory,
+    'error-page-settle',
+    async () => {
+      runs++;
+      order.push(`action ${runs}`);
+      if (runs === 1) {
+        failRequest(page, '/api/auth/login', 'net::ERR_NETWORK_CHANGED');
+        throw new Error(
+          'page.goto: net::ERR_NETWORK_CHANGED at https://127.0.0.1:44995/api/auth/login',
+        );
+      }
+      if (runs === 2)
+        throw new Error(
+          'page.goto: Navigation to "https://127.0.0.1:44995/api/auth/login" is interrupted by another navigation to "chrome-error://chromewebdata/"',
+        );
+    },
+  );
+  assert.deepEqual(order, [
+    'action 1',
+    'settle',
+    'action 2',
+    'settle',
+    'action 3',
+  ]);
+  assert.deepEqual(settleOptions, [
+    { waitUntil: 'commit', timeout: 1000 },
+    { waitUntil: 'commit', timeout: 1000 },
+  ]);
+  assert.deepEqual(result, {
+    attempts: 3,
+    recoveries: [
+      { attempt: 1, routes: ['authentication'] },
+      { attempt: 2, routes: [] },
+    ],
+  });
+});
+
+test('an interruption that keeps failing after the retry limit fails the step', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  let runs = 0;
+  await assert.rejects(
+    qualificationBrowserStep(
+      page,
+      publicOrigin,
+      directory,
+      'error-page-limit',
+      async () => {
+        runs++;
+        throw new Error(
+          'page.goto: Navigation to "https://127.0.0.1:44995/api/auth/login" is interrupted by another navigation to "chrome-error://chromewebdata/"',
+        );
+      },
+    ),
+    /interrupted by another navigation/,
+  );
+  assert.equal(runs, 3);
+  const failure = JSON.parse(
+    await readFile(join(directory, 'error-page-limit-failure.json'), 'utf8'),
+  );
+  assert.deepEqual(
+    failure.events
+      .filter((event) => event.kind === 'error-page-interruption')
+      .map((event) => event.attempt),
+    [1, 2],
+    'the record holds the interrupted attempts',
+  );
+});
