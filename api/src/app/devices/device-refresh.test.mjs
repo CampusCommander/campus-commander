@@ -41,9 +41,8 @@ function fakes({
   const store = async (sql, values) => {
     const name = /cc\.(\w+)/.exec(sql)[1];
     calls.push({ name, values });
-    if (name === 'purge_entity_sync_jobs' && purgeFails)
-      throw new Error('store down');
-    if (name === 'purge_entity_sync_jobs') return 0;
+    if (name === 'purge_jobs' && purgeFails) throw new Error('store down');
+    if (name === 'purge_jobs') return 0;
     if (name === 'create_entity_sync_job') return job(JSON.parse(values[4]));
     return job([]);
   };
@@ -57,12 +56,7 @@ test('stale IDs create one job and start the flow with its batch count', async (
   assert.equal(jobId, '33333333-3333-4333-8333-333333333333');
   assert.deepEqual(
     calls.map((call) => call.name),
-    [
-      'purge_entity_sync_jobs',
-      'addMembers',
-      'create_entity_sync_job',
-      'startEntitySync',
-    ],
+    ['purge_jobs', 'addMembers', 'create_entity_sync_job', 'startEntitySync'],
   );
   assert.equal(calls[1].key, 'cc:entity-inflight:device:C0123456');
   assert.equal(calls[1].seconds, 120);
@@ -87,7 +81,7 @@ test('nothing new means no job', async () => {
   );
   assert.deepEqual(
     calls.map((call) => call.name),
-    ['purge_entity_sync_jobs', 'addMembers'],
+    ['purge_jobs', 'addMembers'],
   );
 });
 
@@ -100,7 +94,7 @@ test('a failed flow start abandons the job and frees the IDs', async () => {
   assert.deepEqual(
     calls.map((call) => call.name),
     [
-      'purge_entity_sync_jobs',
+      'purge_jobs',
       'addMembers',
       'create_entity_sync_job',
       'startEntitySync',
@@ -113,7 +107,7 @@ test('a failed flow start abandons the job and frees the IDs', async () => {
 test('dispatch purges old jobs for the customer before it claims IDs', async () => {
   const { calls, refresh } = fakes();
   await refresh.dispatch(actor, 'C0123456', ['d1'], correlation);
-  assert.equal(calls[0].name, 'purge_entity_sync_jobs');
+  assert.equal(calls[0].name, 'purge_jobs');
   assert.deepEqual(calls[0].values, ['C0123456', 100]);
 });
 
@@ -125,11 +119,6 @@ test('a purge failure does not stop the job', async () => {
   );
   assert.deepEqual(
     calls.map((call) => call.name),
-    [
-      'purge_entity_sync_jobs',
-      'addMembers',
-      'create_entity_sync_job',
-      'startEntitySync',
-    ],
+    ['purge_jobs', 'addMembers', 'create_entity_sync_job', 'startEntitySync'],
   );
 });
