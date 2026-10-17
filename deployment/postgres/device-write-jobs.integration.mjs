@@ -1925,13 +1925,15 @@ export async function qualifyDeviceWriteJobs({
               'list',
             ],
           );
+          // A failing poll must not leave a rejected query unhandled.
+          pending.catch(() => undefined);
           let waiting = false;
           for (let round = 0; round < 100 && !waiting; round += 1) {
             const state = await adminRow(
-              'SELECT wait_event_type FROM pg_stat_activity WHERE pid=$1',
+              'SELECT cardinality(pg_blocking_pids($1))>0 AS blocked',
               [pid],
             );
-            waiting = state?.wait_event_type === 'Lock';
+            waiting = state?.blocked === true;
             if (!waiting) await sleep(20);
           }
           assert.equal(waiting, true, 'The list waits for the settlement.');
@@ -1996,13 +1998,15 @@ export async function qualifyDeviceWriteJobs({
               'read',
             ],
           );
+          // A failing poll must not leave a rejected query unhandled.
+          pending.catch(() => undefined);
           let waiting = false;
           for (let round = 0; round < 100 && !waiting; round += 1) {
             const state = await adminRow(
-              'SELECT wait_event_type FROM pg_stat_activity WHERE pid=$1',
+              'SELECT cardinality(pg_blocking_pids($1))>0 AS blocked',
               [pid],
             );
-            waiting = state?.wait_event_type === 'Lock';
+            waiting = state?.blocked === true;
             if (!waiting) await sleep(20);
           }
           assert.equal(waiting, true, 'The read waits for the settlement.');
