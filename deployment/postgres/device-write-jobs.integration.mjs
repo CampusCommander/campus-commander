@@ -5558,6 +5558,63 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    // The first request of a customer creates its sync state row. The customer key of that row takes the
+    // connection KEY SHARE lock, so the requester principal row must lock before the state insert.
+    await ruleCheck(
+      'S1 a first request takes its principal row before its state insert locks the connection row',
+      async () => {
+        await closeRunningSyncs();
+        const kept = (
+          await adminRow(
+            'SELECT to_jsonb(s) AS row FROM cc.device_sync_state s WHERE customer_id=$1',
+            [customer],
+          )
+        ).row;
+        await migrator.query(
+          'DELETE FROM cc.device_sync_state WHERE customer_id=$1',
+          [customer],
+        );
+        try {
+          await againstCredentialAction({
+            actor: reader,
+            sql: requestSql,
+            values: [
+              reader,
+              1,
+              customer,
+              generation,
+              randomUUID(),
+              randomUUID(),
+            ],
+          });
+        } finally {
+          await migrator.query(
+            'INSERT INTO cc.device_sync_state(customer_id) VALUES($1) ON CONFLICT(customer_id) DO NOTHING',
+            [customer],
+          );
+          await closeRunningSyncs();
+          const columns = Object.keys(kept).filter(
+            (column) => column !== 'customer_id',
+          );
+          await migrator.query(
+            `UPDATE cc.device_sync_state s SET ${columns.map((column) => `${column}=r.${column}`).join(',')}
+              FROM jsonb_populate_record(NULL::cc.device_sync_state,$2::jsonb) r WHERE s.customer_id=$1`,
+            [customer, JSON.stringify(kept)],
+          );
+        }
+        assert.deepEqual(
+          (
+            await adminRow(
+              'SELECT to_jsonb(s) AS row FROM cc.device_sync_state s WHERE customer_id=$1',
+              [customer],
+            )
+          ).row,
+          kept,
+          'The check restores the sync state row.',
+        );
+      },
+    );
+
     await ruleCheck(
       'S1 a refresh job creation takes its principal row before the connection row',
       async () => {
