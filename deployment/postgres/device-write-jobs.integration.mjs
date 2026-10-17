@@ -6525,6 +6525,38 @@ export async function qualifyDeviceWriteJobs({
         await endJob(job.jobId);
       },
     );
+
+    // The claim revalidation reads the confirmer and the connection as their definer. Like
+    // cc.write_capable, it stays an internal helper: no PUBLIC grant and no application grant.
+    await ruleCheck(
+      'S2 the claim revalidation helper is not executable by PUBLIC or the application role',
+      async () => {
+        for (const signature of [
+          'cc.write_capable(uuid,text)',
+          'cc.device_update_stop_reason(text,uuid,integer,integer)',
+        ]) {
+          const privileges = await adminRow(
+            `SELECT to_regprocedure($1) IS NOT NULL AS present,
+              to_regprocedure($1) IS NOT NULL AND has_function_privilege('public',to_regprocedure($1),'EXECUTE')
+                AS public_execute`,
+            [signature],
+          );
+          assert.equal(privileges.present, true, `${signature} exists.`);
+          assert.equal(
+            privileges.public_execute,
+            false,
+            `${signature} grants no EXECUTE to PUBLIC.`,
+          );
+        }
+        await rejects(
+          statement(
+            'SELECT cc.device_update_stop_reason($1,$2,$3,$4) AS result',
+            [customer, randomUUID(), 1, generation],
+          ),
+          '42501',
+        );
+      },
+    );
   } finally {
     await migrator.query('UPDATE cc.google_connection SET active=$1', [
       wasActive,
