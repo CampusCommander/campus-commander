@@ -3,6 +3,7 @@ import { createKubernetesDurableProbe } from './kubernetes-durable-fixture.mjs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
+import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 import { faultRecoveryTimeoutSeconds } from '../deployment/qualification/faults.mjs';
 
 /** Verify authenticated faults inside the caller's owned Kind installation. */
@@ -159,12 +160,14 @@ export async function faultKubernetes({
           .toBe(401);
         record.sourceSessionRejected = true;
         await page.goto(config.applicationAuth.publicOrigin + '/login');
-        await page
-          .getByRole('link', { name: 'Sign in to Campus Commander' })
-          .click();
-        await expect(
-          page.getByRole('heading', { name: 'Your account', exact: true }),
-        ).toBeVisible({ timeout: 15000 });
+        // The sign-in link flow of a fault recovery runs inside the step, so
+        // the step recovers a navigation that the fault leaves pending.
+        await qualificationLinkSignIn(
+          page,
+          config.applicationAuth.publicOrigin,
+          root,
+          `kubernetes-fault-${fault.name}`,
+        );
       } else
         await expect
           .poll(async () => (await request()).httpStatus, { timeout: 30000 })

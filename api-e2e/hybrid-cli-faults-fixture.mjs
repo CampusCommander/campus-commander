@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { chmod, readFile, realpath, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { expect } from '@playwright/test';
 import { outerDocker } from './hybrid-hosts-fixture.mjs';
+import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 import { faultRecoveryTimeoutSeconds } from '../deployment/qualification/faults.mjs';
 
 /** Verify process recovery against the installed distributed application. */
@@ -248,12 +249,14 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
           .toBe(401);
         record.sourceSessionRejected = true;
         await page.goto(config.applicationAuth.publicOrigin + '/login');
-        await page
-          .getByRole('link', { name: 'Sign in to Campus Commander' })
-          .click();
-        await expect(
-          page.getByRole('heading', { name: 'Your account', exact: true }),
-        ).toBeVisible({ timeout: 15000 });
+        // The sign-in link flow of a fault recovery runs inside the step, so
+        // the step recovers a navigation that the fault leaves pending.
+        await qualificationLinkSignIn(
+          page,
+          config.applicationAuth.publicOrigin,
+          dirname(evidencePath ?? join(controller.root, 'fault-progress.json')),
+          `hybrid-cli-fault-${fault.name}`,
+        );
       } else {
         await expect
           .poll(async () => (await request('/api/auth/session')).httpStatus, {

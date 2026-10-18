@@ -14,6 +14,37 @@ const attemptEventLimit = 100;
 const errorPageInterruption =
   'is interrupted by another navigation to "chrome-error://chromewebdata/"';
 const pendingNavigationTimeoutMs = 1000;
+// A sign-in navigation that does not commit within this bound counts as a
+// failed attempt. An installation network change can leave a sign-in
+// navigation without an answer, and the sign-in flow must start again.
+const signInNavigationTimeoutMs = 10000;
+const unfinishedSignInNavigation = 'the sign-in navigation did not commit';
+
+/** Build the failure of a sign-in navigation that did not commit in time. */
+const signInNavigationFailure = (url, cause) =>
+  new Error(
+    `${unfinishedSignInNavigation} within ${signInNavigationTimeoutMs} ms: ${url}`,
+    { cause },
+  );
+
+/** Decide whether an error reports a sign-in navigation that did not commit. */
+const isUnfinishedSignInNavigation = (error) =>
+  error?.message?.includes(unfinishedSignInNavigation) === true;
+
+/** Decide whether an error reports the timeout of a Playwright action. */
+const isActionTimeout = (error) =>
+  /Timeout \d+ms exceeded/.test(error?.message ?? '');
+
+/**
+ * Run a navigation action that must commit within the sign-in bound. A
+ * timeout reports a sign-in navigation that did not commit, so the step can
+ * recover the attempt. Every other failure passes through.
+ */
+const signInNavigation = (url, action) =>
+  action.catch((error) => {
+    if (!isActionTimeout(error)) throw error;
+    throw signInNavigationFailure(url, error);
+  });
 
 /**
  * Wait for a pending navigation of the page, so the next action starts from a
@@ -35,16 +66,100 @@ export async function qualificationSignIn(
   evidenceDirectory,
   label,
 ) {
+  const signInUrl = `${publicOrigin}/api/auth/login`;
   return qualificationBrowserStep(
     page,
     publicOrigin,
     evidenceDirectory,
     `${label}-sign-in`,
     async () => {
-      await page.goto(`${publicOrigin}/api/auth/login`);
+      await signInNavigation(
+        signInUrl,
+        page.goto(signInUrl, { timeout: signInNavigationTimeoutMs }),
+      );
       await expect(
         page.getByRole('heading', { name: 'Your account', exact: true }),
       ).toBeVisible({ timeout: 15000 });
+    },
+  );
+}
+
+/**
+ * Run a sign-in flow that starts at the sign-in link: activate the link and
+ * wait for the account heading. A retry loads the origin page first, so the
+ * retry runs the flow again from a settled document. An activation whose
+ * navigation does not commit within the sign-in bound reports a sign-in
+ * navigation that did not commit, and the step recovers the attempt. Every
+ * other navigation failure keeps its own class. `activate` overrides the
+ * link activation, for the screen-reader flow.
+ */
+export async function qualificationLinkSignIn(
+  page,
+  publicOrigin,
+  evidenceDirectory,
+  label,
+  {
+    activate = (control) =>
+      control.click({ timeout: signInNavigationTimeoutMs }),
+  } = {},
+) {
+  const signInUrl = `${publicOrigin}/api/auth/login`;
+  const accountHeading = () =>
+    page.getByRole('heading', { name: 'Your account', exact: true });
+  let run = 0;
+  return qualificationBrowserStep(
+    page,
+    publicOrigin,
+    evidenceDirectory,
+    `${label}-sign-in`,
+    async () => {
+      run++;
+      if (run > 1) {
+        await signInNavigation(
+          publicOrigin,
+          page.goto(publicOrigin, { timeout: signInNavigationTimeoutMs }),
+        );
+        // A failed attempt can finish the sign-in on the server. The origin
+        // page then answers with the account view.
+        const signedIn = await accountHeading()
+          .waitFor({ state: 'visible', timeout: 3000 })
+          .then(
+            () => true,
+            () => false,
+          );
+        if (signedIn) return;
+      }
+      // The activation starts the sign-in navigation. The wait started before
+      // the activation reports the commit of that navigation.
+      const commit = page.waitForNavigation
+        ? page
+            .waitForNavigation({
+              waitUntil: 'commit',
+              timeout: signInNavigationTimeoutMs,
+            })
+            .then(
+              () => null,
+              (error) => error,
+            )
+        : Promise.resolve(null);
+      let activationFailure = null;
+      await activate(
+        page.getByRole('link', {
+          name: 'Sign in to Campus Commander',
+          exact: true,
+        }),
+      ).catch((error) => {
+        activationFailure = error;
+      });
+      const navigationFailure = await commit;
+      if (navigationFailure) {
+        if (!isActionTimeout(navigationFailure)) throw navigationFailure;
+        throw signInNavigationFailure(
+          signInUrl,
+          activationFailure ?? navigationFailure,
+        );
+      }
+      await accountHeading().waitFor({ state: 'visible', timeout: 15000 });
     },
   );
 }
@@ -56,13 +171,15 @@ export async function qualificationSignIn(
  * When the action fails, and a request failed with ERR_NETWORK_CHANGED during
  * that attempt, the step runs the action again. An attempt that the error page
  * of an earlier failed navigation interrupts is recoverable in the same way.
- * The step runs the action at most three times. An HTTP error status fails the
- * attempt at once, even when the same attempt saw a network change. Every other
- * failure fails at once. A final failure writes a record with the events of
- * every attempt. A passing step reports every recovered attempt with its failed
- * request routes, the attempts of a nested reload helper included. A caller
- * passes `retryOnNetworkChange: false` when the action must not run again, or
- * when another helper already recovers the action.
+ * An attempt that a sign-in navigation without a commit ends is recoverable in
+ * the same way, and the next attempt starts after the pending navigation
+ * settles. The step runs the action at most three times. An HTTP error status
+ * fails the attempt at once, even when the same attempt saw a network change.
+ * Every other failure fails at once. A final failure writes a record with the
+ * events of every attempt. A passing step reports every recovered attempt with
+ * its failed request routes, the attempts of a nested reload helper included.
+ * A caller passes `retryOnNetworkChange: false` when the action must not run
+ * again, or when another helper already recovers the action.
  */
 export async function qualificationBrowserStep(
   page,
@@ -185,9 +302,10 @@ export async function qualificationBrowserStep(
         failure = error;
         const interruption =
           error?.message?.includes(errorPageInterruption) === true;
+        const unfinished = isUnfinishedSignInNavigation(error);
         if (
           !retryOnNetworkChange ||
-          (!attemptNetworkChange && !interruption) ||
+          (!attemptNetworkChange && !interruption && !unfinished) ||
           attempt === stepAttemptLimit
         )
           break;
@@ -196,7 +314,9 @@ export async function qualificationBrowserStep(
         events.push({
           kind: interruption
             ? 'error-page-interruption'
-            : 'network-change-retry',
+            : unfinished
+              ? 'pending-sign-in-navigation'
+              : 'network-change-retry',
           attempt,
           routes,
         });

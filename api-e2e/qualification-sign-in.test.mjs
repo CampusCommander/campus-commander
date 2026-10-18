@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
-import { qualificationBrowserStep } from './qualification-sign-in.mjs';
+import {
+  qualificationBrowserStep,
+  qualificationLinkSignIn,
+  qualificationSignIn,
+} from './qualification-sign-in.mjs';
 
 const publicOrigin = 'https://qualification.invalid';
 
@@ -47,6 +51,57 @@ const createEvidenceDirectory = async (t) => {
   );
   t.after(() => rm(directory, { recursive: true, force: true }));
   return directory;
+};
+
+/**
+ * A fake page that drives the sign-in link flow. `navigate` answers the
+ * commit wait of an activation, `heading` answers the account heading wait
+ * of an attempt, and `signedIn` answers the account view check of a retry.
+ */
+const fakeLinkPage = ({ navigate, heading, signedIn = false }) => {
+  const page = new EventEmitter();
+  page.clicks = 0;
+  page.visited = [];
+  page.url = () => `${publicOrigin}/`;
+  page.goto = async (url) => {
+    page.visited.push(url);
+    return { status: () => 200, url: () => url };
+  };
+  page.evaluate = async () => ({
+    readyState: 'complete',
+    applicationChildren: 0,
+    headings: 0,
+    busyRegions: 0,
+    alerts: 0,
+  });
+  // The commit wait of an activation starts before the activation, so the
+  // fake answers it after the next click.
+  const clickWaiters = [];
+  page.getByRole = (role) => {
+    if (role === 'link')
+      return {
+        click: async () => {
+          page.clicks++;
+          for (const waiter of clickWaiters.splice(0)) waiter();
+        },
+      };
+    return {
+      waitFor: ({ timeout }) =>
+        timeout === 3000
+          ? signedIn
+            ? Promise.resolve()
+            : Promise.reject(new Error('the account heading is absent'))
+          : heading(page, timeout),
+    };
+  };
+  page.waitForNavigation = ({ timeout }) => {
+    if (timeout === 1000)
+      return Promise.reject(new Error('no pending navigation'));
+    return new Promise((done) => clickWaiters.push(done)).then(() =>
+      navigate(page, timeout),
+    );
+  };
+  return page;
 };
 
 test('replays the phase-3 sign-in after a script request fails with a network change', async (t) => {
@@ -407,7 +462,7 @@ test('recovers a step that the error page of a failed navigation interrupts', as
     'page.goto: Navigation to "https://127.0.0.1:44995/api/auth/login" is interrupted by another navigation to "chrome-error://chromewebdata/"',
   );
   let runs = 0;
-  const result = await qualificationBrowserStep(
+  const outcome = await qualificationBrowserStep(
     page,
     publicOrigin,
     directory,
@@ -423,9 +478,17 @@ test('recovers a step that the error page of a failed navigation interrupts', as
       if (runs === 2) throw interruption;
       await page.goto(`${publicOrigin}/api/auth/login`);
     },
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(
+    outcome.status,
+    'resolved',
+    `the step rejected with ${outcome.error?.message}`,
   );
   assert.equal(runs, 3);
-  assert.deepEqual(result, {
+  assert.deepEqual(outcome.value, {
     attempts: 3,
     recoveries: [
       { attempt: 1, routes: ['authentication'] },
@@ -446,7 +509,7 @@ test('an interrupted step waits for the pending navigation before the retry', as
     return { status: () => 200, url: () => `${publicOrigin}/api/auth/login` };
   };
   let runs = 0;
-  const result = await qualificationBrowserStep(
+  const outcome = await qualificationBrowserStep(
     page,
     publicOrigin,
     directory,
@@ -465,6 +528,14 @@ test('an interrupted step waits for the pending navigation before the retry', as
           'page.goto: Navigation to "https://127.0.0.1:44995/api/auth/login" is interrupted by another navigation to "chrome-error://chromewebdata/"',
         );
     },
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(
+    outcome.status,
+    'resolved',
+    `the step rejected with ${outcome.error?.message}`,
   );
   assert.deepEqual(order, [
     'action 1',
@@ -477,7 +548,7 @@ test('an interrupted step waits for the pending navigation before the retry', as
     { waitUntil: 'commit', timeout: 1000 },
     { waitUntil: 'commit', timeout: 1000 },
   ]);
-  assert.deepEqual(result, {
+  assert.deepEqual(outcome.value, {
     attempts: 3,
     recoveries: [
       { attempt: 1, routes: ['authentication'] },
@@ -515,5 +586,196 @@ test('an interruption that keeps failing after the retry limit fails the step', 
       .map((event) => event.attempt),
     [1, 2],
     'the record holds the interrupted attempts',
+  );
+});
+
+test('recovers a sign-in link that the error page of a failed navigation interrupts', async (t) => {
+  // A click of the sign-in link holds the failure classes of the navigation
+  // itself. The run-145 race probe records the interruption verbatim on the
+  // current wrapper: the error page of a failed navigation commits, and the
+  // next navigation of the flow races that commit. The step recovers the
+  // attempt in the same way as the entry flow recovers it.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeLinkPage({
+    navigate: async () => ({
+      status: () => 200,
+      url: () => `${publicOrigin}/`,
+    }),
+    heading: async (page) => {
+      if (page.clicks === 1) {
+        failRequest(page, '/api/auth/login', 'net::ERR_NETWORK_CHANGED');
+        throw new Error(
+          'locator.waitFor: Navigation to "https://127.0.0.1:44995/api/auth/login" is interrupted by another navigation to "chrome-error://chromewebdata/"',
+        );
+      }
+      return true;
+    },
+  });
+  const outcome = await qualificationLinkSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'link-interruption',
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(
+    outcome.status,
+    'resolved',
+    `the flow rejected with ${outcome.error?.message}`,
+  );
+  assert.equal(page.clicks, 2);
+  assert.deepEqual(page.visited, [publicOrigin]);
+  assert.deepEqual(outcome.value, {
+    attempts: 2,
+    recoveries: [{ attempt: 1, routes: ['authentication'] }],
+  });
+  assert.deepEqual(await readdir(directory), []);
+});
+
+test('a sign-in link whose navigation does not commit runs the flow again', async (t) => {
+  // The click returns while the sign-in navigation stays pending, as the call
+  // log of the failed main run shows. The step bounds the commit wait, runs
+  // the flow again, and the second navigation commits.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeLinkPage({
+    navigate: async (page) =>
+      page.clicks === 1
+        ? Promise.reject(
+            new Error('page.waitForNavigation: Timeout 10000ms exceeded.'),
+          )
+        : { status: () => 200, url: () => `${publicOrigin}/` },
+    heading: async () => true,
+  });
+  const outcome = await qualificationLinkSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'link-pending',
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(
+    outcome.status,
+    'resolved',
+    `the flow rejected with ${outcome.error?.message}`,
+  );
+  assert.equal(page.clicks, 2);
+  assert.deepEqual(page.visited, [publicOrigin]);
+  assert.deepEqual(outcome.value, {
+    attempts: 2,
+    recoveries: [{ attempt: 1, routes: [] }],
+  });
+  assert.deepEqual(await readdir(directory), []);
+});
+
+test('a sign-in link that keeps failing after the retry limit fails the step', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeLinkPage({
+    navigate: async () =>
+      Promise.reject(
+        new Error('page.waitForNavigation: Timeout 10000ms exceeded.'),
+      ),
+    heading: async () => {
+      throw new Error('locator.waitFor: Timeout 15000ms exceeded.');
+    },
+  });
+  const outcome = await qualificationLinkSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'link-pending-limit',
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(outcome.status, 'rejected', 'the step resolved');
+  assert.match(
+    outcome.error.message,
+    /the sign-in navigation did not commit/,
+    'the failure reports the sign-in navigation that did not commit',
+  );
+  assert.equal(page.clicks, 3);
+  const failure = JSON.parse(
+    await readFile(
+      join(directory, 'link-pending-limit-sign-in-failure.json'),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(
+    failure.events
+      .filter((event) => event.kind === 'pending-sign-in-navigation')
+      .map((event) => event.attempt),
+    [1, 2],
+    'the record holds the attempts without a commit',
+  );
+});
+
+test('a failed sign-in link without a network change fails at once', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeLinkPage({
+    navigate: async () => ({
+      status: () => 200,
+      url: () => `${publicOrigin}/`,
+    }),
+    heading: async () => {
+      throw new Error('the "Your account" heading did not appear');
+    },
+  });
+  const outcome = await qualificationLinkSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'link-assertion',
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(outcome.status, 'rejected', 'the step resolved');
+  assert.match(outcome.error.message, /did not appear/);
+  assert.equal(page.clicks, 1);
+});
+
+test('retries a sign-in navigation that does not commit', async (t) => {
+  // The sign-in navigation of a direct visit can stay pending after an
+  // installation network change. The step bounds the navigation and runs the
+  // action again.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  let runs = 0;
+  page.goto = async () => {
+    runs++;
+    throw new Error('page.goto: Timeout 10000ms exceeded.');
+  };
+  const outcome = await qualificationSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'goto-pending',
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(outcome.status, 'rejected', 'the step resolved');
+  assert.match(
+    outcome.error.message,
+    /the sign-in navigation did not commit/,
+    'the failure reports the sign-in navigation that did not commit',
+  );
+  assert.equal(runs, 3);
+  const failure = JSON.parse(
+    await readFile(
+      join(directory, 'goto-pending-sign-in-failure.json'),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(
+    failure.events
+      .filter((event) => event.kind === 'pending-sign-in-navigation')
+      .map((event) => event.attempt),
+    [1, 2],
+    'the record holds the attempts without a commit',
   );
 });
