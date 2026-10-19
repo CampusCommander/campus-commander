@@ -1,9 +1,45 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { chmod, mkdtemp, rm } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { registerHooks } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { transformSync } from 'esbuild';
+import 'reflect-metadata';
+
+// The controller and its Nest services carry decorators, and Node's type-stripping loader refuses
+// decorator syntax. Transform only the TypeScript modules that use decorators. Every other module
+// keeps the default loader.
+const decorator = /(^|\n)\s*@[A-Z][A-Za-z]*\(/;
+registerHooks({
+  load(url, context, nextLoad) {
+    if (
+      url.startsWith('file:') &&
+      url.endsWith('.ts') &&
+      !url.includes('/node_modules/')
+    ) {
+      const file = fileURLToPath(url);
+      const source = readFileSync(file, 'utf8');
+      if (decorator.test(source)) {
+        const transformed = transformSync(source, {
+          loader: 'ts',
+          format: 'esm',
+          target: 'node24',
+          sourcefile: file,
+          tsconfigRaw: { compilerOptions: { experimentalDecorators: true } },
+        });
+        return {
+          format: 'module',
+          source: transformed.code,
+          shortCircuit: true,
+        };
+      }
+    }
+    return nextLoad(url, context);
+  },
+});
 
 const load = async () => {
   const updates = await import(
@@ -34,6 +70,28 @@ const load = async () => {
   const store = await import(
     pathToFileURL(resolve(process.cwd(), 'deployment/storage/index.mjs')).href
   );
+  const controller = await import(
+    pathToFileURL(
+      resolve(
+        process.cwd(),
+        'api/src/app/devices/device-updates.controller.ts',
+      ),
+    ).href
+  );
+  const devices = await import(
+    pathToFileURL(
+      resolve(process.cwd(), 'api/src/app/devices/devices.service.ts'),
+    ).href
+  );
+  const auth = await import(
+    pathToFileURL(resolve(process.cwd(), 'api/src/app/auth/auth.service.ts'))
+      .href
+  );
+  const database = await import(
+    pathToFileURL(
+      resolve(process.cwd(), 'api/src/app/database/database.service.ts'),
+    ).href
+  );
   return {
     DeviceUpdates: updates.DeviceUpdates,
     selectionStorageKey: selection.selectionStorageKey,
@@ -41,6 +99,10 @@ const load = async () => {
     authorizeAction: authorize.authorizeAction,
     storeJsonDocument: artifacts.storeJsonDocument,
     createArtifactStore: store.createArtifactStore,
+    DeviceUpdatesController: controller.DeviceUpdatesController,
+    DevicesService: devices.DevicesService,
+    AuthService: auth.AuthService,
+    DatabaseService: database.DatabaseService,
   };
 };
 
@@ -66,6 +128,10 @@ export async function qualifyDeviceUpdates({
     authorizeAction,
     storeJsonDocument,
     createArtifactStore,
+    DeviceUpdatesController,
+    DevicesService,
+    AuthService,
+    DatabaseService,
   } = await load();
   const actor = randomUUID();
   const key = { gridId: 'devices', tabId: 'b3' };
@@ -1333,7 +1399,7 @@ export async function qualifyDeviceUpdates({
     });
 
     await check(
-      'B3 a preview request without devices:bulk-actions answers 403 and writes access-denied',
+      'B3 the device update action helper answers 403 and writes access-denied',
       async () => {
         const limited = await createPrincipal('limited-request', [
           'devices:read',
@@ -1398,6 +1464,103 @@ export async function qualifyDeviceUpdates({
             'DELETE FROM cc.security_events WHERE correlation_id=$1',
             [correlationId],
           );
+          await removePrincipal(limited);
+        }
+      },
+    );
+
+    await check(
+      'B3 a preview request through the controller without devices:bulk-actions answers 403 and writes access-denied',
+      async () => {
+        const limited = await createPrincipal('controller-request', [
+          'devices:read',
+          'devices:write',
+        ]);
+        const limitedGrants = ['devices:read', 'devices:write'].map(
+          (action) => ({
+            action,
+            scope: { kind: 'district', customerId: customer },
+          }),
+        );
+        const controllerKey = {
+          gridId: 'devices',
+          tabId: '66666666-6666-4666-8666-666666666666',
+        };
+        const limitedSelectionKey = selectionStorageKey(limited, controllerKey);
+        selections.set(limitedSelectionKey, raw({ additions: ['b3-a'] }));
+        const correlationId = randomUUID();
+        // R2-F2 (round 4): the real controller runs the real AuthService.authorize, and the real
+        // DatabaseService.audit writes the row through the runtime role.
+        const appDatabase = new DatabaseService({ deployment: undefined });
+        appDatabase.pool = {
+          query: (text, values) => runtime.query(text, values),
+        };
+        const authService = new AuthService(
+          { deployment: { phase: 3 } },
+          appDatabase,
+          {},
+          {},
+          {},
+        );
+        const devicesService = new DevicesService(database, {}, {});
+        const controller = new DeviceUpdatesController(
+          devicesService,
+          updates,
+          authService,
+        );
+        const request = {
+          session: sessionFor(limited, 1, limitedGrants),
+          correlationId,
+        };
+        try {
+          await assert.rejects(
+            controller.preview(request, { ...controllerKey, mode: 'clear' }),
+            (error) => {
+              assert.equal(
+                typeof error?.getStatus,
+                'function',
+                `The controller answered with ${error}`,
+              );
+              assert.equal(error.getStatus(), 403);
+              return true;
+            },
+            'The controller answers 403.',
+          );
+          const rows = (
+            await migrator.query(
+              `SELECT actor_id,event,correlation_id,detail FROM cc.security_events
+               WHERE correlation_id=$1`,
+              [correlationId],
+            )
+          ).rows;
+          assert.deepEqual(
+            rows,
+            [
+              {
+                actor_id: limited,
+                event: 'access-denied',
+                correlation_id: correlationId,
+                detail: 'devices:bulk-actions',
+              },
+            ],
+            'The real audit path writes the actor, correlation, and action.',
+          );
+          assert.equal(
+            (
+              await migrator.query(
+                'SELECT count(*)::integer AS count FROM cc.device_update_previews WHERE created_by=$1',
+                [limited],
+              )
+            ).rows[0].count,
+            0,
+            'The refused request creates no preview.',
+          );
+        } finally {
+          await migrator.query(
+            'DELETE FROM cc.security_events WHERE correlation_id=$1',
+            [correlationId],
+          );
+          selections.delete(limitedSelectionKey);
           await removePrincipal(limited);
         }
       },
@@ -1539,6 +1702,117 @@ export async function qualifyDeviceUpdates({
         }
       },
     );
+
+    // R2-F1 (round 4): the clock has no lock. A confirmation that waits on the manifest artifact
+    // must read it again after every blocking lock and before the first write.
+    const waitPastExpiry = async ({ name, lock, lockValues, blockingLock }) => {
+      await check(name, async () => {
+        fresh(['b3-a']);
+        const other = await updates.preview(session, current, {
+          ...key,
+          mode: 'replace',
+          value: 'Room 12',
+        });
+        const artifactId = await storage.storeJson({
+          preview: { previewId: other.previewId },
+        });
+        const holder = await connect('cc-migrator', 'cc-app');
+        const caller = await connect('cc-app', 'cc-app');
+        let pending;
+        try {
+          await holder.query('BEGIN');
+          await holder.query(lock, lockValues(artifactId));
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const callerPid = (
+            await caller.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await migrator.query(
+            "UPDATE cc.device_update_previews SET expires_at=clock_timestamp()+interval '3 seconds' WHERE preview_id=$1",
+            [other.previewId],
+          );
+          pending = new DeviceUpdates(databaseFor(caller), cache, {
+            async storeJson() {
+              return artifactId;
+            },
+          })
+            .confirm(session, current, other.previewId, {
+              manifestDigest: other.manifestDigest,
+              acknowledged: true,
+            })
+            .then(
+              (value) => ({ value }),
+              (error) => ({ error }),
+            );
+          let waited = false;
+          for (let round = 0; round < 200; round += 1) {
+            const held = (
+              await migrator.query(
+                'SELECT pg_blocking_pids($1::int) && $2::int[] AS held',
+                [callerPid, [holderPid]],
+              )
+            ).rows[0].held;
+            if (held === true) {
+              waited = true;
+              break;
+            }
+            await sleep(25);
+          }
+          assert.equal(waited, true, blockingLock);
+          await sleep(3300);
+          await holder.query('COMMIT');
+          const answer = await pending;
+          assert.equal(
+            answer.error?.getResponse?.().reason,
+            'preview-expired',
+            'The confirmation refuses after the wait crosses the expiry.',
+          );
+          assert.equal(answer.error?.getStatus?.(), 410);
+          assert.equal(
+            (
+              await migrator.query(
+                'SELECT job_id FROM cc.device_update_previews WHERE preview_id=$1',
+                [other.previewId],
+              )
+            ).rows[0].job_id,
+            null,
+            'The expired preview holds no job.',
+          );
+          assert.equal(
+            (
+              await migrator.query(
+                `SELECT count(*)::integer AS count FROM cc.jobs j
+                 JOIN cc.device_update_previews p ON p.job_id=j.job_id
+                 WHERE p.preview_id=$1`,
+                [other.previewId],
+              )
+            ).rows[0].count,
+            0,
+            'The expired confirmation creates no job.',
+          );
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (pending) await pending;
+          await Promise.allSettled([holder.end(), caller.end()]);
+        }
+      });
+    };
+
+    await waitPastExpiry({
+      name: 'B3 confirmation rechecks expiry after the manifest advisory lock waits',
+      lock: 'SELECT pg_advisory_xact_lock(hashtextextended($1::text,0))',
+      lockValues: (artifactId) => [artifactId],
+      blockingLock:
+        'The confirmation waits on the manifest artifact advisory lock.',
+    });
+
+    await waitPastExpiry({
+      name: 'B3 confirmation rechecks expiry after the artifact row lock waits',
+      lock: 'SELECT 1 FROM cc.artifacts WHERE id=$1 FOR UPDATE',
+      lockValues: (artifactId) => [artifactId],
+      blockingLock: 'The confirmation waits on the artifact row lock.',
+    });
 
     await check(
       'B3 confirmation takes the global access lock before its preview row',
