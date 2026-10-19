@@ -150,7 +150,9 @@ export class OrchestrationService {
         customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
         jobId: z.uuid(),
         dispatchToken: z.uuid(),
-        batchCount: z.number().int().min(1).max(1000),
+        // The design permits 100,000 devices and batch sizes 1 to 250, so one
+        // write job can hold 100,000 batches (design section 5.2).
+        batchCount: z.number().int().min(1).max(100_000),
         correlationId: z.uuid(),
       })
       .parse(input);
