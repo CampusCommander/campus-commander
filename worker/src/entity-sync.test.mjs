@@ -503,6 +503,17 @@ test('the freshness stamp comes from Postgres before the Directory read', async 
   assert.equal(upsert.values[2], clock.toISOString());
 });
 
+// The refresh path is a current observation. A list stays list, because stage_devices calls it (5.8).
+test('a refresh read records the read observation kind', async () => {
+  const db = database();
+  await new EntitySyncBatch(db, cipher, reader(), cache(), noSleep).run(
+    request,
+    AbortSignal.timeout(5000),
+  );
+  const upsert = db.calls.find((call) => call.name === 'upsert_devices');
+  assert.equal(upsert.values[3], 'read');
+});
+
 test('a telemetry quota sleep extends the batch claim on its in-flight IDs', async () => {
   const redis = cache();
   const waits = [];

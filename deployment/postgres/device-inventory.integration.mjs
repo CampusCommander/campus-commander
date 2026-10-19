@@ -27,6 +27,19 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     );
     const result = (sql, values) =>
       runtime.query(sql, values).then((r) => r.rows[0].result);
+    const results = [];
+    const failures = [];
+    // Every rewritten check reports its own name, so a failing-first run names each one.
+    const check = async (name, body) => {
+      try {
+        await body();
+        results.push(`${name}: pass`);
+      } catch (error) {
+        failures.push(name);
+        results.push(`${name}: FAIL ${error.message}`);
+      }
+      process.stderr.write(`check ${results.at(-1)}\n`);
+    };
     const read = (who = reader) =>
       result('SELECT cc.read_device_sync($1,1) AS result', [who]);
     const request = (id = randomUUID()) =>
@@ -335,101 +348,168 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       ]),
       detail('entity-sync-changed'),
     );
-    const abandonedId = randomUUID();
-    await result(
-      'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
-      [reader, customer, 'device', '["d1"]', 100, abandonedId, randomUUID()],
-    );
-    const abandoned = await result(
-      'SELECT cc.abandon_entity_sync_job($1,1,$2,$3) AS result',
-      [reader, customer, abandonedId],
-    );
-    assert.equal(abandoned.failure, 'orchestration-unavailable');
-    assert.ok(abandoned.finishedAt);
-    await migrator.query(
-      "UPDATE cc.entity_sync_jobs SET finished_at=finished_at-interval '2 days' WHERE job_id=$1",
-      [abandonedId],
-    );
-    assert.equal(
-      await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [
-        customer,
-        100,
-      ]),
-      1,
+    await check(
+      'the purge removes an abandoned refresh job after 7 days and keeps a write job',
+      async () => {
+        const abandonedId = randomUUID();
+        await result(
+          'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+          [
+            reader,
+            customer,
+            'device',
+            '["d1"]',
+            100,
+            abandonedId,
+            randomUUID(),
+          ],
+        );
+        const abandoned = await result(
+          'SELECT cc.abandon_entity_sync_job($1,1,$2,$3) AS result',
+          [reader, customer, abandonedId],
+        );
+        assert.equal(abandoned.failure, 'orchestration-unavailable');
+        assert.ok(abandoned.finishedAt);
+        await migrator.query(
+          "UPDATE cc.jobs SET finished_at=finished_at-interval '8 days' WHERE job_id=$1",
+          [abandonedId],
+        );
+        assert.ok(
+          (await result('SELECT cc.purge_jobs($1,$2) AS result', [
+            customer,
+            100,
+          ])) >= 1,
+        );
+        assert.equal(
+          await result(
+            'SELECT count(*)::int AS result FROM cc.jobs WHERE job_id=$1',
+            [abandonedId],
+          ),
+          0,
+        );
+      },
     );
 
-    // A job that no batch finishes ends as interrupted after two hours. The purge reaps it a day later.
-    const stuckId = randomUUID();
-    await result(
-      'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
-      [reader, customer, 'device', '["d1"]', 100, stuckId, randomUUID()],
-    );
-    const stuck = async () =>
-      (
+    // A job that no batch finishes ends as interrupted after two hours. The purge reaps it a week later.
+    await check(
+      'the purge ends jobs unfinished after two hours and reaps them a week later',
+      async () => {
+        const stuckId = randomUUID();
+        await result(
+          'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+          [reader, customer, 'device', '["d1"]', 100, stuckId, randomUUID()],
+        );
+        const stuck = async () =>
+          (
+            await migrator.query(
+              'SELECT failure,finished_at FROM cc.entity_sync_jobs WHERE job_id=$1',
+              [stuckId],
+            )
+          ).rows[0];
+        await result('SELECT cc.purge_jobs($1,$2) AS result', [customer, 100]);
+        assert.equal(
+          (await stuck()).finished_at,
+          null,
+          'A young unfinished job stays open.',
+        );
         await migrator.query(
-          'SELECT failure,finished_at FROM cc.entity_sync_jobs WHERE job_id=$1',
+          "UPDATE cc.jobs SET created_at=created_at-interval '3 hours' WHERE job_id=$1",
           [stuckId],
-        )
-      ).rows[0];
-    await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [
-      customer,
-      100,
-    ]);
-    assert.equal(
-      (await stuck()).finished_at,
-      null,
-      'A young unfinished job stays open.',
+        );
+        await result('SELECT cc.purge_jobs($1,$2) AS result', [customer, 100]);
+        assert.equal((await stuck()).failure, 'interrupted');
+        assert.ok((await stuck()).finished_at instanceof Date);
+        await migrator.query(
+          "UPDATE cc.jobs SET finished_at=finished_at-interval '8 days' WHERE job_id=$1",
+          [stuckId],
+        );
+        assert.ok(
+          (await result('SELECT cc.purge_jobs($1,$2) AS result', [
+            customer,
+            100,
+          ])) >= 1,
+        );
+        assert.equal(await stuck(), undefined);
+      },
     );
-    await migrator.query(
-      "UPDATE cc.entity_sync_jobs SET created_at=created_at-interval '3 hours' WHERE job_id=$1",
-      [stuckId],
-    );
-    await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [
-      customer,
-      100,
-    ]);
-    assert.equal((await stuck()).failure, 'interrupted');
-    assert.ok((await stuck()).finished_at instanceof Date);
-    await migrator.query(
-      "UPDATE cc.entity_sync_jobs SET finished_at=finished_at-interval '2 days' WHERE job_id=$1",
-      [stuckId],
-    );
-    assert.equal(
-      await result('SELECT cc.purge_entity_sync_jobs($1,$2) AS result', [
-        customer,
-        100,
-      ]),
-      1,
-    );
-    assert.equal(await stuck(), undefined);
 
     // Job creation accepts only plain device identifiers and a bounded batch size.
-    const create = (ids, size = 100) =>
-      result(
-        'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
-        [
-          reader,
-          customer,
-          'device',
-          JSON.stringify(ids),
-          size,
-          randomUUID(),
-          randomUUID(),
-        ],
-      );
-    for (const [ids, size] of [
-      [['d1', 'd>2'], 100],
-      [['d1\r'], 100],
-      [[], 100],
-      [[1], 100],
-      [['x'.repeat(129)], 100],
-      [['d1'], 0],
-      [['d1'], 1001],
-    ])
-      await assert.rejects(
-        create(ids, size),
-        (error) => error.code === '22023',
-      );
+    await check(
+      'job creation rejects a malformed ID, an empty list, a non-string, an over-long ID, and a batch size outside 1 to 1000',
+      async () => {
+        const create = (ids, size = 100) =>
+          result(
+            'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              reader,
+              customer,
+              'device',
+              JSON.stringify(ids),
+              size,
+              randomUUID(),
+              randomUUID(),
+            ],
+          );
+        for (const [ids, size] of [
+          [['d1', 'd>2'], 100],
+          [['d1\r'], 100],
+          [[], 100],
+          [[1], 100],
+          [['x'.repeat(129)], 100],
+          [['d1'], 0],
+          [['d1'], 1001],
+        ])
+          await assert.rejects(
+            create(ids, size),
+            (error) => error.code === '22023',
+          );
+        // The rewrite records the header first and one target row per ID.
+        const createdId = randomUUID();
+        await result(
+          'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+          [
+            reader,
+            customer,
+            'device',
+            '["jobs-d1","jobs-d2"]',
+            100,
+            createdId,
+            randomUUID(),
+          ],
+        );
+        assert.deepEqual(
+          (
+            await migrator.query(
+              'SELECT target_count,scope_kind,status FROM cc.jobs WHERE job_id=$1',
+              [createdId],
+            )
+          ).rows[0],
+          {
+            target_count: 2,
+            scope_kind: 'devices',
+            status: 'running',
+          },
+        );
+        assert.match(
+          (
+            await migrator.query(
+              'SELECT display_id FROM cc.jobs WHERE job_id=$1',
+              [createdId],
+            )
+          ).rows[0].display_id,
+          /^REF-[0-9]{3,}$/,
+        );
+        assert.equal(
+          (
+            await migrator.query(
+              'SELECT count(*)::int AS targets FROM cc.job_targets WHERE job_id=$1',
+              [createdId],
+            )
+          ).rows[0].targets,
+          2,
+        );
+      },
+    );
 
     // Expired leases still report interruption.
     const lost = await request();
@@ -462,13 +542,17 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       [reader],
     );
     await assert.rejects(read(), (error) => error.code === '42501');
+    if (failures.length)
+      throw new Error(
+        `Device inventory checks failed: ${failures.join(' | ')}`,
+      );
     return [
+      ...results,
       'device inventory reads require current devices:read authority: pass',
       'one worker attempt claims a device sync and duplicate dispatch is rejected: pass',
       'a full sync soft-deletes devices Google no longer returns and a failed sync removes nothing: pass',
       'the last full sync names the devices it removed: pass',
       'entity sync jobs slice IDs into batches and count each batch once: pass',
-      'the purge ends jobs unfinished after two hours and rejects unsafe job IDs: pass',
       'upserts stamp last_entity_sync and clear removed_at: pass',
       'expired leases report interruption and reject late publication: pass',
     ];
