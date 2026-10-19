@@ -144,13 +144,16 @@
         <ol>
           <li>Enable the Admin SDK API in the service-account project.</li>
           <li>
-            Open
-            <a
-              href="https://admin.google.com/ac/owl/domainwidedelegation"
-              target="_blank"
-              rel="noopener noreferrer"
-              >domain-wide delegation in the Google Admin console</a
+            @if (delegationHref(); as href) {
+            <a [href]="href" target="_blank" rel="noopener noreferrer"
+              >Open domain-wide delegation in the Google Admin console</a
             >.
+            <p class="secondary">
+              This link opens Google Admin with the client ID and these scopes
+              filled in. Authorize replaces the scope list of that client with
+              the listed scopes.
+            </p>
+            } @else { Open domain-wide delegation in the Google Admin console. }
           </li>
           <li>
             Add the service account client ID and the {{ scopes.length }} scopes
@@ -222,7 +225,19 @@
     </p>
     } @else if (candidate.status === 'failed') {
     <p role="alert" class="error">{{ failure(candidate) }}</p>
-    } @else if (candidate.status === 'consumed') {
+    @if (namesDelegation(candidate.failure)) { @if (candidateDelegationHref();
+    as href) {
+    <p>
+      <a [href]="href" target="_blank" rel="noopener noreferrer"
+        >Open domain-wide delegation in the Google Admin console</a
+      >.
+    </p>
+    <p class="secondary">
+      This link opens Google Admin with the client ID and these scopes filled
+      in. Authorize replaces the scope list of that client with the listed
+      scopes.
+    </p>
+    } } } @else if (candidate.status === 'consumed') {
     <p role="status">
       This review was already confirmed. Refresh saved status to view the
       connection.

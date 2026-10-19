@@ -162,6 +162,24 @@ Resolve related permission, resource, and placement decisions as needed. Later q
 - **D2, write scope during setup.** The Google connection page lists the device write scope with the setup scopes. Update device stays disabled until Google grants it, with a message naming the scope.
   Source: the owner chose the answer "List it with the setup scopes. Update device stays disabled, with a message naming the scope, until Google grants it". Workflow: [update device annotated location](workflows/update-device-annotated-location.md#owner-decisions--2026-10-16).
   Replaced behavior: connection setup without the device write scope.
+- **Pre-filled delegation links, 2026-10-19.** The delegation link opens Google Admin with the client ID and the scopes filled in. The Google connection page offers it today.
+  Source: the owner wrote "Works perfectly we should use this when ever we prompt to add or modify the scopes." on 2026-10-19.
+
+  Observations from the GAM source and the owner test:
+  - The link uses `https://admin.google.com/ac/owl/domainwidedelegation?clientScopeToAdd=<scopes>&clientIdToAdd=<client ID>&overwriteClientId=true&dn=<domain>`.
+  - `clientScopeToAdd` holds full scope URLs, sorted and joined with literal commas. The owner tested this unencoded form.
+  - `overwriteClientId=true` selects "Overwrite existing client ID". Authorize then replaces the scope list of that client with the listed scopes.
+  - The link omits `authuser` and the delegated subject. It changes nothing until an administrator selects Authorize.
+
+  Eng-lead rules of 2026-10-19 (not owner decisions):
+  - A link replaces the scope list. The connection page offers it during setup, because that prompt sets the full setup list. Its links list `GOOGLE_SETUP_SCOPES`.
+  - A prompt that fixes a scope on a saved connection offers a pre-filled link only when the app knows every granted Campus Commander scope. The health check verifies two scopes today, so the diagnostics page offers no pre-filled link.
+  - The Schools page and every `school-ou-references` prompt show no link.
+
+  Source: the owner chose the answer "Queue it after the bulk-actions stage, then add diagnostics links" (2026-10-19). A later card verifies every Campus Commander scope. The diagnostics page then offers pre-filled links.
+
+  Design gap, 2026-10-19: no Figma frame shows these prompts. The existing composition stays.
+
 - **D3, Jobs navigation and the activity area.** Jobs becomes a main navigation item. The owner also asked for a jobs activity notification area.
   Source: the owner answered "A) AND We want a jobs activity notification area. This should be l;ike the googl;e cloud console notification area. At a glance shows when jobs re running and of you select it show you a summary of what is happening and happened recently." Choice A was "Yes: a Jobs page in the main navigation, as Figma shows". Workflow: [update device annotated location](workflows/update-device-annotated-location.md#owner-decisions--2026-10-16).
   Replaced behavior: no Jobs navigation decision.
