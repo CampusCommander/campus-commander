@@ -7,6 +7,7 @@ import test from 'node:test';
 import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
 import {
   qualificationBrowserStep,
+  qualificationHeldSignIn,
   qualificationLinkSignIn,
   qualificationSignIn,
 } from './qualification-sign-in.mjs';
@@ -1224,4 +1225,256 @@ test('a click that starts another navigation fails the step at once', async (t) 
   assert.match(outcome.error.message, /the sign-in navigation did not start/);
   assert.equal(page.clicks, 1, 'the step ran the activation again');
   assert.deepEqual(page.visited, [], 'the step loaded the origin page again');
+});
+
+/**
+ * A fake page that drives the held-response sign-in flow. `commit` answers
+ * the navigation outcome of a click: `ok` commits, and `stall` reports a
+ * commit that does not arrive. `heading` answers the account view after the
+ * commit. `responseStatus` adds a response after the release, for the
+ * genuine-failure control.
+ */
+const fakeHeldPage = ({
+  commit = () => 'ok',
+  heading = 'ok',
+  responseStatus = null,
+} = {}) => {
+  const page = new EventEmitter();
+  page.clicks = 0;
+  page.observations = 0;
+  page.visited = [];
+  page.gotoCalls = [];
+  page.url = () => `${publicOrigin}/`;
+  page.goto = async (url, options = {}) => {
+    page.visited.push(url);
+    page.gotoCalls.push({ url, options });
+    // The retry origin answers with the sign-in view.
+    if (url === publicOrigin) page.viewCheck = true;
+    return { status: () => 200, url: () => url };
+  };
+  page.evaluate = async () => ({
+    readyState: 'complete',
+    applicationChildren: 0,
+    headings: 0,
+    busyRegions: 0,
+    alerts: 0,
+  });
+  const requestWaiters = [];
+  const navigationWaiters = [];
+  const heldRoutes = new Set();
+  let routeHandler = null;
+  let routePattern = null;
+  page.routeFailures = [];
+  page.unrouteSawInFlight = false;
+  page.route = async (pattern, handler) => {
+    routePattern = pattern;
+    routeHandler = handler;
+  };
+  page.unroute = async (pattern) => {
+    if (pattern !== routePattern) return;
+    // Playwright removes the interceptor without waiting for in-flight
+    // handlers. Its server continues a paused route as a fallback and marks
+    // the route handled, so a later continue of the same route fails.
+    if (heldRoutes.size > 0) page.unrouteSawInFlight = true;
+    for (const route of heldRoutes) route.handled = true;
+    routeHandler = null;
+  };
+  // Answer the request watch with the request that the activation starts. A
+  // predicate that does not match this request ends at the wait's own
+  // timeout.
+  const answerRequest = (request) => {
+    for (const waiter of requestWaiters.splice(0)) {
+      if (waiter.predicate?.(request)) waiter.resolve(request);
+      else
+        waiter.reject(
+          new Error('page.waitForRequest: Timeout 10000ms exceeded.'),
+        );
+    }
+  };
+  // Continue the held navigation. The commit arrives, or the wait reports
+  // the commit that does not arrive.
+  const continueNavigation = async () => {
+    if (responseStatus)
+      page.emit('response', {
+        url: () => `${publicOrigin}/api/auth/callback`,
+        status: () => responseStatus,
+        request: () => ({ isNavigationRequest: () => true }),
+      });
+    if (commit(page.clicks) === 'ok')
+      for (const waiter of navigationWaiters.splice(0)) waiter.resolve();
+    else
+      for (const waiter of navigationWaiters.splice(0))
+        waiter.reject(
+          new Error('page.waitForNavigation: Timeout 10000ms exceeded.'),
+        );
+  };
+  const click = async () => {
+    page.clicks++;
+    // The activation leaves the origin view check behind.
+    page.viewCheck = false;
+    answerRequest({
+      isNavigationRequest: () => true,
+      url: () => `${publicOrigin}/api/auth/login`,
+    });
+    if (!routeHandler) throw new Error('the held sign-in route is absent');
+    const continued = Promise.withResolvers();
+    const route = {
+      handled: false,
+      continue: async () => {
+        if (route.handled)
+          throw new Error('route.continue: Route is already handled!');
+        await continueNavigation();
+        continued.resolve();
+      },
+    };
+    heldRoutes.add(route);
+    // Playwright reports a route handler rejection through the unhandled
+    // rejection path. The fake records the rejection for the control.
+    routeHandler(route)
+      .catch((error) => page.routeFailures.push(error))
+      .finally(() => heldRoutes.delete(route));
+    await continued.promise;
+  };
+  page.getByRole = (role) => ({
+    click,
+    waitFor: () => {
+      // The retry origin shows the sign-in view, not the account view.
+      if (role === 'link')
+        return page.viewCheck
+          ? Promise.resolve()
+          : Promise.reject(new Error('the sign-in link is absent'));
+      if (page.viewCheck)
+        return Promise.reject(new Error('the account heading is absent'));
+      return heading === 'ok'
+        ? Promise.resolve()
+        : Promise.reject(new Error('the account heading is absent'));
+    },
+  });
+  page.waitForRequest = (predicate, options = {}) =>
+    new Promise((resolve, reject) =>
+      requestWaiters.push({
+        resolve,
+        reject,
+        predicate,
+        timeout: options.timeout,
+      }),
+    );
+  page.waitForNavigation = ({ timeout } = {}) => {
+    // The step uses the short wait to settle a pending navigation.
+    if (timeout === 1000)
+      return Promise.reject(new Error('no pending navigation'));
+    return new Promise((resolve, reject) =>
+      navigationWaiters.push({ resolve, reject, timeout }),
+    );
+  };
+  return page;
+};
+
+test('recovers a held sign-in whose navigation does not commit after the release', async (t) => {
+  // The reproduction stalls the navigation commit after the release, as the
+  // main run 39207328567 attempt 1 log records for this site. The retry
+  // loads the origin page, observes the progress again, and commits.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeHeldPage({
+    commit: (click) => (click === 1 ? 'stall' : 'ok'),
+  });
+  const outcome = await qualificationHeldSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'held-stall',
+    {
+      prepare: async () => undefined,
+      observe: async () => {
+        page.observations++;
+      },
+    },
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(
+    outcome.status,
+    'resolved',
+    `the flow rejected with ${outcome.error?.message}`,
+  );
+  assert.equal(page.clicks, 2, 'the flow did not retry the sign-in');
+  assert.equal(page.observations, 2, 'the flow skipped a progress check');
+  assert.deepEqual(
+    page.visited,
+    [publicOrigin],
+    'the retry did not load the origin page',
+  );
+  assert.deepEqual(outcome.value, {
+    attempts: 2,
+    recoveries: [{ attempt: 1, routes: [] }],
+  });
+  assert.deepEqual(await readdir(directory), []);
+});
+
+test('a failed progress check rejects without a rejected held route', async (t) => {
+  // The progress check fails while the login response is held. The step must
+  // keep that assertion, release the held route, and remove the route only
+  // after the route settles. Playwright continues an in-flight route when
+  // page.unroute removes its handler, so a continue that races the removal
+  // reports a handled route.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeHeldPage();
+  const outcome = await qualificationHeldSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'held-progress-failure',
+    {
+      prepare: async () => undefined,
+      observe: async () => {
+        page.observations++;
+        throw new Error('the progress text stayed absent');
+      },
+    },
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(outcome.status, 'rejected', 'the flow resolved');
+  assert.match(outcome.error.message, /the progress text stayed absent/);
+  assert.equal(page.clicks, 1, 'the flow retried a failed progress check');
+  assert.equal(page.observations, 1, 'the flow repeated the progress check');
+  assert.equal(
+    page.unrouteSawInFlight,
+    false,
+    'the flow removed the route before the held route settled',
+  );
+  assert.deepEqual(
+    page.routeFailures,
+    [],
+    'the failed progress check left a rejected route handler',
+  );
+});
+
+test('a held sign-in that answers an HTTP error fails at once', async (t) => {
+  // The control keeps a genuine sign-in failure visible. The callback
+  // answers HTTP 500 after the release, so the recovery must not run the
+  // flow again.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeHeldPage({ heading: 'absent', responseStatus: 500 });
+  const outcome = await qualificationHeldSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'held-http-error',
+    {
+      prepare: async () => undefined,
+      observe: async () => {
+        page.observations++;
+      },
+    },
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(outcome.status, 'rejected', 'the flow resolved');
+  assert.match(outcome.error.message, /HTTP 500/);
+  assert.equal(page.clicks, 1, 'the flow retried a genuine failure');
+  assert.equal(page.observations, 1, 'the flow ran the progress check again');
 });
