@@ -170,3 +170,60 @@ test('query cache names carry the query generation and expire after five minutes
     'cc:query:device:C0123456:7:abc',
   );
 });
+
+test('the Devices stream schema drops job IDs, batch counters, and the job record', async () => {
+  const { deviceStreamEventSchema } = await import('./entity-cache.ts');
+  const batch = {
+    type: 'entity-batch',
+    entityType: 'device',
+    deviceIds: ['d1'],
+    removedIds: [],
+  };
+  assert.deepEqual(deviceStreamEventSchema.parse(batch), batch);
+  for (const extra of [
+    { jobId: '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6b' },
+    { batch: 0 },
+    { batchCount: 1 },
+  ])
+    assert.equal(
+      deviceStreamEventSchema.safeParse({ ...batch, ...extra }).success,
+      false,
+    );
+  const job = {
+    jobId: '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6b',
+    customerId: 'C0123456',
+    entityType: 'device',
+    batchCount: 2,
+    completedBatches: 1,
+    failedBatches: 1,
+    failure: 'quota',
+    createdAt: '2026-10-06T12:00:00.000Z',
+    finishedAt: '2026-10-06T12:01:00.000Z',
+  };
+  assert.equal(
+    deviceStreamEventSchema.safeParse({ type: 'job-finished', job }).success,
+    false,
+  );
+  assert.equal(
+    deviceStreamEventSchema.safeParse({ type: 'job-finished', failure: null })
+      .success,
+    true,
+  );
+  assert.equal(
+    deviceStreamEventSchema.safeParse({
+      type: 'job-finished',
+      failure: 'quota',
+    }).success,
+    true,
+  );
+  assert.equal(
+    deviceStreamEventSchema.safeParse({
+      type: 'job-changed',
+      jobId: job.jobId,
+      displayId: 'UPD-006',
+      revision: 1,
+      requestedBy: job.jobId,
+    }).success,
+    false,
+  );
+});

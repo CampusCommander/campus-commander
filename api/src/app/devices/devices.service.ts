@@ -12,10 +12,12 @@ import { z } from 'zod';
 import {
   deviceFreshnessSchema,
   deviceGroupPageSchema,
+  deviceSyncFailureSchema,
   freshnessCutoff,
   deviceOrgUnitsSchema,
   devicePageSchema,
   deviceSyncStateSchema,
+  isAuthorized,
   type DeviceDetail,
   type DeviceFreshness,
   type DeviceGroupField,
@@ -29,6 +31,7 @@ import {
   type DeviceSelectionKey,
   type DeviceSelectionOp,
   type DeviceSelectionSpec,
+  type DeviceSyncFailure,
   type DeviceSyncState,
   type SessionResponse,
 } from '@campus/application-contracts';
@@ -512,5 +515,36 @@ export class DevicesService {
       },
       {},
     );
+  }
+
+  /** True when the caller holds jobs:read at platform scope, or at district scope of this customer. */
+  jobVisibility(session: SessionResponse, customerId: string): boolean {
+    return isAuthorized(session.identity.grants, 'jobs:read', {
+      kind: 'district',
+      customerId,
+    });
+  }
+
+  /**
+   * The failure of one job, as the caller may see it. The predicate decides, so a caller without
+   * jobs:read reads null for another person's job. A missing header row reads as null.
+   */
+  async jobFailure(
+    session: SessionResponse,
+    customerId: string,
+    jobId: string,
+  ): Promise<DeviceSyncFailure | null> {
+    try {
+      const row = (
+        await this.database.connection.query(
+          `SELECT CASE WHEN cc.job_visible($1,$2,$3,j.requested_by) THEN j.failure END AS failure
+            FROM cc.jobs j WHERE j.customer_id=$3 AND j.job_id=$4`,
+          [...this.actor(session), customerId, jobId],
+        )
+      ).rows[0];
+      return deviceSyncFailureSchema.nullable().parse(row?.['failure'] ?? null);
+    } catch (error) {
+      translate(error);
+    }
   }
 }

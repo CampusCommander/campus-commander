@@ -3,7 +3,14 @@ import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import { setTimeout as wait } from 'node:timers/promises';
 import {
+  entityEventSchema,
+  entityEventsChannel,
+  jobEventSchema,
+  jobEventsChannel,
+} from '@campus/application-contracts';
+import {
   EventFanout,
+  FORWARD_READ_MS,
   MAX_BUFFERED_BYTES,
   frame,
   redisSubscriber,
@@ -20,6 +27,31 @@ const batch = (deviceIds = ['d1']) => ({
   removedIds: [],
 });
 const ping = 'event: ping\ndata: {}\n\n';
+
+/** Parse one channel message with the schema of the channel. */
+const parseWith = (schema) => (message) => {
+  try {
+    const parsed = schema.safeParse(JSON.parse(message));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+};
+const entityListener = {
+  channel: entityEventsChannel,
+  parse: parseWith(entityEventSchema),
+};
+const jobListener = {
+  channel: jobEventsChannel,
+  parse: parseWith(jobEventSchema),
+};
+const jobChanged = {
+  type: 'job-changed',
+  jobId: '33333333-3333-4333-8333-333333333333',
+  displayId: 'UPD-006',
+  revision: 3,
+  requestedBy: '44444444-4444-4444-8444-444444444444',
+};
 
 /** Poll until `done()` holds or two seconds pass. Timers fire late on a loaded runner. */
 async function until(done) {
@@ -57,10 +89,15 @@ function subscribers() {
   return { opened, open };
 }
 
-const collector = () => {
+const collector = (
+  channel = entityEventsChannel('C0123456'),
+  parse = entityListener.parse,
+) => {
   const listener = {
     events: [],
     closed: 0,
+    channel: () => channel,
+    parse,
     event: (event) => listener.events.push(event),
     close: () => {
       listener.closed += 1;
@@ -87,11 +124,46 @@ test('one subscriber serves every stream and a channel unsubscribes after its la
   ]);
 });
 
+test('one subscriber serves the entity channel and the job channel', async () => {
+  const { opened, open } = subscribers();
+  const fanout = new EventFanout(open);
+  const devices = collector();
+  const jobs = collector(jobEventsChannel('C0123456'), jobListener.parse);
+  await fanout.listen('C0123456', devices);
+  await fanout.listen('C0123456', jobs);
+  assert.equal(opened.length, 1);
+  assert.deepEqual(opened[0].calls, [
+    ['subscribe', 'cc:entity-events:C0123456'],
+    ['subscribe', 'cc:job-events:C0123456'],
+  ]);
+  opened[0].publish('cc:entity-events:C0123456', JSON.stringify(batch()));
+  opened[0].publish('cc:job-events:C0123456', JSON.stringify(jobChanged));
+  assert.deepEqual(devices.events, [batch()]);
+  assert.deepEqual(jobs.events, [jobChanged]);
+  await fanout.close();
+});
+
+test('a job event never parses as an entity event and the reverse', async () => {
+  const { opened, open } = subscribers();
+  const fanout = new EventFanout(open);
+  const devices = collector();
+  const jobs = collector(jobEventsChannel('C0123456'), jobListener.parse);
+  await fanout.listen('C0123456', devices);
+  await fanout.listen('C0123456', jobs);
+  // A job event on the entity channel is dropped by that channel's parser.
+  opened[0].publish('cc:entity-events:C0123456', JSON.stringify(jobChanged));
+  // An entity event on the job channel is dropped too.
+  opened[0].publish('cc:job-events:C0123456', JSON.stringify(batch()));
+  assert.deepEqual(devices.events, []);
+  assert.deepEqual(jobs.events, []);
+  await fanout.close();
+});
+
 test('events reach only their customer and invalid messages are dropped', async () => {
   const { opened, open } = subscribers();
   const fanout = new EventFanout(open);
   const mine = collector();
-  const other = collector();
+  const other = collector(entityEventsChannel('C0999999'));
   await fanout.listen('C0123456', mine);
   await fanout.listen('C0999999', other);
   opened[0].publish('cc:entity-events:C0123456', JSON.stringify(batch()));
@@ -188,6 +260,7 @@ test('a stream starts after the subscription and sends named events and pings', 
   const started = await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
+    listener: entityListener,
     begin: () => {
       response.began += 1;
     },
@@ -195,6 +268,7 @@ test('a stream starts after the subscription and sends named events and pings', 
       checks += 1;
       return true;
     },
+    forward: (event) => ({ event }),
     pingMs: 10,
   });
   assert.equal(started, true);
@@ -202,6 +276,7 @@ test('a stream starts after the subscription and sends named events and pings', 
   assert.equal(listeners[0].customerId, 'C0123456');
   assert.equal(response.chunks[0], 'retry: 3000\n\n');
   listeners[0].listener.event(batch());
+  await until(() => response.chunks.length > 1);
   assert.equal(response.chunks[1], frame('entity-batch', batch()));
   assert.equal(frame('ping', {}), ping);
   await until(() => checks >= 2 && pings() >= 2);
@@ -218,8 +293,10 @@ test('a failed session check ends the stream', async (t) => {
   await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
+    listener: entityListener,
     begin: () => undefined,
     recheck: async () => false,
+    forward: (event) => ({ event }),
     pingMs: 10,
   });
   await until(() => response.ended);
@@ -234,12 +311,15 @@ test('a slow browser loses its stream instead of buffering without bound', async
   await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
+    listener: entityListener,
     begin: () => undefined,
     recheck: async () => true,
+    forward: (event) => ({ event }),
     pingMs: 60_000,
   });
   response.writableLength = MAX_BUFFERED_BYTES + 1;
   listeners[0].listener.event(batch());
+  await until(() => response.ended);
   assert.equal(response.ended, true);
   assert.equal(listeners.length, 0);
 });
@@ -253,10 +333,12 @@ test('a stream whose subscription fails writes nothing', async () => {
         throw new Error('redis down');
       },
     },
+    listener: entityListener,
     begin: () => {
       response.began += 1;
     },
     recheck: async () => true,
+    forward: (event) => ({ event }),
   });
   assert.equal(started, false);
   assert.equal(response.began, 0);
@@ -278,10 +360,12 @@ test('a browser that leaves during the subscription unsubscribes', async () => {
             });
         }),
     },
+    listener: entityListener,
     begin: () => {
       response.began += 1;
     },
     recheck: async () => true,
+    forward: (event) => ({ event }),
   });
   response.disconnect();
   release();
@@ -299,10 +383,12 @@ test('a loss before the stream starts returns false and does not end the sink', 
   const started = await streamEvents(response, {
     customerId: 'C0123456',
     fanout,
+    listener: entityListener,
     begin: () => {
       response.began += 1;
     },
     recheck: async () => true,
+    forward: (event) => ({ event }),
   });
   assert.equal(started, false);
   assert.equal(response.began, 0);
@@ -328,10 +414,12 @@ test('a loss during a pending subscribe ends the attempt and unsubscribes', asyn
         });
       },
     },
+    listener: entityListener,
     begin: () => {
       response.began += 1;
     },
     recheck: async () => true,
+    forward: (event) => ({ event }),
   });
   close();
   release();
@@ -340,6 +428,157 @@ test('a loss during a pending subscribe ends the attempt and unsubscribes', asyn
   assert.equal(response.began, 0);
   assert.equal(response.ended, false);
   assert.deepEqual(response.chunks, []);
+});
+
+const finishedJob = {
+  type: 'job-finished',
+  job: {
+    jobId: '33333333-3333-4333-8333-333333333333',
+    customerId: 'C0123456',
+    entityType: 'device',
+    batchCount: 1,
+    completedBatches: 0,
+    failedBatches: 1,
+    failure: 'quota',
+    createdAt: '2026-10-06T12:00:00.000Z',
+    finishedAt: '2026-10-06T12:01:00.000Z',
+  },
+};
+
+test('forward maps one channel event to one stream event or to none', async (t) => {
+  const listeners = [];
+  const response = sink();
+  t.after(() => response.disconnect());
+  await streamEvents(response, {
+    customerId: 'C0123456',
+    fanout: fanoutWith(listeners),
+    listener: entityListener,
+    begin: () => undefined,
+    recheck: async () => true,
+    pingMs: 60_000,
+    forward: (event) =>
+      event.type === 'entity-batch'
+        ? {
+            event: {
+              type: 'entity-batch',
+              entityType: event.entityType,
+              deviceIds: event.deviceIds,
+              removedIds: event.removedIds,
+            },
+          }
+        : null,
+  });
+  listeners[0].listener.event(finishedJob);
+  listeners[0].listener.event(batch());
+  await until(() => response.chunks.length > 1);
+  assert.equal(
+    response.chunks[1],
+    frame('entity-batch', {
+      type: 'entity-batch',
+      entityType: 'device',
+      deviceIds: ['d1'],
+      removedIds: [],
+    }),
+  );
+  await wait(20);
+  assert.equal(response.chunks.length, 2, 'The mapped-away event is not sent.');
+});
+
+test('a failed forward read sends the null-failure event and ends the stream', async (t) => {
+  const listeners = [];
+  const response = sink();
+  t.after(() => response.disconnect());
+  await streamEvents(response, {
+    customerId: 'C0123456',
+    fanout: fanoutWith(listeners),
+    listener: entityListener,
+    begin: () => undefined,
+    recheck: async () => true,
+    pingMs: 60_000,
+    forward: (event, failed) => {
+      if (failed)
+        return { event: { type: 'job-finished', failure: null }, end: true };
+      throw new Error('store down');
+    },
+  });
+  listeners[0].listener.event(finishedJob);
+  await until(() => response.ended);
+  assert.equal(response.ended, true);
+  assert.equal(
+    response.chunks[1],
+    frame('job-finished', { type: 'job-finished', failure: null }),
+  );
+  assert.equal(listeners.length, 0);
+});
+
+test('a forward read that outlives its deadline counts as failed', async (t) => {
+  const listeners = [];
+  const response = sink();
+  t.after(() => response.disconnect());
+  await streamEvents(response, {
+    customerId: 'C0123456',
+    fanout: fanoutWith(listeners),
+    listener: entityListener,
+    begin: () => undefined,
+    recheck: async () => true,
+    pingMs: 60_000,
+    readMs: 20,
+    forward: (event, failed) => {
+      if (failed)
+        return { event: { type: 'job-finished', failure: null }, end: true };
+      return new Promise(() => undefined);
+    },
+  });
+  listeners[0].listener.event(finishedJob);
+  await until(() => response.ended);
+  assert.equal(response.ended, true);
+  assert.equal(
+    response.chunks[1],
+    frame('job-finished', { type: 'job-finished', failure: null }),
+  );
+  assert.ok(FORWARD_READ_MS >= 5000);
+});
+
+test('a slow read delays only the later events of the stream', async (t) => {
+  const listeners = [];
+  const response = sink();
+  t.after(() => response.disconnect());
+  const order = [];
+  await streamEvents(response, {
+    customerId: 'C0123456',
+    fanout: fanoutWith(listeners),
+    listener: entityListener,
+    begin: () => undefined,
+    recheck: async () => true,
+    pingMs: 60_000,
+    forward: async (event) => {
+      if (event.type === 'full-sync') await wait(40);
+      order.push(event.type);
+      return { event };
+    },
+  });
+  listeners[0].listener.event({
+    type: 'full-sync',
+    sync: {
+      customerId: 'C0123456',
+      generation: 1,
+      status: 'ready',
+      observedAt: null,
+      deviceCount: 0,
+      failure: null,
+      telemetryFailure: null,
+      startedAt: null,
+      checkedAt: null,
+      stale: false,
+    },
+  });
+  listeners[0].listener.event(batch());
+  await until(() => response.chunks.length > 2);
+  assert.deepEqual(order, ['full-sync', 'entity-batch']);
+  assert.deepEqual(
+    response.chunks.slice(1).map((chunk) => chunk.split('\n')[0]),
+    ['event: full-sync', 'event: entity-batch'],
+  );
 });
 
 /** A node-redis client stand-in. */

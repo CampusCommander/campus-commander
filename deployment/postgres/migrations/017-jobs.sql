@@ -1701,6 +1701,38 @@ BEGIN
 END;
 $$;
 
+-- Eng-lead ruling 1: the connected customer for a caller with jobs:read or devices:read.
+-- It copies cc.device_reader of 016 and accepts either action.
+CREATE FUNCTION cc.job_reader(p_actor uuid,p_version integer) RETURNS cc.google_connection
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE connection cc.google_connection;
+BEGIN
+  SELECT * INTO connection FROM cc.google_connection WHERE singleton;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action IN ('jobs:read','devices:read') AND (
+      g.scope='{"kind":"platform"}'::jsonb OR
+      (g.scope->>'kind'='district' AND g.scope->>'customerId'=connection.customer_id))) THEN
+    RAISE EXCEPTION 'Job read authority is required.' USING ERRCODE='42501';
+  END IF;
+  RETURN connection;
+END;
+$$;
+
+-- Eng-lead ruling 2: store the caller's activity seen time and return it. It locks only that row.
+CREATE FUNCTION cc.record_job_activity_seen(p_actor uuid,p_version integer) RETURNS timestamptz
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE seen timestamptz;
+BEGIN
+  PERFORM cc.job_reader(p_actor,p_version);
+  INSERT INTO cc.job_activity_seen(principal_id,seen_at) VALUES(p_actor,clock_timestamp())
+    ON CONFLICT(principal_id) DO UPDATE SET seen_at=excluded.seen_at
+    RETURNING seen_at INTO seen;
+  RETURN seen;
+END;
+$$;
+
 REVOKE ALL ON cc.jobs,cc.job_targets,cc.device_update_previews,cc.device_update_preview_targets,
   cc.device_update_jobs,cc.device_update_batches,cc.device_update_operations,cc.device_write_overlays,
   cc.job_activity_seen,cc.job_publications FROM PUBLIC;
@@ -1724,4 +1756,5 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.purge_jobs(text,integer),cc.device_update_receipt(uuid),
   cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,jsonb,integer),
   cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
-  cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid) FROM PUBLIC;
+  cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid),
+  cc.job_reader(uuid,integer),cc.record_job_activity_seen(uuid,integer) FROM PUBLIC;

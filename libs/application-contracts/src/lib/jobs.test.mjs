@@ -10,8 +10,12 @@ import {
   jobEventSchema,
   jobEventsChannel,
   jobLatestActivitySchema,
+  jobListSchema,
   jobOperationSchema,
+  jobOperationsPageSchema,
   jobProgressSchema,
+  jobRequestersSchema,
+  jobSeenSchema,
   jobStatusSchema,
   jobSummarySchema,
 } from './jobs.ts';
@@ -327,4 +331,55 @@ test('job events accept only job-changed and require a requester', () => {
   assert.equal(jobEventSchema.safeParse(withoutRequester).success, false);
   assert.equal(entityEventSchema.safeParse(event).success, false);
   assert.equal(jobEventsChannel('C0123456'), 'cc:job-events:C0123456');
+});
+
+test('the list answer carries the page, the matching count, and the next cursor', () => {
+  const list = {
+    jobs: [summary],
+    matching: 1,
+    nextCursor: null,
+    observedAt: at,
+  };
+  assert.deepEqual(jobListSchema.parse(list), list);
+  assert.equal(
+    jobListSchema.safeParse({ ...list, extra: true }).success,
+    false,
+  );
+  assert.equal(
+    jobListSchema.safeParse({ ...list, nextCursor: '' }).success,
+    false,
+  );
+});
+
+test('the operations page caps at 1,000 rows and pages with a string cursor', () => {
+  const page = { operations: [operation], nextCursor: '3' };
+  assert.deepEqual(jobOperationsPageSchema.parse(page), page);
+  assert.equal(
+    jobOperationsPageSchema.safeParse({ operations: [], nextCursor: null })
+      .success,
+    true,
+  );
+  assert.equal(
+    jobOperationsPageSchema.safeParse({ ...page, extra: true }).success,
+    false,
+  );
+});
+
+test('the requesters answer caps at 20 people', () => {
+  assert.deepEqual(
+    jobRequestersSchema.parse({
+      requesters: [{ id: requesterId, displayName: 'Alex Rivera' }],
+    }),
+    { requesters: [{ id: requesterId, displayName: 'Alex Rivera' }] },
+  );
+  assert.equal(
+    jobRequestersSchema.safeParse({ requesters: [{ id: requesterId }] })
+      .success,
+    false,
+  );
+});
+
+test('the seen answer carries the stored time', () => {
+  assert.deepEqual(jobSeenSchema.parse({ seenAt: at }), { seenAt: at });
+  assert.equal(jobSeenSchema.safeParse({}).success, false);
 });

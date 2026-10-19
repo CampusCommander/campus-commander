@@ -1,13 +1,12 @@
-import {
-  ENTITY_EVENTS_PING_SECONDS,
-  entityEventSchema,
-  entityEventsChannel,
-  type EntityEvent,
-} from '@campus/application-contracts';
+import { ENTITY_EVENTS_PING_SECONDS } from '@campus/application-contracts';
 
-/** One open event stream. */
-export interface EventListener {
-  event(event: EntityEvent): void;
+/** One open event stream. The listener names its channel and parses that channel's events. */
+export interface EventListener<Event> {
+  /** The Redis channel for the customer of this stream. */
+  channel(customerId: string): string;
+  /** Parse one channel message. A message outside this channel's schema returns null and is dropped. */
+  parse(message: string): Event | null;
+  event(event: Event): void;
   /** The subscriber connection ended. The stream closes so the browser reconnects and reconciles. */
   close(): void;
 }
@@ -23,7 +22,8 @@ export interface Subscriber {
 }
 
 interface Channel {
-  listeners: Set<EventListener>;
+  listeners: Set<EventListener<unknown>>;
+  parse: (message: string) => unknown;
   ready: Promise<void>;
 }
 
@@ -42,15 +42,16 @@ export class EventFanout {
   }
 
   /** Returns the function that removes the listener. */
-  async listen(
+  async listen<Event>(
     customerId: string,
-    listener: EventListener,
+    listener: EventListener<Event>,
   ): Promise<() => Promise<void>> {
-    const channel = entityEventsChannel(customerId);
+    const channel = listener.channel(customerId);
     let entry = this.channels.get(channel);
     if (!entry) {
       const created: Channel = {
         listeners: new Set(),
+        parse: (message) => listener.parse(message),
         ready: this.connection().then((subscriber) =>
           subscriber.subscribe(channel, (message) =>
             this.deliver(channel, message),
@@ -64,16 +65,19 @@ export class EventFanout {
       this.channels.set(channel, created);
       entry = created;
     }
-    entry.listeners.add(listener);
+    entry.listeners.add(listener as EventListener<unknown>);
     try {
       await entry.ready;
     } catch (error) {
-      entry.listeners.delete(listener);
+      entry.listeners.delete(listener as EventListener<unknown>);
       throw error;
     }
     return async () => {
       const current = this.channels.get(channel);
-      if (!current?.listeners.delete(listener) || current.listeners.size)
+      if (
+        !current?.listeners.delete(listener as EventListener<unknown>) ||
+        current.listeners.size
+      )
         return;
       this.channels.delete(channel);
       const subscriber = this.subscriber;
@@ -89,15 +93,17 @@ export class EventFanout {
   }
 
   private deliver(channel: string, message: string): void {
-    let event: EntityEvent;
+    const entry = this.channels.get(channel);
+    if (!entry) return;
+    let event: unknown;
     try {
-      event = entityEventSchema.parse(JSON.parse(message));
+      event = entry.parse(message);
     } catch {
       // The worker publishes only valid events. Anything else is dropped.
       return;
     }
-    for (const listener of this.channels.get(channel)?.listeners ?? [])
-      listener.event(event);
+    if (event === null) return;
+    for (const listener of entry.listeners) listener.event(event);
   }
 
   private lose(): void {
@@ -196,18 +202,38 @@ export interface EventSink {
   readonly writableLength: number;
 }
 
+/** One stream event that `forward` produced, and whether its failure ends the stream. */
+export interface Forwarded {
+  event: unknown;
+  /** A failed read sends its event and then ends the stream. */
+  end?: boolean;
+}
+
+/** A forward read that runs longer than this counts as failed. */
+export const FORWARD_READ_MS = 5_000;
+
 /**
  * Stream one customer's events to one browser (D6, D12). The stream starts after the subscription is active,
  * so a reconnect that reads state afterwards misses nothing. Each ping re-checks the session first.
+ *
+ * `forward` maps one channel event to the stream event for this caller, or to none. It handles the events
+ * of one stream one at a time, in arrival order. A read times out after `readMs` and counts as failed; the
+ * stream then sends the event that `forward(event, true)` returns and ends.
  */
-export async function streamEvents(
+export async function streamEvents<Event>(
   sink: EventSink,
   options: {
     customerId: string;
     fanout: Pick<EventFanout, 'listen'>;
+    listener: Pick<EventListener<Event>, 'channel' | 'parse'>;
     begin: () => void;
     recheck: () => Promise<boolean>;
+    forward: (
+      event: Event,
+      failed: boolean,
+    ) => Forwarded | null | Promise<Forwarded | null>;
     pingMs?: number;
+    readMs?: number;
   },
 ): Promise<boolean> {
   let closed = false;
@@ -216,6 +242,7 @@ export async function streamEvents(
   // eslint-disable-next-line prefer-const
   let timer: ReturnType<typeof setInterval> | undefined;
   let unlisten: (() => Promise<void>) | undefined;
+  let pending: Promise<void> = Promise.resolve();
   const finish = () => {
     if (closed) return;
     closed = true;
@@ -229,10 +256,41 @@ export async function streamEvents(
     sink.write(chunk);
     if (sink.writableLength > MAX_BUFFERED_BYTES) finish();
   };
+  const fail = async (event: Event) => {
+    let forwarded: Forwarded | null;
+    try {
+      forwarded = await options.forward(event, true);
+    } catch {
+      forwarded = null;
+    }
+    if (forwarded?.event) send(streamFrame(forwarded.event));
+    finish();
+  };
+  const handle = async (event: Event) => {
+    if (closed) return;
+    let forwarded: Forwarded | null;
+    try {
+      forwarded = await deadline(
+        Promise.resolve(options.forward(event, false)),
+        options.readMs ?? FORWARD_READ_MS,
+      );
+    } catch {
+      await fail(event);
+      return;
+    }
+    if (closed) return;
+    if (forwarded?.event) send(streamFrame(forwarded.event));
+    if (forwarded?.end) finish();
+  };
   sink.once('close', finish);
   try {
     unlisten = await options.fanout.listen(options.customerId, {
-      event: (event) => send(frame(event.type, event)),
+      channel: options.listener.channel,
+      parse: options.listener.parse,
+      event: (event) => {
+        // One read at a time, in arrival order. A pending read delays only the later events of this stream.
+        pending = pending.then(() => handle(event)).catch(() => undefined);
+      },
       close: finish,
     });
   } catch {
@@ -255,4 +313,28 @@ export async function streamEvents(
     options.pingMs ?? ENTITY_EVENTS_PING_SECONDS * 1000,
   );
   return true;
+}
+
+/** The SSE frame of one forwarded stream event. Its type names the frame. */
+export function streamFrame(event: unknown): string {
+  const name = (event as { type?: unknown }).type;
+  return frame(typeof name === 'string' ? name : 'message', event);
+}
+
+/** Resolve with the value, or reject after `ms`. A read that outlives the deadline counts as failed. */
+function deadline<T>(value: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('forward-timeout')), ms);
+    timer.unref?.();
+    value.then(
+      (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
