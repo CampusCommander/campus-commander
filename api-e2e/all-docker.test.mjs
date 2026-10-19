@@ -16,7 +16,10 @@ import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
 import { startRegistry } from './registry-fixture.mjs';
 import { qualifyApplicationRestore } from './restore-fixture.mjs';
-import { qualificationBrowserStep } from './qualification-sign-in.mjs';
+import {
+  qualificationBrowserStep,
+  qualificationLinkSignIn,
+} from './qualification-sign-in.mjs';
 import { loadQualificationBundle } from '../deployment/release/qualification.mjs';
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
 import {
@@ -609,6 +612,7 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
               page,
               publicOrigin,
               provider,
+              evidenceDirectory,
             });
             await checks();
           }
@@ -721,12 +725,14 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
               // appends its recovery record. A step retry would multiply both.
               { retryOnNetworkChange: false },
             );
-            await page
-              .getByRole('link', { name: 'Sign in to Campus Commander' })
-              .click();
-            await expect(
-              page.getByRole('heading', { name: 'Your account', exact: true }),
-            ).toBeVisible({ timeout: 15000 });
+            // The sign-in link flow runs inside the step, so the step
+            // recovers a navigation that the resume leaves pending.
+            await qualificationLinkSignIn(
+              page,
+              publicOrigin,
+              evidenceDirectory,
+              `all-docker-phase-${applicationPhase}-${command}-resume`,
+            );
             await expect(page.locator('html')).toHaveAttribute(
               'data-theme',
               'dark',
@@ -768,15 +774,12 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
                     .getByRole('link', { name: 'Sign in to Campus Commander' })
                     .isVisible()
                 ) {
-                  await page
-                    .getByRole('link', { name: 'Sign in to Campus Commander' })
-                    .click();
-                  await expect(
-                    page.getByRole('heading', {
-                      name: 'Your account',
-                      exact: true,
-                    }),
-                  ).toBeVisible({ timeout: 15000 });
+                  await qualificationLinkSignIn(
+                    page,
+                    publicOrigin,
+                    evidenceDirectory,
+                    'all-docker-guided-update',
+                  );
                 }
                 await expect(page.locator('html')).toHaveAttribute(
                   'data-theme',

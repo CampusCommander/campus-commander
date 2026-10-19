@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { expect } from '@playwright/test';
+import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 import { faultRecoveryTimeoutSeconds } from '../deployment/qualification/faults.mjs';
 
 const docker = (args, input) =>
@@ -363,12 +364,14 @@ export async function faultAllDocker({
           .toBe(401);
         record.sourceSessionRejected = true;
         await page.goto(config.applicationAuth.publicOrigin + '/login');
-        await page
-          .getByRole('link', { name: 'Sign in to Campus Commander' })
-          .click();
-        await expect(
-          page.getByRole('heading', { name: 'Your account', exact: true }),
-        ).toBeVisible({ timeout: 15000 });
+        // The sign-in link flow of a fault recovery runs inside the step, so
+        // the step recovers a navigation that the fault leaves pending.
+        await qualificationLinkSignIn(
+          page,
+          config.applicationAuth.publicOrigin,
+          dirname(evidencePath),
+          `all-docker-fault-${fault.name}`,
+        );
       } else
         await expect
           .poll(async () => (await request()).httpStatus, { timeout: 30000 })
