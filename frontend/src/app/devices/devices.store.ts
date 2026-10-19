@@ -16,7 +16,7 @@ import {
   devicePageSchema,
   deviceRowsSchema,
   deviceSyncStateSchema,
-  entityEventSchema,
+  deviceStreamEventSchema,
   type DeviceDetail,
   type DeviceFreshness,
   type DeviceOrgUnit,
@@ -591,14 +591,14 @@ export class DevicesStore {
     } catch {
       return;
     }
-    const result = entityEventSchema.safeParse(parsed);
+    const result = deviceStreamEventSchema.safeParse(parsed);
     if (!result.success) return;
     const event = result.data;
     if (event.type === 'entity-batch') {
       void this.refreshRows([...event.deviceIds, ...event.removedIds]);
       this.scheduleRecount();
     } else if (event.type === 'job-finished') {
-      if (event.job.failure) this.jobFailure.set(event.job.failure);
+      if (event.failure) this.jobFailure.set(event.failure);
       this.scheduleRecount();
     } else {
       // An older event reports a sync that the current status already passed. It changes nothing.

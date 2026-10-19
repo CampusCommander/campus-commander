@@ -20,14 +20,31 @@ import {
   deviceSelectionChangeSchema,
   deviceSelectionKeySchema,
   deviceSelectionResolveSchema,
+  entityEventSchema,
+  entityEventsChannel,
+  type EntityEvent,
 } from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { DeviceEventsService } from './device-events.service';
 import { streamEvents } from './device-events';
+import { deviceForward } from './device-stream';
 import { DevicesService } from './devices.service';
 
 const deviceIdSchema = z.string().min(1).max(128);
+
+/** The entity channel and its schema. The Devices stream forwards the events of section 3.1. */
+const entityListener = {
+  channel: entityEventsChannel,
+  parse: (message: string): EntityEvent | null => {
+    try {
+      const parsed = entityEventSchema.safeParse(JSON.parse(message));
+      return parsed.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
+  },
+};
 
 @Controller('api/devices')
 @UseGuards(AuthGuard)
@@ -173,9 +190,15 @@ export class DevicesController {
     const current = await this.current(request);
     if (!current)
       throw new ConflictException({ reason: 'connection-required' });
-    const started = await streamEvents(response, {
+    // A holder of jobs:read at platform or district scope receives every failure of the customer.
+    const seesEveryJob = this.devices.jobVisibility(
+      request.session,
+      current.customerId,
+    );
+    const started = await streamEvents<EntityEvent>(response, {
       customerId: current.customerId,
       fanout: this.deviceEvents.fanout,
+      listener: entityListener,
       begin: () => {
         response.writeHead(200, {
           'content-type': 'text/event-stream; charset=utf-8',
@@ -193,13 +216,22 @@ export class DevicesController {
             request.correlationId,
             { slide: false },
           );
+          const next = await this.current(request);
           return (
-            (await this.current(request))?.customerId === current.customerId
+            next?.customerId === current.customerId &&
+            this.devices.jobVisibility(request.session, current.customerId) ===
+              seesEveryJob
           );
         } catch {
           return false;
         }
       },
+      // Section 3.1: no job ID, no job record, no requester, and no failure that the caller cannot see.
+      forward: deviceForward(seesEveryJob, {
+        jobFailure: (jobId) =>
+          this.devices.jobFailure(request.session, current.customerId, jobId),
+        sync: () => this.devices.sync(request.session),
+      }),
     });
     if (!started && !response.headersSent)
       throw new ServiceUnavailableException({ reason: 'events-unavailable' });
