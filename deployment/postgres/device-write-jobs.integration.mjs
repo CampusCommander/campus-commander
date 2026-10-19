@@ -5703,12 +5703,12 @@ export async function qualifyDeviceWriteJobs({
     // on its device rows. A test trigger caps that renewal at 1.2 seconds for the one session that sets
     // cc.test_short_lease, so the lease lapses within a short device wait. The trigger leaves with the
     // check. The round-1 review measured the same order with the real ten-minute lease.
-    const withShortStagingLease = async (body) => {
+    const withShortStagingLease = async (body, milliseconds = 1200) => {
       await migrator.query(`CREATE FUNCTION cc.test_short_sync_lease() RETURNS trigger
         LANGUAGE plpgsql AS $f$
         BEGIN
           IF current_setting('cc.test_short_lease',true)='on' AND NEW.sync_expires_at IS NOT NULL THEN
-            NEW.sync_expires_at:=LEAST(NEW.sync_expires_at,clock_timestamp()+interval '1200 milliseconds');
+            NEW.sync_expires_at:=LEAST(NEW.sync_expires_at,clock_timestamp()+interval '${milliseconds} milliseconds');
           END IF;
           RETURN NEW;
         END
@@ -6060,6 +6060,434 @@ export async function qualifyDeviceWriteJobs({
         await resetSync();
       },
     );
+
+    // Round 3 of B2b. Rule G: advisory lock 7240173008 is the global access lock. Every function that
+    // can reach it takes it first, before any row lock and before any other advisory lock. A full-sync
+    // claim, a full-sync finish, and a device-update batch claim reach it through
+    // cc.google_current_generation. At 6fc3b04 each of them took its row locks first and held them while
+    // it waited for the global lock. Each check below holds the global lock, lets the call wait for it,
+    // and then proves with NOWAIT locks that the named rows stay free during that wait.
+    const outcomeOf = (promise) =>
+      promise.then(
+        () => ({ accepted: true }),
+        (error) => ({
+          accepted: false,
+          code: error.code,
+          detail: error.detail,
+          message: error.message,
+        }),
+      );
+    const waitsForAny = async (blockedPid, holderPids) => {
+      for (let round = 0; round < 200; round += 1) {
+        const state = await adminRow(
+          'SELECT pg_blocking_pids($1::int) && $2::int[] AS held',
+          [blockedPid, holderPids],
+        );
+        if (state?.held === true) return true;
+        await sleep(25);
+      }
+      return false;
+    };
+    const globalLockFirst = async ({ name, sql, values, free }) => {
+      const holder = await connect('cc-migrator', 'cc-app');
+      const caller = await connect('cc-app', 'cc-app');
+      const observer = await connect('cc-migrator', 'cc-app');
+      let pending = null;
+      try {
+        await holder.query('BEGIN');
+        await holder.query('SELECT pg_advisory_xact_lock(7240173008)');
+        const holderPid = await pidOf(holder);
+        const callerPid = await pidOf(caller);
+        // The answer of a claim carries a credential envelope. Only its outcome enters the result.
+        pending = outcomeOf(caller.query(sql, values));
+        assert.equal(
+          await waitsFor(callerPid, holderPid),
+          true,
+          `${name} waits for the global access lock.`,
+        );
+        for (const [label, text, args] of free) {
+          const locked = await observer.query(text, args).then(
+            () => true,
+            (error) => error.code,
+          );
+          assert.equal(
+            locked,
+            true,
+            `${name} holds no ${label} row while it waits for the global access lock.`,
+          );
+        }
+        await holder.query('COMMIT');
+        const answer = await pending;
+        assert.equal(answer.accepted, true, answer.message);
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        if (pending) await pending;
+        await Promise.allSettled([holder.end(), caller.end(), observer.end()]);
+      }
+    };
+    const freeSyncState = () => [
+      'sync-state',
+      'SELECT 1 FROM cc.device_sync_state WHERE customer_id=$1 FOR UPDATE NOWAIT',
+      [customer],
+    ];
+    const freeHeader = (jobId) => [
+      'job header',
+      'SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE NOWAIT',
+      [jobId],
+    ];
+
+    await ruleCheck(
+      'G a full-sync claim takes the global access lock before any row lock',
+      async () => {
+        await closeRunningSyncs();
+        const sync = await requestAs(reader);
+        await globalLockFirst({
+          name: 'A full-sync claim',
+          sql: 'SELECT cc.claim_device_sync($1,$2,$3) AS result',
+          values: [customer, sync.id, randomUUID()],
+          free: [freeSyncState(), freeHeader(sync.id)],
+        });
+        assert.ok(
+          (await syncStateRow()).sync_attempt,
+          'The claim records its attempt.',
+        );
+        await closeRunningSyncs();
+      },
+    );
+
+    for (const [label, failure] of [
+      ['successful', null],
+      ['failed', 'quota'],
+    ])
+      await ruleCheck(
+        `G a ${label} full-sync finish takes the global access lock before any row lock`,
+        async () => {
+          await closeRunningSyncs();
+          await upsert(
+            [device(`g-finish-${label}`)],
+            new Date(Date.now() - 60 * 60 * 1000),
+          );
+          const sync = await makeSync();
+          await globalLockFirst({
+            name: `A ${label} full-sync finish`,
+            sql: 'SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result',
+            values: [customer, sync.id, sync.attempt, failure, null],
+            free: [
+              freeSyncState(),
+              freeHeader(sync.id),
+              [
+                'device',
+                'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE NOWAIT',
+                [customer, `g-finish-${label}`],
+              ],
+            ],
+          });
+          assert.equal(
+            (await jobRow(sync.id)).status,
+            failure === null ? 'completed' : 'failed',
+          );
+          await closeRunningSyncs();
+        },
+      );
+
+    await ruleCheck(
+      'G a device-update batch claim takes the global access lock before any row lock',
+      async () => {
+        const job = await makeJob({ devices: ['g-claim-a'] });
+        const admitted = await admit(false);
+        assert.equal(
+          admitted.jobId,
+          job.jobId,
+          'The admission picks this job.',
+        );
+        await globalLockFirst({
+          name: 'A batch claim',
+          sql: 'SELECT cc.claim_device_update_batch($1,$2,$3,$4,$5,$6) AS result',
+          values: [
+            customer,
+            job.jobId,
+            admitted.dispatchToken,
+            0,
+            randomUUID(),
+            'g-claim',
+          ],
+          free: [
+            freeHeader(job.jobId),
+            [
+              'detail',
+              'SELECT 1 FROM cc.device_update_jobs WHERE job_id=$1 FOR UPDATE NOWAIT',
+              [job.jobId],
+            ],
+            [
+              'operation',
+              'SELECT 1 FROM cc.device_update_operations WHERE job_id=$1 FOR UPDATE NOWAIT',
+              [job.jobId],
+            ],
+          ],
+        });
+        assert.equal(
+          (await operations(job.jobId))[0].status,
+          'dispatched',
+          'The claim dispatches its operation after the wait.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // R2-F1 (P1): a duplicate request takes its requester principal FOR KEY SHARE before it waits for the
+    // sync state (the first-request protection of 6fc3b04). A full-sync writer holds that state while it
+    // waits for its header. A Google observation of the same actor takes the global access lock, then
+    // that principal FOR UPDATE (007 cc.google_connection_actor). At 6fc3b04 the full-sync writer asked
+    // for the global lock only after its header wait, so the three calls formed a principal, state, and
+    // global-lock cycle (40P01). Under rule G the full-sync writer holds the global lock before its state
+    // row, so the observation waits for that writer, and every call ends with its defined answer. The
+    // three calls run as the function owner and as the runtime role. The held header only schedules them.
+    const diagnostician = await principal(`${randomUUID()}`, [
+      ['devices:read', district()],
+      ['connection:diagnose', district()],
+    ]);
+    const threeWriters = async ({ role, writer }) => {
+      await closeRunningSyncs();
+      const sync = randomUUID();
+      const attempt = randomUUID();
+      await result(requestSql, [
+        diagnostician,
+        1,
+        customer,
+        generation,
+        sync,
+        randomUUID(),
+      ]);
+      if (writer === 'finish') await claimSync(sync, attempt);
+      const observation = JSON.stringify(
+        (
+          await adminRow(
+            'SELECT observation FROM cc.google_connection WHERE customer_id=$1',
+            [customer],
+          )
+        ).observation,
+      );
+      const holder = await connect('cc-migrator', 'cc-app');
+      const syncWriter = await connect(role, 'cc-app');
+      const requester = await connect(role, 'cc-app');
+      const google = await connect(role, 'cc-app');
+      const runs = [];
+      try {
+        const holderPid = await pidOf(holder);
+        const writerPid = await pidOf(syncWriter);
+        const requestPid = await pidOf(requester);
+        const googlePid = await pidOf(google);
+        await holder.query('BEGIN');
+        await holder.query('SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE', [
+          sync,
+        ]);
+        // The answer of a claim carries a credential envelope. Only the outcome of each call enters the result.
+        runs.push(
+          outcomeOf(
+            writer === 'claim'
+              ? syncWriter.query(
+                  'SELECT cc.claim_device_sync($1,$2,$3) AS result',
+                  [customer, sync, attempt],
+                )
+              : syncWriter.query(
+                  'SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result',
+                  [customer, sync, attempt, null, null],
+                ),
+          ),
+        );
+        assert.equal(
+          await waitsFor(writerPid, holderPid),
+          true,
+          `The ${writer} holds the sync state and waits for its header.`,
+        );
+        runs.push(
+          outcomeOf(
+            requester.query(requestSql, [
+              diagnostician,
+              1,
+              customer,
+              generation,
+              randomUUID(),
+              randomUUID(),
+            ]),
+          ),
+        );
+        assert.equal(
+          await waitsFor(requestPid, writerPid),
+          true,
+          'The duplicate request holds its principal row and waits for the sync state.',
+        );
+        runs.push(
+          outcomeOf(
+            google.query(
+              'SELECT cc.record_google_observation($1,$2,$3,$4,$5,$6) AS result',
+              [
+                customer,
+                generation,
+                observation,
+                randomUUID(),
+                diagnostician,
+                1,
+              ],
+            ),
+          ),
+        );
+        assert.equal(
+          await waitsForAny(googlePid, [requestPid, writerPid]),
+          true,
+          'The observation waits for the requester principal or for the global access lock.',
+        );
+        await holder.query('COMMIT');
+        const [written, requested, observed] = await Promise.all(runs);
+        for (const [label, answer] of [
+          [writer, written],
+          ['request', requested],
+          ['observation', observed],
+        ])
+          assert.notEqual(
+            answer.code,
+            '40P01',
+            `The ${label} must not deadlock in a principal, sync-state, and global-lock cycle: ${answer.message}`,
+          );
+        assert.equal(written.accepted, true, written.message);
+        if (writer === 'claim')
+          assert.equal(
+            requested.detail,
+            'device-sync-running',
+            `The duplicate request rejects the running sync: ${requested.message ?? 'accepted'}`,
+          );
+        else assert.equal(requested.accepted, true, requested.message);
+        assert.equal(observed.accepted, true, observed.message);
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        await Promise.allSettled(runs);
+        await Promise.allSettled([
+          holder.end(),
+          syncWriter.end(),
+          requester.end(),
+          google.end(),
+        ]);
+      }
+      await closeRunningSyncs();
+    };
+    for (const [label, role] of [
+      ['owner', 'cc-migrator'],
+      ['runtime role', 'cc-app'],
+    ]) {
+      await ruleCheck(
+        `B2b R2-F1 a duplicate request, a full-sync claim, and a same-actor Google observation do not deadlock (${label})`,
+        () => threeWriters({ role, writer: 'claim' }),
+      );
+      await ruleCheck(
+        `B2b R2-F1 a duplicate request, a successful full-sync finish, and a same-actor Google observation do not deadlock (${label})`,
+        () => threeWriters({ role, writer: 'finish' }),
+      );
+    }
+
+    // R2-F2 (P2): a battery page locks its devices and rechecks its lease, and then
+    // cc.upsert_device_batteries locks the page devices again from a fresh snapshot. A device that another
+    // session inserts during the first wait is visible only to that second lock, so the helper can wait on
+    // it after the page fence. The lease repeats after the helper returns, so an expired page changes no
+    // battery, no device, and no lease. The trigger of R1-F4 caps the renewal at two seconds here.
+    for (const [label, role] of [
+      ['owner', 'cc-migrator'],
+      ['runtime role', 'cc-app'],
+    ])
+      await ruleCheck(
+        `B2b R2-F2 a staged battery page rejects a lease that lapses in its helper wait on a newly visible device (${label})`,
+        async () => {
+          await closeRunningSyncs();
+          const first = `r2f2-${role}-a`;
+          const second = `r2f2-${role}-b`;
+          const listedAt = new Date(Date.now() - 60 * 60 * 1000);
+          await upsert([device(first)], listedAt);
+          assert.equal(
+            await deviceRow(second),
+            undefined,
+            'The second device does not exist before the page.',
+          );
+          const sync = await makeSync();
+          const page = JSON.stringify(
+            [first, second].map((deviceId) => ({
+              deviceId,
+              battery: {
+                status: 'reported',
+                health: 'normal',
+                capacityPercent: 77,
+                reportedAt: '2026-10-17T12:00:00.000Z',
+              },
+              reports: [],
+            })),
+          );
+          const snapshot = async () => ({
+            state: await stateSnapshot(),
+            devices: await admin(
+              'SELECT * FROM cc.devices WHERE customer_id=$1 AND device_id=ANY($2::text[]) ORDER BY device_id',
+              [customer, [first, second]],
+            ),
+          });
+          let before = null;
+          const answer = await withShortStagingLease(async () => {
+            const holderA = await connect('cc-migrator', 'cc-app');
+            const holderB = await connect('cc-migrator', 'cc-app');
+            const caller = await connect(role, 'cc-app');
+            let pending = null;
+            try {
+              await shortLeaseSession(caller);
+              const holderAPid = await pidOf(holderA);
+              const holderBPid = await pidOf(holderB);
+              const callerPid = await pidOf(caller);
+              await holderA.query('BEGIN');
+              await holderA.query(...heldDevice(first));
+              pending = outcomeOf(
+                caller.query(
+                  'SELECT cc.stage_device_batteries($1,$2,$3,$4) AS result',
+                  [customer, sync.id, sync.attempt, page],
+                ),
+              );
+              assert.equal(
+                await waitsFor(callerPid, holderAPid),
+                true,
+                'The page waits on the first device of its first snapshot.',
+              );
+              await upsert([device(second)], listedAt);
+              await holderB.query('BEGIN');
+              await holderB.query(...heldDevice(second));
+              before = await snapshot();
+              await holderA.query('ROLLBACK');
+              assert.equal(
+                await waitsFor(callerPid, holderBPid),
+                true,
+                'The helper waits on the newly visible device after the page fence.',
+              );
+              // The renewed lease lapses in this second wait.
+              await sleep(2400);
+              await holderB.query('ROLLBACK');
+              return await pending;
+            } finally {
+              await holderA.query('ROLLBACK').catch(() => undefined);
+              await holderB.query('ROLLBACK').catch(() => undefined);
+              if (pending) await pending;
+              await Promise.allSettled([
+                holderA.end(),
+                holderB.end(),
+                caller.end(),
+              ]);
+            }
+          }, 2000);
+          assert.equal(
+            answer.detail,
+            'device-sync-changed',
+            `A battery page whose lease lapsed in its helper wait must reject: ${answer.message ?? 'accepted'}`,
+          );
+          assert.deepEqual(
+            await snapshot(),
+            before,
+            'An expired battery page changes no battery, no device, and no lease.',
+          );
+          await resetSync();
+        },
+      );
 
     // The start lock order moved in round 5, so its own contention check follows.
     await ruleCheck(
