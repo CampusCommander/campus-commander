@@ -8,6 +8,7 @@ import {
   deviceOrgUnitsSchema,
   deviceSelectionChangeSchema,
   deviceSelectionKeySchema,
+  deviceSelectionSpecSchema,
   deviceGroupQuerySchema,
   deviceGroupingSchema,
   deviceDetailSchema,
@@ -217,6 +218,40 @@ test('selection keys name the device grid and a tab UUID', () => {
     false,
   );
   assert.deepEqual(deviceQuerySchema.parse({ selection: key }).selection, key);
+});
+
+test('the selection spec requires expiredAt as a timestamp or null', () => {
+  const base = {
+    terms: [],
+    groups: [],
+    added: 0,
+    excluded: 0,
+    selectedCount: 0,
+  };
+  assert.equal(deviceSelectionSpecSchema.safeParse(base).success, false);
+  assert.deepEqual(
+    deviceSelectionSpecSchema.parse({ ...base, expiredAt: null }),
+    { ...base, expiredAt: null },
+  );
+  assert.equal(
+    deviceSelectionSpecSchema.safeParse({
+      ...base,
+      expiredAt: '2026-10-18T12:00:00.000Z',
+    }).success,
+    true,
+  );
+  assert.equal(
+    deviceSelectionSpecSchema.safeParse({
+      ...base,
+      expiredAt: '2026-10-18T12:00:00',
+    }).success,
+    false,
+  );
+  assert.equal(
+    deviceSelectionSpecSchema.safeParse({ ...base, expiredAt: 'yesterday' })
+      .success,
+    false,
+  );
 });
 
 test('selection changes accept the four row operations within bounds', () => {

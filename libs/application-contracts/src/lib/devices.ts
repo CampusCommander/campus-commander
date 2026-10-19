@@ -256,6 +256,8 @@ export const deviceSelectionSpecSchema = z.strictObject({
   added: z.number().int().min(0),
   excluded: z.number().int().min(0),
   selectedCount: z.number().int().min(0),
+  /** The expiry time of a selection that lapsed, or null while the selection is current. */
+  expiredAt: timestamp.nullable(),
 });
 export type DeviceSelectionSpec = z.infer<typeof deviceSelectionSpecSchema>;
 

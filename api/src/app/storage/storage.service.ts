@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import type { Pool } from 'pg';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { DatabaseService } from '../database/database.service';
+import { storeJsonDocument } from './json-artifact';
 
 interface ArtifactManifest {
   artifactId: string;
@@ -42,10 +43,13 @@ interface StorageModule {
 @Injectable()
 export class StorageService implements OnApplicationShutdown {
   private store?: Promise<ArtifactStore>;
-  constructor(
-    private readonly configuration: ConfigurationService,
-    private readonly database: DatabaseService,
-  ) {}
+  private readonly configuration: ConfigurationService;
+  private readonly database: DatabaseService;
+
+  constructor(configuration: ConfigurationService, database: DatabaseService) {
+    this.configuration = configuration;
+    this.database = database;
+  }
 
   private connection() {
     this.store ??= (async () => {
@@ -74,6 +78,11 @@ export class StorageService implements OnApplicationShutdown {
 
   async healthy() {
     return (await this.connection()).checkHealth();
+  }
+
+  /** Store one JSON document as an artifact and publish it. Returns the artifact ID. */
+  async storeJson(document: unknown): Promise<string> {
+    return storeJsonDocument(await this.connection(), document);
   }
 
   async check(correlationId: string) {

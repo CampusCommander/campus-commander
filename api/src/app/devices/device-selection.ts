@@ -12,15 +12,22 @@ import {
 
 /** A selection expires 12 hours after its last change. */
 export const SELECTION_SECONDS = 12 * 60 * 60;
+/** Redis keeps an expired selection for one more day, so its expiry time can be reported. */
+export const SELECTION_MARKER_SECONDS = 24 * 60 * 60;
+export const SELECTION_STORAGE_SECONDS =
+  SELECTION_SECONDS + SELECTION_MARKER_SECONDS;
 const maxTerms = 50;
 const maxIds = 200_000;
 const deviceIds = z.array(z.string().min(1).max(128)).max(maxIds);
+const timestamp = z.iso.datetime({ offset: true });
 
 const selectionStateSchema = z.strictObject({
   terms: z.array(z.array(devicePredicateSchema).max(20)).max(maxTerms),
   groups: z.array(deviceGroupScopeSchema).max(maxTerms).default([]),
   additions: deviceIds,
   exceptions: deviceIds,
+  /** The time of the last selection change. Absent state never expires. */
+  changedAt: timestamp.nullable().optional(),
 });
 export type SelectionState = z.infer<typeof selectionStateSchema>;
 
@@ -39,15 +46,36 @@ export function selectionStorageKey(
   return `cc:device-selection:${identityId}:${key.gridId}:${key.tabId}`;
 }
 
-/** A missing, expired, or unreadable selection is empty. */
-export function parseSelection(raw: string | null): SelectionState {
-  if (!raw) return emptySelection();
+export interface ParsedSelection {
+  state: SelectionState;
+  /** The expiry time of the last change, or null while the selection is current. */
+  expiredAt: string | null;
+}
+
+/** A missing or unreadable selection is empty. A selection older than 12 hours reads as empty. */
+export function parseSelection(
+  raw: string | null,
+  now = Date.now(),
+): ParsedSelection {
+  if (!raw) return { state: emptySelection(), expiredAt: null };
+  let parsed: z.infer<typeof selectionStateSchema>;
   try {
-    const parsed = selectionStateSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : emptySelection();
+    const result = selectionStateSchema.safeParse(JSON.parse(raw));
+    if (!result.success) return { state: emptySelection(), expiredAt: null };
+    parsed = result.data;
   } catch {
-    return emptySelection();
+    return { state: emptySelection(), expiredAt: null };
   }
+  if (parsed.changedAt) {
+    const changed = Date.parse(parsed.changedAt);
+    const expires = changed + SELECTION_SECONDS * 1000;
+    if (Number.isFinite(changed) && now >= expires)
+      return {
+        state: emptySelection(),
+        expiredAt: new Date(expires).toISOString(),
+      };
+  }
+  return { state: parsed, expiredAt: null };
 }
 
 const union = (current: readonly string[], ids: readonly string[]) => [
@@ -84,6 +112,7 @@ export async function applySelectionOps(
     group: DeviceGrouping,
   ) => Promise<string[]> = async () => [],
 ): Promise<SelectionState> {
+  const { changedAt } = state;
   let { terms, groups = [], additions, exceptions } = state;
   const clearInScope = async (
     predicates: DevicePredicate[],
@@ -146,7 +175,9 @@ export async function applySelectionOps(
     exceptions.length > maxIds
   )
     throw new SelectionTooLargeError();
-  return { terms, groups, additions, exceptions };
+  const next: SelectionState = { terms, groups, additions, exceptions };
+  if (changedAt) next.changedAt = changedAt;
+  return next;
 }
 
 export interface SelectionCache {
@@ -159,7 +190,10 @@ export interface SelectionCache {
   ): Promise<boolean>;
 }
 
-/** Read, change, and write a selection. A concurrent write makes the change retry from the newer value. */
+/**
+ * Read, change, and write a selection. A concurrent write makes the change retry from the newer value.
+ * The first change after expiry starts from empty, and every change records `changedAt`.
+ */
 export async function changeSelection(
   cache: SelectionCache,
   key: string,
@@ -167,9 +201,20 @@ export async function changeSelection(
 ): Promise<SelectionState> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const raw = await cache.get(key);
-    const next = await change(parseSelection(raw));
-    if (await cache.swap(key, raw, JSON.stringify(next), SELECTION_SECONDS))
-      return next;
+    const next = await change(parseSelection(raw).state);
+    const stored: SelectionState = {
+      ...next,
+      changedAt: new Date().toISOString(),
+    };
+    if (
+      await cache.swap(
+        key,
+        raw,
+        JSON.stringify(stored),
+        SELECTION_STORAGE_SECONDS,
+      )
+    )
+      return stored;
   }
   throw new SelectionBusyError();
 }
@@ -177,6 +222,7 @@ export async function changeSelection(
 export function selectionSpec(
   state: SelectionState,
   selectedCount: number,
+  expiredAt: string | null = null,
 ): DeviceSelectionSpec {
   return {
     terms: state.terms.map((predicates) => ({ type: 'all', predicates })),
@@ -184,5 +230,6 @@ export function selectionSpec(
     added: state.additions.length,
     excluded: state.exceptions.length,
     selectedCount,
+    expiredAt,
   };
 }

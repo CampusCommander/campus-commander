@@ -68,6 +68,7 @@ it('shows what Select All captured', () => {
     added: 0,
     excluded: 1,
     selectedCount: 95,
+    expiredAt: null,
   });
   render();
   expect(element.textContent).toContain(

@@ -20,6 +20,7 @@ const spec: DeviceSelectionSpec = {
   added: 0,
   excluded: 1,
   selectedCount: 95,
+  expiredAt: null,
 };
 
 it('sends Select All with the grid filters as device predicates', async () => {
@@ -128,6 +129,7 @@ it('describes what Select All captured', () => {
       added: 2,
       excluded: 0,
       selectedCount: 450,
+      expiredAt: null,
     }),
   ).toBe('Selected by filter: All devices · 2 added');
 });
@@ -184,6 +186,7 @@ it('reports selected groups to LibreGrid and the status bar', async () => {
     added: 0,
     excluded: 0,
     selectedCount: 12,
+    expiredAt: null,
   };
   const provider = new DeviceSelectionProvider(
     vi.fn().mockResolvedValue(Response.json({ selection: grouped })),
