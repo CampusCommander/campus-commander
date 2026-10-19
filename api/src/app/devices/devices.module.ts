@@ -8,6 +8,7 @@ import { StorageModule } from '../storage/storage.module';
 import { DeviceEventsService } from './device-events.service';
 import { DeviceUpdatesController } from './device-updates.controller';
 import { DeviceUpdatesService } from './device-updates.service';
+import { DeviceWriteAccessService } from './device-write-access.service';
 import { DevicesController } from './devices.controller';
 import { DevicesService } from './devices.service';
 
@@ -21,6 +22,11 @@ import { DevicesService } from './devices.service';
     StorageModule,
   ],
   controllers: [DeviceUpdatesController, DevicesController],
-  providers: [DevicesService, DeviceEventsService, DeviceUpdatesService],
+  providers: [
+    DevicesService,
+    DeviceEventsService,
+    DeviceUpdatesService,
+    DeviceWriteAccessService,
+  ],
 })
 export class DevicesModule {}

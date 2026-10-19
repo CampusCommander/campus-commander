@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  GOOGLE_CAPABILITIES,
   GOOGLE_CUSTOMER_SCOPES,
   GOOGLE_SETUP_SCOPES,
 } from './google-capabilities.ts';
@@ -13,6 +14,7 @@ const INVENTORY =
   'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly';
 const TELEMETRY =
   'https://www.googleapis.com/auth/chrome.management.telemetry.readonly';
+const WRITE = 'https://www.googleapis.com/auth/admin.directory.device.chromeos';
 const SCHOOL_OU =
   'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
 
@@ -22,6 +24,7 @@ test('the setup scope list holds the connection scopes and the device scopes in 
     DOMAIN,
     INVENTORY,
     TELEMETRY,
+    WRITE,
   ]);
   assert.equal(
     new Set(GOOGLE_SETUP_SCOPES).size,
@@ -36,4 +39,24 @@ test('the setup scope list holds the connection scopes and the device scopes in 
 
 test('the connection check still requests exactly the two connection scopes', () => {
   assert.deepEqual(GOOGLE_CUSTOMER_SCOPES, [CUSTOMER, DOMAIN]);
+});
+
+test('the write capability names its label, scope, method, flags, and evidence', () => {
+  assert.deepEqual(
+    GOOGLE_CAPABILITIES.find(
+      (capability) => capability.id === 'device-changes',
+    ),
+    {
+      id: 'device-changes',
+      requiredForConnection: false,
+      label: 'ChromeOS device changes',
+      enabled: true,
+      qualified: false,
+      scope: WRITE,
+      method: 'chromeosdevices.patch',
+      source:
+        'https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/patch',
+      evidence: 'admin-sdk-mock v0.2.0 only. No live write check.',
+    },
+  );
 });

@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import { setTimeout as delay } from 'node:timers/promises';
-import { mockExitedError } from './admin-sdk-mock-fixture.mjs';
+import { promisify } from 'node:util';
+import { MOCK_SCOPES, mockExitedError } from './admin-sdk-mock-fixture.mjs';
+import { GOOGLE_SETUP_SCOPES } from '../libs/application-contracts/src/lib/google-capabilities.ts';
+import {
+  DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+  deviceWriteAccessMessage,
+} from '../libs/application-contracts/src/lib/device-write-access-message.ts';
 
 /** Google battery health values as Campus Commander classifies them. */
 const batteryHealth = {
@@ -152,6 +159,42 @@ async function reviewSignIn({ request, ca, publicOrigin }) {
 }
 
 /**
+ * B6 C4: run the real scoped client and the real write-access check against the
+ * mock, with a recording transport at the provider request bound. The probe
+ * asserts the issued scope set and every Directory request.
+ */
+async function qualifyWriteAccessProvider(mock) {
+  const { stdout } = await promisify(execFile)(
+    process.execPath,
+    [
+      '--import',
+      './libs/application-contracts/test-register.mjs',
+      'api-e2e/device-write-access-provider-probe.mjs',
+    ],
+    {
+      cwd: process.cwd(),
+      timeout: 120_000,
+      env: {
+        ...process.env,
+        CC_PROBE_CA: mock.caFile,
+        CC_PROBE_PORT: String(mock.googlePort),
+        CC_PROBE_CUSTOMER: mock.customerId,
+        CC_PROBE_KEY: mock.keyFile,
+        CC_PROBE_SUBJECT: mock.adminEmail,
+      },
+    },
+  );
+  const trace = JSON.parse(stdout.trim().split('\n').at(-1));
+  await mkdir('dist/client-review', { recursive: true });
+  await writeFile(
+    'dist/client-review/device-write-access-provider-trace.json',
+    `${JSON.stringify(trace, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  return trace;
+}
+
+/**
  * Drive the review environment through the same API endpoints as the UI:
  * connect the mock credential, run Refresh all, and check the published devices
  * against the mock's own count and telemetry.
@@ -176,6 +219,8 @@ async function runAdminSdkMockIntegration({
   request,
   ca,
   publicOrigin,
+  redis,
+  customer,
 }) {
   // Every step below depends on the running mock. A stopped container fails
   // this flow with the mock log instead of a later connection error.
@@ -317,6 +362,238 @@ async function runAdminSdkMockIntegration({
   }
   assert.ok(compared, 'No synced device matched the mock battery telemetry.');
 
+  // B6: the write scope, its check, and the write-access projection.
+  // Every Google call in this block goes to the mock. The scope removal, the
+  // delegation grant, and the list fault use the mock control API.
+  const writeScope =
+    'https://www.googleapis.com/auth/admin.directory.device.chromeos';
+  const control = async (path, { method = 'GET', body } = {}) => {
+    const response = await fetch(`${mock.controlUrl}${path}`, {
+      method,
+      ...(body === undefined
+        ? {}
+        : {
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+    });
+    assert.ok(
+      [200, 201, 204].includes(response.status),
+      `The mock control API answered ${response.status} for ${path}.`,
+    );
+    return response.status === 204 ? null : response.json();
+  };
+  const clearFaults = () =>
+    control(`/domains/${mock.customerId}/faults`, { method: 'DELETE' });
+  const addFault = (rule) =>
+    control(`/domains/${mock.customerId}/faults`, {
+      method: 'POST',
+      body: rule,
+    });
+  const writeAccess = async () => {
+    const response = await call('/api/devices/updates/access');
+    assert.equal(response.status, 200, response.text);
+    return JSON.parse(response.text);
+  };
+  // The check holds a 30-second interval per customer and generation. Each
+  // unrelated assertion clears that key so the next check runs. The application
+  // Redis user cannot list keys, so build the small known key set instead.
+  const clearBusy = async () => {
+    const keys = [];
+    for (let generation = 1; generation <= 8; generation += 1)
+      keys.push(`cc:device-write-access-busy:${customer}:${generation}`);
+    await redis.del(keys);
+  };
+  const postCheck = () =>
+    call('/api/devices/updates/access/check', {
+      method: 'POST',
+      headers: headers(),
+      body: {},
+    });
+  const checkWriteAccess = async () => {
+    await clearBusy();
+    const response = await postCheck();
+    assert.ok([200, 201].includes(response.status), response.text);
+    return JSON.parse(response.text);
+  };
+  assert.equal(
+    GOOGLE_SETUP_SCOPES.includes(writeScope),
+    true,
+    'The setup scopes include the write scope.',
+  );
+  assert.equal(
+    MOCK_SCOPES.includes(writeScope),
+    true,
+    'The mock grants the write scope to the delegation client.',
+  );
+
+  await clearFaults();
+  assert.deepEqual(
+    await writeAccess(),
+    { state: 'unchecked', scope: null, failure: null, checkedAt: null },
+    'write access starts unchecked without a check',
+  );
+  const granted = await checkWriteAccess();
+  assert.equal(
+    granted.state,
+    'granted',
+    `the write scope check grants access: ${JSON.stringify(granted)}`,
+  );
+  assert.equal(granted.scope, writeScope, 'the check names the write scope');
+  assert.equal(granted.failure, null, 'a granted check carries no failure');
+  assert.ok(
+    Number.isFinite(Date.parse(granted.checkedAt)),
+    'a granted check records its time',
+  );
+  // C7: the check holds one interval per customer and generation.
+  const repeat = await postCheck();
+  assert.equal(
+    repeat.status,
+    429,
+    `a second check inside the interval answers 429: ${repeat.text}`,
+  );
+  assert.equal(
+    JSON.parse(repeat.text).reason,
+    'busy',
+    'a busy check answers the busy route reason',
+  );
+  assert.deepEqual(
+    await writeAccess(),
+    granted,
+    'GET answers the cached check',
+  );
+
+  // The mock keeps a remaining count for each fault. A patch fault that still
+  // waits after the check proves that the check sent no write.
+  const patchFault = await addFault({
+    kind: 'status',
+    method: 'directory.chromeosdevices.patch',
+    status: 500,
+    reason: 'backendError',
+    count: 1,
+  });
+  assert.equal(
+    (await checkWriteAccess()).state,
+    'granted',
+    'the check grants access while a patch fault waits',
+  );
+  const waiting = (await control(`/domains/${mock.customerId}/faults`)).find(
+    (fault) => fault.id === patchFault.id,
+  );
+  assert.equal(
+    waiting.remaining,
+    1,
+    'the check sends no write, so the patch fault never runs',
+  );
+  await clearFaults();
+
+  // Removing the write scope denies the check and the cached projection.
+  await addFault({
+    kind: 'remove-scope',
+    clientId: mock.key.client_id,
+    scope: writeScope,
+  });
+  const denied = await checkWriteAccess();
+  assert.equal(
+    denied.state,
+    'denied',
+    `removing the write scope denies access: ${JSON.stringify(denied)}`,
+  );
+  assert.equal(
+    denied.failure,
+    'delegation-not-authorized',
+    'a removed write scope reports delegation-not-authorized',
+  );
+  const deniedRead = await writeAccess();
+  assert.equal(
+    deniedRead.state,
+    'denied',
+    'GET answers the denied state after the scope removal',
+  );
+  assert.equal(
+    deniedRead.failure,
+    'delegation-not-authorized',
+    'GET answers the denied failure after the scope removal',
+  );
+  assert.equal(
+    deviceWriteAccessMessage(deniedRead),
+    DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+    'GET carries the exact scope-named denied message',
+  );
+
+  // A delegation grant through the mock control restores granted.
+  await clearFaults();
+  await control(
+    `/domains/${mock.customerId}/delegation/${mock.key.client_id}`,
+    {
+      method: 'PUT',
+      body: { scopes: MOCK_SCOPES },
+    },
+  );
+  assert.equal(
+    (await checkWriteAccess()).state,
+    'granted',
+    'a delegation grant through the mock control restores granted',
+  );
+
+  // A revoked delegation denies the check.
+  await addFault({
+    kind: 'revoke-delegation',
+    clientId: mock.key.client_id,
+  });
+  const revoked = await checkWriteAccess();
+  assert.equal(
+    revoked.state,
+    'denied',
+    `a revoked delegation denies access: ${JSON.stringify(revoked)}`,
+  );
+  assert.equal(
+    revoked.failure,
+    'delegation-not-authorized',
+    'a revoked delegation reports delegation-not-authorized',
+  );
+  await clearFaults();
+  assert.equal(
+    (await checkWriteAccess()).state,
+    'granted',
+    'clearing the revocation grants access again',
+  );
+
+  // A 403 on the list is unavailable, never denied.
+  await addFault({
+    kind: 'status',
+    method: 'directory.chromeosdevices.list',
+    status: 403,
+    reason: 'forbidden',
+    count: 1,
+  });
+  const forbidden = await checkWriteAccess();
+  assert.equal(
+    forbidden.state,
+    'unavailable',
+    `a 403 on the list reads unavailable: ${JSON.stringify(forbidden)}`,
+  );
+  assert.equal(
+    forbidden.failure,
+    'permission-denied',
+    'a 403 on the list reports permission-denied',
+  );
+  await clearFaults();
+  assert.equal(
+    (await checkWriteAccess()).state,
+    'granted',
+    'the check recovers after the list fault clears',
+  );
+
+  // C4: the real scoped client records one write-scope token, one
+  // introspection, and one Directory GET with maxResults=1 against the mock.
+  const providerTrace = await qualifyWriteAccessProvider(mock);
+  assert.equal(
+    providerTrace.result.state,
+    'granted',
+    'the provider probe grants the write scope',
+  );
+
   const quota = await mock.quota();
   const record = {
     tier: mock.tier,
@@ -345,5 +622,9 @@ async function runAdminSdkMockIntegration({
     `the mock credential connects with the mock administrator and customer ${mock.customerId}: pass`,
     `Refresh all publishes ${state.deviceCount} devices in ${syncSeconds.toFixed(1)} seconds: pass`,
     `the published count equals the mock count and a device battery class matches the mock telemetry: pass`,
+    'the write scope check lists one device for the mock administrator and sends no write: pass',
+    'the provider probe mints one write-scope token and sends one GET with maxResults=1 to the mock: pass',
+    'removing the write scope denies access, and a delegation grant through the mock control restores granted: pass',
+    'a revoked delegation denies access, and a 403 on the list reads unavailable with permission-denied: pass',
   ];
 }

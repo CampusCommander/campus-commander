@@ -1,6 +1,11 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
+import {
+  GOOGLE_HEALTH_RECOVERY,
+  GOOGLE_SETUP_SCOPES,
+} from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from './connection.store';
 import { GoogleConnectionPage } from './google-connection';
@@ -180,6 +185,7 @@ const setupScopes = [
   'https://www.googleapis.com/auth/admin.directory.domain.readonly',
   'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly',
   'https://www.googleapis.com/auth/chrome.management.telemetry.readonly',
+  'https://www.googleapis.com/auth/admin.directory.device.chromeos',
 ];
 
 async function setupImportPage() {
@@ -222,7 +228,7 @@ async function setupImportPage() {
   };
 }
 
-it('lists the four setup scopes in order under the Google scopes name', async () => {
+it('lists the five setup scopes in order under the Google scopes name', async () => {
   const { fixture, element } = await setupImportPage();
   const block = element.querySelector<HTMLElement>(
     '[aria-label="Google scopes"]',
@@ -233,14 +239,14 @@ it('lists the four setup scopes in order under the Google scopes name', async ()
   fixture.destroy();
 });
 
-it('names the four scopes in step 3 and copies them for the Admin Console', async () => {
+it('names the five scopes in step 3 and copies them for the Admin Console', async () => {
   const { fixture, element, writeText } = await setupImportPage();
   const text = element.textContent!.replace(/\s+/g, ' ');
   expect(text).toContain(
-    'Add the service account client ID and the 4 read-only scopes below.',
+    'Add the service account client ID and the 5 scopes below.',
   );
   expect(text).toContain(
-    'Campus Commander connects with the customer and domain scopes. Devices also needs the device and telemetry scopes.',
+    'Campus Commander connects with the customer and domain scopes. Devices also needs the device, telemetry, and device change scopes.',
   );
   const copy = [...element.querySelectorAll('button')].find(
     (button) => button.textContent?.trim() === 'Copy scopes',
@@ -252,3 +258,139 @@ it('names the four scopes in step 3 and copies them for the Admin Console', asyn
   );
   fixture.destroy();
 });
+
+const CONSOLE = 'https://admin.google.com/ac/owl/domainwidedelegation';
+const REPLACE_NOTE =
+  'Authorize replaces the scope list of that client with the listed scopes.';
+const sortedSetupScopes = [...new Set(GOOGLE_SETUP_SCOPES)].sort();
+
+async function selectKeyFile(element: HTMLElement, clientId: string) {
+  const input = element.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const file = new File(['fixture'], 'fixture.json');
+  Object.defineProperty(file, 'text', {
+    value: async () =>
+      JSON.stringify({ type: 'service_account', client_id: clientId }),
+  });
+  Object.defineProperty(input, 'files', { value: [file] });
+  input.dispatchEvent(new Event('change'));
+}
+
+async function importPageWithKey(clientId: string) {
+  const page = await setupImportPage();
+  await selectKeyFile(page.element, clientId);
+  await page.fixture.whenStable();
+  page.fixture.detectChanges();
+  return page;
+}
+
+it('lists exactly the setup scopes in the pre-filled link without a domain', async () => {
+  const { fixture, element } = await setupImportPage();
+  expect(element.querySelector('a[href*="clientScopeToAdd"]')).toBeNull();
+  await selectKeyFile(element, '123456789');
+  await fixture.whenStable();
+  fixture.detectChanges();
+  const link = element.querySelector<HTMLAnchorElement>(
+    'a[href*="clientScopeToAdd"]',
+  );
+  expect(link).not.toBeNull();
+  const url = new URL(link!.href);
+  expect(url.origin + url.pathname).toBe(CONSOLE);
+  expect(url.searchParams.get('clientScopeToAdd')).toBe(
+    sortedSetupScopes.join(','),
+  );
+  expect(url.searchParams.get('clientIdToAdd')).toBe('123456789');
+  expect(url.searchParams.get('overwriteClientId')).toBe('true');
+  expect(url.searchParams.get('dn')).toBeNull();
+  expect(link!.href).not.toContain('authuser');
+  expect(element.textContent).toContain(REPLACE_NOTE);
+  expect(element.textContent).toContain(
+    'This link opens Google Admin with the client ID and these scopes filled in.',
+  );
+  fixture.destroy();
+});
+
+it('keeps Copy scopes beside the pre-filled link', async () => {
+  const { fixture, element, writeText } = await importPageWithKey('123456789');
+  expect(element.querySelector('a[href*="clientScopeToAdd"]')).not.toBeNull();
+  const copy = [...element.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Copy scopes',
+  );
+  expect(copy).toBeDefined();
+  copy!.click();
+  await vi.waitFor(() =>
+    expect(writeText).toHaveBeenCalledWith(GOOGLE_SETUP_SCOPES.join(',')),
+  );
+  fixture.destroy();
+});
+
+it.each(['delegation-not-authorized', 'scope-mismatch'] as const)(
+  'offers the setup scopes beside the %s failure before confirmation',
+  async (failure) => {
+    const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    sessionStorage.setItem(`cc:google-candidate:${identity.id}`, id);
+    const request = vi.fn(async (path: string) =>
+      path.includes('/candidates/')
+        ? Response.json({
+            id,
+            status: 'failed',
+            expiresAt: new Date(Date.now() + 600000).toISOString(),
+            clientId: '123456789',
+            subject: 'admin@example.org',
+            observation: null,
+            observedAt: null,
+            failure,
+          })
+        : Response.json({ connection: null }),
+    );
+    await TestBed.configureTestingModule({
+      imports: [GoogleConnectionPage],
+      providers: [
+        provideRouter([]),
+        {
+          provide: AuthStore,
+          useValue: {
+            request,
+            metadata: () => ({ phase: 3 }),
+            session: () => ({ identity, csrfToken: 'session' }),
+            interrupted: () => false,
+            can: () => true,
+          },
+        },
+        {
+          provide: ConnectionStore,
+          useValue: {
+            connection: signal(null),
+            loaded: signal(true),
+            loading: signal(false),
+            stale: signal(false),
+            error: signal(''),
+          },
+        },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(GoogleConnectionPage);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    await vi.waitFor(() =>
+      expect(element.textContent).toContain(
+        GOOGLE_HEALTH_RECOVERY[failure].recovery,
+      ),
+    );
+    fixture.detectChanges();
+    const link = element.querySelector<HTMLAnchorElement>(
+      'a[href*="clientScopeToAdd"]',
+    );
+    expect(link).not.toBeNull();
+    const url = new URL(link!.href);
+    expect(url.searchParams.get('clientScopeToAdd')).toBe(
+      sortedSetupScopes.join(','),
+    );
+    expect(url.searchParams.get('clientIdToAdd')).toBe('123456789');
+    expect(url.searchParams.get('overwriteClientId')).toBe('true');
+    expect(url.searchParams.get('dn')).toBeNull();
+    expect(link!.href).not.toContain('authuser');
+    expect(element.textContent).toContain(REPLACE_NOTE);
+    fixture.destroy();
+    sessionStorage.clear();
+  },
+);

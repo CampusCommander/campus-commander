@@ -66,6 +66,18 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     evidence:
       'Live read-only check 2026-10-16 (deployment/evidence/device-browsing-live-2026-10-16.json): HTTP 200, empty collection.',
   },
+  {
+    id: 'device-changes',
+    requiredForConnection: false,
+    label: 'ChromeOS device changes',
+    enabled: true,
+    qualified: false,
+    scope: 'https://www.googleapis.com/auth/admin.directory.device.chromeos',
+    method: 'chromeosdevices.patch',
+    source:
+      'https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/patch',
+    evidence: 'admin-sdk-mock v0.2.0 only. No live write check.',
+  },
 ] as const);
 
 /** Capability ids that the Google connection page lists during setup, in page order. */
@@ -74,6 +86,7 @@ const GOOGLE_SETUP_CAPABILITY_IDS = [
   'domain-observations',
   'device-inventory',
   'device-telemetry',
+  'device-changes',
 ] as const;
 
 /**

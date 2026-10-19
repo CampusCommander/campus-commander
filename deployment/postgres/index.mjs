@@ -114,6 +114,7 @@ export async function loadMigrations() {
       '015-restore-revalidation',
       '016-device-inventory',
       '017-jobs',
+      '018-device-write-access',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -296,6 +297,11 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,jsonb,integer),
         cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
         cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '018-device-write-access')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.device_writer(uuid,integer),
+        cc.device_write_credential(uuid,integer,text,integer) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

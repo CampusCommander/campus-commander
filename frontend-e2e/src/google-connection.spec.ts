@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { test, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { GOOGLE_SETUP_SCOPES } from '@campus/application-contracts';
 
 const principal = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const csrf = 'a'.repeat(64);
@@ -336,6 +337,40 @@ test('access interruption clears the private file before the same administrator 
   await expect(page.getByLabel('Delegated administrator email')).toHaveValue(
     'administrator@fixture.invalid',
   );
+});
+
+test('offers the pre-filled delegation link with the setup scopes', async ({
+  page,
+}, testInfo) => {
+  await fixture(page);
+  await select(page);
+  await page.getByText('Configure Google delegation', { exact: true }).click();
+  const link = page.getByRole('link', {
+    name: 'Open domain-wide delegation in the Google Admin console',
+    exact: true,
+  });
+  await expect(link).toBeVisible();
+  const href = (await link.getAttribute('href'))!;
+  const url = new URL(href);
+  expect(url.origin + url.pathname).toBe(
+    'https://admin.google.com/ac/owl/domainwidedelegation',
+  );
+  expect(url.searchParams.get('clientScopeToAdd')).toBe(
+    [...new Set(GOOGLE_SETUP_SCOPES)].sort().join(','),
+  );
+  expect(url.searchParams.get('clientIdToAdd')).toBe(account.client_id);
+  expect(url.searchParams.get('overwriteClientId')).toBe('true');
+  expect(url.searchParams.get('dn')).toBeNull();
+  expect(href).not.toContain('authuser');
+  await expect(
+    page.getByText(
+      'Authorize replaces the scope list of that client with the listed scopes.',
+    ),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath('delegation-link.png'),
+    fullPage: true,
+  });
 });
 
 test('customer import and review meet automated accessibility and overflow checks', async ({
