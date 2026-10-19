@@ -32,9 +32,7 @@ const connection = {
   observation: {
     customerId: 'C0123456',
     primaryDomain: DOMAIN,
-    domains: [
-      { name: DOMAIN, primary: true, verified: true, aliases: [] },
-    ],
+    domains: [{ name: DOMAIN, primary: true, verified: true, aliases: [] }],
   },
 };
 
@@ -154,7 +152,10 @@ it('lists every capability scope in the required-scope link when all checks veri
   );
   expect(link).not.toBeNull();
   expect(linkScopes(link!)).toEqual(
-    sorted([...GOOGLE_CUSTOMER_SCOPES, ...allVerified().map((entry) => scopeOf(entry.capability))]),
+    sorted([
+      ...GOOGLE_CUSTOMER_SCOPES,
+      ...allVerified().map((entry) => scopeOf(entry.capability)),
+    ]),
   );
   expect(new URL(link!.href).searchParams.get('dn')).toBe(DOMAIN);
   fixture.destroy();
@@ -197,9 +198,7 @@ it('keeps a verified School OU scope in every link and shows no School OU prompt
     'article[aria-labelledby="school-ou-references-title"]',
   );
   expect(school).not.toBeNull();
-  expect(
-    school!.querySelector('a[href*="clientScopeToAdd"]'),
-  ).toBeNull();
+  expect(school!.querySelector('a[href*="clientScopeToAdd"]')).toBeNull();
   const required = element.querySelector<HTMLAnchorElement>(
     'details.authorization a[href*="clientScopeToAdd"]',
   );
@@ -217,16 +216,14 @@ it('shows no link and keeps the copy controls when the latest checks are unreada
   const { fixture, element } = await render(null);
   const details = element.querySelector<HTMLElement>('details.authorization');
   expect(details).not.toBeNull();
-  expect(
-    details!.querySelector('a[href*="domainwidedelegation"]'),
-  ).toBeNull();
+  expect(details!.querySelector('a[href*="domainwidedelegation"]')).toBeNull();
   const copy = [...details!.querySelectorAll('button')].map((button) =>
     button.textContent?.trim(),
   );
   expect(copy).toContain('Copy required Google scopes');
-  expect(details!.textContent).toContain(
-    'Required Google capability scopes',
-  );
+  expect(
+    details!.querySelector('[aria-label="Required Google capability scopes"]'),
+  ).not.toBeNull();
   fixture.destroy();
 });
 

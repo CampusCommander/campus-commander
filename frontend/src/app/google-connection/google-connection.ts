@@ -2,6 +2,7 @@ import {
   Component,
   OnDestroy,
   OnInit,
+  computed,
   effect,
   inject,
   signal,
@@ -15,8 +16,11 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { z } from 'zod';
 import {
+  GOOGLE_CUSTOMER_SCOPES,
   GOOGLE_HEALTH_RECOVERY,
   GOOGLE_SETUP_SCOPES,
+  delegationLink,
+  delegationLinkScopes,
   googleCandidateSchema,
   googleCredentialImportSchema,
   type GoogleCandidate,
@@ -54,6 +58,27 @@ export class GoogleConnectionPage implements OnInit, OnDestroy {
   protected readonly clientId = signal('');
   protected readonly now = signal(Date.now());
   protected readonly scopes = GOOGLE_SETUP_SCOPES;
+  /**
+   * The setup prompt has no saved connection, so its verified list is empty.
+   * The link appears only after the page reads a numeric client ID.
+   */
+  protected readonly delegationHref = computed(() =>
+    this.buildDelegationLink(this.clientId(), GOOGLE_SETUP_SCOPES),
+  );
+  /**
+   * A failed review has no saved connection, so its verified list is empty.
+   * The check requests the connection scopes.
+   */
+  protected readonly candidateDelegationHref = computed(() => {
+    const candidate = this.candidate();
+    return candidate
+      ? this.buildDelegationLink(
+          candidate.clientId,
+          GOOGLE_CUSTOMER_SCOPES,
+          candidate.observation?.primaryDomain,
+        )
+      : null;
+  });
   protected subject = '';
   protected confirmed = false;
   private file: File | null = null;
@@ -117,6 +142,11 @@ export class GoogleConnectionPage implements OnInit, OnDestroy {
       ? GOOGLE_HEALTH_RECOVERY[candidate.failure].recovery
       : '';
   }
+  protected namesDelegation(failure: GoogleCandidate['failure']) {
+    return (
+      failure === 'delegation-not-authorized' || failure === 'scope-mismatch'
+    );
+  }
   private storageKey() {
     return `cc:google-candidate:${this.auth.session()?.identity.id ?? this.auth.interruptedPrincipalId() ?? 'unavailable'}`;
   }
@@ -134,6 +164,23 @@ export class GoogleConnectionPage implements OnInit, OnDestroy {
       !this.auth.interrupted() &&
       session === this.auth.session()?.csrfToken
     );
+  }
+
+  private buildDelegationLink(
+    clientId: string,
+    scopes: readonly string[],
+    domain?: string,
+  ) {
+    if (!/^[0-9]{1,32}$/.test(clientId)) return null;
+    try {
+      return delegationLink({
+        clientId,
+        scopes: delegationLinkScopes(scopes, []),
+        domain,
+      });
+    } catch {
+      return null;
+    }
   }
 
   protected async selectFile(event: Event) {

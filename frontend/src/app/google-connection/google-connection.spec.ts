@@ -284,9 +284,7 @@ async function importPageWithKey(clientId: string) {
 
 it('lists exactly the setup scopes in the pre-filled link without a domain', async () => {
   const { fixture, element } = await setupImportPage();
-  expect(
-    element.querySelector('a[href*="clientScopeToAdd"]'),
-  ).toBeNull();
+  expect(element.querySelector('a[href*="clientScopeToAdd"]')).toBeNull();
   await selectKeyFile(element, '123456789');
   await fixture.whenStable();
   fixture.detectChanges();
@@ -312,9 +310,7 @@ it('lists exactly the setup scopes in the pre-filled link without a domain', asy
 
 it('keeps Copy scopes beside the pre-filled link', async () => {
   const { fixture, element, writeText } = await importPageWithKey('123456789');
-  expect(
-    element.querySelector('a[href*="clientScopeToAdd"]'),
-  ).not.toBeNull();
+  expect(element.querySelector('a[href*="clientScopeToAdd"]')).not.toBeNull();
   const copy = [...element.querySelectorAll('button')].find(
     (button) => button.textContent?.trim() === 'Copy scopes',
   );
