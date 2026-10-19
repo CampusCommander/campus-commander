@@ -112,7 +112,8 @@ export async function applySelectionOps(
     group: DeviceGrouping,
   ) => Promise<string[]> = async () => [],
 ): Promise<SelectionState> {
-  let { terms, groups = [], additions, exceptions, changedAt } = state;
+  const { changedAt } = state;
+  let { terms, groups = [], additions, exceptions } = state;
   const clearInScope = async (
     predicates: DevicePredicate[],
     group?: DeviceGrouping,

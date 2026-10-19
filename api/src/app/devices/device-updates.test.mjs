@@ -437,16 +437,6 @@ const manifestDocument = () => ({
   requester: actor,
   confirmer: actor,
 });
-const receiptResult = {
-  outcome: 'created',
-  receipt: {
-    jobId,
-    displayId: 'UPD-001',
-    status: 'accepted',
-    deviceCount: 1,
-    updateCount: 1,
-  },
-};
 const selectionJson = JSON.stringify({
   terms: [],
   groups: [],
