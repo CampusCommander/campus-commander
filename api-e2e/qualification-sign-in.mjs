@@ -61,23 +61,30 @@ const signInNavigation = (url, action) =>
   });
 
 /**
- * Watch for the navigation request that a sign-in activation starts. The
- * answer is true after a navigation request for the sign-in URL, and false
- * when no such request arrives within the sign-in bound. An activation that
- * fails before the sign-in navigation starts keeps its own failure class.
+ * Wait for the first visible view of the committed origin document. The
+ * candidates are name and locator pairs. The answer is the name of the first
+ * visible view, or `none` when no view becomes visible within the bound. A
+ * view that stays hidden does not end the wait of another view.
  */
-const signInNavigationStarted = (page, signInUrl) => {
-  const watch = page.waitForRequest?.bind(page);
-  if (!watch) return Promise.resolve(true);
-  return watch(
-    (request) =>
-      request.isNavigationRequest?.() === true &&
-      request.url().startsWith(signInUrl),
-    { timeout: signInNavigationTimeoutMs },
-  ).then(
-    () => true,
-    () => false,
-  );
+const firstVisibleView = (candidates, timeout) => {
+  const first = new Promise((resolve) => {
+    let pending = candidates.length;
+    let answered = false;
+    const answer = (view) => {
+      if (answered) return;
+      answered = true;
+      resolve(view);
+    };
+    for (const [view, locator] of candidates)
+      locator.waitFor({ state: 'visible', timeout }).then(
+        () => answer(view),
+        () => {
+          pending -= 1;
+          if (pending === 0) answer('none');
+        },
+      );
+  });
+  return Promise.race([first, delay(timeout, 'none', { ref: false })]);
 };
 
 /**
@@ -128,11 +135,13 @@ export async function qualificationSignIn(
 /**
  * Run a sign-in flow that starts at the sign-in link: activate the link and
  * wait for the account heading. A retry loads the origin page first, so the
- * retry runs the flow again from a settled document. An activation whose
- * navigation does not commit within the sign-in bound reports a sign-in
- * navigation that did not commit, and the step recovers the attempt. An
- * activation that fails before the sign-in navigation starts keeps its own
- * failure class. Every other navigation failure keeps its own class.
+ * retry runs the flow again from a settled document. The retry waits for the
+ * account view or the sign-in view, so a slow account document is not
+ * mistaken for the sign-in page. An activation whose navigation does not
+ * commit within the sign-in bound reports a sign-in navigation that did not
+ * commit, and the step recovers the attempt. An activation that fails before
+ * the sign-in navigation starts keeps its own failure class. Every other
+ * navigation failure keeps its own class.
  * `activate` overrides the link activation, for the screen-reader flow.
  */
 export async function qualificationLinkSignIn(
@@ -148,6 +157,11 @@ export async function qualificationLinkSignIn(
   const signInUrl = `${publicOrigin}/api/auth/login`;
   const accountHeading = () =>
     page.getByRole('heading', { name: 'Your account', exact: true });
+  const signInLink = () =>
+    page.getByRole('link', {
+      name: 'Sign in to Campus Commander',
+      exact: true,
+    });
   let run = 0;
   return qualificationBrowserStep(
     page,
@@ -167,56 +181,93 @@ export async function qualificationLinkSignIn(
           }),
         );
         // A failed attempt can finish the sign-in on the server. The origin
-        // page then answers with the account view.
-        const signedIn = await accountHeading()
-          .waitFor({ state: 'visible', timeout: 3000 })
-          .then(
-            () => true,
-            () => false,
-          );
-        if (signedIn) return;
+        // page then answers with the account view, after its own readiness
+        // budget. The sign-in view is the other possible answer.
+        const view = await firstVisibleView(
+          [
+            ['account', accountHeading()],
+            ['sign-in', signInLink()],
+          ],
+          15000,
+        );
+        if (view === 'account') return;
       }
-      // The activation starts the sign-in navigation. The wait started before
-      // the activation reports the commit of that navigation. The request
-      // watch holds the evidence that the sign-in navigation started.
-      const commit = page.waitForNavigation
-        ? page
-            .waitForNavigation({
-              waitUntil: 'commit',
-              timeout: signInNavigationTimeoutMs,
-            })
-            .then(
-              () => null,
-              (error) => error,
-            )
-        : Promise.resolve(null);
-      const started = signInNavigationStarted(page, signInUrl);
+      // Both watches start before the activation, so an immediate navigation
+      // is observed. Neither watch has a timeout, because activation
+      // preparation can outlast the commit bound and is not a navigation
+      // failure. The request watch holds the evidence that the sign-in
+      // navigation started.
+      let startedAt = null;
+      let navigationStartSeen = false;
+      const startedWatch = page.waitForRequest
+        ? page.waitForRequest(
+            (request) =>
+              request.isNavigationRequest?.() === true &&
+              request.url().startsWith(signInUrl),
+            { timeout: 0 },
+          )
+        : Promise.resolve(true);
+      const started = startedWatch.then(
+        () => {
+          navigationStartSeen = true;
+          startedAt = Date.now();
+          return true;
+        },
+        () => false,
+      );
+      const commit = { settled: false, error: null };
+      const commitWatch = (
+        page.waitForNavigation
+          ? page.waitForNavigation({ waitUntil: 'commit', timeout: 0 })
+          : Promise.resolve()
+      ).then(
+        () => {
+          commit.settled = true;
+        },
+        (error) => {
+          commit.settled = true;
+          commit.error = error;
+        },
+      );
       let activationFailure = null;
-      await activate(
-        page.getByRole('link', {
-          name: 'Sign in to Campus Commander',
-          exact: true,
-        }),
-      ).catch((error) => {
+      await activate(signInLink()).catch((error) => {
         activationFailure = error;
       });
-      const navigationFailure = await commit;
-      const navigationStarted = await started;
-      if (navigationFailure) {
-        if (!isActionTimeout(navigationFailure)) throw navigationFailure;
-        // A commit that the bound ends is a sign-in navigation without a
-        // commit only after the sign-in navigation started. Every other case
-        // keeps the activation failure.
-        if (!navigationStarted)
-          throw (
-            activationFailure ??
-            signInNavigationStartFailure(signInUrl, navigationFailure)
-          );
-        throw signInNavigationFailure(
-          signInUrl,
-          activationFailure ?? navigationFailure,
-        );
+      // A failed activation that started no sign-in navigation keeps its own
+      // failure class. The step does not recover it, because the link was
+      // absent or not actionable. A click that ends at its timeout while the
+      // sign-in navigation is pending is an unfinished navigation, not an
+      // absent link. A failed activation needs only a short wait for a start
+      // that the failure may have raced.
+      const navigationStarted = navigationStartSeen
+        ? true
+        : await Promise.race([
+            started,
+            delay(
+              activationFailure
+                ? pendingNavigationTimeoutMs
+                : signInNavigationTimeoutMs,
+              false,
+              { ref: false },
+            ),
+          ]);
+      if (activationFailure && !navigationStarted) throw activationFailure;
+      if (!navigationStarted) throw signInNavigationStartFailure(signInUrl);
+      // The activation preparation is not part of the commit bound. The
+      // bound starts when the sign-in navigation request arrives.
+      if (!commit.settled) {
+        const remaining = signInNavigationTimeoutMs - (Date.now() - startedAt);
+        await Promise.race([
+          commitWatch,
+          delay(Math.max(0, remaining), null, { ref: false }),
+        ]);
       }
+      if (!commit.settled) throw signInNavigationFailure(signInUrl);
+      if (commit.error) {
+        if (!isActionTimeout(commit.error)) throw commit.error;
+        throw signInNavigationFailure(signInUrl, commit.error);
+      }
+      // An activation error after the commit keeps its own failure class.
       if (activationFailure) throw activationFailure;
       await accountHeading().waitFor({ state: 'visible', timeout: 15000 });
     },

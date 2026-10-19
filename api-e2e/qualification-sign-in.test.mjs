@@ -57,26 +57,34 @@ const createEvidenceDirectory = async (t) => {
  * A fake page that drives the sign-in link flow. `navigate` answers the
  * commit wait of an activation, `heading` answers the account heading wait
  * of an attempt, and `signedIn` answers the account view check of a retry.
- * `click` selects the activation result: `ok` clicks the link, `timeout`
- * reports a click that never finds the link, `inert` clicks a link that
- * starts no navigation, and `other` clicks a link that starts another
- * navigation. `goto` answers the origin navigation of a retry.
+ * `accountReadinessMs` is the time that the account view needs after the
+ * retry origin commits. `click` selects the activation result, as a status
+ * name or as a function of the page: `ok` clicks the link, `timeout` reports
+ * a click that never finds the link, `inert` clicks a link that starts no
+ * navigation, and `other` clicks a link that starts another navigation.
+ * `goto` answers the origin navigation of a retry.
  */
 const fakeLinkPage = ({
   navigate,
   heading,
   signedIn = false,
+  accountReadinessMs = 0,
   click = 'ok',
   goto = async (url) => ({ status: () => 200, url: () => url }),
 }) => {
   const page = new EventEmitter();
   page.clicks = 0;
+  page.authenticationRequests = 0;
   page.visited = [];
   page.gotoCalls = [];
+  page.locatorWaits = [];
   page.url = () => `${publicOrigin}/`;
   page.goto = async (url, options = {}) => {
     page.visited.push(url);
     page.gotoCalls.push({ url, options });
+    // The retry origin can answer with the account view. The first account
+    // heading wait after that navigation belongs to the view check.
+    if (url === publicOrigin) page.retryView = true;
     return goto(url, options);
   };
   page.evaluate = async () => ({
@@ -95,6 +103,19 @@ const fakeLinkPage = ({
     for (const waiter of navigationWaiters.splice(0)) waiter.reject(error);
   };
   page.endNavigationWaits = endNavigationWaits;
+  // Model the end of the finite navigation watches, as a preparation that
+  // outlasts their timeout does. A watch without a timeout stays pending.
+  page.expireNavigationWaits = () => {
+    for (const waiters of [requestWaiters, navigationWaiters]) {
+      for (const waiter of waiters.splice(0)) {
+        if (waiter.timeout === 0) waiters.push(waiter);
+        else
+          waiter.reject(
+            new Error('page.waitForNavigation: Timeout 10000ms exceeded.'),
+          );
+      }
+    }
+  };
   // Answer the request watch with the request that the activation starts. A
   // predicate that does not match this request ends at the wait's own
   // timeout, so another navigation cannot stand in for the sign-in
@@ -109,15 +130,16 @@ const fakeLinkPage = ({
     }
   };
   const clickLink = async () => {
+    const mode = typeof click === 'function' ? click(page) : click;
     page.clicks++;
-    if (click === 'timeout') {
+    if (mode === 'timeout') {
       // The link is absent. The click waits for the element and ends at its
       // own timeout, and no navigation starts.
       const error = new Error('locator.click: Timeout 10000ms exceeded.');
       endNavigationWaits(error);
       throw error;
     }
-    if (click === 'inert') {
+    if (mode === 'inert') {
       // The link is not actionable. The click returns and no navigation
       // starts.
       endNavigationWaits(
@@ -125,7 +147,7 @@ const fakeLinkPage = ({
       );
       return;
     }
-    if (click === 'other') {
+    if (mode === 'other') {
       // The click starts a navigation that is not the sign-in route.
       answerRequest({
         isNavigationRequest: () => true,
@@ -136,6 +158,7 @@ const fakeLinkPage = ({
       );
       return;
     }
+    page.authenticationRequests++;
     answerRequest({
       isNavigationRequest: () => true,
       url: () => `${publicOrigin}/api/auth/login`,
@@ -146,27 +169,39 @@ const fakeLinkPage = ({
     if (role === 'link')
       return {
         click: clickLink,
-        waitFor: () => Promise.reject(new Error('the sign-in link is absent')),
+        waitFor: ({ timeout } = {}) => {
+          page.locatorWaits.push({ role, timeout });
+          return Promise.reject(new Error('the sign-in link is absent'));
+        },
       };
     return {
-      waitFor: ({ timeout }) =>
-        timeout === 3000
-          ? signedIn
+      waitFor: ({ timeout }) => {
+        page.locatorWaits.push({ role, timeout });
+        if (page.retryView) {
+          page.retryView = false;
+          return signedIn && timeout >= accountReadinessMs
             ? Promise.resolve()
-            : Promise.reject(new Error('the account heading is absent'))
-          : heading(page, timeout),
+            : Promise.reject(new Error('the account heading is absent'));
+        }
+        return heading(page, timeout);
+      },
     };
   };
   // The request watch holds the evidence that a sign-in navigation started.
-  page.waitForRequest = (predicate) =>
+  page.waitForRequest = (predicate, options = {}) =>
     new Promise((resolve, reject) =>
-      requestWaiters.push({ resolve, reject, predicate }),
+      requestWaiters.push({
+        resolve,
+        reject,
+        predicate,
+        timeout: options.timeout,
+      }),
     );
-  page.waitForNavigation = ({ timeout }) => {
+  page.waitForNavigation = ({ timeout } = {}) => {
     if (timeout === 1000)
       return Promise.reject(new Error('no pending navigation'));
     return new Promise((resolve, reject) =>
-      navigationWaiters.push({ resolve, reject }),
+      navigationWaiters.push({ resolve, reject, timeout }),
     ).then(() => navigate(page, timeout));
   };
   return page;
@@ -1068,6 +1103,99 @@ test('a sign-in link that starts no navigation fails the step at once', async (t
   assert.match(outcome.error.message, /the sign-in navigation did not start/);
   assert.equal(page.clicks, 1, 'the step ran the activation again');
   assert.deepEqual(page.visited, [], 'the step loaded the origin page again');
+});
+
+test('a sign-in link whose activation preparation outlasts the navigation bound passes once', async (t) => {
+  // The screen-reader activation prepares accessibility controls before it
+  // presses Enter, and that preparation can outlast the navigation bound. A
+  // finite watch would expire during preparation and misread the completed
+  // sign-in as a navigation that never started.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeLinkPage({
+    navigate: async () => ({
+      status: () => 200,
+      url: () => `${publicOrigin}/`,
+    }),
+    heading: async () => true,
+  });
+  const outcome = await qualificationLinkSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'link-delayed-activation',
+    {
+      activate: async (control) => {
+        // The finite watches of the previous flow end here, before the click.
+        page.expireNavigationWaits();
+        await control.click();
+      },
+    },
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(
+    outcome.status,
+    'resolved',
+    `the flow rejected with ${outcome.error?.message}`,
+  );
+  assert.equal(page.clicks, 1, 'the flow activated the link again');
+  assert.equal(
+    page.authenticationRequests,
+    1,
+    'the flow started another authentication request',
+  );
+  assert.deepEqual(page.visited, [], 'the flow loaded the origin page again');
+  assert.deepEqual(outcome.value, { attempts: 1, recoveries: [] });
+});
+
+test('a committed retry account document becomes ready after the readiness budget', async (t) => {
+  // The first sign-in navigation stays pending, so the flow runs again. The
+  // retry origin answers with the account view, whose heading becomes
+  // visible only after the slow asset loads. The flow must keep the account
+  // readiness budget instead of clicking an absent sign-in link.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeLinkPage({
+    navigate: async (page) =>
+      page.clicks === 1
+        ? Promise.reject(
+            new Error('page.waitForNavigation: Timeout 10000ms exceeded.'),
+          )
+        : { status: () => 200, url: () => `${publicOrigin}/` },
+    heading: async () => true,
+    signedIn: true,
+    accountReadinessMs: 11000,
+    click: (page) => (page.clicks === 0 ? 'ok' : 'timeout'),
+  });
+  const outcome = await qualificationLinkSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'retry-account-readiness',
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(
+    outcome.status,
+    'resolved',
+    `the flow rejected with ${outcome.error?.message}`,
+  );
+  assert.equal(page.clicks, 1, 'the flow activated the link again');
+  assert.equal(
+    page.authenticationRequests,
+    1,
+    'the flow started another authentication request',
+  );
+  assert.deepEqual(
+    page.visited,
+    [publicOrigin],
+    'the flow loaded the origin page more than once',
+  );
+  assert.deepEqual(outcome.value, {
+    attempts: 2,
+    recoveries: [{ attempt: 1, routes: [] }],
+  });
 });
 
 test('a click that starts another navigation fails the step at once', async (t) => {
