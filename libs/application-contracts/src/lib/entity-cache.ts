@@ -1,6 +1,10 @@
 import * as z from 'zod';
 import { googleCustomerIdSchema } from './google-connection';
-import { deviceSyncFailureSchema, deviceSyncStateSchema } from './devices';
+import {
+  deviceRecordSchema,
+  deviceSyncFailureSchema,
+  deviceSyncStateSchema,
+} from './devices';
 
 const timestamp = z.iso.datetime({ offset: true });
 const deviceId = z.string().min(1).max(128);
@@ -58,6 +62,13 @@ export const queryCacheKey = (
   generation: string,
   hash: string,
 ) => `cc:query:${type}:${customerId}:${generation}:${hash}`;
+
+/** One Redis entity value: the entry version and the record it serves. */
+export const entityEntrySchema = z.strictObject({
+  version: z.number().int().min(1),
+  record: deviceRecordSchema,
+});
+export type EntityEntry = z.infer<typeof entityEntrySchema>;
 
 export const entitySyncJobSchema = z.strictObject({
   jobId: z.uuid(),
