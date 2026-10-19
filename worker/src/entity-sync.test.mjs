@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { GoogleConnectionError } from '@campus/google-connection';
+import { entityEventSchema } from '@campus/application-contracts';
 import { EntitySyncBatch } from './entity-sync.ts';
 import { DeviceSyncError } from './device-sync.ts';
 import { EntityCacheError } from './entity-cache.ts';
@@ -33,18 +34,20 @@ const device = (deviceId) => ({
   status: null,
 });
 const record = (deviceId) => ({
-  deviceId,
-  serialNumber: deviceId,
-  model: null,
-  assetTag: null,
-  orgUnitPath: '/',
-  lastContact: null,
-  annotatedLocation: null,
-  notes: null,
-  battery: { status: 'no-report' },
-  // One hour old, so Redis keeps the record for the 23 hours it stays fresh.
-  lastEntitySync: new Date(Date.now() - 3_600_000).toISOString(),
-  removedAt: null,
+  version: 1,
+  record: {
+    deviceId,
+    serialNumber: deviceId,
+    model: null,
+    assetTag: null,
+    orgUnitPath: '/',
+    lastContact: null,
+    annotatedLocation: null,
+    notes: null,
+    battery: { status: 'no-report' },
+    // One hour old, so Redis keeps the record for the 23 hours it stays fresh.
+    lastEntitySync: new Date(Date.now() - 3_600_000).toISOString(),
+  },
 });
 
 const clock = new Date('2026-10-06T11:59:59.123Z');
@@ -169,10 +172,16 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
     'A record one hour old stays cached for 23 hours.',
   );
   assert.equal(redis.calls[0].args.length, 1);
+  const stored = JSON.parse(redis.calls[0].args[0][0].value);
   assert.equal(
-    JSON.parse(redis.calls[0].args[0][0].value).stale,
+    stored.record.stale,
     undefined,
     'Redis stores records without stale.',
+  );
+  assert.equal(
+    stored.version,
+    1,
+    'The stored value carries the entry version.',
   );
   assert.deepEqual(redis.calls[1].args[0], ['cc:entity:device:C0123456:d2']);
   assert.deepEqual(redis.calls[2].args, [
@@ -195,6 +204,62 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
     removed: ['d2'],
     failure: null,
   });
+});
+
+test('the refresh batch publishes entity-batch before the batch finish', async () => {
+  const order = [];
+  const published = [];
+  const db = database();
+  const query = db.query.bind(db);
+  db.query = async (sql, values) => {
+    const result = await query(sql, values);
+    order.push((/cc\.(\w+)/.exec(sql) ?? /(\w+)\(\)/.exec(sql))[1]);
+    return result;
+  };
+  const redis = cache();
+  const publish = redis.publish;
+  redis.publish = async (channel, message) => {
+    order.push('publish');
+    published.push({ channel, message });
+    return publish(channel, message);
+  };
+  const result = await new EntitySyncBatch(
+    db,
+    cipher,
+    reader({ devices: [{ devices: [device('d1')], missing: ['d2'] }] }),
+    redis,
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  const event = published.find(
+    ({ message }) => JSON.parse(message).type === 'entity-batch',
+  );
+  assert.ok(event, 'The batch publishes one entity-batch event.');
+  const parsed = entityEventSchema.parse(JSON.parse(event.message));
+  assert.equal(parsed.type, 'entity-batch');
+  assert.equal(parsed.jobId, jobId);
+  assert.equal(parsed.entityType, 'device');
+  assert.equal(parsed.batch, 0);
+  assert.ok(parsed.batchCount > 0, 'The event carries a positive batch count.');
+  assert.deepEqual(parsed.deviceIds, ['d1']);
+  assert.deepEqual(parsed.removedIds, ['d2']);
+  assert.ok(
+    order.indexOf('publish') < order.indexOf('finish_entity_sync_batch'),
+    'The publication precedes the batch finish.',
+  );
+  const finish = db.calls.find(
+    (call) => call.name === 'finish_entity_sync_batch',
+  );
+  assert.deepEqual(
+    finish.values,
+    [customerId, jobId, 0, null],
+    'The batch finish carries no devices.',
+  );
+  assert.equal('deviceIds' in result.job, false);
+  assert.deepEqual(
+    published.map(({ message }) => JSON.parse(message).type),
+    ['entity-batch'],
+    'The batch publishes no job-changed event.',
+  );
 });
 
 test('the last batch publishes job-finished', async () => {

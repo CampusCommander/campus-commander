@@ -121,6 +121,46 @@ test('the Redis record schema accepts cc.device_record output without removedAt 
   );
 });
 
+test('the Redis entry schema carries the entry version and a record without removedAt', async () => {
+  const { entityEntrySchema } = await import('./entity-cache.ts');
+  assert.ok(entityEntrySchema, 'entityEntrySchema exists');
+  const record = {
+    deviceId: 'synthetic-device-0',
+    serialNumber: 'C0A1-0000',
+    model: 'Lenovo 100e Gen 4',
+    assetTag: 'HS-0400',
+    orgUnitPath: '/School A',
+    lastContact: '2026-10-05T12:00:00+00:00',
+    annotatedLocation: null,
+    notes: null,
+    battery: {
+      status: 'reported',
+      health: 'replace-soon',
+      capacityPercent: 78,
+      reportedAt: '2026-10-05T13:50:00+00:00',
+    },
+    lastEntitySync: '2026-10-06T12:00:00.123456+00:00',
+  };
+  const entry = { version: 1, record };
+  assert.deepEqual(entityEntrySchema.parse(entry), entry);
+  assert.equal(
+    entityEntrySchema.safeParse({ version: 1, record: null }).success,
+    false,
+  );
+  assert.equal(
+    entityEntrySchema.safeParse({ version: 0, record }).success,
+    false,
+  );
+  assert.equal(entityEntrySchema.safeParse({ version: 1 }).success, false);
+  assert.equal(
+    entityEntrySchema.safeParse({
+      version: 1,
+      record: { ...record, removedAt: null },
+    }).success,
+    false,
+  );
+});
+
 test('query cache names carry the query generation and expire after five minutes', () => {
   assert.equal(QUERY_CACHE_SECONDS, 300);
   assert.equal(QUERY_CACHE_MAX_IDS, 100_000);

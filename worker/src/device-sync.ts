@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   deviceSyncStateSchema,
+  entityEntrySchema,
   entityEventsChannel,
   entityKey,
   queryGenerationKey,
@@ -181,11 +182,7 @@ export class DeviceSync {
           );
           after = ids[ids.length - 1];
         }
-        const recordPage = z.array(
-          z
-            .object({ deviceId: z.string(), lastEntitySync: z.string() })
-            .passthrough(),
-        );
+        const recordPage = z.array(entityEntrySchema);
         for (let after = ''; !signal.aborted; ) {
           const records = recordPage.parse(
             await this.call(
@@ -195,17 +192,13 @@ export class DeviceSync {
           );
           if (records.length === 0) break;
           await this.cache.setRecords(
-            records.map((record) => {
-              const cached: Record<string, unknown> = { ...record };
-              delete cached['removedAt'];
-              return {
-                key: entityKey('device', input.customerId, record.deviceId),
-                value: JSON.stringify(cached),
-                seconds: recordSeconds(record.lastEntitySync),
-              };
-            }),
+            records.map((entry) => ({
+              key: entityKey('device', input.customerId, entry.record.deviceId),
+              value: JSON.stringify(entry),
+              seconds: recordSeconds(entry.record.lastEntitySync),
+            })),
           );
-          after = records[records.length - 1].deviceId;
+          after = records[records.length - 1].record.deviceId;
         }
         await this.cache.increment(
           queryGenerationKey('device', input.customerId),

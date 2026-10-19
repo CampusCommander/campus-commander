@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   ENTITY_INFLIGHT_SECONDS,
+  entityEntrySchema,
   entityEventsChannel,
   entityKey,
   entitySyncBatchRequestSchema,
@@ -60,9 +61,7 @@ const batchSchema = z.strictObject({
   batchCount: z.number().int().min(1),
   ids: z.array(z.string().min(1).max(128)).max(1000),
 });
-const recordsSchema = z.array(
-  z.object({ deviceId: z.string(), lastEntitySync: z.string() }).passthrough(),
-);
+const recordsSchema = z.array(entityEntrySchema);
 
 const defaultBackoff = (attempt: number) =>
   Math.min(60_000, 1_000 * 2 ** attempt) + Math.floor(Math.random() * 500);
@@ -242,18 +241,14 @@ export class EntitySyncBatch {
           JSON.stringify(present),
         ]),
       );
-      updated = records.map((record) => record.deviceId);
+      updated = records.map((entry) => entry.record.deviceId);
       removed = read.missing;
       await this.cache.setRecords(
-        records.map((record) => {
-          const cached = { ...record };
-          delete cached['removedAt'];
-          return {
-            key: entityKey('device', input.customerId, record.deviceId),
-            value: JSON.stringify(cached),
-            seconds: recordSeconds(record.lastEntitySync),
-          };
-        }),
+        records.map((entry) => ({
+          key: entityKey('device', input.customerId, entry.record.deviceId),
+          value: JSON.stringify(entry),
+          seconds: recordSeconds(entry.record.lastEntitySync),
+        })),
       );
       await this.cache.remove(
         removed.map((id) => entityKey('device', input.customerId, id)),

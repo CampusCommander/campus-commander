@@ -24,6 +24,8 @@ CREATE TABLE cc.device_sync_state (
   correlation_id uuid,
   failure_requested_by uuid REFERENCES cc.application_principals(id),
   telemetry_failure_requested_by uuid REFERENCES cc.application_principals(id),
+  -- Raises by one when telemetry_failure changes. The requester does not raise it (section 5.11).
+  telemetry_version bigint NOT NULL DEFAULT 1,
   CHECK((sync_id IS NULL)=(sync_expires_at IS NULL)),
   CHECK((failure IS NULL)=(failure_requested_by IS NULL)),
   CHECK((telemetry_failure IS NULL)=(telemetry_failure_requested_by IS NULL))
@@ -49,6 +51,8 @@ CREATE TABLE cc.devices (
   last_entity_sync timestamptz NOT NULL,
   removed_at timestamptz,
   annotated_location_observed_at timestamptz,
+  -- Raises by one when any other column changes. See the trigger below.
+  record_version bigint NOT NULL DEFAULT 1,
   CHECK((battery_status='reported')=(battery_health IS NOT NULL AND battery_reported_at IS NOT NULL)),
   PRIMARY KEY(customer_id,device_id)
 );
@@ -58,6 +62,36 @@ CREATE INDEX devices_asset ON cc.devices(customer_id,asset_tag,device_id);
 CREATE INDEX devices_org_unit ON cc.devices(customer_id,org_unit_path text_pattern_ops);
 CREATE INDEX devices_contact ON cc.devices(customer_id,last_contact,device_id);
 CREATE INDEX devices_freshness ON cc.devices(customer_id,last_entity_sync);
+
+-- Every writer raises the record version. An update that changes no other column keeps it.
+-- The trigger takes no lock: it reads the row values that the update already holds.
+CREATE FUNCTION cc.bump_device_record_version() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+BEGIN
+  NEW.record_version:=CASE
+    WHEN (to_jsonb(NEW)-'record_version') IS DISTINCT FROM (to_jsonb(OLD)-'record_version')
+      THEN OLD.record_version+1
+    ELSE OLD.record_version END;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER devices_record_version BEFORE UPDATE ON cc.devices
+FOR EACH ROW EXECUTE FUNCTION cc.bump_device_record_version();
+
+-- A change of the telemetry failure raises the telemetry version. Its requester alone does not.
+-- The version never decreases: a row rewrite keeps the old value unless the failure changes.
+CREATE FUNCTION cc.bump_telemetry_version() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+BEGIN
+  NEW.telemetry_version:=CASE
+    WHEN NEW.telemetry_failure IS DISTINCT FROM OLD.telemetry_failure
+      THEN OLD.telemetry_version+1
+    ELSE OLD.telemetry_version END;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER device_sync_state_telemetry_version BEFORE UPDATE ON cc.device_sync_state
+FOR EACH ROW EXECUTE FUNCTION cc.bump_telemetry_version();
 
 -- One refresh job: the ID list, its batch size, and the connection generation it reads with.
 CREATE TABLE cc.entity_sync_jobs (
@@ -453,7 +487,9 @@ $$;
 
 CREATE FUNCTION cc.read_device_records(p_customer text,p_ids jsonb) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-  SELECT COALESCE(jsonb_agg(cc.device_record(d,s.telemetry_failure) ORDER BY d.device_id),'[]'::jsonb)
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('version',
+      d.record_version+COALESCE(s.telemetry_version,1),
+      'record',cc.device_record(d,s.telemetry_failure)-'removedAt') ORDER BY d.device_id),'[]'::jsonb)
   FROM cc.devices d LEFT JOIN cc.device_sync_state s ON s.customer_id=d.customer_id
   WHERE d.customer_id=p_customer AND d.removed_at IS NULL
     AND d.device_id IN (SELECT jsonb_array_elements_text(p_ids));
@@ -462,8 +498,10 @@ $$;
 -- Present devices after p_after in device_id order. An empty p_after starts at the first device.
 CREATE FUNCTION cc.page_device_records(p_customer text,p_after text,p_limit integer) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-  SELECT COALESCE(jsonb_agg(record ORDER BY device_id),'[]'::jsonb) FROM (
-    SELECT d.device_id,cc.device_record(d,s.telemetry_failure) AS record
+  SELECT COALESCE(jsonb_agg(entry ORDER BY device_id),'[]'::jsonb) FROM (
+    SELECT d.device_id,jsonb_build_object('version',
+      d.record_version+COALESCE(s.telemetry_version,1),
+      'record',cc.device_record(d,s.telemetry_failure)-'removedAt') AS entry
     FROM cc.devices d LEFT JOIN cc.device_sync_state s ON s.customer_id=d.customer_id
     WHERE d.customer_id=p_customer AND d.removed_at IS NULL AND d.device_id>COALESCE(p_after,'')
     ORDER BY d.device_id LIMIT LEAST(GREATEST(p_limit,1),1000)) page;
@@ -846,4 +884,5 @@ REVOKE ALL ON FUNCTION cc.device_reader(uuid,integer),cc.device_sync_projection(
   cc.finish_device_sync(text,uuid,uuid,text,text),cc.entity_sync_job_projection(cc.entity_sync_jobs),
   cc.create_entity_sync_job(uuid,integer,text,text,jsonb,integer,uuid,uuid),
   cc.abandon_entity_sync_job(uuid,integer,text,uuid),cc.read_entity_sync_batch(text,uuid,integer),
-  cc.finish_entity_sync_batch(text,uuid,integer,text) FROM PUBLIC;
+  cc.finish_entity_sync_batch(text,uuid,integer,text),
+  cc.bump_device_record_version(),cc.bump_telemetry_version() FROM PUBLIC;

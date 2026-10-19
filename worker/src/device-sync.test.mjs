@@ -78,18 +78,20 @@ function database({ fail = {}, onPage = () => undefined, removed = [] } = {}) {
   };
 }
 const record = (deviceId) => ({
-  deviceId,
-  serialNumber: deviceId,
-  model: null,
-  assetTag: null,
-  orgUnitPath: '/',
-  lastContact: null,
-  annotatedLocation: null,
-  notes: null,
-  battery: { status: 'no-report' },
-  // One hour old, so Redis keeps the record for the 23 hours it stays fresh.
-  lastEntitySync: new Date(Date.now() - 3_600_000).toISOString(),
-  removedAt: null,
+  version: 1,
+  record: {
+    deviceId,
+    serialNumber: deviceId,
+    model: null,
+    assetTag: null,
+    orgUnitPath: '/',
+    lastContact: null,
+    annotatedLocation: null,
+    notes: null,
+    battery: { status: 'no-report' },
+    // One hour old, so Redis keeps the record for the 23 hours it stays fresh.
+    lastEntitySync: new Date(Date.now() - 3_600_000).toISOString(),
+  },
 });
 function cache() {
   const calls = [];
