@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
+import {
+  qualificationLinkSignIn,
+  qualificationSignIn,
+} from './qualification-sign-in.mjs';
 
 /** Keep invitation fragments and authorization codes out of fixture errors. */
 export async function withInstalledAdmission(action) {
@@ -40,6 +44,7 @@ export async function qualifyInstalledPhase3({
   publicOrigin,
   provider,
   verifyRecipientAccess,
+  evidenceDirectory,
 }) {
   const startedAt = Date.now();
   const observations = [];
@@ -235,15 +240,12 @@ export async function qualifyInstalledPhase3({
         ),
       ).toBeVisible();
       checkpoint('sign in recipient');
-      await recipientPage
-        .getByRole('link', { name: 'Sign in to Campus Commander', exact: true })
-        .click();
-      await expect(
-        recipientPage.getByRole('heading', {
-          name: 'Your account',
-          exact: true,
-        }),
-      ).toBeVisible({ timeout: 15000 });
+      await qualificationLinkSignIn(
+        recipientPage,
+        publicOrigin,
+        evidenceDirectory,
+        'installed-recipient',
+      );
       checkpoint('check initial access');
       let identity = (await request(recipientPage, '/api/auth/session'))
         .identity;
@@ -294,13 +296,12 @@ export async function qualifyInstalledPhase3({
       });
       await request(recipientPage, '/api/auth/session', undefined, 401);
       checkpoint('renew recipient session');
-      await recipientPage.goto(`${publicOrigin}/api/auth/login`);
-      await expect(
-        recipientPage.getByRole('heading', {
-          name: 'Your account',
-          exact: true,
-        }),
-      ).toBeVisible({ timeout: 15000 });
+      await qualificationSignIn(
+        recipientPage,
+        publicOrigin,
+        evidenceDirectory,
+        'installed-recipient-renew',
+      );
       checkpoint('check school boundaries');
       assert.equal(
         (await request(recipientPage, `/api/schools/${schools[0].id}`)).id,

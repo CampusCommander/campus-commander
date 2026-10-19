@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
+import { tmpdir } from 'node:os';
 import { chromium, expect } from '@playwright/test';
+import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 import { startScreenReader } from './screen-reader.mjs';
 
 export async function applicationBrowser(
   publicOrigin,
   run,
-  { recoverySeconds = 0, afterSignOut } = {},
+  { recoverySeconds = 0, afterSignOut, evidenceDirectory = tmpdir() } = {},
 ) {
   const reader =
     process.env.CC_AUTH_SCREEN_READER === '1'
@@ -32,24 +34,28 @@ export async function applicationBrowser(
         await control.press('Enter');
       } else await control.click();
     };
+    // The screen-reader flow announces the sign-in link before the
+    // activation. The sign-in step repeats the flow after a failed attempt.
+    const activateSignIn = async (control) => {
+      await page.bringToFront();
+      await reader.waitForControl('Sign in to Campus Commander');
+      await control.focus();
+      await reader.waitForControl('Sign in to Campus Commander', true);
+      await activate(control);
+    };
     const errors = [];
     const observations = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(publicOrigin);
-    if (reader) {
-      await page.bringToFront();
-      await reader.waitForControl('Sign in to Campus Commander');
-      await page
-        .getByRole('link', { name: 'Sign in to Campus Commander' })
-        .focus();
-      await reader.waitForControl('Sign in to Campus Commander', true);
-    }
-    await activate(
-      page.getByRole('link', { name: 'Sign in to Campus Commander' }),
+    // The sign-in link flow runs inside the step, so the step recovers a
+    // navigation that the installation network change leaves pending.
+    await qualificationLinkSignIn(
+      page,
+      publicOrigin,
+      evidenceDirectory,
+      'application',
+      reader ? { activate: activateSignIn } : {},
     );
-    await expect(
-      page.getByRole('heading', { name: 'Your account', exact: true }),
-    ).toBeVisible({ timeout: 15000 });
     await expect(page).toHaveTitle('Your account · Campus Commander');
     const checks = async ({
       recoverySeconds: bound = recoverySeconds,

@@ -11,12 +11,34 @@ import {
 test('the application and worker users get only the commands they issue', () => {
   assert.equal(
     applicationRedisAcl,
-    '~cc:* &cc:* -@all +ping +get +getdel +mget +set +del +exists +expire +ttl +eval +llen +lrange +rpush +zadd +zrem +zremrangebyscore +time +subscribe +unsubscribe',
+    '~cc:* &cc:* -@all +ping +get +getdel +mget +set +del +exists +expire +ttl +eval +llen +lrange +rpush +zadd +zrem +zremrangebyscore +time +subscribe +unsubscribe +publish +incr',
   );
   assert.equal(
     workerRedisAcl,
-    '~cc:entity:* ~cc:query-gen:* ~cc:entity-inflight:* &cc:entity-events:* -@all +ping +set +del +publish +incr +zadd +zrem +multi +exec',
+    '~cc:entity:* ~cc:query-gen:* ~cc:entity-inflight:* &cc:entity-events:* &cc:job-events:* -@all +ping +set +del +publish +incr +zadd +zrem +multi +exec',
   );
+});
+
+test('the worker publishes job events but cannot write the admission hold', () => {
+  const keyPatterns = workerRedisAcl
+    .split(' ')
+    .filter((rule) => rule.startsWith('~'));
+  const channelPatterns = workerRedisAcl
+    .split(' ')
+    .filter((rule) => rule.startsWith('&'));
+  // The hold belongs to the API. A worker key pattern for it would let a
+  // worker renew or delete a hold (design sections 3.2 and 6.2).
+  assert.equal(
+    keyPatterns.some((pattern) => pattern.startsWith('~cc:job-hold:')),
+    false,
+  );
+  assert.deepEqual(channelPatterns, [
+    '&cc:entity-events:*',
+    '&cc:job-events:*',
+  ]);
+  // The API grants report backoff and publish job events.
+  assert.match(applicationRedisAcl, / \+publish(?: |$)/);
+  assert.match(applicationRedisAcl, / \+incr(?: |$)/);
 });
 
 test('renderRedis gives the worker user the same password hash', async () => {

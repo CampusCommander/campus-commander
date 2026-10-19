@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { expect } from '@playwright/test';
 import { createAllDockerDurableProbe } from './all-docker-faults-fixture.mjs';
+import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 
 /** Qualify provider failures without changing the installed customer or local authority. */
 export async function qualifyInstalledProviderFaults({
@@ -197,12 +198,15 @@ export async function qualifyInstalledProviderFaults({
           try {
             const login = await context.newPage();
             await login.goto(config.applicationAuth.publicOrigin + '/login');
-            await login
-              .getByRole('link', { name: 'Sign in to Campus Commander' })
-              .click();
-            await expect(
-              login.getByRole('heading', { name: 'Your account', exact: true }),
-            ).toBeVisible({ timeout: 15000 });
+            // The local sign-in of the provider-fault check runs inside the
+            // step, so the step recovers a navigation that a network change
+            // leaves pending.
+            await qualificationLinkSignIn(
+              login,
+              config.applicationAuth.publicOrigin,
+              dirname(evidencePath ?? join(root, 'provider-faults.json')),
+              'provider-fault-local',
+            );
             record.freshSignInPassed = true;
           } catch {
             throw new Error(

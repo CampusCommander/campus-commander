@@ -160,6 +160,26 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/devices/org-units', 'api'],
       ['GET', '/devices', 'frontend'],
       ['GET', '/devices/synthetic-device-1', 'frontend'],
+      ['GET', '/api/jobs', 'api'],
+      ['GET', '/api/jobs/UPD-001', 'api'],
+      ['GET', '/api/jobs/UPD-001/operations', 'api'],
+      ['POST', '/api/jobs/UPD-001/operations/1/reconcile', 'api'],
+      ['GET', '/api/jobs/activity', 'api'],
+      ['POST', '/api/jobs/activity/seen', 'api'],
+      ['GET', '/api/jobs/requesters', 'api'],
+      ['GET', '/api/jobs/events', 'api'],
+      ['GET', '/api/devices/updates/access', 'api'],
+      ['POST', '/api/devices/updates/access/check', 'api'],
+      ['POST', '/api/devices/updates/previews', 'api'],
+      ['GET', `/api/devices/updates/previews/${id}`, 'api'],
+      ['GET', `/api/devices/updates/previews/${id}/targets`, 'api'],
+      ['POST', `/api/devices/updates/previews/${id}/confirm`, 'api'],
+      ['GET', '/jobs', 'frontend'],
+      ['GET', '/jobs/UPD-001', 'frontend'],
+      ['GET', '/jobs/UPD-001/receipt', 'frontend'],
+      ['GET', '/devices/update', 'frontend'],
+      ['GET', `/devices/update/previews/${id}`, 'frontend'],
+      ['GET', `/devices/update/previews/${id}/confirm`, 'frontend'],
     ];
     for (const [method, path, expected] of routes) {
       const response = await fetch(`${origin(edge)}${path}`, { method });
@@ -204,6 +224,24 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', `/api/platform-users/${id}`, 405],
       ['POST', `/api/platform-users/${id}/receipts`, 405],
       ['POST', '/api/platform-users/not-a-uuid/access', 404],
+      ['POST', '/api/jobs', 405],
+      ['GET', '/api/jobs/activity/seen', 405],
+      ['POST', '/api/jobs/UPD-001', 405],
+      ['POST', '/api/jobs/UPD-001/operations', 405],
+      ['GET', '/api/jobs/UPD-001/operations/1/reconcile', 405],
+      ['POST', '/api/jobs/events', 405],
+      ['POST', '/api/jobs/requesters', 405],
+      ['GET', '/api/jobs/not-a-display-id', 404],
+      ['GET', '/api/jobs/UPD-001/private', 404],
+      ['POST', '/api/jobs/UPD-001/operations/0/reconcile', 404],
+      ['POST', '/api/jobs/UPD-001/operations/one/reconcile', 404],
+      ['GET', '/api/devices/updates/access/check', 405],
+      ['POST', '/api/devices/updates/access', 405],
+      ['GET', '/api/devices/updates/previews', 405],
+      ['POST', `/api/devices/updates/previews/${id}`, 405],
+      ['GET', `/api/devices/updates/previews/${id}/confirm`, 405],
+      ['POST', `/api/devices/updates/previews/${id}/targets`, 405],
+      ['GET', '/api/devices/updates/previews/not-a-uuid', 404],
     ]) {
       assert.equal(
         (await fetch(`${origin(edge)}${path}`, { method })).status,
@@ -272,7 +310,11 @@ test('the device event stream outlives the request timeout while pings flow', as
     new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = (server) => `http://127.0.0.1:${server.address().port}`;
   const api = http.createServer((request, response) => {
-    if (!request.url.startsWith('/api/devices/events')) return;
+    if (
+      !request.url.startsWith('/api/devices/events') &&
+      !request.url.startsWith('/api/jobs/events')
+    )
+      return;
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     response.write('retry: 3000\n\n');
     // A silent stream must end at the edge.
@@ -325,6 +367,24 @@ test('the device event stream outlives the request timeout while pings flow', as
     const quiet = Date.now();
     await assert.rejects(silent.text());
     assert.ok(Date.now() - quiet < 1000, 'The edge ended the silent stream.');
+    // The Jobs stream carries the same event idle timeout.
+    const jobs = await fetch(`${origin(edge)}/api/jobs/events`, guard());
+    assert.equal(jobs.headers.get('content-type'), 'text/event-stream');
+    assert.equal(
+      (await jobs.text()).split('event: ping').length - 1,
+      6,
+      'The Jobs stream ran past the 120 ms request timeout.',
+    );
+    const silentJobs = await fetch(
+      `${origin(edge)}/api/jobs/events?silent=1`,
+      guard(),
+    );
+    const quietJobs = Date.now();
+    await assert.rejects(silentJobs.text());
+    assert.ok(
+      Date.now() - quietJobs < 1000,
+      'The edge ended the silent stream.',
+    );
     // Every other request keeps the request timeout.
     assert.equal(
       (await fetch(`${origin(edge)}/api/devices/sync`, guard())).status,

@@ -8,6 +8,98 @@ import {
 
 const stepAttemptLimit = 3;
 const attemptEventLimit = 100;
+// A failed navigation makes the browser commit its own error page. The commit
+// arrives as a navigation of its own, and it interrupts a navigation that
+// starts before it.
+const errorPageInterruption =
+  'is interrupted by another navigation to "chrome-error://chromewebdata/"';
+const pendingNavigationTimeoutMs = 1000;
+// A sign-in navigation that does not commit within this bound counts as a
+// failed attempt. An installation network change can leave a sign-in
+// navigation without an answer, and the sign-in flow must start again.
+const signInNavigationTimeoutMs = 10000;
+const unfinishedSignInNavigation = 'the sign-in navigation did not commit';
+const missingSignInNavigation = 'the sign-in navigation did not start';
+
+/** Build the failure of a sign-in navigation that did not commit in time. */
+const signInNavigationFailure = (url, cause) =>
+  new Error(
+    `${unfinishedSignInNavigation} within ${signInNavigationTimeoutMs} ms: ${url}`,
+    { cause },
+  );
+
+/**
+ * Build the failure of an activation that started no sign-in navigation. The
+ * step does not recover this failure, because the link was absent or not
+ * actionable.
+ */
+const signInNavigationStartFailure = (url, cause) =>
+  new Error(
+    `${missingSignInNavigation} within ${signInNavigationTimeoutMs} ms: ${url}`,
+    { cause },
+  );
+
+/** Decide whether an error reports a sign-in navigation that did not commit. */
+const isUnfinishedSignInNavigation = (error) =>
+  error?.message?.includes(unfinishedSignInNavigation) === true;
+
+/** Decide whether an error reports the timeout of a Playwright action. */
+const isActionTimeout = (error) =>
+  /Timeout \d+ms exceeded/.test(error?.message ?? '');
+
+/**
+ * Run a navigation action that must commit within the sign-in bound. The
+ * action starts the navigation with `waitUntil: 'commit'`, so the bound
+ * measures the document commit, not the load of its assets. A timeout reports
+ * a sign-in navigation that did not commit, so the step can recover the
+ * attempt. Every other failure passes through.
+ */
+const signInNavigation = (url, action) =>
+  action.catch((error) => {
+    if (!isActionTimeout(error)) throw error;
+    throw signInNavigationFailure(url, error);
+  });
+
+/**
+ * Wait for the first visible view of the committed origin document. The
+ * candidates are name and locator pairs. The answer is the name of the first
+ * visible view, or `none` when no view becomes visible within the bound. A
+ * view that stays hidden does not end the wait of another view.
+ */
+const firstVisibleView = (candidates, timeout) => {
+  const first = new Promise((resolve) => {
+    let pending = candidates.length;
+    let answered = false;
+    const answer = (view) => {
+      if (answered) return;
+      answered = true;
+      resolve(view);
+    };
+    for (const [view, locator] of candidates)
+      locator.waitFor({ state: 'visible', timeout }).then(
+        () => answer(view),
+        () => {
+          pending -= 1;
+          if (pending === 0) answer('none');
+        },
+      );
+  });
+  return Promise.race([first, delay(timeout, 'none', { ref: false })]);
+};
+
+/**
+ * Wait for a pending navigation of the page, so the next action starts from a
+ * settled document. The wait ends at the timeout when the page has no pending
+ * navigation.
+ */
+const settlePendingNavigation = async (page) => {
+  const wait = page.waitForNavigation?.bind(page);
+  if (!wait) return;
+  await wait({
+    waitUntil: 'commit',
+    timeout: pendingNavigationTimeoutMs,
+  }).catch(() => null);
+};
 
 export async function qualificationSignIn(
   page,
@@ -15,16 +107,169 @@ export async function qualificationSignIn(
   evidenceDirectory,
   label,
 ) {
+  const signInUrl = `${publicOrigin}/api/auth/login`;
   return qualificationBrowserStep(
     page,
     publicOrigin,
     evidenceDirectory,
     `${label}-sign-in`,
     async () => {
-      await page.goto(`${publicOrigin}/api/auth/login`);
+      // The bound covers the document commit. A slow asset does not fail a
+      // navigation that committed.
+      await signInNavigation(
+        signInUrl,
+        page.goto(signInUrl, {
+          waitUntil: 'commit',
+          timeout: signInNavigationTimeoutMs,
+        }),
+      );
+      // The account readiness assertion holds the account view of the
+      // committed document.
       await expect(
         page.getByRole('heading', { name: 'Your account', exact: true }),
       ).toBeVisible({ timeout: 15000 });
+    },
+  );
+}
+
+/**
+ * Run a sign-in flow that starts at the sign-in link: activate the link and
+ * wait for the account heading. A retry loads the origin page first, so the
+ * retry runs the flow again from a settled document. The retry waits for the
+ * account view or the sign-in view, so a slow account document is not
+ * mistaken for the sign-in page. An activation whose navigation does not
+ * commit within the sign-in bound reports a sign-in navigation that did not
+ * commit, and the step recovers the attempt. An activation that fails before
+ * the sign-in navigation starts keeps its own failure class. Every other
+ * navigation failure keeps its own class.
+ * `activate` overrides the link activation, for the screen-reader flow.
+ */
+export async function qualificationLinkSignIn(
+  page,
+  publicOrigin,
+  evidenceDirectory,
+  label,
+  {
+    activate = (control) =>
+      control.click({ timeout: signInNavigationTimeoutMs }),
+  } = {},
+) {
+  const signInUrl = `${publicOrigin}/api/auth/login`;
+  const accountHeading = () =>
+    page.getByRole('heading', { name: 'Your account', exact: true });
+  const signInLink = () =>
+    page.getByRole('link', {
+      name: 'Sign in to Campus Commander',
+      exact: true,
+    });
+  let run = 0;
+  return qualificationBrowserStep(
+    page,
+    publicOrigin,
+    evidenceDirectory,
+    `${label}-sign-in`,
+    async () => {
+      run++;
+      if (run > 1) {
+        // The retry starts from the origin page. The bound covers the
+        // document commit, so a slow asset does not fail the retry.
+        await signInNavigation(
+          publicOrigin,
+          page.goto(publicOrigin, {
+            waitUntil: 'commit',
+            timeout: signInNavigationTimeoutMs,
+          }),
+        );
+        // A failed attempt can finish the sign-in on the server. The origin
+        // page then answers with the account view, after its own readiness
+        // budget. The sign-in view is the other possible answer.
+        const view = await firstVisibleView(
+          [
+            ['account', accountHeading()],
+            ['sign-in', signInLink()],
+          ],
+          15000,
+        );
+        if (view === 'account') return;
+      }
+      // Both watches start before the activation, so an immediate navigation
+      // is observed. Neither watch has a timeout, because activation
+      // preparation can outlast the commit bound and is not a navigation
+      // failure. The request watch holds the evidence that the sign-in
+      // navigation started.
+      let startedAt = null;
+      let navigationStartSeen = false;
+      const startedWatch = page.waitForRequest
+        ? page.waitForRequest(
+            (request) =>
+              request.isNavigationRequest?.() === true &&
+              request.url().startsWith(signInUrl),
+            { timeout: 0 },
+          )
+        : Promise.resolve(true);
+      const started = startedWatch.then(
+        () => {
+          navigationStartSeen = true;
+          startedAt = Date.now();
+          return true;
+        },
+        () => false,
+      );
+      const commit = { settled: false, error: null };
+      const commitWatch = (
+        page.waitForNavigation
+          ? page.waitForNavigation({ waitUntil: 'commit', timeout: 0 })
+          : Promise.resolve()
+      ).then(
+        () => {
+          commit.settled = true;
+        },
+        (error) => {
+          commit.settled = true;
+          commit.error = error;
+        },
+      );
+      let activationFailure = null;
+      await activate(signInLink()).catch((error) => {
+        activationFailure = error;
+      });
+      // A failed activation that started no sign-in navigation keeps its own
+      // failure class. The step does not recover it, because the link was
+      // absent or not actionable. A click that ends at its timeout while the
+      // sign-in navigation is pending is an unfinished navigation, not an
+      // absent link. A failed activation needs only a short wait for a start
+      // that the failure may have raced.
+      const navigationStarted = navigationStartSeen
+        ? true
+        : await Promise.race([
+            started,
+            delay(
+              activationFailure
+                ? pendingNavigationTimeoutMs
+                : signInNavigationTimeoutMs,
+              false,
+              { ref: false },
+            ),
+          ]);
+      if (activationFailure && !navigationStarted) throw activationFailure;
+      if (!navigationStarted) throw signInNavigationStartFailure(signInUrl);
+      // The activation preparation is not part of the commit bound. The
+      // bound starts when the sign-in navigation request arrives.
+      if (!commit.settled) {
+        const remaining = signInNavigationTimeoutMs - (Date.now() - startedAt);
+        await Promise.race([
+          commitWatch,
+          delay(Math.max(0, remaining), null, { ref: false }),
+        ]);
+      }
+      if (!commit.settled) throw signInNavigationFailure(signInUrl);
+      if (commit.error) {
+        if (!isActionTimeout(commit.error)) throw commit.error;
+        throw signInNavigationFailure(signInUrl, commit.error);
+      }
+      // An activation error after the commit keeps its own failure class.
+      if (activationFailure) throw activationFailure;
+      await accountHeading().waitFor({ state: 'visible', timeout: 15000 });
     },
   );
 }
@@ -34,14 +279,17 @@ export async function qualificationSignIn(
  * change aborts.
  *
  * When the action fails, and a request failed with ERR_NETWORK_CHANGED during
- * that attempt, the step runs the action again. The step runs the action at
- * most three times. An HTTP error status fails the attempt at once, even when
- * the same attempt saw a network change. Every other failure fails at once. A
- * final failure writes a record with the events of every attempt. A passing
- * step reports every recovered attempt with its failed request routes, the
- * attempts of a nested reload helper included. A caller passes
- * `retryOnNetworkChange: false` when the action must not run again, or when
- * another helper already recovers the action.
+ * that attempt, the step runs the action again. An attempt that the error page
+ * of an earlier failed navigation interrupts is recoverable in the same way.
+ * An attempt that a sign-in navigation without a commit ends is recoverable in
+ * the same way, and the next attempt starts after the pending navigation
+ * settles. The step runs the action at most three times. An HTTP error status
+ * fails the attempt at once, even when the same attempt saw a network change.
+ * Every other failure fails at once. A final failure writes a record with the
+ * events of every attempt. A passing step reports every recovered attempt with
+ * its failed request routes, the attempts of a nested reload helper included.
+ * A caller passes `retryOnNetworkChange: false` when the action must not run
+ * again, or when another helper already recovers the action.
  */
 export async function qualificationBrowserStep(
   page,
@@ -162,15 +410,27 @@ export async function qualificationBrowserStep(
           break;
         }
         failure = error;
+        const interruption =
+          error?.message?.includes(errorPageInterruption) === true;
+        const unfinished = isUnfinishedSignInNavigation(error);
         if (
           !retryOnNetworkChange ||
-          !attemptNetworkChange ||
+          (!attemptNetworkChange && !interruption && !unfinished) ||
           attempt === stepAttemptLimit
         )
           break;
         const routes = [...new Set(attemptRoutes)];
         recoveries.push({ attempt, routes });
-        events.push({ kind: 'network-change-retry', attempt, routes });
+        events.push({
+          kind: interruption
+            ? 'error-page-interruption'
+            : unfinished
+              ? 'pending-sign-in-navigation'
+              : 'network-change-retry',
+          attempt,
+          routes,
+        });
+        await settlePendingNavigation(page);
       }
     }
     const documentState = await Promise.race([

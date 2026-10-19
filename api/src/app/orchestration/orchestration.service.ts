@@ -138,6 +138,75 @@ export class OrchestrationService {
     });
   }
 
+  async startDeviceUpdate(input: {
+    customerId: string;
+    jobId: string;
+    dispatchToken: string;
+    batchCount: number;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        jobId: z.uuid(),
+        dispatchToken: z.uuid(),
+        // The design permits 100,000 devices and batch sizes 1 to 250, so one
+        // write job can hold 100,000 batches (design section 5.2).
+        batchCount: z.number().int().min(1).max(100_000),
+        correlationId: z.uuid(),
+      })
+      .parse(input);
+    await this.deployFlow('device-update.yaml', 'device_update');
+    return this.execute('device_update', {
+      customerId: values.customerId,
+      jobId: values.jobId,
+      dispatchToken: values.dispatchToken,
+      batches: JSON.stringify(
+        Array.from({ length: values.batchCount }, (_, index) => index),
+      ),
+      correlationId: values.correlationId,
+    });
+  }
+
+  async startDeviceUpdateReconcile(input: {
+    customerId: string;
+    jobId: string;
+    operationNumber: number | 'all';
+    verifyAttempt?: string;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        jobId: z.uuid(),
+        operationNumber: z.union([
+          z.literal('all'),
+          z.number().int().min(1).max(2147483647),
+        ]),
+        verifyAttempt: z.uuid().optional(),
+        correlationId: z.uuid(),
+      })
+      .refine(
+        (value) =>
+          value.operationNumber === 'all'
+            ? value.verifyAttempt === undefined
+            : value.verifyAttempt !== undefined,
+        { message: 'A read-back attempt accompanies one operation number.' },
+      )
+      .parse(input);
+    await this.deployFlow(
+      'device-update-reconcile.yaml',
+      'device_update_reconcile',
+    );
+    return this.execute('device_update_reconcile', {
+      customerId: values.customerId,
+      jobId: values.jobId,
+      operationNumber: String(values.operationNumber),
+      ...(values.verifyAttempt ? { verifyAttempt: values.verifyAttempt } : {}),
+      correlationId: values.correlationId,
+    });
+  }
+
   async check(correlationId: string) {
     await this.deployFlow('phase2-connection.yaml', 'phase2_connection');
     const marker = 'campus-commander-phase-2';

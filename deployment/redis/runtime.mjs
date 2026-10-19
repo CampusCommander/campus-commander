@@ -8,10 +8,10 @@ export const redisImage =
   'redis:8.0.5-alpine@sha256:6c8e66693fa71bad36ae06c75c990446ad01dbd4b081dd847eb9869f20d7c6ee';
 
 export const applicationRedisAcl =
-  '~cc:* &cc:* -@all +ping +get +getdel +mget +set +del +exists +expire +ttl +eval +llen +lrange +rpush +zadd +zrem +zremrangebyscore +time +subscribe +unsubscribe';
+  '~cc:* &cc:* -@all +ping +get +getdel +mget +set +del +exists +expire +ttl +eval +llen +lrange +rpush +zadd +zrem +zremrangebyscore +time +subscribe +unsubscribe +publish +incr';
 /** The worker writes records, bumps the query generation, extends and frees in-flight claims, and publishes events. */
 export const workerRedisAcl =
-  '~cc:entity:* ~cc:query-gen:* ~cc:entity-inflight:* &cc:entity-events:* -@all +ping +set +del +publish +incr +zadd +zrem +multi +exec';
+  '~cc:entity:* ~cc:query-gen:* ~cc:entity-inflight:* &cc:entity-events:* &cc:job-events:* -@all +ping +set +del +publish +incr +zadd +zrem +multi +exec';
 
 export function secretPath(reference) {
   return reference.provider === 'file'

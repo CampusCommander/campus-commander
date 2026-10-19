@@ -28,6 +28,7 @@ import {
 import { renderKubernetes } from '../deployment/kubernetes/render.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
+import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 import { qualifyKubernetesUpgrade } from './kubernetes-upgrade-fixture.mjs';
 import { faultKubernetesCertificates } from './kubernetes-certificates-fixture.mjs';
 import { faultKubernetes } from './kubernetes-faults-fixture.mjs';
@@ -675,6 +676,7 @@ test(
               page,
               publicOrigin,
               provider,
+              evidenceDirectory,
               verifyRecipientAccess: async (input) => {
                 stage = `recipient permissions: ${input.stage}`;
                 recipientAccessChecks.push(
@@ -800,15 +802,15 @@ test(
               await expect(
                 page.getByRole('heading', { name: 'Sign in', exact: true }),
               ).toBeVisible({ timeout: 15000 });
-              await page
-                .getByRole('link', { name: 'Sign in to Campus Commander' })
-                .click();
-              await expect(
-                page.getByRole('heading', {
-                  name: 'Your account',
-                  exact: true,
-                }),
-              ).toBeVisible({ timeout: 15000 });
+              // The sign-in link flow of a resume runs inside the step, so
+              // the step recovers a navigation that the resume leaves
+              // pending.
+              await qualificationLinkSignIn(
+                page,
+                publicOrigin,
+                evidenceDirectory,
+                `kubernetes-${command}-resume`,
+              );
               await expect(page.locator('html')).toHaveAttribute(
                 'data-theme',
                 'dark',
@@ -904,12 +906,14 @@ test(
               ),
               401,
             );
-            await page
-              .getByRole('link', { name: 'Sign in to Campus Commander' })
-              .click();
-            await expect(
-              page.getByRole('heading', { name: 'Your account', exact: true }),
-            ).toBeVisible({ timeout: 15000 });
+            // The sign-in link flow after a restore runs inside the step, so
+            // the step recovers a navigation that the restore leaves pending.
+            await qualificationLinkSignIn(
+              page,
+              publicOrigin,
+              evidenceDirectory,
+              'kubernetes-restore',
+            );
             await expect(page.locator('html')).toHaveAttribute(
               'data-theme',
               'dark',
