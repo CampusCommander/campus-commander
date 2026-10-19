@@ -559,6 +559,26 @@ export async function qualifyDeviceUpdates({
               false,
               `The runtime role holds no INSERT on ${table}.`,
             );
+          assert.equal(
+            (
+              await migrator.query(
+                `SELECT has_column_privilege('cc-app','cc.google_credentials',
+                  'delegated_subject','SELECT') AS held`,
+              )
+            ).rows[0].held,
+            false,
+            'The runtime role reads no delegated subject.',
+          );
+          assert.equal(
+            (
+              await migrator.query(
+                `SELECT has_column_privilege('cc-app','cc.google_connection',
+                  'generation','SELECT') AS held`,
+              )
+            ).rows[0].held,
+            false,
+            'The runtime role reads no connection generation.',
+          );
           for (const text of statements) {
             await writer.query('BEGIN');
             const code = await writer.query(text).then(
@@ -654,6 +674,57 @@ export async function qualifyDeviceUpdates({
             409,
           );
           assert.equal(stored.length, 0);
+        } finally {
+          await migrator.query(
+            'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
+            [
+              actor,
+              'devices:bulk-actions',
+              JSON.stringify({ kind: 'district', customerId: customer }),
+            ],
+          );
+        }
+      },
+    );
+
+    await check(
+      'B3 a grant lost after the manifest creates no job',
+      async () => {
+        fresh(['b3-a']);
+        const other = await updates.preview(session, current, {
+          ...key,
+          mode: 'replace',
+          value: 'Room 12',
+        });
+        const revoked = new DeviceUpdates(database, cache, {
+          async storeJson() {
+            await migrator.query(
+              "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='devices:bulk-actions'",
+              [actor],
+            );
+            return randomUUID();
+          },
+        });
+        try {
+          await rejects(
+            revoked.confirm(session, current, other.previewId, {
+              manifestDigest: other.manifestDigest,
+              acknowledged: true,
+            }),
+            'permission-changed',
+            409,
+          );
+          assert.equal(
+            (
+              await migrator.query(
+                `SELECT count(*)::integer AS count FROM cc.jobs j
+                 JOIN cc.device_update_previews p ON p.job_id=j.job_id
+                 WHERE p.preview_id=$1`,
+                [other.previewId],
+              )
+            ).rows[0].count,
+            0,
+          );
         } finally {
           await migrator.query(
             'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
