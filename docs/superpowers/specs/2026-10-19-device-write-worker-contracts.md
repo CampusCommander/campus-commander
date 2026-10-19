@@ -1,12 +1,12 @@
 # Design addendum: worker contracts for the device write jobs
 
-Status: proposed, revision 3, 2026-10-19. Author: architect. Card: `t_ebb18941`.
+Status: approved technical addendum, revision 3, 2026-10-19. Author: architect. The reviewer approved it at `2827226`. The eng-lead accepted contract C8 and rulings 7 and 10. Card: `t_ebb18941`.
 This addendum extends the approved design `docs/superpowers/specs/2026-10-16-device-write-jobs-design.md`, revision 6.
 It resolves the seven open questions and the four design notes of the P2 spec draft.
 Card B2c builds its SQL changes. Card P2 builds the worker against its contracts.
 The write-access card of ruling 5 builds the API part. Card B5 calls the changed read-back claim from its Reconcile route.
 This addendum adds no product behavior, workflow, entity, or navigation destination.
-Ruling 5 proposes two new columns. The section "Needs the eng-lead" holds them for a decision.
+Ruling 5 adds two new columns. The eng-lead accepted them (section "Needs the eng-lead").
 It keeps every decision of `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md` as the owner confirmed it.
 
 Conventions:
