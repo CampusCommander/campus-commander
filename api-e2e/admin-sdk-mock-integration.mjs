@@ -384,8 +384,9 @@ async function runAdminSdkMockIntegration({
     'GET answers the cached check',
   );
 
-  // A patch fault would fail a write. A granted check proves that it never wrote.
-  await addFault({
+  // The mock keeps a remaining count for each fault. A patch fault that still
+  // waits after the check proves that the check sent no write.
+  const patchFault = await addFault({
     kind: 'status',
     method: 'directory.chromeosdevices.patch',
     status: 500,
@@ -395,7 +396,15 @@ async function runAdminSdkMockIntegration({
   assert.equal(
     (await checkWriteAccess()).state,
     'granted',
-    'the check sends no write while a patch fault waits',
+    'the check grants access while a patch fault waits',
+  );
+  const waiting = (await control(`/domains/${mock.customerId}/faults`)).find(
+    (fault) => fault.id === patchFault.id,
+  );
+  assert.equal(
+    waiting.remaining,
+    1,
+    'the check sends no write, so the patch fault never runs',
   );
   await clearFaults();
 
