@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import { setTimeout as delay } from 'node:timers/promises';
-import { mockExitedError } from './admin-sdk-mock-fixture.mjs';
+import { MOCK_SCOPES, mockExitedError } from './admin-sdk-mock-fixture.mjs';
 
 /** Google battery health values as Campus Commander classifies them. */
 const batteryHealth = {
@@ -317,6 +317,181 @@ async function runAdminSdkMockIntegration({
   }
   assert.ok(compared, 'No synced device matched the mock battery telemetry.');
 
+  // B6: the write scope, its check, and the write-access projection.
+  // Every Google call in this block goes to the mock. The scope removal, the
+  // delegation grant, and the list fault use the mock control API.
+  const writeScope =
+    'https://www.googleapis.com/auth/admin.directory.device.chromeos';
+  const control = async (path, { method = 'GET', body } = {}) => {
+    const response = await fetch(`${mock.controlUrl}${path}`, {
+      method,
+      ...(body === undefined
+        ? {}
+        : {
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+    });
+    assert.ok(
+      [200, 201, 204].includes(response.status),
+      `The mock control API answered ${response.status} for ${path}.`,
+    );
+    return response.status === 204 ? null : response.json();
+  };
+  const clearFaults = () =>
+    control(`/domains/${mock.customerId}/faults`, { method: 'DELETE' });
+  const addFault = (rule) =>
+    control(`/domains/${mock.customerId}/faults`, {
+      method: 'POST',
+      body: rule,
+    });
+  const writeAccess = async () => {
+    const response = await call('/api/devices/updates/access');
+    assert.equal(response.status, 200, response.text);
+    return JSON.parse(response.text);
+  };
+  const checkWriteAccess = async () => {
+    const response = await call('/api/devices/updates/access/check', {
+      method: 'POST',
+      headers: headers(),
+      body: {},
+    });
+    assert.ok([200, 201].includes(response.status), response.text);
+    return JSON.parse(response.text);
+  };
+
+  await clearFaults();
+  assert.deepEqual(
+    await writeAccess(),
+    { state: 'unchecked', scope: null, failure: null, checkedAt: null },
+    'write access starts unchecked without a check',
+  );
+  const granted = await checkWriteAccess();
+  assert.equal(
+    granted.state,
+    'granted',
+    `the write scope check grants access: ${JSON.stringify(granted)}`,
+  );
+  assert.equal(granted.scope, writeScope, 'the check names the write scope');
+  assert.equal(granted.failure, null, 'a granted check carries no failure');
+  assert.ok(
+    Number.isFinite(Date.parse(granted.checkedAt)),
+    'a granted check records its time',
+  );
+  assert.deepEqual(
+    await writeAccess(),
+    granted,
+    'GET answers the cached check',
+  );
+
+  // A patch fault would fail a write. A granted check proves that it never wrote.
+  await addFault({
+    kind: 'status',
+    method: 'directory.chromeosdevices.patch',
+    status: 500,
+    reason: 'backendError',
+    count: 1,
+  });
+  assert.equal(
+    (await checkWriteAccess()).state,
+    'granted',
+    'the check sends no write while a patch fault waits',
+  );
+  await clearFaults();
+
+  // Removing the write scope denies the check and the cached projection.
+  await addFault({
+    kind: 'remove-scope',
+    clientId: mock.key.client_id,
+    scope: writeScope,
+  });
+  const denied = await checkWriteAccess();
+  assert.equal(
+    denied.state,
+    'denied',
+    `removing the write scope denies access: ${JSON.stringify(denied)}`,
+  );
+  assert.equal(
+    denied.failure,
+    'delegation-not-authorized',
+    'a removed write scope reports delegation-not-authorized',
+  );
+  const deniedRead = await writeAccess();
+  assert.equal(
+    deniedRead.state,
+    'denied',
+    'GET answers the denied state after the scope removal',
+  );
+  assert.equal(
+    deniedRead.failure,
+    'delegation-not-authorized',
+    'GET answers the denied failure after the scope removal',
+  );
+
+  // A delegation grant through the mock control restores granted.
+  await clearFaults();
+  await control(
+    `/domains/${mock.customerId}/delegation/${mock.key.client_id}`,
+    {
+      method: 'PUT',
+      body: { scopes: MOCK_SCOPES },
+    },
+  );
+  assert.equal(
+    (await checkWriteAccess()).state,
+    'granted',
+    'a delegation grant through the mock control restores granted',
+  );
+
+  // A revoked delegation denies the check.
+  await addFault({
+    kind: 'revoke-delegation',
+    clientId: mock.key.client_id,
+  });
+  const revoked = await checkWriteAccess();
+  assert.equal(
+    revoked.state,
+    'denied',
+    `a revoked delegation denies access: ${JSON.stringify(revoked)}`,
+  );
+  assert.equal(
+    revoked.failure,
+    'delegation-not-authorized',
+    'a revoked delegation reports delegation-not-authorized',
+  );
+  await clearFaults();
+  assert.equal(
+    (await checkWriteAccess()).state,
+    'granted',
+    'clearing the revocation grants access again',
+  );
+
+  // A 403 on the list is unavailable, never denied.
+  await addFault({
+    kind: 'status',
+    method: 'directory.chromeosdevices.list',
+    status: 403,
+    reason: 'forbidden',
+    count: 1,
+  });
+  const forbidden = await checkWriteAccess();
+  assert.equal(
+    forbidden.state,
+    'unavailable',
+    `a 403 on the list reads unavailable: ${JSON.stringify(forbidden)}`,
+  );
+  assert.equal(
+    forbidden.failure,
+    'permission-denied',
+    'a 403 on the list reports permission-denied',
+  );
+  await clearFaults();
+  assert.equal(
+    (await checkWriteAccess()).state,
+    'granted',
+    'the check recovers after the list fault clears',
+  );
+
   const quota = await mock.quota();
   const record = {
     tier: mock.tier,
@@ -345,5 +520,8 @@ async function runAdminSdkMockIntegration({
     `the mock credential connects with the mock administrator and customer ${mock.customerId}: pass`,
     `Refresh all publishes ${state.deviceCount} devices in ${syncSeconds.toFixed(1)} seconds: pass`,
     `the published count equals the mock count and a device battery class matches the mock telemetry: pass`,
+    'the write scope check lists one device for the mock administrator and sends no write: pass',
+    'removing the write scope denies access, and a delegation grant through the mock control restores granted: pass',
+    'a revoked delegation denies access, and a 403 on the list reads unavailable with permission-denied: pass',
   ];
 }

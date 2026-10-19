@@ -145,3 +145,13 @@ export const deviceWriteAccessSchema = z.strictObject({
   checkedAt: timestamp.nullable(),
 });
 export type DeviceWriteAccess = z.infer<typeof deviceWriteAccessSchema>;
+
+/** The exact message of section 4.3 while the state is denied. */
+export const DEVICE_WRITE_ACCESS_DENIED_MESSAGE = '';
+
+/** The message that the client shows for one write-access state. */
+export function deviceWriteAccessMessage(
+  access: DeviceWriteAccess,
+): string | null {
+  return access.state === 'denied' ? DEVICE_WRITE_ACCESS_DENIED_MESSAGE : null;
+}

@@ -20,6 +20,8 @@ import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { requireDeviceUpdateActions } from './device-updates-actions';
 import { DeviceUpdatesService } from './device-updates.service';
+import { DeviceWriteAccessRoutes } from './device-write-access-routes';
+import { DeviceWriteAccessService } from './device-write-access.service';
 import { DevicesService } from './devices.service';
 
 const previewIdSchema = z.uuid();
@@ -35,15 +37,18 @@ export class DeviceUpdatesController {
   private readonly devices: DevicesService;
   private readonly updates: DeviceUpdatesService;
   private readonly auth: AuthService;
+  private readonly writeAccess: DeviceWriteAccessRoutes;
 
   constructor(
     devices: DevicesService,
     updates: DeviceUpdatesService,
     auth: AuthService,
+    access: DeviceWriteAccessService,
   ) {
     this.devices = devices;
     this.updates = updates;
     this.auth = auth;
+    this.writeAccess = new DeviceWriteAccessRoutes(devices, auth, access);
   }
 
   /** Resolve the connected customer, then require the read and both write actions for it. */
@@ -57,6 +62,16 @@ export class DeviceUpdatesController {
         request.correlationId,
       );
     return sync;
+  }
+
+  @Get('access')
+  async access(@Req() request: AuthenticatedRequest) {
+    return this.writeAccess.read(request.session, request.correlationId);
+  }
+
+  @Post('access/check')
+  async accessCheck(@Req() request: AuthenticatedRequest) {
+    return this.writeAccess.check(request.session, request.correlationId);
   }
 
   @Post('previews')
