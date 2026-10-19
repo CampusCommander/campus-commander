@@ -146,13 +146,18 @@ export const deviceWriteAccessSchema = z.strictObject({
 });
 export type DeviceWriteAccess = z.infer<typeof deviceWriteAccessSchema>;
 
-/** The exact message of section 4.3 while the state is denied. */
-export const DEVICE_WRITE_ACCESS_DENIED_MESSAGE =
-  'Google denied device changes. Add https://www.googleapis.com/auth/admin.directory.device.chromeos to the delegation client in the Google Admin Console.';
+export {
+  DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+  deviceWriteAccessMessage,
+} from './device-write-access-message';
 
-/** The message that the client shows for one write-access state. */
-export function deviceWriteAccessMessage(
-  access: DeviceWriteAccess,
-): string | null {
-  return access.state === 'denied' ? DEVICE_WRITE_ACCESS_DENIED_MESSAGE : null;
-}
+/**
+ * The documented answer of `POST /api/devices/updates/access/check` inside the
+ * 30-second interval: status 429 with the route body `{reason:'busy'}`. The GET
+ * route never answers this status. `applicationErrorSchema` names `busy` in the
+ * wider application vocabulary.
+ */
+export const DEVICE_WRITE_ACCESS_BUSY_ANSWER = Object.freeze({
+  status: 429,
+  reason: 'busy',
+} as const);

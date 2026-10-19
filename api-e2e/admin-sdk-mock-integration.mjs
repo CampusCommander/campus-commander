@@ -4,6 +4,11 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import { setTimeout as delay } from 'node:timers/promises';
 import { MOCK_SCOPES, mockExitedError } from './admin-sdk-mock-fixture.mjs';
+import { GOOGLE_SETUP_SCOPES } from '../libs/application-contracts/src/lib/google-capabilities.ts';
+import {
+  DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+  deviceWriteAccessMessage,
+} from '../libs/application-contracts/src/lib/device-write-access-message.ts';
 
 /** Google battery health values as Campus Commander classifies them. */
 const batteryHealth = {
@@ -176,6 +181,8 @@ async function runAdminSdkMockIntegration({
   request,
   ca,
   publicOrigin,
+  redis,
+  customer,
 }) {
   // Every step below depends on the running mock. A stopped container fails
   // this flow with the mock log instead of a later connection error.
@@ -350,15 +357,37 @@ async function runAdminSdkMockIntegration({
     assert.equal(response.status, 200, response.text);
     return JSON.parse(response.text);
   };
-  const checkWriteAccess = async () => {
-    const response = await call('/api/devices/updates/access/check', {
+  // The check holds a 30-second interval per customer and generation. Each
+  // unrelated assertion clears that key so the next check runs. The application
+  // Redis user cannot list keys, so build the small known key set instead.
+  const clearBusy = async () => {
+    const keys = [];
+    for (let generation = 1; generation <= 8; generation += 1)
+      keys.push(`cc:device-write-access-busy:${customer}:${generation}`);
+    await redis.del(keys);
+  };
+  const postCheck = () =>
+    call('/api/devices/updates/access/check', {
       method: 'POST',
       headers: headers(),
       body: {},
     });
+  const checkWriteAccess = async () => {
+    await clearBusy();
+    const response = await postCheck();
     assert.ok([200, 201].includes(response.status), response.text);
     return JSON.parse(response.text);
   };
+  assert.equal(
+    GOOGLE_SETUP_SCOPES.includes(writeScope),
+    true,
+    'The setup scopes include the write scope.',
+  );
+  assert.equal(
+    MOCK_SCOPES.includes(writeScope),
+    true,
+    'The mock grants the write scope to the delegation client.',
+  );
 
   await clearFaults();
   assert.deepEqual(
@@ -377,6 +406,18 @@ async function runAdminSdkMockIntegration({
   assert.ok(
     Number.isFinite(Date.parse(granted.checkedAt)),
     'a granted check records its time',
+  );
+  // C7: the check holds one interval per customer and generation.
+  const repeat = await postCheck();
+  assert.equal(
+    repeat.status,
+    429,
+    `a second check inside the interval answers 429: ${repeat.text}`,
+  );
+  assert.equal(
+    JSON.parse(repeat.text).reason,
+    'busy',
+    'a busy check answers the busy route reason',
   );
   assert.deepEqual(
     await writeAccess(),
@@ -435,6 +476,11 @@ async function runAdminSdkMockIntegration({
     deniedRead.failure,
     'delegation-not-authorized',
     'GET answers the denied failure after the scope removal',
+  );
+  assert.equal(
+    deviceWriteAccessMessage(deniedRead),
+    DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+    'GET carries the exact scope-named denied message',
   );
 
   // A delegation grant through the mock control restores granted.

@@ -26,6 +26,17 @@ export const UNCHECKED_WRITE_ACCESS: DeviceWriteAccessState = Object.freeze({
   checkedAt: null,
 });
 
+/** The minimum interval between two checks of one customer and generation. */
+export const DEVICE_WRITE_ACCESS_INTERVAL_SECONDS = 30;
+
+/** A check that arrives inside the interval of the previous check. */
+export class WriteAccessBusyError extends Error {
+  constructor() {
+    super('A write access check is already running.');
+    this.name = 'WriteAccessBusyError';
+  }
+}
+
 /** The connected customer and generation that the check reads with. */
 export interface DeviceWriteAccessContext {
   customerId: string;

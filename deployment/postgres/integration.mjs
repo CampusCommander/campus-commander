@@ -566,6 +566,7 @@ try {
     ...(await qualifyDeviceWriteAccess({
       runtime,
       migrator: migrators[0],
+      connect,
       issuer,
     })),
   );
