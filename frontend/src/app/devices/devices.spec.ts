@@ -6,12 +6,21 @@ import { vi } from 'vitest';
 import type {
   DevicePredicate,
   DeviceRow,
+  DeviceSelectionSpec,
   DeviceSyncState,
+  DeviceWriteAccess,
 } from '@campus/application-contracts';
+import { DEVICE_WRITE_ACCESS_DENIED_MESSAGE } from '@campus/application-contracts';
+import {
+  DEVICE_WRITE_ACCESS_BUSY_MESSAGE,
+  DEVICE_UPDATE_PERMISSION_MESSAGE,
+} from './device-update-messages';
 import { DeviceFilter } from './device-filter';
 import { DeviceGrid } from './device-grid';
 import { DevicesPage } from './devices';
 import { DevicesStore } from './devices.store';
+import { DeviceWriteAccessStore } from './device-write-access.store';
+import { AuthStore } from '../auth.store';
 
 @Component({
   selector: 'app-device-grid',
@@ -53,14 +62,53 @@ const ready = (extra: Partial<DeviceSyncState> = {}): DeviceSyncState => ({
   ...extra,
 });
 
+const allActions = ['devices:read', 'devices:write', 'devices:bulk-actions'];
+const grantedAccess: DeviceWriteAccess = {
+  state: 'granted',
+  scope: 'https://www.googleapis.com/auth/admin.directory.device.chromeos',
+  failure: null,
+  checkedAt: '2026-10-19T12:00:00.000Z',
+};
+
 function setup(options: {
   sync: DeviceSyncState | null;
   predicates?: DevicePredicate[];
   page?: { matching: number; total: number; observedAt: string | null } | null;
   offline?: boolean;
   freshness?: { stale: number; refreshing: boolean } | null;
+  actions?: string[];
+  selectionCount?: number;
+  access?: DeviceWriteAccess | null;
+  accessLoading?: boolean;
+  accessMessage?: string;
+  checking?: boolean;
 }) {
   const sync = signal(options.sync);
+  const selectionSpec: DeviceSelectionSpec = {
+    terms: [],
+    groups: [],
+    added: options.selectionCount ?? 6,
+    excluded: 0,
+    selectedCount: options.selectionCount ?? 6,
+    expiredAt: null,
+  };
+  const access = signal<DeviceWriteAccess | null>(
+    options.access === undefined ? grantedAccess : options.access,
+  );
+  const message = signal(options.accessMessage ?? '');
+  const checking = signal(options.checking ?? false);
+  const check = vi.fn(async () => {
+    message.set(DEVICE_WRITE_ACCESS_BUSY_MESSAGE);
+  });
+  const writeAccess = {
+    access,
+    loading: signal(options.accessLoading ?? false),
+    checking,
+    message,
+    ensure: vi.fn().mockResolvedValue(access()),
+    check,
+  };
+  const actions = new Set(options.actions ?? allActions);
   const store = {
     sync,
     syncLoaded: signal(true),
@@ -80,7 +128,10 @@ function setup(options: {
     error: signal(''),
     revision: signal(0),
     position: signal<number | null>(null),
-    selection: { spec: signal(null) },
+    selection: {
+      spec: signal(selectionSpec),
+      getSpec: vi.fn(),
+    },
     selectionTab: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
     refreshing: computed(() => sync()?.status === 'running'),
     init: vi.fn().mockResolvedValue(undefined),
@@ -95,7 +146,19 @@ function setup(options: {
     loadOrgUnits: vi.fn().mockResolvedValue(undefined),
   };
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), { provide: DevicesStore, useValue: store }],
+    providers: [
+      provideRouter([]),
+      { provide: DevicesStore, useValue: store },
+      {
+        provide: AuthStore,
+        useValue: {
+          session: signal(null),
+          metadata: signal({ phase: 3 }),
+          can: (action: string) => actions.has(action),
+        },
+      },
+      { provide: DeviceWriteAccessStore, useValue: writeAccess },
+    ],
   });
   TestBed.overrideComponent(DevicesPage, {
     remove: { imports: [DeviceGrid] },
@@ -108,10 +171,23 @@ function setup(options: {
     [...element.querySelectorAll('button')].find(
       (candidate) => candidate.textContent?.trim() === name,
     );
+  const menuItem = (name: string) =>
+    [
+      ...document.querySelectorAll<HTMLButtonElement>('button[mat-menu-item]'),
+    ].find((candidate) => candidate.textContent?.trim() === name);
+  const openBulk = async () => {
+    button('Bulk Actions')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
   return {
     store,
     element,
     button,
+    menuItem,
+    openBulk,
+    writeAccess,
     fixture,
     render: () => fixture.detectChanges(),
   };
@@ -364,4 +440,157 @@ it('passes the resume of a session to the grid', () => {
   store.resumeRevision.set(1);
   render();
   expect(grid.resumeRevision()).toBe(1);
+});
+
+describe('Bulk Actions', () => {
+  it('reads the Google write access state when the person can write', () => {
+    const { writeAccess } = setup({ sync: ready(), page: counted });
+    expect(writeAccess.ensure).toHaveBeenCalled();
+  });
+
+  it('does not read the write access state without devices:write', () => {
+    const { writeAccess } = setup({
+      sync: ready(),
+      page: counted,
+      actions: allActions.filter((action) => action !== 'devices:write'),
+    });
+    expect(writeAccess.ensure).not.toHaveBeenCalled();
+  });
+
+  it('offers one item, Update device', async () => {
+    const { openBulk, menuItem } = setup({ sync: ready(), page: counted });
+    await openBulk();
+    const items = [
+      ...document.querySelectorAll<HTMLButtonElement>('button[mat-menu-item]'),
+    ];
+    expect(items.map((item) => item.textContent?.trim())).toEqual([
+      'Update device',
+    ]);
+    expect(menuItem('Import')).toBeUndefined();
+    expect(menuItem('Export')).toBeUndefined();
+    expect(menuItem('Send command')).toBeUndefined();
+    expect(menuItem('Change status')).toBeUndefined();
+  });
+
+  it('opens the draft page from Update device', async () => {
+    const { openBulk, menuItem } = setup({ sync: ready(), page: counted });
+    const navigate = vi
+      .spyOn(TestBed.inject(Router), 'navigate')
+      .mockResolvedValue(true);
+    await openBulk();
+    expect(menuItem('Update device')?.disabled).toBe(false);
+    menuItem('Update device')?.click();
+    expect(navigate).toHaveBeenCalledWith(['/devices/update']);
+  });
+
+  it('disables Update device when the selection is empty', async () => {
+    const { element, openBulk, menuItem } = setup({
+      sync: ready(),
+      page: counted,
+      selectionCount: 0,
+    });
+    expect(element.textContent).toContain(
+      'Select one or more devices to update.',
+    );
+    await openBulk();
+    expect(menuItem('Update device')?.disabled).toBe(true);
+  });
+
+  it.each(['devices:read', 'devices:write'])(
+    'disables Update device without %s',
+    async (missing) => {
+      const { element, openBulk, menuItem } = setup({
+        sync: ready(),
+        page: counted,
+        actions: allActions.filter((action) => action !== missing),
+      });
+      expect(element.textContent).toContain(DEVICE_UPDATE_PERMISSION_MESSAGE);
+      await openBulk();
+      expect(menuItem('Update device')?.disabled).toBe(true);
+    },
+  );
+
+  it('disables Bulk Actions without devices:bulk-actions', () => {
+    const { button, element } = setup({
+      sync: ready(),
+      page: counted,
+      actions: allActions.filter((action) => action !== 'devices:bulk-actions'),
+    });
+    expect(button('Bulk Actions')).toMatchObject({ disabled: true });
+    expect(element.textContent).toContain(DEVICE_UPDATE_PERMISSION_MESSAGE);
+  });
+
+  it('disables Update device when the app is offline', async () => {
+    const { element, openBulk, menuItem } = setup({
+      sync: ready(),
+      page: counted,
+      offline: true,
+    });
+    expect(element.textContent).toContain(
+      'Update device is unavailable while you are offline.',
+    );
+    await openBulk();
+    expect(menuItem('Update device')?.disabled).toBe(true);
+  });
+
+  it('disables Update device while the write access is unchecked', async () => {
+    const { element, openBulk, menuItem } = setup({
+      sync: ready(),
+      page: counted,
+      access: { ...grantedAccess, state: 'unchecked', failure: null },
+    });
+    expect(element.textContent).toContain(
+      'Campus Commander has not checked Google write access.',
+    );
+    await openBulk();
+    expect(menuItem('Update device')?.disabled).toBe(true);
+  });
+
+  it('shows the scope-named message and copies the scope when denied', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const { element, button, fixture } = setup({
+      sync: ready(),
+      page: counted,
+      access: { ...grantedAccess, state: 'denied', failure: 'scope-mismatch' },
+    });
+    expect(element.textContent).toContain(DEVICE_WRITE_ACCESS_DENIED_MESSAGE);
+    button('Copy scope')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(writeText).toHaveBeenCalledWith(grantedAccess.scope);
+      expect(element.textContent).toContain(
+        'Copied the Google device changes scope.',
+      );
+    });
+  });
+
+  it('shows the busy answer after Recheck', async () => {
+    const { element, button, writeAccess, fixture } = setup({
+      sync: ready(),
+      page: counted,
+      access: { ...grantedAccess, state: 'unchecked', failure: null },
+    });
+    button('Recheck')?.click();
+    expect(writeAccess.check).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain(DEVICE_WRITE_ACCESS_BUSY_MESSAGE);
+    });
+  });
+
+  it('keeps Update device disabled while the first check runs', async () => {
+    const { element, openBulk, menuItem } = setup({
+      sync: ready(),
+      page: counted,
+      access: null,
+      accessLoading: true,
+    });
+    expect(element.textContent).toContain('Checking Google write access…');
+    await openBulk();
+    expect(menuItem('Update device')?.disabled).toBe(true);
+  });
 });
