@@ -140,6 +140,10 @@ Additional engineering defaults:
 - The write-scope message follows the PR #28 pattern, quoted under [Data and access](#data-and-access).
 - Depends on PR #33 (the 401 `unauthorized_client` classification). Without it, a missing write scope reads as a credential problem.
 
+## Implementation defaults — 2026-10-19
+
+Engineering choices from card F1, not owner decisions. The draft route is `devices/update`, declared before `devices/:deviceId`, and the preview route is `devices/update/previews/:previewId`, which card F2 builds. The busy answer of the write-access check reads "Another check started less than 30 seconds ago. Try again in 30 seconds." The expired-selection state leaves out "View existing jobs" until card F3 adds the Jobs page.
+
 ## States
 
 Job status labels: Accepted, Queued, Held, Running, Completed, Completed with errors, Failed, and Needs review.
