@@ -308,6 +308,10 @@ export async function qualificationLinkSignIn(
  * own class.
  * `prepare` installs the observation of the current document. `observe`
  * runs the progress check before the release.
+ * Each attempt owns its hold. A failed attempt releases the hold and waits
+ * for its intercepted request to settle before the step retries the flow
+ * or removes the route. The wait keeps the failed progress assertion, and
+ * it keeps a rejected route handler out of the failure path.
  */
 export async function qualificationHeldSignIn(
   page,
@@ -325,17 +329,39 @@ export async function qualificationHeldSignIn(
       name: 'Sign in to Campus Commander',
       exact: true,
     });
-  // The hold outlives an attempt, because page.unroute waits for a pending
-  // navigation. The retry origin navigation cancels that navigation first.
-  const hold = { release: null };
-  const holdResponse = async (intercepted) => {
-    // A request that races the first attempt passes without a hold.
-    if (!hold.release) {
+  // The route stays installed across attempts, because page.unroute waits
+  // for a pending navigation. The retry origin navigation cancels that
+  // navigation first.
+  const hold = { attempt: null };
+  const releaseHold = (attempt) => {
+    attempt.released = true;
+    attempt.release.resolve();
+    if (attempt.continued === attempt.intercepted) attempt.settled.resolve();
+  };
+  const continueRoute = async (intercepted) => {
+    try {
       await intercepted.continue();
+    } catch {
+      // page.unroute continues an in-flight route itself, and it marks the
+      // route handled. A continue that races the removal reports that state.
+    }
+  };
+  const holdResponse = async (intercepted) => {
+    const attempt = hold.attempt;
+    // A request that races the first attempt passes without a hold.
+    if (!attempt) {
+      await continueRoute(intercepted);
       return;
     }
-    await hold.release.promise;
-    await intercepted.continue();
+    attempt.intercepted += 1;
+    try {
+      await attempt.release.promise;
+      await continueRoute(intercepted);
+    } finally {
+      attempt.continued += 1;
+      if (attempt.released && attempt.continued === attempt.intercepted)
+        attempt.settled.resolve();
+    }
   };
   let run = 0;
   let completed = false;
@@ -371,67 +397,88 @@ export async function qualificationHeldSignIn(
           if (view === 'account') return;
         }
         await prepare();
-        hold.release = Promise.withResolvers();
-        const {
-          state,
-          started,
-          commit,
-          watch: commitWatch,
-        } = signInWatches(page, signInUrl);
-        // The click cannot be awaited before the release, because the hold
-        // keeps its navigation pending.
-        const activation = { failure: null };
-        const click = signInLink()
-          .click({ timeout: signInNavigationTimeoutMs })
-          .then(
-            () => undefined,
-            (error) => {
-              activation.failure = error;
-            },
-          );
-        let navigationStarted = state.navigationStartSeen;
-        if (!navigationStarted) {
-          const outcome = await Promise.race([
+        const attempt = {
+          release: Promise.withResolvers(),
+          released: false,
+          intercepted: 0,
+          continued: 0,
+          settled: Promise.withResolvers(),
+        };
+        hold.attempt = attempt;
+        try {
+          const {
+            state,
             started,
-            click.then(() =>
-              delay(pendingNavigationTimeoutMs, activation, { ref: false }),
-            ),
-            delay(signInNavigationTimeoutMs, null, { ref: false }),
-          ]);
-          navigationStarted = outcome === true;
-          // A failed activation that started no sign-in navigation keeps
-          // its own failure class.
-          if (!navigationStarted && activation.failure)
-            throw activation.failure;
+            commit,
+            watch: commitWatch,
+          } = signInWatches(page, signInUrl);
+          // The click cannot be awaited before the release, because the hold
+          // keeps its navigation pending.
+          const activation = { failure: null };
+          const click = signInLink()
+            .click({ timeout: signInNavigationTimeoutMs })
+            .then(
+              () => undefined,
+              (error) => {
+                activation.failure = error;
+              },
+            );
+          let navigationStarted = state.navigationStartSeen;
+          if (!navigationStarted) {
+            const outcome = await Promise.race([
+              started,
+              click.then(() =>
+                delay(pendingNavigationTimeoutMs, activation, { ref: false }),
+              ),
+              delay(signInNavigationTimeoutMs, null, { ref: false }),
+            ]);
+            navigationStarted = outcome === true;
+            // A failed activation that started no sign-in navigation keeps
+            // its own failure class.
+            if (!navigationStarted && activation.failure)
+              throw activation.failure;
+          }
+          if (!navigationStarted) throw signInNavigationStartFailure(signInUrl);
+          // The progress check runs while the route holds the response.
+          await observe();
+          // The bound starts at the release, because the hold is not part of
+          // the navigation.
+          const releasedAt = Date.now();
+          releaseHold(attempt);
+          if (!commit.settled) {
+            const remaining =
+              signInNavigationTimeoutMs - (Date.now() - releasedAt);
+            await Promise.race([
+              commitWatch,
+              delay(Math.max(0, remaining), null, { ref: false }),
+            ]);
+          }
+          if (!commit.settled) throw signInNavigationFailure(signInUrl);
+          if (commit.error) {
+            if (!isActionTimeout(commit.error)) throw commit.error;
+            throw signInNavigationFailure(signInUrl, commit.error);
+          }
+          await accountHeading().waitFor({ state: 'visible', timeout: 15000 });
+        } finally {
+          hold.attempt = null;
+          releaseHold(attempt);
+          // page.unroute continues an in-flight route itself, and it marks
+          // the route handled. Settle the owned route before that removal.
+          if (attempt.continued < attempt.intercepted)
+            await Promise.race([
+              attempt.settled.promise,
+              delay(pendingNavigationTimeoutMs, null, { ref: false }),
+            ]);
         }
-        if (!navigationStarted) throw signInNavigationStartFailure(signInUrl);
-        // The progress check runs while the route holds the response.
-        await observe();
-        // The bound starts at the release, because the hold is not part of
-        // the navigation.
-        const releasedAt = Date.now();
-        hold.release.resolve();
-        if (!commit.settled) {
-          const remaining =
-            signInNavigationTimeoutMs - (Date.now() - releasedAt);
-          await Promise.race([
-            commitWatch,
-            delay(Math.max(0, remaining), null, { ref: false }),
-          ]);
-        }
-        if (!commit.settled) throw signInNavigationFailure(signInUrl);
-        if (commit.error) {
-          if (!isActionTimeout(commit.error)) throw commit.error;
-          throw signInNavigationFailure(signInUrl, commit.error);
-        }
-        await accountHeading().waitFor({ state: 'visible', timeout: 15000 });
       },
     );
     completed = true;
     return result;
   } finally {
-    // A failed observation must not leave the hold parked.
-    hold.release?.resolve();
+    // A failed observation must not leave an attempt parked.
+    const attempt = hold.attempt;
+    hold.attempt = null;
+    if (attempt) releaseHold(attempt);
     if (completed) await page.unroute(holdPattern);
     else {
       // A stalled navigation keeps page.unroute pending. Bound the wait.
