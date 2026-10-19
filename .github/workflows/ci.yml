@@ -107,7 +107,7 @@ jobs:
           NX_NO_CLOUD: ${{ vars.NX_CLOUD_ENABLED != 'true' }}
       - run: npm exec nx run api-e2e:e2e
       - run: npm exec nx run deployment:validate-examples
-      - run: npm exec nx affected -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test,google-proof-test --base="$NX_BASE" --head=HEAD
+      - run: npm exec nx affected -- -t redis-test,bootstrap-test,postgres-test,storage-test,release-test,installer-test,kubernetes-test,profiles-test,qualification-test,operations-test,google-proof-test,kestra-test --base="$NX_BASE" --head=HEAD
 
   foundation-integration:
     if: inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
@@ -122,6 +122,8 @@ jobs:
             storage-integration,
             operations-integration,
             operations-phase3-integration,
+            redis-acl-integration,
+            kestra-integration,
           ]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -130,6 +132,22 @@ jobs:
           node-version: 24.19.0
           cache: npm
       - run: npm ci
+      - name: Prepare Kestra integration images
+        if: matrix.target == 'kestra-integration'
+        run: |
+          npm exec nx run deployment:build
+          node --input-type=module -e '
+          import { execFileSync } from "node:child_process";
+          import { readFileSync } from "node:fs";
+          import { kestraImage, postgresImage } from "./deployment/profiles/all-docker/render.mjs";
+          const nodeImage = readFileSync("deployment/images/api.Dockerfile", "utf8").match(/^FROM (node:\S+)/m)[1];
+          for (const image of [kestraImage, postgresImage, nodeImage]) {
+            console.log(`Pulling ${image}`);
+            execFileSync("docker", ["pull", image], { stdio: "inherit" });
+          }
+          '
+        env:
+          NX_NO_CLOUD: 'true'
       - run: npm exec nx run deployment:${{ matrix.target }}
         env:
           NX_NO_CLOUD: 'true'
