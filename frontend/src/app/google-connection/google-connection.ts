@@ -16,7 +16,6 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { z } from 'zod';
 import {
-  GOOGLE_CUSTOMER_SCOPES,
   GOOGLE_HEALTH_RECOVERY,
   GOOGLE_SETUP_SCOPES,
   delegationLink,
@@ -67,14 +66,15 @@ export class GoogleConnectionPage implements OnInit, OnDestroy {
   );
   /**
    * A failed review has no saved connection, so its verified list is empty.
-   * The check requests the connection scopes.
+   * Every link on this page lists the setup scopes, because Authorize replaces
+   * the whole scope list of the client.
    */
   protected readonly candidateDelegationHref = computed(() => {
     const candidate = this.candidate();
     return candidate
       ? this.buildDelegationLink(
           candidate.clientId,
-          GOOGLE_CUSTOMER_SCOPES,
+          GOOGLE_SETUP_SCOPES,
           candidate.observation?.primaryDomain,
         )
       : null;
