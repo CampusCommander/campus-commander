@@ -145,3 +145,19 @@ export const deviceWriteAccessSchema = z.strictObject({
   checkedAt: timestamp.nullable(),
 });
 export type DeviceWriteAccess = z.infer<typeof deviceWriteAccessSchema>;
+
+export {
+  DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+  deviceWriteAccessMessage,
+} from './device-write-access-message';
+
+/**
+ * The documented answer of `POST /api/devices/updates/access/check` inside the
+ * 30-second interval: status 429 with the route body `{reason:'busy'}`. The GET
+ * route never answers this status. `applicationErrorSchema` names `busy` in the
+ * wider application vocabulary.
+ */
+export const DEVICE_WRITE_ACCESS_BUSY_ANSWER = Object.freeze({
+  status: 429,
+  reason: 'busy',
+} as const);

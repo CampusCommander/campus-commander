@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   DEVICE_UPDATE_VALUE_MAX,
+  DEVICE_WRITE_ACCESS_BUSY_ANSWER,
+  DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
   deviceUpdateConfirmRequestSchema,
   deviceUpdateJobReceiptSchema,
   deviceUpdatePreviewRequestSchema,
@@ -9,8 +11,10 @@ import {
   deviceUpdateTargetSchema,
   deviceUpdateTargetsSchema,
   deviceUpdateValueSchema,
+  deviceWriteAccessMessage,
   deviceWriteAccessSchema,
 } from './device-updates.ts';
+import { applicationErrorSchema } from './application-contracts.ts';
 
 const tabId = '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10';
 const previewId = '9a8b7c6d-5e4f-4031-8273-6a5b4c3d2e1f';
@@ -202,4 +206,47 @@ test('write access reports the four states', () => {
     }).success,
     false,
   );
+});
+
+test('the check route documents the busy answer inside the interval', () => {
+  assert.deepEqual(DEVICE_WRITE_ACCESS_BUSY_ANSWER, {
+    status: 429,
+    reason: 'busy',
+  });
+  assert.equal(
+    applicationErrorSchema.safeParse({
+      code: 'busy',
+      message: 'A check is already running. Wait before another request.',
+      correlationId: '33333333-3333-4333-8333-333333333333',
+    }).success,
+    true,
+    'The busy code is part of the application error vocabulary.',
+  );
+});
+
+test('the denied write access names the write scope in its exact message', () => {
+  const denied = {
+    state: 'denied',
+    scope: 'https://www.googleapis.com/auth/admin.directory.device.chromeos',
+    failure: 'delegation-not-authorized',
+    checkedAt: at,
+  };
+  assert.equal(
+    DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+    'Google denied device changes. Add https://www.googleapis.com/auth/admin.directory.device.chromeos to the delegation client in the Google Admin Console.',
+  );
+  assert.equal(
+    deviceWriteAccessMessage(denied),
+    'Google denied device changes. Add https://www.googleapis.com/auth/admin.directory.device.chromeos to the delegation client in the Google Admin Console.',
+  );
+  for (const state of ['granted', 'unavailable', 'unchecked'])
+    assert.equal(
+      deviceWriteAccessMessage({
+        state,
+        scope: state === 'unchecked' ? null : denied.scope,
+        failure: state === 'unavailable' ? 'network-failure' : null,
+        checkedAt: state === 'unchecked' ? null : at,
+      }),
+      null,
+    );
 });

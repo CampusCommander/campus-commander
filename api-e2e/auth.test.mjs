@@ -976,6 +976,8 @@ test(
             request,
             ca,
             publicOrigin,
+            redis,
+            customer: mock.customerId,
           }))
             process.stdout.write(`${check}\n`);
           // The page budget of design section 5.11. The parent run seeds bare records.

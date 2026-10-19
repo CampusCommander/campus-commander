@@ -185,6 +185,7 @@ const setupScopes = [
   'https://www.googleapis.com/auth/admin.directory.domain.readonly',
   'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly',
   'https://www.googleapis.com/auth/chrome.management.telemetry.readonly',
+  'https://www.googleapis.com/auth/admin.directory.device.chromeos',
 ];
 
 async function setupImportPage() {
@@ -227,7 +228,7 @@ async function setupImportPage() {
   };
 }
 
-it('lists the four setup scopes in order under the Google scopes name', async () => {
+it('lists the five setup scopes in order under the Google scopes name', async () => {
   const { fixture, element } = await setupImportPage();
   const block = element.querySelector<HTMLElement>(
     '[aria-label="Google scopes"]',
@@ -238,14 +239,14 @@ it('lists the four setup scopes in order under the Google scopes name', async ()
   fixture.destroy();
 });
 
-it('names the four scopes in step 3 and copies them for the Admin Console', async () => {
+it('names the five scopes in step 3 and copies them for the Admin Console', async () => {
   const { fixture, element, writeText } = await setupImportPage();
   const text = element.textContent!.replace(/\s+/g, ' ');
   expect(text).toContain(
-    'Add the service account client ID and the 4 read-only scopes below.',
+    'Add the service account client ID and the 5 scopes below.',
   );
   expect(text).toContain(
-    'Campus Commander connects with the customer and domain scopes. Devices also needs the device and telemetry scopes.',
+    'Campus Commander connects with the customer and domain scopes. Devices also needs the device, telemetry, and device change scopes.',
   );
   const copy = [...element.querySelectorAll('button')].find(
     (button) => button.textContent?.trim() === 'Copy scopes',
