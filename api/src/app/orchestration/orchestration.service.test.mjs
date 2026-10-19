@@ -122,9 +122,7 @@ async function starter(stub) {
 
 /** Read one multipart form field from the recorded request body. */
 function field(body, name) {
-  const match = body.match(
-    new RegExp(`name="${name}"\r\n\r\n([^\r\n]*)`),
-  );
+  const match = body.match(new RegExp(`name="${name}"\r\n\r\n([^\r\n]*)`));
   assert.ok(match, `The request carries the ${name} field.`);
   return match[1];
 }
@@ -144,7 +142,9 @@ before(async () => {
   await mkdir(bundleDirectory, { recursive: true });
   serviceBundle = join(bundleDirectory, 'orchestration.service.mjs');
   await esbuild.build({
-    entryPoints: [join(repo, 'api/src/app/orchestration/orchestration.service.ts')],
+    entryPoints: [
+      join(repo, 'api/src/app/orchestration/orchestration.service.ts'),
+    ],
     bundle: true,
     platform: 'node',
     format: 'esm',
@@ -158,7 +158,8 @@ before(async () => {
 });
 
 after(async () => {
-  for (const layout of layouts) await rm(layout, { recursive: true, force: true });
+  for (const layout of layouts)
+    await rm(layout, { recursive: true, force: true });
   await rm(bundleDirectory, { recursive: true, force: true });
 });
 
@@ -206,11 +207,20 @@ test('startDeviceUpdate deploys and starts the packaged device_update flow', asy
       execution.url,
       '/api/v1/main/executions/campus.application/device_update',
     );
-    assert.equal(execution.contentType?.startsWith('multipart/form-data'), true);
+    assert.equal(
+      execution.contentType?.startsWith('multipart/form-data'),
+      true,
+    );
     assert.equal(field(execution.body, 'customerId'), identity.customerId);
     assert.equal(field(execution.body, 'jobId'), identity.jobId);
-    assert.equal(field(execution.body, 'dispatchToken'), identity.dispatchToken);
-    assert.equal(field(execution.body, 'correlationId'), identity.correlationId);
+    assert.equal(
+      field(execution.body, 'dispatchToken'),
+      identity.dispatchToken,
+    );
+    assert.equal(
+      field(execution.body, 'correlationId'),
+      identity.correlationId,
+    );
     assert.deepEqual(JSON.parse(field(execution.body, 'batches')), [0, 1, 2]);
     assert.equal(executionId, execution.executionId);
   } finally {
@@ -254,7 +264,10 @@ test('startDeviceUpdateReconcile deploys and starts the packaged reconcile flow'
     assert.equal(field(execution.body, 'jobId'), identity.jobId);
     assert.equal(field(execution.body, 'operationNumber'), '3');
     assert.equal(field(execution.body, 'verifyAttempt'), verifyAttempt);
-    assert.equal(field(execution.body, 'correlationId'), identity.correlationId);
+    assert.equal(
+      field(execution.body, 'correlationId'),
+      identity.correlationId,
+    );
     assert.equal(executionId, execution.executionId);
   } finally {
     process.chdir(repo);
