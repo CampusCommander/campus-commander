@@ -14,22 +14,17 @@ import { createDeviceWriteAccessStore } from './device-write-access-store.ts';
 /**
  * The secret guard over the real adapter, the real domain, and the route error
  * bodies. Every sentinel is made-up test material. The real cipher seals and
- * opens a real envelope, so the adapter's own open site runs.
+ * opens a real envelope, so the adapter's own open site runs. The search values
+ * come from the generated fixtures at run time.
  */
 const customer = 'C0123456';
 const generation = 1;
 const credentialId = '33333333-3333-4333-8333-333333333333';
 const secretPath = '/run/secrets/google-credential-key';
-const envelopeSentinel = 'ENVELOPE-CIPHERTEXT-VALUE';
+const malformedEnvelope = 'ENVELOPE-CIPHERTEXT-VALUE';
 const keySentinel = 'KEY-MATERIAL-SENTINEL-32-BYTES!!';
-const privateKeySentinel = 'PRIVATE-KEY-MATERIAL';
 const tokenSentinel = 'ACCESS-TOKEN-VALUE';
-const sentinels = [
-  envelopeSentinel,
-  keySentinel,
-  privateKeySentinel,
-  tokenSentinel,
-];
+const storeErrorSentinel = 'STORE-ERROR-VALUE';
 const { privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
   privateKeyEncoding: { format: 'pem', type: 'pkcs8' },
@@ -164,10 +159,10 @@ test('the real adapter and the response bodies hold no envelope, key, private ke
     });
     bodies.push(granted);
     assert.equal(granted.state, 'granted');
-    assert.match(
+    assert.equal(
       opened.serviceAccount.private_key,
-      /BEGIN PRIVATE KEY/,
-      'The real adapter opens the sealed credential.',
+      privateKey,
+      'The real adapter opens the generated private key.',
     );
 
     const denied = await check(async () => {
@@ -198,7 +193,7 @@ test('the real adapter and the response bodies hold no envelope, key, private ke
 
     const unopened = createDeviceWriteAccessStore(
       createDatabase({
-        claim: { ...claim, envelope: envelopeSentinel },
+        claim: { ...claim, envelope: malformedEnvelope },
       }),
       createCache(),
       configuration,
@@ -217,7 +212,7 @@ test('the real adapter and the response bodies hold no envelope, key, private ke
 
     const failed = createDeviceWriteAccessStore(
       createDatabase({
-        error: Object.assign(new Error(privateKeySentinel), {
+        error: Object.assign(new Error(storeErrorSentinel), {
           code: 'XX000',
         }),
       }),
@@ -241,16 +236,32 @@ test('the real adapter and the response bodies hold no envelope, key, private ke
   }
   const text = captured.join('\n');
   const body = JSON.stringify(bodies);
-  for (const sentinel of sentinels) {
-    assert.equal(
-      text.includes(sentinel),
-      false,
-      `The process output holds no ${sentinel}.`,
-    );
-    assert.equal(
-      body.includes(sentinel),
-      false,
-      `The response body holds no ${sentinel}.`,
-    );
-  }
+  const escaped = (value) => JSON.stringify(value).slice(1, -1);
+  const secrets = [
+    {
+      label: 'generated private key',
+      values: [privateKey, escaped(privateKey)],
+    },
+    {
+      label: 'envelope ciphertext',
+      values: [envelope.ciphertext, escaped(envelope.ciphertext)],
+    },
+    { label: 'envelope tag', values: [envelope.tag, escaped(envelope.tag)] },
+    { label: 'encryption key', values: [keySentinel, escaped(keySentinel)] },
+    { label: 'access token', values: [tokenSentinel, escaped(tokenSentinel)] },
+    { label: 'store error message', values: [storeErrorSentinel] },
+  ];
+  for (const { label, values } of secrets)
+    for (const value of values) {
+      assert.equal(
+        text.includes(value),
+        false,
+        `The process output holds no ${label}.`,
+      );
+      assert.equal(
+        body.includes(value),
+        false,
+        `The response body holds no ${label}.`,
+      );
+    }
 });
