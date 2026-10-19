@@ -1,11 +1,12 @@
 # Design addendum: worker contracts for the device write jobs
 
-Status: proposed, revision 2, 2026-10-19. Author: architect. Card: `t_ebb18941`.
+Status: proposed, revision 3, 2026-10-19. Author: architect. Card: `t_ebb18941`.
 This addendum extends the approved design `docs/superpowers/specs/2026-10-16-device-write-jobs-design.md`, revision 6.
 It resolves the seven open questions and the four design notes of the P2 spec draft.
 Card B2c builds its SQL changes. Card P2 builds the worker against its contracts.
 The write-access card of ruling 5 builds the API part. Card B5 calls the changed read-back claim from its Reconcile route.
 This addendum adds no product behavior, workflow, entity, or navigation destination.
+Ruling 5 proposes two new columns. The section "Needs the eng-lead" holds them for a decision.
 It keeps every decision of `docs/superpowers/specs/2026-10-06-entity-cache-decisions.md` as the owner confirmed it.
 
 Conventions:
@@ -14,7 +15,7 @@ Conventions:
 - `design:N` names line N of the design file at `e48c8b8`.
 - `draft:N` names line N of the P2 spec draft, the attachment `p2-spec-draft.md` of Kanban task `t_ebb18941`.
 - `B3@603a10b:` names a file at commit `603a10b` of the unmerged branch `codex/device-update-preview`.
-  That commit is an ancestor of the branch head `763f300` at revision 2. The head keeps `index.mjs`.
+  That commit is an ancestor of the branch head `d0aef55` at revision 3. The head keeps `index.mjs`.
   In `017-jobs.sql` the head changes only the expiry check of the confirmation. The cited confirmation lines move down by seven.
 - A bare migration file name, for example `017-jobs.sql`, names that file in `deployment/postgres/migrations/`.
 - `index.mjs` names `deployment/postgres/index.mjs`.
@@ -22,6 +23,7 @@ Conventions:
 - "Runtime role" names the application runtime role that `index.mjs:131-296` grants.
 - Nothing is live. B2c changes `017-jobs.sql` in place, by owner direction (`AGENTS.md:23-28`) and design section 1.1 (`design:221-222`).
 - "Scope failure" names the job failures `delegation-not-authorized` and `scope-mismatch` (`design:888`).
+- "Scope observation" names a part answer of kind `auth` or a mint failure with a scope failure code (`design:1346-1354`).
 
 This record uses one name for each function:
 
@@ -39,8 +41,15 @@ This record uses one name for each function:
 | The credential read   | `cc.google_current_generation`                               |
 | The global lock       | Advisory lock `7240173008`, the global access lock of rule G |
 
-Revision 2 answers review comment 313 on card `t_ebb18941`. The review of revision 1 raised three findings.
-This record calls them Rev-1 F1 to Rev-1 F3.
+Revision 3 answers review comment 324 on card `t_ebb18941`. The review of revision 2 raised one finding, R2-F1.
+
+| Finding  | Change                                                                                                                                                                                                     | Sections                                                                                                                               |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| R2-F1    | The settlement records each scope observation in two new columns of the job detail row. The job failure keeps its first code. The API compares the sum of the observations with the sum that a check read. | Conventions, rulings 4 and 5, contracts C3 and C8, and needs the eng-lead. B2c tests 27 to 32, P2 edits 4, 8, 9, 13, 15, and 17 to 19. |
+| Citation | The B3 branch head moved to `d0aef55`. The pin `603a10b` stays.                                                                                                                                            | Conventions                                                                                                                            |
+
+Revision 2 answered review comment 313. The review of revision 1 raised three findings.
+This record calls them Rev-1 F1 to Rev-1 F3. Their changes stay in revision 3.
 
 | Finding    | Change                                                                                                                                          | Sections                                                                                  |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -248,6 +257,8 @@ Decision:
 - B2c changes the preparation and the reaper (contract C5). Each skips pending operations with the recorded job failure as the reason, or `interrupted` without one (`design:1143`).
 - The finish request still carries no failure (`deployment/kestra/device-update.yaml:60-67`). The final finish keeps the recorded failure (`017-jobs.sql:1198-1200`).
 - After the stop, the batch handler answers 200 with outcome `stopped` and the failure.
+- Ruling 5 adds a ninth value to the settlement, `p_scope_failure`. It records scope observations beside the job failure.
+  The job failure rule of this ruling stays as it is.
 
 A worker exit between two settlements keeps the stop (Rev-1 F1):
 
@@ -266,16 +277,16 @@ Design support:
 
 Contract C3, the settlement:
 
-| Item             | Contract                                                                                                                                                                                                                                                                           |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Function         | `cc.settle_device_update_operations(p_customer text, p_job uuid, p_token uuid, p_attempt uuid, p_kind text, p_results jsonb, p_observed_at timestamptz, p_failure text DEFAULT NULL) RETURNS jsonb`. Changed in place in `017-jobs.sql`.                                           |
-| Change           | After the settled set proves non-empty (`017-jobs.sql:1022-1024`), a failure sets `failure=COALESCE(failure,p_failure)` on the header. That write precedes the counters and the job change (`017-jobs.sql:1026-1033`). A fenced call and an empty call record no failure.          |
-| Caller and check | The batch handler of the worker. It passes the dispatch token of the flow body (`deployment/kestra/device-update.yaml:32-40`) and its own attempt. It passes the failure on every write settlement after the first stopping observation.                                           |
-| Grants           | Replace the signature in `index.mjs:288` and in the revoke list at `017-jobs.sql:1465`.                                                                                                                                                                                            |
-| Lock order       | Unchanged. 1. The S2 checks (`017-jobs.sql:850-888`). 2. The header (`017-jobs.sql:889`). 3. The eligible operation rows in `operation_number` order (`017-jobs.sql:920-921`). 4. The detail row (`017-jobs.sql:922`). 5. The connection row `FOR KEY SHARE` (`017-jobs.sql:943`). |
-| Lock order, end  | 6. Device rows (`017-jobs.sql:948-954`). 7. Overlay rows (`017-jobs.sql:958-962`). 8. The clock (`017-jobs.sql:964`). The failure write changes only the header row, which the call holds from step 2. Rule G does not apply.                                                      |
-| Return           | Unchanged. The failure write precedes the job change, so the revision of the publication element includes the failure.                                                                                                                                                             |
-| Errors           | 22023 "The settlement is invalid." also covers a failure outside `cc.job_failure_known` (`017-jobs.sql:411-419`). It also covers a failure with kind `read-back`. Both checks precede any lock. Other answers stay unchanged.                                                      |
+| Item             | Contract                                                                                                                                                                                                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Function         | `cc.settle_device_update_operations(p_customer text, p_job uuid, p_token uuid, p_attempt uuid, p_kind text, p_results jsonb, p_observed_at timestamptz, p_failure text DEFAULT NULL, p_scope_failure text DEFAULT NULL) RETURNS jsonb`. Changed in place in `017-jobs.sql`. `p_scope_failure` belongs to ruling 5.       |
+| Change           | After the settled set proves non-empty (`017-jobs.sql:1022-1024`), a failure sets `failure=COALESCE(failure,p_failure)` on the header. That write precedes the counters and the job change (`017-jobs.sql:1026-1033`). A fenced call and an empty call record no failure.                                                |
+| Caller and check | The batch handler of the worker. It passes the dispatch token of the flow body (`deployment/kestra/device-update.yaml:32-40`) and its own attempt. It passes the failure on every write settlement after the first stopping observation. Ruling 5 states when it also passes a scope failure.                            |
+| Grants           | Replace the signature in `index.mjs:288` and in the revoke list at `017-jobs.sql:1465`.                                                                                                                                                                                                                                  |
+| Lock order       | Unchanged. 1. The S2 checks (`017-jobs.sql:850-888`). 2. The header (`017-jobs.sql:889`). 3. The eligible operation rows in `operation_number` order (`017-jobs.sql:920-921`). 4. The detail row (`017-jobs.sql:922`). 5. The connection row `FOR KEY SHARE` (`017-jobs.sql:943`).                                       |
+| Lock order, end  | 6. Device rows (`017-jobs.sql:948-954`). 7. Overlay rows (`017-jobs.sql:958-962`). 8. The clock (`017-jobs.sql:964`). The failure write changes only the header row, which the call holds from step 2. The scope write of ruling 5 changes only the detail row, which the call holds from step 4. Rule G does not apply. |
+| Return           | Unchanged. The failure write precedes the job change, so the revision of the publication element includes the failure.                                                                                                                                                                                                   |
+| Errors           | 22023 "The settlement is invalid." also covers a failure outside `cc.job_failure_known` (`017-jobs.sql:411-419`). It also covers a failure with kind `read-back`. Both checks precede any lock. Ruling 5 adds the checks of the scope failure. Other answers stay unchanged.                                             |
 
 Contract C4, the batch claim:
 
@@ -339,54 +350,158 @@ Rejected alternatives:
 
 Open question 5 (`draft:11`).
 
-Decision by card:
+Decision by card. It needs the two new columns of contract C8, so it waits for the column decision (section "Needs the eng-lead"):
 
 - B6 runs as written. It builds the check of section 4.2 and its cache of 300 s (`design:871-888`).
   It also builds the routes of section 2.7 (`design:660-663`, `design:1731-1732`).
-- P2 records the observation as the job failure through ruling 4. P2 writes no write-access state and no API cache.
-- The write-access card, a later backend card on top of B6, derives `denied` in the API from that job failure.
-  It reads `cc.jobs` through the existing `SELECT` grant (`index.mjs:273`). It adds no table, column, or function.
+- B2c adds the columns `scope_observations` and `scope_failure` to the job detail row (contract C8).
+  Only the settlement writes them, through its new value `p_scope_failure` (contract C3).
+- P2 passes `p_scope_failure` on each write settlement whose results hold a scope observation.
+  P2 writes no write-access state and no API cache.
+- The write-access card derives `denied` in the API from the two columns. It is a later backend card on top of B6 and B2c.
+  It reads `cc.device_update_jobs` and `cc.jobs` through the existing `SELECT` grant (`index.mjs:273-274`).
+  It adds no table, column, or function.
+
+Why the job failure cannot carry the evidence (R2-F1):
+
+- The job failure keeps its first code (ruling 4). A scope observation after another stopping failure leaves it unchanged.
+- Example: the worker `batchSize` is 1. Round 1 answers a 403 with reason `forbidden`. Round 2 answers a 403 with reason `invalid_scope`.
+  `failure()` maps the two answers to `permission-denied` and `scope-mismatch` (`libs/google-connection/src/lib/provider.ts:138-147`).
+  Both answers have kind `auth` (`libs/google-connection/src/lib/batch.ts:432`). The batch runs to its end (`design:1352`).
+- A second scope observation of a job with a scope failure adds no job to a count of such jobs.
+  A recheck that answers `granted` between the two observations then stays in force.
+- Revision 2 counted the write jobs with a scope failure. That count misses both cases.
+
+The scope evidence of P2 and B2c:
+
+1. The worker derives the failure code of each scope observation already, for the job failure of ruling 4.
+   Sources: `libs/google-connection/src/lib/devices.ts:191-198`, `devices.ts:366-378`, and `design:1346-1354`.
+2. The settlement that holds the observed operations records the observation, in the transaction of their outcomes.
+   It adds one to `scope_observations` and sets `scope_failure` on the detail row.
+   - A part answer of kind `auth`: the settlement of its round (`libs/google-connection/src/lib/batch.ts:929-939`).
+   - A mint failure: the settlement after the call returns (`batch.ts:630-641`).
+     The batch service mints at the start and 45 minutes after its last mint (`batch.ts:613-623`).
+3. One settlement records one observation at most. With both scope failures in its results, the worker passes the code of the lowest operation number.
+4. The job failure of ruling 4 stays as it is. In the example above, one settlement carries `p_failure` `permission-denied` and `p_scope_failure` `scope-mismatch`.
+5. A fenced settlement records no observation, as it records no outcome (S3).
+   A store failure or a worker exit before the settlement loses the observation with its outcomes (`design:1358`).
+   The cached result of B6 lasts at most 300 s (`design:887`). A later check then reads Google again.
+
+Contract C3, the change of ruling 5:
+
+| Item             | Contract                                                                                                                                                                                                                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Value            | `p_scope_failure text DEFAULT NULL`, the ninth parameter of the settlement (contract C3 in ruling 4).                                                                                                                                                                            |
+| Change           | After the settled set proves non-empty (`017-jobs.sql:1022-1024`), a scope failure adds one to `scope_observations`. It also sets `scope_failure` on the detail row. That write joins the heartbeat write (`017-jobs.sql:1032`). A fenced call and an empty call record nothing. |
+| Caller and check | The batch handler of the worker. It passes the value on each write settlement whose results hold a scope observation, and on no other. A scope observation stops the job (`design:1346-1354`), so ruling 4 passes a failure on that settlement too.                              |
+| Lock order       | Unchanged. The write changes only the detail row. The call holds that row `FOR UPDATE` from step 4 (`017-jobs.sql:922`).                                                                                                                                                         |
+| Errors           | 22023 "The settlement is invalid." also covers a scope failure outside the two scope failures. It also covers a scope failure with kind `read-back`, and a scope failure without a failure. Each check precedes any lock.                                                        |
+
+Contract C8, the scope columns. The eng-lead decides this contract:
+
+| Item                 | Contract                                                                                                                                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table                | `cc.device_update_jobs`, changed in place (`017-jobs.sql:103-129`).                                                                                                                                                    |
+| `scope_observations` | `integer NOT NULL DEFAULT 0`, never negative. The number of scope observations that the settlement recorded for the job.                                                                                               |
+| `scope_failure`      | `text`, null or a scope failure. The failure code of the latest recorded scope observation.                                                                                                                            |
+| Row check            | `scope_observations` is 0 exactly when `scope_failure` is null.                                                                                                                                                        |
+| Index                | A partial index on `job_id` for the rows with `scope_observations` above 0. The evidence read of the write-access card filters on that predicate and uses the index.                                                   |
+| Writer               | The settlement only (contract C3).                                                                                                                                                                                     |
+| Readers              | The write-access card, through the table grant (`index.mjs:273-274`). No API job schema names the columns (`design:533-536`).                                                                                          |
+| Grants               | Unchanged. The table grant covers the new columns.                                                                                                                                                                     |
+| Inserts              | The B2 seed and the B3 confirmation name their columns, so the defaults fill the new columns. Sources: `device-write-jobs.integration.mjs:264` and `B3@603a10b:deployment/postgres/migrations/017-jobs.sql:1585-1588`. |
+
+Lock rules check of contracts C3 and C8 for ruling 5:
+
+- S1: the change adds no lock. The write changes the detail row, which the call holds from step 4.
+- S2: the three new input checks precede the header lock (`017-jobs.sql:889`).
+- S3: a fenced call and an empty call return before the write (`017-jobs.sql:914-916`, `017-jobs.sql:936-938`, `017-jobs.sql:1022-1024`).
+  A terminal job fences every write settlement (`017-jobs.sql:898-901`).
+- Rule G: the settlement reaches no credential read.
 
 The rule that the write-access card adds on top of B6:
 
-1. Before each check, the API counts the write jobs with a scope failure. The count covers the customer and the generation of the check.
-   The API stores that count with the cached result.
-2. Each read of the state counts again. A higher count proves a scope failure that committed after the check began.
-3. The API then replaces the cached result with state `denied`. `failure` is the scope failure of the counted job with the latest `changed_at` (`017-jobs.sql:270`).
-   `checkedAt` is the time of that read.
-   The new count replaces the stored count, and the window of 300 s starts again.
-4. Without a cached result, the state stays `unchecked` until the check of B6 runs (`design:881`).
-5. A recheck stores a new count. The result of Google then wins over every earlier scope failure.
-6. The state names only the scope failure code, as a check names it. It names no job, display ID, or requester (`design:479-480`).
+1. The evidence of a check is the sum of `scope_observations` over the write jobs of its customer and generation.
+   The evidence failure is the `scope_failure` of the job with the latest `started_at` among the jobs with an observation.
+2. One write job runs at a time (`017-jobs.sql:42-43`). A write settlement needs a running job (`017-jobs.sql:898-901`).
+   The job with the latest `started_at` therefore holds the latest observation.
+3. Before the Google call of each check, the API reads the evidence. It stores the sum with the cached result.
+4. Each read of the state reads the evidence again. The answer of a check is such a read.
+   A higher sum proves a scope observation that committed after the check read its sum.
+5. The API then replaces the cached result with state `denied` and the evidence failure. `checkedAt` is the time of that read.
+   The new sum replaces the stored sum, and the window of 300 s starts again.
+6. Without a cached result, the state stays `unchecked` until the check of B6 runs (`design:881`).
+7. The state names only the scope failure code, as a check names it. It names no job, display ID, or requester (`design:479-480`).
 
-Why a higher count proves a newer failure:
+Order against a recheck while the batch still runs:
 
+- A recheck reads the evidence before its Google call (rule item 3).
+- An observation that commits before that read lies inside the stored sum. The Google call of the recheck follows it, so the recheck result wins.
+- An observation that commits after that read raises the sum above the stored sum. The next read answers `denied`.
+  Every later observation of the same job and batch follows this line, after any number of rechecks.
+- The evidence read sees committed rows only. A settlement that commits after the read therefore follows the second line.
+- The second line also covers an observation whose Google answer came before the Google call of the recheck.
+  Its commit came after the read. The state then stays `denied` until the next check. `denied` keeps Update device disabled (`design:894`).
+- Two overlapping checks each store their own sum, and the later store stays. A lower stored sum only adds denials. It never hides an observation.
+
+Why a higher sum proves a newer observation:
+
+- Only the settlement writes `scope_observations`, and each write adds one (contract C3). B2c test 31 checks the other 017 functions.
 - Write jobs never leave Postgres. The purge deletes refresh headers only (`017-jobs.sql:1417-1431`, `design:416`).
-- A write job keeps its first failure. Every failure write on a write job uses `COALESCE`, and so does ruling 4.
-  Sources: `017-jobs.sql:712`, `017-jobs.sql:1138`, `017-jobs.sql:1199`, and `017-jobs.sql:1253`.
-- The direct write at `017-jobs.sql:556` runs only for a job without a first claim (`017-jobs.sql:538-541`). A scope failure needs a claimed batch, so that write never replaces one.
-- The set of write jobs with a scope failure therefore only grows. A higher count means a new member.
+- No 017 statement changes the customer or the generation of a job. The 16 `UPDATE cc.jobs` statements set other columns.
+  Sources: `017-jobs.sql:270`, `:373`, `:458`, `:466`, `:473`, `:556`, `:712`, `:743`, `:1028`, `:1138`, `:1199`, `:1203`, `:1253`, `:1259`, `:1393`, and `:1408`.
+- The sum for one customer and generation therefore never falls. Each recorded observation raises it by one.
 
-Timing: the first read after the commit of the stopping settlement returns `denied`. That meets "at once" in section 4.2 (`design:888`).
+Timing: the first read after the commit of the settlement returns `denied`. That meets "at once" in section 4.2 (`design:888`).
 Card F1 reads the state for its disabled reasons (`design:1759`).
+Each state read runs the evidence read, so contract C8 gives that read an index. The eng-lead note of 2026-10-19 at 09:32 requires one (routing 3).
 
 Tests of the write-access card:
 
-- A scope failure that commits after a `granted` check gives `denied` on the next read, without a recheck.
-- A `network-failure` job failure leaves the state unchanged (`design:1351`).
-- A recheck after the failure returns `granted` when the mock grants the scope again (`design:1385`).
-- A scope failure of an earlier connection generation leaves the state unchanged.
-- The tests set the job failure through the preparation, which accepts a failure on origin/main (`017-jobs.sql:1137-1139`). The write-access card therefore waits for no P2 code.
+1. R2-F1, an ordinary auth failure and then a scope failure. A `granted` check is in the cache.
+   A write settlement records the job failure `permission-denied` with no scope failure. The next read still answers `granted` (`design:884`).
+   The next settlement of the same batch adds scope failure `scope-mismatch`. The next read answers `denied` with `scope-mismatch`, without a recheck.
+   The job failure stays `permission-denied`.
+2. R2-F1, a scope failure after a granted recheck in the same job. A scope observation gives `denied`, and the batch lease still lives.
+   A recheck then answers `granted` from Google, for example after a scope grant on the mock (`design:1385`).
+   A second scope observation of the same job and batch commits. The next read answers `denied` again.
+3. Order: a recheck reads its evidence and then waits before its Google call. A scope observation commits during that wait.
+   The answer of the recheck and the next read both answer `denied`.
+4. A job failure without a scope observation, for example `network-failure`, leaves the state unchanged (`design:1351`).
+5. A scope observation of an earlier connection generation leaves the state unchanged.
+6. With sequential scans off, the plan of the evidence read uses the partial index of contract C8.
+7. The tests record scope observations through the B2c settlement, on jobs from the migrator seed (`device-write-jobs.integration.mjs:214-298`).
+   The write-access card therefore waits for B2c and B6, not for P2.
 
 Rejected alternatives:
 
+- The count of write jobs with a scope failure (revision 2). It misses both cases of R2-F1 above.
+- Alternative 5B, without a new column. The settlement lets a scope failure replace another job failure.
+  The API then holds such a job against a check while a batch lease of the job lives.
+  It also holds the job when its last lease ended after the check began. A release stamps `settled_at` (`017-jobs.sql:836-838`).
+  Every write settlement finds a live lease after its last lock (`017-jobs.sql:972-975`). Each observation therefore precedes the end of the last lease.
+  5B misses no observation. It costs three things. It changes the first-failure rule of ruling 4 and the failure that a job shows (`design:533`).
+  A recheck that begins before the stopping batch ends stays `denied`. Every state read also joins the batch rows.
+  5B is the fallback if the eng-lead declines contract C8. Contract C3, the B2c tests, the P2 edits, and this rule then need a revision.
+- A count of operation rows by `google_status` and `google_reason`. They hold the raw answer, not the failure code (`design:379`).
+  The batch service reads `errors[0].reason` or a string `error.status` (`libs/google-connection/src/lib/batch.ts:397-412`).
+  `failure()` reads a string `error` or `errors[0].reason` (`provider.ts:99-113`). The stored reason therefore does not decide the code.
+  A copy of `failure()` in SQL also drifts from its source. PR #33 already moved one of its rules (`design:897-899`).
+  A read-back settlement writes the same two columns (`017-jobs.sql:980`).
+- A count of `failed` or `skipped` operations with a scope outcome reason. An answer of kind `auth` stores the Google reason there (`design:1326`).
+  The stop path, the preparation, and the reaper also skip pending operations with the job failure as reason.
+  Sources: `017-jobs.sql:360`, `017-jobs.sql:713`, and contract C5. Such a skip observes nothing. After a granted recheck, it denies again.
+- One failure column per operation. It also adds a column, and every write settlement then writes one value per result.
+  The rule needs one count per job.
+- The time of the latest observation in place of the count. The API then compares database times from different sessions.
+  The count needs no clock, and each observation raises it.
 - The worker writes the API cache. The worker has no path to the API process. The flows dispatch to the worker only (`design:917-925`).
 - A Redis key or a new channel event. The worker Redis rule names no write-access key (`deployment/redis/runtime.mjs:12-14`).
   `jobEventSchema` has one member (`design:538`). Either path adds a contract.
-- A table or a column for the state or for a failure time. The count rule needs neither. A new column needs the eng-lead.
-- A comparison of `finished_at` with `checkedAt`. `finished_at` comes after the read-back of finish step 5.
+- A comparison of `finished_at` with the time of a check. `finished_at` comes after the read-back of finish step 5.
   A recheck between the stop and the finish then loses to an older observation.
-- The job service applies the failure on `job-changed`. Its memory of applied failures ends with the process. A relayed event of an old failure then denies after a newer recheck.
+- The job service applies the failure on `job-changed`. Its memory of applied failures ends with the process.
+  A relayed event of an old failure then denies after a newer recheck.
 
 ### Ruling 6. The publication element of the finish
 
@@ -549,8 +664,19 @@ A lower setting then shortens no request of a confirmed job, against the mitigat
 
 ## Needs the eng-lead
 
-New tables, columns, product behaviors, workflows, entities, or navigation destinations: none.
-The rulings add one function and three parameters. They also change three results:
+New tables, product behaviors, workflows, entities, or navigation destinations: none.
+
+New columns: two, in contract C8 for ruling 5. This addendum does not decide them. This record calls the decision the column decision:
+
+- The columns are `cc.device_update_jobs.scope_observations` and `cc.device_update_jobs.scope_failure`, with the partial index of contract C8.
+- Only the settlement writes them. No API job schema carries them (`design:533-536`).
+  The write-access state of section 2.7 shows only the scope failure code, as a check shows it.
+- With them, ruling 5 meets section 4.2 for every committed scope observation (R2-F1). Without them, alternative 5B of ruling 5 applies.
+  5B changes the first-failure rule of ruling 4. A recheck during a stopping batch then stays `denied`.
+- The eng-lead note of 2026-10-19 at 09:32 accepted "no new table or column" for revision 1. The column decision reopens that answer.
+- B2c needs the column decision before it starts. P2 and the write-access card follow the same decision.
+
+The rulings add one function, four parameters, two columns, and one index. They also change three results:
 
 - The answer of the batch claim for a job with a failure.
 - The skip reason of the preparation and the reaper.
@@ -565,14 +691,13 @@ Rulings 7 and 10 change worker mechanics that the design states. None of these c
 - Ruling 7 sets `first_claimed_at` on a `stopped` or `done` claim too. `design:951` sets it with `started_at` on the first claim. `started_at` keeps its rule.
 - Ruling 10 releases the lease after every batch. `design:991-992` releases it only on a graceful stop.
 
-Revision 2 changes the ruling 7 items of this list. The eng-lead note of 2026-10-19 at 09:32 accepted their revision 1 form.
-The changed items need the eng-lead again.
+The eng-lead note of 2026-10-19 at 10:09 accepted the revision 2 form of ruling 7. Revision 3 changes no item of rulings 7 and 10.
 
 Routing decisions for the eng-lead. Each one is a card or an order, not a product decision:
 
-1. Create card B2c from the section "Changes for card B2c".
+1. Create card B2c from the section "Changes for card B2c", after the column decision.
 2. B2c and the unmerged B3 edit the same file `017-jobs.sql` and the same 017 grant block of `index.mjs`. Start B2c after B3 merges.
-3. Create the write-access card of ruling 5. It depends on B6.
+3. Create the write-access card of ruling 5. It depends on B6 and on B2c.
 4. Add B2c, B6, and the write-access card to the dependencies of P2. The design lists B2, P1, and P3 (`design:1689`).
 5. The job service of card B5 meets the question of ruling 6. This addendum does not rule on B5.
    - Admission, labels, a refused start, and the reaper record status changes.
@@ -582,20 +707,23 @@ Routing decisions for the eng-lead. Each one is a card or an order, not a produc
 ## Changes for card B2c
 
 Card B2c changes `017-jobs.sql` and `index.mjs` in place. It adds no migration file (`design:221-222`). It changes no worker or API code.
+Contract C8 and the scope part of contract C3 wait for the column decision (section "Needs the eng-lead").
 
-| ID  | Function                       | Change                                                                                                              | Ruling  |
+| ID  | Object                         | Change                                                                                                              | Ruling  |
 | --- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ------- |
 | C1  | The read-back claim            | Adds `p_after` and `p_limit`.                                                                                       | 3       |
 | C2  | The verification read          | New function.                                                                                                       | 1, 2    |
-| C3  | The settlement                 | Adds `p_failure`.                                                                                                   | 4       |
+| C3  | The settlement                 | Adds `p_failure` and `p_scope_failure`.                                                                             | 4, 5    |
 | C4  | The batch claim                | A recorded job failure is a stop reason. A `stopped` or `done` answer writes `heartbeat_at` and `first_claimed_at`. | 4, 7    |
 | C5  | The preparation and the reaper | The skip reason comes from the recorded job failure.                                                                | 4       |
 | C6  | The final finish               | Returns `publication`.                                                                                              | 6       |
 | C7  | Grants                         | `index.mjs:277-295` and `017-jobs.sql:1453-1470` name the new signatures of C1 and C3, and add C2.                  | 1, 3, 4 |
+| C8  | The job detail table           | Adds `scope_observations`, `scope_failure`, and a partial index. Only the settlement writes the columns.            | 5       |
 
 Tests go in `device-write-jobs.integration.mjs`, target `deployment:postgres-integration`.
 Each new test commits before its change and fails at an assertion on the parent revision (`design:1399-1403`).
 A signature probe turns a missing signature into an assertion, as `device-write-jobs.integration.mjs:349-354` does.
+A column probe does the same for a missing column of C8.
 
 1. C1: a job with 1,001 `unknown` operations. Claims with a cursor and limit 250 return 250, 250, 250, 250, and 1 operations, then none. The claims return each operation once.
 2. C1: a chunk claim locks only its chunk. An operation outside the chunk stays free for a `NOWAIT` lock.
@@ -641,26 +769,45 @@ A signature probe turns a missing signature into an assertion, as `device-write-
 25. C6: the terminal answer of the final finish carries `publication`. Its `publicationId` names the newest row of the job, and its `revision` equals the job revision.
     The other answers carry no element.
 26. C7: `to_regprocedure` resolves each new signature and no replaced signature.
+27. C3 and C8, R2-F1 with an ordinary auth failure first: a batch of two operations. A write settlement with failure `permission-denied` settles operation 1.
+    The next write settlement carries failure `permission-denied` and scope failure `scope-mismatch`, and it settles operation 2.
+    The job failure stays `permission-denied`. `scope_observations` is 1, and `scope_failure` is `scope-mismatch`.
+28. C3 and C8, R2-F1 with a second scope observation: two write settlements carry scope failures `scope-mismatch` and then `delegation-not-authorized`.
+    `scope_observations` is 2, and `scope_failure` is `delegation-not-authorized`. The job failure keeps its first code.
+29. C3, S3: a fenced settlement and an empty settlement with a scope failure change neither column.
+30. C3, S2: a scope failure outside the two scope failures rejects with 22023 before any lock.
+    So do a scope failure with kind `read-back` and a scope failure without a failure.
+31. C8: in `pg_proc`, only the source of the settlement names `scope_observations` or `scope_failure`.
+    The checks at `device-write-jobs.integration.mjs:9205-9215` read function sources the same way.
+32. C8: the row checks reject `scope_observations` -1, `scope_observations` 0 with a `scope_failure`, and 1 without one.
+    They also reject a `scope_failure` outside the two scope failures. The partial index exists with its predicate.
 
 Existing B2 checks. A scan of the claim calls in `device-write-jobs.integration.mjs` found no check that claims a running job with a recorded failure.
 No check asserts a `done` answer or compares a whole answer of the final finish. C4 and C6 therefore change no existing assertion.
 The checks that age `heartbeat_at` call the tick with no claim in between (`device-write-jobs.integration.mjs:1021`, `:3870`, `:6570`, `:7994`).
 The new writes leave those checks unchanged. The check at `device-write-jobs.integration.mjs:8951-8980` leaves the detail row out of its comparison. Test 23 adds the two columns.
+C8 changes no existing check either. The seed names its columns (`device-write-jobs.integration.mjs:264`), and so does every read of the detail table.
+Sources: `device-write-jobs.integration.mjs:4346-4347`, `:371`, `:775`, `:1031`, `:4725-4726`, `:7740`, `:7778-7779`, `:7936-7937`, `:7975`, `:8011`, and `:9007-9008`.
+The two lock probes select a constant (`device-write-jobs.integration.mjs:6220`, `:6798`).
 
-Consumers of C1 to C7. The search covered the whole repository at `e48c8b8` and the B3 branch at `603a10b`:
+Consumers of C1 to C8. The search covered the whole repository at `e48c8b8` and the B3 branch at `603a10b`:
 
 | Change | Callers at `e48c8b8`                                                                                                                                                                                                        | Later callers                     |
 | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | C1     | `device-write-jobs.integration.mjs:385`, `:6720`, `:6916`, `:8171`, `:8224`, and `:8536`. Each passes four arguments, and the defaults keep them valid.                                                                     | P2, and the Reconcile route of B5 |
 | C2     | None                                                                                                                                                                                                                        | P2                                |
-| C3     | `device-write-jobs.integration.mjs:324`, `:2469`, `:2541`, `:2735`, `:2839`, `:2956`, `:3978`, `:4085`, `:6728`, `:6864`, `:7042`, and `:7186`. Each passes seven arguments, and the default keeps them valid.              | P2                                |
+| C3     | `device-write-jobs.integration.mjs:324`, `:2469`, `:2541`, `:2735`, `:2839`, `:2956`, `:3978`, `:4085`, `:6728`, `:6864`, `:7042`, and `:7186`. Each passes seven arguments, and the two defaults keep them valid.          | P2                                |
 | C4     | `device-write-jobs.integration.mjs:307`, `:3299`, `:6207`, `:6813`, and `:7184`                                                                                                                                             | P2                                |
 | C5     | The preparation: `device-write-jobs.integration.mjs:343` and `:8055`. The reaper: `device-write-jobs.integration.mjs:55`, `:378`, `:4479`, `:6655`, `:8117`, `:8558`, and `:9188`, and the tick path at `017-jobs.sql:613`. | P2, and the tick of B5            |
 | C6     | `device-write-jobs.integration.mjs:351-375`, `:6585`, `:6643`, `:8553`, `:9136`, and `:9162`                                                                                                                                | P2                                |
 | C7     | `index.mjs:285-292`                                                                                                                                                                                                         | None                              |
+| C8     | The seed insert and the reads of the detail table above. Each names its columns.                                                                                                                                            | The write-access card             |
 
-No worker or API code calls C1 to C6 at `e48c8b8`. Inside SQL, only the tick path at `017-jobs.sql:613` calls one of them.
-B3 at `763f300` adds no caller. Its `index.mjs` names the same grants (`B3@603a10b:deployment/postgres/index.mjs:285-292`).
+No worker or API code calls C1 to C6 or reads `cc.device_update_jobs` at `e48c8b8`. Inside SQL, only the tick path at `017-jobs.sql:613` calls one of them.
+B3 at `d0aef55` adds no caller. Its `index.mjs` names the same grants (`B3@603a10b:deployment/postgres/index.mjs:285-292`).
+At `603a10b`, B3 names the detail table in two inserts. The confirmation names its columns (`B3@603a10b:deployment/postgres/migrations/017-jobs.sql:1585-1588`).
+A privilege check expects the runtime role to fail an insert that copies the table into itself (`B3@603a10b:deployment/postgres/device-updates.integration.mjs:1315`).
+C8 leaves both valid.
 
 ## Changes for card P2
 
@@ -669,7 +816,8 @@ Edits to the draft, by draft line:
 1. `draft:3-20`: delete the section "Open questions for the eng-lead", as `draft:5` instructs. Name this addendum in its place.
 2. `draft:25-26`: P2 also builds on cards B2c, B6, and the write-access card (rulings 1 to 6, and 8).
 3. `draft:51`: keep. Ruling 11 confirms the reading. The setting is the `batchSize` option of each batch call.
-4. `draft:52-55`: add rulings 4 and 10. From the first stopping observation on, every write settlement of the batch carries the job failure.
+4. `draft:52-55`: add rulings 4, 5, and 10. From the first stopping observation on, every write settlement of the batch carries the job failure.
+   A write settlement whose results hold a scope observation also carries its scope failure (ruling 5).
    The batch call still runs to its end. Each batch request ends with the release when no operation of the attempt stays `dispatched`.
 5. `draft:59`: replace its last sentence with ruling 4. The batch answers 200 with outcome `stopped` and the failure.
 6. `draft:60-61`: add the read-back loop of rulings 1, 2, 3, and 7. The worker reads the envelope and the operations through the verification read.
@@ -679,25 +827,27 @@ Edits to the draft, by draft line:
 9. `draft:93-99`: replace the six "Open question" rows of open questions 1 to 6 with the first six rows below.
    Replace the `heartbeat_at` row of open question 7 with the last row below. Ruling 7 places that write in the batch claim.
 
-| Operation                                                   | Function                                                                                                                                                                                              | Grant in `index.mjs`              |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| Credential envelope for the finish and reconcile read-backs | `cc.read_device_update_verification(text,uuid,uuid,jsonb)`, ruling 1                                                                                                                                  | New grant of B2c in the 017 block |
-| Device ID and requested value of one Reconcile operation    | The same function with the `verifyAttempt` of the flow, ruling 2                                                                                                                                      | The same grant                    |
-| `unknown` operations in chunks of 250                       | `cc.claim_device_update_verification(text,uuid,jsonb,uuid,integer,integer)`, ruling 3                                                                                                                 | `index.mjs:289`, signature of B2c |
-| Job failure of section 7.2 during a batch                   | `cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz,text)` with `p_failure` on every write settlement after the first stopping observation. Later claims answer `stopped`. | `index.mjs:288`, signature of B2c |
-| Write access `denied`                                       | No worker call. The job failure of ruling 4 is the record, ruling 5.                                                                                                                                  | None                              |
-| Publication element of the finish                           | `cc.finish_device_update_job(text,uuid,uuid,text)` returns `publication`, ruling 6                                                                                                                    | `index.mjs:291`                   |
-| `heartbeat_at` on `stopped` and `done` claims               | `cc.claim_device_update_batch(text,uuid,uuid,integer,uuid,text)` writes it, ruling 7. P2 makes no separate call.                                                                                      | `index.mjs:285`                   |
+| Operation                                                   | Function                                                                                                                                                                                                   | Grant in `index.mjs`              |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Credential envelope for the finish and reconcile read-backs | `cc.read_device_update_verification(text,uuid,uuid,jsonb)`, ruling 1                                                                                                                                       | New grant of B2c in the 017 block |
+| Device ID and requested value of one Reconcile operation    | The same function with the `verifyAttempt` of the flow, ruling 2                                                                                                                                           | The same grant                    |
+| `unknown` operations in chunks of 250                       | `cc.claim_device_update_verification(text,uuid,jsonb,uuid,integer,integer)`, ruling 3                                                                                                                      | `index.mjs:289`, signature of B2c |
+| Job failure of section 7.2 during a batch                   | `cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz,text,text)` with `p_failure` on every write settlement after the first stopping observation. Later claims answer `stopped`. | `index.mjs:288`, signature of B2c |
+| Write access `denied`                                       | `p_scope_failure` of the same function, on each write settlement whose results hold a scope observation, ruling 5. The write-access card derives `denied`.                                                 | `index.mjs:288`, signature of B2c |
+| Publication element of the finish                           | `cc.finish_device_update_job(text,uuid,uuid,text)` returns `publication`, ruling 6                                                                                                                         | `index.mjs:291`                   |
+| `heartbeat_at` on `stopped` and `done` claims               | `cc.claim_device_update_batch(text,uuid,uuid,integer,uuid,text)` writes it, ruling 7. P2 makes no separate call.                                                                                           | `index.mjs:285`                   |
 
 10. `draft:101-102`: replace with this text. "P2 changes no 016 or 017 object and no grant. Card B2c makes the changes of the addendum, and P2 depends on B2c."
 11. `draft:104-111`: point to the section "Lock rules" of this addendum. Keep the worker rule, which is rule W.
 12. `draft:165`: item 8 reads `GET /api/devices/updates/access` after the stop. The state stays unchanged, because `network-failure` is no scope failure (ruling 5).
 13. `draft:166`: item 9 asserts that `GET /api/devices/updates/access` answers `denied` with failure `delegation-not-authorized` after the stop, without a recheck.
+    The job then holds `scope_observations` 1 and `scope_failure` `delegation-not-authorized` (ruling 5).
     It runs on the mock stack after B6 and the write-access card merge.
 14. `draft:188`: item 26 reads the 1,001 operations through five chunk claims (ruling 3).
 15. `draft:194-204`: change the audit rows of item 28 as follows. Cite the B2c functions at the base of P2.
     - "Batch claim and `busy` poll": add the stop decision and the heartbeat writes of C4. Name the lock orders of its `stopped` and `done` paths.
-    - "Write recording with the `40P01` retry": add `p_failure` of C3 on every write settlement after the first stopping observation. The lock order stays.
+    - "Write recording with the `40P01` retry": add `p_failure` of C3 on every write settlement after the first stopping observation.
+      Add `p_scope_failure` on each write settlement whose results hold a scope observation. The lock order stays.
     - "Read-back in the batch, the takeover, the finish, and the reconcile flow": name the C1 signature.
       Add the verification read before the GET parts of places 3 and 4.
     - "Graceful stop": the release ends every batch request, not only a stop (ruling 10).
@@ -711,7 +861,8 @@ Edits to the draft, by draft line:
 17. `draft:214-228`: add reviewer checks. The release ends each batch request. Each chunk ends 15 s before its lease.
     Each pass reads each operation once. P2 makes no separate heartbeat call.
     Every write settlement after a stopping observation carries the failure, and so does the settlement that holds the observation.
-18. After `draft:181`, add items A1 and A2. They test Rev-1 F1 and Rev-1 F2 at the worker.
+    Each write settlement whose results hold a scope observation carries its scope failure. No other settlement carries one.
+18. After `draft:181`, add items A1 to A3. They test Rev-1 F1, Rev-1 F2, and R2-F1 at the worker.
     - A1, ruling 4. The job holds two batches of two operations, and the worker `batchSize` is 1. Round 1 answers one part of kind `auth`.
       The worker settles round 1 with the job failure. The test then kills the worker before the round 2 settlement, as item 12 kills it.
       A second request for the same batch answers `stopped` with that failure and sends no part.
@@ -719,13 +870,18 @@ Edits to the draft, by draft line:
     - A2, ruling 7. A part answer of kind `auth` stops a job of three batches at batch 0. That request releases its lease.
       Before each later batch request, the test sets `heartbeat_at` 11 minutes back. Each request answers `stopped`.
       After each request, `cc.recover_device_update_jobs` returns no start for the job.
-19. `draft:183` and `draft:207`: A1 and A2 live in `deployment:postgres-integration`. Item 30 maps them with items 1 to 26.
+    - A3, ruling 5. The job holds one batch of three operations, and the worker `batchSize` is 1.
+      Round 1 answers a 403 with reason `forbidden`. Rounds 2 and 3 each answer a 403 with reason `invalid_scope`.
+      After the batch, the job failure is `permission-denied`. `scope_observations` is 2, and `scope_failure` is `scope-mismatch`.
+      The round 1 settlement carries no scope failure.
+19. `draft:183` and `draft:207`: A1 to A3 live in `deployment:postgres-integration`. Item 30 maps them with items 1 to 26.
 
 Handler call order. Each call runs as its own statement (rule W):
 
 - Batch request:
   1. The batch claim with its envelope. Every answer except `busy` and `superseded` writes `heartbeat_at` inside the claim (ruling 7).
   2. The write call with its renewals and round settlements. After a stopping observation, every write settlement carries the failure.
+     A settlement whose results hold a scope observation also carries its scope failure.
   3. One write settlement for any operation that no round settled. A mint failure, a fatal batch error, and an abort leave such operations.
   4. The read-back of places 1 and 2.
   5. The release.
