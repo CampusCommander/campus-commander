@@ -74,12 +74,22 @@ export async function qualifyDeviceUpdates({
   const artifacts = new Map();
   let artifactFailure = false;
   const cache = { get: async (name) => selections.get(name) ?? null };
+  const createdArtifacts = new Set();
   const storage = {
     async storeJson(document) {
       if (artifactFailure)
         throw new Error('The artifact store is unavailable.');
       const id = randomUUID();
+      const attemptId = randomUUID();
       artifacts.set(id, document);
+      createdArtifacts.add(id);
+      // The fixture publishes the same cc.artifacts state as the real store, without a file.
+      await migrator.query(
+        `INSERT INTO cc.artifacts(id,backend,locator,schema_version,attempt_id,sha256,size_bytes,
+           publication_state,active,reference_count)
+         VALUES($1,'local',$2,1,$3,$4,1,'ready',false,0)`,
+        [id, `${id}.${attemptId}`, attemptId, 'a'.repeat(64)],
+      );
       return id;
     },
   };
@@ -104,7 +114,11 @@ export async function qualifyDeviceUpdates({
     backend: 'local',
   });
   const realStorage = {
-    storeJson: (document) => storeJsonDocument(artifactStore, document),
+    async storeJson(document) {
+      const id = await storeJsonDocument(artifactStore, document);
+      createdArtifacts.add(id);
+      return id;
+    },
   };
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const databaseFor = (client) => ({
@@ -273,6 +287,11 @@ export async function qualifyDeviceUpdates({
       "DELETE FROM cc.devices WHERE customer_id=$1 AND device_id LIKE 'b3-%'",
       [customer],
     );
+    if (createdArtifacts.size)
+      await migrator.query(
+        'DELETE FROM cc.artifacts WHERE id=ANY($1::text[])',
+        [[...createdArtifacts]],
+      );
   };
   try {
     await migrator.query('UPDATE cc.google_connection SET active=true');
@@ -693,6 +712,7 @@ export async function qualifyDeviceUpdates({
           requester: actor,
           confirmer: actor,
         });
+        createdArtifacts.add(artifactId);
         const attemptId = (
           await migrator.query(
             'SELECT attempt_id FROM cc.artifacts WHERE id=$1',
@@ -761,6 +781,7 @@ export async function qualifyDeviceUpdates({
           requester: actor,
           confirmer: actor,
         });
+        createdArtifacts.add(artifactId);
         const attemptId = (
           await migrator.query(
             'SELECT attempt_id FROM cc.artifacts WHERE id=$1',

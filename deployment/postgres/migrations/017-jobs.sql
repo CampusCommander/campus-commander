@@ -1417,6 +1417,10 @@ BEGIN
     (SELECT count(DISTINCT e->>'device_id') FROM jsonb_array_elements(p_targets) e)<>jsonb_array_length(p_targets) THEN
     RAISE EXCEPTION 'The preview targets repeat an ordinal or a device.' USING ERRCODE='22023';
   END IF;
+  -- Rule G (round 3, R1-F2): advisory lock 7240173008 is the global access lock. Every access change
+  -- takes it first. This function takes it before the person check and before every row lock, so an
+  -- access change cannot commit between the check and the INSERT of the preview and its targets.
+  PERFORM pg_advisory_xact_lock(7240173008);
   -- The person check of the preview route. A caller without both write actions receives no preview.
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
@@ -1463,10 +1467,18 @@ BEGIN
   IF preview.preview_id IS NULL OR preview.created_by<>p_actor OR preview.customer_id<>p_customer THEN
     RETURN jsonb_build_object('outcome','not-found');
   END IF;
+  -- R1-F1 and R1-F3 (round 3): current authority and the frozen versions come before the existing
+  -- receipt and before any manifest is stored. A changed permission version or action version stores
+  -- no artifact and creates no job.
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
-    NOT cc.write_capable(p_actor,p_customer) THEN
+    NOT cc.write_capable(p_actor,p_customer) OR preview.permission_version<>p_version THEN
     RETURN jsonb_build_object('outcome','permission-changed');
+  END IF;
+  -- The current action version of this slice is 1. A preview prepared under other semantics never
+  -- confirms (section 2.4).
+  IF preview.action_version<>1 THEN
+    RETURN jsonb_build_object('outcome','preview-changed');
   END IF;
   IF preview.job_id IS NOT NULL THEN
     RETURN jsonb_build_object('outcome','existing','receipt',cc.device_update_receipt(preview.job_id));
@@ -1495,7 +1507,7 @@ CREATE FUNCTION cc.confirm_device_update_preview(p_actor uuid,p_version integer,
   p_preview uuid,p_digest text,p_artifact text,p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE preview cc.device_update_previews; connection cc.google_connection; job cc.jobs;
-  subject text; eligible integer; now_at timestamptz; number bigint;
+  subject text; eligible integer; now_at timestamptz; number bigint; artifact cc.artifacts;
 BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before any lock.
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_preview IS NULL OR
@@ -1512,14 +1524,21 @@ BEGIN
   IF preview.preview_id IS NULL OR preview.created_by<>p_actor OR preview.customer_id<>p_customer THEN
     RETURN jsonb_build_object('outcome','not-found');
   END IF;
-  -- S3: a preview that holds a job never creates another one.
-  IF preview.job_id IS NOT NULL THEN
-    RETURN jsonb_build_object('outcome','existing','receipt',cc.device_update_receipt(preview.job_id));
-  END IF;
+  -- S3: a preview that holds a job never creates another one. R1-F3 (round 3): current authority and
+  -- the frozen versions are checked before the existing receipt, so a revoked grant, a disabled
+  -- principal, or an obsolete version never receives the receipt of a job it no longer may see.
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
-    NOT cc.write_capable(p_actor,p_customer) THEN
+    NOT cc.write_capable(p_actor,p_customer) OR preview.permission_version<>p_version THEN
     RETURN jsonb_build_object('outcome','permission-changed');
+  END IF;
+  -- R1-F1 (round 3): the preview's frozen action version must still be current. This slice runs
+  -- action version 1.
+  IF preview.action_version<>1 THEN
+    RETURN jsonb_build_object('outcome','preview-changed');
+  END IF;
+  IF preview.job_id IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','existing','receipt',cc.device_update_receipt(preview.job_id));
   END IF;
   -- The clock reads after the preview lock, so a wait never revives an expired preview.
   IF preview.expires_at<=clock_timestamp() THEN
@@ -1543,6 +1562,14 @@ BEGIN
   WHERE t.preview_id=p_preview AND t.disposition='eligible';
   IF eligible=0 THEN
     RETURN jsonb_build_object('outcome','nothing-to-update');
+  END IF;
+  -- R1-F4 (round 3): the manifest must be a published, live artifact. Take the artifact store's
+  -- advisory lock before the artifact row, so a concurrent remove cannot delete the file between this
+  -- check and the commit that adds the job's reference.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_artifact,0));
+  SELECT * INTO artifact FROM cc.artifacts a WHERE a.id=p_artifact FOR UPDATE;
+  IF artifact.id IS NULL OR artifact.publication_state<>'ready' OR artifact.active THEN
+    RETURN jsonb_build_object('outcome','artifact-missing');
   END IF;
   now_at:=clock_timestamp();
   number:=nextval('cc.job_number_upd');
@@ -1568,6 +1595,10 @@ BEGIN
   FROM cc.device_update_preview_targets t
   WHERE t.preview_id=p_preview AND t.disposition='eligible' ORDER BY t.ordinal;
   UPDATE cc.device_update_previews SET job_id=job.job_id WHERE preview_id=p_preview;
+  -- The reference keeps the manifest artifact alive for the job. remove() refuses while the count is
+  -- above zero. The increment belongs to this transaction, so a rollback releases the reference.
+  UPDATE cc.artifacts SET reference_count=reference_count+1,job_id=job.job_id::text
+  WHERE id=p_artifact;
   PERFORM cc.record_job_change(job.job_id,true);
   RETURN jsonb_build_object('outcome','created','receipt',cc.device_update_receipt(job.job_id));
 END;

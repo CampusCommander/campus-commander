@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   GoneException,
+  InternalServerErrorException,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -200,6 +201,8 @@ export class DeviceUpdates {
     const sql = selectionIdsSql(current.customerId, state);
     const rows = (await this.database.connection.query(sql.text, sql.values))
       .rows;
+    if (rows.length === 0)
+      throw new UnprocessableEntityException({ reason: 'nothing-selected' });
     if (rows.length > MAX_PREVIEW_TARGETS)
       throw new UnprocessableEntityException({
         reason: 'selection-too-large',
@@ -330,6 +333,10 @@ export class DeviceUpdates {
       });
     if (outcome === 'nothing-to-update')
       throw new UnprocessableEntityException({ reason: outcome });
+    if (outcome === 'artifact-missing')
+      throw new InternalServerErrorException(
+        'The manifest artifact is unavailable.',
+      );
     if (
       outcome === 'preview-changed' ||
       outcome === 'permission-changed' ||
