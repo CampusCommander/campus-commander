@@ -14,6 +14,8 @@ export {
   GoogleCustomerVerifier,
   GoogleConnectionError,
   GOOGLE_CONNECTION_SCOPES,
+  failure,
+  scopedClient,
 } from './lib/provider';
 
 export { GoogleConnectionProvider, GoogleStoreError } from './lib/coordinator';

@@ -1,12 +1,22 @@
-import type {
-  DeviceWriteAccess as DeviceWriteAccessState,
-  SessionResponse,
+import { z } from 'zod';
+import {
+  GOOGLE_CAPABILITIES,
+  GOOGLE_HEALTH_FRESH_SECONDS,
+  deviceWriteAccessSchema,
+  googleCustomerIdSchema,
+  type DeviceWriteAccess as DeviceWriteAccessState,
+  type SessionResponse,
 } from '@campus/application-contracts';
-import type { DelegatedCredential } from '@campus/google-connection';
+import {
+  failure,
+  scopedClient,
+  type DelegatedCredential,
+} from '@campus/google-connection';
 
-/** The Google scope that the write-access check mints, from section 4.1. */
-export const DEVICE_WRITE_SCOPE =
-  'https://www.googleapis.com/auth/admin.directory.device.chromeos';
+/** The write capability of section 4.1, and the one scope its token carries. */
+export const DEVICE_WRITE_SCOPE = GOOGLE_CAPABILITIES.find(
+  (capability) => capability.id === 'device-changes',
+)!.scope;
 
 /** The projection before any check ran, from section 2.7. */
 export const UNCHECKED_WRITE_ACCESS: DeviceWriteAccessState = Object.freeze({
@@ -54,32 +64,89 @@ export type DeviceWriteClientFactory = (
   signal: AbortSignal,
 ) => Promise<DeviceWriteClient>;
 
-const unavailableClient: DeviceWriteClientFactory = async () => {
-  throw new Error('No device write client is configured.');
-};
+/** The one list answer. An empty device collection still proves the grant. */
+const listPageSchema = z.object({
+  chromeosdevices: z.array(z.unknown()).max(300).optional(),
+});
+const checkTimeoutMilliseconds = 30_000;
+const deniedCodes = ['delegation-not-authorized', 'scope-mismatch'];
 
-function emptyAccess(): DeviceWriteAccessState {
-  return {} as DeviceWriteAccessState;
+function measuredAt(): string {
+  return new Date().toISOString();
 }
 
-/** Stub: the check and the cache projection are not implemented yet. */
+/**
+ * Read and check the Google write scope. The check mints one token for the write
+ * scope alone and lists one device. Only a scope failure denies access.
+ */
 export class DeviceWriteAccess {
+  private readonly store: DeviceWriteAccessStore;
+  private readonly getClient: DeviceWriteClientFactory;
+
   constructor(
-    _store: DeviceWriteAccessStore,
-    _getClient: DeviceWriteClientFactory = unavailableClient,
-  ) {}
+    store: DeviceWriteAccessStore,
+    getClient: DeviceWriteClientFactory = scopedClient,
+  ) {
+    this.store = store;
+    this.getClient = getClient;
+  }
 
   async read(
     _session: SessionResponse,
-    _context: DeviceWriteAccessContext,
+    context: DeviceWriteAccessContext,
   ): Promise<DeviceWriteAccessState> {
-    return emptyAccess();
+    return (await this.store.read(context)) ?? UNCHECKED_WRITE_ACCESS;
   }
 
   async check(
-    _session: SessionResponse,
-    _context: DeviceWriteAccessContext,
+    session: SessionResponse,
+    context: DeviceWriteAccessContext,
   ): Promise<DeviceWriteAccessState> {
-    return emptyAccess();
+    const customerId = googleCustomerIdSchema.parse(context.customerId);
+    const credential = await this.store.credential(session, context);
+    if (!credential) {
+      await this.store.write(
+        context,
+        UNCHECKED_WRITE_ACCESS,
+        GOOGLE_HEALTH_FRESH_SECONDS,
+      );
+      return UNCHECKED_WRITE_ACCESS;
+    }
+    let stage: 'token' | 'read' = 'token';
+    let access: DeviceWriteAccessState;
+    try {
+      const client = await this.getClient(
+        credential,
+        DEVICE_WRITE_SCOPE,
+        AbortSignal.timeout(checkTimeoutMilliseconds),
+      );
+      stage = 'read';
+      listPageSchema.parse(
+        (
+          await client.request({
+            url: `https://admin.googleapis.com/admin/directory/v1/customer/${customerId}/devices/chromeos`,
+            method: 'GET',
+            params: { maxResults: 1, fields: 'chromeosdevices(deviceId)' },
+          })
+        ).data ?? {},
+      );
+      access = {
+        state: 'granted',
+        scope: DEVICE_WRITE_SCOPE,
+        failure: null,
+        checkedAt: measuredAt(),
+      };
+    } catch (error) {
+      const code = failure(error, stage).code;
+      access = {
+        state: deniedCodes.includes(code) ? 'denied' : 'unavailable',
+        scope: DEVICE_WRITE_SCOPE,
+        failure: code,
+        checkedAt: measuredAt(),
+      };
+    }
+    const parsed = deviceWriteAccessSchema.parse(access);
+    await this.store.write(context, parsed, GOOGLE_HEALTH_FRESH_SECONDS);
+    return parsed;
   }
 }
