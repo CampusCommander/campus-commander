@@ -528,7 +528,7 @@ $$;
 
 CREATE FUNCTION cc.stage_device_batteries(p_customer text,p_id uuid,p_attempt uuid,p_batteries jsonb) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE lease timestamptz; now_at timestamptz;
+DECLARE lease timestamptz; now_at timestamptz; staged integer;
 BEGIN
   PERFORM cc.device_sync_lease(p_customer,p_id,p_attempt);
   IF jsonb_typeof(p_batteries) IS DISTINCT FROM 'array' OR jsonb_array_length(p_batteries)>1000 THEN
@@ -545,7 +545,16 @@ BEGIN
   IF lease IS NULL OR lease<=now_at THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
-  RETURN cc.upsert_device_batteries(p_customer,p_batteries);
+  staged:=cc.upsert_device_batteries(p_customer,p_batteries);
+  -- S1 rule 6 (B2b round 3, R2-F2): the helper locks the page devices again from a fresh snapshot. A device
+  -- that another session inserted during the wait above is visible only to that lock, so the helper can
+  -- wait on it after the fence above. The lease repeats after the helper returns. A lapse raises, and the
+  -- transaction commits no battery, device, or lease change.
+  now_at:=clock_timestamp();
+  IF lease<=now_at THEN
+    RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
+  END IF;
+  RETURN staged;
 END;
 $$;
 
