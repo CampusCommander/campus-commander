@@ -1,22 +1,24 @@
 import type {
-  DeviceSyncState,
   DeviceWriteAccess,
   SessionResponse,
 } from '@campus/application-contracts';
-import type { DeviceUpdateAuthorizer } from './device-updates-actions';
+import { DEVICE_WRITE_ACCESS_BUSY_ANSWER } from '@campus/application-contracts';
+import { HttpException } from '@nestjs/common';
 import {
   UNCHECKED_WRITE_ACCESS,
+  WriteAccessBusyError,
   type DeviceWriteAccessContext,
 } from './device-write-access';
 
-/** The one action that the write-access routes require, from section 2.1. */
-export const WRITE_ACCESS_ACTION = 'devices:write';
-
-export interface WriteAccessDevices {
-  sync(session: SessionResponse): Promise<DeviceSyncState | null>;
-}
-
-export interface WriteAccessProjection {
+/** The port that resolves the connection and answers the cached projection. */
+export interface WriteAccessPort {
+  /**
+   * Resolve the connected customer through cc.device_writer. The function requires
+   * devices:write and raises 42501 for every other caller. Null means no connection.
+   */
+  connection(
+    session: SessionResponse,
+  ): Promise<DeviceWriteAccessContext | null>;
   read(
     session: SessionResponse,
     context: DeviceWriteAccessContext,
@@ -28,55 +30,40 @@ export interface WriteAccessProjection {
 }
 
 /**
- * The access state of the connected customer. A caller without devices:write
- * receives 403. A caller without a connection reads unchecked.
+ * The access state of the connected customer. Both routes authorize devices:write
+ * through cc.device_writer before they read the connection or the cache.
  */
 export class DeviceWriteAccessRoutes {
-  private readonly devices: WriteAccessDevices;
-  private readonly auth: DeviceUpdateAuthorizer;
-  private readonly access: WriteAccessProjection;
+  private readonly access: WriteAccessPort;
 
-  constructor(
-    devices: WriteAccessDevices,
-    auth: DeviceUpdateAuthorizer,
-    access: WriteAccessProjection,
-  ) {
-    this.devices = devices;
-    this.auth = auth;
+  constructor(access: WriteAccessPort) {
     this.access = access;
   }
 
   async read(
     session: SessionResponse,
-    correlationId: string,
+    _correlationId: string,
   ): Promise<DeviceWriteAccess> {
-    const context = await this.context(session, correlationId);
+    const context = await this.access.connection(session);
     if (!context) return UNCHECKED_WRITE_ACCESS;
     return this.access.read(session, context);
   }
 
   async check(
     session: SessionResponse,
-    correlationId: string,
+    _correlationId: string,
   ): Promise<DeviceWriteAccess> {
-    const context = await this.context(session, correlationId);
+    const context = await this.access.connection(session);
     if (!context) return UNCHECKED_WRITE_ACCESS;
-    return this.access.check(session, context);
-  }
-
-  /** Read the connection, then require devices:write at its district scope. */
-  private async context(
-    session: SessionResponse,
-    correlationId: string,
-  ): Promise<DeviceWriteAccessContext | null> {
-    const sync = await this.devices.sync(session);
-    if (!sync) return null;
-    await this.auth.authorize(
-      session,
-      WRITE_ACCESS_ACTION,
-      { kind: 'district', customerId: sync.customerId },
-      correlationId,
-    );
-    return { customerId: sync.customerId, generation: sync.generation };
+    try {
+      return await this.access.check(session, context);
+    } catch (error) {
+      if (error instanceof WriteAccessBusyError)
+        throw new HttpException(
+          { reason: DEVICE_WRITE_ACCESS_BUSY_ANSWER.reason },
+          DEVICE_WRITE_ACCESS_BUSY_ANSWER.status,
+        );
+      throw error;
+    }
   }
 }

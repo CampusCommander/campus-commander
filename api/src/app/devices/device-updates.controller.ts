@@ -48,7 +48,7 @@ export class DeviceUpdatesController {
     this.devices = devices;
     this.updates = updates;
     this.auth = auth;
-    this.writeAccess = new DeviceWriteAccessRoutes(devices, auth, access);
+    this.writeAccess = new DeviceWriteAccessRoutes(access);
   }
 
   /** Resolve the connected customer, then require the read and both write actions for it. */

@@ -45,6 +45,11 @@ export interface DeviceWriteAccessContext {
 
 /** The credential source and the cached projection of one customer. */
 export interface DeviceWriteAccessStore {
+  /**
+   * Reserve the one-check interval for this customer and generation. False means
+   * a check already holds it, so no credential leaves and no token mints.
+   */
+  reserve(context: DeviceWriteAccessContext): Promise<boolean>;
   /** Open the active credential for a caller that holds devices:write. Null means no connection. */
   credential(
     session: SessionResponse,
@@ -114,6 +119,7 @@ export class DeviceWriteAccess {
     context: DeviceWriteAccessContext,
   ): Promise<DeviceWriteAccessState> {
     const customerId = googleCustomerIdSchema.parse(context.customerId);
+    if (!(await this.store.reserve(context))) throw new WriteAccessBusyError();
     const credential = await this.store.credential(session, context);
     if (!credential) {
       await this.store.write(

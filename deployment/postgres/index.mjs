@@ -300,6 +300,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
     }
     if (migrations.some(({ id }) => id === '018-device-write-access')) {
       await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.device_writer(uuid,integer),
         cc.device_write_credential(uuid,integer,text,integer) TO ${role}`);
     }
   } finally {
