@@ -37,6 +37,16 @@
       <mat-icon fontSet="material-symbols-outlined">laptop_chromebook</mat-icon
       ><span class="nav-label">Devices</span>
     </a>
+    } @if (jobsReadable()) {
+    <a
+      routerLink="/jobs"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Jobs"
+    >
+      <mat-icon fontSet="material-symbols-outlined">history</mat-icon
+      ><span class="nav-label">Jobs</span>
+    </a>
     } @if (connection.readable()) {
     <a
       routerLink="/google-connection"
@@ -111,6 +121,7 @@
   <header>
     <span class="header-title"
       >{{ router.url.startsWith('/devices') ? 'Devices' :
+      router.url.startsWith('/jobs') ? 'Jobs' :
       router.url.startsWith('/schools') ? 'Schools' :
       router.url.startsWith('/customer-settings') ? 'Customer settings' :
       router.url.startsWith('/google-connection') ? 'Google customer connection'

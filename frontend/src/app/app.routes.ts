@@ -5,6 +5,7 @@ import { CustomerStore } from './customer-settings/customer.store';
 import { ConnectionStore } from './google-connection/connection.store';
 import { schoolsReadable } from './schools/schools.store';
 import { devicesReadable } from './devices/devices.store';
+import { jobsReadable } from './jobs/jobs.store';
 import { deviceUpdateWritable } from './devices/device-update.guard';
 
 const authenticated: CanActivateFn = async () => {
@@ -71,6 +72,16 @@ export const routes: Routes = [
         ],
         loadComponent: () =>
           import('./devices/devices').then((m) => m.DevicesPage),
+      },
+      {
+        path: 'jobs',
+        title: 'Jobs · Campus Commander',
+        canActivate: [
+          () =>
+            jobsReadable(inject(AuthStore)) ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () => import('./jobs/jobs').then((m) => m.JobsPage),
       },
       {
         path: 'devices/update',
