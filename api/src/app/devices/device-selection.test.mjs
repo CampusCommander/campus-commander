@@ -102,12 +102,86 @@ test('selections belong to one person, grid, and tab', () => {
 });
 
 test('a missing or unreadable stored selection reads as empty', () => {
-  assert.deepEqual(parseSelection(null), emptySelection());
-  assert.deepEqual(parseSelection('{bad'), emptySelection());
-  assert.deepEqual(
-    parseSelection(JSON.stringify({ terms: 'x' })),
-    emptySelection(),
+  assert.deepEqual(parseSelection(null), {
+    state: emptySelection(),
+    expiredAt: null,
+  });
+  assert.deepEqual(parseSelection('{bad'), {
+    state: emptySelection(),
+    expiredAt: null,
+  });
+  assert.deepEqual(parseSelection(JSON.stringify({ terms: 'x' })), {
+    state: emptySelection(),
+    expiredAt: null,
+  });
+});
+
+test('a selection last changed 13 hours ago reads as expired', () => {
+  const changedAt = '2026-10-18T00:00:00.000Z';
+  const now = Date.parse(changedAt) + 13 * 60 * 60 * 1000;
+  const parsed = parseSelection(
+    JSON.stringify({
+      terms: [[]],
+      groups: [],
+      additions: ['d1'],
+      exceptions: [],
+      changedAt,
+    }),
+    now,
   );
+  assert.deepEqual(parsed.state, emptySelection());
+  assert.equal(parsed.expiredAt, '2026-10-18T12:00:00.000Z');
+});
+
+test('a selection changed 11 hours ago stays current', () => {
+  const changedAt = '2026-10-18T00:00:00.000Z';
+  const parsed = parseSelection(
+    JSON.stringify({
+      terms: [[]],
+      groups: [],
+      additions: ['d1'],
+      exceptions: [],
+      changedAt,
+    }),
+    Date.parse(changedAt) + 11 * 60 * 60 * 1000,
+  );
+  assert.deepEqual(parsed.state.additions, ['d1']);
+  assert.equal(parsed.expiredAt, null);
+});
+
+test('the first change after expiry starts from empty and clears the marker', async () => {
+  const changedAt = '2026-10-18T00:00:00.000Z';
+  const expired = JSON.stringify({
+    terms: [[]],
+    groups: [],
+    additions: ['d1'],
+    exceptions: [],
+    changedAt,
+  });
+  const writes = [];
+  const cache = {
+    get: async () => expired,
+    swap: async (key, expected, value, seconds) => {
+      writes.push({ key, expected, value, seconds });
+      return true;
+    },
+  };
+  const state = await changeSelection(cache, 'k', (current) =>
+    applySelectionOps(current, [{ op: 'select', ids: ['d9'] }], none),
+  );
+  assert.deepEqual(state.additions, ['d9']);
+  assert.match(state.changedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(writes[0].expected, expired);
+  assert.equal(writes[0].seconds, 129_600);
+});
+
+test('the selection spec carries the expiry time', () => {
+  assert.equal(
+    selectionSpec(emptySelection(), 0, '2026-10-18T12:00:00.000Z')
+      .expiredAt,
+    '2026-10-18T12:00:00.000Z',
+  );
+  assert.equal(selectionSpec(emptySelection(), 0).expiredAt, null);
 });
 
 test('a concurrent change makes the write retry from the newer value', async () => {
@@ -129,7 +203,7 @@ test('a concurrent change makes the write retry from the newer value', async () 
   );
   assert.deepEqual(state.additions, ['d1', 'd5', 'd2']);
   assert.equal(writes[1].expected, stored[1]);
-  assert.equal(writes[1].seconds, 43_200);
+  assert.equal(writes[1].seconds, 129_600);
 });
 
 test('a selection that keeps changing underneath reports busy', async () => {

@@ -1,0 +1,342 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createHash } from 'node:crypto';
+import { ForbiddenException } from '@nestjs/common';
+import {
+  deviceSelectionSpecSchema,
+  deviceUpdatePreviewRequestSchema,
+} from '@campus/application-contracts';
+import { storeJsonDocument } from '../storage/json-artifact.ts';
+import { authorizeAction } from '../auth/authorize-action.ts';
+import {
+  DeviceUpdates,
+  displayNumber,
+  manifestDigest,
+  previewTargets,
+} from './device-updates.ts';
+import { previewTargetRow } from './device-update-rows.ts';
+
+const customer = 'C0123456';
+const actor = '11111111-1111-4111-8111-111111111111';
+const key = { gridId: 'devices', tabId: 't1' };
+const session = {
+  identity: {
+    id: actor,
+    displayName: 'Test person',
+    permissions: [],
+    permissionVersion: 1,
+    grants: [],
+    preferences: {},
+  },
+  expiresAt: '2026-10-19T12:00:00.000Z',
+  csrfToken: 'a'.repeat(64),
+};
+const current = {
+  customerId: customer,
+  generation: 1,
+  status: 'ready',
+  observedAt: null,
+  deviceCount: 1,
+  failure: null,
+  telemetryFailure: null,
+  startedAt: null,
+  checkedAt: null,
+  stale: false,
+};
+const device = (id, extra = {}) => ({
+  device_id: id,
+  serial_number: `SN-${id}`,
+  org_unit_path: '/School A',
+  annotated_location: null,
+  last_entity_sync: new Date().toISOString(),
+  removed_at: null,
+  ...extra,
+});
+
+test('the preview freezes eligible, unchanged, and excluded targets', () => {
+  const targets = previewTargets(
+    [
+      device('d1'),
+      device('d2', { annotated_location: 'Room 12' }),
+      device('d3', { annotated_location: 'Room 12' }),
+      device('d4', { removed_at: new Date() }),
+      device('bad id!'),
+    ],
+    'replace',
+    'Room 12',
+  );
+  assert.deepEqual(
+    targets.map((target) => [target.deviceId, target.disposition]),
+    [
+      ['d1', 'eligible'],
+      ['d2', 'unchanged'],
+      ['d3', 'unchanged'],
+      ['d4', 'excluded'],
+      ['bad id!', 'excluded'],
+    ],
+  );
+  assert.equal(targets[3].exclusionReason, 'removed');
+  assert.equal(targets[4].exclusionReason, 'invalid-device-id');
+});
+
+test('Clear makes an empty observed value unchanged and writes a null value', () => {
+  const targets = previewTargets([device('d1')], 'clear', null);
+  assert.equal(targets[0].disposition, 'unchanged');
+  assert.equal(targets[0].observedValue, null);
+});
+
+test('the manifest digest covers the value and every eligible baseline', () => {
+  const targets = previewTargets(
+    [device('d1'), device('d2', { annotated_location: 'Room 12' })],
+    'replace',
+    'Room 12',
+  );
+  const digest = manifestDigest('replace', 'Room 12', targets);
+  assert.match(digest, /^[a-f0-9]{64}$/);
+  assert.equal(digest, manifestDigest('replace', 'Room 12', targets));
+  assert.notEqual(digest, manifestDigest('replace', 'Room 13', targets));
+  const changed = previewTargets(
+    [device('d1', { annotated_location: 'Room 1' }), device('d2')],
+    'replace',
+    'Room 12',
+  );
+  assert.notEqual(digest, manifestDigest('replace', 'Room 12', changed));
+});
+
+test('a display number keeps at least three digits without truncating 1000', () => {
+  assert.equal(displayNumber('PV', 6), 'PV-006');
+  assert.equal(displayNumber('UPD', 999), 'UPD-999');
+  assert.equal(displayNumber('UPD', 1000), 'UPD-1000');
+});
+
+test('a target row reports the approved value and its exclusion reason', () => {
+  assert.deepEqual(
+    previewTargetRow(
+      {
+        device_id: 'd1',
+        serial_number: 'SN-1',
+        observed_value: 'Room 1',
+        disposition: 'eligible',
+        exclusion_reason: null,
+      },
+      'replace',
+      'Room 12',
+    ),
+    {
+      deviceId: 'd1',
+      serialNumber: 'SN-1',
+      field: 'annotatedLocation',
+      observedValue: 'Room 1',
+      approvedValue: 'Room 12',
+      disposition: 'eligible',
+      exclusionReason: null,
+    },
+  );
+});
+
+test('the selection contract requires expiredAt as a timestamp or null', () => {
+  const base = {
+    terms: [],
+    groups: [],
+    added: 0,
+    excluded: 0,
+    selectedCount: 0,
+  };
+  assert.equal(deviceSelectionSpecSchema.parse(base).expiredAt, null);
+  assert.equal(
+    deviceSelectionSpecSchema.parse({
+      ...base,
+      expiredAt: '2026-10-18T12:00:00.000Z',
+    }).expiredAt,
+    '2026-10-18T12:00:00.000Z',
+  );
+  assert.throws(
+    () =>
+      deviceSelectionSpecSchema.parse({
+        ...base,
+        expiredAt: '2026-10-18T12:00:00',
+      }),
+    /expiredAt/,
+  );
+  assert.throws(
+    () =>
+      deviceSelectionSpecSchema.parse({ ...base, expiredAt: 'yesterday' }),
+    /expiredAt/,
+  );
+});
+
+test('a missing bulk-actions grant answers 403 and audits access-denied', async () => {
+  const audits = [];
+  const request = {
+    session: {
+      ...session,
+      identity: {
+        ...session.identity,
+        grants: [
+          { action: 'devices:read', scope: { kind: 'district', customerId } },
+          { action: 'devices:write', scope: { kind: 'district', customerId } },
+        ],
+      },
+    },
+    correlationId: '22222222-2222-4222-8222-222222222222',
+  };
+  await assert.rejects(
+    authorizeAction(
+      {
+        phase: 3,
+        audit: async (...args) => audits.push(args),
+      },
+      request.session,
+      'devices:bulk-actions',
+      { kind: 'district', customerId },
+      request.correlationId,
+    ),
+    (error) => {
+      assert.ok(error instanceof ForbiddenException);
+      assert.equal(error.getStatus(), 403);
+      return true;
+    },
+  );
+  assert.deepEqual(audits, [
+    [
+      'access-denied',
+      request.correlationId,
+      actor,
+      'devices:bulk-actions',
+    ],
+  ]);
+});
+
+test('an expired selection answers 409 selection-expired with its expiry time', async () => {
+  const changedAt = '2026-10-18T00:00:00.000Z';
+  const updates = new DeviceUpdates(
+    { connection: { query: async () => ({ rows: [] }) }, transaction: async () => ({}) },
+    {
+      get: async () =>
+        JSON.stringify({
+          terms: [[]],
+          groups: [],
+          additions: ['d1'],
+          exceptions: [],
+          changedAt,
+        }),
+    },
+    { storeJson: async () => 'artifact' },
+  );
+  await assert.rejects(
+    updates.preview(session, current, {
+      ...key,
+      mode: 'clear',
+    }),
+    (error) => {
+      assert.equal(error.getStatus(), 409);
+      assert.deepEqual(error.getResponse(), {
+        reason: 'selection-expired',
+        expiredAt: '2026-10-18T12:00:00.000Z',
+      });
+      return true;
+    },
+  );
+});
+
+test('an empty selection answers 422 nothing-selected', async () => {
+  const updates = new DeviceUpdates(
+    { connection: { query: async () => ({ rows: [] }) }, transaction: async () => ({}) },
+    { get: async () => null },
+    { storeJson: async () => 'artifact' },
+  );
+  await assert.rejects(
+    updates.preview(session, current, { ...key, mode: 'clear' }),
+    (error) => {
+      assert.equal(error.getStatus(), 422);
+      assert.deepEqual(error.getResponse(), { reason: 'nothing-selected' });
+      return true;
+    },
+  );
+});
+
+test('the preview request refuses a value on Clear', () => {
+  assert.throws(() =>
+    deviceUpdatePreviewRequestSchema.parse({
+      ...key,
+      mode: 'clear',
+      value: 'Room 12',
+    }),
+  );
+});
+
+test('a JSON document is staged and published as one artifact', async () => {
+  const calls = [];
+  const store = {
+    stage: async (manifest, chunks) => {
+      calls.push({ name: 'stage', manifest, chunks });
+      return { ...manifest, sizeBytes: manifest.expectedSizeBytes };
+    },
+    publish: async (descriptor) => {
+      calls.push({ name: 'publish', descriptor });
+    },
+  };
+  const artifactId = await storeJsonDocument(store, { hello: 'world' });
+  assert.equal(artifactId, calls[0].manifest.artifactId);
+  const bytes = Buffer.concat(calls[0].chunks);
+  assert.equal(bytes.toString(), '{"hello":"world"}\n');
+  assert.equal(
+    calls[0].manifest.expectedSha256,
+    createHash('sha256').update(bytes).digest('hex'),
+  );
+  assert.equal(calls[1].name, 'publish');
+});
+
+test('an artifact failure fails the confirmation', async () => {
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text) =>
+          text.includes('FROM cc.device_update_previews')
+            ? {
+                rows: [
+                  {
+                    preview_id: '33333333-3333-4333-8333-333333333333',
+                    display_id: 'PV-001',
+                    customer_id: customer,
+                    created_by: actor,
+                    permission_version: 1,
+                    generation: 1,
+                    field: 'annotatedLocation',
+                    mode: 'replace',
+                    value: 'Room 12',
+                    selected: 1,
+                    eligible: 1,
+                    unchanged: 0,
+                    excluded: 0,
+                    oldest_observed_at: new Date(),
+                    manifest_digest: 'a'.repeat(64),
+                    prepared_at: new Date(),
+                    expires_at: new Date(Date.now() + 600_000),
+                    job_id: null,
+                  },
+                ],
+              }
+            : { rows: [] },
+      },
+      transaction: async () => {
+        throw new Error('The transaction must not run.');
+      },
+    },
+    { get: async () => null },
+    {
+      storeJson: async () => {
+        throw new Error('The artifact store is unavailable.');
+      },
+    },
+  );
+  await assert.rejects(
+    updates.confirm(
+      session,
+      current,
+      '33333333-3333-4333-8333-333333333333',
+      { manifestDigest: 'a'.repeat(64), acknowledged: true },
+    ),
+    /artifact store is unavailable/,
+  );
+});
