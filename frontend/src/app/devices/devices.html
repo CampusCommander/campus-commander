@@ -123,9 +123,51 @@
           Refresh all
         </button>
       </mat-menu>
+      <button
+        mat-button
+        type="button"
+        [matMenuTriggerFor]="bulkMenu"
+        [disabled]="!canBulk()"
+        [attr.aria-describedby]="note() ? 'bulk-note' : null"
+      >
+        Bulk Actions
+      </button>
+      <mat-menu #bulkMenu="matMenu">
+        <button
+          mat-menu-item
+          type="button"
+          [disabled]="!!note()"
+          [attr.aria-describedby]="note() ? 'bulk-note' : null"
+          (click)="startUpdate()"
+        >
+          Update device
+        </button>
+      </mat-menu>
     </div>
   </div>
-  @if (store.refreshing()) {
+  @if (note(); as availability) {
+  <div class="action-note" [class.error]="availability.error">
+    <p id="bulk-note">{{ availability.text }}</p>
+    @if (availability.action === 'copy-scope') {
+    <button mat-button type="button" (click)="copyScope()">Copy scope</button>
+    } @else if (availability.action === 'recheck') {
+    <button
+      mat-button
+      type="button"
+      (click)="recheck()"
+      [disabled]="writeAccess.checking()"
+    >
+      {{ writeAccess.checking() ? 'Checking…' : 'Recheck' }}
+    </button>
+    } @if (writeAccess.checking()) {
+    <p role="status">Checking Google write access…</p>
+    } @if (writeAccess.message(); as message) {
+    <p role="status">{{ message }}</p>
+    } @if (copied()) {
+    <p role="status">{{ copied() }}</p>
+    }
+  </div>
+  } @if (store.refreshing()) {
   <p class="visually-hidden" role="status">Refreshing device inventory.</p>
   }
 

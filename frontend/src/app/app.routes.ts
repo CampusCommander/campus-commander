@@ -5,6 +5,7 @@ import { CustomerStore } from './customer-settings/customer.store';
 import { ConnectionStore } from './google-connection/connection.store';
 import { schoolsReadable } from './schools/schools.store';
 import { devicesReadable } from './devices/devices.store';
+import { deviceUpdateWritable } from './devices/device-update.guard';
 
 const authenticated: CanActivateFn = async () => {
   const auth = inject(AuthStore),
@@ -70,6 +71,18 @@ export const routes: Routes = [
         ],
         loadComponent: () =>
           import('./devices/devices').then((m) => m.DevicesPage),
+      },
+      {
+        path: 'devices/update',
+        title: 'Update devices · Campus Commander',
+        canActivate: [
+          () =>
+            devicesReadable(inject(AuthStore)) ||
+            inject(Router).parseUrl('/devices'),
+          deviceUpdateWritable,
+        ],
+        loadComponent: () =>
+          import('./devices/device-update').then((m) => m.DeviceUpdatePage),
       },
       {
         path: 'devices/:deviceId',

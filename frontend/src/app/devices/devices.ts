@@ -15,7 +15,12 @@ import {
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
-import type { DevicePredicate, DeviceRow } from '@campus/application-contracts';
+import type {
+  Action,
+  DevicePredicate,
+  DeviceRow,
+} from '@campus/application-contracts';
+import { AuthStore } from '../auth.store';
 import { DevicesStore } from './devices.store';
 import { DeviceGrid } from './device-grid';
 import { DeviceFilter } from './device-filter';
@@ -27,6 +32,8 @@ import {
   syncFailureText,
   telemetryFailureText,
 } from './device-fields';
+import { DEVICE_WRITE_SCOPE, updateDeviceNote } from './device-update-messages';
+import { DeviceWriteAccessStore } from './device-write-access.store';
 
 @Component({
   selector: 'app-devices',
@@ -42,11 +49,14 @@ import {
 })
 export class DevicesPage implements OnInit, OnDestroy {
   protected readonly store = inject(DevicesStore);
+  protected readonly writeAccess = inject(DeviceWriteAccessStore);
+  private readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);
   private readonly chips = viewChildren<ElementRef<HTMLButtonElement>>('chip');
   protected readonly sync = this.store.sync;
   protected readonly editingIndex = signal<number | null>(null);
+  protected readonly copied = signal('');
   protected readonly editing = computed(() => {
     const index = this.editingIndex();
     return index === null ? null : (this.store.predicates()[index] ?? null);
@@ -108,11 +118,43 @@ export class DevicesPage implements OnInit, OnDestroy {
     this.store.gridState.set(state);
     this.store.selectedView.set(selectedView);
   };
+  protected readonly canRead = computed(() => this.authorized('devices:read'));
+  protected readonly canWrite = computed(() =>
+    this.authorized('devices:write'),
+  );
+  protected readonly canBulk = computed(() =>
+    this.authorized('devices:bulk-actions'),
+  );
+  protected readonly note = computed(() =>
+    updateDeviceNote({
+      offline: this.store.offline(),
+      canRead: this.canRead(),
+      canWrite: this.canWrite(),
+      canBulk: this.canBulk(),
+      selectionCount: this.store.selection.spec()?.selectedCount ?? 0,
+      access: this.writeAccess.access(),
+      // Before the first read starts, the note reports the pending check.
+      accessLoading:
+        this.writeAccess.loading() ||
+        (!this.writeAccess.access() && !this.writeAccess.message()),
+    }),
+  );
+
+  /** The actions authorize at the connected customer's district scope (design 2.1). */
+  private authorized(action: Action): boolean {
+    const customerId = this.sync()?.customerId;
+    return (
+      !!customerId && this.auth.can(action, { kind: 'district', customerId })
+    );
+  }
 
   constructor() {
     effect(() => {
       this.store.revision();
       untracked(() => void this.store.loadOrgUnits());
+    });
+    effect(() => {
+      if (this.canWrite()) untracked(() => void this.writeAccess.ensure());
     });
   }
 
@@ -130,6 +172,29 @@ export class DevicesPage implements OnInit, OnDestroy {
 
   protected reconnect(): void {
     void this.store.reconnect();
+  }
+
+  /** Update device opens the draft page, not a dialog (design 1758). */
+  protected startUpdate(): void {
+    void this.router.navigate(['/devices/update']);
+  }
+
+  /** Copy the scope that the denied message names (design 4.3). */
+  protected async copyScope(): Promise<void> {
+    const scope = this.writeAccess.access()?.scope ?? DEVICE_WRITE_SCOPE;
+    if (!scope) return;
+    try {
+      await navigator.clipboard.writeText(scope);
+      this.copied.set('Copied the Google device changes scope.');
+    } catch {
+      this.copied.set(
+        'Clipboard access is unavailable. Select and copy the scope text.',
+      );
+    }
+  }
+
+  protected recheck(): void {
+    void this.writeAccess.check();
   }
 
   /** One filter per field. A chip for a filtered field replaces that filter. */
