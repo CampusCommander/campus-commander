@@ -15,7 +15,8 @@ export async function qualifyDeviceWriteAccess({ runtime, migrator, issuer }) {
   const wasActive = connection.active;
   const principals = [];
   const results = [];
-  const role = (await runtime.query('SELECT current_user AS name')).rows[0].name;
+  const role = (await runtime.query('SELECT current_user AS name')).rows[0]
+    .name;
   const result = (text, values = []) =>
     runtime.query(text, values).then((rows) => rows.rows[0]?.result);
   const adminRow = (text, values = []) =>
@@ -95,7 +96,9 @@ export async function qualifyDeviceWriteAccess({ runtime, migrator, issuer }) {
     results.push('devices:read alone does not open the credential: pass');
 
     await rejects(read(writer, 2), '42501');
-    results.push('a stale permission version does not open the credential: pass');
+    results.push(
+      'a stale permission version does not open the credential: pass',
+    );
 
     await rejects(
       result('SELECT cc.device_write_credential($1,$2,$3,$4)', [
@@ -119,8 +122,14 @@ export async function qualifyDeviceWriteAccess({ runtime, migrator, issuer }) {
     );
     assert.equal(privileges.present, true, 'The function exists.');
     assert.equal(privileges.public_grant, false, 'PUBLIC holds no EXECUTE.');
-    assert.equal(privileges.role_grant, true, 'The application role holds EXECUTE.');
-    results.push('the application role holds EXECUTE and PUBLIC holds none: pass');
+    assert.equal(
+      privileges.role_grant,
+      true,
+      'The application role holds EXECUTE.',
+    );
+    results.push(
+      'the application role holds EXECUTE and PUBLIC holds none: pass',
+    );
   } finally {
     await migrator.query('UPDATE cc.google_connection SET active=$1', [
       wasActive,
