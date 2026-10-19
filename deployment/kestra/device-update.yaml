@@ -1,0 +1,106 @@
+id: device_update
+namespace: campus.application
+# The job service admits one write job and a unique index enforces it. A
+# flow-level concurrency limit would hold a superseded execution ahead of the
+# current one, so this flow sets none (design section 5.1).
+inputs:
+  - id: customerId
+    type: STRING
+  - id: jobId
+    type: STRING
+  - id: dispatchToken
+    type: STRING
+  - id: batches
+    type: STRING
+  - id: correlationId
+    type: STRING
+tasks:
+  - id: batches
+    type: io.kestra.plugin.core.flow.ForEach
+    values: '{{ inputs.batches }}'
+    # Batches of one job run in order. The batch service also keeps one
+    # multipart call in flight (design section 5.2).
+    concurrencyLimit: 1
+    tasks:
+      - id: dispatch
+        type: io.kestra.plugin.core.http.Request
+        uri: '{{ envs.cc_worker_base_url }}/dispatch/device-update-batch'
+        method: POST
+        contentType: application/json
+        headers:
+          Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+        body: |
+          {{ {
+            "executionId": execution.id,
+            "customerId": inputs.customerId,
+            "jobId": inputs.jobId,
+            "dispatchToken": inputs.dispatchToken,
+            "batch": taskrun.value,
+            "correlationId": inputs.correlationId
+          } | json }}
+        timeout: PT1H
+        options:
+          timeout:
+            connectTimeout: PT3S
+            readIdleTimeout: PT1H
+        # Only a failed worker request retries here. Every Google outcome and
+        # every fenced result returns 200 and never retries (design section 5.1).
+        retry:
+          type: constant
+          interval: PT5S
+          maxAttempts: 3
+          warningOnRetry: false
+  - id: finish
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/device-update-finish'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "customerId": inputs.customerId,
+        "jobId": inputs.jobId,
+        "dispatchToken": inputs.dispatchToken,
+        "correlationId": inputs.correlationId
+      } | json }}
+    timeout: PT1H
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT1H
+    # The finish is idempotent (design section 5.10).
+    retry:
+      type: constant
+      interval: PT5S
+      maxAttempts: 3
+      warningOnRetry: false
+errors:
+  # A failed flow still finishes its job. The same request as the final task,
+  # so a late execution cannot leave the job running (design section 5.1).
+  - id: finish_on_error
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/device-update-finish'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "customerId": inputs.customerId,
+        "jobId": inputs.jobId,
+        "dispatchToken": inputs.dispatchToken,
+        "correlationId": inputs.correlationId
+      } | json }}
+    timeout: PT1H
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT1H
+    retry:
+      type: constant
+      interval: PT5S
+      maxAttempts: 3
+      warningOnRetry: false
