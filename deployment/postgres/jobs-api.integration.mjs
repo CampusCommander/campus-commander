@@ -20,7 +20,6 @@ const load = (path) => import(pathToFileURL(resolve(workspace, path)).href);
 export async function qualifyJobsApi({ runtime, migrator, issuer }) {
   const [
     { Jobs },
-    { deviceForward },
     { EventFanout, redisSubscriber },
     { JobsController },
     { JobsService },
@@ -28,7 +27,6 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     { DevicesService },
   ] = await Promise.all([
     load('api/src/app/jobs/jobs.ts'),
-    load('api/src/app/devices/device-stream.ts'),
     load('api/src/app/devices/device-events.ts'),
     load('api/src/app/jobs/jobs.controller.ts'),
     load('api/src/app/jobs/jobs.service.ts'),
@@ -1188,136 +1186,6 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     );
 
     await check(
-      'the Devices stream mapping reads each failure for its own requester',
-      async () => {
-        await reset();
-        const mine = await writeJob({
-          requestedBy: owner,
-          status: 'failed',
-          failed: 1,
-        });
-        const theirs = await writeJob({
-          requestedBy: reader,
-          status: 'failed',
-          failed: 1,
-        });
-        await admin(
-          "UPDATE cc.jobs SET failure='quota' WHERE job_id=ANY($1::uuid[])",
-          [[mine.job_id, theirs.job_id]],
-        );
-        const reads = {
-          jobFailure: async (jobId) =>
-            (
-              await query(
-                `SELECT CASE WHEN cc.job_visible($1,$2,$3,j.requested_by) THEN j.failure END AS failure
-                FROM cc.jobs j WHERE j.customer_id=$3 AND j.job_id=$4`,
-                [owner, 1, customer, jobId],
-              )
-            )[0].failure,
-          sync: async () =>
-            (
-              await query('SELECT cc.read_device_sync($1,$2) AS result', [
-                owner,
-                1,
-              ])
-            )[0].result,
-        };
-        const ownEvent = {
-          type: 'job-finished',
-          job: {
-            jobId: mine.job_id,
-            customerId: customer,
-            entityType: 'device',
-            batchCount: 1,
-            completedBatches: 0,
-            failedBatches: 1,
-            failure: 'quota',
-            createdAt: new Date().toISOString(),
-            finishedAt: new Date().toISOString(),
-          },
-        };
-        const otherEvent = {
-          ...ownEvent,
-          job: { ...ownEvent.job, jobId: theirs.job_id },
-        };
-        const forward = deviceForward(false, reads);
-        assert.deepEqual(await forward(ownEvent, false), {
-          event: { type: 'job-finished', failure: 'quota' },
-        });
-        assert.deepEqual(await forward(otherEvent, false), {
-          event: { type: 'job-finished', failure: null },
-        });
-        const visibleForward = deviceForward(true, reads);
-        assert.deepEqual(await visibleForward(otherEvent, false), {
-          event: { type: 'job-finished', failure: 'quota' },
-        });
-        const batchEvent = {
-          type: 'entity-batch',
-          jobId: theirs.job_id,
-          entityType: 'device',
-          batch: 0,
-          batchCount: 1,
-          deviceIds: ['device-1'],
-          removedIds: [],
-        };
-        assert.deepEqual(await forward(batchEvent, false), {
-          event: {
-            type: 'entity-batch',
-            entityType: 'device',
-            deviceIds: ['device-1'],
-            removedIds: [],
-          },
-        });
-      },
-    );
-
-    await check(
-      'the full-sync stream event carries the failures of the caller alone',
-      async () => {
-        await reset();
-        const sync = await adminRow(
-          `UPDATE cc.device_sync_state SET telemetry_failure='quota',telemetry_failure_requested_by=$2
-          WHERE customer_id=$1 RETURNING *`,
-          [customer, reader],
-        );
-        const projection = (
-          await query('SELECT cc.read_device_sync($1,$2) AS result', [owner, 1])
-        )[0].result;
-        const event = {
-          type: 'full-sync',
-          sync: {
-            customerId: customer,
-            generation: sync.generation,
-            status: 'ready',
-            observedAt: null,
-            deviceCount: 0,
-            failure: null,
-            telemetryFailure: 'quota',
-            startedAt: null,
-            checkedAt: null,
-            stale: false,
-          },
-        };
-        const forward = deviceForward(false, {
-          jobFailure: async () => null,
-          sync: async () => projection,
-        });
-        const forwarded = await forward(event, false);
-        assert.equal(forwarded.event.sync.telemetryFailure, null);
-        const visible = await deviceForward(true, {
-          jobFailure: async () => null,
-          sync: async () => projection,
-        })(event, false);
-        assert.equal(visible.event.sync.telemetryFailure, 'quota');
-        await admin(
-          `UPDATE cc.device_sync_state SET telemetry_failure=NULL,telemetry_failure_requested_by=NULL
-          WHERE customer_id=$1`,
-          [customer],
-        );
-      },
-    );
-
-    await check(
       'the list keyset keeps database microseconds and equal created times',
       async () => {
         await reset();
@@ -1716,6 +1584,33 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
               'failure',
               'type',
             ]);
+
+          // A job-finished event without a header row reads as a null failure.
+          await publish(entityEventsChannel(customer), {
+            type: 'job-finished',
+            job: {
+              jobId: randomUUID(),
+              customerId: customer,
+              entityType: 'device',
+              batchCount: 1,
+              completedBatches: 0,
+              failedBatches: 1,
+              failure: 'quota',
+              createdAt: new Date().toISOString(),
+              finishedAt: new Date().toISOString(),
+            },
+          });
+          await until(
+            () =>
+              streamFrames(aStream.sink).length >= 5 &&
+              streamFrames(bStream.sink).length >= 5,
+          );
+          assert.equal(
+            streamFrames(aStream.sink)[4].data.failure,
+            null,
+            'A missing job row never carries a failure.',
+          );
+          assert.equal(streamFrames(bStream.sink)[4].data.failure, null);
         } finally {
           aStream.sink.disconnect();
           bStream.sink.disconnect();
