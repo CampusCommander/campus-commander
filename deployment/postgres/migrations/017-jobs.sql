@@ -1540,7 +1540,8 @@ BEGIN
   IF preview.job_id IS NOT NULL THEN
     RETURN jsonb_build_object('outcome','existing','receipt',cc.device_update_receipt(preview.job_id));
   END IF;
-  -- The clock reads after the preview lock, so a wait never revives an expired preview.
+  -- The clock reads after the preview lock. This fast path refuses an already expired preview
+  -- without the connection and artifact waits. The clock reads again after those waits.
   IF preview.expires_at<=clock_timestamp() THEN
     RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
   END IF;
@@ -1571,7 +1572,13 @@ BEGIN
   IF artifact.id IS NULL OR artifact.publication_state<>'ready' OR artifact.active THEN
     RETURN jsonb_build_object('outcome','artifact-missing');
   END IF;
+  -- R2-F1 (round 4): the connection and artifact locks above can wait. The clock has no lock, so it
+  -- reads again after the last blocking lock and before the first write. A wait that crosses the
+  -- expiry leaves no job, no operation, and no artifact reference.
   now_at:=clock_timestamp();
+  IF preview.expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
+  END IF;
   number:=nextval('cc.job_number_upd');
   INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
     target_count,target_org_unit_paths,correlation_id)
