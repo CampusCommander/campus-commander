@@ -20,6 +20,9 @@ import { kestraImage, postgresImage } from '../profiles/all-docker/render.mjs';
  * worker belongs to card P2.
  */
 const flows = ['device-update.yaml', 'device-update-reconcile.yaml'];
+const runtime = JSON.parse(
+  await readFile('deployment/kestra/runtime.json', 'utf8'),
+);
 const terminal = new Set([
   'SUCCESS',
   'WARNING',
@@ -76,8 +79,10 @@ async function startFixture(jobIds) {
   const directory = await mkdtemp(join(tmpdir(), 'ccp1-device-update-'));
   const runtime = join(directory, 'kestra-runtime');
   const storage = join(directory, 'kestra-storage');
+  const stubDirectory = join(directory, 'stub');
   await mkdir(runtime, { mode: 0o700 });
   await mkdir(storage, { mode: 0o700 });
+  await mkdir(stubDirectory, { mode: 0o700 });
   const network = `${runId}-network`;
   const postgres = `${runId}-postgres`;
   const kestra = `${runId}-kestra`;
@@ -174,10 +179,12 @@ async function startFixture(jobIds) {
         .join('\n'),
       { mode: 0o600 },
     );
-    await writeFile(join(directory, 'requests.jsonl'), '', { mode: 0o666 });
+    await writeFile(join(stubDirectory, 'requests.jsonl'), '', {
+      mode: 0o666,
+    });
     await copyFile(
       'deployment/kestra/stub-dispatch.mjs',
-      join(directory, 'stub-dispatch.mjs'),
+      join(stubDirectory, 'stub-dispatch.mjs'),
     );
     docker(
       'run',
@@ -191,7 +198,7 @@ async function startFixture(jobIds) {
       '-p',
       '127.0.0.1::9000',
       '-v',
-      `${directory}:/stub`,
+      `${stubDirectory}:/stub`,
       '-e',
       'STUB_LOG=/stub/requests.jsonl',
       '-e',
@@ -292,7 +299,10 @@ async function startFixture(jobIds) {
         return response.json();
       },
       async records() {
-        const text = await readFile(join(directory, 'requests.jsonl'), 'utf8');
+        const text = await readFile(
+          join(stubDirectory, 'requests.jsonl'),
+          'utf8',
+        );
         return text
           .split('\n')
           .filter(Boolean)
@@ -313,7 +323,7 @@ async function startFixture(jobIds) {
         }
         if (!accepted.includes(state)) {
           const detail = await readFile(
-            join(directory, 'requests.jsonl'),
+            join(stubDirectory, 'requests.jsonl'),
             'utf8',
           );
           assert.fail(
@@ -341,6 +351,9 @@ async function startFixture(jobIds) {
 
 test('Kestra runs device_update one batch at a time with the section 5.1 retry', async () => {
   for (const name of flows) await flowSource(name);
+  // The run uses the pinned runtime image of deployment/kestra/runtime.json.
+  assert.equal(runtime.version, '1.3.37');
+  assert.ok(kestraImage.endsWith(runtime.image.platformDigest));
   const jobId = randomUUID();
   const failJob = randomUUID();
   fixture = await startFixture({ fail: failJob });
