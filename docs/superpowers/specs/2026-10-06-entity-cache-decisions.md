@@ -1,6 +1,6 @@
 # Entity cache decision record
 
-Status: owner-confirmed. Implementation authorized 2026-10-06 as infrastructure under [device browsing](../../workflows/device-browsing.md).
+Status: owner-confirmed. Implementation authorized 2026-10-06 as infrastructure under [device browsing](../../workflows/device-browsing.md). The owner confirmed six amendments on 2026-10-17 (see [Amendments](#amendments-of-2026-10-17)).
 Source: owner interview with Claude on 2026-10-06, questions Q1 through Q17
 Branch: `codex/entity-cache`
 Design: existing stale frames in [device browsing](../../workflows/device-browsing.md#design), to be re-inspected before Q11 implementation
@@ -35,7 +35,7 @@ The client receives a push signal when rows are refreshed and updates them in pl
 
 Read path: query key to Redis. Hit: hydrate IDs from the entity cache, Postgres fills misses.
 Miss: Postgres runs the query, the API writes the ID list, then returns rows. The API never writes the entity cache.
-The application Redis user gains mget, llen, lrange, rpush, subscribe, and unsubscribe, owner-approved 2026-10-07. District-operated Redis must grant the same. The district Redis docs follow-up stays open.
+The application Redis user gains mget, llen, lrange, rpush, subscribe, and unsubscribe, owner-approved 2026-10-07. District-operated Redis must grant the same. The district Redis docs follow-up stays open. The owner amended D1 on 2026-10-17 (see [Amendments](#amendments-of-2026-10-17)).
 
 ### D2. The query cache holds the whole ordered result set (Q2)
 
@@ -75,13 +75,13 @@ Verified 2026-10-06 against Google documentation:
 `GET /api/devices/events` is an SSE response on the existing controller and session guard.
 The worker publishes to Redis channel `cc:entity-events:{customer}`. Each API instance holds one dedicated subscriber client and fans out to open SSE responses.
 Pub/Sub is fire-and-forget. The client reconciles on reconnect (D12), so lost messages cost only latency.
-As built, each ping first checks the session without extending the idle session lifetime. An open tab never keeps an unattended session alive.
+As built, each ping first checks the session without extending the idle session lifetime. An open tab never keeps an unattended session alive. The owner amended D6 on 2026-10-17 (see [Amendments](#amendments-of-2026-10-17)).
 
 ### D7. One event per completed batch (Q7)
 
 Event `entity-batch` carries `{jobId, entityType, batch, batchCount, deviceIds}`.
 The client intersects `deviceIds` with the rows it holds and makes one `POST /api/devices/by-ids` call.
-`by-ids` is Redis-first per ID, Postgres for misses. Rows carry `lastEntitySync` and `stale`, same shape as grid rows.
+`by-ids` is Redis-first per ID, Postgres for misses. Rows carry `lastEntitySync` and `stale`, same shape as grid rows. The owner amended D7 on 2026-10-17 (see [Amendments](#amendments-of-2026-10-17)).
 
 ### D8. Threshold is a code constant evaluated at read time (Q8)
 
@@ -92,12 +92,12 @@ One map keyed by entity type in the contracts lib. Devices: 24 hours. Passed to 
 
 The worker stores the full row projection under `cc:entity:{type}:{customer}:{id}` with TTL equal to the threshold.
 Redis TTL is the Redis staleness tool. Expired keys drop out. A hit is fresh by construction.
-Soft-deleting a device also deletes its key. A `by-ids` miss means "ask Postgres", never "not found".
+Soft-deleting a device also deletes its key. A `by-ids` miss means "ask Postgres", never "not found". The owner amended D9 on 2026-10-17 (see [Amendments](#amendments-of-2026-10-17)).
 
 ### D10. Query cache invalidation (Q10)
 
 TTL only for entity syncs. A completed full sync bumps `INCR cc:query-gen:{type}:{customer}`, which is part of every query key.
-Old keys become unreachable and expire. No `SCAN` or wildcard `DEL`.
+Old keys become unreachable and expire. No `SCAN` or wildcard `DEL`. D10 gained one extension on 2026-10-17 (see [Amendments](#amendments-of-2026-10-17)).
 
 ### D11. Stale presentation (Q11)
 
@@ -115,12 +115,12 @@ The 2 second poll is removed. The store opens one `EventSource` on Devices mount
 On reconnect the store refetches `GET /api/devices/sync` once and `by-ids` for rows still tagged stale.
 As built, a closed stream reopens after a status read. A 401 or 403 answer leaves it closed until the same person resumes the session.
 Other failures retry after 5 seconds, and each failure doubles the wait up to 60 seconds. An open resets the wait.
-The store reads the status again after the new stream opens. A full sync that ends between the two reads still reloads the grid.
+The store reads the status again after the new stream opens. A full sync that ends between the two reads still reloads the grid. The owner amended D12 on 2026-10-17 (see [Amendments](#amendments-of-2026-10-17)).
 
 ### D13. The worker writes Redis and publishes directly (Q13)
 
 The worker gains a Redis client, a deployment service binding in all three modes, and an ACL user scoped to
-`cc:entity:*`, `cc:query-gen:*`, `cc:entity-inflight:*`, and the publish channel. The API stays out of the job path.
+`cc:entity:*`, `cc:query-gen:*`, `cc:entity-inflight:*`, and the publish channel. The API stays out of the job path. The owner amended D13 on 2026-10-17 (see [Amendments](#amendments-of-2026-10-17)).
 
 ### D14. Generic names, device-only code (Q14)
 
@@ -150,3 +150,19 @@ The quota cap of 25 was corrected on 2026-10-07. See the [batch service record](
 - Google batch facts verified 2026-10-06. See D5.
 - Write the implementation plan with the writing-plans skill before any code, in this order:
   migration, worker job and Kestra flow, API caches and `by-ids` and SSE, grid store and UI, docs and evidence.
+
+## Amendments of 2026-10-17
+
+The owner confirmed these changes on 2026-10-17 for [device write jobs](2026-10-16-device-write-jobs-design.md).
+The design section "Owner decision gate" lists each change with its source line.
+
+- D1: the application Redis user also gains `publish` and `incr` for the job service and its relay (design section 3.2). District-operated Redis grants them too. The Entity row of the D1 table follows the D9 change.
+- D6: the API subscriber also listens on the job channel and feeds the Jobs stream (design sections 3.1 and 3.3). A relay in the API publishes `job-changed` and `entity-batch` events from publication rows (design section 3.6).
+- D7: the Devices stream event drops `jobId`, `batch`, and `batchCount`. The Redis channel event keeps them (design section 3.1). `by-ids` reads Postgres for every ID, not only for misses.
+- D9: each entity entry holds an entry version and the record. A reader serves an entry only at the current entry version in Postgres. The TTL bounds memory only (design section 5.11).
+- D12: `job-finished` becomes `{ type, failure }` without the job record. `entity-batch` drops the job fields of D7. `full-sync` keeps its `{ sync }` shape. Its failure fields follow the caller (design sections 2.1 and 3.1).
+- D13: the worker user also publishes on `cc:job-events:*` (design section 3.2). The API enters the job path for write jobs. Its job service admits, starts, and recovers write jobs. Its relay publishes job events (design sections 3.6, 5.3, and 6.5).
+
+One extension stays outside the owner confirmation, by the OQ10 ruling of 2026-10-17:
+
+- D10: write settlements also increment the query generation (design section 5.8).

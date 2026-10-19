@@ -154,7 +154,7 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - The status bar and group counts still show the last full sync time. Device details show the device's own last Google read.
 - The banner's N counts the matching devices that are still stale. M counts the matching devices. N falls as batches land.
 - A new query counts its stale devices at once. The banner keeps the last count until the new count arrives.
-- Without a running refresh, stale devices keep the title "Inventory observation is stale". The text names the stale count and the last failure.
+- Without a running refresh, stale devices keep the title "Inventory observation is stale". The text names the stale count and the last failure. For a person without `jobs:read`, the text omits each failure that another person requested. Default 15 of the [annotated location workflow](update-device-annotated-location.md) requires that.
 - A cached page refreshes the stale devices on that page. The query that filled the cache refreshed every stale device it matched.
 - A cached query result belongs to one person and one permission version.
 - Show All Selected and results over 100,000 devices skip the query cache.
