@@ -297,24 +297,27 @@ export async function qualifyEntityEntries({ runtime, migrator, issuer }) {
     // A synthetic empty inventory starts every check from a known state.
     await fullSync([]);
 
-    const versionOf = async (deviceId) =>
-      Number(
-        (
-          await admin(
-            'SELECT record_version FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
-            [customer, deviceId],
-          )
-        )[0].record_version,
-      );
-    const telemetryVersion = async () =>
-      Number(
-        (
-          await admin(
-            'SELECT telemetry_version FROM cc.device_sync_state WHERE customer_id=$1',
-            [customer],
-          )
-        )[0].telemetry_version,
-      );
+    // to_jsonb reads a missing version column as null, so these helpers also run on the parent revision.
+    const versionOf = async (deviceId) => {
+      const row = (
+        await admin(
+          "SELECT to_jsonb(d)->>'record_version' AS record_version FROM cc.devices d WHERE d.customer_id=$1 AND d.device_id=$2",
+          [customer, deviceId],
+        )
+      )[0];
+      return row?.record_version == null ? null : Number(row.record_version);
+    };
+    const telemetryVersion = async () => {
+      const row = (
+        await admin(
+          "SELECT to_jsonb(s)->>'telemetry_version' AS telemetry_version FROM cc.device_sync_state s WHERE s.customer_id=$1",
+          [customer],
+        )
+      )[0];
+      return row?.telemetry_version == null
+        ? null
+        : Number(row.telemetry_version);
+    };
     const telemetryRequester = async () =>
       (
         await admin(
@@ -400,6 +403,10 @@ export async function qualifyEntityEntries({ runtime, migrator, issuer }) {
         await fullSync([observation('p3v-telemetry', 'telemetry')], null);
         const cleared = await telemetryVersion();
         const clearedRecord = await versionOf('p3v-telemetry');
+        assert.ok(
+          Number.isInteger(cleared),
+          'The telemetry_version column exists after a finish.',
+        );
         assert.equal(
           (await elements('p3v-telemetry'))[0].version,
           clearedRecord + cleared,
@@ -419,6 +426,10 @@ export async function qualifyEntityEntries({ runtime, migrator, issuer }) {
         await fullSync([observation('p3v-telemetry', 'telemetry')], 'quota');
         assert.equal(await telemetryRequester(), actor);
         const before = await telemetryVersion();
+        assert.ok(
+          Number.isInteger(before),
+          'The telemetry_version column exists before the requester change.',
+        );
         await fullSync(
           [observation('p3v-telemetry', 'telemetry')],
           'quota',
@@ -674,7 +685,7 @@ export async function qualifyEntityEntries({ runtime, migrator, issuer }) {
         assert.equal(entries.length, 1000);
         for (const entry of entries)
           await client.set(
-            entityKey('device', customer, entry.record.deviceId),
+            entityKey('device', customer, entry.record?.deviceId),
             JSON.stringify(entry),
             { EX: 3600 },
           );

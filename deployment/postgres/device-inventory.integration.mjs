@@ -60,25 +60,31 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
         id,
         randomUUID(),
       ]).then((state) => ({ id, state }));
+    // to_jsonb reads a missing version column as null, so this helper also runs on the parent revision.
     const versions = async (deviceId) => {
       const row = (
         await migrator.query(
-          `SELECT d.record_version,COALESCE(s.telemetry_version,1) AS telemetry_version
+          `SELECT to_jsonb(d)->>'record_version' AS record_version,
+                  to_jsonb(s)->>'telemetry_version' AS telemetry_version
              FROM cc.devices d LEFT JOIN cc.device_sync_state s ON s.customer_id=d.customer_id
             WHERE d.customer_id=$1 AND d.device_id=$2`,
           [customer, deviceId],
         )
       ).rows[0];
+      const number = (value) =>
+        value === null || value === undefined ? null : Number(value);
       return row
         ? {
-            record: Number(row.record_version),
-            telemetry: Number(row.telemetry_version),
+            record: number(row.record_version),
+            telemetry: number(row.telemetry_version),
           }
         : null;
     };
     const elementVersion = async (deviceId) => {
       const current = await versions(deviceId);
-      return current.record + current.telemetry;
+      return current && current.record !== null && current.telemetry !== null
+        ? current.record + current.telemetry
+        : null;
     };
     const claim = (id, attempt) =>
       result('SELECT cc.claim_device_sync($1,$2,$3) AS result', [
@@ -318,24 +324,28 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       ]),
       1,
     );
+    const elementRecord = (element) =>
+      element && typeof element === 'object' && 'record' in element
+        ? element.record
+        : element;
     const records = await result(
       'SELECT cc.read_device_records($1,$2) AS result',
       [customer, JSON.stringify(['d1', 'd2', 'd3'])],
     );
     assert.deepEqual(
-      records.map((entry) => entry.record.deviceId),
+      records.map((entry) => elementRecord(entry)?.deviceId),
       ['d1', 'd2'],
       'Removed devices stay out of records.',
     );
-    assert.equal(records[1].record.model, 'Acer');
-    assert.equal(records[1].record.battery.status, 'no-report');
-    assert.equal(typeof records[1].record.lastEntitySync, 'string');
+    assert.equal(elementRecord(records[1])?.model, 'Acer');
+    assert.equal(elementRecord(records[1])?.battery.status, 'no-report');
+    assert.equal(typeof elementRecord(records[1])?.lastEntitySync, 'string');
     const page = await result(
       'SELECT cc.page_device_records($1,$2,$3) AS result',
       [customer, '', 1],
     );
     assert.deepEqual(
-      page.map((entry) => entry.record.deviceId),
+      page.map((entry) => elementRecord(entry)?.deviceId),
       ['d1'],
     );
     assert.deepEqual(
@@ -345,7 +355,7 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
           'd1',
           10,
         ])
-      ).map((entry) => entry.record.deviceId),
+      ).map((entry) => elementRecord(entry)?.deviceId),
       ['d2'],
     );
     const once = await result(
@@ -582,6 +592,10 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
           ]);
         await upsert(unchanged, '2026-10-01T10:00:00.000Z');
         const first = (await versions(id)).record;
+        assert.ok(
+          Number.isInteger(first),
+          'The record_version column exists after an upsert.',
+        );
         await upsert(unchanged, '2026-10-01T10:00:00.000Z');
         assert.equal(
           (await versions(id)).record,
@@ -626,7 +640,11 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
           [customer, JSON.stringify([present, removed])],
         );
         assert.equal(records.length, 1);
-        assert.equal(records[0].record.deviceId, present);
+        assert.equal(
+          records[0].record?.deviceId,
+          present,
+          'The read returns an entry with its record.',
+        );
         assert.equal('removedAt' in records[0].record, false);
         assert.equal(records[0].version, await elementVersion(present));
         const page = await result(
@@ -634,8 +652,9 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
           [customer, 'p3read-', 1000],
         );
         assert.deepEqual(
-          page.map((entry) => entry.record.deviceId),
+          page.map((entry) => entry.record?.deviceId),
           [present],
+          'The page returns an entry with its record.',
         );
         assert.equal(page[0].version, await elementVersion(present));
       },
@@ -654,6 +673,10 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
         };
         await sync(reader, null);
         const before = (await versions(id)).telemetry;
+        assert.ok(
+          Number.isInteger(before),
+          'The telemetry_version column exists after a finish.',
+        );
         await sync(reader, 'quota');
         const afterClear = (await versions(id)).telemetry;
         assert.equal(afterClear, before + 1);
@@ -676,6 +699,26 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
         );
         assert.equal(stored.telemetry_failure_requested_by, otherReader);
         await sync(reader, null);
+      },
+    );
+
+    await check(
+      'an explicit telemetry version on a rewrite never lowers the stored version',
+      async () => {
+        const current = (await versions('p3tel-a')).telemetry;
+        assert.ok(
+          Number.isInteger(current),
+          'The telemetry_version column exists before the rewrite.',
+        );
+        await migrator.query(
+          'UPDATE cc.device_sync_state SET telemetry_version=0 WHERE customer_id=$1',
+          [customer],
+        );
+        assert.equal(
+          (await versions('p3tel-a')).telemetry,
+          current,
+          'A rewrite without a telemetry failure keeps the stored version.',
+        );
       },
     );
 

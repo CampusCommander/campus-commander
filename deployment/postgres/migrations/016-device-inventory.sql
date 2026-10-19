@@ -79,13 +79,14 @@ CREATE TRIGGER devices_record_version BEFORE UPDATE ON cc.devices
 FOR EACH ROW EXECUTE FUNCTION cc.bump_device_record_version();
 
 -- A change of the telemetry failure raises the telemetry version. Its requester alone does not.
+-- The version never decreases: a row rewrite keeps the old value unless the failure changes.
 CREATE FUNCTION cc.bump_telemetry_version() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 BEGIN
   NEW.telemetry_version:=CASE
     WHEN NEW.telemetry_failure IS DISTINCT FROM OLD.telemetry_failure
       THEN OLD.telemetry_version+1
-    ELSE NEW.telemetry_version END;
+    ELSE OLD.telemetry_version END;
   RETURN NEW;
 END;
 $$;
