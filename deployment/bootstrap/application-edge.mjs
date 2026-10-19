@@ -71,6 +71,26 @@ const deviceRead = /^\/api\/devices\/[A-Za-z0-9_-]{1,128}$/;
 const devicePage = /^\/devices\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
   /^\/api\/devices\/(?:sync|query|groups|by-ids|freshness|selection(?:\/(?:ops|resolve))?)$/;
+const jobDisplayIdPath = '(?:UPD|REF)-\\d{3,}';
+const previewIdPath =
+  '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
+const jobRead = new RegExp(
+  `^/api/jobs(?:/(?:activity|requesters|events|${jobDisplayIdPath}(?:/operations)?))?$`,
+);
+// An operation number is a whole number from 1. The route rejects the rest.
+const jobWrite = new RegExp(
+  `^/api/jobs/(?:activity/seen|${jobDisplayIdPath}/operations/[1-9]\\d{0,8}/reconcile)$`,
+);
+const deviceUpdateRead = new RegExp(
+  `^/api/devices/updates/(?:access|previews/${previewIdPath}(?:/targets)?)$`,
+);
+const deviceUpdateWrite = new RegExp(
+  `^/api/devices/updates/(?:access/check|previews|previews/${previewIdPath}/confirm)$`,
+);
+const jobPage = new RegExp(`^/jobs(?:/${jobDisplayIdPath}(?:/receipt)?)?$`);
+const deviceUpdatePage = new RegExp(
+  `^/devices/update(?:/previews/${previewIdPath}(?:/confirm)?)?$`,
+);
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
@@ -115,7 +135,9 @@ export async function proxyApplication(
         customerRead.test(pathname) ||
         pathname === '/api/schools/references' ||
         deviceRead.test(pathname) ||
-        schoolRead.test(pathname)));
+        schoolRead.test(pathname) ||
+        jobRead.test(pathname) ||
+        deviceUpdateRead.test(pathname)));
   const writable =
     postRoutes.has(pathname) ||
     (phase === 3 &&
@@ -126,11 +148,17 @@ export async function proxyApplication(
         pathname === '/api/customer/settings' ||
         pathname === '/api/schools/references/refresh' ||
         deviceWrite.test(pathname) ||
-        schoolWrite.test(pathname)));
+        schoolWrite.test(pathname) ||
+        jobWrite.test(pathname) ||
+        deviceUpdateWrite.test(pathname)));
   const api = readable || writable;
   const page =
     pages.has(pathname) ||
-    (phase === 3 && (phase3Pages.has(pathname) || devicePage.test(pathname)));
+    (phase === 3 &&
+      (phase3Pages.has(pathname) ||
+        devicePage.test(pathname) ||
+        jobPage.test(pathname) ||
+        deviceUpdatePage.test(pathname)));
   if (!api && !page && !assets.test(pathname))
     return finish(response, 404, 'Route unavailable.\n');
   const methodAllowed =
@@ -194,7 +222,9 @@ export async function proxyApplication(
       ca: target.ca,
       rejectUnauthorized: true,
       timeout:
-        pathname === '/api/devices/events' ? timeouts.events : timeouts.request,
+        pathname === '/api/devices/events' || pathname === '/api/jobs/events'
+          ? timeouts.events
+          : timeouts.request,
     },
     (incoming) => {
       const forwarded = {
