@@ -27,19 +27,21 @@ const dbRow = (id, extra = {}) => ({
   ...extra,
 });
 
-const record = (id) =>
-  JSON.stringify({
-    deviceId: id,
-    serialNumber: `R-${id}`,
-    model: null,
-    assetTag: null,
-    orgUnitPath: '/',
-    lastContact: null,
-    annotatedLocation: null,
-    notes: null,
-    battery: { status: 'no-report' },
-    lastEntitySync: '2026-10-06T11:30:00.000Z',
-  });
+const recordObject = (id) => ({
+  deviceId: id,
+  serialNumber: `R-${id}`,
+  model: null,
+  assetTag: null,
+  orgUnitPath: '/',
+  lastContact: null,
+  annotatedLocation: null,
+  notes: null,
+  battery: { status: 'no-report' },
+  lastEntitySync: '2026-10-06T11:30:00.000Z',
+});
+
+const entry = (id, version, extra = {}) =>
+  JSON.stringify({ version, record: { ...recordObject(id), ...extra } });
 
 /** An in-memory Redis with the calls the pager makes. Names in `fail` throw. */
 function memoryCache({ fail = new Set() } = {}) {
@@ -84,8 +86,10 @@ function database({
   ordered = ['d3', 'd1', 'd2'],
   stale = ['d2'],
   known = ordered,
+  versions = {},
 } = {}) {
   const statements = [];
+  const byIdRows = [];
   const rows = async ({ text, values }) => {
     statements.push(text);
     if (text.includes('AS matching')) return [{ matching: ordered.length }];
@@ -94,6 +98,25 @@ function database({
     if (text.includes(' OFFSET ')) {
       const [offset, limit] = values.slice(-2);
       return ordered.slice(offset, offset + limit).map((id) => dbRow(id));
+    }
+    if (text.includes('AS entry_version')) {
+      const ids = values[1];
+      const supplied = values[2];
+      return ids.flatMap((id, index) => {
+        if (!known.includes(id)) return [];
+        const current = versions[id] ?? 1;
+        const matches =
+          supplied[index] !== null &&
+          String(supplied[index]) === String(current);
+        const row = matches
+          ? { device_id: id, entry_version: current, serial_number: null }
+          : {
+              ...dbRow(id, stale.includes(id) ? { last_entity_sync: old } : {}),
+              entry_version: current,
+            };
+        byIdRows.push(row);
+        return [row];
+      });
     }
     if (text.includes('d.device_id=ANY($2::text[])'))
       return values[1]
@@ -105,7 +128,7 @@ function database({
       return ordered.map((id) => ({ device_id: id }));
     throw new Error(`Unexpected statement: ${text}`);
   };
-  return { statements, rows };
+  return { statements, byIdRows, rows };
 }
 
 const input = (rows, value = {}, extra = {}) => ({
@@ -139,7 +162,7 @@ test('a hit pages the cached list, reads Redis first, and dispatches its stale r
   const cache = memoryCache();
   const pager = new DevicePager(cache);
   await pager.page(input(database().rows, { limit: 2 }));
-  cache.strings.set('cc:entity:device:C0123456:d1', record('d1'));
+  cache.strings.set('cc:entity:device:C0123456:d1', entry('d1', 1));
   const db = database();
   const read = await pager.page(input(db.rows, { offset: 1, limit: 2 }));
   assert.deepEqual(
@@ -160,7 +183,10 @@ test('a hit pages the cached list, reads Redis first, and dispatches its stale r
     1,
     'Only the Redis miss reaches Postgres.',
   );
-  assert.match(db.statements[0], /d\.device_id=ANY\(\$2::text\[\]\)$/);
+  assert.match(
+    db.statements[0],
+    /FROM cc\.device_sync_state s JOIN cc\.devices d ON d\.customer_id=s\.customer_id/,
+  );
 });
 
 test('the cache key covers the person, the connection, and the query shape but not paging', () => {
@@ -263,8 +289,8 @@ test('a Redis fault pages through Postgres', async () => {
 test('hydration keeps the requested order and treats unreadable records as misses', async () => {
   const cache = memoryCache();
   cache.strings.set('cc:entity:device:C0123456:d1', '{not json');
-  cache.strings.set('cc:entity:device:C0123456:d2', record('other'));
-  cache.strings.set('cc:entity:device:C0123456:d3', record('d3'));
+  cache.strings.set('cc:entity:device:C0123456:d2', entry('other', 1));
+  cache.strings.set('cc:entity:device:C0123456:d3', entry('d3', 1));
   const read = await new DevicePager(cache).hydrate(
     customerId,
     ['d2', 'd3', 'd1', 'd9'],
@@ -320,4 +346,66 @@ test('the fault guard is per request', async () => {
   const before = cache.calls.filter((name) => name === 'get').length;
   await pager.page(input(database().rows));
   assert.equal(cache.calls.filter((name) => name === 'get').length, before + 1);
+});
+
+test('an entry at the current version serves its record and the statement returns no row columns', async () => {
+  const cache = memoryCache();
+  const version = 4;
+  cache.strings.set('cc:entity:device:C0123456:d1', entry('d1', version));
+  const db = database({ versions: { d1: version } });
+  const read = await new DevicePager(cache).hydrate(
+    customerId,
+    ['d1'],
+    db.rows,
+    now,
+  );
+  assert.equal(read.rows[0].serialNumber, 'R-d1');
+  assert.equal(read.missing.length, 0);
+  assert.equal(db.byIdRows.length, 1, 'The current version reads once.');
+  assert.equal(
+    db.byIdRows[0].serial_number,
+    null,
+    'A current entry adds no row columns.',
+  );
+});
+
+test('a current entry past its freshness reads stale true from the entry', async () => {
+  const cache = memoryCache();
+  const version = 4;
+  cache.strings.set(
+    'cc:entity:device:C0123456:d1',
+    entry('d1', version, { lastEntitySync: '2026-10-01T00:00:00.000Z' }),
+  );
+  const db = database({ versions: { d1: version } });
+  const read = await new DevicePager(cache).hydrate(
+    customerId,
+    ['d1'],
+    db.rows,
+    now,
+  );
+  assert.equal(read.rows[0].serialNumber, 'R-d1');
+  assert.equal(read.rows[0].stale, true);
+});
+
+test('an unreadable entry, an entry of another device, and an entry without a version read Postgres', async () => {
+  const cache = memoryCache();
+  cache.strings.set('cc:entity:device:C0123456:d1', '{not json');
+  cache.strings.set(
+    'cc:entity:device:C0123456:d2',
+    JSON.stringify({ version: 1, record: recordObject('other') }),
+  );
+  cache.strings.set(
+    'cc:entity:device:C0123456:d3',
+    JSON.stringify({ record: recordObject('d3') }),
+  );
+  const read = await new DevicePager(cache).hydrate(
+    customerId,
+    ['d1', 'd2', 'd3'],
+    database({ versions: { d1: 1, d2: 1, d3: 1 } }).rows,
+    now,
+  );
+  assert.deepEqual(
+    read.rows.map((row) => row.serialNumber),
+    ['S-d1', 'S-d2', 'S-d3'],
+  );
 });

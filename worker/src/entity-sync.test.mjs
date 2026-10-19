@@ -33,18 +33,20 @@ const device = (deviceId) => ({
   status: null,
 });
 const record = (deviceId) => ({
-  deviceId,
-  serialNumber: deviceId,
-  model: null,
-  assetTag: null,
-  orgUnitPath: '/',
-  lastContact: null,
-  annotatedLocation: null,
-  notes: null,
-  battery: { status: 'no-report' },
-  // One hour old, so Redis keeps the record for the 23 hours it stays fresh.
-  lastEntitySync: new Date(Date.now() - 3_600_000).toISOString(),
-  removedAt: null,
+  version: 1,
+  record: {
+    deviceId,
+    serialNumber: deviceId,
+    model: null,
+    assetTag: null,
+    orgUnitPath: '/',
+    lastContact: null,
+    annotatedLocation: null,
+    notes: null,
+    battery: { status: 'no-report' },
+    // One hour old, so Redis keeps the record for the 23 hours it stays fresh.
+    lastEntitySync: new Date(Date.now() - 3_600_000).toISOString(),
+  },
 });
 
 const clock = new Date('2026-10-06T11:59:59.123Z');
@@ -169,10 +171,16 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
     'A record one hour old stays cached for 23 hours.',
   );
   assert.equal(redis.calls[0].args.length, 1);
+  const stored = JSON.parse(redis.calls[0].args[0][0].value);
   assert.equal(
-    JSON.parse(redis.calls[0].args[0][0].value).stale,
+    stored.record.stale,
     undefined,
     'Redis stores records without stale.',
+  );
+  assert.equal(
+    stored.version,
+    1,
+    'The stored value carries the entry version.',
   );
   assert.deepEqual(redis.calls[1].args[0], ['cc:entity:device:C0123456:d2']);
   assert.deepEqual(redis.calls[2].args, [
