@@ -162,6 +162,19 @@ Resolve related permission, resource, and placement decisions as needed. Later q
 - **D2, write scope during setup.** The Google connection page lists the device write scope with the setup scopes. Update device stays disabled until Google grants it, with a message naming the scope.
   Source: the owner chose the answer "List it with the setup scopes. Update device stays disabled, with a message naming the scope, until Google grants it". Workflow: [update device annotated location](workflows/update-device-annotated-location.md#owner-decisions--2026-10-16).
   Replaced behavior: connection setup without the device write scope.
+- **Pre-filled delegation links, 2026-10-19.** Every scope prompt offers a Google Admin link that fills in the client ID and the scopes.
+  Owner direction, 2026-10-19:
+  > Works perfectly we should use this when ever we prompt to add or modify the scopes.
+  > Observations from the GAM source and the owner test:
+  - The link uses `https://admin.google.com/ac/owl/domainwidedelegation?clientScopeToAdd=<scopes>&clientIdToAdd=<client ID>&overwriteClientId=true&dn=<domain>`.
+  - `clientScopeToAdd` holds full scope URLs, sorted and joined with literal commas. The owner tested this unencoded form.
+  - `overwriteClientId=true` selects "Overwrite existing client ID". Authorize then replaces the scope list of that client with the listed scopes.
+  - The link omits `authuser` and the delegated subject. It changes nothing until an administrator selects Authorize.
+    Eng-lead rules of 2026-10-19 (not owner decisions):
+  - Every link lists the scopes that its prompt requests. It also lists every scope whose latest capability check reports `scopeVerified` true.
+  - Without a saved connection the verified list is empty. A page that cannot read the latest checks shows no link and keeps the copy controls.
+  - The Schools page and every `school-ou-references` prompt show no link. A verified School OU scope still appears in every other link.
+    Design gap, 2026-10-19: no Figma frame shows these prompts. The existing composition stays.
 - **D3, Jobs navigation and the activity area.** Jobs becomes a main navigation item. The owner also asked for a jobs activity notification area.
   Source: the owner answered "A) AND We want a jobs activity notification area. This should be l;ike the googl;e cloud console notification area. At a glance shows when jobs re running and of you select it show you a summary of what is happening and happened recently." Choice A was "Yes: a Jobs page in the main navigation, as Figma shows". Workflow: [update device annotated location](workflows/update-device-annotated-location.md#owner-decisions--2026-10-16).
   Replaced behavior: no Jobs navigation decision.
