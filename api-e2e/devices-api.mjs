@@ -439,15 +439,18 @@ export async function qualifyDevicesApi({
         0,
         'The worker freed every in-flight claim.',
       );
+      // Each entity value is an entry: { version, record } (design section 5.11).
       const cached = JSON.parse(await redis.get(entity('synthetic-device-0')));
-      assert.equal(cached.deviceId, 'synthetic-device-0');
-      assert.equal(typeof cached.lastEntitySync, 'string');
+      assert.deepEqual(Object.keys(cached).sort(), ['record', 'version']);
+      assert.ok(Number.isSafeInteger(cached.version) && cached.version >= 1);
+      assert.equal(cached.record.deviceId, 'synthetic-device-0');
+      assert.equal(typeof cached.record.lastEntitySync, 'string');
       assert.ok(
-        Date.parse(cached.lastEntitySync) > Date.parse(ready.observedAt),
+        Date.parse(cached.record.lastEntitySync) > Date.parse(ready.observedAt),
         'The batch, not the first full sync, wrote the cached record.',
       );
-      assert.equal('stale' in cached, false);
-      assert.equal('removedAt' in cached, false);
+      assert.equal('stale' in cached.record, false);
+      assert.equal('removedAt' in cached.record, false);
       assert.equal(await redis.get(entity('synthetic-device-3')), null);
 
       await rm(faultPath, { force: true });
