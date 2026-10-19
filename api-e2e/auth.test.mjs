@@ -72,6 +72,7 @@ import {
   reviewIdentities,
   reviewIdentityPage,
 } from './client-review-identity.mjs';
+import { qualificationHeldSignIn } from './qualification-sign-in.mjs';
 
 const docker = (...args) =>
   execFileSync('docker', args, {
@@ -2158,45 +2159,47 @@ test(
         page.getByRole('heading', { name: 'Sign in', exact: true }),
       ).toBeVisible();
       await auditAccessibility(page, 'login');
-      // Capture the status before navigation replaces the document.
+      // Capture the status before navigation replaces the document. The
+      // observer starts on every attempt, because a retry loads the origin
+      // document.
       let signInProgressObserved = false;
       const recordSignInProgress = (message) => {
         if (message.text() === 'cc-qualification:sign-in-progress')
           signInProgressObserved = true;
       };
       page.on('console', recordSignInProgress);
-      await page.evaluate(() => {
-        const observer = new MutationObserver(() => {
-          if (
-            document.querySelector('[role="status"]')?.textContent?.trim() ===
-            'Connecting to sign-in.'
-          ) {
-            console.debug('cc-qualification:sign-in-progress');
-            observer.disconnect();
-          }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-      });
-      const signInResponse = Promise.withResolvers();
-      await page.route('**/api/auth/login', async (route) => {
-        await signInResponse.promise;
-        await route.continue();
-      });
-      const signInNavigation = page
-        .getByRole('link', { name: 'Sign in to Campus Commander' })
-        .click();
       try {
-        await expect.poll(() => signInProgressObserved).toBe(true);
-      } finally {
-        signInResponse.resolve();
-        await signInNavigation;
-        await page.unroute('**/api/auth/login');
-        page.off('console', recordSignInProgress);
-      }
-      try {
-        await expect(
-          page.getByRole('heading', { name: 'Your account', exact: true }),
-        ).toBeVisible({ timeout: 15000 });
+        await qualificationHeldSignIn(
+          page,
+          publicOrigin,
+          evidenceDirectory,
+          'held-response',
+          {
+            prepare: async () => {
+              signInProgressObserved = false;
+              await page.evaluate(() => {
+                const observer = new MutationObserver(() => {
+                  if (
+                    document
+                      .querySelector('[role="status"]')
+                      ?.textContent?.trim() === 'Connecting to sign-in.'
+                  ) {
+                    console.debug('cc-qualification:sign-in-progress');
+                    observer.disconnect();
+                  }
+                });
+                observer.observe(document.body, {
+                  childList: true,
+                  subtree: true,
+                });
+              });
+            },
+            observe: async () => {
+              // The login response stays held until this check passes.
+              await expect.poll(() => signInProgressObserved).toBe(true);
+            },
+          },
+        );
       } catch (error) {
         await evidenceSecurity.screenshot(page, {
           path: `${evidenceDirectory}/sign-in-startup-failure.png`,
@@ -2218,6 +2221,8 @@ test(
           ),
         );
         throw error;
+      } finally {
+        page.off('console', recordSignInProgress);
       }
       await expect(page.locator('html')).toHaveAttribute(
         'data-theme',
