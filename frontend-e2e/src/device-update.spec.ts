@@ -131,7 +131,8 @@ async function signIn(
       return route.fulfill({ json: { connection: null } });
     if (path === '/api/google-connection/health')
       return route.fulfill({ json: { health: null } });
-    if (path === '/api/auth/preferences') return route.fulfill({ json: {} });
+    if (path === '/api/auth/preferences')
+      return route.fulfill({ json: route.request().postDataJSON() });
     return route.fulfill({ status: 404, json: {} });
   });
 }
@@ -170,6 +171,16 @@ test('updates a draft in place and restores it after a reload', async ({
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({
     path: testInfo.outputPath('device-update-draft.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.getByRole('button', { name: 'Choose theme' }).click();
+  await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('device-update-draft-dark.png'),
     fullPage: true,
   });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
