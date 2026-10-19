@@ -273,23 +273,9 @@ it('does not report the group limit for Next device inside a group', async () =>
 });
 
 const JOB = '33333333-3333-4333-8333-333333333333';
-const job = (failure: string | null) => ({
-  jobId: JOB,
-  customerId: 'C0123456',
-  entityType: 'device',
-  batchCount: 1,
-  completedBatches: failure ? 0 : 1,
-  failedBatches: failure ? 1 : 0,
-  failure,
-  createdAt: '2026-10-06T12:00:00.000Z',
-  finishedAt: '2026-10-06T12:01:00.000Z',
-});
 const batchEvent = (deviceIds: string[], removedIds: string[] = []) => ({
   type: 'entity-batch',
-  jobId: JOB,
   entityType: 'device',
-  batch: 0,
-  batchCount: 1,
   deviceIds,
   removedIds,
 });
@@ -500,10 +486,31 @@ it('keeps the cause of a failed refresh job until a new job starts', async () =>
   const store = setup(request);
   const opened = streams(store);
   await store.init();
-  opened[0].send('job-finished', { type: 'job-finished', job: job('quota') });
+  opened[0].send('job-finished', { type: 'job-finished', failure: 'quota' });
   expect(store.jobFailure()).toBe('quota');
   await store.rows(0, 100);
   expect(store.jobFailure()).toBeNull();
+});
+
+it('recounts on a job-finished event with a null failure and keeps the banner cause', async () => {
+  const request = routes({
+    '/api/devices/sync': () => Response.json({ sync: state('ready') }),
+    '/api/devices/freshness': () =>
+      Response.json({ freshness: { stale: 4, refreshing: false } }),
+  });
+  const store = setup(request);
+  store.recountDelay = 0;
+  const opened = streams(store);
+  await store.init();
+  opened[0].send('job-finished', { type: 'job-finished', failure: 'quota' });
+  expect(store.jobFailure()).toBe('quota');
+  const counted = () =>
+    request.mock.calls.filter(([path]) => path === '/api/devices/freshness')
+      .length;
+  const before = counted();
+  opened[0].send('job-finished', { type: 'job-finished', failure: null });
+  await vi.waitFor(() => expect(counted()).toBeGreaterThan(before));
+  expect(store.jobFailure()).toBe('quota');
 });
 
 it('reconciles after a reconnect: one status read, held stale rows, and a recount', async () => {
