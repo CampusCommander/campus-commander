@@ -1,0 +1,41 @@
+id: device_update_reconcile
+namespace: campus.application
+# One operation of one write job, or every unknown operation after the reaper
+# finalizes a job (design sections 2.6 and 5.7).
+inputs:
+  - id: customerId
+    type: STRING
+  - id: jobId
+    type: STRING
+  # A whole operation number, or `all`.
+  - id: operationNumber
+    type: STRING
+  # Only a whole number names one read-back attempt. `all` claims its own
+  # attempts, so the input stays absent for it.
+  - id: verifyAttempt
+    type: STRING
+    required: false
+  - id: correlationId
+    type: STRING
+tasks:
+  - id: dispatch
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/device-update-reconcile'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "customerId": inputs.customerId,
+        "jobId": inputs.jobId,
+        "operationNumber": inputs.operationNumber,
+        "verifyAttempt": inputs.verifyAttempt,
+        "correlationId": inputs.correlationId
+      } | json }}
+    timeout: PT1H
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT1H
