@@ -18,6 +18,7 @@ import {
 } from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
+import { requireDeviceUpdateActions } from './device-updates-actions';
 import { DeviceUpdatesService } from './device-updates.service';
 import { DevicesService } from './devices.service';
 
@@ -49,17 +50,12 @@ export class DeviceUpdatesController {
   private async current(request: AuthenticatedRequest) {
     const sync = await this.devices.sync(request.session);
     if (sync)
-      for (const action of [
-        'devices:read',
-        'devices:write',
-        'devices:bulk-actions',
-      ] as const)
-        await this.auth.authorize(
-          request.session,
-          action,
-          { kind: 'district', customerId: sync.customerId },
-          request.correlationId,
-        );
+      await requireDeviceUpdateActions(
+        this.auth,
+        request.session,
+        sync.customerId,
+        request.correlationId,
+      );
     return sync;
   }
 

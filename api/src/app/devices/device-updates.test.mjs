@@ -142,7 +142,15 @@ test('the selection contract requires expiredAt as a timestamp or null', () => {
     excluded: 0,
     selectedCount: 0,
   };
-  assert.equal(deviceSelectionSpecSchema.parse(base).expiredAt, null);
+  assert.throws(
+    () => deviceSelectionSpecSchema.parse(base),
+    /expiredAt/,
+    'An omitted expiredAt is refused.',
+  );
+  assert.equal(
+    deviceSelectionSpecSchema.parse({ ...base, expiredAt: null }).expiredAt,
+    null,
+  );
   assert.equal(
     deviceSelectionSpecSchema.parse({
       ...base,
@@ -631,4 +639,96 @@ test('every confirmation outcome maps to its status and code', async () => {
       `${result.outcome} reason.`,
     );
   }
+});
+
+test('a selection that resolves to no devices answers 422 nothing-selected', async () => {
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text) =>
+          text.includes('cc.create_device_update_preview')
+            ? {
+                rows: [
+                  { result: { outcome: 'created', preview: previewRow() } },
+                ],
+              }
+            : { rows: [] },
+      },
+      transaction: async () => {
+        throw new Error('No preview write is allowed.');
+      },
+    },
+    {
+      get: async () =>
+        JSON.stringify({
+          terms: [
+            [
+              {
+                field: 'serialNumber',
+                operator: 'startsWith',
+                value: 'ZZZ-no-device',
+              },
+            ],
+          ],
+          groups: [],
+          additions: [],
+          exceptions: [],
+          changedAt: new Date().toISOString(),
+        }),
+    },
+    { storeJson: async () => 'unused' },
+  );
+  await assert.rejects(
+    updates.preview(session, current, { ...key, mode: 'clear' }),
+    (error) => {
+      assert.equal(error.getStatus(), 422);
+      assert.deepEqual(error.getResponse(), { reason: 'nothing-selected' });
+      return true;
+    },
+  );
+});
+
+test('a missing manifest artifact fails the confirmation', async () => {
+  const missing = '55555555-5555-4555-8555-555555555555';
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text) => {
+          if (text.includes('cc.read_device_update_preview_manifest'))
+            return {
+              rows: [
+                {
+                  result: {
+                    outcome: 'manifest',
+                    manifest: manifestDocument(),
+                  },
+                },
+              ],
+            };
+          if (text.includes('cc.confirm_device_update_preview'))
+            return { rows: [{ result: { outcome: 'artifact-missing' } }] };
+          return { rows: [] };
+        },
+      },
+      transaction: async (run) => run({ query: async () => ({ rows: [] }) }),
+    },
+    { get: async () => null },
+    { storeJson: async () => missing },
+  );
+  let error;
+  try {
+    await updates.confirm(session, current, previewId, {
+      manifestDigest: 'a'.repeat(64),
+      acknowledged: true,
+    });
+  } catch (failure) {
+    error = failure;
+  }
+  assert.equal(
+    typeof error?.getStatus,
+    'function',
+    'The confirmation answers with an HTTP error.',
+  );
+  assert.equal(error.getStatus(), 500);
+  assert.match(String(error.message), /manifest artifact/i);
 });
