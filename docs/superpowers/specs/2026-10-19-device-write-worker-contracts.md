@@ -1,6 +1,6 @@
 # Design addendum: worker contracts for the device write jobs
 
-Status: proposed, revision 1, 2026-10-19. Author: architect. Card: `t_ebb18941`.
+Status: proposed, revision 2, 2026-10-19. Author: architect. Card: `t_ebb18941`.
 This addendum extends the approved design `docs/superpowers/specs/2026-10-16-device-write-jobs-design.md`, revision 6.
 It resolves the seven open questions and the four design notes of the P2 spec draft.
 Card B2c builds its SQL changes. Card P2 builds the worker against its contracts.
@@ -14,7 +14,8 @@ Conventions:
 - `design:N` names line N of the design file at `e48c8b8`.
 - `draft:N` names line N of the P2 spec draft, the attachment `p2-spec-draft.md` of Kanban task `t_ebb18941`.
 - `B3@603a10b:` names a file at commit `603a10b` of the unmerged branch `codex/device-update-preview`.
-  The branch head `45e6f02` holds the same `017-jobs.sql` and `index.mjs`.
+  That commit is an ancestor of the branch head `763f300` at revision 2. The head keeps `index.mjs`.
+  In `017-jobs.sql` the head changes only the expiry check of the confirmation. The cited confirmation lines move down by seven.
 - A bare migration file name, for example `017-jobs.sql`, names that file in `deployment/postgres/migrations/`.
 - `index.mjs` names `deployment/postgres/index.mjs`.
 - `device-write-jobs.integration.mjs` names `deployment/postgres/device-write-jobs.integration.mjs`.
@@ -37,6 +38,17 @@ This record uses one name for each function:
 | The reaper            | `cc.finalize_device_update_job`                              |
 | The credential read   | `cc.google_current_generation`                               |
 | The global lock       | Advisory lock `7240173008`, the global access lock of rule G |
+
+Revision 2 answers review comment 313 on card `t_ebb18941`. The review of revision 1 raised three findings.
+This record calls them Rev-1 F1 to Rev-1 F3.
+
+| Finding    | Change                                                                                                                                          | Sections                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Rev-1 F1   | Every write settlement after the first stopping observation carries the job failure. The settlement that holds that observation is one of them. | Ruling 4, contract C3, B2c test 18, P2 edits 4, 15, 17, and 18                            |
+| Rev-1 F2   | A `stopped` or `done` claim writes `heartbeat_at` and `first_claimed_at`. Revision 1 added no write.                                            | Ruling 7, contract C4, needs the eng-lead, B2c tests 19 to 23, P2 edits 9, 15, 17, and 18 |
+| Rev-1 F3   | S3 exempts the read-back claim beside the read-back settlement. Both keep their attempt and lease fences.                                       | S3, B2c test 5                                                                            |
+| Correction | No existing B2 check claims a running job with a recorded failure. The B2c section therefore names no changed expectation.                      | Changes for card B2c                                                                      |
+| Citation   | The B3 branch head moved to `763f300`. The pin `603a10b` stays.                                                                                 | Conventions                                                                               |
 
 ## Lock rules
 
@@ -73,7 +85,13 @@ This section states each rule as the code applies it. Every ruling below follows
   The same holds for a call with a token or attempt that is not current.
   Sources: `017-jobs.sql:504-508`, `017-jobs.sql:537-541`, `017-jobs.sql:821-825`, `017-jobs.sql:1110-1116`, `017-jobs.sql:1167-1173`, and `016-device-inventory.sql:830-834`.
 - A call that a wait superseded also changes nothing. It reads the token again after the wait (`017-jobs.sql:699-711`, `017-jobs.sql:1185-1193`).
-- The design makes one exception. A read-back settlement checks its attempt and its read-back lease, not the token. It also settles a terminal job (`017-jobs.sql:896-901`, `design:997`).
+- Read-back is the one exception, by design (`design:997`, `design:1052`, `design:1431`). Its two functions check no token and no job status.
+  Each of them acts on a terminal job:
+  - The read-back claim takes only `unknown` operations without a live read-back lease. It sets their read-back attempt and lease (`017-jobs.sql:1064-1067`, `017-jobs.sql:1078-1083`).
+    The check at `device-write-jobs.integration.mjs:1119-1131` claims a read-back after the final finish answers `needs-review`.
+  - The read-back settlement takes only `unknown` operations of its attempt under a live read-back lease (`017-jobs.sql:896-901`, `017-jobs.sql:912-913`, `017-jobs.sql:976-977`).
+    On a terminal job it derives the status again (`017-jobs.sql:1027-1028`).
+  - A call outside those attempt and lease fences changes nothing. No ruling below adds a terminal-job rejection to either function.
 
 ### Rule G. The global lock comes first
 
@@ -215,13 +233,29 @@ Open question 4 (`draft:10`).
 
 Decision:
 
-- B2c adds an optional failure to the settlement. A write settlement with a failure records it as the job failure, in the transaction of its outcomes.
-- The worker passes the failure on the last write settlement of the failing batch. That call holds the final results of the batch.
-- B2c changes the batch claim. A recorded job failure is a stop reason.
+- B2c adds an optional failure to the settlement (contract C3). A write settlement with a failure records it as the job failure, in the transaction of its outcomes.
+- From its first stopping observation on, the worker passes the failure on every write settlement of the batch.
+  The settlement that holds the observed operations is one of them. The job failure therefore commits with its first evidence.
+- The settlement that holds the observed operations depends on the kind of the observation:
+  - An answer of kind `auth`: the settlement of its round. The service reports the answer before the round ends (`libs/google-connection/src/lib/batch.ts:929-939`, `batch.ts:704`).
+  - A mint failure: the settlement after the call returns. The service fails the waiting requests without an event (`batch.ts:630-641`).
+  - A fatal batch error: the settlement from the kept events after the call throws (`batch.ts:596`, `draft:58`).
+  - A credential that cannot open: the one settlement before any request (`design:1357`).
+- The batch call still runs to its end. An answer of kind `auth` stops the job only after its batch settles (`design:1352`).
+  Each later round settlement carries the same failure. `COALESCE` keeps the first failure, so a repeat changes nothing.
+- B2c changes the batch claim (contract C4). A recorded job failure is a stop reason.
   A later claim answers `stopped` with that failure. It skips every pending operation of the job with that reason and sends nothing.
-- B2c changes the preparation and the reaper. Each skips pending operations with the recorded job failure as the reason, or `interrupted` without one (`design:1143`).
+- B2c changes the preparation and the reaper (contract C5). Each skips pending operations with the recorded job failure as the reason, or `interrupted` without one (`design:1143`).
 - The finish request still carries no failure (`deployment/kestra/device-update.yaml:60-67`). The final finish keeps the recorded failure (`017-jobs.sql:1198-1200`).
 - After the stop, the batch handler answers 200 with outcome `stopped` and the failure.
+
+A worker exit between two settlements keeps the stop (Rev-1 F1):
+
+- The failure commits with the first settlement that holds a stopping observation. A later exit leaves it in place.
+- Kestra sends the request again after a failed worker request (`design:920`, `deployment/kestra/device-update.yaml:48-52`).
+  The new claim answers `stopped`, because C4 decides the stop before the busy check (`017-jobs.sql:655-664`).
+- The exited attempt leaves its unsettled operations `dispatched`. The preparation answers `busy` until their lease and its grace end (`017-jobs.sql:1117-1120`).
+  It then fences them to `unknown` (`017-jobs.sql:1140`), and finish step 5 reads them back.
 
 Design support:
 
@@ -236,7 +270,7 @@ Contract C3, the settlement:
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Function         | `cc.settle_device_update_operations(p_customer text, p_job uuid, p_token uuid, p_attempt uuid, p_kind text, p_results jsonb, p_observed_at timestamptz, p_failure text DEFAULT NULL) RETURNS jsonb`. Changed in place in `017-jobs.sql`.                                           |
 | Change           | After the settled set proves non-empty (`017-jobs.sql:1022-1024`), a failure sets `failure=COALESCE(failure,p_failure)` on the header. That write precedes the counters and the job change (`017-jobs.sql:1026-1033`). A fenced call and an empty call record no failure.          |
-| Caller and check | The batch handler of the worker. It passes the dispatch token of the flow body (`deployment/kestra/device-update.yaml:32-40`) and its own attempt.                                                                                                                                 |
+| Caller and check | The batch handler of the worker. It passes the dispatch token of the flow body (`deployment/kestra/device-update.yaml:32-40`) and its own attempt. It passes the failure on every write settlement after the first stopping observation.                                           |
 | Grants           | Replace the signature in `index.mjs:288` and in the revoke list at `017-jobs.sql:1465`.                                                                                                                                                                                            |
 | Lock order       | Unchanged. 1. The S2 checks (`017-jobs.sql:850-888`). 2. The header (`017-jobs.sql:889`). 3. The eligible operation rows in `operation_number` order (`017-jobs.sql:920-921`). 4. The detail row (`017-jobs.sql:922`). 5. The connection row `FOR KEY SHARE` (`017-jobs.sql:943`). |
 | Lock order, end  | 6. Device rows (`017-jobs.sql:948-954`). 7. Overlay rows (`017-jobs.sql:958-962`). 8. The clock (`017-jobs.sql:964`). The failure write changes only the header row, which the call holds from step 2. Rule G does not apply.                                                      |
@@ -245,16 +279,34 @@ Contract C3, the settlement:
 
 Contract C4, the batch claim:
 
-| Item             | Contract                                                                                                                                                                                                                                                             |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Function         | `cc.claim_device_update_batch(text,uuid,uuid,integer,uuid,text)`. The signature stays.                                                                                                                                                                               |
-| Change           | The first stop decision under the header lock (`017-jobs.sql:655-656`) takes the recorded job failure before the revalidation reason. A job with a failure then enters the stop path at once (`017-jobs.sql:698-717`).                                               |
-| Caller and check | The batch handler of the worker, as today.                                                                                                                                                                                                                           |
-| Grants           | Unchanged (`index.mjs:285`).                                                                                                                                                                                                                                         |
-| Lock order       | Unchanged. 1. The global lock (`017-jobs.sql:638`). 2. The header (`017-jobs.sql:639`). 3. In the stop path, the pending operation rows of the job in `operation_number` order (`017-jobs.sql:704-705`). 4. The connection row `FOR KEY SHARE` (`017-jobs.sql:706`). |
-| Lock order, end  | 5. The clock and a fresh token read (`017-jobs.sql:707-711`). The header lock keeps the failure stable for the whole call.                                                                                                                                           |
-| Return           | Unchanged: `{outcome:'stopped', failure}`.                                                                                                                                                                                                                           |
-| Errors and S3    | Unchanged. A token that is not current still answers `superseded` before the stop decision (`017-jobs.sql:647-650`).                                                                                                                                                 |
+| Item                  | Contract                                                                                                                                                                                                                                                                                                                   |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Function              | `cc.claim_device_update_batch(text,uuid,uuid,integer,uuid,text)`. The signature stays.                                                                                                                                                                                                                                     |
+| Change 1, ruling 4    | The first stop decision under the header lock (`017-jobs.sql:655-656`) takes the recorded job failure before the revalidation reason. A job with a failure then enters the stop path at once (`017-jobs.sql:698-717`).                                                                                                     |
+| Change 2, ruling 7    | A `stopped` or `done` answer writes `heartbeat_at` and `first_claimed_at=COALESCE(first_claimed_at,now_at)`, as a `claimed` answer does (`017-jobs.sql:738-739`). `now_at` is the clock after the last wait of the path. A `superseded` or `busy` answer writes nothing.                                                   |
+| Caller and check      | The batch handler of the worker, as today.                                                                                                                                                                                                                                                                                 |
+| Grants                | Unchanged (`index.mjs:285`).                                                                                                                                                                                                                                                                                               |
+| Lock order, start     | Unchanged. 1. The S2 check (`017-jobs.sql:631-635`). 2. The global lock (`017-jobs.sql:638`). 3. The header (`017-jobs.sql:639`). 4. The clock and the fence. A terminal job or a token that is not current answers `superseded` (`017-jobs.sql:645-650`).                                                                 |
+| Lock order, `stopped` | 5. The pending operation rows of the job in `operation_number` order (`017-jobs.sql:704-705`). 6. New: the detail row `FOR UPDATE`, in place of the read at `017-jobs.sql:708`. 7. The connection row `FOR KEY SHARE` (`017-jobs.sql:706`). 8. The clock, and the token on the locked detail row (`017-jobs.sql:707-711`). |
+| Writes, `stopped`     | The failure, the skip, the counters, and the progress row stay (`017-jobs.sql:712-715`). The heartbeat write of change 2 joins them.                                                                                                                                                                                       |
+| Lock order, `done`    | 5. The batch row (`017-jobs.sql:665`). 6. No operation row matches (`017-jobs.sql:676-679`). 7. New: the detail row `FOR UPDATE`. 8. New: the clock, and the token on the locked detail row. A token that is not current answers `superseded` and writes nothing.                                                          |
+| Lock order, `claimed` | Unchanged (`017-jobs.sql:658-749`). The second `done` site (`017-jobs.sql:731-732`) holds the detail row from `017-jobs.sql:682` and the clock from `017-jobs.sql:696`. It writes the two columns before it answers.                                                                                                       |
+| Return                | Unchanged: `{outcome:'stopped', failure}`, `{outcome:'done'}`, and the other answers.                                                                                                                                                                                                                                      |
+| Errors and S3         | Unchanged. A token that is not current still answers `superseded` before the stop decision (`017-jobs.sql:647-650`). A token that changes in a later wait answers `superseded` after that wait and writes nothing.                                                                                                         |
+
+Lock rules check of C4:
+
+- S1: every 017 function that locks or updates a detail row holds its header first. The new detail lock therefore waits on no other 017 function.
+  Sources: `017-jobs.sql:434-435` with `017-jobs.sql:464`, `017-jobs.sql:496` with `017-jobs.sql:511`, and `017-jobs.sql:530` with `017-jobs.sql:543`.
+  More sources: `017-jobs.sql:573-574` with `017-jobs.sql:584` and `017-jobs.sql:600`, `017-jobs.sql:639` with `017-jobs.sql:682`, and `017-jobs.sql:768` with `017-jobs.sql:792`.
+  More sources: `017-jobs.sql:889` with `017-jobs.sql:922`, `017-jobs.sql:1280` with `017-jobs.sql:1298`, and `017-jobs.sql:1329-1330` with `017-jobs.sql:1343`. B3 at `603a10b` adds no detail lock.
+- S1: the clock reads after the last lock of each path. A test session that holds the detail row delays the call, and the stamp still follows that wait.
+- S1: the stop path keeps the connection row as its last lock (`017-jobs.sql:699-703`). Its detail row locks between the operation rows and the connection row.
+  The claim path (`017-jobs.sql:676-691`) and the settlement (`017-jobs.sql:920-943`) use the same order.
+- S1: a stop that the second revalidation finds already holds the detail row (`017-jobs.sql:682`, `017-jobs.sql:686-694`). The new lock then adds no wait.
+- S2: unchanged.
+- S3: each new write follows the token check on the locked detail row. A terminal call and a superseded call write nothing.
+- Rule G: the global lock stays the first lock. The new lock is a row lock after it.
 
 Contract C5, the preparation and the reaper:
 
@@ -267,9 +319,14 @@ Contract C5, the preparation and the reaper:
 | Return, errors, grants | Unchanged.                                                                                                                                                   |
 
 Each later `stopped` claim records one progress-only row, as a revalidation stop does today. The relay publishes such rows once per job and run (`design:743`).
+Each `stopped` claim also writes `heartbeat_at` (ruling 7).
 
 Rejected alternatives:
 
+- The failure on the last write settlement of the batch only (revision 1). A batch of several rounds settles each round in its own call (`draft:54`, ruling 11).
+  An exit after a stopping round and before the last settlement then loses the stop.
+  A later claim returns only `pending` operations and the `dispatched` operations of a lapsed attempt (`017-jobs.sql:676-679`, `017-jobs.sql:718-754`).
+  No call then reads the settled failure again, and the next batch claims and sends.
 - The release, then the preparation with the failure (`draft:10`). The stop then commits after the outcomes, in a third transaction.
   A worker exit between the commits loses the stop, and the next batch claims and sends. The preparation also answers `busy` while any batch lease or its grace lives (`017-jobs.sql:1117-1120`).
 - A new stop function. It adds a third writer of the job failure with its own fence and lock order. The settlement already holds the header lock and the attempt fence that a stop needs.
@@ -366,27 +423,53 @@ Open question 7 (`draft:13`).
 
 Decision:
 
-- P2 needs no new `heartbeat_at` write. B2c changes no heartbeat write.
+- B2c changes the batch claim (contract C4, change 2). A `stopped` or `done` answer writes `heartbeat_at`, as a `claimed` answer does (`017-jobs.sql:738-739`).
+- The same answers set `first_claimed_at` when it is null. `started_at` keeps its rule: the first `claimed` answer sets it (`017-jobs.sql:742-744`).
+- A `busy` answer and a `superseded` answer write nothing.
+- P2 makes no separate heartbeat call. Every batch request starts with a claim.
+  Each Kestra iteration therefore writes `heartbeat_at`, unless its claim answers `busy` or `superseded`.
 - P2 bounds each read-back chunk by its lease. The worker aborts the GET parts of a chunk 15 s before the lease ends.
   Every part without an answer then settles as `unknown` with `verification-failed`.
 - The margin covers one request of 10 s (`libs/google-connection/src/lib/provider.ts:241`) and one statement of 5 s (`worker/src/google-connection.ts:105`).
-- This addendum replaces the list of `design:960`. `heartbeat_at` records a claim that claims, a renewal, and a settlement with a result.
-  Sources: `017-jobs.sql:738-739`, `017-jobs.sql:799`, and `017-jobs.sql:1032`.
+- This addendum replaces the list of `design:960`. `heartbeat_at` records every current-token claim except `busy`.
+  It also records every renewal and every settlement with a result (`017-jobs.sql:799`, `017-jobs.sql:1032`).
 
-Why the tick never declares a live worker lost:
+Why `stopped` and `done` claims need the write (Rev-1 F2):
 
-- The tick restarts a job only without a live batch lease and with `heartbeat_at` 10 minutes old (`017-jobs.sql:596-597`, `design:952`).
-- A `busy` claim or a `busy` preparation means that a lease or its grace of 30 s lives (`017-jobs.sql:661-663`, `017-jobs.sql:1117-1120`).
-  Its holder renews every 30 s (`design:982`). The last renewal is then at most 210 s old.
-- Between batches, the next claim follows the release within seconds (ruling 10).
-- In finish step 5 no batch lease lives. Each chunk settles within its lease of 120 s, and each settlement with a result writes `heartbeat_at`.
-  The age therefore stays below 330 s, under the limit of 600 s.
-- A store failure ends the request with a non-2xx answer, and Kestra retries the request (`design:920`).
+- Kestra runs every iteration of the `ForEach` and reads only the HTTP status of each answer (`deployment/kestra/device-update.yaml:18-52`, `design:920`).
+- After a stop, every later iteration answers `stopped` and holds no lease (`017-jobs.sql:698-716`). Ruling 10 released the lease of the stopping batch.
+- A job of 100,000 targets is valid (`design:267`). Confirmation writes batches of 250 (`B3@603a10b:deployment/postgres/migrations/017-jobs.sql:1587-1588`).
+  That job holds 400 batches. At more than 1.51 s per iteration, its 399 `stopped` iterations take more than 600 s.
+- On origin/main a `stopped` claim writes no `heartbeat_at`. The tick then rotates the token of the live execution (`017-jobs.sql:596-610`).
+  Every later call of that execution answers `superseded`, its finish included (`017-jobs.sql:1111-1113`). A revalidation stop meets the same gap today.
+- A `done` sequence meets the same gap. After a rotation, the new execution claims every settled batch again, and each claim answers `done` (`017-jobs.sql:676-679`).
+- A `stopped` first claim leaves `first_claimed_at` null on origin/main. After the start deadline, the tick treats the live execution as an unclaimed start (`017-jobs.sql:580-592`).
+  At three executions the refused-start path replaces the recorded failure with `orchestration-unavailable` (`017-jobs.sql:594`, `017-jobs.sql:556`).
+
+Why the tick never declares a live execution lost:
+
+- Before the first claim, the tick acts on the start deadline of 120 s (`017-jobs.sql:580`).
+  After the first claim, it acts only without a live batch lease and with `heartbeat_at` 10 minutes old (`017-jobs.sql:596-597`, `design:952`).
+- A `claimed`, `stopped`, or `done` answer writes `heartbeat_at` and `first_claimed_at`.
+  Every iteration of the current execution therefore refreshes the heartbeat at its start, unless its claim answers `busy`.
+- A `busy` answer means that a lease or its grace of 30 s lives (`017-jobs.sql:661-663`, `017-jobs.sql:668-671`).
+  The holder writes `heartbeat_at` with each claim and each renewal. The lease runs 180 s from that write (`017-jobs.sql:735-738`, `017-jobs.sql:797-799`).
+  When the grace ends, the last write is at most 210 s old. The next poll follows within 10 s (`design:968`) and writes.
+- Inside a claimed batch, the worker renews every 30 s (`design:982`). A read-back of place 1 or 2 settles within its lease of 120 s (`017-jobs.sql:719-722`, `017-jobs.sql:987-991`).
+- In finish step 5 no batch lease lives. Each chunk settles within its lease of 120 s, and each settlement with a result writes `heartbeat_at` (`017-jobs.sql:1032`).
+  A preparation that polled `busy` answers `ready` at most 220 s after the last write. The first chunk then settles within 340 s of that write.
+- 340 s stays under the limit of 600 s. A store failure ends the request with a non-2xx answer, and Kestra retries the request (`design:920`).
 
 Rejected alternatives:
 
-- Writes on `busy` and `done` claims, on empty settlements, and on finish polls. The `busy` claim answers before the batch lock to avoid a wait (`017-jobs.sql:658-664`).
-  The preparation and the final finish lock no detail row. Each write needs the detail lock on those paths. A poller then writes every 10 s for up to 45 minutes (`design:968`).
+- No write on `stopped` and `done` claims (revision 1). The sequences above then rotate a live execution.
+- End the `ForEach` after a stop. The worker then answers a stop with a non-2xx status, against section 5.1 (`design:920`).
+  Kestra repeats such a request up to its attempt limit, and the flow then fails (`deployment/kestra/device-update.yaml:48-52`). A skip condition instead changes the merged flow of card P1.
+- A longer threshold in the tick. A fixed threshold fails for a longer job or a slower iteration. `batch_size` accepts 1 (`017-jobs.sql:112`), so a job can hold 100,000 batches.
+- A separate heartbeat function. It adds a function, a grant, and a lock order. The claim already holds the header, the token fence, and the clock.
+- Writes on `busy` claims and finish polls. A `busy` claim answers before the batch lock to avoid a wait (`017-jobs.sql:658-664`).
+  A `busy` answer already proves a live lease or grace. A poller then writes every 10 s for up to 45 minutes (`design:968`).
+- A write on an empty settlement. It settles no result, so it proves no progress of the current attempt.
 - A write in the read-back claim. The Reconcile route of the API also calls that claim (`design:651`). An API call then hides a lost runner for 10 minutes.
 
 ### Ruling 8. P2 waits for B6
@@ -473,10 +556,17 @@ The rulings add one function and three parameters. They also change three result
 - The skip reason of the preparation and the reaper.
 - The answer of the final finish.
 
-Two rulings change worker mechanics that the design states. Neither changes product behavior:
+The batch claim also gains two writes on its `stopped` and `done` answers: `heartbeat_at` and `first_claimed_at` (ruling 7).
+Both columns exist (`017-jobs.sql:118-119`). The job schemas of the API carry neither column (`design:533-534`).
 
-- Ruling 7 replaces the heartbeat list of `design:960`.
+Rulings 7 and 10 change worker mechanics that the design states. None of these changes product behavior:
+
+- Ruling 7 replaces the heartbeat list of `design:960`. `busy` claims, finish polls, and empty settlements write no heartbeat. Every other current-token claim writes one.
+- Ruling 7 sets `first_claimed_at` on a `stopped` or `done` claim too. `design:951` sets it with `started_at` on the first claim. `started_at` keeps its rule.
 - Ruling 10 releases the lease after every batch. `design:991-992` releases it only on a graceful stop.
+
+Revision 2 changes the ruling 7 items of this list. The eng-lead note of 2026-10-19 at 09:32 accepted their revision 1 form.
+The changed items need the eng-lead again.
 
 Routing decisions for the eng-lead. Each one is a card or an order, not a product decision:
 
@@ -493,15 +583,15 @@ Routing decisions for the eng-lead. Each one is a card or an order, not a produc
 
 Card B2c changes `017-jobs.sql` and `index.mjs` in place. It adds no migration file (`design:221-222`). It changes no worker or API code.
 
-| ID  | Function                       | Change                                                                                             | Ruling  |
-| --- | ------------------------------ | -------------------------------------------------------------------------------------------------- | ------- |
-| C1  | The read-back claim            | Adds `p_after` and `p_limit`.                                                                      | 3       |
-| C2  | The verification read          | New function.                                                                                      | 1, 2    |
-| C3  | The settlement                 | Adds `p_failure`.                                                                                  | 4       |
-| C4  | The batch claim                | A recorded job failure is a stop reason.                                                           | 4       |
-| C5  | The preparation and the reaper | The skip reason comes from the recorded job failure.                                               | 4       |
-| C6  | The final finish               | Returns `publication`.                                                                             | 6       |
-| C7  | Grants                         | `index.mjs:277-295` and `017-jobs.sql:1453-1470` name the new signatures of C1 and C3, and add C2. | 1, 3, 4 |
+| ID  | Function                       | Change                                                                                                              | Ruling  |
+| --- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ------- |
+| C1  | The read-back claim            | Adds `p_after` and `p_limit`.                                                                                       | 3       |
+| C2  | The verification read          | New function.                                                                                                       | 1, 2    |
+| C3  | The settlement                 | Adds `p_failure`.                                                                                                   | 4       |
+| C4  | The batch claim                | A recorded job failure is a stop reason. A `stopped` or `done` answer writes `heartbeat_at` and `first_claimed_at`. | 4, 7    |
+| C5  | The preparation and the reaper | The skip reason comes from the recorded job failure.                                                                | 4       |
+| C6  | The final finish               | Returns `publication`.                                                                                              | 6       |
+| C7  | Grants                         | `index.mjs:277-295` and `017-jobs.sql:1453-1470` name the new signatures of C1 and C3, and add C2.                  | 1, 3, 4 |
 
 Tests go in `device-write-jobs.integration.mjs`, target `deployment:postgres-integration`.
 Each new test commits before its change and fails at an assertion on the parent revision (`design:1399-1403`).
@@ -511,28 +601,51 @@ A signature probe turns a missing signature into an assertion, as `device-write-
 2. C1: a chunk claim locks only its chunk. An operation outside the chunk stays free for a `NOWAIT` lock.
 3. C1: `p_after` -1, `p_limit` 0, and `p_limit` 251 reject with 22023 before any lock. The check at `device-write-jobs.integration.mjs:8526-8539` shows the pattern.
 4. C1: a null cursor and a null limit claim every eligible operation, as today.
-5. C2: an attempt that holds two listed operations receives `held`.
+5. C1 and S3 (Rev-1 F3): the final finish answers `needs-review`. A chunk claim with cursor 0 and limit 250 then claims the `unknown` operations of that terminal job.
+   The check at `device-write-jobs.integration.mjs:1114-1131` shows the sequence.
+6. C2: an attempt that holds two listed operations receives `held`.
    The answer carries the envelope, the generation, the credential ID, and both operations.
-6. C2: another attempt, a lapsed lease, a settled operation, and an unlisted operation each give `not-held` without an envelope.
-7. C2, rule G: while another session holds the global lock, the read waits. Its header, detail, and operation rows stay free.
+7. C2: another attempt, a lapsed lease, a settled operation, and an unlisted operation each give `not-held` without an envelope.
+8. C2, rule G: while another session holds the global lock, the read waits. Its header, detail, and operation rows stay free.
    The check at `device-write-jobs.integration.mjs:6195-6237` shows the pattern.
-8. C2: a changed generation raises `credential-changed`. An inactive connection raises `connection-disconnected`.
-9. C2: null inputs and an invalid list reject with 22023 before any lock.
-10. C2: the read changes no operation row, header revision, or publication row.
-11. C2: the runtime role executes the read, and `PUBLIC` does not. The check at `device-write-jobs.integration.mjs:8241-8262` shows the technique.
-12. C3: a write settlement with failure `delegation-not-authorized` records its outcomes, the job failure, one revision, and one publication row.
-13. C3: an earlier job failure stays. A fenced settlement with a failure records no failure and no row.
-14. C3: an unknown failure code, and a failure with kind `read-back`, reject with 22023 before any lock.
-15. C4: after test 12, the claim of the next batch answers `stopped` with that failure. It dispatches nothing and skips every pending operation of the job with that reason.
-16. C4: a token that is not current still answers `superseded`. The rule G check of the batch claim still passes (`device-write-jobs.integration.mjs:6195-6237`).
-17. C5: a job holds a recorded failure and pending operations. The preparation with a null failure skips them with the recorded failure.
+9. C2: a changed generation raises `credential-changed`. An inactive connection raises `connection-disconnected`.
+10. C2: null inputs and an invalid list reject with 22023 before any lock.
+11. C2: the read changes no operation row, header revision, or publication row.
+12. C2: the runtime role executes the read, and `PUBLIC` does not. The check at `device-write-jobs.integration.mjs:8241-8262` shows the technique.
+13. C3: a write settlement with failure `delegation-not-authorized` records its outcomes, the job failure, one revision, and one publication row.
+14. C3: an earlier job failure stays. A fenced settlement with a failure records no failure and no row.
+15. C3: an unknown failure code, and a failure with kind `read-back`, reject with 22023 before any lock.
+16. C4: after test 13, the claim of the next batch answers `stopped` with that failure. It dispatches nothing and skips every pending operation of the job with that reason.
+17. C4: a token that is not current still answers `superseded`. The rule G check of the batch claim still passes (`device-write-jobs.integration.mjs:6195-6237`).
+18. C3 and C4, Rev-1 F1: a job holds two batches of two operations. One attempt claims batch 0.
+    A write settlement with failure `permission-denied` settles operation 1 as `failed`. The attempt then makes no other call.
+    A claim of batch 0 by a new attempt with the current token answers `stopped` with that failure, not `busy`.
+    That claim skips the operations of batch 1. The claim of batch 1 then answers `stopped` and dispatches nothing.
+    Operation 2 stays `dispatched`. After its lease and grace, the preparation fences it to `unknown` with reason `interrupted`.
+19. C4, Rev-1 F2: a job of three batches. Batch 0 claims, settles, and releases. The confirmer then loses access.
+    The test sets `heartbeat_at` 11 minutes back. The claim of batch 1 answers `stopped`, and the tick returns no start for the job.
+    The token and `dispatch_count` stay. Batch 2 repeats the sequence. On the parent revision the tick rotates the token.
+20. C4: a job of one batch claims, settles, and releases. The test sets `heartbeat_at` 11 minutes back.
+    A claim of batch 0 by a new attempt with the current token answers `done`. The tick then returns no start for the job.
+21. C4: the confirmer loses access before the first claim. That claim answers `stopped` and sets `first_claimed_at`. `started_at` stays null.
+    The test sets `start_deadline_at` in the past, and the tick returns no start.
+    The test then sets `heartbeat_at` 11 minutes back before each of three ticks. The ticks rotate twice and then finalize the job.
+    The job ends `failed` with `permission-changed`, not `orchestration-unavailable`.
+22. C4, S1: a migrator session holds the detail row (`device-write-jobs.integration.mjs:6797-6800`). A `stopped` claim and a `done` claim each wait on it.
+    After the release, `heartbeat_at` is not earlier than the release time. The check at `device-write-jobs.integration.mjs:7988-8025` shows the pattern.
+23. C4, S3: the check at `device-write-jobs.integration.mjs:8951-8980` also asserts unchanged `heartbeat_at` and `first_claimed_at`.
+    A `done` claim whose token rotates while it waits on the batch row answers `superseded` and writes nothing.
+    The parent revision answers `done` there without a fresh token check. A `busy` answer writes nothing, as a guard.
+24. C5: a job holds a recorded failure and pending operations. The preparation with a null failure skips them with the recorded failure.
     Without a recorded failure the reason stays `interrupted`. The reaper follows the same rule.
-18. C6: the terminal answer of the final finish carries `publication`. Its `publicationId` names the newest row of the job, and its `revision` equals the job revision.
+25. C6: the terminal answer of the final finish carries `publication`. Its `publicationId` names the newest row of the job, and its `revision` equals the job revision.
     The other answers carry no element.
-19. C7: `to_regprocedure` resolves each new signature and no replaced signature.
+26. C7: `to_regprocedure` resolves each new signature and no replaced signature.
 
-Existing B2 tests: a claim on a job with a recorded failure now answers `stopped`, not `done`. Its test changes that expectation.
-A test that compares a whole terminal answer of the final finish gains `publication`.
+Existing B2 checks. A scan of the claim calls in `device-write-jobs.integration.mjs` found no check that claims a running job with a recorded failure.
+No check asserts a `done` answer or compares a whole answer of the final finish. C4 and C6 therefore change no existing assertion.
+The checks that age `heartbeat_at` call the tick with no claim in between (`device-write-jobs.integration.mjs:1021`, `:3870`, `:6570`, `:7994`).
+The new writes leave those checks unchanged. The check at `device-write-jobs.integration.mjs:8951-8980` leaves the detail row out of its comparison. Test 23 adds the two columns.
 
 Consumers of C1 to C7. The search covered the whole repository at `e48c8b8` and the B3 branch at `603a10b`:
 
@@ -547,7 +660,7 @@ Consumers of C1 to C7. The search covered the whole repository at `e48c8b8` and 
 | C7     | `index.mjs:285-292`                                                                                                                                                                                                         | None                              |
 
 No worker or API code calls C1 to C6 at `e48c8b8`. Inside SQL, only the tick path at `017-jobs.sql:613` calls one of them.
-B3 at `45e6f02` adds no caller. Its `index.mjs` names the same grants (`B3@603a10b:deployment/postgres/index.mjs:285-292`).
+B3 at `763f300` adds no caller. Its `index.mjs` names the same grants (`B3@603a10b:deployment/postgres/index.mjs:285-292`).
 
 ## Changes for card P2
 
@@ -556,24 +669,25 @@ Edits to the draft, by draft line:
 1. `draft:3-20`: delete the section "Open questions for the eng-lead", as `draft:5` instructs. Name this addendum in its place.
 2. `draft:25-26`: P2 also builds on cards B2c, B6, and the write-access card (rulings 1 to 6, and 8).
 3. `draft:51`: keep. Ruling 11 confirms the reading. The setting is the `batchSize` option of each batch call.
-4. `draft:52-55`: add rulings 4 and 10. The last write settlement of a failing batch carries the job failure.
-   Each batch request ends with the release when no operation of the attempt stays `dispatched`.
+4. `draft:52-55`: add rulings 4 and 10. From the first stopping observation on, every write settlement of the batch carries the job failure.
+   The batch call still runs to its end. Each batch request ends with the release when no operation of the attempt stays `dispatched`.
 5. `draft:59`: replace its last sentence with ruling 4. The batch answers 200 with outcome `stopped` and the failure.
 6. `draft:60-61`: add the read-back loop of rulings 1, 2, 3, and 7. The worker reads the envelope and the operations through the verification read.
    It starts no GET before `verifyAfter` and aborts the chunk 15 s before the lease ends.
 7. `draft:63-69`: the finish handler handles the `publication` of the final finish like a settlement element (ruling 6).
 8. `draft:85-87`: name the new signatures of the settlement and the read-back claim.
-9. `draft:93-99`: replace the six "Open question" rows of open questions 1 to 6 with the rows below.
-   Delete the `heartbeat_at` row of open question 7, because ruling 7 needs no write.
+9. `draft:93-99`: replace the six "Open question" rows of open questions 1 to 6 with the first six rows below.
+   Replace the `heartbeat_at` row of open question 7 with the last row below. Ruling 7 places that write in the batch claim.
 
-| Operation                                                   | Function                                                                                                                               | Grant in `index.mjs`              |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| Credential envelope for the finish and reconcile read-backs | `cc.read_device_update_verification(text,uuid,uuid,jsonb)`, ruling 1                                                                   | New grant of B2c in the 017 block |
-| Device ID and requested value of one Reconcile operation    | The same function with the `verifyAttempt` of the flow, ruling 2                                                                       | The same grant                    |
-| `unknown` operations in chunks of 250                       | `cc.claim_device_update_verification(text,uuid,jsonb,uuid,integer,integer)`, ruling 3                                                  | `index.mjs:289`, signature of B2c |
-| Job failure of section 7.2 during a batch                   | `cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz,text)` with `p_failure`. Later claims answer `stopped`. | `index.mjs:288`, signature of B2c |
-| Write access `denied`                                       | No worker call. The job failure of ruling 4 is the record, ruling 5.                                                                   | None                              |
-| Publication element of the finish                           | `cc.finish_device_update_job(text,uuid,uuid,text)` returns `publication`, ruling 6                                                     | `index.mjs:291`                   |
+| Operation                                                   | Function                                                                                                                                                                                              | Grant in `index.mjs`              |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Credential envelope for the finish and reconcile read-backs | `cc.read_device_update_verification(text,uuid,uuid,jsonb)`, ruling 1                                                                                                                                  | New grant of B2c in the 017 block |
+| Device ID and requested value of one Reconcile operation    | The same function with the `verifyAttempt` of the flow, ruling 2                                                                                                                                      | The same grant                    |
+| `unknown` operations in chunks of 250                       | `cc.claim_device_update_verification(text,uuid,jsonb,uuid,integer,integer)`, ruling 3                                                                                                                 | `index.mjs:289`, signature of B2c |
+| Job failure of section 7.2 during a batch                   | `cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz,text)` with `p_failure` on every write settlement after the first stopping observation. Later claims answer `stopped`. | `index.mjs:288`, signature of B2c |
+| Write access `denied`                                       | No worker call. The job failure of ruling 4 is the record, ruling 5.                                                                                                                                  | None                              |
+| Publication element of the finish                           | `cc.finish_device_update_job(text,uuid,uuid,text)` returns `publication`, ruling 6                                                                                                                    | `index.mjs:291`                   |
+| `heartbeat_at` on `stopped` and `done` claims               | `cc.claim_device_update_batch(text,uuid,uuid,integer,uuid,text)` writes it, ruling 7. P2 makes no separate call.                                                                                      | `index.mjs:285`                   |
 
 10. `draft:101-102`: replace with this text. "P2 changes no 016 or 017 object and no grant. Card B2c makes the changes of the addendum, and P2 depends on B2c."
 11. `draft:104-111`: point to the section "Lock rules" of this addendum. Keep the worker rule, which is rule W.
@@ -582,27 +696,37 @@ Edits to the draft, by draft line:
     It runs on the mock stack after B6 and the write-access card merge.
 14. `draft:188`: item 26 reads the 1,001 operations through five chunk claims (ruling 3).
 15. `draft:194-204`: change the audit rows of item 28 as follows. Cite the B2c functions at the base of P2.
-    - "Batch claim and `busy` poll": add the stop decision of C4.
-    - "Write recording with the `40P01` retry": add `p_failure` of C3. The lock order stays.
+    - "Batch claim and `busy` poll": add the stop decision and the heartbeat writes of C4. Name the lock orders of its `stopped` and `done` paths.
+    - "Write recording with the `40P01` retry": add `p_failure` of C3 on every write settlement after the first stopping observation. The lock order stays.
     - "Read-back in the batch, the takeover, the finish, and the reconcile flow": name the C1 signature.
       Add the verification read before the GET parts of places 3 and 4.
     - "Graceful stop": the release ends every batch request, not only a stop (ruling 10).
-    - "Job stop of section 7.2": the B2 calls are C3, then C4 in later claims. The lock orders are those of contract C3 and of the stop path in contract C4.
-      Later batches answer `stopped` and send nothing.
+    - "Job stop of section 7.2": the B2 calls are C3 after the first stopping observation and C4 in later claims.
+      The lock orders are those of contract C3 and of the stop path in contract C4. Later batches answer `stopped` and send nothing.
     - "Finish handler": add the chunk claims, the verification read, and the `publication` of C6.
     - "Reconcile handler": the verification read and the chunk claim replace "Open questions 1 to 3".
     - Add a row for the verification read. (a) The global lock, then the connection row. (b) The clock and the held operations again after the credential wait.
       (c) `held` or `not-held`. A credential error settles the chunk `unknown` with `verification-failed`.
 16. `draft:206`: item 29 becomes "P2 adds no migration and no grant. Card B2c adds them."
 17. `draft:214-228`: add reviewer checks. The release ends each batch request. Each chunk ends 15 s before its lease.
-    Each pass reads each operation once. P2 writes no `heartbeat_at`.
+    Each pass reads each operation once. P2 makes no separate heartbeat call.
+    Every write settlement after a stopping observation carries the failure, and so does the settlement that holds the observation.
+18. After `draft:181`, add items A1 and A2. They test Rev-1 F1 and Rev-1 F2 at the worker.
+    - A1, ruling 4. The job holds two batches of two operations, and the worker `batchSize` is 1. Round 1 answers one part of kind `auth`.
+      The worker settles round 1 with the job failure. The test then kills the worker before the round 2 settlement, as item 12 kills it.
+      A second request for the same batch answers `stopped` with that failure and sends no part.
+      The request for the next batch answers `stopped` and sends no part. The finish fences operation 2 after its lease and grace, then reads it back.
+    - A2, ruling 7. A part answer of kind `auth` stops a job of three batches at batch 0. That request releases its lease.
+      Before each later batch request, the test sets `heartbeat_at` 11 minutes back. Each request answers `stopped`.
+      After each request, `cc.recover_device_update_jobs` returns no start for the job.
+19. `draft:183` and `draft:207`: A1 and A2 live in `deployment:postgres-integration`. Item 30 maps them with items 1 to 26.
 
 Handler call order. Each call runs as its own statement (rule W):
 
 - Batch request:
-  1. The batch claim with its envelope.
-  2. The write call with its renewals and round settlements.
-  3. The last write settlement, with the failure of a stop.
+  1. The batch claim with its envelope. Every answer except `busy` and `superseded` writes `heartbeat_at` inside the claim (ruling 7).
+  2. The write call with its renewals and round settlements. After a stopping observation, every write settlement carries the failure.
+  3. One write settlement for any operation that no round settled. A mint failure, a fatal batch error, and an abort leave such operations.
   4. The read-back of places 1 and 2.
   5. The release.
 - Finish request:
