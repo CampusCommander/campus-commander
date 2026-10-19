@@ -147,7 +147,8 @@ export const deviceWriteAccessSchema = z.strictObject({
 export type DeviceWriteAccess = z.infer<typeof deviceWriteAccessSchema>;
 
 /** The exact message of section 4.3 while the state is denied. */
-export const DEVICE_WRITE_ACCESS_DENIED_MESSAGE = '';
+export const DEVICE_WRITE_ACCESS_DENIED_MESSAGE =
+  'Google denied device changes. Add https://www.googleapis.com/auth/admin.directory.device.chromeos to the delegation client in the Google Admin Console.';
 
 /** The message that the client shows for one write-access state. */
 export function deviceWriteAccessMessage(
