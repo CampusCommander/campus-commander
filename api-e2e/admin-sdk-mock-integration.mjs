@@ -184,7 +184,14 @@ async function qualifyWriteAccessProvider(mock) {
       },
     },
   );
-  return JSON.parse(stdout.trim().split('\n').at(-1));
+  const trace = JSON.parse(stdout.trim().split('\n').at(-1));
+  await mkdir('dist/client-review', { recursive: true });
+  await writeFile(
+    'dist/client-review/device-write-access-provider-trace.json',
+    `${JSON.stringify(trace, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  return trace;
 }
 
 /**
