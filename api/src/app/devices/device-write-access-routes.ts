@@ -3,10 +3,11 @@ import type {
   SessionResponse,
 } from '@campus/application-contracts';
 import { DEVICE_WRITE_ACCESS_BUSY_ANSWER } from '@campus/application-contracts';
-import { HttpException } from '@nestjs/common';
+import { HttpException, ServiceUnavailableException } from '@nestjs/common';
 import {
   UNCHECKED_WRITE_ACCESS,
   WriteAccessBusyError,
+  WriteAccessDeadlineError,
   type DeviceWriteAccessContext,
 } from './device-write-access';
 
@@ -63,6 +64,10 @@ export class DeviceWriteAccessRoutes {
           { reason: DEVICE_WRITE_ACCESS_BUSY_ANSWER.reason },
           DEVICE_WRITE_ACCESS_BUSY_ANSWER.status,
         );
+      if (error instanceof WriteAccessDeadlineError)
+        throw new ServiceUnavailableException({
+          reason: 'device-store-unavailable',
+        });
       throw error;
     }
   }

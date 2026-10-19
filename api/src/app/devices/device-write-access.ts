@@ -101,7 +101,6 @@ export type DeviceWriteClientFactory = (
 const listPageSchema = z.object({
   chromeosdevices: z.array(z.unknown()).max(300).optional(),
 });
-const checkTimeoutMilliseconds = 30_000;
 const deniedCodes = ['delegation-not-authorized', 'scope-mismatch'];
 
 /** The check options. Production uses the deadline of the card. */
@@ -114,6 +113,24 @@ function measuredAt(): string {
   return new Date().toISOString();
 }
 
+/** Resolve a promise before the deadline, or reject with the deadline error. */
+function beforeDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) {
+    void work.catch(() => undefined);
+    throw new WriteAccessDeadlineError();
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new WriteAccessDeadlineError()), remaining);
+    timer.unref?.();
+  });
+  void work.catch(() => undefined);
+  return Promise.race([work, expired]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
 /**
  * Read and check the Google write scope. The check mints one token for the write
  * scope alone and lists one device. Only a scope failure denies access.
@@ -121,14 +138,17 @@ function measuredAt(): string {
 export class DeviceWriteAccess {
   private readonly store: DeviceWriteAccessStore;
   private readonly getClient: DeviceWriteClientFactory;
+  private readonly deadlineMilliseconds: number;
 
   constructor(
     store: DeviceWriteAccessStore,
     getClient: DeviceWriteClientFactory = scopedClient,
-    _options: DeviceWriteAccessOptions = {},
+    options: DeviceWriteAccessOptions = {},
   ) {
     this.store = store;
     this.getClient = getClient;
+    this.deadlineMilliseconds =
+      options.deadlineMilliseconds ?? DEVICE_WRITE_ACCESS_DEADLINE_MILLISECONDS;
   }
 
   async read(
@@ -144,7 +164,14 @@ export class DeviceWriteAccess {
   ): Promise<DeviceWriteAccessState> {
     const customerId = googleCustomerIdSchema.parse(context.customerId);
     if (!(await this.store.reserve(context))) throw new WriteAccessBusyError();
-    const credential = await this.store.credential(session, context);
+    // One deadline covers the credential read and every provider request. It
+    // ends before the reservation key expires, so no second check can start
+    // while this one still reads or mints.
+    const deadline = Date.now() + this.deadlineMilliseconds;
+    const credential = await beforeDeadline(
+      this.store.credential(session, context),
+      deadline,
+    );
     if (!credential) {
       await this.store.write(
         context,
@@ -155,36 +182,47 @@ export class DeviceWriteAccess {
     }
     let stage: 'token' | 'read' = 'token';
     let access: DeviceWriteAccessState;
-    try {
-      const client = await this.getClient(
-        credential,
-        DEVICE_WRITE_SCOPE,
-        AbortSignal.timeout(checkTimeoutMilliseconds),
-      );
-      stage = 'read';
-      listPageSchema.parse(
-        (
-          await client.request({
-            url: `https://admin.googleapis.com/admin/directory/v1/customer/${customerId}/devices/chromeos`,
-            method: 'GET',
-            params: { maxResults: 1, fields: 'chromeosdevices(deviceId)' },
-          })
-        ).data ?? {},
-      );
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      // The credential arrived after the deadline, so no token mints.
       access = {
-        state: 'granted',
+        state: 'unavailable',
         scope: DEVICE_WRITE_SCOPE,
-        failure: null,
+        failure: 'network-failure',
         checkedAt: measuredAt(),
       };
-    } catch (error) {
-      const code = failure(error, stage).code;
-      access = {
-        state: deniedCodes.includes(code) ? 'denied' : 'unavailable',
-        scope: DEVICE_WRITE_SCOPE,
-        failure: code,
-        checkedAt: measuredAt(),
-      };
+    } else {
+      try {
+        const client = await this.getClient(
+          credential,
+          DEVICE_WRITE_SCOPE,
+          AbortSignal.timeout(remaining),
+        );
+        stage = 'read';
+        listPageSchema.parse(
+          (
+            await client.request({
+              url: `https://admin.googleapis.com/admin/directory/v1/customer/${customerId}/devices/chromeos`,
+              method: 'GET',
+              params: { maxResults: 1, fields: 'chromeosdevices(deviceId)' },
+            })
+          ).data ?? {},
+        );
+        access = {
+          state: 'granted',
+          scope: DEVICE_WRITE_SCOPE,
+          failure: null,
+          checkedAt: measuredAt(),
+        };
+      } catch (error) {
+        const code = failure(error, stage).code;
+        access = {
+          state: deniedCodes.includes(code) ? 'denied' : 'unavailable',
+          scope: DEVICE_WRITE_SCOPE,
+          failure: code,
+          checkedAt: measuredAt(),
+        };
+      }
     }
     const parsed = deviceWriteAccessSchema.parse(access);
     await this.store.write(context, parsed, GOOGLE_HEALTH_FRESH_SECONDS);
