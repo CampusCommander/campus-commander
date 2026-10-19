@@ -134,7 +134,13 @@ it('a different grid query forgets the opened row and the same query keeps it', 
 it('sends selection requests through the signed-in connection', async () => {
   const request = vi.fn().mockResolvedValue(
     Response.json({
-      selection: { terms: [], added: 0, excluded: 0, selectedCount: 0 },
+      selection: {
+        terms: [],
+        added: 0,
+        excluded: 0,
+        selectedCount: 0,
+        expiredAt: null,
+      },
     }),
   );
   const store = setup(request);
