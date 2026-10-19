@@ -221,6 +221,7 @@ it('shows no link and keeps the copy controls when the latest checks are unreada
     button.textContent?.trim(),
   );
   expect(copy).toContain('Copy required Google scopes');
+  expect(copy).toContain('Copy service account client ID');
   expect(
     details!.querySelector('[aria-label="Required Google capability scopes"]'),
   ).not.toBeNull();
