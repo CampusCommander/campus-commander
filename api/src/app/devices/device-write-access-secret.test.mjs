@@ -52,10 +52,10 @@ const envelopeContext = {
   customerId: customer,
   generation,
 };
-const envelope = new CredentialCipher('test-key', Buffer.from(keySentinel)).seal(
-  delegated,
-  envelopeContext,
-);
+const envelope = new CredentialCipher(
+  'test-key',
+  Buffer.from(keySentinel),
+).seal(delegated, envelopeContext);
 const session = {
   identity: {
     id: '11111111-1111-4111-8111-111111111111',
@@ -204,7 +204,10 @@ test('the real adapter and the response bodies hold no envelope, key, private ke
       configuration,
     );
     const malformed = await settle(() =>
-      createRoutes(new DeviceWriteAccess(unopened)).check(session, 'correlation'),
+      createRoutes(new DeviceWriteAccess(unopened)).check(
+        session,
+        'correlation',
+      ),
     );
     assert.ok(
       malformed.error instanceof ServiceUnavailableException,
