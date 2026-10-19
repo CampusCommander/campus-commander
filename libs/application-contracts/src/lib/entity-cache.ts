@@ -108,3 +108,22 @@ export const entityEventSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('full-sync'), sync: deviceSyncStateSchema }),
 ]);
 export type EntityEvent = z.infer<typeof entityEventSchema>;
+
+/**
+ * The Devices stream events of section 3.1. The server drops the job ID, the batch counters, the
+ * job record, and every failure that the caller cannot see.
+ */
+export const deviceStreamEventSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('entity-batch'),
+    entityType: entityTypeSchema,
+    deviceIds: z.array(deviceId).max(1000),
+    removedIds: z.array(deviceId).max(1000),
+  }),
+  z.strictObject({
+    type: z.literal('job-finished'),
+    failure: deviceSyncFailureSchema.nullable(),
+  }),
+  z.strictObject({ type: z.literal('full-sync'), sync: deviceSyncStateSchema }),
+]);
+export type DeviceStreamEvent = z.infer<typeof deviceStreamEventSchema>;

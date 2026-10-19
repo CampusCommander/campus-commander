@@ -217,3 +217,29 @@ export type JobEvent = z.infer<typeof jobEventSchema>;
 
 export const jobEventsChannel = (customerId: string) =>
   `cc:job-events:${customerId}`;
+
+/** The list answer of section 2.5. `nextCursor` pages the keyset sort. */
+export const jobListSchema = z.strictObject({
+  jobs: z.array(jobSummarySchema),
+  matching: count,
+  nextCursor: z.string().min(1).max(1024).nullable(),
+  observedAt: timestamp,
+});
+export type JobList = z.infer<typeof jobListSchema>;
+
+/** One page of operations of section 2.5. */
+export const jobOperationsPageSchema = z.strictObject({
+  operations: z.array(jobOperationSchema).max(1000),
+  nextCursor: z.string().min(1).max(1024).nullable(),
+});
+export type JobOperationsPage = z.infer<typeof jobOperationsPageSchema>;
+
+/** The requesters answer of section 2.5. */
+export const jobRequestersSchema = z.strictObject({
+  requesters: z.array(jobPersonSchema).max(20),
+});
+export type JobRequesters = z.infer<typeof jobRequestersSchema>;
+
+/** The answer of `POST /api/jobs/activity/seen`. */
+export const jobSeenSchema = z.strictObject({ seenAt: timestamp });
+export type JobSeen = z.infer<typeof jobSeenSchema>;
