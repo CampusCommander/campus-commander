@@ -125,8 +125,13 @@ CREATE TABLE cc.device_update_jobs (
   hold_written_at timestamptz,
   hold_cleaned_at timestamptz,
   manifest_artifact_id text,
-  result_artifact_id text
+  result_artifact_id text,
+  scope_observations integer NOT NULL DEFAULT 0 CHECK(scope_observations>=0),
+  scope_failure text CHECK(scope_failure IS NULL OR scope_failure IN ('delegation-not-authorized','scope-mismatch')),
+  CHECK((scope_observations=0)=(scope_failure IS NULL))
 );
+CREATE INDEX device_update_jobs_scope_observations ON cc.device_update_jobs(job_id)
+  WHERE scope_observations>0;
 
 -- One batch of a write job. The row holds the lease of one attempt.
 CREATE TABLE cc.device_update_batches (
@@ -651,9 +656,10 @@ BEGIN
   IF p_batch IS NULL OR p_batch<0 OR p_batch>=detail.batch_count THEN
     RAISE EXCEPTION 'The device update batch is invalid.' USING ERRCODE='22023';
   END IF;
-  -- Revalidation before dispatch (section 5.6).
-  stopped:=cc.device_update_stop_reason(p_customer,detail.confirmed_by,detail.confirmer_permission_version,
-    job.generation);
+  -- Revalidation before dispatch (section 5.6). A recorded job failure is the first stop reason
+  -- (B2c ruling 4): the job never dispatches again after the settlement that recorded it.
+  stopped:=COALESCE(job.failure,cc.device_update_stop_reason(p_customer,detail.confirmed_by,
+    detail.confirmer_permission_version,job.generation));
   IF stopped IS NULL THEN
     -- S1/R6-2: the batch ownership and its lease eligibility read under the header, before the batch
     -- lock. A duplicate claim answers busy instead of waiting on the held batch row.
@@ -676,7 +682,20 @@ BEGIN
     PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.batch=p_batch AND
         (o.status='pending' OR (o.status='dispatched' AND o.attempt_id=lost))
       ORDER BY o.operation_number FOR UPDATE;
-    IF NOT FOUND THEN RETURN jsonb_build_object('outcome','done'); END IF;
+    IF NOT FOUND THEN
+      -- S1 (B2c ruling 7): the detail row locks after the batch and operation rows. The clock reads
+      -- after that wait, and the token repeats on the locked row, so a call that a wait superseded
+      -- writes nothing.
+      SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+      now_at:=clock_timestamp();
+      IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
+        RETURN jsonb_build_object('outcome','superseded');
+      END IF;
+      -- B2c ruling 7: a done answer proves that this execution still runs the job.
+      UPDATE cc.device_update_jobs SET heartbeat_at=now_at,first_claimed_at=COALESCE(first_claimed_at,now_at)
+      WHERE job_id=p_job;
+      RETURN jsonb_build_object('outcome','done');
+    END IF;
     -- S1 (round 2, F1): the detail row locks after the operation rows. After the batch, operation, and
     -- detail waits, the token and the revalidation repeat before any change or credential read.
     SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
@@ -698,17 +717,22 @@ BEGIN
   IF stopped IS NOT NULL THEN
     -- S1 (round 3, R2-F2): the stop skips every pending operation of the job, so that complete set locks
     -- first, in operation_number order, and no write below waits. After that wait the clock reads again,
-    -- and the token repeats on a fresh read, so a call that the wait superseded changes nothing (S3). A
-    -- stop stays a stop: access that returns during the wait reopens no dispatch (section 5.6). The connection
-    -- row locks last, so the publication insert never waits on it.
+    -- and the token repeats on the locked detail row, so a call that the wait superseded changes nothing
+    -- (S3). A stop stays a stop: access that returns during the wait reopens no dispatch (section 5.6).
+    -- The connection row locks last, so the publication insert never waits on it.
     PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='pending'
       ORDER BY o.operation_number FOR UPDATE;
+    -- S1 (B2c contract C4): the detail row locks after the operation rows and before the connection row.
+    -- After both waits the clock reads again, and the token repeats on the locked detail row.
+    SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
     PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
     now_at:=clock_timestamp();
-    SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
     IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token THEN
       RETURN jsonb_build_object('outcome','superseded');
     END IF;
+    -- B2c ruling 7: the heartbeat and the first claim of a stopped answer prove the execution is live.
+    UPDATE cc.device_update_jobs SET heartbeat_at=now_at,first_claimed_at=COALESCE(first_claimed_at,now_at)
+    WHERE job_id=p_job;
     UPDATE cc.jobs SET failure=COALESCE(failure,stopped) WHERE job_id=p_job;
     PERFORM cc.skip_device_update_pending(p_job,stopped);
     PERFORM cc.refresh_device_update_counters(p_job);
@@ -729,6 +753,10 @@ BEGIN
     'serialNumber',c.serial_number,'baselineValue',c.baseline_value,'requestedValue',c.requested_value)),'[]'::jsonb)
   INTO claim FROM claimed c;
   IF jsonb_array_length(claim)=0 AND jsonb_array_length(readback)=0 THEN
+    -- B2c ruling 7: the detail row is held from the claim path, and the clock reads after its wait. The
+    -- write of a done answer proves that this execution still runs the job.
+    UPDATE cc.device_update_jobs SET heartbeat_at=now_at,first_claimed_at=COALESCE(first_claimed_at,now_at)
+    WHERE job_id=p_job;
     RETURN jsonb_build_object('outcome','done');
   END IF;
   INSERT INTO cc.device_update_batches(job_id,batch,attempt_id,execution_id,lease_expires_at,claimed_at)
@@ -840,8 +868,10 @@ END;
 $$;
 
 -- The fenced recording of one batch, or of one read-back. A fenced result changes nothing.
+-- A write settlement also records the job failure and the scope observation of its results.
 CREATE FUNCTION cc.settle_device_update_operations(p_customer text,p_job uuid,p_token uuid,p_attempt uuid,
-  p_kind text,p_results jsonb,p_observed_at timestamptz) RETURNS jsonb
+  p_kind text,p_results jsonb,p_observed_at timestamptz,p_failure text DEFAULT NULL,
+  p_scope_failure text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; bad integer; provenance text;
   before text; after text; first_batch integer; element jsonb:=NULL; candidates integer[];
@@ -850,6 +880,15 @@ BEGIN
   -- S2 (round 2, F2): a null kind never matches NOT IN, so the kind rejects explicitly before any lock.
   IF p_kind IS NULL OR p_kind NOT IN ('write','read-back') OR jsonb_typeof(p_results) IS DISTINCT FROM 'array' OR
     p_observed_at IS NULL OR p_attempt IS NULL THEN
+    RAISE EXCEPTION 'The settlement is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- S2 (B2c ruling 4): the job failure and the scope failure hold a value of their domain before any
+  -- lock. A read-back settlement records neither, and a scope failure names a job failure.
+  IF p_failure IS NOT NULL AND (NOT cc.job_failure_known(p_failure) OR p_kind='read-back') THEN
+    RAISE EXCEPTION 'The settlement is invalid.' USING ERRCODE='22023';
+  END IF;
+  IF p_scope_failure IS NOT NULL AND (p_scope_failure NOT IN ('delegation-not-authorized','scope-mismatch') OR
+    p_kind='read-back' OR p_failure IS NULL) THEN
     RAISE EXCEPTION 'The settlement is invalid.' USING ERRCODE='22023';
   END IF;
   -- The observation source of each kind: a 2xx write answer (section 7.1) or a read (section 5.7).
@@ -1015,12 +1054,17 @@ BEGIN
     WHERE d.customer_id=p_customer AND d.device_id=m.device_id RETURNING d.device_id
   )
   SELECT (SELECT COALESCE(jsonb_agg(jsonb_build_object('operationNumber',a.operation_number,'deviceId',a.device_id,
-      'status',a.status,'batch',a.batch)),'[]'::jsonb) FROM applied a),
-    (SELECT COALESCE(jsonb_agg(p.device_id),'[]'::jsonb) FROM published p),
-    (SELECT COALESCE(jsonb_agg(m.device_id),'[]'::jsonb) FROM missing m)
+      'status',a.status,'batch',a.batch) ORDER BY a.operation_number),'[]'::jsonb) FROM applied a),
+    (SELECT COALESCE(jsonb_agg(p.device_id ORDER BY p.device_id),'[]'::jsonb) FROM published p),
+    (SELECT COALESCE(jsonb_agg(m.device_id ORDER BY m.device_id),'[]'::jsonb) FROM missing m)
   INTO settled,devices,removed;
   IF jsonb_array_length(settled)=0 THEN
     RETURN jsonb_build_object('outcome','settled','settled',settled,'publication',NULL);
+  END IF;
+  -- S1 (B2c ruling 4): the job failure writes on the header row that this call holds from step 2. The
+  -- write precedes the counters and the job change, so the publication element includes the failure.
+  IF p_failure IS NOT NULL THEN
+    UPDATE cc.jobs SET failure=COALESCE(failure,p_failure) WHERE job_id=p_job;
   END IF;
   SELECT min((s->>'batch')::integer) INTO first_batch FROM jsonb_array_elements(settled) s;
   PERFORM cc.refresh_device_update_counters(p_job);
@@ -1029,15 +1073,22 @@ BEGIN
   ELSE
     after:=before;
   END IF;
-  UPDATE cc.device_update_jobs SET heartbeat_at=now_at WHERE job_id=p_job;
+  -- S1 (B2c ruling 5): the scope observation writes on the detail row that this call holds from step 4.
+  -- One settlement records one observation, so the count and its latest code change together.
+  UPDATE cc.device_update_jobs SET heartbeat_at=now_at,
+    scope_observations=scope_observations+CASE WHEN p_scope_failure IS NULL THEN 0 ELSE 1 END,
+    scope_failure=CASE WHEN p_scope_failure IS NULL THEN scope_failure ELSE p_scope_failure END
+  WHERE job_id=p_job;
   element:=cc.record_job_change(p_job,after IS DISTINCT FROM before,devices,removed,first_batch);
   RETURN jsonb_build_object('outcome','settled','settled',settled,'published',devices,'removed',removed,
     'publication',element);
 END;
 $$;
 
--- One read-back claim of the named unknown operations, or of every unknown operation.
-CREATE FUNCTION cc.claim_device_update_verification(p_customer text,p_job uuid,p_operations jsonb,p_attempt uuid)
+-- One read-back claim of the named unknown operations, or of every unknown operation. A caller may
+-- claim the next chunk after a cursor, with a limit of 1 to 250 operations (B2c ruling 3).
+CREATE FUNCTION cc.claim_device_update_verification(p_customer text,p_job uuid,p_operations jsonb,p_attempt uuid,
+  p_after integer DEFAULT NULL,p_limit integer DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; claimed jsonb:='[]'::jsonb; now_at timestamptz; lease_until timestamptz; candidates integer[];
@@ -1052,6 +1103,10 @@ BEGIN
         THEN (e.value::text)::integer<1 ELSE true END) THEN
     RAISE EXCEPTION 'The read-back claim is invalid.' USING ERRCODE='22023';
   END IF;
+  -- S2 (B2c ruling 3): a negative cursor and a limit outside 1 to 250 reject before any lock.
+  IF (p_after IS NOT NULL AND p_after<0) OR (p_limit IS NOT NULL AND p_limit NOT BETWEEN 1 AND 250) THEN
+    RAISE EXCEPTION 'The read-back claim is invalid.' USING ERRCODE='22023';
+  END IF;
   -- S1: the header row locks first, then the operation rows in operation_number order, and the
   -- clock reads after the header lock. A settlement cannot slip between the fence and the claim.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
@@ -1060,11 +1115,15 @@ BEGIN
   END IF;
   -- S1: the header prefix reads the clock, and eligibility is decided under the header before the
   -- operation locks (round 6, R6-4). A live reservation or a non-unknown operation is not eligible.
+  -- The cursor and the limit pick the chunk: the first p_limit candidates after p_after.
   now_at:=clock_timestamp();
-  SELECT array_agg(o.operation_number ORDER BY o.operation_number) INTO candidates
-  FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='unknown' AND
-    (o.verify_lease_expires_at IS NULL OR o.verify_lease_expires_at<=now_at) AND
-    (p_operations IS NULL OR o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e));
+  SELECT array_agg(n ORDER BY n) INTO candidates FROM (
+    SELECT o.operation_number AS n
+    FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='unknown' AND
+      (o.verify_lease_expires_at IS NULL OR o.verify_lease_expires_at<=now_at) AND
+      (p_after IS NULL OR o.operation_number>p_after) AND
+      (p_operations IS NULL OR o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e))
+    ORDER BY o.operation_number LIMIT p_limit) chunk;
   IF candidates IS NULL THEN
     RETURN claimed;
   END IF;
@@ -1083,9 +1142,65 @@ BEGIN
     RETURNING o.operation_number,o.device_id,o.serial_number,o.baseline_value,o.requested_value,o.verify_after)
   SELECT COALESCE(jsonb_agg(jsonb_build_object('operationNumber',c.operation_number,'deviceId',c.device_id,
     'serialNumber',c.serial_number,'baselineValue',c.baseline_value,'requestedValue',c.requested_value,
-    'verifyAfter',c.verify_after)),'[]'::jsonb)
+    'verifyAfter',c.verify_after) ORDER BY c.operation_number),'[]'::jsonb)
   INTO claimed FROM picked c;
   RETURN claimed;
+END;
+$$;
+
+-- The verification read of one read-back attempt (B2c ruling 1). It returns the envelope of the job
+-- generation beside the listed operations that the attempt holds under a live read-back lease.
+CREATE FUNCTION cc.read_device_update_verification(p_customer text,p_job uuid,p_attempt uuid,p_operations jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; connection cc.google_connection; now_at timestamptz; operations jsonb;
+BEGIN
+  -- S2: every input holds a value of its domain, or the call rejects before its first lock. A null
+  -- input names no operation to hold, so it never answers not-held.
+  IF p_customer IS NULL OR p_job IS NULL OR p_attempt IS NULL OR p_operations IS NULL OR
+    jsonb_typeof(p_operations) IS DISTINCT FROM 'array' OR
+    jsonb_array_length(p_operations) NOT BETWEEN 1 AND 250 OR
+    EXISTS(SELECT 1 FROM jsonb_array_elements(p_operations) e WHERE
+      CASE WHEN jsonb_typeof(e.value)='number' AND pg_input_is_valid(e.value::text,'integer')
+        THEN (e.value::text)::integer<1 ELSE true END) THEN
+    RAISE EXCEPTION 'The verification read is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Rule G: the credential read below reaches the global access lock, so this read takes it first,
+  -- before every row lock.
+  PERFORM pg_advisory_xact_lock(7240173008);
+  -- S1: the header reads without a lock. This call changes no job row.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer;
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+    RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
+  END IF;
+  -- The clock and the held operations read without a lock.
+  now_at:=clock_timestamp();
+  SELECT jsonb_agg(jsonb_build_object('operationNumber',o.operation_number,'deviceId',o.device_id,
+      'serialNumber',o.serial_number,'baselineValue',o.baseline_value,'requestedValue',o.requested_value,
+      'verifyAfter',o.verify_after,'verifyLeaseExpiresAt',o.verify_lease_expires_at) ORDER BY o.operation_number)
+    INTO operations
+  FROM cc.device_update_operations o
+  WHERE o.job_id=p_job AND o.status='unknown' AND o.verify_attempt=p_attempt AND o.verify_lease_expires_at>now_at
+    AND o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e);
+  IF operations IS NULL THEN RETURN jsonb_build_object('outcome','not-held'); END IF;
+  -- The credential read locks the connection row FOR UPDATE and raises the detail of a changed
+  -- generation, a disconnected connection, or a restored credential that needs revalidation.
+  connection:=cc.google_current_generation(p_customer,job.generation);
+  -- The clock reads again after the connection wait, and the held operations repeat on it. A hold
+  -- that lapsed in that wait answers not-held and returns no envelope (open question 4).
+  now_at:=clock_timestamp();
+  SELECT jsonb_agg(jsonb_build_object('operationNumber',o.operation_number,'deviceId',o.device_id,
+      'serialNumber',o.serial_number,'baselineValue',o.baseline_value,'requestedValue',o.requested_value,
+      'verifyAfter',o.verify_after,'verifyLeaseExpiresAt',o.verify_lease_expires_at) ORDER BY o.operation_number)
+    INTO operations
+  FROM cc.device_update_operations o
+  WHERE o.job_id=p_job AND o.status='unknown' AND o.verify_attempt=p_attempt AND o.verify_lease_expires_at>now_at
+    AND o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e);
+  IF operations IS NULL THEN RETURN jsonb_build_object('outcome','not-held'); END IF;
+  RETURN jsonb_build_object('outcome','held','checkedAt',now_at,'generation',connection.generation,
+    'credentialId',connection.credential_id,
+    'envelope',(SELECT g.envelope FROM cc.google_credentials g WHERE g.id=connection.credential_id),
+    'operations',operations);
 END;
 $$;
 
@@ -1138,7 +1253,9 @@ BEGIN
     UPDATE cc.jobs SET failure=COALESCE(failure,p_failure) WHERE job_id=p_job;
   END IF;
   PERFORM cc.fence_device_update_operations(p_job,NULL,NULL,now_at,NULL);
-  PERFORM cc.skip_device_update_pending(p_job,COALESCE(p_failure,'interrupted'));
+  -- B2c ruling 4: the skip reason is the recorded job failure after that update, or interrupted.
+  PERFORM cc.skip_device_update_pending(p_job,
+    COALESCE((SELECT j.failure FROM cc.jobs j WHERE j.job_id=p_job),'interrupted'));
   PERFORM cc.refresh_device_update_counters(p_job);
   PERFORM cc.record_job_change(p_job,false);
   RETURN jsonb_build_object('outcome','ready',
@@ -1150,7 +1267,7 @@ $$;
 CREATE FUNCTION cc.finish_device_update_job(p_customer text,p_job uuid,p_token uuid,p_failure text DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; before text; after text;
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; before text; after text; element jsonb;
 BEGIN
   -- S2 (round 3, eng-lead ruling 2): a failure outside its enumeration rejects before any lock. A null
   -- failure names no failure.
@@ -1201,13 +1318,15 @@ BEGIN
   PERFORM cc.refresh_device_update_counters(p_job);
   after:=cc.device_update_terminal_status(p_job);
   UPDATE cc.jobs SET status=after,finished_at=COALESCE(finished_at,now_at) WHERE job_id=p_job;
-  PERFORM cc.record_job_change(p_job,after IS DISTINCT FROM before);
+  -- B2c ruling 6: the terminal answer carries the element of the publication row that this call records,
+  -- so the worker publishes it at once.
+  element:=cc.record_job_change(p_job,after IS DISTINCT FROM before);
   RETURN jsonb_build_object('jobId',p_job,'status',after,
     'succeeded',(SELECT j.succeeded FROM cc.jobs j WHERE j.job_id=p_job),
     'failed',(SELECT j.failed FROM cc.jobs j WHERE j.job_id=p_job),
     'unknown',(SELECT j.unknown FROM cc.jobs j WHERE j.job_id=p_job),
     'skipped',(SELECT j.skipped FROM cc.jobs j WHERE j.job_id=p_job),
-    'finishedAt',(SELECT j.finished_at FROM cc.jobs j WHERE j.job_id=p_job));
+    'finishedAt',(SELECT j.finished_at FROM cc.jobs j WHERE j.job_id=p_job),'publication',element);
 END;
 $$;
 
@@ -1253,7 +1372,9 @@ BEGIN
     UPDATE cc.jobs SET failure=COALESCE(failure,p_failure) WHERE job_id=p_job;
   END IF;
   PERFORM cc.fence_device_update_operations(p_job,NULL,NULL,now_at,NULL);
-  PERFORM cc.skip_device_update_pending(p_job,COALESCE(p_failure,'interrupted'));
+  -- B2c ruling 4: the skip reason is the recorded job failure after that update, or interrupted.
+  PERFORM cc.skip_device_update_pending(p_job,
+    COALESCE((SELECT j.failure FROM cc.jobs j WHERE j.job_id=p_job),'interrupted'));
   PERFORM cc.refresh_device_update_counters(p_job);
   after:=cc.device_update_terminal_status(p_job);
   UPDATE cc.jobs SET status=after,finished_at=now_at WHERE job_id=p_job;
@@ -1748,8 +1869,9 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.claim_device_update_batch(text,uuid,uuid,integer,uuid,text),
   cc.renew_device_update_batch(text,uuid,uuid,integer,uuid),
   cc.release_device_update_batch(text,uuid,uuid,integer,uuid),
-  cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz),
-  cc.claim_device_update_verification(text,uuid,jsonb,uuid),
+  cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz,text,text),
+  cc.claim_device_update_verification(text,uuid,jsonb,uuid,integer,integer),
+  cc.read_device_update_verification(text,uuid,uuid,jsonb),
   cc.prepare_device_update_finish(text,uuid,uuid,text),cc.finish_device_update_job(text,uuid,uuid,text),
   cc.finalize_device_update_job(text,uuid,text),
   cc.report_device_update_backoff(text,uuid,uuid,integer,uuid,integer),cc.accept_device_update_hold(text),
