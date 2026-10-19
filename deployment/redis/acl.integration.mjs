@@ -89,42 +89,42 @@ test('the worker publishes job events but cannot write the hold key', async () =
     worker = await connect('worker');
     api = await connect('default');
     for (const command of [
-      () => worker.set('cc:job-hold:C01zcarnq:device-update', 'job'),
-      () => worker.del('cc:job-hold:C01zcarnq:device-update'),
+      () => worker.set('cc:job-hold:C0123456:device-update', 'job'),
+      () => worker.del('cc:job-hold:C0123456:device-update'),
     ])
       await assert.rejects(command, /NOPERM/);
     await assert.rejects(
-      () => worker.publish('cc:job-hold:C01zcarnq', 'synthetic'),
+      () => worker.publish('cc:job-hold:C0123456', 'synthetic'),
       /NOPERM/,
     );
     assert.equal(
-      await worker.publish('cc:entity-events:C01zcarnq', 'synthetic'),
+      await worker.publish('cc:entity-events:C0123456', 'synthetic'),
       0,
     );
     assert.equal(
       await worker
-        .publish('cc:job-events:C01zcarnq', 'synthetic')
+        .publish('cc:job-events:C0123456', 'synthetic')
         .catch((error) => error.message),
       0,
       'The worker publishes job events.',
     );
-    assert.equal(await worker.incr('cc:query-gen:device:C01zcarnq'), 1);
+    assert.equal(await worker.incr('cc:query-gen:device:C0123456'), 1);
     assert.equal(
       await api
-        .publish('cc:job-events:C01zcarnq', 'synthetic')
+        .publish('cc:job-events:C0123456', 'synthetic')
         .catch((error) => error.message),
       0,
       'The API publishes job events.',
     );
     assert.equal(
       await api
-        .incr('cc:query-gen:device:C01zcarnq')
+        .incr('cc:query-gen:device:C0123456')
         .catch((error) => error.message),
       2,
       'The API increments the query generation.',
     );
     assert.equal(
-      await api.set('cc:job-hold:C01zcarnq:device-update', 'job', 'EX', 300),
+      await api.set('cc:job-hold:C0123456:device-update', 'job', 'EX', 300),
       'OK',
     );
     process.stdout.write(

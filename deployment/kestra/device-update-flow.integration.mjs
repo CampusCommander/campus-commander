@@ -359,7 +359,7 @@ test('Kestra runs device_update one batch at a time with the section 5.1 retry',
   fixture = await startFixture({ fail: failJob });
   for (const name of flows) await fixture.upload(name);
   const executionId = await fixture.start('device_update', {
-    customerId: 'C01zcarnq',
+    customerId: 'C0123456',
     jobId,
     dispatchToken: randomUUID(),
     batches: JSON.stringify([0, 1, 2]),
@@ -392,7 +392,7 @@ test('Kestra runs device_update one batch at a time with the section 5.1 retry',
   );
   assert.equal(finishes.length, 1);
   assert.equal(finishes[0].body.jobId, jobId);
-  assert.equal(finishes[0].body.customerId, 'C01zcarnq');
+  assert.equal(finishes[0].body.customerId, 'C0123456');
   assert.ok(finishes[0].body.dispatchToken);
   assert.ok(finishes[0].body.correlationId);
   process.stdout.write(
@@ -413,7 +413,7 @@ test('the errors tasks post the finish after a batch fails its retries', async (
   assert.ok(failJob);
   const recordsBefore = (await fixture.records()).length;
   const executionId = await fixture.start('device_update', {
-    customerId: 'C01zcarnq',
+    customerId: 'C0123456',
     jobId: failJob,
     dispatchToken: randomUUID(),
     batches: JSON.stringify([0]),
@@ -453,7 +453,7 @@ test('the reconcile flow posts one request with its inputs', async () => {
   const verifyAttempt = randomUUID();
   const recordsBefore = (await fixture.records()).length;
   const executionId = await fixture.start('device_update_reconcile', {
-    customerId: 'C01zcarnq',
+    customerId: 'C0123456',
     jobId,
     operationNumber: '3',
     verifyAttempt,
@@ -472,7 +472,7 @@ test('the reconcile flow posts one request with its inputs', async () => {
   const allJobId = randomUUID();
   const allBefore = (await fixture.records()).length;
   const allExecution = await fixture.start('device_update_reconcile', {
-    customerId: 'C01zcarnq',
+    customerId: 'C0123456',
     jobId: allJobId,
     operationNumber: 'all',
     correlationId: randomUUID(),

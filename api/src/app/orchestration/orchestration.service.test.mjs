@@ -17,7 +17,7 @@ import esbuild from 'esbuild';
  */
 const repo = fileURLToPath(new URL('../../../../', import.meta.url));
 const identity = {
-  customerId: 'C01zcarnq',
+  customerId: 'C0123456',
   jobId: '11111111-1111-4111-8111-111111111111',
   dispatchToken: '22222222-2222-4222-8222-222222222222',
   correlationId: '33333333-3333-4333-8333-333333333333',
