@@ -1,0 +1,216 @@
+import {
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  ServiceUnavailableException,
+  UseGuards,
+} from '@nestjs/common';
+import type { Response } from 'express';
+import { z } from 'zod';
+import {
+  jobActionSchema,
+  jobDisplayIdSchema,
+  jobEventSchema,
+  jobEventsChannel,
+  jobStatusSchema,
+  type JobEvent,
+} from '@campus/application-contracts';
+import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
+import { AuthService } from '../auth/auth.service';
+import { DeviceEventsService } from '../devices/device-events.service';
+import { streamEvents } from '../devices/device-events';
+import { JobsService } from './jobs.service';
+import { seesEveryJob } from './jobs';
+
+/** A repeated query key or a comma-separated value. */
+const many = <Schema extends z.ZodTypeAny>(schema: Schema) =>
+  z
+    .preprocess(
+      (value) =>
+        value === undefined
+          ? undefined
+          : Array.isArray(value)
+            ? value
+            : String(value).split(','),
+      z.array(schema).max(100),
+    )
+    .optional();
+
+const listQuerySchema = z.strictObject({
+  jobId: jobDisplayIdSchema.optional(),
+  status: many(jobStatusSchema),
+  action: many(jobActionSchema),
+  entityType: many(z.literal('device')),
+  requestedBy: many(z.uuid()),
+  createdFrom: z.iso.datetime({ offset: true }).optional(),
+  createdTo: z.iso.datetime({ offset: true }).optional(),
+  finishedFrom: z.iso.datetime({ offset: true }).optional(),
+  finishedTo: z.iso.datetime({ offset: true }).optional(),
+  cursor: z.string().min(1).max(1024).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+const operationsQuerySchema = z.strictObject({
+  attention: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
+  cursor: z.string().regex(/^\d+$/).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
+
+const requestersQuerySchema = z.strictObject({
+  query: z.string().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(20).optional(),
+});
+
+/** The job channel and its schema. The Jobs stream sends `job-changed` only. */
+const jobListener = {
+  channel: jobEventsChannel,
+  parse: (message: string): JobEvent | null => {
+    try {
+      const parsed = jobEventSchema.safeParse(JSON.parse(message));
+      return parsed.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
+  },
+};
+
+@Controller('api/jobs')
+@UseGuards(AuthGuard)
+export class JobsController {
+  constructor(
+    private readonly jobs: JobsService,
+    private readonly auth: AuthService,
+    private readonly deviceEvents: DeviceEventsService,
+  ) {}
+
+  @Get()
+  async list(@Req() request: AuthenticatedRequest, @Query() query: unknown) {
+    const input = listQuerySchema.parse(query);
+    const customerId = await this.jobs.customer(request.session);
+    return this.jobs.list(
+      request.session,
+      customerId,
+      input,
+      input.cursor,
+      input.limit,
+    );
+  }
+
+  @Get('activity')
+  async activity(@Req() request: AuthenticatedRequest) {
+    const customerId = await this.jobs.customer(request.session);
+    return this.jobs.activity(request.session, customerId);
+  }
+
+  @Post('activity/seen')
+  @HttpCode(200)
+  async seen(@Req() request: AuthenticatedRequest) {
+    await this.jobs.customer(request.session);
+    return this.jobs.seen(request.session);
+  }
+
+  @Get('requesters')
+  async requesters(
+    @Req() request: AuthenticatedRequest,
+    @Query() query: unknown,
+  ) {
+    const input = requestersQuerySchema.parse(query);
+    const customerId = await this.jobs.customer(request.session);
+    return this.jobs.requesters(
+      request.session,
+      customerId,
+      input.query ?? '',
+      input.limit,
+    );
+  }
+
+  /** Server-Sent Events for this customer's visible jobs (section 3.3). */
+  @Get('events')
+  async events(
+    @Req() request: AuthenticatedRequest,
+    @Res() response: Response,
+  ): Promise<void> {
+    const customerId = await this.jobs.customer(request.session);
+    const everyJob = seesEveryJob(request.session, customerId);
+    const started = await streamEvents<JobEvent>(response, {
+      customerId,
+      fanout: this.deviceEvents.fanout,
+      listener: jobListener,
+      begin: () => {
+        response.writeHead(200, {
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-store',
+          'x-accel-buffering': 'no',
+        });
+      },
+      // A ping goes out only while the session and its read actions still hold for this customer.
+      recheck: async () => {
+        try {
+          request.session = await this.auth.authenticate(
+            request.headers.cookie,
+            'identity:read',
+            request.correlationId,
+            { slide: false },
+          );
+          const next = await this.jobs.customer(request.session);
+          return (
+            next === customerId &&
+            seesEveryJob(request.session, customerId) === everyJob
+          );
+        } catch {
+          return false;
+        }
+      },
+      forward: async (event, failed) => {
+        if (failed || event.type !== 'job-changed') return null;
+        if (everyJob) return { event };
+        // The same predicate as every job read decides the event of another person's job.
+        const visible = await this.jobs.visible(
+          request.session,
+          customerId,
+          event.requestedBy,
+        );
+        return visible ? { event } : null;
+      },
+    });
+    if (!started && !response.headersSent)
+      throw new ServiceUnavailableException({ reason: 'events-unavailable' });
+  }
+
+  @Get(':displayId')
+  async detail(
+    @Req() request: AuthenticatedRequest,
+    @Param('displayId') displayId: string,
+  ) {
+    const id = jobDisplayIdSchema.parse(displayId);
+    const customerId = await this.jobs.customer(request.session);
+    return this.jobs.detail(request.session, customerId, id);
+  }
+
+  @Get(':displayId/operations')
+  async operations(
+    @Req() request: AuthenticatedRequest,
+    @Param('displayId') displayId: string,
+    @Query() query: unknown,
+  ) {
+    const input = operationsQuerySchema.parse(query);
+    const id = jobDisplayIdSchema.parse(displayId);
+    const customerId = await this.jobs.customer(request.session);
+    return this.jobs.operations(
+      request.session,
+      customerId,
+      id,
+      input.attention === true,
+      input.cursor,
+      input.limit,
+    );
+  }
+}

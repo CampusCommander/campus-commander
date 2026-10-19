@@ -14,9 +14,16 @@ import { AuthModule } from './auth/auth.module';
 import { ConfigurationModule } from './configuration/configuration.module';
 import { DiagnosticsModule } from './diagnostics/diagnostics.module';
 import { DevicesModule } from './devices/devices.module';
+import { JobsModule } from './jobs/jobs.module';
 
 @Module({
-  imports: [ConfigurationModule, AuthModule, DiagnosticsModule, DevicesModule],
+  imports: [
+    ConfigurationModule,
+    AuthModule,
+    DiagnosticsModule,
+    DevicesModule,
+    JobsModule,
+  ],
   controllers: [AppController, BootstrapController, HealthController],
 })
 export class AppModule {
