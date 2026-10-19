@@ -2,13 +2,14 @@ import { createHash } from 'node:crypto';
 import {
   QUERY_CACHE_MAX_IDS,
   QUERY_CACHE_SECONDS,
-  deviceRecordSchema,
+  entityEntrySchema,
   entityKey,
   freshnessCutoff,
   isStale,
   queryCacheKey,
   queryGenerationKey,
   type DeviceQuery,
+  type DeviceRecord,
   type DeviceRow,
 } from '@campus/application-contracts';
 import type { CacheService } from '../cache/cache.service';
@@ -115,6 +116,10 @@ export class DevicePager {
   ): Promise<{ rows: DeviceRow[]; missing: string[] }> {
     const unique = [...new Set(ids)];
     const found = new Map<string, DeviceRow>();
+    const entries = new Map<
+      string,
+      { version: number; record: DeviceRecord }
+    >();
     let cached: (string | null)[] = [];
     try {
       cached = await cache.getMany(
@@ -127,21 +132,33 @@ export class DevicePager {
       const raw = cached[index];
       if (!raw) return;
       try {
-        const record = deviceRecordSchema.parse(JSON.parse(raw));
-        if (record.deviceId === id)
-          found.set(id, {
-            ...record,
-            stale: isStale('device', record.lastEntitySync, now),
-          });
+        const entry = entityEntrySchema.parse(JSON.parse(raw));
+        if (entry.record.deviceId === id) entries.set(id, entry);
       } catch {
-        // An unreadable record counts as a miss.
+        // An unreadable entry counts as an absent entry.
       }
     });
-    const misses = unique.filter((id) => !found.has(id));
-    if (misses.length) {
+    if (unique.length) {
       const cutoff = freshnessCutoff('device', now).getTime();
-      for (const row of await rows(deviceRowsByIdSql(customerId, misses)))
-        found.set(String(row['device_id']), deviceRow(row, cutoff));
+      for (const row of await rows(
+        deviceRowsByIdSql(
+          customerId,
+          unique.map((id) => ({
+            deviceId: id,
+            version: entries.get(id)?.version ?? null,
+          })),
+        ),
+      )) {
+        const id = String(row['device_id']);
+        const entry = entries.get(id);
+        // Only the current entry version serves its record. Every other ID takes its row.
+        if (entry && String(entry.version) === String(row['entry_version']))
+          found.set(id, {
+            ...entry.record,
+            stale: isStale('device', entry.record.lastEntitySync, now),
+          });
+        else found.set(id, deviceRow(row, cutoff));
+      }
     }
     return {
       rows: unique.flatMap((id) => found.get(id) ?? []),

@@ -11,20 +11,22 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
   await migrator.query('UPDATE cc.google_connection SET active=true');
   const reader = randomUUID();
   const outsider = randomUUID();
+  const otherReader = randomUUID();
   try {
-    for (const id of [reader, outsider])
+    for (const id of [reader, outsider, otherReader])
       await migrator.query(
         'INSERT INTO cc.application_principals(id,issuer,subject,display_name) VALUES($1,$2,$3,$3)',
         [id, issuer, id],
       );
-    await migrator.query(
-      'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
-      [
-        reader,
-        'devices:read',
-        JSON.stringify({ kind: 'district', customerId: customer }),
-      ],
-    );
+    for (const id of [reader, otherReader])
+      await migrator.query(
+        'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
+        [
+          id,
+          'devices:read',
+          JSON.stringify({ kind: 'district', customerId: customer }),
+        ],
+      );
     const result = (sql, values) =>
       runtime.query(sql, values).then((r) => r.rows[0].result);
     const results = [];
@@ -50,6 +52,40 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
         id,
         randomUUID(),
       ]).then((state) => ({ id, state }));
+    const requestAs = (actor, id = randomUUID()) =>
+      result('SELECT cc.request_device_sync($1,1,$2,$3,$4,$5) AS result', [
+        actor,
+        customer,
+        generation,
+        id,
+        randomUUID(),
+      ]).then((state) => ({ id, state }));
+    // to_jsonb reads a missing version column as null, so this helper also runs on the parent revision.
+    const versions = async (deviceId) => {
+      const row = (
+        await migrator.query(
+          `SELECT to_jsonb(d)->>'record_version' AS record_version,
+                  to_jsonb(s)->>'telemetry_version' AS telemetry_version
+             FROM cc.devices d LEFT JOIN cc.device_sync_state s ON s.customer_id=d.customer_id
+            WHERE d.customer_id=$1 AND d.device_id=$2`,
+          [customer, deviceId],
+        )
+      ).rows[0];
+      const number = (value) =>
+        value === null || value === undefined ? null : Number(value);
+      return row
+        ? {
+            record: number(row.record_version),
+            telemetry: number(row.telemetry_version),
+          }
+        : null;
+    };
+    const elementVersion = async (deviceId) => {
+      const current = await versions(deviceId);
+      return current && current.record !== null && current.telemetry !== null
+        ? current.record + current.telemetry
+        : null;
+    };
     const claim = (id, attempt) =>
       result('SELECT cc.claim_device_sync($1,$2,$3) AS result', [
         customer,
@@ -288,24 +324,28 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       ]),
       1,
     );
+    const elementRecord = (element) =>
+      element && typeof element === 'object' && 'record' in element
+        ? element.record
+        : element;
     const records = await result(
       'SELECT cc.read_device_records($1,$2) AS result',
       [customer, JSON.stringify(['d1', 'd2', 'd3'])],
     );
     assert.deepEqual(
-      records.map((record) => record.deviceId),
+      records.map((entry) => elementRecord(entry)?.deviceId),
       ['d1', 'd2'],
       'Removed devices stay out of records.',
     );
-    assert.equal(records[1].model, 'Acer');
-    assert.equal(records[1].battery.status, 'no-report');
-    assert.equal(typeof records[1].lastEntitySync, 'string');
+    assert.equal(elementRecord(records[1])?.model, 'Acer');
+    assert.equal(elementRecord(records[1])?.battery.status, 'no-report');
+    assert.equal(typeof elementRecord(records[1])?.lastEntitySync, 'string');
     const page = await result(
       'SELECT cc.page_device_records($1,$2,$3) AS result',
       [customer, '', 1],
     );
     assert.deepEqual(
-      page.map((record) => record.deviceId),
+      page.map((entry) => elementRecord(entry)?.deviceId),
       ['d1'],
     );
     assert.deepEqual(
@@ -315,7 +355,7 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
           'd1',
           10,
         ])
-      ).map((r) => r.deviceId),
+      ).map((entry) => elementRecord(entry)?.deviceId),
       ['d2'],
     );
     const once = await result(
@@ -536,6 +576,151 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       [reader, customer, next.id, 'orchestration-unavailable'],
     );
     assert.equal(abandonedSync.failure, 'orchestration-unavailable');
+
+    // P3: the entry versions of section 1.8 and the versioned elements of section 5.11.
+    await check(
+      'each device writer raises record_version by one and an unchanged update keeps it',
+      async () => {
+        const id = 'p3ver-a';
+        const unchanged = device(id);
+        const upsert = (entry, at) =>
+          result('SELECT cc.upsert_devices($1,$2,$3,$4) AS result', [
+            customer,
+            JSON.stringify([entry]),
+            at,
+            'list',
+          ]);
+        await upsert(unchanged, '2026-10-01T10:00:00.000Z');
+        const first = (await versions(id)).record;
+        assert.ok(
+          Number.isInteger(first),
+          'The record_version column exists after an upsert.',
+        );
+        await upsert(unchanged, '2026-10-01T10:00:00.000Z');
+        assert.equal(
+          (await versions(id)).record,
+          first,
+          'An update without a change keeps the version.',
+        );
+        await upsert(
+          { ...unchanged, serialNumber: 'SN-changed' },
+          '2026-10-01T11:00:00.000Z',
+        );
+        assert.equal((await versions(id)).record, first + 1);
+        await result('SELECT cc.soft_delete_devices($1,$2) AS result', [
+          customer,
+          JSON.stringify([id]),
+        ]);
+        assert.equal((await versions(id)).record, first + 2);
+        const removed = await result(
+          'SELECT cc.read_device_records($1,$2) AS result',
+          [customer, JSON.stringify([id])],
+        );
+        assert.deepEqual(removed, [], 'A removed device is not an entry.');
+      },
+    );
+
+    await check(
+      'read and page return present entries with the sum of both versions',
+      async () => {
+        const present = 'p3read-a';
+        const removed = 'p3read-b';
+        await result('SELECT cc.upsert_devices($1,$2,$3,$4) AS result', [
+          customer,
+          JSON.stringify([device(present), device(removed)]),
+          '2026-10-02T10:00:00.000Z',
+          'list',
+        ]);
+        await result('SELECT cc.soft_delete_devices($1,$2) AS result', [
+          customer,
+          JSON.stringify([removed]),
+        ]);
+        const records = await result(
+          'SELECT cc.read_device_records($1,$2) AS result',
+          [customer, JSON.stringify([present, removed])],
+        );
+        assert.equal(records.length, 1);
+        assert.equal(
+          records[0].record?.deviceId,
+          present,
+          'The read returns an entry with its record.',
+        );
+        assert.equal('removedAt' in records[0].record, false);
+        assert.equal(records[0].version, await elementVersion(present));
+        const page = await result(
+          'SELECT cc.page_device_records($1,$2,$3) AS result',
+          [customer, 'p3read-', 1000],
+        );
+        assert.deepEqual(
+          page.map((entry) => entry.record?.deviceId),
+          [present],
+          'The page returns an entry with its record.',
+        );
+        assert.equal(page[0].version, await elementVersion(present));
+      },
+    );
+
+    await check(
+      'a telemetry failure raises telemetry_version and a new requester keeps it',
+      async () => {
+        const id = 'p3tel-a';
+        const sync = async (who, telemetry) => {
+          const { id: syncId } = await requestAs(who);
+          const attempt = randomUUID();
+          await claim(syncId, attempt);
+          await stage(syncId, attempt, [device(id)]);
+          return finish(syncId, attempt, null, telemetry);
+        };
+        await sync(reader, null);
+        const before = (await versions(id)).telemetry;
+        assert.ok(
+          Number.isInteger(before),
+          'The telemetry_version column exists after a finish.',
+        );
+        await sync(reader, 'quota');
+        const afterClear = (await versions(id)).telemetry;
+        assert.equal(afterClear, before + 1);
+        const entry = await result(
+          'SELECT cc.read_device_records($1,$2) AS result',
+          [customer, JSON.stringify([id])],
+        );
+        assert.equal(entry[0].version, await elementVersion(id));
+        await sync(otherReader, 'quota');
+        const stored = (
+          await migrator.query(
+            'SELECT telemetry_version,telemetry_failure_requested_by FROM cc.device_sync_state WHERE customer_id=$1',
+            [customer],
+          )
+        ).rows[0];
+        assert.equal(
+          Number(stored.telemetry_version),
+          afterClear,
+          'Only the failure raises the telemetry version.',
+        );
+        assert.equal(stored.telemetry_failure_requested_by, otherReader);
+        await sync(reader, null);
+      },
+    );
+
+    await check(
+      'an explicit telemetry version on a rewrite never lowers the stored version',
+      async () => {
+        const current = (await versions('p3tel-a')).telemetry;
+        assert.ok(
+          Number.isInteger(current),
+          'The telemetry_version column exists before the rewrite.',
+        );
+        await migrator.query(
+          'UPDATE cc.device_sync_state SET telemetry_version=0 WHERE customer_id=$1',
+          [customer],
+        );
+        assert.equal(
+          (await versions('p3tel-a')).telemetry,
+          current,
+          'A rewrite without a telemetry failure keeps the stored version.',
+        );
+      },
+    );
 
     await migrator.query(
       'UPDATE cc.application_principals SET permission_version=2 WHERE id=$1',

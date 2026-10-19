@@ -495,14 +495,31 @@ test('an open group narrows the cached ID list', () => {
   assert.deepEqual(sql.values, ['C0123456', 'Lenovo 100e', 10]);
 });
 
-test('rows by ID include removed devices and bind the IDs as one array', () => {
-  const sql = deviceRowsByIdSql('C0123456', ['d2', 'd1']);
+test('rows by ID carry the entry version and add row columns only for a missing or older entry', () => {
+  const sql = deviceRowsByIdSql('C0123456', [
+    { deviceId: 'd2', version: null },
+    { deviceId: 'd1', version: 9 },
+  ]);
   assert.match(
     sql.text,
-    /,d\.removed_at FROM cc\.device_sync_state s JOIN cc\.devices d ON d\.customer_id=s\.customer_id WHERE s\.customer_id=\$1 AND d\.device_id=ANY\(\$2::text\[\]\)$/,
+    /d\.record_version\+COALESCE\(s\.telemetry_version,1\) AS entry_version/,
+  );
+  assert.ok(
+    sql.text.includes(
+      'unnest($2::text[],$3::bigint[]) AS requested(device_id,version)',
+    ),
+  );
+  assert.ok(
+    sql.text.includes(
+      'requested.version IS NULL OR requested.version IS DISTINCT FROM d.record_version+COALESCE(s.telemetry_version,1)',
+    ),
+  );
+  assert.match(
+    sql.text,
+    /CASE WHEN requested\.version IS NULL OR requested\.version IS DISTINCT FROM .* THEN d\.serial_number END AS serial_number/,
   );
   assert.doesNotMatch(sql.text, /removed_at IS NULL/);
-  assert.deepEqual(sql.values, ['C0123456', ['d2', 'd1']]);
+  assert.deepEqual(sql.values, ['C0123456', ['d2', 'd1'], [null, 9]]);
 });
 
 test('the stale count covers the whole result set below the cutoff', () => {

@@ -214,14 +214,50 @@ export function deviceIdsSql(
   };
 }
 
-/** Rows for known device IDs, removed devices included. A cached list keeps its devices until it expires. */
+/** The current entry version of one device: its record version plus the customer telemetry version. */
+const entryVersionSql = 'd.record_version+COALESCE(s.telemetry_version,1)';
+
+export interface DeviceEntryRef {
+  deviceId: string;
+  version: number | null;
+}
+
+/**
+ * One row for every known device. Each row carries the current entry version.
+ * The record columns stay null when the supplied entry version is current.
+ * A removed device stays in the result, because a cached list holds it until it expires.
+ */
 export function deviceRowsByIdSql(
   customerId: string,
-  ids: readonly string[],
+  entries: readonly DeviceEntryRef[],
 ): SqlStatement {
+  const changed = `requested.version IS NULL OR requested.version IS DISTINCT FROM ${entryVersionSql}`;
+  const conditional = (expression: string, alias: string) =>
+    `CASE WHEN ${changed} THEN ${expression} END AS ${alias}`;
+  const columns = [
+    ['d.serial_number', 'serial_number'],
+    ['d.model', 'model'],
+    ['d.asset_tag', 'asset_tag'],
+    ['d.org_unit_path', 'org_unit_path'],
+    ['d.last_contact', 'last_contact'],
+    ['d.annotated_location', 'annotated_location'],
+    ['d.notes', 'notes'],
+    [batteryStatus, 'battery_status'],
+    ['d.battery_health', 'battery_health'],
+    ['d.battery_capacity_percent', 'battery_capacity_percent'],
+    ['d.battery_reported_at', 'battery_reported_at'],
+    ['d.last_entity_sync', 'last_entity_sync'],
+    ['d.removed_at', 'removed_at'],
+  ]
+    .map(([expression, alias]) => conditional(expression, alias))
+    .join(',');
   return {
-    text: `SELECT ${deviceColumns},d.removed_at ${from} WHERE s.customer_id=$1 AND d.device_id=ANY($2::text[])`,
-    values: [customerId, ids],
+    text: `SELECT d.device_id AS device_id,${entryVersionSql} AS entry_version,${columns} ${from} JOIN unnest($2::text[],$3::bigint[]) AS requested(device_id,version) ON requested.device_id=d.device_id WHERE s.customer_id=$1`,
+    values: [
+      customerId,
+      entries.map((entry) => entry.deviceId),
+      entries.map((entry) => entry.version),
+    ],
   };
 }
 

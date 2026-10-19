@@ -64,6 +64,7 @@ import {
   startMockExitGuard,
 } from './admin-sdk-mock-fixture.mjs';
 import { qualifyAdminSdkMockIntegration } from './admin-sdk-mock-integration.mjs';
+import { measureP3PageLatency } from './p3-page-benchmark.mjs';
 import { chromium, expect } from '@playwright/test';
 import { auditAccessibility as auditPageAccessibility } from './accessibility.mjs';
 import { qualifyInvitationBrowser } from './invitations-browser.mjs';
@@ -977,6 +978,19 @@ test(
             publicOrigin,
           }))
             process.stdout.write(`${check}\n`);
+          // The page budget of design section 5.11. The parent run seeds bare records.
+          if (process.env.CC_P3_PAGE_BENCHMARK === '1') {
+            const record = await measureP3PageLatency({
+              request,
+              ca,
+              publicOrigin,
+              migrator,
+              redis,
+            });
+            process.stdout.write(
+              `p3 page benchmark record: ${JSON.stringify(record)}\n`,
+            );
+          }
           return;
         }
         // A task runner can end this process without its teardown. The

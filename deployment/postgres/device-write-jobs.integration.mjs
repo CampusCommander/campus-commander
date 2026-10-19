@@ -5593,13 +5593,15 @@ export async function qualifyDeviceWriteJobs({
             [customer],
           );
           await closeRunningSyncs();
-          const columns = Object.keys(kept).filter(
-            (column) => column !== 'customer_id',
+          // The version trigger keeps every version on an update. Only an insert restores
+          // a stored version, so the fixture replaces the row instead of updating it.
+          await migrator.query(
+            'DELETE FROM cc.device_sync_state WHERE customer_id=$1',
+            [customer],
           );
           await migrator.query(
-            `UPDATE cc.device_sync_state s SET ${columns.map((column) => `${column}=r.${column}`).join(',')}
-              FROM jsonb_populate_record(NULL::cc.device_sync_state,$2::jsonb) r WHERE s.customer_id=$1`,
-            [customer, JSON.stringify(kept)],
+            'INSERT INTO cc.device_sync_state SELECT * FROM jsonb_populate_record(NULL::cc.device_sync_state,$1::jsonb)',
+            [JSON.stringify(kept)],
           );
         }
         assert.deepEqual(
