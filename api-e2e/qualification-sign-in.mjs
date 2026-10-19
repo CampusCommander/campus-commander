@@ -20,6 +20,8 @@ const pendingNavigationTimeoutMs = 1000;
 const signInNavigationTimeoutMs = 10000;
 const unfinishedSignInNavigation = 'the sign-in navigation did not commit';
 const missingSignInNavigation = 'the sign-in navigation did not start';
+/** The default hook of a step call that needs no preparation or check. */
+const noOperation = async () => undefined;
 
 /** Build the failure of a sign-in navigation that did not commit in time. */
 const signInNavigationFailure = (url, cause) =>
@@ -99,6 +101,50 @@ const settlePendingNavigation = async (page) => {
     waitUntil: 'commit',
     timeout: pendingNavigationTimeoutMs,
   }).catch(() => null);
+};
+
+/**
+ * Start the request watch and the commit watch of a sign-in activation. The
+ * request watch holds the evidence that the sign-in navigation started, and
+ * it records the request time. The commit watch settles on the first
+ * document commit after it starts. Neither watch has a timeout, because the
+ * activation preparation can outlast the commit bound. The caller bounds
+ * both waits.
+ */
+const signInWatches = (page, signInUrl) => {
+  const state = { startedAt: null, navigationStartSeen: false };
+  const started = (
+    page.waitForRequest
+      ? page.waitForRequest(
+          (request) =>
+            request.isNavigationRequest?.() === true &&
+            request.url().startsWith(signInUrl),
+          { timeout: 0 },
+        )
+      : Promise.resolve(true)
+  ).then(
+    () => {
+      state.navigationStartSeen = true;
+      state.startedAt = Date.now();
+      return true;
+    },
+    () => false,
+  );
+  const commit = { settled: false, error: null };
+  const watch = (
+    page.waitForNavigation
+      ? page.waitForNavigation({ waitUntil: 'commit', timeout: 0 })
+      : Promise.resolve()
+  ).then(
+    () => {
+      commit.settled = true;
+    },
+    (error) => {
+      commit.settled = true;
+      commit.error = error;
+    },
+  );
+  return { state, started, commit, watch };
 };
 
 export async function qualificationSignIn(
@@ -197,38 +243,12 @@ export async function qualificationLinkSignIn(
       // preparation can outlast the commit bound and is not a navigation
       // failure. The request watch holds the evidence that the sign-in
       // navigation started.
-      let startedAt = null;
-      let navigationStartSeen = false;
-      const startedWatch = page.waitForRequest
-        ? page.waitForRequest(
-            (request) =>
-              request.isNavigationRequest?.() === true &&
-              request.url().startsWith(signInUrl),
-            { timeout: 0 },
-          )
-        : Promise.resolve(true);
-      const started = startedWatch.then(
-        () => {
-          navigationStartSeen = true;
-          startedAt = Date.now();
-          return true;
-        },
-        () => false,
-      );
-      const commit = { settled: false, error: null };
-      const commitWatch = (
-        page.waitForNavigation
-          ? page.waitForNavigation({ waitUntil: 'commit', timeout: 0 })
-          : Promise.resolve()
-      ).then(
-        () => {
-          commit.settled = true;
-        },
-        (error) => {
-          commit.settled = true;
-          commit.error = error;
-        },
-      );
+      const {
+        state,
+        started,
+        commit,
+        watch: commitWatch,
+      } = signInWatches(page, signInUrl);
       let activationFailure = null;
       await activate(signInLink()).catch((error) => {
         activationFailure = error;
@@ -239,7 +259,7 @@ export async function qualificationLinkSignIn(
       // sign-in navigation is pending is an unfinished navigation, not an
       // absent link. A failed activation needs only a short wait for a start
       // that the failure may have raced.
-      const navigationStarted = navigationStartSeen
+      const navigationStarted = state.navigationStartSeen
         ? true
         : await Promise.race([
             started,
@@ -256,7 +276,8 @@ export async function qualificationLinkSignIn(
       // The activation preparation is not part of the commit bound. The
       // bound starts when the sign-in navigation request arrives.
       if (!commit.settled) {
-        const remaining = signInNavigationTimeoutMs - (Date.now() - startedAt);
+        const remaining =
+          signInNavigationTimeoutMs - (Date.now() - state.startedAt);
         await Promise.race([
           commitWatch,
           delay(Math.max(0, remaining), null, { ref: false }),
@@ -272,6 +293,154 @@ export async function qualificationLinkSignIn(
       await accountHeading().waitFor({ state: 'visible', timeout: 15000 });
     },
   );
+}
+
+/**
+ * Run a sign-in flow whose login response the caller holds.
+ *
+ * The step holds the response of the sign-in route, activates the link,
+ * runs the caller's progress check while the response is held, releases the
+ * response, and bounds the navigation commit from the release. A commit
+ * that does not arrive inside the bound reports a sign-in navigation that
+ * did not commit, and the step recovers the attempt. A retry loads the
+ * origin page first, so a failed attempt that finished the sign-in is
+ * detected before another activation. A failure after the commit keeps its
+ * own class.
+ * `prepare` installs the observation of the current document. `observe`
+ * runs the progress check before the release.
+ */
+export async function qualificationHeldSignIn(
+  page,
+  publicOrigin,
+  evidenceDirectory,
+  label,
+  { prepare = noOperation, observe = noOperation } = {},
+) {
+  const signInUrl = `${publicOrigin}/api/auth/login`;
+  const holdPattern = '**/api/auth/login';
+  const accountHeading = () =>
+    page.getByRole('heading', { name: 'Your account', exact: true });
+  const signInLink = () =>
+    page.getByRole('link', {
+      name: 'Sign in to Campus Commander',
+      exact: true,
+    });
+  // The hold outlives an attempt, because page.unroute waits for a pending
+  // navigation. The retry origin navigation cancels that navigation first.
+  const hold = { release: null };
+  const holdResponse = async (intercepted) => {
+    // A request that races the first attempt passes without a hold.
+    if (!hold.release) {
+      await intercepted.continue();
+      return;
+    }
+    await hold.release.promise;
+    await intercepted.continue();
+  };
+  let run = 0;
+  let completed = false;
+  await page.route(holdPattern, holdResponse);
+  try {
+    const result = await qualificationBrowserStep(
+      page,
+      publicOrigin,
+      evidenceDirectory,
+      `${label}-sign-in`,
+      async () => {
+        run++;
+        if (run > 1) {
+          // The retry starts from the origin page. The bound covers the
+          // document commit, so a slow asset does not fail the retry.
+          await signInNavigation(
+            publicOrigin,
+            page.goto(publicOrigin, {
+              waitUntil: 'commit',
+              timeout: signInNavigationTimeoutMs,
+            }),
+          );
+          // A failed attempt can finish the sign-in on the server. The
+          // origin page then answers with the account view, after its own
+          // readiness budget. The sign-in view is the other possible answer.
+          const view = await firstVisibleView(
+            [
+              ['account', accountHeading()],
+              ['sign-in', signInLink()],
+            ],
+            15000,
+          );
+          if (view === 'account') return;
+        }
+        await prepare();
+        hold.release = Promise.withResolvers();
+        const {
+          state,
+          started,
+          commit,
+          watch: commitWatch,
+        } = signInWatches(page, signInUrl);
+        // The click cannot be awaited before the release, because the hold
+        // keeps its navigation pending.
+        const activation = { failure: null };
+        const click = signInLink()
+          .click({ timeout: signInNavigationTimeoutMs })
+          .then(
+            () => undefined,
+            (error) => {
+              activation.failure = error;
+            },
+          );
+        let navigationStarted = state.navigationStartSeen;
+        if (!navigationStarted) {
+          const outcome = await Promise.race([
+            started,
+            click.then(() =>
+              delay(pendingNavigationTimeoutMs, activation, { ref: false }),
+            ),
+            delay(signInNavigationTimeoutMs, null, { ref: false }),
+          ]);
+          navigationStarted = outcome === true;
+          // A failed activation that started no sign-in navigation keeps
+          // its own failure class.
+          if (!navigationStarted && activation.failure)
+            throw activation.failure;
+        }
+        if (!navigationStarted) throw signInNavigationStartFailure(signInUrl);
+        // The progress check runs while the route holds the response.
+        await observe();
+        // The bound starts at the release, because the hold is not part of
+        // the navigation.
+        const releasedAt = Date.now();
+        hold.release.resolve();
+        if (!commit.settled) {
+          const remaining =
+            signInNavigationTimeoutMs - (Date.now() - releasedAt);
+          await Promise.race([
+            commitWatch,
+            delay(Math.max(0, remaining), null, { ref: false }),
+          ]);
+        }
+        if (!commit.settled) throw signInNavigationFailure(signInUrl);
+        if (commit.error) {
+          if (!isActionTimeout(commit.error)) throw commit.error;
+          throw signInNavigationFailure(signInUrl, commit.error);
+        }
+        await accountHeading().waitFor({ state: 'visible', timeout: 15000 });
+      },
+    );
+    completed = true;
+    return result;
+  } finally {
+    // A failed observation must not leave the hold parked.
+    hold.release?.resolve();
+    if (completed) await page.unroute(holdPattern);
+    else {
+      // A stalled navigation keeps page.unroute pending. Bound the wait.
+      await Promise.race([
+        page.unroute(holdPattern).catch(() => null),
+        delay(pendingNavigationTimeoutMs, null, { ref: false }),
+      ]);
+    }
+  }
 }
 
 /**
