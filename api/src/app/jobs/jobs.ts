@@ -77,10 +77,18 @@ function translate(error: unknown): never {
   );
 }
 
-/** A cursor names the last row of the previous page: its created time and its display ID. */
+/**
+ * A cursor names the last row of the previous page: its created time and its display ID.
+ * The query returns the database time as text with microseconds, so the keyset keeps the
+ * exact precision that PostgreSQL sorts and compares with.
+ */
 export function encodeCursor(row: Record<string, unknown>): string {
+  const exact = row['created_at_cursor'];
   return Buffer.from(
-    JSON.stringify([measuredAt(row['created_at']), String(row['display_id'])]),
+    JSON.stringify([
+      typeof exact === 'string' ? exact : measuredAt(row['created_at']),
+      String(row['display_id']),
+    ]),
   ).toString('base64url');
 }
 
@@ -319,7 +327,8 @@ export class Jobs {
     )[0];
     const pageQuery = build(true);
     const rows = await this.rows(
-      `SELECT j.*, p.display_name AS requested_by_name
+      `SELECT j.*, p.display_name AS requested_by_name,
+        to_char(j.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_cursor
         FROM cc.jobs j JOIN cc.application_principals p ON p.id=j.requested_by
         WHERE ${pageQuery.where}
         ORDER BY j.created_at DESC, j.display_id DESC
@@ -512,13 +521,15 @@ export class Jobs {
         ORDER BY j.finished_at DESC LIMIT ${ACTIVITY_RECENT_ROWS}`,
       [...actor, customerId],
     );
+    // The stored seen time is compared in SQL, so database microseconds decide the answer.
     const attention = (
       await this.rows(
         `SELECT EXISTS(SELECT 1 FROM cc.jobs j WHERE ${visible}
           AND j.finished_at IS NOT NULL
           AND j.status IN ('needs-review','completed-with-errors','failed')
-          AND ($4::timestamptz IS NULL OR j.finished_at>$4)) AS attention`,
-        [...actor, customerId, seenAt],
+          AND j.finished_at > COALESCE((SELECT s.seen_at FROM cc.job_activity_seen s
+            WHERE s.principal_id=$4),'-infinity'::timestamptz)) AS attention`,
+        [...actor, customerId, actor[0]],
       )
     )[0];
     return jobActivitySchema.parse({

@@ -156,6 +156,18 @@ test('a cursor round-trips the created time and the display ID', () => {
   assert.throws(() => decodeCursor('not-a-cursor'), BadRequestException);
 });
 
+test('a cursor keeps the exact database time, not the rounded Date', () => {
+  const cursor = encodeCursor({
+    created_at: new Date('2026-10-06T12:00:00.123Z'),
+    created_at_cursor: '2026-10-06T12:00:00.123900Z',
+    display_id: 'REF-003',
+  });
+  assert.deepEqual(decodeCursor(cursor), {
+    createdAt: '2026-10-06T12:00:00.123900Z',
+    displayId: 'REF-003',
+  });
+});
+
 test('the list applies every filter, the keyset, and the page limit', async () => {
   const db = database([
     [
@@ -353,7 +365,7 @@ test('the activity answer caps each section and derives the window and attention
       [{ now: new Date('2026-10-06T12:00:00.000Z') }],
     ],
     [
-      'FROM cc.job_activity_seen',
+      'SELECT seen_at FROM cc.job_activity_seen WHERE principal_id',
       [{ seen_at: new Date('2026-10-06T10:00:00.000Z') }],
     ],
     [
@@ -398,7 +410,15 @@ test('the activity answer caps each section and derives the window and attention
   const attentionCall = db.calls.find(([text]) =>
     text.includes('AS attention'),
   );
-  assert.equal(attentionCall[1][3], '2026-10-06T10:00:00.000Z');
+  assert.equal(attentionCall[1][3], ACTOR);
+  assert.ok(
+    attentionCall[0].includes('cc.job_activity_seen'),
+    'The attention comparison reads the stored seen time.',
+  );
+  assert.ok(
+    !attentionCall[0].includes('$4::timestamptz IS NULL'),
+    'The rounded wire time never decides attention.',
+  );
 });
 
 test('an empty activity window gives a null next expiry', async () => {
