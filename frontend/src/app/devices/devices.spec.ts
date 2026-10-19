@@ -82,6 +82,9 @@ function setup(options: {
   accessLoading?: boolean;
   accessMessage?: string;
   checking?: boolean;
+  /** Use the real store, so a second activation performs a second read. */
+  realAccess?: boolean;
+  request?: (path: string) => Promise<Response>;
 }) {
   const sync = signal(options.sync);
   const selectionSpec: DeviceSelectionSpec = {
@@ -105,7 +108,7 @@ function setup(options: {
     loading: signal(options.accessLoading ?? false),
     checking,
     message,
-    ensure: vi.fn().mockResolvedValue(access()),
+    load: vi.fn().mockResolvedValue(access()),
     check,
   };
   const actions = new Set(options.actions ?? allActions);
@@ -155,9 +158,12 @@ function setup(options: {
           session: signal(null),
           metadata: signal({ phase: 3 }),
           can: (action: string) => actions.has(action),
+          request: options.request ?? vi.fn(),
         },
       },
-      { provide: DeviceWriteAccessStore, useValue: writeAccess },
+      ...(options.realAccess
+        ? []
+        : [{ provide: DeviceWriteAccessStore, useValue: writeAccess }]),
     ],
   });
   TestBed.overrideComponent(DevicesPage, {
@@ -445,7 +451,7 @@ it('passes the resume of a session to the grid', () => {
 describe('Bulk Actions', () => {
   it('reads the Google write access state when the person can write', () => {
     const { writeAccess } = setup({ sync: ready(), page: counted });
-    expect(writeAccess.ensure).toHaveBeenCalled();
+    expect(writeAccess.load).toHaveBeenCalled();
   });
 
   it('does not read the write access state without devices:write', () => {
@@ -454,7 +460,7 @@ describe('Bulk Actions', () => {
       page: counted,
       actions: allActions.filter((action) => action !== 'devices:write'),
     });
-    expect(writeAccess.ensure).not.toHaveBeenCalled();
+    expect(writeAccess.load).not.toHaveBeenCalled();
   });
 
   it('offers one item, Update device', async () => {
@@ -568,6 +574,19 @@ describe('Bulk Actions', () => {
     });
   });
 
+  it('offers Recheck beside Copy scope when denied', () => {
+    const { element, button, writeAccess } = setup({
+      sync: ready(),
+      page: counted,
+      access: { ...grantedAccess, state: 'denied', failure: 'scope-mismatch' },
+    });
+    expect(element.textContent).toContain(DEVICE_WRITE_ACCESS_DENIED_MESSAGE);
+    expect(button('Copy scope')).toBeDefined();
+    expect(button('Recheck')).toBeDefined();
+    button('Recheck')?.click();
+    expect(writeAccess.check).toHaveBeenCalled();
+  });
+
   it('shows the busy answer after Recheck', async () => {
     const { element, button, writeAccess, fixture } = setup({
       sync: ready(),
@@ -592,5 +611,82 @@ describe('Bulk Actions', () => {
     expect(element.textContent).toContain('Checking Google write access…');
     await openBulk();
     expect(menuItem('Update device')?.disabled).toBe(true);
+  });
+
+  it('reads the access state again when the page activates again', async () => {
+    let state: DeviceWriteAccess['state'] = 'granted';
+    const request = vi.fn(async () =>
+      Response.json({
+        ...grantedAccess,
+        state,
+        failure: state === 'denied' ? 'scope-mismatch' : null,
+      }),
+    );
+    const { fixture } = setup({
+      sync: ready(),
+      page: counted,
+      realAccess: true,
+      request,
+    });
+    const access = TestBed.inject(DeviceWriteAccessStore);
+    await vi.waitFor(() => expect(access.state()).toBe('granted'));
+
+    state = 'denied';
+    fixture.destroy();
+    const second = TestBed.createComponent(DevicesPage);
+    second.detectChanges();
+    await vi.waitFor(() => expect(access.state()).toBe('denied'));
+    second.detectChanges();
+    const element: HTMLElement = second.nativeElement;
+    expect(element.textContent).toContain(DEVICE_WRITE_ACCESS_DENIED_MESSAGE);
+    const names = [...element.querySelectorAll('button')].map((candidate) =>
+      candidate.textContent?.trim(),
+    );
+    expect(names).toContain('Copy scope');
+    expect(names).toContain('Recheck');
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads the access state again after a denial becomes a grant', async () => {
+    let state: DeviceWriteAccess['state'] = 'denied';
+    const request = vi.fn(async () =>
+      Response.json({
+        ...grantedAccess,
+        state,
+        failure: state === 'denied' ? 'scope-mismatch' : null,
+      }),
+    );
+    const { fixture } = setup({
+      sync: ready(),
+      page: counted,
+      realAccess: true,
+      request,
+    });
+    const access = TestBed.inject(DeviceWriteAccessStore);
+    await vi.waitFor(() => expect(access.state()).toBe('denied'));
+
+    state = 'granted';
+    fixture.destroy();
+    const second = TestBed.createComponent(DevicesPage);
+    second.detectChanges();
+    await vi.waitFor(() => expect(access.state()).toBe('granted'));
+    second.detectChanges();
+    const element: HTMLElement = second.nativeElement;
+    expect(element.textContent).not.toContain(
+      DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+    );
+    expect(element.querySelector('#bulk-note')).toBeNull();
+    const bulk = [...element.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === 'Bulk Actions',
+    );
+    bulk?.click();
+    second.detectChanges();
+    await second.whenStable();
+    second.detectChanges();
+    const item = [
+      ...document.querySelectorAll<HTMLButtonElement>('button[mat-menu-item]'),
+    ].find((candidate) => candidate.textContent?.trim() === 'Update device');
+    expect(item?.disabled).toBe(false);
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });

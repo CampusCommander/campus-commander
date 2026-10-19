@@ -12,7 +12,7 @@ const writeGrant: Grant = {
   scope: { kind: 'district', customerId: 'C0123456' },
 };
 
-function run(grants: Grant[], access: unknown) {
+function configure(grants: Grant[], access: unknown) {
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
@@ -29,32 +29,51 @@ function run(grants: Grant[], access: unknown) {
       { provide: DeviceWriteAccessStore, useValue: access },
     ],
   });
+}
+
+function guard() {
   return TestBed.runInInjectionContext(() =>
     deviceUpdateWritable({} as never, {} as never),
   );
 }
 
 it('opens the draft page while write access is granted', async () => {
-  const ensure = vi.fn().mockResolvedValue({ state: 'granted' });
-  expect(await run([writeGrant], { ensure })).toBe(true);
-  expect(ensure).toHaveBeenCalled();
+  const load = vi.fn().mockResolvedValue({ state: 'granted' });
+  configure([writeGrant], { load });
+  expect(await guard()).toBe(true);
+  expect(load).toHaveBeenCalled();
+});
+
+it('asks the store for a fresh answer on every draft entry', async () => {
+  const load = vi
+    .fn()
+    .mockResolvedValueOnce({ state: 'granted' })
+    .mockResolvedValueOnce({ state: 'denied' });
+  configure([writeGrant], { load });
+  expect(await guard()).toBe(true);
+  const second = await guard();
+  expect(second.toString()).toBe('/devices');
+  expect(load).toHaveBeenCalledTimes(2);
 });
 
 it('returns to Devices when Google did not grant device changes', async () => {
-  const ensure = vi.fn().mockResolvedValue({ state: 'denied' });
-  const result = await run([writeGrant], { ensure });
+  const load = vi.fn().mockResolvedValue({ state: 'denied' });
+  configure([writeGrant], { load });
+  const result = await guard();
   expect(result.toString()).toBe('/devices');
 });
 
 it('returns to Devices when the write state cannot be read', async () => {
-  const ensure = vi.fn().mockResolvedValue(null);
-  const result = await run([writeGrant], { ensure });
+  const load = vi.fn().mockResolvedValue(null);
+  configure([writeGrant], { load });
+  const result = await guard();
   expect(result.toString()).toBe('/devices');
 });
 
 it('returns to Devices without the devices:write permission', async () => {
-  const ensure = vi.fn();
-  const result = await run([], { ensure });
+  const load = vi.fn();
+  configure([], { load });
+  const result = await guard();
   expect(result.toString()).toBe('/devices');
-  expect(ensure).not.toHaveBeenCalled();
+  expect(load).not.toHaveBeenCalled();
 });

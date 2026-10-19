@@ -53,14 +53,75 @@ it('reports an unreadable read answer', async () => {
   );
 });
 
-it('shares one read between callers', async () => {
+it('shares one read between concurrent callers and reads again later', async () => {
   const { store, request } = setup(async () =>
     Response.json(granted, { status: 200 }),
   );
-  await Promise.all([store.ensure(), store.ensure()]);
+  await Promise.all([store.load(), store.load()]);
   expect(request).toHaveBeenCalledTimes(1);
-  expect(await store.ensure()).toEqual(granted);
-  expect(request).toHaveBeenCalledTimes(1);
+  expect(await store.load()).toEqual(granted);
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
+it('replaces a granted answer when a later read is denied', async () => {
+  let state: DeviceWriteAccess['state'] = 'granted';
+  const { store, request } = setup(async () =>
+    Response.json({
+      ...granted,
+      state,
+      failure: state === 'denied' ? 'scope-mismatch' : null,
+    }),
+  );
+  expect(await store.load()).toMatchObject({ state: 'granted' });
+  state = 'denied';
+  expect(await store.load()).toMatchObject({ state: 'denied' });
+  expect(store.state()).toBe('denied');
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
+it('returns from denied to granted on a later read', async () => {
+  let state: DeviceWriteAccess['state'] = 'denied';
+  const { store, request } = setup(async () =>
+    Response.json({
+      ...granted,
+      state,
+      failure: state === 'denied' ? 'scope-mismatch' : null,
+    }),
+  );
+  expect(await store.load()).toMatchObject({ state: 'denied' });
+  state = 'granted';
+  expect(await store.load()).toMatchObject({ state: 'granted' });
+  expect(store.state()).toBe('granted');
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
+it('drops a kept grant when a later read fails', async () => {
+  let fail = false;
+  const { store } = setup(async () =>
+    fail
+      ? Response.json({ reason: 'unavailable' }, { status: 503 })
+      : Response.json(granted),
+  );
+  expect(await store.load()).toEqual(granted);
+  fail = true;
+  expect(await store.load()).toBeNull();
+  expect(store.access()).toBeNull();
+  expect(store.message()).toBe('Google write access is unavailable.');
+});
+
+it('drops a kept grant when a later read cannot reach the server', async () => {
+  let fail = false;
+  const { store } = setup(async () => {
+    if (fail) throw new Error('offline');
+    return Response.json(granted);
+  });
+  expect(await store.load()).toEqual(granted);
+  fail = true;
+  expect(await store.load()).toBeNull();
+  expect(store.access()).toBeNull();
+  expect(store.message()).toBe(
+    'Cannot reach Campus Commander. Check Google write access when the connection returns.',
+  );
 });
 
 it('runs the check and keeps its answer', async () => {

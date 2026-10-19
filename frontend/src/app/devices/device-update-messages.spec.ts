@@ -46,7 +46,7 @@ describe('updateDeviceNote', () => {
       }),
     ).toMatchObject({
       text: 'Update device is unavailable while you are offline.',
-      action: 'none',
+      actions: [],
     });
   });
 
@@ -60,7 +60,7 @@ describe('updateDeviceNote', () => {
         }),
       ).toMatchObject({
         text: DEVICE_UPDATE_PERMISSION_MESSAGE,
-        action: 'none',
+        actions: [],
       });
     }
   });
@@ -68,7 +68,7 @@ describe('updateDeviceNote', () => {
   it('asks for a selection before anything else', () => {
     expect(updateDeviceNote({ ...allowed, selectionCount: 0 })).toMatchObject({
       text: 'Select one or more devices to update.',
-      action: 'none',
+      actions: [],
     });
   });
 
@@ -76,7 +76,7 @@ describe('updateDeviceNote', () => {
     expect(updateDeviceNote({ ...allowed, accessLoading: true })).toMatchObject(
       {
         text: 'Checking Google write access…',
-        action: 'none',
+        actions: [],
       },
     );
   });
@@ -84,17 +84,17 @@ describe('updateDeviceNote', () => {
   it('offers Recheck when the state could not be read', () => {
     expect(updateDeviceNote(allowed)).toMatchObject({
       text: 'Campus Commander could not read Google write access.',
-      action: 'recheck',
+      actions: ['recheck'],
       error: true,
     });
   });
 
-  it('shows the scope-named message and a Copy scope action when denied', () => {
+  it('shows the scope-named message with Copy scope and Recheck when denied', () => {
     expect(
       updateDeviceNote({ ...allowed, access: access('denied') }),
     ).toMatchObject({
       text: DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
-      action: 'copy-scope',
+      actions: ['copy-scope', 'recheck'],
       error: true,
     });
   });
@@ -104,7 +104,7 @@ describe('updateDeviceNote', () => {
       updateDeviceNote({ ...allowed, access: access('unchecked') }),
     ).toMatchObject({
       text: 'Campus Commander has not checked Google write access.',
-      action: 'recheck',
+      actions: ['recheck'],
       error: false,
     });
   });
@@ -120,7 +120,7 @@ describe('updateDeviceNote', () => {
       }),
     ).toMatchObject({
       text: 'Google request limit. Wait for the request limit to recover, then retry. Check the Google project quota if failures continue.',
-      action: 'recheck',
+      actions: ['recheck'],
       error: true,
     });
   });
@@ -130,7 +130,7 @@ describe('updateDeviceNote', () => {
       updateDeviceNote({ ...allowed, access: access('unavailable') }),
     ).toMatchObject({
       text: 'Google write access is unavailable.',
-      action: 'recheck',
+      actions: ['recheck'],
     });
   });
 });
