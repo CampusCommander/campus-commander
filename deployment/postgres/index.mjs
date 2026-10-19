@@ -293,6 +293,14 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.report_device_update_backoff(text,uuid,uuid,integer,uuid,integer),
         cc.accept_device_update_hold(text),
         cc.purge_jobs(text,integer) TO ${role}`);
+      // Card B3 creates a frozen preview and its job in one transaction. The API checks the actions
+      // before each write, and the confirmation revalidates them inside its transaction.
+      await client.query(`GRANT INSERT ON cc.device_update_previews, cc.device_update_preview_targets,
+        cc.jobs, cc.device_update_jobs, cc.device_update_operations TO ${role};
+        GRANT UPDATE (job_id) ON cc.device_update_previews TO ${role};
+        GRANT USAGE ON SEQUENCE cc.job_number_upd, cc.preview_number_pv TO ${role};
+        GRANT SELECT (customer_id,generation,credential_id,active) ON cc.google_connection TO ${role};
+        GRANT SELECT (id,delegated_subject) ON cc.google_credentials TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

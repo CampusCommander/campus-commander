@@ -159,8 +159,7 @@ test('the selection contract requires expiredAt as a timestamp or null', () => {
     /expiredAt/,
   );
   assert.throws(
-    () =>
-      deviceSelectionSpecSchema.parse({ ...base, expiredAt: 'yesterday' }),
+    () => deviceSelectionSpecSchema.parse({ ...base, expiredAt: 'yesterday' }),
     /expiredAt/,
   );
 });
@@ -173,8 +172,14 @@ test('a missing bulk-actions grant answers 403 and audits access-denied', async 
       identity: {
         ...session.identity,
         grants: [
-          { action: 'devices:read', scope: { kind: 'district', customerId } },
-          { action: 'devices:write', scope: { kind: 'district', customerId } },
+          {
+            action: 'devices:read',
+            scope: { kind: 'district', customerId: customer },
+          },
+          {
+            action: 'devices:write',
+            scope: { kind: 'district', customerId: customer },
+          },
         ],
       },
     },
@@ -188,7 +193,7 @@ test('a missing bulk-actions grant answers 403 and audits access-denied', async 
       },
       request.session,
       'devices:bulk-actions',
-      { kind: 'district', customerId },
+      { kind: 'district', customerId: customer },
       request.correlationId,
     ),
     (error) => {
@@ -198,19 +203,17 @@ test('a missing bulk-actions grant answers 403 and audits access-denied', async 
     },
   );
   assert.deepEqual(audits, [
-    [
-      'access-denied',
-      request.correlationId,
-      actor,
-      'devices:bulk-actions',
-    ],
+    ['access-denied', request.correlationId, actor, 'devices:bulk-actions'],
   ]);
 });
 
 test('an expired selection answers 409 selection-expired with its expiry time', async () => {
   const changedAt = '2026-10-18T00:00:00.000Z';
   const updates = new DeviceUpdates(
-    { connection: { query: async () => ({ rows: [] }) }, transaction: async () => ({}) },
+    {
+      connection: { query: async () => ({ rows: [] }) },
+      transaction: async () => ({}),
+    },
     {
       get: async () =>
         JSON.stringify({
@@ -241,7 +244,10 @@ test('an expired selection answers 409 selection-expired with its expiry time', 
 
 test('an empty selection answers 422 nothing-selected', async () => {
   const updates = new DeviceUpdates(
-    { connection: { query: async () => ({ rows: [] }) }, transaction: async () => ({}) },
+    {
+      connection: { query: async () => ({ rows: [] }) },
+      transaction: async () => ({}),
+    },
     { get: async () => null },
     { storeJson: async () => 'artifact' },
   );
@@ -331,12 +337,68 @@ test('an artifact failure fails the confirmation', async () => {
     },
   );
   await assert.rejects(
-    updates.confirm(
-      session,
-      current,
-      '33333333-3333-4333-8333-333333333333',
-      { manifestDigest: 'a'.repeat(64), acknowledged: true },
-    ),
+    updates.confirm(session, current, '33333333-3333-4333-8333-333333333333', {
+      manifestDigest: 'a'.repeat(64),
+      acknowledged: true,
+    }),
     /artifact store is unavailable/,
+  );
+});
+test('a selection above the 100,000 cap answers 422 selection-too-large', async () => {
+  const rows = Array.from({ length: 100_001 }, (_, index) => ({
+    device_id: `device-${index}`,
+    serial_number: `SN-${index}`,
+    org_unit_path: '/School',
+    observed_value: null,
+    observed_at: null,
+    removed_at: null,
+  }));
+  const updates = new DeviceUpdates(
+    {
+      connection: { query: async () => ({ rows }) },
+      transaction: async () => {
+        throw new Error('No preview write is allowed.');
+      },
+    },
+    {
+      get: async () =>
+        JSON.stringify({
+          terms: [],
+          groups: [],
+          additions: ['device-1', 'device-2'],
+          exceptions: [],
+          changedAt: new Date().toISOString(),
+        }),
+    },
+    { storeJson: async () => 'unused' },
+  );
+  await assert.rejects(
+    updates.preview(session, current, { ...key, mode: 'clear' }),
+    (error) => {
+      assert.equal(error.getStatus(), 422);
+      assert.equal(error.getResponse().reason, 'selection-too-large');
+      return true;
+    },
+  );
+});
+
+test('an unknown preview answers 404 preview-not-found', async () => {
+  const updates = new DeviceUpdates(
+    {
+      connection: { query: async () => ({ rows: [] }) },
+      transaction: async () => {
+        throw new Error('No write is allowed.');
+      },
+    },
+    { get: async () => null },
+    { storeJson: async () => 'unused' },
+  );
+  await assert.rejects(
+    updates.previewById(session, '33333333-3333-4333-8333-333333333333'),
+    (error) => {
+      assert.equal(error.getStatus(), 404);
+      assert.equal(error.getResponse().reason, 'preview-not-found');
+      return true;
+    },
   );
 });

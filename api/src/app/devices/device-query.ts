@@ -323,6 +323,44 @@ export function selectionCountSql(
   };
 }
 
+/**
+ * Every selected device with the value and stamp of a preview. Filter and group terms skip removed
+ * devices. An explicit addition keeps a removed device, so the preview can exclude it with a reason.
+ */
+export function selectionIdsSql(
+  customerId: string,
+  selection: SelectionState,
+  limit = 100_001,
+): SqlStatement {
+  const values: unknown[] = [customerId];
+  const add = adder(values);
+  const all = (clauses: string[]) =>
+    clauses.length ? `(${clauses.join(' AND ')})` : 'TRUE';
+  const parts = [
+    ...selection.terms.map((term) =>
+      all(['d.removed_at IS NULL', ...predicateClauses(term, add)]),
+    ),
+    ...selection.groups.map((group) =>
+      all([
+        'd.removed_at IS NULL',
+        ...predicateClauses(group.predicates, add),
+        ...groupClauses(group.by, group.route, add),
+      ]),
+    ),
+  ];
+  if (selection.additions.length)
+    parts.push(`d.device_id=ANY(${add(selection.additions)}::text[])`);
+  const chosen = parts.length ? `(${parts.join(' OR ')})` : 'FALSE';
+  const exceptions = selection.exceptions.length
+    ? ` AND NOT d.device_id=ANY(${add(selection.exceptions)}::text[])`
+    : '';
+  values.push(limit);
+  return {
+    text: `SELECT d.device_id,d.serial_number,d.org_unit_path,d.annotated_location,d.last_entity_sync,d.removed_at ${from} WHERE s.customer_id=$1 AND ${chosen}${exceptions} ORDER BY d.device_id LIMIT $${values.length}`,
+    values,
+  };
+}
+
 /** Which of the given devices the selection holds. */
 export function selectedAmongSql(
   customerId: string,

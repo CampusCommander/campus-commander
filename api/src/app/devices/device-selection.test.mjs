@@ -177,8 +177,7 @@ test('the first change after expiry starts from empty and clears the marker', as
 
 test('the selection spec carries the expiry time', () => {
   assert.equal(
-    selectionSpec(emptySelection(), 0, '2026-10-18T12:00:00.000Z')
-      .expiredAt,
+    selectionSpec(emptySelection(), 0, '2026-10-18T12:00:00.000Z').expiredAt,
     '2026-10-18T12:00:00.000Z',
   );
   assert.equal(selectionSpec(emptySelection(), 0).expiredAt, null);
@@ -231,6 +230,7 @@ test('the spec reports terms and counts without device IDs', () => {
       added: 1,
       excluded: 2,
       selectedCount: 95,
+      expiredAt: null,
     },
   );
 });
