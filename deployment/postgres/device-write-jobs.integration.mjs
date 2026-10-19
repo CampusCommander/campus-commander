@@ -263,7 +263,7 @@ export async function qualifyDeviceWriteJobs({
       await admin(
         `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,confirmer_permission_version,
           delegated_subject,batch_size,batch_count)
-        VALUES($1,$2,'annotatedLocation',$3,$4,$5,$6,'spencer@easton-consulting.com',$7,$8)`,
+        VALUES($1,$2,'annotatedLocation',$3,$4,$5,$6,'admin@example.org',$7,$8)`,
         [
           jobId,
           previewId,
