@@ -43,6 +43,25 @@
   align-items: center;
   gap: var(--cc-space-sm);
 }
+.action-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-md);
+  padding: var(--cc-space-md) var(--cc-card-padding);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+}
+.action-note.error {
+  border-inline-start: 4px solid var(--cc-status-error);
+}
+.action-note p {
+  margin: 0;
+}
+.action-note button {
+  flex: none;
+}
 .chip {
   display: inline-flex;
   align-items: center;
