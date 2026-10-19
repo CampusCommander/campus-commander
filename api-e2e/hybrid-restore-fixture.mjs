@@ -8,6 +8,7 @@ import { qualifyHybridRestore } from '../deployment/profiles/hybrid/restore-inte
 import { prepareHybrid } from '../deployment/profiles/hybrid/prepare.mjs';
 import { renderFiles } from '../deployment/profiles/hybrid/render.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
+import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 
 const execute = promisify(execFile);
 const json = async (path) => JSON.parse(await readFile(path, 'utf8'));
@@ -32,6 +33,7 @@ export async function qualifyHybridApplicationRestore({
   page,
   context,
   caFile,
+  evidenceDirectory,
 }) {
   const startedAt = Date.now();
   const sourceConfig = await json(join(sourceRoot, 'runtime', 'profile.json'));
@@ -250,7 +252,16 @@ export async function qualifyHybridApplicationRestore({
         exact: true,
       });
       await expect(login.or(account)).toBeVisible({ timeout: 15000 });
-      if (await login.isVisible()) await login.click();
+      // The sign-in link flow of a restore runs inside the step, so the step
+      // recovers a navigation that the restore leaves pending. A settled
+      // session skips the flow.
+      if (await login.isVisible())
+        await qualificationLinkSignIn(
+          page,
+          publicOrigin,
+          evidenceDirectory,
+          'hybrid-restore',
+        );
       await expect(account).toBeVisible({ timeout: 15000 });
     }
     if (restoreRoot) await rm(restoreRoot, { recursive: true, force: true });

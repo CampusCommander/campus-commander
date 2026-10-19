@@ -965,6 +965,7 @@ process.exit(result.status??1);
               page,
               publicOrigin,
               provider,
+              evidenceDirectory,
               verifyRecipientAccess: async (input) => {
                 recipientAccessChecks.push(
                   ...(await verifyHybridRecipientAccess(

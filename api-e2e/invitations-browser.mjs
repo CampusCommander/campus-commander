@@ -6,6 +6,7 @@ import { expect } from '@playwright/test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { qualifyPlatformAccessApi } from './platform-access-api.mjs';
 import { qualifyPlatformAccessBrowser } from './platform-access-browser.mjs';
+import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 
 export async function qualifyInvitationBrowser({
   browser,
@@ -204,12 +205,12 @@ export async function qualifyInvitationBrowser({
       ),
     ).toBeVisible();
     setSubject('invited-platform-user');
-    await recipientPage
-      .getByRole('link', { name: 'Sign in to Campus Commander', exact: true })
-      .click();
-    await expect(
-      recipientPage.getByRole('heading', { name: 'Your account', exact: true }),
-    ).toBeVisible({ timeout: 15000 });
+    await qualificationLinkSignIn(
+      recipientPage,
+      publicOrigin,
+      evidenceDirectory,
+      'invitation-recipient',
+    );
     const session = await (
       await recipient.request.get(`${publicOrigin}/api/auth/session`)
     ).json();

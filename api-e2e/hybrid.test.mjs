@@ -215,6 +215,7 @@ test(
                     ...fixture,
                     ...browser,
                     caFile: certificate,
+                    evidenceDirectory: 'dist/phase-2-evidence',
                   });
                   await mkdir('dist/phase-2-evidence', { recursive: true });
                   await writeFile(
