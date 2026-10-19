@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ForbiddenException, HttpException } from '@nestjs/common';
-import { WriteAccessBusyError } from './device-write-access.ts';
+import {
+  ForbiddenException,
+  HttpException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import {
+  WriteAccessBusyError,
+  WriteAccessDeadlineError,
+} from './device-write-access.ts';
 import { DeviceWriteAccessRoutes } from './device-write-access-routes.ts';
 
 const customer = 'C0123456';
@@ -205,4 +212,27 @@ test('a repeat check inside the interval answers 429 busy', async () => {
   assert.deepEqual(check.error.getResponse(), { reason: 'busy' });
   assert.equal(calls.connection.length, 2, 'The busy check authorized first.');
   assert.deepEqual(calls.read, [connected]);
+});
+
+test('a check that reaches its deadline answers 503 without a credential', async () => {
+  const { routes, calls } = createRoutes({
+    check: async () => {
+      throw new WriteAccessDeadlineError();
+    },
+  });
+  const check = await settle(() => routes.check(session, correlationId));
+  assert.equal(check.value, undefined, 'A deadline answers no projection.');
+  assert.ok(
+    check.error instanceof ServiceUnavailableException,
+    `A deadline answers 503: ${check.error}`,
+  );
+  assert.equal(check.error.getStatus(), 503);
+  assert.deepEqual(check.error.getResponse(), {
+    reason: 'device-store-unavailable',
+  });
+  assert.equal(
+    calls.connection.length,
+    1,
+    'The deadline check authorized first.',
+  );
 });

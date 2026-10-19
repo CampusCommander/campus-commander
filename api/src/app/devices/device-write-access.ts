@@ -29,11 +29,28 @@ export const UNCHECKED_WRITE_ACCESS: DeviceWriteAccessState = Object.freeze({
 /** The minimum interval between two checks of one customer and generation. */
 export const DEVICE_WRITE_ACCESS_INTERVAL_SECONDS = 30;
 
+/** The margin that ends a running check before its reservation expires. */
+export const DEVICE_WRITE_ACCESS_DEADLINE_MARGIN_SECONDS = 5;
+
+/** The overall deadline of one check, from its reservation. */
+export const DEVICE_WRITE_ACCESS_DEADLINE_MILLISECONDS =
+  (DEVICE_WRITE_ACCESS_INTERVAL_SECONDS -
+    DEVICE_WRITE_ACCESS_DEADLINE_MARGIN_SECONDS) *
+  1000;
+
 /** A check that arrives inside the interval of the previous check. */
 export class WriteAccessBusyError extends Error {
   constructor() {
     super('A write access check is already running.');
     this.name = 'WriteAccessBusyError';
+  }
+}
+
+/** A check that reached its deadline before the credential arrived. */
+export class WriteAccessDeadlineError extends Error {
+  constructor() {
+    super('The write access check reached its deadline.');
+    this.name = 'WriteAccessDeadlineError';
   }
 }
 
@@ -87,6 +104,12 @@ const listPageSchema = z.object({
 const checkTimeoutMilliseconds = 30_000;
 const deniedCodes = ['delegation-not-authorized', 'scope-mismatch'];
 
+/** The check options. Production uses the deadline of the card. */
+export interface DeviceWriteAccessOptions {
+  /** The overall deadline of one check, from its reservation. */
+  deadlineMilliseconds?: number;
+}
+
 function measuredAt(): string {
   return new Date().toISOString();
 }
@@ -102,6 +125,7 @@ export class DeviceWriteAccess {
   constructor(
     store: DeviceWriteAccessStore,
     getClient: DeviceWriteClientFactory = scopedClient,
+    _options: DeviceWriteAccessOptions = {},
   ) {
     this.store = store;
     this.getClient = getClient;

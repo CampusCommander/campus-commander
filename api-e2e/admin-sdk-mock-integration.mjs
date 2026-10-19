@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import { setTimeout as delay } from 'node:timers/promises';
+import { promisify } from 'node:util';
 import { MOCK_SCOPES, mockExitedError } from './admin-sdk-mock-fixture.mjs';
 import { GOOGLE_SETUP_SCOPES } from '../libs/application-contracts/src/lib/google-capabilities.ts';
 import {
@@ -154,6 +156,35 @@ async function reviewSignIn({ request, ca, publicOrigin }) {
     `The review sign-in returned no session: ${finish.status} ${String(finish.headers.location)}`,
   );
   return sessionCookie;
+}
+
+/**
+ * B6 C4: run the real scoped client and the real write-access check against the
+ * mock, with a recording transport at the provider request bound. The probe
+ * asserts the issued scope set and every Directory request.
+ */
+async function qualifyWriteAccessProvider(mock) {
+  const { stdout } = await promisify(execFile)(
+    process.execPath,
+    [
+      '--import',
+      './libs/application-contracts/test-register.mjs',
+      'api-e2e/device-write-access-provider-probe.mjs',
+    ],
+    {
+      cwd: process.cwd(),
+      timeout: 120_000,
+      env: {
+        ...process.env,
+        CC_PROBE_CA: mock.caFile,
+        CC_PROBE_PORT: String(mock.googlePort),
+        CC_PROBE_CUSTOMER: mock.customerId,
+        CC_PROBE_KEY: mock.keyFile,
+        CC_PROBE_SUBJECT: mock.adminEmail,
+      },
+    },
+  );
+  return JSON.parse(stdout.trim().split('\n').at(-1));
 }
 
 /**
@@ -547,6 +578,15 @@ async function runAdminSdkMockIntegration({
     'the check recovers after the list fault clears',
   );
 
+  // C4: the real scoped client records one write-scope token, one
+  // introspection, and one Directory GET with maxResults=1 against the mock.
+  const providerTrace = await qualifyWriteAccessProvider(mock);
+  assert.equal(
+    providerTrace.result.state,
+    'granted',
+    'the provider probe grants the write scope',
+  );
+
   const quota = await mock.quota();
   const record = {
     tier: mock.tier,
@@ -576,6 +616,7 @@ async function runAdminSdkMockIntegration({
     `Refresh all publishes ${state.deviceCount} devices in ${syncSeconds.toFixed(1)} seconds: pass`,
     `the published count equals the mock count and a device battery class matches the mock telemetry: pass`,
     'the write scope check lists one device for the mock administrator and sends no write: pass',
+    'the provider probe mints one write-scope token and sends one GET with maxResults=1 to the mock: pass',
     'removing the write scope denies access, and a delegation grant through the mock control restores granted: pass',
     'a revoked delegation denies access, and a 403 on the list reads unavailable with permission-denied: pass',
   ];

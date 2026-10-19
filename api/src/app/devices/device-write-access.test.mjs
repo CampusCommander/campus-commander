@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
   GOOGLE_HEALTH_FRESH_SECONDS,
@@ -9,9 +10,12 @@ import {
 } from '@campus/application-contracts';
 import { GoogleConnectionError } from '@campus/google-connection';
 import {
+  DEVICE_WRITE_ACCESS_DEADLINE_MARGIN_SECONDS,
+  DEVICE_WRITE_ACCESS_DEADLINE_MILLISECONDS,
   DEVICE_WRITE_ACCESS_INTERVAL_SECONDS,
   DeviceWriteAccess,
   WriteAccessBusyError,
+  WriteAccessDeadlineError,
 } from './device-write-access.ts';
 
 const writeScope =
@@ -81,6 +85,12 @@ function createClient({ data = {}, error, mintError } = {}) {
     },
   };
 }
+
+const settle = (call) =>
+  call().then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
 
 const exactMessage =
   'Google denied device changes. Add https://www.googleapis.com/auth/admin.directory.device.chromeos to the delegation client in the Google Admin Console.';
@@ -503,4 +513,129 @@ test('no check writes a secret to the process output', async () => {
       false,
       `The process output holds no ${secret}.`,
     );
+});
+
+test('a check that reaches its deadline during the credential read mints nothing', async () => {
+  let reads = 0;
+  const store = createStore({
+    credential: async () => {
+      reads += 1;
+      // The read is slower than the deadline of this test.
+      await delay(200);
+      return credential;
+    },
+  });
+  const fake = createClient();
+  const access = new DeviceWriteAccess(store, fake.factory, {
+    deadlineMilliseconds: 40,
+  });
+  const started = Date.now();
+  const answer = await settle(() => access.check(session, context));
+  const elapsed = Date.now() - started;
+  assert.ok(
+    answer.error instanceof WriteAccessDeadlineError,
+    `A check at its deadline rejects: ${answer.error}`,
+  );
+  assert.ok(
+    elapsed < 180,
+    `The check ends at its deadline, not after the credential read: ${elapsed} ms`,
+  );
+  assert.equal(reads, 1, 'The check reads the credential once.');
+  assert.equal(
+    fake.calls.length,
+    0,
+    'The check mints nothing after the deadline.',
+  );
+});
+
+test('a slow credential read and a slow provider end at the deadline, and the next check runs alone', async () => {
+  const interval = 250;
+  const deadline = 120;
+  const started = Date.now();
+  const expiry = new Map();
+  const events = [];
+  let credentialReads = 0;
+  let reading = 0;
+  let maxReading = 0;
+  let mints = 0;
+  let minting = 0;
+  let maxMinting = 0;
+  const store = createStore({
+    reserve: async (target) => {
+      if ((expiry.get(target.customerId) ?? -1) > Date.now()) return false;
+      expiry.set(target.customerId, Date.now() + interval);
+      events.push({ event: 'reserve', at: Date.now() - started });
+      return true;
+    },
+    credential: async () => {
+      credentialReads += 1;
+      reading += 1;
+      maxReading = Math.max(maxReading, reading);
+      events.push({
+        event: `read-${credentialReads}-start`,
+        at: Date.now() - started,
+      });
+      // A slow credential read that still fits inside the deadline.
+      await delay(30);
+      reading -= 1;
+      events.push({
+        event: `read-${credentialReads}-end`,
+        at: Date.now() - started,
+      });
+      return credential;
+    },
+  });
+  const factory = async (_received, _scope, signal) => {
+    const ordinal = ++mints;
+    minting += 1;
+    maxMinting = Math.max(maxMinting, minting);
+    events.push({ event: `mint-${ordinal}-start`, at: Date.now() - started });
+    try {
+      if (ordinal === 1) {
+        // The first token exchange hangs until the deadline aborts it.
+        await new Promise((_resolve, reject) => {
+          if (signal.aborted) reject(signal.reason);
+          else
+            signal.addEventListener('abort', () => reject(signal.reason), {
+              once: true,
+            });
+        });
+      }
+    } finally {
+      minting -= 1;
+      events.push({ event: `mint-${ordinal}-end`, at: Date.now() - started });
+    }
+    return { request: async () => ({ data: {} }) };
+  };
+  const access = new DeviceWriteAccess(store, factory, {
+    deadlineMilliseconds: deadline,
+  });
+  const first = await access.check(session, context);
+  const firstElapsed = Date.now() - started;
+  assert.equal(first.state, 'unavailable');
+  assert.equal(first.failure, 'network-failure');
+  assert.ok(
+    firstElapsed >= deadline - 15 && firstElapsed < deadline + 90,
+    `The first check ends at its deadline: ${firstElapsed} ms`,
+  );
+  await delay(interval - firstElapsed + 20);
+  const second = await access.check(session, context);
+  assert.equal(second.state, 'granted');
+  assert.equal(credentialReads, 2, 'The two checks read the credential.');
+  assert.equal(mints, 2, 'The two checks mint one token each.');
+  assert.equal(maxReading, 1, 'At no time do two checks read the credential.');
+  assert.equal(maxMinting, 1, 'At no time do two checks mint.');
+  // The first read and mint end before the second check starts.
+  const firstMintEnd = events.find((entry) => entry.event === 'mint-1-end').at;
+  const secondStart = events.find((entry) => entry.event === 'read-2-start').at;
+  assert.ok(
+    firstMintEnd < secondStart,
+    `The first check ends before the second starts: ${firstMintEnd} < ${secondStart}`,
+  );
+});
+
+test('the production deadline ends five seconds before the interval', () => {
+  assert.equal(DEVICE_WRITE_ACCESS_INTERVAL_SECONDS, 30);
+  assert.equal(DEVICE_WRITE_ACCESS_DEADLINE_MARGIN_SECONDS, 5);
+  assert.equal(DEVICE_WRITE_ACCESS_DEADLINE_MILLISECONDS, 25_000);
 });
