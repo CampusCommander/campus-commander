@@ -12,6 +12,6 @@ export const deviceUpdateWritable: CanActivateFn = async () => {
     .session()
     ?.identity.grants.some((grant) => grant.action === 'devices:write');
   if (!permitted) return router.parseUrl('/devices');
-  const state = await access.ensure();
+  const state = await access.load();
   return state?.state === 'granted' || router.parseUrl('/devices');
 };

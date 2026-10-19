@@ -148,9 +148,10 @@
   @if (note(); as availability) {
   <div class="action-note" [class.error]="availability.error">
     <p id="bulk-note">{{ availability.text }}</p>
-    @if (availability.action === 'copy-scope') {
+    @for (action of availability.actions; track action) { @if (action ===
+    'copy-scope') {
     <button mat-button type="button" (click)="copyScope()">Copy scope</button>
-    } @else if (availability.action === 'recheck') {
+    } @else if (action === 'recheck') {
     <button
       mat-button
       type="button"
@@ -159,7 +160,7 @@
     >
       {{ writeAccess.checking() ? 'Checking…' : 'Recheck' }}
     </button>
-    } @if (writeAccess.checking()) {
+    } } @if (writeAccess.checking()) {
     <p role="status">Checking Google write access…</p>
     } @if (writeAccess.message(); as message) {
     <p role="status">{{ message }}</p>

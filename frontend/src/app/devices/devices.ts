@@ -154,7 +154,7 @@ export class DevicesPage implements OnInit, OnDestroy {
       untracked(() => void this.store.loadOrgUnits());
     });
     effect(() => {
-      if (this.canWrite()) untracked(() => void this.writeAccess.ensure());
+      if (this.canWrite()) untracked(() => void this.writeAccess.load());
     });
   }
 

@@ -44,12 +44,13 @@ export function changedFieldsText(value: number): string {
   return `${value} changed ${value === 1 ? 'field' : 'fields'}`;
 }
 
-export type UpdateDeviceNoteAction = 'none' | 'copy-scope' | 'recheck';
+export type UpdateDeviceNoteAction = 'copy-scope' | 'recheck';
 
 /** What the Devices page shows beside Bulk Actions while Update device is disabled. */
 export interface UpdateDeviceNote {
   text: string;
-  action: UpdateDeviceNoteAction;
+  /** The recovery controls, in display order. */
+  actions: UpdateDeviceNoteAction[];
   /** The state needs recovery, not only a different selection. */
   error: boolean;
 }
@@ -82,53 +83,54 @@ export function updateDeviceNote(
   if (availability.offline)
     return {
       text: 'Update device is unavailable while you are offline.',
-      action: 'none',
+      actions: [],
       error: false,
     };
   if (!availability.canRead || !availability.canWrite || !availability.canBulk)
     return {
       text: DEVICE_UPDATE_PERMISSION_MESSAGE,
-      action: 'none',
+      actions: [],
       error: false,
     };
   if (availability.selectionCount === 0)
     return {
       text: 'Select one or more devices to update.',
-      action: 'none',
+      actions: [],
+      error: false,
+    };
+  // A read in flight is the current answer; a retained state is not reused.
+  if (availability.accessLoading)
+    return {
+      text: 'Checking Google write access…',
+      actions: [],
       error: false,
     };
   const access = availability.access;
   if (!access)
-    return availability.accessLoading
-      ? {
-          text: 'Checking Google write access…',
-          action: 'none',
-          error: false,
-        }
-      : {
-          text: 'Campus Commander could not read Google write access.',
-          action: 'recheck',
-          error: true,
-        };
+    return {
+      text: 'Campus Commander could not read Google write access.',
+      actions: ['recheck'],
+      error: true,
+    };
   switch (access.state) {
     case 'granted':
       return null;
     case 'denied':
       return {
         text: DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
-        action: 'copy-scope',
+        actions: ['copy-scope', 'recheck'],
         error: true,
       };
     case 'unchecked':
       return {
         text: 'Campus Commander has not checked Google write access.',
-        action: 'recheck',
+        actions: ['recheck'],
         error: false,
       };
     case 'unavailable':
       return {
         text: accessFailureText(access.failure),
-        action: 'recheck',
+        actions: ['recheck'],
         error: true,
       };
   }

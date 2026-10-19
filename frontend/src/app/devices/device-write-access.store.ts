@@ -18,7 +18,11 @@ export class DeviceWriteAccessStore {
   readonly state = computed(() => this.access()?.state ?? null);
   private inFlight: Promise<DeviceWriteAccess | null> | null = null;
 
-  /** Read the state once. A second call while the read runs shares its answer. */
+  /**
+   * Read the current state. Each activation reads again, so a changed grant is
+   * visible without a reload (design 2.7, 4.3). A second call while the read runs
+   * shares its answer. A failed read leaves no usable state.
+   */
   async load(): Promise<DeviceWriteAccess | null> {
     if (this.inFlight) return this.inFlight;
     this.loading.set(true);
@@ -29,15 +33,11 @@ export class DeviceWriteAccessStore {
     return answer;
   }
 
-  /** The state when it is already known, or a new read. */
-  async ensure(): Promise<DeviceWriteAccess | null> {
-    return this.access() ?? (await this.load());
-  }
-
   private async read(): Promise<DeviceWriteAccess | null> {
     try {
       const response = await this.auth.request('/api/devices/updates/access');
       if (!response.ok) {
+        this.access.set(null);
         this.message.set(
           response.status === 403
             ? 'You do not have permission to change devices.'
@@ -47,6 +47,7 @@ export class DeviceWriteAccessStore {
       }
       const access = deviceWriteAccessSchema.safeParse(await response.json());
       if (!access.success) {
+        this.access.set(null);
         this.message.set(
           'The Google write access answer was not readable. Check it again.',
         );
@@ -56,6 +57,7 @@ export class DeviceWriteAccessStore {
       this.access.set(access.data);
       return access.data;
     } catch {
+      this.access.set(null);
       this.message.set(
         'Cannot reach Campus Commander. Check Google write access when the connection returns.',
       );
