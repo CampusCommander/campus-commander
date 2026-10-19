@@ -5,7 +5,6 @@ import {
   ViewChild,
   afterNextRender,
   Injector,
-  computed,
   inject,
   effect,
 } from '@angular/core';
@@ -14,12 +13,8 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { GoogleHealthStore } from '../google-connection/health.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import {
-  GOOGLE_CAPABILITIES,
   GOOGLE_CUSTOMER_SCOPES,
-  delegationLink,
-  delegationLinkScopes,
-  type GoogleHealthCapability,
-  type GoogleHealthFailure,
+  GoogleHealthCapability,
 } from '@campus/application-contracts';
 import { DatePipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
@@ -36,56 +31,7 @@ export class Diagnostics {
   protected readonly google = inject(GoogleHealthStore);
   protected readonly connection = inject(ConnectionStore);
   protected readonly googleScopes = GOOGLE_CUSTOMER_SCOPES;
-  /**
-   * A verified scope belongs to a capability whose latest check reports
-   * `scopeVerified`. A link keeps every verified scope.
-   */
-  private readonly verifiedScopes = computed(() => {
-    const scopes: string[] = [];
-    for (const item of this.google.health()?.capabilities ?? []) {
-      if (!item.scopeVerified) continue;
-      const capability = GOOGLE_CAPABILITIES.find(
-        (entry) => entry.id === item.capability,
-      );
-      if (capability) scopes.push(capability.scope);
-    }
-    return scopes;
-  });
   private readonly destroy = inject(DestroyRef);
-  protected namesDelegation(failure: GoogleHealthFailure | null) {
-    return (
-      failure === 'delegation-not-authorized' || failure === 'scope-mismatch'
-    );
-  }
-  /**
-   * A link needs a saved connection, a readable health result, and a numeric
-   * client ID. Without a readable result the page shows no link.
-   */
-  private buildDelegationLink(requested: readonly string[]) {
-    const saved = this.connection.connection();
-    if (!saved || !this.google.health() || this.google.unavailable())
-      return null;
-    try {
-      return delegationLink({
-        clientId: saved.clientId,
-        scopes: delegationLinkScopes(requested, this.verifiedScopes()),
-        domain: saved.observation?.primaryDomain,
-      });
-    } catch {
-      return null;
-    }
-  }
-  protected delegationHref(requested: readonly string[]) {
-    return this.buildDelegationLink(requested);
-  }
-  /** The Schools feature is disputed, so its capability prompt shows no link. */
-  protected capabilityDelegationHref(capability: {
-    id: string;
-    scope: string;
-  }) {
-    if (capability.id === 'school-ou-references') return null;
-    return this.buildDelegationLink([capability.scope]);
-  }
   protected async copyGoogle(value: string) {
     try {
       await navigator.clipboard.writeText(value);

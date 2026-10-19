@@ -1,7 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { test, expect, type Page } from '@playwright/test';
 import {
-  GOOGLE_CUSTOMER_SCOPES,
   googleHealthCheckSchema,
   type GoogleHealth,
 } from '@campus/application-contracts';
@@ -127,7 +126,7 @@ async function fixture(page: Page, diagnose = true, services = false) {
 
 test('preserves partial access, uses only the selected scope, and shares the footer result', async ({
   page,
-}, testInfo) => {
+}) => {
   const state = await fixture(page);
   const partial = state.health();
   partial.capabilities[1].failure = 'delegation-not-authorized';
@@ -178,30 +177,6 @@ test('preserves partial access, uses only the selected scope, and shares the foo
   await expect(
     page.getByText('Add these 2 scopes to allow the checks on this page.'),
   ).toBeVisible();
-  const delegation = page.locator(
-    'details.authorization a[href*="clientScopeToAdd"]',
-  );
-  await expect(delegation).toHaveCount(1);
-  const href = (await delegation.getAttribute('href'))!;
-  const url = new URL(href);
-  expect(url.searchParams.get('clientIdToAdd')).toBe('123456789');
-  expect(url.searchParams.get('overwriteClientId')).toBe('true');
-  expect(url.searchParams.get('dn')).toBe('fixture.invalid');
-  expect(url.searchParams.get('clientScopeToAdd')!.split(',')).toEqual(
-    [...GOOGLE_CUSTOMER_SCOPES].sort(),
-  );
-  expect(href).not.toContain('authuser');
-  await expect(
-    page
-      .locator('details.authorization')
-      .getByText(
-        'Authorize replaces the scope list of that client with the listed scopes.',
-      ),
-  ).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath('delegation-link.png'),
-    fullPage: true,
-  });
 });
 
 test('retains historical observations offline and clears them after read denial', async ({

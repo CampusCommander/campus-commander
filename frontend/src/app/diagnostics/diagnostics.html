@@ -175,20 +175,6 @@
     <h3>Background Google access</h3>
     <p class="error">{{ google.recovery[failure].label }}</p>
     <p>{{ google.recovery[failure].recovery }}</p>
-    @if (namesDelegation(failure)) { @if (delegationHref(googleScopes); as href)
-    {
-    <p>
-      <a [href]="href" target="_blank" rel="noopener noreferrer"
-        >Open domain-wide delegation for background Google access in Google
-        Admin console</a
-      >.
-    </p>
-    <p class="secondary">
-      This link opens Google Admin with the client ID and these scopes filled
-      in. Authorize replaces the scope list of that client with the listed
-      scopes.
-    </p>
-    } }
     <p>
       After fixing the problem, run both Google checks to resume background
       reads.
@@ -215,20 +201,7 @@
     </p>
     @if (result.failure) {
     <p>{{ google.recovery[result.failure].recovery }}</p>
-    @if (namesDelegation(result.failure)) { @if
-    (capabilityDelegationHref(capability); as href) {
-    <p>
-      <a [href]="href" target="_blank" rel="noopener noreferrer"
-        >Open domain-wide delegation for {{ capability.label }} in Google Admin
-        console</a
-      >.
-    </p>
-    <p class="secondary">
-      This link opens Google Admin with the client ID and these scopes filled
-      in. Authorize replaces the scope list of that client with the listed
-      scopes.
-    </p>
-    } } } @if (result.lastSucceededAt) {
+    } @if (result.lastSucceededAt) {
     <p>
       Last successful check:
       <time [attr.datetime]="result.lastSucceededAt"
@@ -253,19 +226,6 @@
       <button mat-stroked-button (click)="copyGoogle(capability.scope)">
         Copy {{ capability.label }} scope
       </button>
-      @if (capabilityDelegationHref(capability); as href) {
-      <p>
-        <a [href]="href" target="_blank" rel="noopener noreferrer"
-          >Open domain-wide delegation for {{ capability.label }} in Google
-          Admin console</a
-        >.
-      </p>
-      <p class="secondary">
-        This link opens Google Admin with the client ID and these scopes filled
-        in. Authorize replaces the scope list of that client with the listed
-        scopes.
-      </p>
-      }
       <p>
         <a [href]="capability.source" target="_blank" rel="noopener noreferrer"
           >Google {{ capability.method }} documentation</a
@@ -282,7 +242,7 @@
       }
     </details>
   </article>
-  } } } @if (connection.connection(); as saved) {
+  } }
   <details class="authorization">
     <summary>Configure required Google authorization</summary>
     <p>
@@ -292,25 +252,24 @@
     <ol>
       <li>Enable the Admin SDK API in the service-account project.</li>
       <li>
-        @if (delegationHref(googleScopes); as href) {
-        <a [href]="href" target="_blank" rel="noopener noreferrer"
-          >Open domain-wide delegation in Google Admin console</a
+        Open
+        <a
+          href="https://admin.google.com/ac/owl/domainwidedelegation"
+          target="_blank"
+          rel="noopener noreferrer"
+          >domain-wide delegation in Google Admin console</a
         >.
-        <p class="secondary">
-          This link opens Google Admin with the client ID and these scopes
-          filled in. Authorize replaces the scope list of that client with the
-          listed scopes.
-        </p>
-        } @else { Open domain-wide delegation in Google Admin console. }
       </li>
       <li>
         Add the service-account numeric client ID and the required scopes below.
       </li>
     </ol>
+    @if (connection.connection(); as saved) {
     <p>Service account client ID: <code>{{ saved.clientId }}</code></p>
     <button mat-stroked-button (click)="copyGoogle(saved.clientId)">
       Copy service account client ID
     </button>
+    }
     <pre
       class="scope-text"
       role="group"
