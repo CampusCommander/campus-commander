@@ -23,12 +23,13 @@ import {
   entityEventSchema,
   entityEventsChannel,
   type EntityEvent,
+  type SessionResponse,
 } from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { DeviceEventsService } from './device-events.service';
 import { streamEvents } from './device-events';
-import { deviceForward } from './device-stream';
+import { deviceForward, recheckDeviceStream } from './device-stream';
 import { DevicesService } from './devices.service';
 
 const deviceIdSchema = z.string().min(1).max(128);
@@ -57,13 +58,17 @@ export class DevicesController {
 
   /** Resolve the connected customer, then require devices:read for it. */
   private async current(request: AuthenticatedRequest) {
-    const sync = await this.devices.sync(request.session);
+    return this.currentFor(request.session, request.correlationId);
+  }
+
+  private async currentFor(session: SessionResponse, correlationId: string) {
+    const sync = await this.devices.sync(session);
     if (sync)
       await this.auth.authorize(
-        request.session,
+        session,
         'devices:read',
         { kind: 'district', customerId: sync.customerId },
-        request.correlationId,
+        correlationId,
       );
     return sync;
   }
@@ -206,25 +211,25 @@ export class DevicesController {
           'x-accel-buffering': 'no',
         });
       },
-      // A ping goes out only while the session and devices:read still hold for this customer.
+      // A ping goes out only while the session and devices:read still hold for this customer, and
+      // while its jobs:read visibility is unchanged.
       // The recheck leaves the idle timeout alone. An open tab must not keep an unattended session alive.
       recheck: async () => {
-        try {
-          request.session = await this.auth.authenticate(
-            request.headers.cookie,
-            'identity:read',
-            request.correlationId,
-            { slide: false },
-          );
-          const next = await this.current(request);
-          return (
-            next?.customerId === current.customerId &&
-            this.devices.jobVisibility(request.session, current.customerId) ===
-              seesEveryJob
-          );
-        } catch {
-          return false;
-        }
+        const checked = await recheckDeviceStream({
+          auth: this.auth,
+          reads: {
+            current: (session) =>
+              this.currentFor(session, request.correlationId),
+            jobVisibility: (session, customerId) =>
+              this.devices.jobVisibility(session, customerId),
+          },
+          cookie: request.headers.cookie,
+          correlationId: request.correlationId,
+          customerId: current.customerId,
+          seesEveryJob,
+        });
+        if (checked.session) request.session = checked.session;
+        return checked.allowed;
       },
       // Section 3.1: no job ID, no job record, no requester, and no failure that the caller cannot see.
       forward: deviceForward(seesEveryJob, {

@@ -3,6 +3,7 @@ import {
   type DeviceSyncFailure,
   type DeviceSyncState,
   type EntityEvent,
+  type SessionResponse,
 } from '@campus/application-contracts';
 import type { Forwarded } from './device-events';
 
@@ -74,4 +75,62 @@ export function deviceForward(
     // No other channel event reaches the Devices stream.
     return null;
   };
+}
+
+/** The session check of the Devices stream ping. */
+export interface DeviceStreamAuth {
+  authenticate(
+    cookie: string | undefined,
+    action: string,
+    correlationId: string,
+    options: { slide: boolean },
+  ): Promise<SessionResponse>;
+}
+
+/** The reads of one Devices stream ping. */
+export interface DeviceStreamPingReads {
+  /** The sync of the customer, after the devices:read authority of the session. */
+  current(session: SessionResponse): Promise<{ customerId: string } | null>;
+  /** True when the session holds jobs:read at platform scope or district scope of the customer. */
+  jobVisibility(session: SessionResponse, customerId: string): boolean;
+}
+
+export interface DeviceStreamRecheck {
+  /** False ends the stream, so the browser reconnects and reads the state it may no longer see. */
+  allowed: boolean;
+  /** The session of this ping when the check succeeded. */
+  session: SessionResponse | null;
+}
+
+/**
+ * One ping of the Devices stream (section 3.3). The session must still hold devices:read for the
+ * customer, and its jobs:read visibility must not change. A changed visibility closes the stream,
+ * so the browser reconnects and reads the failures it may now see or no longer see.
+ */
+export async function recheckDeviceStream(input: {
+  auth: DeviceStreamAuth;
+  reads: DeviceStreamPingReads;
+  cookie: string | undefined;
+  correlationId: string;
+  customerId: string;
+  seesEveryJob: boolean;
+}): Promise<DeviceStreamRecheck> {
+  try {
+    const session = await input.auth.authenticate(
+      input.cookie,
+      'identity:read',
+      input.correlationId,
+      { slide: false },
+    );
+    const current = await input.reads.current(session);
+    return {
+      allowed:
+        current?.customerId === input.customerId &&
+        input.reads.jobVisibility(session, input.customerId) ===
+          input.seesEveryJob,
+      session,
+    };
+  } catch {
+    return { allowed: false, session: null };
+  }
 }
