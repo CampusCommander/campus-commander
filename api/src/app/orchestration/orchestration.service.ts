@@ -186,7 +186,9 @@ export class OrchestrationService {
       })
       .refine(
         (value) =>
-          value.operationNumber !== 'all' || value.verifyAttempt === undefined,
+          value.operationNumber === 'all'
+            ? value.verifyAttempt === undefined
+            : value.verifyAttempt !== undefined,
         { message: 'A read-back attempt accompanies one operation number.' },
       )
       .parse(input);
