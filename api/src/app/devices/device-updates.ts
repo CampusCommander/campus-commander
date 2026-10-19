@@ -145,7 +145,7 @@ function summary(row: PreviewRow, now = Date.now()): DeviceUpdatePreview {
     excluded: row['excluded'],
     oldestObservedAt,
     stale:
-      row['eligible'] > 0 &&
+      Number(row['eligible']) > 0 &&
       oldestObservedAt !== null &&
       Date.parse(oldestObservedAt) < now - 24 * 60 * 60 * 1000,
     preparedAt: measuredAt(row['prepared_at']),
