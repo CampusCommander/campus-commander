@@ -1,17 +1,39 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createClient } from 'redis';
+import {
+  entityEventsChannel,
+  jobEventsChannel,
+} from '@campus/application-contracts';
+import { redisImage } from '../redis/runtime.mjs';
 
-// The B4 checks of design section 8.3: the jobs reads of section 2.5 and the two eng-lead functions.
+// The B4 checks of design section 8.3: the jobs reads of section 2.5, the two eng-lead functions,
+// and both live streams through the production controllers and a real Redis.
 // Every check runs against the integration PostgreSQL instance through the runtime role.
 const workspace = resolve(import.meta.dirname, '../..');
 const load = (path) => import(pathToFileURL(resolve(workspace, path)).href);
 
 export async function qualifyJobsApi({ runtime, migrator, issuer }) {
-  const [{ Jobs }, { deviceForward }] = await Promise.all([
+  const [
+    { Jobs },
+    { deviceForward },
+    { EventFanout, redisSubscriber },
+    { JobsController },
+    { JobsService },
+    { DevicesController },
+    { DevicesService },
+  ] = await Promise.all([
     load('api/src/app/jobs/jobs.ts'),
     load('api/src/app/devices/device-stream.ts'),
+    load('api/src/app/devices/device-events.ts'),
+    load('api/src/app/jobs/jobs.controller.ts'),
+    load('api/src/app/jobs/jobs.service.ts'),
+    load('api/src/app/devices/devices.controller.ts'),
+    load('api/src/app/devices/devices.service.ts'),
   ]);
   const connection = (
     await migrator.query('SELECT * FROM cc.google_connection')
@@ -235,6 +257,183 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
       );
     }
     return job;
+  };
+
+  // --- The live stream harness: the production controllers, a real fanout on a test Redis, and
+  // --- the jobs and Devices reads through the runtime role.
+  const docker = (...args) =>
+    execFileSync('docker', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  const redisContainer = `cc-b4-redis-${randomBytes(6).toString('hex')}`;
+  const liveSessions = new Map();
+  let publisher;
+  let fanout;
+  // The stream ping reads the session afresh. This stand-in returns what the session store holds,
+  // so a revoked grant reaches the recheck as the real authenticate would return it.
+  const streamAuth = {
+    async authenticate(cookie) {
+      const found = liveSessions.get(cookie);
+      if (!found) throw new Error('session-expired');
+      return found;
+    },
+    async authorize(streamSession, action, resource) {
+      const allowed = streamSession.identity.grants.some(
+        (grant) =>
+          grant.action === action &&
+          (grant.scope.kind === 'platform' ||
+            (grant.scope.kind === 'district' &&
+              grant.scope.customerId === resource.customerId)),
+      );
+      if (!allowed)
+        throw Object.assign(new Error('forbidden'), { status: 403 });
+    },
+  };
+  const jobsService = new JobsService({
+    connection: { query: (text, values) => runtime.query(text, values) },
+  });
+  const devicesService = new DevicesService(
+    { connection: { query: (text, values) => runtime.query(text, values) } },
+    {},
+    {},
+  );
+  /** One SSE response stand-in. The production controller writes its frames here. */
+  const sseSink = () => {
+    const emitter = new EventEmitter();
+    const sink = {
+      chunks: [],
+      ended: false,
+      headersSent: false,
+      writableLength: 0,
+      writeHead() {
+        sink.headersSent = true;
+      },
+      write(chunk) {
+        sink.chunks.push(chunk);
+        return true;
+      },
+      end() {
+        sink.ended = true;
+      },
+      once(name, listener) {
+        emitter.once(name, listener);
+      },
+      disconnect() {
+        emitter.emit('close');
+      },
+    };
+    return sink;
+  };
+  const streamFrames = (sink) =>
+    sink.chunks
+      .filter((chunk) => chunk.startsWith('event: '))
+      .map((chunk) => {
+        const [head, data] = chunk.split('\n');
+        return {
+          name: head.slice('event: '.length),
+          data: JSON.parse(data.slice('data: '.length)),
+        };
+      });
+  const until = async (done, ms = 2000) => {
+    const deadline = Date.now() + ms;
+    while (!done() && Date.now() < deadline) await sleep(10);
+  };
+  const openJobsStream = async (principalId, grants) => {
+    const cookie = `cc-b4-${randomUUID()}`;
+    const current = session(principalId, grants);
+    liveSessions.set(cookie, current);
+    const sink = sseSink();
+    const controller = new JobsController(jobsService, streamAuth, { fanout });
+    await controller.events(
+      { session: current, headers: { cookie }, correlationId: randomUUID() },
+      sink,
+    );
+    return { sink, cookie };
+  };
+  const openDevicesStream = async (principalId, grants) => {
+    const cookie = `cc-b4-${randomUUID()}`;
+    const current = session(principalId, grants);
+    liveSessions.set(cookie, current);
+    const sink = sseSink();
+    const controller = new DevicesController(devicesService, streamAuth, {
+      fanout,
+    });
+    await controller.events(
+      { session: current, headers: { cookie }, correlationId: randomUUID() },
+      sink,
+    );
+    return { sink, cookie };
+  };
+  /** Start the test Redis, the fanout on it, and the publisher. */
+  const startStreams = async () => {
+    docker(
+      'run',
+      '-d',
+      '--rm',
+      '--name',
+      redisContainer,
+      '-p',
+      '127.0.0.1::6379',
+      redisImage,
+      'redis-server',
+      '--save',
+      '',
+      '--appendonly',
+      'no',
+      '--protected-mode',
+      'no',
+    );
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        if (docker('exec', redisContainer, 'redis-cli', 'ping') === 'PONG')
+          break;
+      } catch {
+        /* Retry bounded startup. */
+      }
+      await sleep(100);
+    }
+    const port = Number(
+      docker('port', redisContainer, '6379/tcp').split(':').at(-1),
+    );
+    const url = `redis://127.0.0.1:${port}`;
+    publisher = createClient({
+      url,
+      disableOfflineQueue: true,
+      socket: { reconnectStrategy: false },
+    });
+    publisher.on('error', () => {
+      /* A failed command reports its own error. */
+    });
+    await publisher.connect();
+    await publisher.ping();
+    fanout = new EventFanout(async (lost) => {
+      const client = createClient({
+        url,
+        disableOfflineQueue: true,
+        socket: { reconnectStrategy: false },
+      });
+      client.on('error', () => {
+        /* The loss listener reports the stream close. */
+      });
+      return redisSubscriber(client, lost);
+    });
+  };
+  const publish = async (channel, event) => {
+    await publisher.publish(channel, JSON.stringify(event));
+  };
+  const stopStreams = async () => {
+    await fanout?.close().catch(() => undefined);
+    try {
+      publisher?.destroy();
+    } catch {
+      /* The client did not connect. */
+    }
+    try {
+      docker('rm', '-f', redisContainer);
+    } catch {
+      /* The container was not created. */
+    }
   };
 
   const owner = await principal(`owner-${randomUUID()}`, [
@@ -1117,7 +1316,451 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         );
       },
     );
+
+    await check(
+      'the list keyset keeps database microseconds and equal created times',
+      async () => {
+        await reset();
+        const late = await header({
+          requestedBy: auditor,
+          status: 'completed',
+          createdAt: '2026-10-06T12:00:00.123900Z',
+        });
+        const middle = await header({
+          requestedBy: auditor,
+          status: 'completed',
+          createdAt: '2026-10-06T12:00:00.123800Z',
+        });
+        const early = await header({
+          requestedBy: auditor,
+          status: 'completed',
+          createdAt: '2026-10-06T12:00:00.122000Z',
+        });
+        const seen = [];
+        let cursor;
+        for (let pageNumber = 0; pageNumber < 4; pageNumber += 1) {
+          const page = await jobs.list(auditorSession, customer, {}, cursor, 1);
+          assert.equal(page.matching, 3);
+          seen.push(...page.jobs.map((entry) => entry.displayId));
+          cursor = page.nextCursor ?? undefined;
+          if (!cursor) break;
+        }
+        assert.deepEqual(seen, [
+          late.display_id,
+          middle.display_id,
+          early.display_id,
+        ]);
+
+        await reset();
+        const first = await header({
+          requestedBy: auditor,
+          status: 'completed',
+          createdAt: '2026-10-06T12:00:00.123900Z',
+        });
+        const second = await header({
+          requestedBy: auditor,
+          status: 'completed',
+          createdAt: '2026-10-06T12:00:00.123900Z',
+        });
+        const firstPage = await jobs.list(
+          auditorSession,
+          customer,
+          {},
+          undefined,
+          1,
+        );
+        assert.equal(firstPage.jobs.length, 1);
+        assert.ok(firstPage.nextCursor);
+        const secondPage = await jobs.list(
+          auditorSession,
+          customer,
+          {},
+          firstPage.nextCursor,
+          1,
+        );
+        assert.equal(secondPage.jobs.length, 1);
+        assert.equal(secondPage.nextCursor, null);
+        assert.deepEqual(
+          [firstPage.jobs[0].displayId, secondPage.jobs[0].displayId].sort(),
+          [first.display_id, second.display_id].sort(),
+        );
+      },
+    );
+
+    await check(
+      'attention compares the stored seen time at database precision',
+      async () => {
+        await reset();
+        await header({
+          requestedBy: auditor,
+          status: 'failed',
+          failure: 'quota',
+          createdAt: '2026-10-06T12:00:00.000000Z',
+          finishedAt: '2026-10-06T12:00:00.123800Z',
+        });
+        await admin(
+          `INSERT INTO cc.job_activity_seen(principal_id,seen_at)
+          VALUES($1,'2026-10-06T12:00:00.123900Z')`,
+          [auditor],
+        );
+        const activity = await jobs.activity(auditorSession, customer);
+        assert.equal(
+          activity.attention,
+          false,
+          'A job finished before the stored seen time needs no attention.',
+        );
+        assert.equal(
+          activity.seenAt,
+          '2026-10-06T12:00:00.123Z',
+          'The wire answer rounds the stored time.',
+        );
+      },
+    );
+
+    await startStreams();
+
+    await check(
+      'the jobs stream sends only job-changed events of visible jobs',
+      async () => {
+        await reset();
+        // One job runs at a time per customer, so the two jobs wait in the queue.
+        const mine = await header({ requestedBy: owner, status: 'queued' });
+        const theirs = await header({ requestedBy: reader, status: 'queued' });
+        const readGrant = { action: 'devices:read', scope: district() };
+        const jobsGrant = { action: 'jobs:read', scope: district() };
+        const ownerStream = await openJobsStream(owner, [readGrant]);
+        const auditorStream = await openJobsStream(auditor, [
+          readGrant,
+          jobsGrant,
+        ]);
+        // jobs:read alone opens the stream, without devices:read.
+        const jobsOnlyStream = await openJobsStream(jobReader, [jobsGrant]);
+        const jobFrame = (row, revision = 2) => ({
+          type: 'job-changed',
+          jobId: row.job_id,
+          displayId: row.display_id,
+          revision,
+          requestedBy: row.requested_by,
+        });
+        try {
+          await publish(jobEventsChannel(customer), jobFrame(mine));
+          await publish(jobEventsChannel(customer), jobFrame(theirs));
+          // None of these may reach the Jobs stream.
+          await publish(jobEventsChannel(customer), {
+            type: 'entity-batch',
+            jobId: mine.job_id,
+            entityType: 'device',
+            batch: 0,
+            batchCount: 1,
+            deviceIds: ['device-1'],
+            removedIds: [],
+          });
+          await publish(entityEventsChannel(customer), jobFrame(mine));
+          await publish(jobEventsChannel('C-other'), jobFrame(mine));
+          await until(
+            () =>
+              streamFrames(ownerStream.sink).length >= 1 &&
+              streamFrames(auditorStream.sink).length >= 2 &&
+              streamFrames(jobsOnlyStream.sink).length >= 2,
+          );
+          await sleep(300);
+          const ownerFrames = streamFrames(ownerStream.sink);
+          const auditorFrames = streamFrames(auditorStream.sink);
+          const jobsOnlyFrames = streamFrames(jobsOnlyStream.sink);
+          assert.deepEqual(
+            ownerFrames.map((frame) => frame.data.jobId),
+            [mine.job_id],
+            'A requester sees its own job only.',
+          );
+          assert.deepEqual(
+            auditorFrames.map((frame) => frame.data.jobId).sort(),
+            [mine.job_id, theirs.job_id].sort(),
+            'A jobs:read holder sees every job of the customer.',
+          );
+          assert.deepEqual(
+            jobsOnlyFrames.map((frame) => frame.data.jobId).sort(),
+            [mine.job_id, theirs.job_id].sort(),
+            'The stream opened with jobs:read alone.',
+          );
+          for (const frame of [
+            ...ownerFrames,
+            ...auditorFrames,
+            ...jobsOnlyFrames,
+          ])
+            assert.equal(frame.name, 'job-changed');
+        } finally {
+          ownerStream.sink.disconnect();
+          auditorStream.sink.disconnect();
+          jobsOnlyStream.sink.disconnect();
+        }
+      },
+    );
+
+    await check(
+      'the jobs stream answers 503 when the subscription is unavailable',
+      async () => {
+        const sink = sseSink();
+        const unavailable = new EventFanout(async () => {
+          throw new Error('redis down');
+        });
+        const controller = new JobsController(jobsService, streamAuth, {
+          fanout: unavailable,
+        });
+        await assert.rejects(
+          controller.events(
+            {
+              session: jobReaderSession,
+              headers: { cookie: 'cc-b4-unavailable' },
+              correlationId: randomUUID(),
+            },
+            sink,
+          ),
+          (error) => error.getStatus?.() === 503,
+          'The stream answers 503.',
+        );
+        assert.deepEqual(sink.chunks, []);
+      },
+    );
+
+    await check(
+      'the jobs stream closes at the next ping when read access is revoked',
+      async () => {
+        await reset();
+        await header({ requestedBy: owner, status: 'running' });
+        const readGrant = { action: 'devices:read', scope: district() };
+        const jobsGrant = { action: 'jobs:read', scope: district() };
+        const everyJobStream = await openJobsStream(auditor, [
+          readGrant,
+          jobsGrant,
+        ]);
+        const jobsOnlyStream = await openJobsStream(jobReader, [jobsGrant]);
+        try {
+          await admin(
+            "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='jobs:read'",
+            [auditor],
+          );
+          liveSessions.set(
+            everyJobStream.cookie,
+            session(auditor, [readGrant]),
+          );
+          await admin(
+            "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='jobs:read'",
+            [jobReader],
+          );
+          liveSessions.set(jobsOnlyStream.cookie, session(jobReader, []));
+          await until(
+            () => everyJobStream.sink.ended && jobsOnlyStream.sink.ended,
+            30_000,
+          );
+          assert.equal(
+            everyJobStream.sink.ended,
+            true,
+            'A changed visibility closes the stream.',
+          );
+          assert.equal(
+            jobsOnlyStream.sink.ended,
+            true,
+            'A removed read action closes the stream.',
+          );
+        } finally {
+          everyJobStream.sink.disconnect();
+          jobsOnlyStream.sink.disconnect();
+        }
+      },
+    );
+
+    await check(
+      'the Devices stream gives A, B, and C their own columns and every device ID',
+      async () => {
+        await reset();
+        const readGrant = { action: 'devices:read', scope: district() };
+        const jobsGrant = { action: 'jobs:read', scope: district() };
+        const a = await principal(`stream-a-${randomUUID()}`, [
+          ['devices:read', district()],
+        ]);
+        const b = await principal(`stream-b-${randomUUID()}`, [
+          ['devices:read', district()],
+        ]);
+        const c = await principal(`stream-c-${randomUUID()}`, [
+          ['devices:read', district()],
+          ['jobs:read', district()],
+        ]);
+        // Step 1 of section 2.1: B's Refresh all read the Directory and its telemetry read failed.
+        await admin(
+          `UPDATE cc.device_sync_state SET observed_at=clock_timestamp(),device_count=2,
+          sync_id=NULL,sync_actor=NULL,sync_generation=NULL,sync_attempt=NULL,sync_expires_at=NULL,
+          failure=NULL,failure_requested_by=NULL,
+          telemetry_failure='quota',telemetry_failure_requested_by=$2 WHERE customer_id=$1`,
+          [customer, b],
+        );
+        const aStream = await openDevicesStream(a, [readGrant]);
+        const bStream = await openDevicesStream(b, [readGrant]);
+        const cStream = await openDevicesStream(c, [readGrant, jobsGrant]);
+        try {
+          const stepOne = (
+            await adminRow('SELECT cc.device_sync_projection($1) AS sync', [
+              customer,
+            ])
+          ).sync;
+          await publish(entityEventsChannel(customer), {
+            type: 'full-sync',
+            sync: stepOne,
+          });
+          await until(
+            () =>
+              streamFrames(aStream.sink).length >= 1 &&
+              streamFrames(bStream.sink).length >= 1 &&
+              streamFrames(cStream.sink).length >= 1,
+          );
+          const [aOne] = streamFrames(aStream.sink);
+          const [bOne] = streamFrames(bStream.sink);
+          const [cOne] = streamFrames(cStream.sink);
+          assert.equal(aOne.data.sync.telemetryFailure, null);
+          assert.equal(bOne.data.sync.telemetryFailure, 'quota');
+          assert.equal(cOne.data.sync.telemetryFailure, 'quota');
+
+          // Every readable device ID reaches every devices:read holder, without job identity.
+          const job = await header({ requestedBy: b, status: 'running' });
+          await publish(entityEventsChannel(customer), {
+            type: 'entity-batch',
+            jobId: job.job_id,
+            entityType: 'device',
+            batch: 0,
+            batchCount: 1,
+            deviceIds: ['device-alpha', 'device-beta'],
+            removedIds: ['device-gone'],
+          });
+          await until(
+            () =>
+              streamFrames(aStream.sink).length >= 2 &&
+              streamFrames(bStream.sink).length >= 2 &&
+              streamFrames(cStream.sink).length >= 2,
+          );
+          const [, aBatch] = streamFrames(aStream.sink);
+          assert.deepEqual(aBatch.data, {
+            type: 'entity-batch',
+            entityType: 'device',
+            deviceIds: ['device-alpha', 'device-beta'],
+            removedIds: ['device-gone'],
+          });
+          assert.deepEqual(Object.keys(aBatch.data).sort(), [
+            'deviceIds',
+            'entityType',
+            'removedIds',
+            'type',
+          ]);
+
+          // Step 3: A's Directory read fails. B keeps the telemetry failure it owns.
+          await admin(
+            `UPDATE cc.device_sync_state SET failure='network-failure',failure_requested_by=$2
+            WHERE customer_id=$1`,
+            [customer, a],
+          );
+          const stepThree = (
+            await adminRow('SELECT cc.device_sync_projection($1) AS sync', [
+              customer,
+            ])
+          ).sync;
+          await publish(entityEventsChannel(customer), {
+            type: 'full-sync',
+            sync: stepThree,
+          });
+          await until(
+            () =>
+              streamFrames(aStream.sink).length >= 3 &&
+              streamFrames(bStream.sink).length >= 3 &&
+              streamFrames(cStream.sink).length >= 3,
+          );
+          const [, , aThree] = streamFrames(aStream.sink);
+          const [, , bThree] = streamFrames(bStream.sink);
+          const [, , cThree] = streamFrames(cStream.sink);
+          assert.equal(aThree.data.sync.failure, 'network-failure');
+          assert.equal(aThree.data.sync.telemetryFailure, null);
+          assert.equal(bThree.data.sync.failure, null);
+          assert.equal(bThree.data.sync.telemetryFailure, 'quota');
+          assert.equal(cThree.data.sync.failure, 'network-failure');
+          assert.equal(cThree.data.sync.telemetryFailure, 'quota');
+
+          // The job failure of B reaches B and C, never A. This is DevicesService.jobFailure.
+          await admin("UPDATE cc.jobs SET failure='quota' WHERE job_id=$1", [
+            job.job_id,
+          ]);
+          await publish(entityEventsChannel(customer), {
+            type: 'job-finished',
+            job: {
+              jobId: job.job_id,
+              customerId: customer,
+              entityType: 'device',
+              batchCount: 1,
+              completedBatches: 0,
+              failedBatches: 1,
+              failure: 'quota',
+              createdAt: new Date(job.created_at).toISOString(),
+              finishedAt: new Date().toISOString(),
+            },
+          });
+          await until(
+            () =>
+              streamFrames(aStream.sink).length >= 4 &&
+              streamFrames(bStream.sink).length >= 4 &&
+              streamFrames(cStream.sink).length >= 4,
+          );
+          const [, , , aFinished] = streamFrames(aStream.sink);
+          const [, , , bFinished] = streamFrames(bStream.sink);
+          const [, , , cFinished] = streamFrames(cStream.sink);
+          assert.equal(aFinished.data.failure, null);
+          assert.equal(bFinished.data.failure, 'quota');
+          assert.equal(cFinished.data.failure, 'quota');
+          for (const frame of [aFinished, bFinished, cFinished])
+            assert.deepEqual(Object.keys(frame.data).sort(), [
+              'failure',
+              'type',
+            ]);
+        } finally {
+          aStream.sink.disconnect();
+          bStream.sink.disconnect();
+          cStream.sink.disconnect();
+        }
+      },
+    );
+
+    await check(
+      'a ping closes the Devices stream when jobs:read is revoked',
+      async () => {
+        await reset();
+        const readGrant = { action: 'devices:read', scope: district() };
+        const jobsGrant = { action: 'jobs:read', scope: district() };
+        const c = await principal(`stream-r-${randomUUID()}`, [
+          ['devices:read', district()],
+          ['jobs:read', district()],
+        ]);
+        await admin(
+          `UPDATE cc.device_sync_state SET observed_at=clock_timestamp(),device_count=0,
+          sync_id=NULL,sync_actor=NULL,sync_generation=NULL,sync_attempt=NULL,sync_expires_at=NULL,
+          failure=NULL,failure_requested_by=NULL,telemetry_failure=NULL,
+          telemetry_failure_requested_by=NULL WHERE customer_id=$1`,
+          [customer],
+        );
+        const stream = await openDevicesStream(c, [readGrant, jobsGrant]);
+        try {
+          await admin(
+            "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='jobs:read'",
+            [c],
+          );
+          liveSessions.set(stream.cookie, session(c, [readGrant]));
+          await until(() => stream.sink.ended, 30_000);
+          assert.equal(
+            stream.sink.ended,
+            true,
+            'A changed visibility closes the Devices stream.',
+          );
+        } finally {
+          stream.sink.disconnect();
+        }
+      },
+    );
   } finally {
+    await stopStreams().catch(() => undefined);
     await migrator
       .query('UPDATE cc.google_connection SET active=$1 WHERE customer_id=$2', [
         wasActive,
@@ -1130,5 +1773,8 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         .query('DELETE FROM cc.application_principals WHERE id=$1', [id])
         .catch(() => undefined);
   }
+  // The caller prints the results and exits zero. A recorded failure must fail the target.
+  if (failures.length)
+    throw new Error(`Jobs API checks failed: ${failures.join(' | ')}`);
   return results;
 }
