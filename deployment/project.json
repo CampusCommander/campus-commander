@@ -59,12 +59,35 @@
         "command": "node --test deployment/bootstrap/*.test.mjs"
       }
     },
+    "kestra-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node --test deployment/kestra/*.test.mjs"
+      }
+    },
+    "kestra-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node --test deployment/kestra/device-update-flow.integration.mjs"
+      }
+    },
     "redis-test": {
       "executor": "nx:run-commands",
       "cache": false,
       "dependsOn": ["build"],
       "options": {
         "command": "node --test deployment/redis/*.test.mjs"
+      }
+    },
+    "redis-acl-integration": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node --test deployment/redis/acl.integration.mjs"
       }
     },
     "postgres-test": {
