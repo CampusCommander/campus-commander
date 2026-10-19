@@ -1,6 +1,7 @@
 import { qualifySchoolReferences } from './school-references.integration.mjs';
 import { qualifyDeviceInventory } from './device-inventory.integration.mjs';
 import { qualifyDeviceWriteJobs } from './device-write-jobs.integration.mjs';
+import { qualifyDeviceUpdates } from './device-updates.integration.mjs';
 import { qualifyEntityEntries } from './entity-entries.integration.mjs';
 import { qualifyRestoredAccess } from './restore-access.integration.mjs';
 import { qualifyGoogleLifecycle } from './google-lifecycle.integration.mjs';
@@ -554,6 +555,14 @@ try {
   );
   results.push(
     ...(await qualifyDeviceWriteJobs({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyDeviceUpdates({
       runtime,
       migrator: migrators[0],
       connect,

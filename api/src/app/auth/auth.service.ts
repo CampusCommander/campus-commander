@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import {
   identitySchema,
-  isAuthorized,
   type Action,
   type ResourceScope,
   type Permission,
@@ -21,6 +20,7 @@ import { CacheService } from '../cache/cache.service';
 import { EnrollmentService } from './enrollment.service';
 import { InvitationService } from './invitation.service';
 import { AccessChangedException } from './access-changed.errors';
+import { authorizeAction } from './authorize-action';
 import { retainSession } from './session-retention';
 
 const sessionSchema = z.strictObject({
@@ -314,20 +314,17 @@ export class AuthService {
     resource: ResourceScope,
     correlationId: string,
   ) {
-    if (
-      this.configuration.deployment?.phase !== 3 ||
-      !isAuthorized(session.identity.grants, action, resource)
-    ) {
-      await this.database.audit(
-        'access-denied',
-        correlationId,
-        session.identity.id,
-        action,
-      );
-      throw new ForbiddenException(
-        'This action requires additional permission.',
-      );
-    }
+    await authorizeAction(
+      {
+        phase: this.configuration.deployment?.phase,
+        audit: (event, id, actorId, detail) =>
+          this.database.audit(event, id, actorId, detail),
+      },
+      session,
+      action,
+      resource,
+      correlationId,
+    );
   }
 
   async recordDeniedRequest(correlationId: string, actorId: string) {

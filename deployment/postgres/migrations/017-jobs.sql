@@ -1357,6 +1357,260 @@ BEGIN
 END;
 $$;
 
+-- The receipt of one accepted job. B3 returns it on creation and on a duplicate confirmation.
+CREATE FUNCTION cc.device_update_receipt(p_job uuid) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+  SELECT jsonb_build_object('jobId',j.job_id,'displayId',j.display_id,'status','accepted',
+    'deviceCount',j.target_count,
+    'updateCount',(SELECT count(*)::integer FROM cc.device_update_operations o WHERE o.job_id=j.job_id))
+  FROM cc.jobs j WHERE j.job_id=p_job AND j.kind='device-update';
+$$;
+
+-- One prepared preview and its frozen targets, in one transaction. The caller resolves the stored
+-- selection and computes the values and the digest. This function freezes that result.
+CREATE FUNCTION cc.create_device_update_preview(p_actor uuid,p_version integer,p_customer text,
+  p_generation integer,p_mode text,p_value text,p_digest text,p_targets jsonb,p_expires_minutes integer)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE preview cc.device_update_previews; now_at timestamptz; selected integer; eligible integer;
+  unchanged integer; excluded integer; oldest timestamptz; bad integer; number bigint;
+BEGIN
+  -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_generation IS NULL OR
+    p_mode IS NULL OR p_mode NOT IN ('replace','clear') OR p_digest IS NULL OR
+    p_digest !~ '^[a-f0-9]{64}$' OR p_targets IS NULL OR jsonb_typeof(p_targets)<>'array' OR
+    p_expires_minutes IS NULL OR p_expires_minutes NOT BETWEEN 1 AND 1440 THEN
+    RAISE EXCEPTION 'The preview request is invalid.' USING ERRCODE='22023';
+  END IF;
+  IF (p_mode='clear') <> (p_value IS NULL) OR
+    (p_mode='replace' AND (char_length(p_value) NOT BETWEEN 1 AND 200 OR btrim(p_value)='')) THEN
+    RAISE EXCEPTION 'The preview value is invalid.' USING ERRCODE='22023';
+  END IF;
+  IF jsonb_array_length(p_targets)>100000 THEN
+    RAISE EXCEPTION 'The preview selection is too large.' USING ERRCODE='22023';
+  END IF;
+  -- Each target row carries every field of the frozen target domain.
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) e
+    WHERE jsonb_typeof(e) IS DISTINCT FROM 'object' OR
+      CASE WHEN jsonb_typeof(e->'ordinal')='number' AND pg_input_is_valid(e->>'ordinal','integer')
+        THEN (e->>'ordinal')::integer<0 ELSE true END OR
+      jsonb_typeof(e->'device_id') IS DISTINCT FROM 'string' OR char_length(e->>'device_id') NOT BETWEEN 1 AND 128 OR
+      jsonb_typeof(e->'serial_number') IS DISTINCT FROM 'string' OR char_length(e->>'serial_number')>256 OR
+      jsonb_typeof(e->'org_unit_path') IS DISTINCT FROM 'string' OR char_length(e->>'org_unit_path')>4096 OR
+      (e->'observed_value' IS NOT NULL AND e->'observed_value'<>'null'::jsonb AND
+        jsonb_typeof(e->'observed_value')<>'string') OR
+      char_length(e->>'observed_value')>4096 OR
+      (e->'observed_at' IS NOT NULL AND e->'observed_at'<>'null'::jsonb AND
+        (jsonb_typeof(e->'observed_at')<>'string' OR
+        NOT pg_input_is_valid(e->>'observed_at','timestamptz'))) OR
+      jsonb_typeof(e->'disposition') IS DISTINCT FROM 'string' OR
+      e->>'disposition' NOT IN ('eligible','unchanged','excluded') OR
+      (e->'exclusion_reason' IS NOT NULL AND e->'exclusion_reason'<>'null'::jsonb AND
+        jsonb_typeof(e->'exclusion_reason')<>'string') OR
+      char_length(e->>'exclusion_reason')>64 OR
+      (e->>'disposition'<>'excluded' AND e->'exclusion_reason' IS NOT NULL AND
+        e->'exclusion_reason'<>'null'::jsonb);
+  IF bad>0 THEN
+    RAISE EXCEPTION 'The preview targets are invalid.' USING ERRCODE='22023';
+  END IF;
+  IF (SELECT count(DISTINCT e->>'ordinal') FROM jsonb_array_elements(p_targets) e)<>jsonb_array_length(p_targets) OR
+    (SELECT count(DISTINCT e->>'device_id') FROM jsonb_array_elements(p_targets) e)<>jsonb_array_length(p_targets) THEN
+    RAISE EXCEPTION 'The preview targets repeat an ordinal or a device.' USING ERRCODE='22023';
+  END IF;
+  -- Rule G (round 3, R1-F2): advisory lock 7240173008 is the global access lock. Every access change
+  -- takes it first. This function takes it before the person check and before every row lock, so an
+  -- access change cannot commit between the check and the INSERT of the preview and its targets.
+  PERFORM pg_advisory_xact_lock(7240173008);
+  -- The person check of the preview route. A caller without both write actions receives no preview.
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT cc.write_capable(p_actor,p_customer) THEN
+    RETURN jsonb_build_object('outcome','forbidden');
+  END IF;
+  SELECT count(*),count(*) FILTER (WHERE e->>'disposition'='eligible'),
+      count(*) FILTER (WHERE e->>'disposition'='unchanged'),
+      count(*) FILTER (WHERE e->>'disposition'='excluded'),
+      min(CASE WHEN e->>'disposition'='eligible' AND e->>'observed_at' IS NOT NULL
+        THEN (e->>'observed_at')::timestamptz END)
+  INTO selected,eligible,unchanged,excluded,oldest FROM jsonb_array_elements(p_targets) e;
+  now_at:=clock_timestamp();
+  number:=nextval('cc.preview_number_pv');
+  INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+    generation,field,mode,value,selected,eligible,unchanged,excluded,oldest_observed_at,manifest_digest,
+    prepared_at,expires_at)
+  VALUES(gen_random_uuid(),cc.job_display_id('PV',number),p_customer,p_actor,p_version,p_generation,
+    'annotatedLocation',p_mode,p_value,selected,eligible,unchanged,excluded,oldest,p_digest,now_at,
+    now_at+make_interval(mins=>p_expires_minutes))
+  RETURNING * INTO preview;
+  INSERT INTO cc.device_update_preview_targets(preview_id,ordinal,device_id,serial_number,org_unit_path,
+    observed_value,observed_at,disposition,exclusion_reason)
+  SELECT preview.preview_id,t.ordinal,t.device_id,t.serial_number,t.org_unit_path,t.observed_value,
+    t.observed_at,t.disposition,t.exclusion_reason
+  FROM jsonb_to_recordset(p_targets) AS t(ordinal integer,device_id text,serial_number text,
+    org_unit_path text,observed_value text,observed_at timestamptz,disposition text,exclusion_reason text)
+  ORDER BY t.ordinal;
+  RETURN jsonb_build_object('outcome','created','preview',to_jsonb(preview));
+END;
+$$;
+
+-- The frozen manifest that confirmation stores before it creates a job (section 5.9).
+CREATE FUNCTION cc.read_device_update_preview_manifest(p_actor uuid,p_version integer,p_customer text,
+  p_preview uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE preview cc.device_update_previews; targets jsonb;
+BEGIN
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_preview IS NULL THEN
+    RAISE EXCEPTION 'The preview manifest request is invalid.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO preview FROM cc.device_update_previews p WHERE p.preview_id=p_preview;
+  -- Another person receives the same answer as a missing preview.
+  IF preview.preview_id IS NULL OR preview.created_by<>p_actor OR preview.customer_id<>p_customer THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  -- R1-F1 and R1-F3 (round 3): current authority and the frozen versions come before the existing
+  -- receipt and before any manifest is stored. A changed permission version or action version stores
+  -- no artifact and creates no job.
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT cc.write_capable(p_actor,p_customer) OR preview.permission_version<>p_version THEN
+    RETURN jsonb_build_object('outcome','permission-changed');
+  END IF;
+  -- The current action version of this slice is 1. A preview prepared under other semantics never
+  -- confirms (section 2.4).
+  IF preview.action_version<>1 THEN
+    RETURN jsonb_build_object('outcome','preview-changed');
+  END IF;
+  IF preview.job_id IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','existing','receipt',cc.device_update_receipt(preview.job_id));
+  END IF;
+  IF preview.expires_at<=clock_timestamp() THEN
+    RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
+  END IF;
+  SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.ordinal),'[]'::jsonb) INTO targets
+  FROM cc.device_update_preview_targets t WHERE t.preview_id=p_preview;
+  RETURN jsonb_build_object('outcome','manifest','manifest',jsonb_build_object('preview',
+    jsonb_build_object('previewId',preview.preview_id,'displayId',preview.display_id,
+      'customerId',preview.customer_id,'createdBy',preview.created_by,
+      'permissionVersion',preview.permission_version,'generation',preview.generation,
+      'field',preview.field,'mode',preview.mode,'value',preview.value,
+      'selected',preview.selected,'eligible',preview.eligible,'unchanged',preview.unchanged,
+      'excluded',preview.excluded,'oldestObservedAt',preview.oldest_observed_at,
+      'preparedAt',preview.prepared_at,'expiresAt',preview.expires_at,
+      'manifestDigest',preview.manifest_digest),
+    'targets',targets,'requester',preview.created_by,'confirmer',p_actor));
+END;
+$$;
+
+-- The confirmation of section 2.4. It revalidates the person, the grants, the expiry, the digest, and
+-- the connection, then creates one accepted job with its operations. A repeated call returns the job.
+CREATE FUNCTION cc.confirm_device_update_preview(p_actor uuid,p_version integer,p_customer text,
+  p_preview uuid,p_digest text,p_artifact text,p_correlation uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE preview cc.device_update_previews; connection cc.google_connection; job cc.jobs;
+  subject text; eligible integer; now_at timestamptz; number bigint; artifact cc.artifacts;
+BEGIN
+  -- S2: every input holds a value of its domain, or the call rejects before any lock.
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_preview IS NULL OR
+    p_digest IS NULL OR p_digest !~ '^[a-f0-9]{64}$' OR p_artifact IS NULL OR
+    char_length(p_artifact) NOT BETWEEN 1 AND 256 OR p_correlation IS NULL THEN
+    RAISE EXCEPTION 'The confirmation request is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Rule G: the connection read below reaches the global access lock. This function takes that lock
+  -- first, before any row lock.
+  PERFORM pg_advisory_xact_lock(7240173008);
+  -- S1: the preview row locks before the connection row. The first confirmation of a preview holds the
+  -- row until its commit, so a second confirmation reads the committed job below.
+  SELECT * INTO preview FROM cc.device_update_previews p WHERE p.preview_id=p_preview FOR UPDATE;
+  IF preview.preview_id IS NULL OR preview.created_by<>p_actor OR preview.customer_id<>p_customer THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  -- S3: a preview that holds a job never creates another one. R1-F3 (round 3): current authority and
+  -- the frozen versions are checked before the existing receipt, so a revoked grant, a disabled
+  -- principal, or an obsolete version never receives the receipt of a job it no longer may see.
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT cc.write_capable(p_actor,p_customer) OR preview.permission_version<>p_version THEN
+    RETURN jsonb_build_object('outcome','permission-changed');
+  END IF;
+  -- R1-F1 (round 3): the preview's frozen action version must still be current. This slice runs
+  -- action version 1.
+  IF preview.action_version<>1 THEN
+    RETURN jsonb_build_object('outcome','preview-changed');
+  END IF;
+  IF preview.job_id IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','existing','receipt',cc.device_update_receipt(preview.job_id));
+  END IF;
+  -- The clock reads after the preview lock. This fast path refuses an already expired preview
+  -- without the connection and artifact waits. The clock reads again after those waits.
+  IF preview.expires_at<=clock_timestamp() THEN
+    RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
+  END IF;
+  IF p_digest<>preview.manifest_digest THEN
+    RETURN jsonb_build_object('outcome','preview-changed');
+  END IF;
+  -- The connection row locks after the preview row, before the job rows. The subject stays inside
+  -- this function, so no principal needs connection:read.
+  SELECT * INTO connection FROM cc.google_connection c WHERE c.singleton FOR KEY SHARE;
+  IF connection.customer_id IS DISTINCT FROM p_customer OR NOT connection.active OR
+    connection.generation<>preview.generation THEN
+    RETURN jsonb_build_object('outcome','connection-changed');
+  END IF;
+  SELECT g.delegated_subject INTO subject FROM cc.google_credentials g WHERE g.id=connection.credential_id;
+  IF subject IS NULL THEN
+    RETURN jsonb_build_object('outcome','connection-changed');
+  END IF;
+  SELECT count(*)::integer INTO eligible FROM cc.device_update_preview_targets t
+  WHERE t.preview_id=p_preview AND t.disposition='eligible';
+  IF eligible=0 THEN
+    RETURN jsonb_build_object('outcome','nothing-to-update');
+  END IF;
+  -- R1-F4 (round 3): the manifest must be a published, live artifact. Take the artifact store's
+  -- advisory lock before the artifact row, so a concurrent remove cannot delete the file between this
+  -- check and the commit that adds the job's reference.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_artifact,0));
+  SELECT * INTO artifact FROM cc.artifacts a WHERE a.id=p_artifact FOR UPDATE;
+  IF artifact.id IS NULL OR artifact.publication_state<>'ready' OR artifact.active THEN
+    RETURN jsonb_build_object('outcome','artifact-missing');
+  END IF;
+  -- R2-F1 (round 4): the connection and artifact locks above can wait. The clock has no lock, so it
+  -- reads again after the last blocking lock and before the first write. A wait that crosses the
+  -- expiry leaves no job, no operation, and no artifact reference.
+  now_at:=clock_timestamp();
+  IF preview.expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
+  END IF;
+  number:=nextval('cc.job_number_upd');
+  INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+    target_count,target_org_unit_paths,correlation_id)
+  VALUES(gen_random_uuid(),cc.job_display_id('UPD',number),p_customer,'device-update','devices','accepted',
+    p_actor,preview.generation,eligible,
+    (SELECT COALESCE(array_agg(DISTINCT t.org_unit_path ORDER BY t.org_unit_path),'{}'::text[])
+      FROM cc.device_update_preview_targets t
+      WHERE t.preview_id=p_preview AND t.disposition='eligible'),
+    p_correlation)
+  RETURNING * INTO job;
+  INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,
+    confirmer_permission_version,delegated_subject,batch_size,batch_count,manifest_artifact_id)
+  VALUES(job.job_id,p_preview,preview.field,preview.mode,preview.value,p_actor,p_version,subject,250,
+    ceil(eligible/250.0),p_artifact);
+  INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
+    baseline_value,requested_value,batch,status)
+  SELECT job.job_id,(row_number() OVER (ORDER BY t.ordinal))::integer,t.device_id,t.serial_number,
+    t.org_unit_path,t.observed_value,
+    CASE WHEN preview.mode='clear' THEN NULL ELSE preview.value END,
+    ((row_number() OVER (ORDER BY t.ordinal)-1)/250)::integer,'pending'
+  FROM cc.device_update_preview_targets t
+  WHERE t.preview_id=p_preview AND t.disposition='eligible' ORDER BY t.ordinal;
+  UPDATE cc.device_update_previews SET job_id=job.job_id WHERE preview_id=p_preview;
+  -- The reference keeps the manifest artifact alive for the job. remove() refuses while the count is
+  -- above zero. The increment belongs to this transaction, so a rollback releases the reference.
+  UPDATE cc.artifacts SET reference_count=reference_count+1,job_id=job.job_id::text
+  WHERE id=p_artifact;
+  PERFORM cc.record_job_change(job.job_id,true);
+  RETURN jsonb_build_object('outcome','created','receipt',cc.device_update_receipt(job.job_id));
+END;
+$$;
+
 -- The purge keeps write jobs. Refresh jobs leave after seven days, previews and overlays when they lapse.
 CREATE FUNCTION cc.purge_jobs(p_customer text,p_limit integer) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -1467,4 +1721,7 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.prepare_device_update_finish(text,uuid,uuid,text),cc.finish_device_update_job(text,uuid,uuid,text),
   cc.finalize_device_update_job(text,uuid,text),
   cc.report_device_update_backoff(text,uuid,uuid,integer,uuid,integer),cc.accept_device_update_hold(text),
-  cc.purge_jobs(text,integer) FROM PUBLIC;
+  cc.purge_jobs(text,integer),cc.device_update_receipt(uuid),
+  cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,jsonb,integer),
+  cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
+  cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid) FROM PUBLIC;

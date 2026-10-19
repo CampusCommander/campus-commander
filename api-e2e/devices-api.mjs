@@ -148,6 +148,7 @@ export async function qualifyDevicesApi({
         added: 0,
         excluded: 0,
         selectedCount: 96,
+        expiredAt: null,
       },
     );
     const changed = await select('/ops', {

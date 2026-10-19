@@ -292,7 +292,10 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.finalize_device_update_job(text,uuid,text),
         cc.report_device_update_backoff(text,uuid,uuid,integer,uuid,integer),
         cc.accept_device_update_hold(text),
-        cc.purge_jobs(text,integer) TO ${role}`);
+        cc.purge_jobs(text,integer),
+        cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,jsonb,integer),
+        cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
+        cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

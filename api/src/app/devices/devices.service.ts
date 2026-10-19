@@ -43,6 +43,7 @@ import {
   selectionSpec,
   selectionStorageKey,
   type SelectionState,
+  type ParsedSelection,
 } from './device-selection';
 import { DatabaseService } from '../database/database.service';
 import { OrchestrationService } from '../orchestration/orchestration.service';
@@ -368,13 +369,20 @@ export class DevicesService {
     );
   }
 
+  private async parsedSelection(
+    session: SessionResponse,
+    key: DeviceSelectionKey,
+  ): Promise<ParsedSelection> {
+    return parseSelection(
+      await this.cache.get(selectionStorageKey(session.identity.id, key)),
+    );
+  }
+
   private async storedSelection(
     session: SessionResponse,
     key: DeviceSelectionKey,
   ): Promise<SelectionState> {
-    return parseSelection(
-      await this.cache.get(selectionStorageKey(session.identity.id, key)),
-    );
+    return (await this.parsedSelection(session, key)).state;
   }
 
   private async selectedCount(
@@ -404,13 +412,14 @@ export class DevicesService {
     return this.read(
       session,
       async (client, customerId) => {
-        const state = await this.storedSelection(session, key);
+        const { state, expiredAt } = await this.parsedSelection(session, key);
         return selectionSpec(
           state,
           await this.selectedCount(client, customerId, state),
+          expiredAt,
         );
       },
-      selectionSpec(emptySelection(), 0),
+      selectionSpec(emptySelection(), 0, null),
     );
   }
 
