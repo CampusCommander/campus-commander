@@ -72,6 +72,8 @@ async function signIn(
           },
         },
       });
+    if (path === '/api/devices/selection/resolve')
+      return route.fulfill({ json: { selected: {} } });
     if (path === '/api/devices/sync')
       return route.fulfill({
         json: {
