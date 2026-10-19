@@ -633,6 +633,9 @@ BEGIN
   IF p_execution IS NULL THEN
     RAISE EXCEPTION 'The device update execution is invalid.' USING ERRCODE='22023';
   END IF;
+  -- Rule G (B2b round 3): the credential read below reaches the global access lock (advisory lock
+  -- 7240173008), so the claim takes that lock first, before any row lock.
+  PERFORM pg_advisory_xact_lock(7240173008);
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL OR job.kind<>'device-update' THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';

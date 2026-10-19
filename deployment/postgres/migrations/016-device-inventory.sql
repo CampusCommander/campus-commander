@@ -247,6 +247,10 @@ BEGIN
   IF p_customer IS NULL OR p_id IS NULL OR p_attempt IS NULL THEN
     RAISE EXCEPTION 'The device sync expired or changed.' USING DETAIL='device-sync-changed';
   END IF;
+  -- Rule G (B2b round 3): advisory lock 7240173008 is the global access lock. The generation helper below
+  -- takes it, so the claim takes it first, before any row lock. No claim then holds a row lock while it
+  -- waits for that lock. The helper takes the lock again, and the lock is re-entrant.
+  PERFORM pg_advisory_xact_lock(7240173008);
   SELECT * INTO pending FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
   -- S1: the state row locks first, the scoped header second, and the clock third. The header loads
   -- here, so the fence validates its presence and its running, unfinished lifecycle under the lock
@@ -551,6 +555,10 @@ RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE pending cc.device_sync_state; header record; now_at timestamptz; staged integer;
 BEGIN
+  -- Rule G (B2b round 3): a successful finish reaches the global access lock (advisory lock 7240173008)
+  -- through the generation helper, so every finish takes that lock first, before any row lock. The
+  -- generation call still precedes the principal KEY SHARE below.
+  PERFORM pg_advisory_xact_lock(7240173008);
   SELECT * INTO pending FROM cc.device_sync_state WHERE customer_id=p_customer FOR UPDATE;
   -- S1: the sync state row locks first, the header second, and the clock third (section 1.8, review F11).
   -- The header type stays dynamic here, because 016 runs before 017 creates cc.jobs.
