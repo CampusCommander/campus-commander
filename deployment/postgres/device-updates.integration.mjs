@@ -21,7 +21,12 @@ const load = async () => {
 };
 
 /** The preview, confirmation, selection expiry, and manifest checks of card B3. */
-export async function qualifyDeviceUpdates({ runtime, migrator, issuer }) {
+export async function qualifyDeviceUpdates({
+  runtime,
+  migrator,
+  connect,
+  issuer,
+}) {
   const connection = (
     await migrator.query('SELECT * FROM cc.google_connection')
   ).rows[0];
@@ -47,20 +52,22 @@ export async function qualifyDeviceUpdates({ runtime, migrator, issuer }) {
       return id;
     },
   };
-  const database = {
-    connection: { query: (text, values) => runtime.query(text, values) },
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const databaseFor = (client) => ({
+    connection: { query: (text, values) => client.query(text, values) },
     async transaction(run) {
-      await runtime.query('BEGIN');
+      await client.query('BEGIN');
       try {
-        const result = await run(runtime);
-        await runtime.query('COMMIT');
+        const result = await run(client);
+        await client.query('COMMIT');
         return result;
       } catch (error) {
-        await runtime.query('ROLLBACK');
+        await client.query('ROLLBACK');
         throw error;
       }
     },
-  };
+  });
+  const database = databaseFor(runtime);
   const updates = new DeviceUpdates(database, cache, storage);
   const current = { customerId: customer, generation };
   const grants = () => [
@@ -268,6 +275,8 @@ export async function qualifyDeviceUpdates({ runtime, migrator, issuer }) {
       });
       assert.equal(again.existing, true);
       assert.equal(again.receipt.jobId, job.jobId);
+      assert.equal(again.receipt.deviceCount, 2);
+      assert.equal(again.receipt.updateCount, 2);
       assert.equal(
         (
           await migrator.query(
@@ -514,6 +523,272 @@ export async function qualifyDeviceUpdates({ runtime, migrator, issuer }) {
         before,
       );
     });
+
+    await check(
+      'B3 the runtime role cannot write a preview, job, or operation table',
+      async () => {
+        const writer = await connect('cc-app', 'cc-app');
+        const tables = [
+          'cc.device_update_previews',
+          'cc.device_update_preview_targets',
+          'cc.jobs',
+          'cc.device_update_jobs',
+          'cc.device_update_operations',
+        ];
+        const statements = [
+          'INSERT INTO cc.device_update_previews SELECT * FROM cc.device_update_previews LIMIT 0',
+          'UPDATE cc.device_update_previews SET job_id=job_id WHERE false',
+          'INSERT INTO cc.device_update_preview_targets SELECT * FROM cc.device_update_preview_targets LIMIT 0',
+          'UPDATE cc.device_update_preview_targets SET serial_number=serial_number WHERE false',
+          'INSERT INTO cc.jobs SELECT * FROM cc.jobs LIMIT 0',
+          'UPDATE cc.jobs SET revision=revision WHERE false',
+          'INSERT INTO cc.device_update_jobs SELECT * FROM cc.device_update_jobs LIMIT 0',
+          'UPDATE cc.device_update_jobs SET value=value WHERE false',
+          'INSERT INTO cc.device_update_operations SELECT * FROM cc.device_update_operations LIMIT 0',
+          'UPDATE cc.device_update_operations SET status=status WHERE false',
+        ];
+        try {
+          for (const table of tables)
+            assert.equal(
+              (
+                await migrator.query(
+                  `SELECT has_table_privilege('cc-app',$1,'INSERT') AS held`,
+                  [table],
+                )
+              ).rows[0].held,
+              false,
+              `The runtime role holds no INSERT on ${table}.`,
+            );
+          for (const text of statements) {
+            await writer.query('BEGIN');
+            const code = await writer.query(text).then(
+              () => 'allowed',
+              (error) => error.code,
+            );
+            await writer.query('ROLLBACK');
+            assert.equal(code, '42501', `${text} is denied.`);
+          }
+        } finally {
+          await writer.end();
+        }
+      },
+    );
+
+    await check(
+      'B3 preview creation rejects a principal without devices:bulk-actions',
+      async () => {
+        const limited = randomUUID();
+        const limitedKey = selectionStorageKey(limited, key);
+        await migrator.query(
+          'INSERT INTO cc.application_principals(id,issuer,subject,display_name) VALUES($1,$2,$3,$4)',
+          [limited, issuer, `b3-limited-${limited}`, 'B3 limited actor'],
+        );
+        await migrator.query(
+          'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
+          [
+            limited,
+            'devices:write',
+            JSON.stringify({ kind: 'district', customerId: customer }),
+          ],
+        );
+        selections.set(limitedKey, raw({ additions: ['b3-a'] }));
+        try {
+          await assert.rejects(
+            updates.preview(
+              {
+                ...session,
+                identity: { ...session.identity, id: limited },
+              },
+              current,
+              { ...key, mode: 'clear' },
+            ),
+            (error) => {
+              assert.equal(error.getStatus(), 403);
+              return true;
+            },
+          );
+        } finally {
+          await migrator.query(
+            'DELETE FROM cc.device_update_previews WHERE created_by=$1',
+            [limited],
+          );
+          await migrator.query(
+            'DELETE FROM cc.application_grants WHERE principal_id=$1',
+            [limited],
+          );
+          await migrator.query(
+            'DELETE FROM cc.application_principals WHERE id=$1',
+            [limited],
+          );
+        }
+      },
+    );
+
+    await check(
+      'B3 a lost grant stores no manifest artifact before the refusal',
+      async () => {
+        fresh(['b3-a']);
+        const other = await updates.preview(session, current, {
+          ...key,
+          mode: 'replace',
+          value: 'Room 12',
+        });
+        await migrator.query(
+          "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='devices:bulk-actions'",
+          [actor],
+        );
+        const stored = [];
+        const revoked = new DeviceUpdates(database, cache, {
+          async storeJson(document) {
+            stored.push(document);
+            return randomUUID();
+          },
+        });
+        try {
+          await rejects(
+            revoked.confirm(session, current, other.previewId, {
+              manifestDigest: other.manifestDigest,
+              acknowledged: true,
+            }),
+            'permission-changed',
+            409,
+          );
+          assert.equal(stored.length, 0);
+        } finally {
+          await migrator.query(
+            'INSERT INTO cc.application_grants(principal_id,action,scope) VALUES($1,$2,$3)',
+            [
+              actor,
+              'devices:bulk-actions',
+              JSON.stringify({ kind: 'district', customerId: customer }),
+            ],
+          );
+        }
+      },
+    );
+
+    await check(
+      'B3 two concurrent confirmations create exactly one job',
+      async () => {
+        fresh(['b3-a']);
+        const other = await updates.preview(session, current, {
+          ...key,
+          mode: 'replace',
+          value: 'Room 12',
+        });
+        const left = await connect('cc-app', 'cc-app');
+        const right = await connect('cc-app', 'cc-app');
+        try {
+          const one = new DeviceUpdates(databaseFor(left), cache, storage);
+          const two = new DeviceUpdates(databaseFor(right), cache, storage);
+          const [first, second] = await Promise.all([
+            one.confirm(session, current, other.previewId, {
+              manifestDigest: other.manifestDigest,
+              acknowledged: true,
+            }),
+            two.confirm(session, current, other.previewId, {
+              manifestDigest: other.manifestDigest,
+              acknowledged: true,
+            }),
+          ]);
+          assert.equal(first.receipt.jobId, second.receipt.jobId);
+          assert.equal(
+            (
+              await migrator.query(
+                `SELECT count(*)::integer AS count FROM cc.jobs j
+                 JOIN cc.device_update_previews p ON p.job_id=j.job_id
+                 WHERE p.preview_id=$1`,
+                [other.previewId],
+              )
+            ).rows[0].count,
+            1,
+          );
+        } finally {
+          await left.end();
+          await right.end();
+        }
+      },
+    );
+
+    await check(
+      'B3 confirmation takes the global access lock before its preview row',
+      async () => {
+        fresh(['b3-a']);
+        const other = await updates.preview(session, current, {
+          ...key,
+          mode: 'replace',
+          value: 'Room 12',
+        });
+        const holder = await connect('cc-migrator', 'cc-app');
+        const caller = await connect('cc-app', 'cc-app');
+        const observer = await connect('cc-migrator', 'cc-app');
+        let pending;
+        try {
+          await holder.query('BEGIN');
+          await holder.query('SELECT pg_advisory_xact_lock(7240173008)');
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const callerPid = (
+            await caller.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          pending = new DeviceUpdates(databaseFor(caller), cache, storage)
+            .confirm(session, current, other.previewId, {
+              manifestDigest: other.manifestDigest,
+              acknowledged: true,
+            })
+            .then(
+              (value) => ({ value }),
+              (error) => ({ error }),
+            );
+          let waited = false;
+          for (let round = 0; round < 200; round += 1) {
+            const held = (
+              await migrator.query(
+                'SELECT pg_blocking_pids($1::int) && $2::int[] AS held',
+                [callerPid, [holderPid]],
+              )
+            ).rows[0].held;
+            if (held === true) {
+              waited = true;
+              break;
+            }
+            await sleep(25);
+          }
+          assert.equal(
+            waited,
+            true,
+            'The confirmation waits for the global access lock.',
+          );
+          const free = await observer
+            .query(
+              'SELECT 1 FROM cc.device_update_previews WHERE preview_id=$1 FOR UPDATE NOWAIT',
+              [other.previewId],
+            )
+            .then(
+              () => true,
+              (error) => error.code,
+            );
+          assert.equal(
+            free,
+            true,
+            'The confirmation holds no preview row while it waits.',
+          );
+          await holder.query('COMMIT');
+          const answer = await pending;
+          assert.equal(answer.error, undefined);
+          assert.equal(answer.value.existing, false);
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (pending) await pending;
+          await Promise.allSettled([
+            holder.end(),
+            caller.end(),
+            observer.end(),
+          ]);
+        }
+      },
+    );
   } finally {
     await migrator.query('UPDATE cc.google_connection SET active=$1', [
       wasActive,

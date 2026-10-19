@@ -294,36 +294,40 @@ test('a JSON document is staged and published as one artifact', async () => {
 });
 
 test('an artifact failure fails the confirmation', async () => {
+  const calls = [];
+  const previewId = '33333333-3333-4333-8333-333333333333';
+  const manifest = {
+    preview: { previewId, manifestDigest: 'a'.repeat(64) },
+    targets: [],
+    requester: actor,
+    confirmer: actor,
+  };
   const updates = new DeviceUpdates(
     {
       connection: {
-        query: async (text) =>
-          text.includes('FROM cc.device_update_previews')
-            ? {
-                rows: [
-                  {
-                    preview_id: '33333333-3333-4333-8333-333333333333',
-                    display_id: 'PV-001',
-                    customer_id: customer,
-                    created_by: actor,
-                    permission_version: 1,
-                    generation: 1,
-                    field: 'annotatedLocation',
-                    mode: 'replace',
-                    value: 'Room 12',
-                    selected: 1,
-                    eligible: 1,
-                    unchanged: 0,
-                    excluded: 0,
-                    oldest_observed_at: new Date(),
-                    manifest_digest: 'a'.repeat(64),
-                    prepared_at: new Date(),
-                    expires_at: new Date(Date.now() + 600_000),
-                    job_id: null,
+        query: async (text) => {
+          calls.push(text);
+          if (text.includes('cc.read_device_update_preview_manifest'))
+            return { rows: [{ result: { outcome: 'manifest', manifest } }] };
+          if (text.includes('cc.confirm_device_update_preview'))
+            return {
+              rows: [
+                {
+                  result: {
+                    outcome: 'created',
+                    receipt: {
+                      jobId: '44444444-4444-4444-8444-444444444444',
+                      displayId: 'UPD-001',
+                      status: 'accepted',
+                      deviceCount: 1,
+                      updateCount: 1,
+                    },
                   },
-                ],
-              }
-            : { rows: [] },
+                },
+              ],
+            };
+          return { rows: [] };
+        },
       },
       transaction: async () => {
         throw new Error('The transaction must not run.');
@@ -337,12 +341,13 @@ test('an artifact failure fails the confirmation', async () => {
     },
   );
   await assert.rejects(
-    updates.confirm(session, current, '33333333-3333-4333-8333-333333333333', {
+    updates.confirm(session, current, previewId, {
       manifestDigest: 'a'.repeat(64),
       acknowledged: true,
     }),
     /artifact store is unavailable/,
   );
+  assert.match(calls[0], /cc\.read_device_update_preview_manifest/);
 });
 test('a selection above the 100,000 cap answers 422 selection-too-large', async () => {
   const rows = Array.from({ length: 100_001 }, (_, index) => ({
@@ -401,4 +406,239 @@ test('an unknown preview answers 404 preview-not-found', async () => {
       return true;
     },
   );
+});
+
+const previewId = '33333333-3333-4333-8333-333333333333';
+const jobId = '44444444-4444-4444-8444-444444444444';
+const previewRow = (extra = {}) => ({
+  preview_id: previewId,
+  display_id: 'PV-001',
+  customer_id: customer,
+  created_by: actor,
+  permission_version: 1,
+  generation: 1,
+  field: 'annotatedLocation',
+  mode: 'replace',
+  value: 'Room 12',
+  selected: 1,
+  eligible: 1,
+  unchanged: 0,
+  excluded: 0,
+  oldest_observed_at: new Date(),
+  manifest_digest: 'a'.repeat(64),
+  prepared_at: new Date(),
+  expires_at: new Date(Date.now() + 600_000),
+  job_id: null,
+  ...extra,
+});
+const manifestDocument = () => ({
+  preview: { previewId, manifestDigest: 'a'.repeat(64) },
+  targets: [],
+  requester: actor,
+  confirmer: actor,
+});
+const receiptResult = {
+  outcome: 'created',
+  receipt: {
+    jobId,
+    displayId: 'UPD-001',
+    status: 'accepted',
+    deviceCount: 1,
+    updateCount: 1,
+  },
+};
+const selectionJson = JSON.stringify({
+  terms: [],
+  groups: [],
+  additions: ['d1'],
+  exceptions: [],
+  changedAt: new Date().toISOString(),
+});
+
+test('the preview create function freezes every target', async () => {
+  const calls = [];
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text, values) => {
+          calls.push({ text, values });
+          if (text.includes('cc.create_device_update_preview'))
+            return {
+              rows: [{ result: { outcome: 'created', preview: previewRow() } }],
+            };
+          return { rows: [device('d1')] };
+        },
+      },
+      transaction: async (run) =>
+        run({
+          query: async (text) => {
+            calls.push({ text });
+            return text.includes('INSERT INTO cc.device_update_previews')
+              ? { rows: [previewRow()] }
+              : { rows: [{}] };
+          },
+        }),
+    },
+    { get: async () => selectionJson },
+    { storeJson: async () => 'unused' },
+  );
+  const result = await updates.preview(session, current, {
+    ...key,
+    mode: 'replace',
+    value: 'Room 12',
+  });
+  assert.ok(
+    calls.some((call) => call.text.includes('cc.create_device_update_preview')),
+    'The preview is created by the SECURITY DEFINER function.',
+  );
+  assert.equal(result.displayId, 'PV-001');
+  assert.equal(result.eligible, 1);
+});
+
+test('a forbidden preview create answers 403', async () => {
+  const calls = [];
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text) => {
+          calls.push(text);
+          if (text.includes('cc.create_device_update_preview'))
+            return { rows: [{ result: { outcome: 'forbidden' } }] };
+          return { rows: [device('d1')] };
+        },
+      },
+      transaction: async (run) => run({ query: async () => ({ rows: [{}] }) }),
+    },
+    { get: async () => selectionJson },
+    { storeJson: async () => 'unused' },
+  );
+  await assert.rejects(
+    updates.preview(session, current, { ...key, mode: 'clear' }),
+    (error) => {
+      assert.equal(error.getStatus(), 403);
+      return true;
+    },
+  );
+  assert.match(calls.join('\n'), /cc\.create_device_update_preview/);
+});
+
+test('a lost grant stores no manifest artifact', async () => {
+  const calls = [];
+  const stored = [];
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text) => {
+          calls.push(text);
+          if (text.includes('cc.read_device_update_preview_manifest'))
+            return { rows: [{ result: { outcome: 'permission-changed' } }] };
+          if (text.includes('FROM cc.device_update_previews'))
+            return { rows: [previewRow()] };
+          return { rows: [] };
+        },
+      },
+      transaction: async (run) =>
+        run({
+          query: async (text) =>
+            text.includes('SELECT CASE')
+              ? { rows: [{ reason: 'permission-changed' }] }
+              : { rows: [{}] },
+        }),
+    },
+    { get: async () => null },
+    {
+      storeJson: async (document) => {
+        stored.push(document);
+        return 'artifact';
+      },
+    },
+  );
+  let error;
+  try {
+    await updates.confirm(session, current, previewId, {
+      manifestDigest: 'a'.repeat(64),
+      acknowledged: true,
+    });
+  } catch (failure) {
+    error = failure;
+  }
+  assert.match(
+    calls[0],
+    /cc\.read_device_update_preview_manifest/,
+    'The manifest function runs first.',
+  );
+  assert.equal(error?.getStatus(), 409);
+  assert.equal(error?.getResponse()?.reason, 'permission-changed');
+  assert.equal(stored.length, 0);
+});
+
+test('every confirmation outcome maps to its status and code', async () => {
+  const cases = [
+    [
+      { outcome: 'preview-expired', expiresAt: '2026-10-19T12:00:00.000Z' },
+      410,
+      'preview-expired',
+    ],
+    [{ outcome: 'preview-changed' }, 409, 'preview-changed'],
+    [{ outcome: 'connection-changed' }, 409, 'connection-changed'],
+    [{ outcome: 'nothing-to-update' }, 422, 'nothing-to-update'],
+    [{ outcome: 'not-found' }, 404, 'preview-not-found'],
+  ];
+  for (const [result, status, reason] of cases) {
+    const calls = [];
+    const updates = new DeviceUpdates(
+      {
+        connection: {
+          query: async (text) => {
+            calls.push(text);
+            if (text.includes('cc.read_device_update_preview_manifest'))
+              return {
+                rows: [
+                  {
+                    result: {
+                      outcome: 'manifest',
+                      manifest: manifestDocument(),
+                    },
+                  },
+                ],
+              };
+            if (text.includes('cc.confirm_device_update_preview'))
+              return { rows: [{ result }] };
+            if (text.includes('FROM cc.device_update_previews'))
+              return { rows: [previewRow()] };
+            return { rows: [] };
+          },
+        },
+        transaction: async (run) =>
+          run({
+            query: async (text) =>
+              text.includes('SELECT CASE')
+                ? { rows: [{ reason: null }] }
+                : { rows: [{}] },
+          }),
+      },
+      { get: async () => null },
+      { storeJson: async () => 'artifact' },
+    );
+    let error;
+    try {
+      await updates.confirm(session, current, previewId, {
+        manifestDigest: 'a'.repeat(64),
+        acknowledged: true,
+      });
+    } catch (failure) {
+      error = failure;
+    }
+    assert.match(
+      calls[0],
+      /cc\.read_device_update_preview_manifest/,
+      `${result.outcome} reads the manifest first.`,
+    );
+    assert.equal(error?.getStatus(), status, `${result.outcome} status.`);
+    assert.equal(
+      error?.getResponse()?.reason,
+      reason,
+      `${result.outcome} reason.`,
+    );
+  }
 });

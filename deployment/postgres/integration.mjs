@@ -564,6 +564,7 @@ try {
     ...(await qualifyDeviceUpdates({
       runtime,
       migrator: migrators[0],
+      connect,
       issuer,
     })),
   );
