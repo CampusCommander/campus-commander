@@ -26,6 +26,7 @@ import { DeviceEventsService } from '../devices/device-events.service';
 import { streamEvents } from '../devices/device-events';
 import { JobsService } from './jobs.service';
 import { seesEveryJob } from './jobs';
+import { recheckJobStream } from './jobs-stream';
 
 /** A repeated query key or a comma-separated value. */
 const many = <Schema extends z.ZodTypeAny>(schema: Schema) =>
@@ -153,21 +154,16 @@ export class JobsController {
       },
       // A ping goes out only while the session and its read actions still hold for this customer.
       recheck: async () => {
-        try {
-          request.session = await this.auth.authenticate(
-            request.headers.cookie,
-            'identity:read',
-            request.correlationId,
-            { slide: false },
-          );
-          const next = await this.jobs.customer(request.session);
-          return (
-            next === customerId &&
-            seesEveryJob(request.session, customerId) === everyJob
-          );
-        } catch {
-          return false;
-        }
+        const checked = await recheckJobStream({
+          auth: this.auth,
+          jobs: this.jobs,
+          cookie: request.headers.cookie,
+          correlationId: request.correlationId,
+          customerId,
+          everyJob,
+        });
+        if (checked.session) request.session = checked.session;
+        return checked.allowed;
       },
       forward: async (event, failed) => {
         if (failed || event.type !== 'job-changed') return null;
