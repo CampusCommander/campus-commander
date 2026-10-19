@@ -6339,16 +6339,17 @@ export async function qualifyDeviceWriteJobs({
         );
         await holder.query('COMMIT');
         const [written, requested, observed] = await Promise.all(runs);
-        for (const [label, answer] of [
-          [writer, written],
-          ['request', requested],
-          ['observation', observed],
-        ])
-          assert.notEqual(
-            answer.code,
-            '40P01',
-            `The ${label} must not deadlock in a principal, sync-state, and global-lock cycle: ${answer.message}`,
-          );
+        // Each call catches its own error in outcomeOf, so a deadlock reaches this assertion as code 40P01.
+        const codes = {
+          [writer]: written.code ?? null,
+          request: requested.code ?? null,
+          observation: observed.code ?? null,
+        };
+        assert.equal(
+          Object.values(codes).filter((code) => code === '40P01').length,
+          0,
+          `No call ends with 40P01 in a principal, sync-state, and global-lock cycle. Codes: ${JSON.stringify(codes)}.`,
+        );
         assert.equal(written.accepted, true, written.message);
         if (writer === 'claim')
           assert.equal(
