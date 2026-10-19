@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import {
-  GOOGLE_CUSTOMER_SCOPES,
+  GOOGLE_HEALTH_RECOVERY,
   GOOGLE_SETUP_SCOPES,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
@@ -322,68 +322,74 @@ it('keeps Copy scopes beside the pre-filled link', async () => {
   fixture.destroy();
 });
 
-it('offers the connection scopes beside a delegation failure before confirmation', async () => {
-  const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-  sessionStorage.setItem(`cc:google-candidate:${identity.id}`, id);
-  const request = vi.fn(async (path: string) =>
-    path.includes('/candidates/')
-      ? Response.json({
-          id,
-          status: 'failed',
-          expiresAt: new Date(Date.now() + 600000).toISOString(),
-          clientId: '123456789',
-          subject: 'admin@example.org',
-          observation: null,
-          observedAt: null,
-          failure: 'delegation-not-authorized',
-        })
-      : Response.json({ connection: null }),
-  );
-  await TestBed.configureTestingModule({
-    imports: [GoogleConnectionPage],
-    providers: [
-      provideRouter([]),
-      {
-        provide: AuthStore,
-        useValue: {
-          request,
-          metadata: () => ({ phase: 3 }),
-          session: () => ({ identity, csrfToken: 'session' }),
-          interrupted: () => false,
-          can: () => true,
+it.each(['delegation-not-authorized', 'scope-mismatch'] as const)(
+  'offers the setup scopes beside the %s failure before confirmation',
+  async (failure) => {
+    const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    sessionStorage.setItem(`cc:google-candidate:${identity.id}`, id);
+    const request = vi.fn(async (path: string) =>
+      path.includes('/candidates/')
+        ? Response.json({
+            id,
+            status: 'failed',
+            expiresAt: new Date(Date.now() + 600000).toISOString(),
+            clientId: '123456789',
+            subject: 'admin@example.org',
+            observation: null,
+            observedAt: null,
+            failure,
+          })
+        : Response.json({ connection: null }),
+    );
+    await TestBed.configureTestingModule({
+      imports: [GoogleConnectionPage],
+      providers: [
+        provideRouter([]),
+        {
+          provide: AuthStore,
+          useValue: {
+            request,
+            metadata: () => ({ phase: 3 }),
+            session: () => ({ identity, csrfToken: 'session' }),
+            interrupted: () => false,
+            can: () => true,
+          },
         },
-      },
-      {
-        provide: ConnectionStore,
-        useValue: {
-          connection: signal(null),
-          loaded: signal(true),
-          loading: signal(false),
-          stale: signal(false),
-          error: signal(''),
+        {
+          provide: ConnectionStore,
+          useValue: {
+            connection: signal(null),
+            loaded: signal(true),
+            loading: signal(false),
+            stale: signal(false),
+            error: signal(''),
+          },
         },
-      },
-    ],
-  }).compileComponents();
-  const fixture = TestBed.createComponent(GoogleConnectionPage);
-  fixture.detectChanges();
-  const element = fixture.nativeElement as HTMLElement;
-  await vi.waitFor(() =>
-    expect(element.textContent).toContain(
-      'Verify the service-account numeric client ID',
-    ),
-  );
-  fixture.detectChanges();
-  const link = element.querySelector<HTMLAnchorElement>(
-    'a[href*="clientScopeToAdd"]',
-  );
-  expect(link).not.toBeNull();
-  const url = new URL(link!.href);
-  expect(url.searchParams.get('clientScopeToAdd')).toBe(
-    [...new Set(GOOGLE_CUSTOMER_SCOPES)].sort().join(','),
-  );
-  expect(url.searchParams.get('dn')).toBeNull();
-  expect(element.textContent).toContain(REPLACE_NOTE);
-  fixture.destroy();
-  sessionStorage.clear();
-});
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(GoogleConnectionPage);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    await vi.waitFor(() =>
+      expect(element.textContent).toContain(
+        GOOGLE_HEALTH_RECOVERY[failure].recovery,
+      ),
+    );
+    fixture.detectChanges();
+    const link = element.querySelector<HTMLAnchorElement>(
+      'a[href*="clientScopeToAdd"]',
+    );
+    expect(link).not.toBeNull();
+    const url = new URL(link!.href);
+    expect(url.searchParams.get('clientScopeToAdd')).toBe(
+      sortedSetupScopes.join(','),
+    );
+    expect(url.searchParams.get('clientIdToAdd')).toBe('123456789');
+    expect(url.searchParams.get('overwriteClientId')).toBe('true');
+    expect(url.searchParams.get('dn')).toBeNull();
+    expect(link!.href).not.toContain('authuser');
+    expect(element.textContent).toContain(REPLACE_NOTE);
+    fixture.destroy();
+    sessionStorage.clear();
+  },
+);

@@ -202,10 +202,12 @@ it('keeps a verified School OU scope in every link and shows no School OU prompt
   const required = element.querySelector<HTMLAnchorElement>(
     'details.authorization a[href*="clientScopeToAdd"]',
   );
+  expect(required).not.toBeNull();
   expect(linkScopes(required!)).toContain(scopeOf('school-ou-references'));
   const capabilityLink = element.querySelector<HTMLAnchorElement>(
     'article[aria-labelledby="device-inventory-title"] a[href*="clientScopeToAdd"]',
   );
+  expect(capabilityLink).not.toBeNull();
   expect(linkScopes(capabilityLink!)).toContain(
     scopeOf('school-ou-references'),
   );
