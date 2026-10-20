@@ -73,6 +73,14 @@ The button's exact presentation without Bulk Actions permission remains subject 
 Verify package compatibility and virtualization behavior during implementation.
 Do not copy historical package versions from a design document.
 
+## Bulk action sheet
+
+- A bulk action opens a 400 px sheet on the right, over the grid. The grid keeps its size and stays usable.
+- A horizontal stepper shows the steps of a multi-step action. A one-step action shows no stepper.
+- Bottom actions sit in a bar at the sheet bottom, aligned left, primary first.
+- Below 600 px, the sheet fills the window as a modal sheet with the shared scrim.
+- Source: `docs/ui/designs/2026-10-20-bulk-action-sheet.html`, approved by the owner on 2026-10-20.
+
 ## Selection
 
 **SELECT-01 — Persistent scope.** Keep browsing selection separate from displayed query state and approved job targets.

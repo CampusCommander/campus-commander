@@ -19,7 +19,7 @@ Select All captures every device that matches the filters.
 Bulk Actions sits to the right of Refresh. This slice adds one item to it: Update device.
 Update device is disabled with a named reason when the selection is empty, the write scope is missing, or the app is offline.
 
-Update device opens the draft page "Update N devices" (`94:75`), not a dialog.
+Update device opens the bulk action sheet on the right, over the grid. The sheet holds the draft, the preview, the confirmation, and the receipt.
 The draft shows the selected count, Annotated location, and Change mode.
 The Change mode label is "Update · Replace the existing value". The D1 answer calls this mode "Replace".
 Replace writes one location value to every target. It accepts at most 200 characters, counted as code points, and rejects a whitespace-only value.
@@ -104,7 +104,7 @@ These defaults are engineering choices, not owner decisions. Change them when th
 Each item names its sources. Repository paths carry line numbers. `mock:` paths refer to the admin-sdk-mock repository.
 
 1. Entry point: Bulk Actions to the right of Refresh, with one item labeled "Update device". No unbuilt items appear. Sources: `docs/ui/patterns.md:15, 19-20`, `docs/archive/ux/feature-review-notes-2026-09-03.md:26`, `docs/ui/rules.md:76`.
-2. The edit step is the draft page in `94:75`, not a dialog. It shows the selected count, Annotated location, and Change mode. The mode label is "Update · Replace the existing value". The D1 answer calls this mode "Replace". Clear value is a separate explicit choice. The draft omits the Organization unit field. Org unit edits are excluded, and UI-05 forbids inert controls. "Review pending devices" shows the selected devices in the Devices grid and keeps the draft. Sources: Figma `94:75`, `docs/archive/ux/feature-review-notes-2026-09-03.md:27-29`, `docs/ui/patterns.md:121`, `docs/ui/rules.md:76`.
+2. The edit step is the Edit step of the bulk action sheet. Its content follows `94:75`. It shows the selected count, Annotated location, and Change mode. The mode label is "Update · Replace the existing value". The D1 answer calls this mode "Replace". Clear value is a separate explicit choice. The draft omits the Organization unit field. Org unit edits are excluded, and UI-05 forbids inert controls. "Review pending devices" shows the selected devices in the Devices grid and keeps the draft. Sources: Figma `94:75`, `docs/archive/ux/feature-review-notes-2026-09-03.md:27-29`, `docs/ui/patterns.md:121`, `docs/ui/rules.md:76`.
 3. Update device is disabled with a reason when the selection is empty, the write scope is missing, or the app is offline. Sources: `docs/ui/patterns.md:20, 24`, `docs/ui/rules.md:118`, `docs/workflows/device-browsing.md:118`.
 4. Validation: at most 200 characters counted as code points, a non-empty value for Replace, whitespace-only rejected, Clear as a separate explicit choice sent as `null`. Sources: Google ChromeOS device resource page (2025-11-07), Google performance guide (2026-09-03), `mock:src/directory/common.ts:118-135`, `docs/ui/patterns.md:121`, `libs/google-connection/src/lib/devices.ts:102-104`.
 5. Google call: `chromeosdevices.patch` with only `annotatedLocation` in the body, sent as PATCH parts through the batch service, at most 250 parts per batch. Sources: Google patch method page (2026-03-10), `libs/google-connection/src/lib/batch.ts:87-100, 160-167`, `docs/superpowers/specs/2026-10-07-google-batch-service-decisions.md:47-56, 74-79`.
@@ -142,9 +142,15 @@ Additional engineering defaults:
 
 ## Implementation defaults — 2026-10-19
 
-Engineering choices from card F1, not owner decisions. The draft route is `devices/update`, declared before `devices/:deviceId`, and the preview route is `devices/update/previews/:previewId`, which card F2 builds. The busy answer of the write-access check reads "Another check started less than 30 seconds ago. Try again in 30 seconds." The expired-selection state leaves out "View existing jobs" until card F3 adds the Jobs page. Recheck appears in the denied state as well as the unchecked and unavailable states, because the API stores each check result for 300 seconds.
+Engineering choices from card F1, not owner decisions. The sheet replaced the draft route `devices/update` and the preview route `devices/update/previews/:previewId` on 2026-10-20. No route remains for the draft, preview, confirmation, or receipt pages. The busy answer of the write-access check reads "Another check started less than 30 seconds ago. Try again in 30 seconds." The expired-selection state leaves out "View existing jobs" until card F3 adds the Jobs page. Recheck appears in the denied state as well as the unchecked and unavailable states, because the API stores each check result for 300 seconds.
 
 Engineering choices from card F3, not owner decisions. The Jobs page opens without a filter, and the "Created: Last 7 days" chip in the frames is an example window. The refresh-job progress lines are drafted in the frame style, and the owner reviews every drafted string in the F3 pull request. The eye control opens `jobs/:displayId`, which card F4 builds.
+
+## Owner decisions — 2026-10-20
+
+- Bulk actions open in a sheet on the right side, over the grid. The sheet holds every control of the action. A horizontal stepper shows the steps.
+- The owner approved the 400 px Material mockup: `docs/ui/designs/2026-10-20-bulk-action-sheet.html`.
+- The sheet replaces the draft, preview, confirmation, and receipt pages.
 
 ## States
 

@@ -68,7 +68,7 @@ const schoolWrite = new RegExp(
   `^/api/schools/reviews(?:/${schoolIdPath}/confirm)?$`,
 );
 const deviceRead = /^\/api\/devices\/[A-Za-z0-9_-]{1,128}$/;
-const devicePage = /^\/devices\/[A-Za-z0-9_-]{1,128}$/;
+const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
   /^\/api\/devices\/(?:sync|query|groups|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh)$/;
 const jobDisplayIdPath = '(?:UPD|REF)-\\d{3,}';
@@ -87,10 +87,7 @@ const deviceUpdateRead = new RegExp(
 const deviceUpdateWrite = new RegExp(
   `^/api/devices/updates/(?:access/check|previews|previews/${previewIdPath}/confirm)$`,
 );
-const jobPage = new RegExp(`^/jobs(?:/${jobDisplayIdPath}(?:/receipt)?)?$`);
-const deviceUpdatePage = new RegExp(
-  `^/devices/update(?:/previews/${previewIdPath}(?:/confirm)?)?$`,
-);
+const jobPage = new RegExp(`^/jobs(?:/${jobDisplayIdPath})?$`);
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
@@ -157,8 +154,7 @@ export async function proxyApplication(
     (phase === 3 &&
       (phase3Pages.has(pathname) ||
         devicePage.test(pathname) ||
-        jobPage.test(pathname) ||
-        deviceUpdatePage.test(pathname)));
+        jobPage.test(pathname)));
   if (!api && !page && !assets.test(pathname))
     return finish(response, 404, 'Route unavailable.\n');
   const methodAllowed =

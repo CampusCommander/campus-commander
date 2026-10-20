@@ -50,6 +50,28 @@ it('sends Select All with the grid filters as device predicates', async () => {
   expect(provider.spec()?.selectedCount).toBe(95);
 });
 
+it('counts applied selection changes, not reads', async () => {
+  const call = vi
+    .fn()
+    .mockImplementation(async () => Response.json({ selection: spec }));
+  const provider = new DeviceSelectionProvider(call);
+  expect(provider.revision()).toBe(0);
+  await provider.getSpec({ gridId: 'devices', tabId });
+  expect(provider.revision()).toBe(0);
+  await provider.applyOps({
+    gridId: 'devices',
+    tabId,
+    ops: [{ op: 'deselect', ids: ['d1'] }],
+  });
+  expect(provider.revision()).toBe(1);
+  await provider.applyOps({
+    gridId: 'devices',
+    tabId,
+    ops: [{ op: 'select', ids: ['d2'] }],
+  });
+  expect(provider.revision()).toBe(2);
+});
+
 it('reports the selection in the grid filter form', async () => {
   const provider = new DeviceSelectionProvider(
     vi.fn().mockResolvedValue(Response.json({ selection: spec })),

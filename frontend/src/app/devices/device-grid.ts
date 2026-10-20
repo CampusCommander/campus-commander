@@ -170,6 +170,7 @@ export class DeviceGrid implements OnInit {
   /** The remembered row while the status bar may still change height. */
   private pendingRow: number | null = null;
   protected options!: GridOptions<DeviceRow>;
+  private selectionService: SsrmSelectionService | null = null;
 
   constructor() {
     effect(() => {
@@ -183,6 +184,11 @@ export class DeviceGrid implements OnInit {
     effect(() => {
       const predicates = this.predicates();
       untracked(() => this.applyPredicates(predicates));
+    });
+    // "Review pending devices" switches the open grid to its selected view.
+    effect(() => {
+      const wanted = this.selectedView();
+      untracked(() => this.applySelectionView(wanted));
     });
   }
 
@@ -291,6 +297,7 @@ export class DeviceGrid implements OnInit {
 
   /** The selection footer makes the status bar taller and the body shorter. Show the row again. */
   private selectionReady(service: SsrmSelectionService): void {
+    this.selectionService = service;
     if (this.selectedView() && !service.isViewActive()) {
       service.enterViewMode();
       // An empty or expired selection cannot hold the view. Show all records instead.
@@ -301,6 +308,21 @@ export class DeviceGrid implements OnInit {
     }
     this.reveal();
     this.pendingRow = null;
+  }
+
+  /** Follow a later Show All Selected request without remounting the grid. */
+  private applySelectionView(wanted: boolean): void {
+    const service = this.selectionService;
+    if (!service) return;
+    if (wanted && !service.isViewActive()) {
+      service.enterViewMode();
+      if (!service.isViewActive()) {
+        this.api?.setGridOption('ssrmSelectionViewActive', false);
+        this.api?.refreshServerSide();
+      }
+    } else if (!wanted && service.isViewActive()) {
+      service.exitViewMode();
+    }
   }
 
   private reveal(): void {
