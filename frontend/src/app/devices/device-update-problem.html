@@ -1,0 +1,29 @@
+<section class="card" [attr.aria-labelledby]="'problem-' + problem().kind">
+  <h2 [id]="'problem-' + problem().kind">{{ problem().heading }}</h2>
+  @for (paragraph of problem().paragraphs; track $index) {
+  <p>{{ paragraph }}</p>
+  } @if (detail()) {
+  <p class="error" role="alert">{{ detail() }}</p>
+  }
+  <div class="actions">
+    @for (action of problem().actions; track action.id) { @if (action.primary) {
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="disabled()"
+      (click)="emit(action.id)"
+    >
+      {{ label(action) }}
+    </button>
+    } @else {
+    <button
+      mat-button
+      type="button"
+      [disabled]="disabled()"
+      (click)="emit(action.id)"
+    >
+      {{ label(action) }}
+    </button>
+    } }
+  </div>
+</section>

@@ -1,0 +1,57 @@
+<div class="device-update-confirm">
+  <header class="page-header">
+    <h1>{{ title() }}</h1>
+    <p class="subtitle">{{ subtitle() }}</p>
+  </header>
+
+  @if (status() === 'loading') {
+  <section class="card" aria-label="Loading the confirmation" aria-busy="true">
+    <p role="status">Loading the approved scope…</p>
+    <div class="skeleton" aria-hidden="true"></div>
+    <div class="skeleton" aria-hidden="true"></div>
+  </section>
+  } @else if (problem(); as problem) {
+  <app-device-update-problem
+    [problem]="problem"
+    [busy]="creating()"
+    [busyLabel]="busyLabel()"
+    [detail]="prepareDetail()"
+    (action)="act($event)"
+  />
+  } @else if (preview(); as preview) {
+  <section class="card" aria-labelledby="confirm-scope-title">
+    <h2 id="confirm-scope-title">{{ heading() }}</h2>
+    <p>{{ sentence() }}</p>
+    <p class="meta">{{ meta() }}</p>
+    <p class="meta">{{ expiry() }}</p>
+
+    <mat-checkbox
+      [checked]="acknowledged()"
+      [disabled]="creating()"
+      (change)="setAcknowledged($event.checked)"
+    >
+      {{ label() }}
+    </mat-checkbox>
+
+    <div class="actions">
+      <button
+        mat-button
+        type="button"
+        [disabled]="creating()"
+        (click)="backToPreview()"
+      >
+        Back to preview
+      </button>
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="!canCreate()"
+        [attr.aria-busy]="creating()"
+        (click)="create()"
+      >
+        {{ creating() ? 'Creating update job…' : 'Create update job' }}
+      </button>
+    </div>
+  </section>
+  }
+</div>

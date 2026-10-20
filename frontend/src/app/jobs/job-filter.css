@@ -1,0 +1,115 @@
+:host {
+  position: relative;
+  display: inline-block;
+}
+.add-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  min-height: 32px;
+  padding-inline: var(--cc-space-md);
+  border: 1px dashed var(--cc-border-control);
+  border-radius: var(--cc-radius-chip);
+  background: transparent;
+  color: var(--cc-text-secondary);
+  cursor: pointer;
+}
+.entry input[role='combobox'] {
+  min-height: 32px;
+  min-width: 240px;
+  padding-inline: var(--cc-space-sm);
+  border: 2px solid var(--cc-accent);
+  border-radius: var(--cc-radius-control);
+}
+.suggestions,
+.editor {
+  position: absolute;
+  z-index: 10;
+  inset-block-start: calc(100% + var(--cc-space-xs));
+  inset-inline-start: 0;
+  min-width: 320px;
+  max-width: min(420px, calc(100vw - 48px));
+  max-height: 420px;
+  overflow: auto;
+}
+.group-label {
+  margin: var(--cc-space-sm) 0 var(--cc-space-xs);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+[role='option'] {
+  padding: var(--cc-space-sm);
+  cursor: pointer;
+}
+[role='option'].active {
+  background: var(--cc-surface-selected);
+}
+.editor h2 {
+  margin-block-start: 0;
+  font-size: 16px;
+}
+fieldset {
+  margin: 0 0 var(--cc-space-md);
+  padding: 0;
+  border: 0;
+}
+legend {
+  margin-block-end: var(--cc-space-xs);
+  color: var(--cc-text-secondary);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-xs);
+  margin-block-end: var(--cc-space-md);
+}
+.field input {
+  min-height: 40px;
+  padding-inline: var(--cc-space-sm);
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-height: 32px;
+}
+.people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-xs);
+  margin: 0 0 var(--cc-space-md);
+  padding: 0;
+  list-style: none;
+}
+.people button {
+  width: 100%;
+  min-height: 40px;
+  padding-inline: var(--cc-space-sm);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+  color: var(--cc-text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.people button:hover {
+  background: var(--cc-surface-hover);
+}
+.people button.selected {
+  border-color: var(--cc-accent);
+  background: var(--cc-surface-selected);
+}
+.editor-actions {
+  display: flex;
+  gap: var(--cc-space-sm);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

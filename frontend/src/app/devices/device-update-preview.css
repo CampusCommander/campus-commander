@@ -1,0 +1,141 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+.device-update-preview {
+  /* UI-03 allows a wider target table in a review view. */
+  max-width: 1040px;
+  margin-inline: auto;
+}
+.page-header h1 {
+  margin-block-end: 0;
+}
+.subtitle {
+  margin-block-start: var(--cc-space-xs);
+  color: var(--cc-text-secondary);
+}
+.card {
+  margin-block-start: var(--cc-space-lg);
+}
+.counts {
+  margin-block: var(--cc-space-lg) var(--cc-space-sm);
+  font-weight: 500;
+}
+.meta {
+  margin-block: var(--cc-space-sm) var(--cc-space-lg);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+.stale {
+  margin-block: 0 var(--cc-space-lg);
+  padding: var(--cc-space-md) var(--cc-card-padding);
+  border-inline-start: 3px solid var(--cc-status-warning);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+  color: var(--cc-status-warning-text);
+}
+.grid-region {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+.table-scroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+.targets-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.targets-table th,
+.targets-table td {
+  padding: var(--cc-space-md) var(--cc-card-padding);
+  border-bottom: 1px solid var(--cc-border);
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.targets-table thead th {
+  background: var(--cc-surface-app);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.targets-table thead th:nth-child(1) {
+  width: 22%;
+}
+.targets-table thead th:nth-child(2) {
+  width: 22%;
+}
+.targets-table thead th:nth-child(3) {
+  width: 28%;
+}
+.targets-table thead th:nth-child(4) {
+  width: 28%;
+}
+.targets-table tbody tr:nth-child(even) {
+  background: var(--cc-surface-hover);
+}
+.targets-table tbody tr:last-child th,
+.targets-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.targets-table tbody th {
+  font-weight: 400;
+}
+.approved {
+  color: var(--cc-text-link);
+}
+.not-updated {
+  color: var(--cc-status-error-text);
+}
+.line {
+  display: block;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+.empty {
+  margin: 0;
+  padding: var(--cc-card-padding);
+  color: var(--cc-text-secondary);
+}
+.note {
+  margin-block: var(--cc-space-md) 0;
+  color: var(--cc-text-secondary);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-lg);
+  margin-block-start: var(--cc-space-xl);
+}
+button {
+  max-width: 100%;
+  height: auto;
+  min-height: 40px;
+  white-space: normal;
+  padding-block: var(--cc-space-sm);
+}
+.skeleton {
+  height: var(--cc-space-xl);
+  margin-block: var(--cc-space-md);
+  background: var(--cc-surface-hover);
+  border-radius: var(--cc-radius-control);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -144,6 +144,8 @@ Additional engineering defaults:
 
 Engineering choices from card F1, not owner decisions. The draft route is `devices/update`, declared before `devices/:deviceId`, and the preview route is `devices/update/previews/:previewId`, which card F2 builds. The busy answer of the write-access check reads "Another check started less than 30 seconds ago. Try again in 30 seconds." The expired-selection state leaves out "View existing jobs" until card F3 adds the Jobs page. Recheck appears in the denied state as well as the unchecked and unavailable states, because the API stores each check result for 300 seconds.
 
+Engineering choices from card F3, not owner decisions. The Jobs page opens without a filter, and the "Created: Last 7 days" chip in the frames is an example window. The refresh-job progress lines are drafted in the frame style, and the owner reviews every drafted string in the F3 pull request. The eye control opens `jobs/:displayId`, which card F4 builds.
+
 ## States
 
 Job status labels: Accepted, Queued, Held, Running, Completed, Completed with errors, Failed, and Needs review.
