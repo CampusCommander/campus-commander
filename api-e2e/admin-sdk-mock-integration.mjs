@@ -682,8 +682,26 @@ async function runAdminSdkMockIntegration({
         observed.length === 0
           ? ''
           : ` (${observed.map((result) => result.id).join(', ')})`
-      }: ${failed.length === 0 && unverified.length === 0 ? 'pass' : 'fail'}`,
+      }: ${failed.length === 0 ? 'pass' : 'fail'}`,
     );
+    // R2: a genuine failed check must fail the test. The complete result record
+    // stays in dist/q1b/attacks.json, and the ruling-authorized S8 and S9
+    // outcomes are classified by the results themselves: S8 carries its revised
+    // end state, and S9's closed window reads unverified, which is not a fail.
+    if (failed.length > 0) {
+      const detail = failed
+        .map((result) => {
+          const labels = result.checks
+            .filter((check) => !check.pass)
+            .map((check) => check.label);
+          return `${result.id}: ${labels.join('; ')}`;
+        })
+        .join(' | ');
+      const ids = failed.map((result) => result.id).join(', ');
+      throw new Error(
+        `Q1b attacks reported failed checks (${ids}): ${detail}. The complete record is dist/q1b/attacks.json.`,
+      );
+    }
   }
   return [
     `the mock credential connects with the mock administrator and customer ${mock.customerId}: pass`,

@@ -52,14 +52,18 @@ function recorder(id, title) {
     result() {
       const failed = checks.filter((check) => !check.pass);
       // An observations-only attack has no acceptance item. `observed` says so.
+      // An attack with a ruled Not verified window keeps its checks, and its
+      // result never fails the run.
       const status =
         failed.length > 0
           ? 'fail'
-          : checks.length > 0
-            ? 'pass'
-            : observations.observationOnly === true
-              ? 'observed'
-              : 'unverified';
+          : observations.notVerified !== undefined
+            ? 'unverified'
+            : checks.length > 0
+              ? 'pass'
+              : observations.observationOnly === true
+                ? 'observed'
+                : 'unverified';
       return { id, title, status, checks, observations };
     },
   };
@@ -658,8 +662,27 @@ export async function runDeviceWriteAttacks(options) {
     return next;
   };
   const resubscribe = async (client) => {
-    for (const one of subscribers.splice(0)) one.destroy();
-    return subscribeOn(client);
+    // A replacement subscriber must stay in the tracking list, or the finalizer
+    // cannot close it and the process never ends.
+    const previous = subscribers.splice(0);
+    let next;
+    try {
+      next = await subscribeOn(client);
+    } catch (error) {
+      // Keep the old subscribers tracked, so the finalizer still closes them.
+      subscribers.push(...previous);
+      throw error;
+    }
+    subscribers.push(next);
+    for (const one of previous) {
+      try {
+        await one.unsubscribe();
+        await one.quit();
+      } catch {
+        one.destroy();
+      }
+    }
+    return next;
   };
   const subscriber = await subscribeOn(await connectRedis());
   subscribers.push(subscriber);
@@ -668,6 +691,12 @@ export async function runDeviceWriteAttacks(options) {
   const trackClient = (client) => {
     ownedClients.push(client);
     return client;
+  };
+  // The Devices streams of S14. The finally closes them even if the attack fails.
+  const streamClients = [];
+  const trackStream = (stream) => {
+    streamClients.push(stream);
+    return stream;
   };
 
   const allDevices = (
@@ -774,6 +803,7 @@ export async function runDeviceWriteAttacks(options) {
       subscribeOn,
       resubscribe,
       trackClient,
+      trackStream,
       identities,
       only,
     });
@@ -792,6 +822,13 @@ export async function runDeviceWriteAttacks(options) {
         await one.quit();
       } catch {
         one.destroy();
+      }
+    }
+    for (const stream of streamClients.splice(0)) {
+      try {
+        stream.close();
+      } catch {
+        /* The stream is already closed. */
       }
     }
   }
@@ -832,6 +869,7 @@ async function runCatalog(context) {
     subscribeOn,
     resubscribe,
     trackClient,
+    trackStream,
     only,
     mock,
     customer,
@@ -1601,38 +1639,24 @@ async function runCatalog(context) {
         one.verified_by,
       ]),
     );
-    rec.check(
-      'Their verify_attempt equals the attempt_id of the batch row',
-      operations.every((one) => one.verify_attempt === claimed.attempt_id),
-      {
-        batchAttempt: claimed.attempt_id,
-        verifyAttempts: operations.map((one) => one.verify_attempt),
-      },
-    );
-    rec.check(
-      'The verify attempt is not the paused attempt',
-      operations.every((one) => one.verify_attempt !== pausedAttempt),
-      { pausedAttempt },
-    );
+    // 017-jobs.sql:1033 rewrites verify_attempt on every settle, so the end
+    // state cannot show the read-back claim. The 2026-10-20 ruling replaced the
+    // end-state criterion with the read-back outcome, one PATCH per device, and
+    // the completed job. The claim stays an observation.
     rec.observe('pausedAttemptKept', {
       pausedAttempt,
       attempts: operations.map((one) => one.attempt_id),
       verifyAttempts: operations.map((one) => one.verify_attempt),
-      // 017-jobs.sql:1033 rewrites verify_attempt on every settle. A read-back
-      // settle leaves it NULL, so the acceptance claim and the end state cannot
-      // both hold. The line stays as written until a ruling changes it.
       criterionNote:
-        'verify_attempt is the read-back claim (017-jobs.sql:1145) and every settle clears it unless the write outcome is unknown (017-jobs.sql:1033). The end state cannot show it.',
+        'verify_attempt is the read-back claim (017-jobs.sql:1145) and every settle clears it unless the write outcome is unknown (017-jobs.sql:1033). The end state cannot show it; the 2026-10-20 ruling replaced the criterion.',
     });
-    nothingToVerify.push(
-      'S8: acceptance 6 asks for verify_attempt in the end state. A read-back settle clears it (017-jobs.sql:1033), so the value is visible only between the claim and the settle. The criterion needs a ruling.',
-    );
     rec.check(
       'The PATCH count equals the device count',
       (await faults.patchCount()) === 2,
       await faults.patchCount(),
     );
     rec.observe('job', { status: job.status });
+    rec.check('The job ends completed', job.status === 'completed', job.status);
   });
 
   // ---------------------------------------------------------------------------
@@ -1778,12 +1802,17 @@ async function runCatalog(context) {
           .every((one) => one.status === 'skipped'),
         operations.map((one) => [one.operation_number, one.batch, one.status]),
       );
-      if (flying === undefined || flying.status !== 'dispatched')
-        nothingToVerify.push(
+      if (flying === undefined || flying.status !== 'dispatched') {
+        // B5 ruling 6 and the 2026-10-20 ruling: the window never opened, so the
+        // attack is Not verified with its observed states. The checks that do
+        // hold stay in the record, and the result never fails the run.
+        const notVerified =
           `A1: operation ${flying?.operation_number ?? 'absent'} read ${flying?.status ?? 'absent'} ` +
-            `after the round 1 settlement, so the window never opened (dispatch count ` +
-            `${latest.dispatch_count}, PATCH count ${await faults.patchCount()}).`,
-        );
+          `after the round 1 settlement, so the window never opened (dispatch count ` +
+          `${latest.dispatch_count}, PATCH count ${await faults.patchCount()}).`;
+        nothingToVerify.push(notVerified);
+        rec.observe('notVerified', notVerified);
+      }
     } finally {
       await restartWorker({});
       docker('restart', kestraName);
@@ -2166,6 +2195,13 @@ async function runCatalog(context) {
           count: 1,
         });
         const displayId = seeded.job.display_id;
+        // The entity check below must cover the Reconcile publication, not only
+        // the settlement commit. Mark the event log and the job revision before
+        // the request.
+        const eventMark = events.length;
+        const revisionBeforeReconcile = Number(
+          (await db.job(seeded.jobId)).revision,
+        );
         const reconciled = await api.call(
           admin,
           `/api/jobs/${displayId}/operations/1/reconcile`,
@@ -2248,9 +2284,45 @@ async function runCatalog(context) {
           stamp: row.annotated_location_observed_at,
         });
         rec.observe('overlay', overlay);
-        const rEvents = events.filter(
-          (one) => one.channel === 'entity' && one.event.jobId === seeded.jobId,
+        // The settlement commits before its publication. Wait for a job change
+        // above the revision read before the Reconcile and for every publication
+        // row of R to clear, so a late entity-batch cannot arrive after the
+        // absence check. One quiet second covers the entity channel, which the
+        // worker publishes before job-changed.
+        const jobAfter = await db.job(seeded.jobId);
+        const publicationWindow = await waitUntil(
+          'The publication of job R did not complete',
+          async () => {
+            const pending = await db.publications(seeded.jobId);
+            const changed = events
+              .slice(eventMark)
+              .find(
+                (one) =>
+                  one.channel === 'job' &&
+                  one.event.type === 'job-changed' &&
+                  one.event.jobId === seeded.jobId &&
+                  Number(one.event.revision) > revisionBeforeReconcile,
+              );
+            return pending.length === 0 && changed !== undefined
+              ? { changed }
+              : null;
+          },
+          { timeout: 30_000, interval: 250 },
         );
+        await delay(1000);
+        rec.observe('publicationWindow', {
+          revisionBeforeReconcile,
+          revisionAfter: Number(jobAfter.revision),
+          jobChangedRevision: publicationWindow.changed.event.revision,
+          pendingRows: (await db.publications(seeded.jobId)).length,
+          eventsAfterReconcile: events.length - eventMark,
+        });
+        const rEvents = events
+          .slice(eventMark)
+          .filter(
+            (one) =>
+              one.channel === 'entity' && one.event.jobId === seeded.jobId,
+          );
         if (variant === 'refresh') {
           // A `read` observation stamps the column, a `list` observation does not
           // (worker/src/entity-sync.ts:222-227, 016-device-inventory.sql:421-424).
@@ -2433,13 +2505,13 @@ async function runCatalog(context) {
         ).rowCount === 1,
       rec.observations['actions.review-observer'],
     );
-    // The Devices stream visibility check is a Q1a item. Here the streams only
-    // supply the frames that item 14 names. A stream that never answers is
-    // recorded as an observation, not asserted.
+    // The Devices stream visibility check is a Q1a item. Here the streams supply
+    // the frames that item 14 names: three open streams and A's full-sync
+    // projection of each step.
     const streams = {
-      A: openStream(readerA),
-      B: openStream(readerB),
-      C: openStream(admin),
+      A: trackStream(openStream(readerA)),
+      B: trackStream(openStream(readerB)),
+      C: trackStream(openStream(admin)),
     };
     const streamGate = await waitUntil(
       'The Devices streams did not answer',
@@ -2452,18 +2524,24 @@ async function runCatalog(context) {
       () => null,
       (error) => error.message,
     );
-    rec.observe('streamStatus', {
+    const streamStatus = {
       A: streams.A.status,
       B: streams.B.status,
       C: streams.C.status,
       errors: { A: streams.A.error, B: streams.B.error, C: streams.C.error },
       gate: streamGate,
-    });
-    if (streamGate !== null) {
-      nothingToVerify.push(
-        'S14: the three Devices streams did not answer within 15 s. The stream visibility check belongs to Q1a, so the full-sync frames of item 14 stay unverified here.',
-      );
-    }
+    };
+    rec.observe('streamStatus', streamStatus);
+    // R4: a refused or unanswered stream, or a stream that is not 200, fails the
+    // attack. The full-sync evidence below needs three open streams.
+    rec.check(
+      'The three Devices streams answer 200 with no error',
+      streamGate === null &&
+        [streams.A, streams.B, streams.C].every(
+          (stream) => stream.status === 200 && stream.error === undefined,
+        ),
+      streamStatus,
+    );
     const batteryOf = async (session) => {
       const page = await queryPage(session, {
         predicates: [
@@ -2492,6 +2570,7 @@ async function runCatalog(context) {
         { timeout: 60_000, interval: 250 },
       );
     // Step 1: B runs Refresh all with a telemetry 403.
+    const frameMarkStep1 = streams.A.frames.length;
     await faults.addCounter();
     await faults.addFault({
       kind: 'status',
@@ -2504,6 +2583,14 @@ async function runCatalog(context) {
     const answerB = await refreshAll(readerB);
     const jobB = await refreshFor(readerB, sinceB);
     await refreshJob(jobB.job_id);
+    const fullSyncStep1 = await waitUntil(
+      'The step 1 full-sync did not reach the A stream',
+      async () =>
+        streams.A.frames
+          .slice(frameMarkStep1)
+          .find((frame) => frame.type === 'full-sync') ?? null,
+      { timeout: 30_000, interval: 100 },
+    );
     const state = await db.syncState();
     rec.observe('syncState', {
       failure: state.failure,
@@ -2549,6 +2636,7 @@ async function runCatalog(context) {
     );
 
     // Step 2: a reset rule on the Directory list, then A starts Refresh all.
+    const frameMarkStep2 = streams.A.frames.length;
     await faults.addFault({
       kind: 'reset',
       method: 'directory.chromeosdevices.list',
@@ -2558,6 +2646,14 @@ async function runCatalog(context) {
     const answerA = await refreshAll(readerA);
     const jobA = await refreshFor(readerA, sinceA);
     await refreshJob(jobA.job_id);
+    const fullSyncStep2 = await waitUntil(
+      'The step 2 full-sync did not reach the A stream',
+      async () =>
+        streams.A.frames
+          .slice(frameMarkStep2)
+          .find((frame) => frame.type === 'full-sync') ?? null,
+      { timeout: 30_000, interval: 100 },
+    );
     const syncA2 = await syncState(readerA);
     const syncB2 = await syncState(readerB);
     const syncC2 = await syncState(admin);
@@ -2588,24 +2684,43 @@ async function runCatalog(context) {
       !JSON.stringify(answerA).includes('permission-denied'),
       answerA,
     );
-    const framesA = streams.A.frames.filter(
-      (frame) => frame.type === 'full-sync',
+    const fullSyncFrames = (stream) =>
+      stream.frames
+        .filter((frame) => frame.type === 'full-sync')
+        .map((frame) => frame.data);
+    const frames = {
+      A: fullSyncFrames(streams.A),
+      B: fullSyncFrames(streams.B),
+      C: fullSyncFrames(streams.C),
+    };
+    rec.observe('fullSyncFrames', {
+      step1: { frame: fullSyncStep1.data, at: fullSyncStep1.at },
+      step2: { frame: fullSyncStep2.data, at: fullSyncStep2.at },
+      A: frames.A,
+      B: frames.B,
+      C: frames.C,
+    });
+    rec.check(
+      'The A stream holds a full-sync event for both steps',
+      frames.A.length >= 2 &&
+        fullSyncStep1.type === 'full-sync' &&
+        fullSyncStep2.type === 'full-sync' &&
+        !JSON.stringify(fullSyncStep1.data).includes('permission-denied') &&
+        !JSON.stringify(fullSyncStep2.data).includes('permission-denied'),
+      {
+        step1: fullSyncStep1.data,
+        step2: fullSyncStep2.data,
+        frames: frames.A,
+      },
     );
-    rec.observe(
-      'fullSyncEventsA',
-      framesA.map((frame) => frame.data),
-    );
-    if (framesA.length > 0) {
-      rec.check(
-        'The full-sync events of A never hold permission-denied',
-        framesA.every(
-          (frame) => !JSON.stringify(frame.data).includes('permission-denied'),
+    rec.check(
+      'The full-sync events of A never hold permission-denied',
+      frames.A.length >= 2 &&
+        frames.A.every(
+          (data) => !JSON.stringify(data).includes('permission-denied'),
         ),
-        framesA.map((frame) => frame.data),
-      );
-    } else {
-      rec.observe('fullSyncFrames', 0);
-    }
+      frames.A,
+    );
     for (const stream of Object.values(streams)) stream.close();
     rec.observe('step1Answer', { status: answerB.status });
   });
@@ -2866,17 +2981,63 @@ async function runCatalog(context) {
     );
     rec.observe('jobJStatus', statusJ);
     rec.check(
-      'J reads held until the key expires',
+      'J reads held while the hold exists',
       statusJ === 'held',
       statusJ,
     );
+    // R5: the durable admission state for the whole hold, up to the expiry
+    // boundary. The job row is read before the key, so a key that still exists
+    // proves the hold was live at the job read. A status other than held, or a
+    // set admitted_at, at that point is an early admission.
+    const holdSamples = {
+      count: 0,
+      statuses: new Set(),
+      firstHeldAt: null,
+      lastHeldAt: null,
+      earlyAdmission: null,
+    };
     const expired = await waitUntil(
       'The hold key did not expire',
-      async () => ((await cache.exists(holdKey)) === 0 ? Date.now() : null),
+      async () => {
+        const job = await db.job(receiptJ.jobId);
+        const exists = await cache.exists(holdKey);
+        holdSamples.count += 1;
+        if (exists !== 1) return Date.now();
+        const at = new Date().toISOString();
+        holdSamples.statuses.add(job?.status ?? 'absent');
+        if (holdSamples.firstHeldAt === null) holdSamples.firstHeldAt = at;
+        holdSamples.lastHeldAt = at;
+        if (
+          holdSamples.earlyAdmission === null &&
+          (job?.status !== 'held' || job?.admitted_at !== null)
+        )
+          holdSamples.earlyAdmission = {
+            at,
+            status: job?.status ?? 'absent',
+            admittedAt: job?.admitted_at ?? null,
+          };
+        return null;
+      },
       { timeout: 330_000, interval: 1000 },
     );
     const heldSeconds = Math.round(
       (expired - new Date(stateH.hold_written_at).getTime()) / 1000,
+    );
+    rec.observe('holdAdmissionSamples', {
+      count: holdSamples.count,
+      statuses: [...holdSamples.statuses],
+      firstHeldAt: holdSamples.firstHeldAt,
+      lastHeldAt: holdSamples.lastHeldAt,
+      earlyAdmission: holdSamples.earlyAdmission,
+    });
+    rec.check(
+      'J stays held and unadmitted for the whole hold',
+      holdSamples.count >= 2 && holdSamples.earlyAdmission === null,
+      {
+        count: holdSamples.count,
+        statuses: [...holdSamples.statuses],
+        earlyAdmission: holdSamples.earlyAdmission,
+      },
     );
     rec.observe('holdExpiry', {
       expiresAt: new Date(expired).toISOString(),
