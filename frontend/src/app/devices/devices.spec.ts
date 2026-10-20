@@ -688,7 +688,7 @@ describe('Bulk Actions', () => {
     fixture.detectChanges();
     const sheet = element.querySelector('app-device-update-sheet');
     const panel = sheet?.querySelector('section[role="dialog"]');
-    expect(panel?.classList.contains('is-closed')).toBe(false);
+    expect(panel?.classList.contains('is-open')).toBe(true);
     expect(panel?.querySelector('h1')?.textContent?.trim()).toBe(
       'Update 6 devices',
     );
@@ -715,7 +715,7 @@ describe('Bulk Actions', () => {
     fixture.detectChanges();
     expect(
       element.querySelector('app-device-update-sheet .bulk-sheet')?.classList,
-    ).toContain('is-closed');
+    ).not.toContain('is-open');
     expect(document.activeElement).toBe(button('Bulk Actions'));
   });
 

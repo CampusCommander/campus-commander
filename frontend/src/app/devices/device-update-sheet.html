@@ -7,7 +7,7 @@
 
 <section
   class="bulk-sheet"
-  [class.is-closed]="!open()"
+  [class.is-open]="open()"
   [class.is-modal]="modal()"
   role="dialog"
   [attr.aria-modal]="modal() && open() ? 'true' : null"
