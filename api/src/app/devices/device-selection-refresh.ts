@@ -47,6 +47,13 @@ export interface SelectionRefreshAnswer {
   selected: number;
 }
 
+/** A new job answers 201. A selection whose devices are all claimed answers 200. */
+export function selectionRefreshStatus(
+  answer: SelectionRefreshAnswer,
+): 200 | 201 {
+  return answer.jobId === null ? 200 : 201;
+}
+
 /**
  * Refresh Selected: resolve the stored selection to device IDs, then start one refresh job.
  * Removed devices and non-plain IDs stay out of the job, the same rule the preview applies.

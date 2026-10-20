@@ -33,6 +33,7 @@ import { GoogleConnectionService } from '../auth/google-connection.service';
 import { DeviceEventsService } from './device-events.service';
 import { streamEvents } from './device-events';
 import { DeviceDomainRefresh } from './device-domain-refresh';
+import { selectionRefreshStatus } from './device-selection-refresh';
 import { deviceForward, recheckDeviceStream } from './device-stream';
 import { DevicesService } from './devices.service';
 
@@ -230,8 +231,8 @@ export class DevicesController {
         request.correlationId,
       ),
     );
-    // Every selected device is already claimed. No new job starts.
-    if (refresh.jobId === null) response.status(200);
+    // A fully claimed selection starts no job and answers 200.
+    response.status(selectionRefreshStatus(refresh));
     return { refresh };
   }
 

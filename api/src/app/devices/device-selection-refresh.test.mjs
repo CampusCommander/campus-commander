@@ -6,6 +6,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DeviceSelectionRefresh } from './device-selection-refresh.ts';
+import { selectionRefreshStatus } from './device-selection-refresh.ts';
 
 const actor = '11111111-1111-4111-8111-111111111111';
 const customerId = 'C0123456';
@@ -275,4 +276,15 @@ test('every ID in flight answers a null job with the selected count', async () =
       correlation: correlationId,
     },
   ]);
+});
+
+test('a started job answers 201 and a fully claimed selection answers 200', () => {
+  assert.equal(
+    selectionRefreshStatus({
+      jobId: '33333333-3333-4333-8333-333333333333',
+      selected: 3,
+    }),
+    201,
+  );
+  assert.equal(selectionRefreshStatus({ jobId: null, selected: 3 }), 200);
 });
