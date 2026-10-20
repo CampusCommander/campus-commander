@@ -463,3 +463,312 @@ it('leaves the page and stops the stream', async () => {
   store.leave();
   expect(stream.readyState).toBe(2);
 });
+
+describe('principal boundary', () => {
+  const otherPerson = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+  it('clears the previous person data before another person reads', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor(person.id),
+    );
+    const pending: ((response: Response) => void)[] = [];
+    const { store } = setup(
+      () => new Promise<Response>((resolve) => pending.push(resolve)),
+      session,
+    );
+    TestBed.tick();
+    const init = store.init('UPD-006');
+    await flush();
+    expect(pending).toHaveLength(1);
+    pending[0](Response.json(detail()));
+    await flush();
+    pending[1](Response.json(operationsPage()));
+    await init;
+    expect(store.job()?.displayId).toBe('UPD-006');
+    expect(store.operations()).toHaveLength(1);
+    expect(store.loaded()).toBe(true);
+
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor(otherPerson));
+    TestBed.tick();
+    // The previous person's job, rows, and revision baseline are gone before the read.
+    expect(store.job()).toBeNull();
+    expect(store.operations()).toHaveLength(0);
+    expect(store.loaded()).toBe(false);
+    expect(store.loading()).toBe(true);
+    expect(pending).toHaveLength(3);
+
+    pending[2](new Response(null, { status: 500 }));
+    await vi.waitFor(() => expect(store.loading()).toBe(false));
+    expect(store.job()).toBeNull();
+    expect(store.error()).toBe('Job details are unavailable.');
+  });
+
+  it('rejects the previous person held answer', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor(person.id),
+    );
+    const pending: ((response: Response) => void)[] = [];
+    const { store } = setup(
+      () => new Promise<Response>((resolve) => pending.push(resolve)),
+      session,
+    );
+    TestBed.tick();
+    const init = store.init('UPD-006');
+    await flush();
+    expect(pending).toHaveLength(1);
+
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor(otherPerson));
+    TestBed.tick();
+    expect(store.job()).toBeNull();
+
+    // The previous person's detail answer arrives after the next person signed in.
+    pending[0](Response.json(detail()));
+    await flush();
+    expect(store.job()).toBeNull();
+    expect(store.loaded()).toBe(false);
+    expect(store.loading()).toBe(true);
+    expect(pending).toHaveLength(2);
+
+    pending[1](new Response(null, { status: 500 }));
+    await vi.waitFor(() => expect(store.loading()).toBe(false));
+    expect(store.job()).toBeNull();
+    await init;
+  });
+
+  it('keeps the state while the same person resumes', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor(person.id),
+    );
+    const { store, requestMock } = setup(undefined, session);
+    TestBed.tick();
+    await store.init('UPD-006');
+    const reads = requestMock.mock.calls.length;
+
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor(person.id));
+    TestBed.tick();
+    expect(store.job()?.displayId).toBe('UPD-006');
+    expect(store.operations()).toHaveLength(1);
+    // The resumed session rereads on the next stream open only.
+    expect(requestMock.mock.calls.length).toBe(reads);
+  });
+});
+
+describe('operations query boundary', () => {
+  it('drops an unfiltered operations answer after attention changes', async () => {
+    let hold = false;
+    let failDetail = false;
+    const pages: ((response: Response) => void)[] = [];
+    const { store } = setup(async (path) => {
+      if (path.includes('/operations')) {
+        if (hold)
+          return new Promise<Response>((resolve) => pages.push(resolve));
+        return Response.json(operationsPage([operation()], '6'));
+      }
+      return failDetail
+        ? new Response(null, { status: 500 })
+        : Response.json(detail());
+    });
+    await store.init('UPD-006');
+    expect(store.operations()).toHaveLength(1);
+    expect(store.nextCursor()).toBe('6');
+
+    hold = true;
+    const refreshing = store.refresh();
+    await flush();
+    expect(pages).toHaveLength(1);
+
+    store.setAttention(true);
+    failDetail = true;
+    pages[0](Response.json(operationsPage([operation()], '6')));
+    await refreshing;
+    await vi.waitFor(() => expect(store.reading()).toBe(false));
+
+    // The obsolete answer does not restore the unfiltered rows or its cursor.
+    expect(store.attention()).toBe(true);
+    expect(store.operations()).toHaveLength(0);
+    expect(store.nextCursor()).toBeNull();
+    expect(store.shownIndex()).toBe(0);
+    expect(store.job()?.displayId).toBe('UPD-006');
+    expect(store.stale()).toBe(true);
+  });
+
+  it('does not restore the old page index or cursor after attention changes', async () => {
+    let hold = false;
+    let failDetail = false;
+    const pages: ((response: Response) => void)[] = [];
+    const { store } = setup(async (path) => {
+      if (path.includes('/operations')) {
+        if (hold)
+          return new Promise<Response>((resolve) => pages.push(resolve));
+        return path.includes('cursor=6')
+          ? Response.json(
+              operationsPage([operation({ operationId: 'UPD-006-7' })], null),
+            )
+          : Response.json(operationsPage([operation()], '6'));
+      }
+      return failDetail
+        ? new Response(null, { status: 500 })
+        : Response.json(detail());
+    });
+    await store.init('UPD-006');
+    store.next();
+    await vi.waitFor(() => expect(store.shownIndex()).toBe(1));
+    expect(store.hasPrevious()).toBe(true);
+
+    hold = true;
+    const refreshing = store.refresh();
+    await flush();
+    expect(pages).toHaveLength(1);
+    store.setAttention(true);
+    failDetail = true;
+    pages[0](
+      Response.json(
+        operationsPage([operation({ operationId: 'UPD-006-7' })], null),
+      ),
+    );
+    await refreshing;
+    await vi.waitFor(() => expect(store.reading()).toBe(false));
+
+    expect(store.shownIndex()).toBe(0);
+    expect(store.hasPrevious()).toBe(false);
+    expect(store.operations()).toHaveLength(0);
+  });
+});
+
+describe('Reconcile concurrency', () => {
+  it('keeps a 202 mark when a read completes before the answer', async () => {
+    const held: ((response: Response) => void)[] = [];
+    const { store } = setup(async (path, body) => {
+      if (body !== undefined)
+        return new Promise<Response>((resolve) => held.push(resolve));
+      return path.includes('/operations')
+        ? Response.json(operationsPage())
+        : Response.json(detail());
+    });
+    await store.init('UPD-006');
+    const reconciling = store.reconcile(operation());
+    await flush();
+    expect(store.reconciling().has('UPD-006-6')).toBe(true);
+
+    // A read that finishes while the request is held must not clear the mark.
+    await store.refresh();
+    expect(store.reconciling().has('UPD-006-6')).toBe(true);
+
+    held[0](new Response(null, { status: 202 }));
+    await reconciling;
+    expect(store.reconciling().has('UPD-006-6')).toBe(true);
+    expect(store.notice()).toBe('Reconcile started for C0A1-7F84.');
+
+    // A later completed read clears the accepted mark and its notice.
+    await store.refresh();
+    expect(store.reconciling().has('UPD-006-6')).toBe(false);
+    expect(store.notice()).toBe('');
+  });
+
+  it('keeps accepted marks independent for two operations', async () => {
+    const held: ((response: Response) => void)[] = [];
+    const { store } = setup(async (path, body) => {
+      if (body !== undefined)
+        return new Promise<Response>((resolve) => held.push(resolve));
+      return path.includes('/operations')
+        ? Response.json(operationsPage())
+        : Response.json(detail());
+    });
+    await store.init('UPD-006');
+    const first = store.reconcile(operation());
+    await flush();
+    await store.refresh();
+    held[0](new Response(null, { status: 202 }));
+    await first;
+
+    const second = store.reconcile(operation({ operationId: 'UPD-006-7' }));
+    await flush();
+    expect(store.reconciling().has('UPD-006-6')).toBe(true);
+    expect(store.reconciling().has('UPD-006-7')).toBe(true);
+
+    // The read clears the first accepted mark only. The second request is held.
+    await store.refresh();
+    expect(store.reconciling().has('UPD-006-6')).toBe(false);
+    expect(store.reconciling().has('UPD-006-7')).toBe(true);
+
+    held[1](new Response(null, { status: 202 }));
+    await second;
+    expect(store.reconciling().has('UPD-006-6')).toBe(false);
+    expect(store.reconciling().has('UPD-006-7')).toBe(true);
+
+    await store.refresh();
+    expect(store.reconciling().has('UPD-006-7')).toBe(false);
+  });
+
+  it('drops a held answer after the route opens another job', async () => {
+    const otherJobId = '1f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10';
+    const held: ((response: Response) => void)[] = [];
+    const { store } = setup(async (path, body) => {
+      if (body !== undefined)
+        return new Promise<Response>((resolve) => held.push(resolve));
+      if (path.includes('/operations')) return Response.json(operationsPage());
+      return path.includes('UPD-014')
+        ? Response.json(
+            detail({ displayId: 'UPD-014', jobId: otherJobId, revision: 1 }),
+          )
+        : Response.json(detail());
+    });
+    await store.init('UPD-006');
+    const reconciling = store.reconcile(operation());
+    await flush();
+    await store.init('UPD-014');
+    expect(store.displayId()).toBe('UPD-014');
+
+    held[0](new Response(null, { status: 202 }));
+    await reconciling;
+    expect(store.notice()).toBe('');
+    expect(store.reconciling()).toHaveLength(0);
+  });
+
+  it('does not read again when a held 409 answers after leave', async () => {
+    const held: ((response: Response) => void)[] = [];
+    const { store, requestMock } = setup(async (path, body) => {
+      if (body !== undefined)
+        return new Promise<Response>((resolve) => held.push(resolve));
+      return path.includes('/operations')
+        ? Response.json(operationsPage())
+        : Response.json(detail());
+    });
+    await store.init('UPD-006');
+    const reconciling = store.reconcile(operation());
+    await flush();
+    store.leave();
+    const reads = requestMock.mock.calls.length;
+
+    held[0](Response.json({ reason: 'operation-settled' }, { status: 409 }));
+    await reconciling;
+    await flush();
+    expect(requestMock.mock.calls.length).toBe(reads);
+    expect(store.notice()).toBe('');
+    expect(store.reconciling()).toHaveLength(0);
+  });
+
+  it('reads the job again after a 404 answer', async () => {
+    const { store, requestMock } = setup(async (path, body) => {
+      if (body !== undefined) return new Response(null, { status: 404 });
+      return path.includes('/operations')
+        ? Response.json(operationsPage())
+        : Response.json(detail());
+    });
+    await store.init('UPD-006');
+    const before = requestMock.mock.calls.length;
+    await store.reconcile(operation());
+    expect(store.reconcileError()).toBe(
+      'This job or operation no longer exists.',
+    );
+    expect(store.reconciling().has('UPD-006-6')).toBe(false);
+    expect(requestMock.mock.calls.length).toBeGreaterThan(before + 1);
+    expect(store.job()?.displayId).toBe('UPD-006');
+  });
+});

@@ -1,4 +1,11 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import {
+  Injectable,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import {
   jobDetailSchema,
   jobEventSchema,
@@ -73,15 +80,52 @@ export class JobDetailStore {
     opened: () => this.reader.opened(),
     changed: (data) => this.onEvent(data),
   });
-  /** Increments on another job. Late answers for the old job are dropped. */
+  /** The page is mounted. A late Reconcile answer changes nothing after leave. */
+  private mounted = false;
+  /** Increments at every mount and leave. A continuation from an earlier mount is dropped. */
+  private mountGeneration = 0;
+  /** The page holds the stream. */
+  private streamWanted = false;
+  /** The person of the current state. Another person clears it. */
+  private identity: string | null = null;
+  /** The session ended. The same person can resume it. */
+  private away = false;
+  /** Increments on another job or another person. Late answers are dropped. */
   private epoch = 0;
-  /** Counts read starts. A Reconcile started during a read keeps its mark. */
+  /** Increments on a filter or page change. Late answers are dropped. */
+  private queryRevision = 0;
+  /** Counts read starts. A Reconcile accepted during a read keeps its mark. */
   private readGeneration = 0;
-  private reconcileStartedAt = 0;
+  /** Operation ID to the read generation at its 202 answer. A later read clears it. */
+  private readonly acceptedMarks = new Map<string, number>();
+  /** The operation whose accepted notice is visible. A later read clears that notice. */
+  private startedNoticeFor: string | null = null;
+
+  constructor() {
+    // The session cookie belongs to one person. Another person starts from no state,
+    // no stream, no held revisions, and no pending answer (the Jobs page boundary).
+    effect(() => {
+      const identity = this.auth.session()?.identity.id ?? null;
+      untracked(() => {
+        if (identity === null) {
+          this.away = this.identity !== null;
+          return;
+        }
+        const resumed = this.away && identity === this.identity;
+        this.away = false;
+        if (this.identity !== null && identity !== this.identity) this.reset();
+        this.identity = identity;
+        if (resumed) this.resume();
+      });
+    });
+  }
 
   /** Job detail mounted: open the stream and read the job and its visible page. */
   async init(displayId: string): Promise<void> {
-    if (this.displayId() !== displayId) this.reset(displayId);
+    this.mounted = true;
+    this.mountGeneration++;
+    if (this.displayId() !== displayId) this.reset(displayId, false);
+    this.streamWanted = true;
     this.events.start();
     if (!this.loaded()) this.loading.set(true);
     await this.reader.request();
@@ -89,8 +133,13 @@ export class JobDetailStore {
 
   /** Job detail left: stop scheduled reads and close the stream. The state stays. */
   leave(): void {
+    this.mounted = false;
+    this.mountGeneration++;
+    this.streamWanted = false;
     this.reader.stop();
     this.events.stop();
+    // No request outlives the page. A mark without a held answer would never clear.
+    this.clearReconcileState();
   }
 
   /** Refresh rereads job state only. It never dispatches provider work. */
@@ -108,6 +157,7 @@ export class JobDetailStore {
   setAttention(value: boolean): void {
     if (value === this.attention()) return;
     this.attention.set(value);
+    this.queryRevision++;
     this.operations.set([]);
     this.nextCursor.set(null);
     this.operationsError.set('');
@@ -127,18 +177,14 @@ export class JobDetailStore {
     const stack = this.cursors().slice(0, index);
     stack.push(cursor);
     this.cursors.set(stack);
-    this.pageIndex.set(index);
-    this.navigating.set(true);
-    void this.reader.request();
+    this.go(index);
   }
 
   previous(): void {
     if (this.reading() || this.navigating()) return;
     const index = this.shownIndex() - 1;
     if (index < 0) return;
-    this.pageIndex.set(index);
-    this.navigating.set(true);
-    void this.reader.request();
+    this.go(index);
   }
 
   /**
@@ -150,8 +196,19 @@ export class JobDetailStore {
     const displayId = this.displayId();
     if (!displayId || this.reconciling().has(operation.operationId)) return;
     const number = operationNumber(operation.operationId);
+    const epoch = this.epoch;
+    const mount = this.mountGeneration;
+    const identity = this.auth.session()?.identity.id ?? null;
+    // A held answer must not reach another job, another person, or a left page.
+    const current = () =>
+      this.mounted &&
+      this.mountGeneration === mount &&
+      this.epoch === epoch &&
+      this.displayId() === displayId &&
+      (this.auth.session()?.identity.id ?? null) === identity;
     this.reconcileError.set('');
     this.notice.set('');
+    this.startedNoticeFor = null;
     if (!number) {
       this.reconcileError.set('Reconcile could not start. Try again.');
       return;
@@ -162,17 +219,21 @@ export class JobDetailStore {
         `/api/jobs/${encodeURIComponent(displayId)}/operations/${number}/reconcile`,
         {},
       );
+      if (!current()) return;
       if (response.status === 202) {
         // A read that started before this answer does not clear the mark.
-        this.reconcileStartedAt = this.readGeneration;
-        this.notice.set(
-          `Reconcile started for ${operation.serialNumber || operation.deviceId}.`,
-        );
+        this.acceptedMarks.set(operation.operationId, this.readGeneration);
+        const text = `Reconcile started for ${
+          operation.serialNumber || operation.deviceId
+        }.`;
+        this.notice.set(text);
+        this.startedNoticeFor = operation.operationId;
         return;
       }
       this.setReconciling(operation.operationId, false);
       if (response.status === 409) {
         const body: unknown = await response.json().catch(() => null);
+        if (!current()) return;
         const settled =
           (body as { reason?: unknown } | null)?.reason === 'operation-settled';
         this.notice.set(
@@ -196,6 +257,7 @@ export class JobDetailStore {
       }
       this.reconcileError.set('Reconcile could not start. Try again.');
     } catch {
+      if (!current()) return;
       this.setReconciling(operation.operationId, false);
       this.reconcileError.set(
         'Cannot reach Campus Commander. Reconcile did not start.',
@@ -203,10 +265,25 @@ export class JobDetailStore {
     }
   }
 
-  private reset(displayId: string): void {
+  private go(index: number): void {
+    this.pageIndex.set(index);
+    this.navigating.set(true);
+    this.queryRevision++;
+    void this.reader.request();
+  }
+
+  /**
+   * Clears the state of the previous job or person. A mounted page replaces its
+   * stream, because the stream carries the session cookie, and reads again.
+   */
+  private reset(
+    displayId: string | null = this.displayId(),
+    reread = true,
+  ): void {
     this.epoch++;
+    this.queryRevision++;
     this.reader.clear();
-    this.displayId.set(displayId);
+    if (displayId !== null) this.displayId.set(displayId);
     this.job.set(null);
     this.operations.set([]);
     this.nextCursor.set(null);
@@ -224,7 +301,24 @@ export class JobDetailStore {
     this.shownIndex.set(0);
     this.navigating.set(false);
     this.cursors.set([null]);
+    this.clearReconcileState();
+    if (reread && this.streamWanted) {
+      this.events.restart();
+      // Do not wait for the stream open to remove the previous person's data.
+      void this.reader.request();
+    }
+  }
+
+  /** The same person resumed an interrupted session. A stream that a 401 closed opens again. */
+  private resume(): void {
+    if (!this.streamWanted || this.events.active) return;
+    this.events.start();
+  }
+
+  private clearReconcileState(): void {
     this.reconciling.set(new Set());
+    this.acceptedMarks.clear();
+    this.startedNoticeFor = null;
     this.reconcileError.set('');
     this.notice.set('');
   }
@@ -234,21 +328,29 @@ export class JobDetailStore {
     const displayId = this.displayId();
     if (!displayId) return [];
     const epoch = this.epoch;
+    const revision = this.queryRevision;
     const generation = ++this.readGeneration;
+    const identity = this.auth.session()?.identity.id ?? null;
     const index = this.pageIndex();
     const cursor = this.cursors()[index] ?? null;
+    const attention = this.attention();
     const path = `/api/jobs/${encodeURIComponent(displayId)}`;
+    // Another job, person, filter, or page makes this answer obsolete.
+    const current = () =>
+      epoch === this.epoch &&
+      revision === this.queryRevision &&
+      (this.auth.session()?.identity.id ?? null) === identity;
     this.reading.set(true);
     try {
       let response: Response;
       try {
         response = await this.auth.request(path);
       } catch {
-        if (epoch !== this.epoch) return [];
+        if (!current()) return [];
         this.failed(true);
         return null;
       }
-      if (epoch !== this.epoch) return [];
+      if (!current()) return [];
       if (response.status === 404) {
         this.missingJob();
         return [];
@@ -260,7 +362,7 @@ export class JobDetailStore {
       const detail = jobDetailSchema.safeParse(
         await response.json().catch(() => null),
       );
-      if (epoch !== this.epoch) return [];
+      if (!current()) return [];
       if (!detail.success) {
         this.failed(false);
         return null;
@@ -272,7 +374,7 @@ export class JobDetailStore {
       this.missing.set(false);
 
       const params = new URLSearchParams();
-      if (this.attention()) params.set('attention', 'true');
+      if (attention) params.set('attention', 'true');
       if (cursor) params.set('cursor', cursor);
       params.set('limit', String(OPERATIONS_PAGE_SIZE));
       let page: Response;
@@ -281,11 +383,11 @@ export class JobDetailStore {
           `${path}/operations?${params.toString()}`,
         );
       } catch {
-        if (epoch !== this.epoch) return [];
+        if (!current()) return [];
         this.operationsFailed(true);
         return null;
       }
-      if (epoch !== this.epoch) return [];
+      if (!current()) return [];
       if (!page.ok) {
         this.operationsFailed(false);
         return null;
@@ -293,7 +395,7 @@ export class JobDetailStore {
       const parsed = jobOperationsPageSchema.safeParse(
         await page.json().catch(() => null),
       );
-      if (epoch !== this.epoch) return [];
+      if (!current()) return [];
       if (!parsed.success) {
         this.operationsFailed(false);
         return null;
@@ -305,16 +407,21 @@ export class JobDetailStore {
       this.offline.set(false);
       this.stale.set(false);
       this.error.set('');
-      // A read after the 202 answer clears the reconciling marks (design 2.6).
-      if (generation > this.reconcileStartedAt) {
-        this.reconciling.set(new Set());
-        if (this.notice().startsWith('Reconcile started for '))
+      // A completed read after the 202 answer clears the accepted marks of this
+      // operation only (design 2.6). A read started before the answer does not.
+      for (const [operationId, accepted] of [...this.acceptedMarks]) {
+        if (generation <= accepted) continue;
+        this.acceptedMarks.delete(operationId);
+        this.setReconciling(operationId, false);
+        if (this.startedNoticeFor === operationId) {
+          this.startedNoticeFor = null;
           this.notice.set('');
+        }
       }
       return [{ jobId: detail.data.jobId, revision: detail.data.revision }];
     } finally {
       this.reading.set(false);
-      if (epoch === this.epoch) this.navigating.set(false);
+      if (revision === this.queryRevision) this.navigating.set(false);
     }
   }
 

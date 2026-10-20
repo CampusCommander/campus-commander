@@ -150,6 +150,7 @@ function setup(options: SetupOptions = {}) {
     action,
     scope: { kind: 'district', customerId: 'C0123456' },
   }));
+  const session = signal({ identity: { id: person.id, grants } });
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     imports: [JobDetailPage],
@@ -160,7 +161,7 @@ function setup(options: SetupOptions = {}) {
         provide: AuthStore,
         useValue: {
           metadata: signal({ phase: 3 }),
-          session: signal({ identity: { id: person.id, grants } }),
+          session,
         },
       },
     ],
@@ -168,7 +169,12 @@ function setup(options: SetupOptions = {}) {
   const fixture = TestBed.createComponent(JobDetailPage);
   fixture.componentRef.setInput('displayId', 'UPD-006');
   fixture.detectChanges();
-  return { store, fixture, element: fixture.nativeElement as HTMLElement };
+  return {
+    store,
+    fixture,
+    element: fixture.nativeElement as HTMLElement,
+    session,
+  };
 }
 
 const text = (element: HTMLElement) => element.textContent ?? '';
@@ -280,6 +286,35 @@ it('shows Inspect failure and the evidence panel', async () => {
   expect(text(element)).toContain('Updated');
 
   button(element, 'Close')?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+  expect(text(element)).not.toContain('Failure details');
+});
+
+it('closes the failure panel when a job or a person replaces the data', async () => {
+  const { element, fixture, store, session } = setup();
+  button(element, 'Inspect failure')?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+  expect(text(element)).toContain('Failure details · C0A1-7F77');
+
+  // The store clears the job on a change of person. The panel must not stay open.
+  store.job.set(null);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  expect(text(element)).not.toContain('Failure details');
+
+  store.job.set(job());
+  fixture.detectChanges();
+  await fixture.whenStable();
+  button(element, 'Inspect failure')?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+  expect(text(element)).toContain('Failure details · C0A1-7F77');
+
+  session.set({
+    identity: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', grants: [] },
+  });
   fixture.detectChanges();
   await fixture.whenStable();
   expect(text(element)).not.toContain('Failure details');

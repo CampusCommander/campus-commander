@@ -7,9 +7,11 @@ import {
   SimpleChanges,
   afterNextRender,
   computed,
+  effect,
   inject,
   input,
   signal,
+  untracked,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -56,6 +58,24 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   private readonly auth = inject(AuthStore);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  /** The job and person whose data the open panel belongs to. */
+  private shownJobId: string | null = null;
+  private shownIdentity: string | null = null;
+
+  constructor() {
+    // Another job or another person must not show the previous failure panel.
+    effect(() => {
+      const jobId = this.store.job()?.jobId ?? null;
+      const identity = this.auth.session()?.identity.id ?? null;
+      untracked(() => {
+        if (jobId === this.shownJobId && identity === this.shownIdentity)
+          return;
+        this.shownJobId = jobId;
+        this.shownIdentity = identity;
+        this.inspecting.set(null);
+      });
+    });
+  }
 
   /** The failed operation whose evidence panel is open. */
   protected readonly inspecting = signal<JobOperation | null>(null);
