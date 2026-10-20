@@ -369,6 +369,11 @@ BEGIN
     p_synced_at IS NULL OR p_observation NOT IN ('read','list') THEN
     RAISE EXCEPTION 'The device page is invalid.' USING ERRCODE='22023';
   END IF;
+  -- S1 (B2c F1): a page device without a row checks the connection foreign key on insert, and that
+  -- check takes the connection row FOR KEY SHARE. The lock comes here, after the input check and
+  -- before every device row, as cc.stage_devices takes it, so a full-sync finish never forms a
+  -- lock cycle with this call.
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   -- Every function that reads or changes an overlay locks the device rows first (section 5.8).
   -- The lock waits for a concurrent settlement. The upsert statement then takes a fresh snapshot
   -- and sees the overlay that the settlement committed (review F1).
