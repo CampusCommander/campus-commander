@@ -771,4 +771,111 @@ describe('Reconcile concurrency', () => {
     expect(requestMock.mock.calls.length).toBeGreaterThan(before + 1);
     expect(store.job()?.displayId).toBe('UPD-006');
   });
+
+  it('does not clear a newer request mark when an abandoned answer arrives', async () => {
+    const held: ((response: Response) => void)[] = [];
+    const { store } = setup(async (path, body) => {
+      if (body !== undefined)
+        return new Promise<Response>((resolve) => held.push(resolve));
+      return path.includes('/operations')
+        ? Response.json(operationsPage())
+        : Response.json(detail());
+    });
+    await store.init('UPD-006');
+    const first = store.reconcile(operation());
+    await flush();
+    store.leave();
+
+    // A new mount starts its own request for the same operation.
+    await store.init('UPD-006');
+    const second = store.reconcile(operation());
+    await flush();
+    expect(store.reconciling().has('UPD-006-6')).toBe(true);
+
+    // The abandoned request terminates. It must not clear the newer mark or notice.
+    held[0](new Response(null, { status: 202 }));
+    await first;
+    expect(store.reconciling().has('UPD-006-6')).toBe(true);
+    expect(store.notice()).toBe('');
+
+    held[1](new Response(null, { status: 202 }));
+    await second;
+    expect(store.reconciling().has('UPD-006-6')).toBe(true);
+    expect(store.notice()).toBe('Reconcile started for C0A1-7F84.');
+
+    await store.refresh();
+    expect(store.reconciling().has('UPD-006-6')).toBe(false);
+  });
+});
+
+describe('Reconcile interruption', () => {
+  it('releases a terminated request mark when a 401 interrupts the session', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor(person.id),
+    );
+    // AuthStore clears the session before it returns 401 (auth.store.ts:159-183).
+    const { store, requestMock } = setup(async (path, body) => {
+      if (body !== undefined) {
+        session.set(null);
+        return new Response(null, { status: 401 });
+      }
+      return path.includes('/operations')
+        ? Response.json(operationsPage())
+        : Response.json(detail());
+    }, session);
+    TestBed.tick();
+    await store.init('UPD-006');
+    await store.reconcile(operation());
+    // The request terminated without acceptance, so no orphan mark remains.
+    expect(store.reconciling().has('UPD-006-6')).toBe(false);
+    expect(store.notice()).toBe('');
+    expect(store.reconcileError()).toBe('');
+
+    // The session is interrupted, then the same person recovers.
+    TestBed.tick();
+    expect(store.job()?.displayId).toBe('UPD-006');
+    session.set(sessionFor(person.id));
+    TestBed.tick();
+
+    const before = requestMock.mock.calls.length;
+    await store.refresh();
+    expect(requestMock.mock.calls.length).toBeGreaterThan(before);
+    // The operation still reads as unknown, and Reconcile is offered again.
+    expect(store.operations()).toHaveLength(1);
+    expect(store.operations()[0].outcome).toBe('unknown');
+    expect(store.reconciling().has('UPD-006-6')).toBe(false);
+  });
+
+  it('releases a held request that terminates while the session is interrupted', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor(person.id),
+    );
+    const held: ((response: Response) => void)[] = [];
+    const { store } = setup(async (path, body) => {
+      if (body !== undefined)
+        return new Promise<Response>((resolve) => held.push(resolve));
+      return path.includes('/operations')
+        ? Response.json(operationsPage())
+        : Response.json(detail());
+    }, session);
+    TestBed.tick();
+    await store.init('UPD-006');
+    const reconciling = store.reconcile(operation());
+    await flush();
+    expect(store.reconciling().has('UPD-006-6')).toBe(true);
+
+    session.set(null);
+    TestBed.tick();
+    held[0](new Response(null, { status: 202 }));
+    await reconciling;
+    // The answer arrived after the session ended, so it cannot mark this page.
+    expect(store.reconciling().has('UPD-006-6')).toBe(false);
+    expect(store.notice()).toBe('');
+
+    session.set(sessionFor(person.id));
+    TestBed.tick();
+    await store.refresh();
+    expect(store.reconciling().has('UPD-006-6')).toBe(false);
+    expect(store.operations()[0].outcome).toBe('unknown');
+  });
 });

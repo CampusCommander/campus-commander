@@ -743,6 +743,42 @@ test('inspects a failure and reconciles an unknown operation', async ({
   await expect(page.getByText('Reconciling')).toHaveCount(0);
 });
 
+test('releases the reconciling mark when a 401 interrupts the session', async ({
+  page,
+}, testInfo) => {
+  const state = await signIn(page);
+  await page.goto('/jobs/UPD-006');
+  await expect(page.getByRole('button', { name: 'Reconcile' })).toBeVisible();
+
+  // AuthStore clears the session before the store sees the 401 answer.
+  state.reconcileStatus = 401;
+  await page.getByRole('button', { name: 'Reconcile' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Recheck access' }),
+  ).toBeVisible();
+  await expect(page.getByText('Reconciling')).toHaveCount(0);
+
+  // The same person recovers with the same grants.
+  state.reconcileStatus = 202;
+  await page.getByRole('button', { name: 'Recheck access' }).click();
+  await expect(page.getByText('Requested by District Admin')).toBeVisible();
+
+  // A successful reread keeps the operation unknown and offers Reconcile again.
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.getByRole('button', { name: 'Reconcile' })).toBeVisible();
+  await expect(page.getByText('Reconciling')).toHaveCount(0);
+  await expect(page.getByText('Reconcile started for C0A1-7F84.')).toHaveCount(
+    0,
+  );
+
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('job-detail-after-interruption.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
 test('clears the previous person job after another person signs in', async ({
   page,
 }) => {

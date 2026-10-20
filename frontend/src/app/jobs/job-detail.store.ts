@@ -98,6 +98,12 @@ export class JobDetailStore {
   private readGeneration = 0;
   /** Operation ID to the read generation at its 202 answer. A later read clears it. */
   private readonly acceptedMarks = new Map<string, number>();
+  /**
+   * Operation ID to the live Reconcile request that owns its mark. A request that
+   * terminates without acceptance releases its own mark, so a 401 during a session
+   * interruption cannot leave an orphan Reconciling row (R2-F1).
+   */
+  private readonly pendingReconciles = new Map<string, symbol>();
   /** The operation whose accepted notice is visible. A later read clears that notice. */
   private startedNoticeFor: string | null = null;
 
@@ -213,6 +219,8 @@ export class JobDetailStore {
       this.reconcileError.set('Reconcile could not start. Try again.');
       return;
     }
+    const token = Symbol(operation.operationId);
+    this.pendingReconciles.set(operation.operationId, token);
     this.setReconciling(operation.operationId, true);
     try {
       const response = await this.auth.request(
@@ -230,7 +238,6 @@ export class JobDetailStore {
         this.startedNoticeFor = operation.operationId;
         return;
       }
-      this.setReconciling(operation.operationId, false);
       if (response.status === 409) {
         const body: unknown = await response.json().catch(() => null);
         if (!current()) return;
@@ -258,10 +265,13 @@ export class JobDetailStore {
       this.reconcileError.set('Reconcile could not start. Try again.');
     } catch {
       if (!current()) return;
-      this.setReconciling(operation.operationId, false);
       this.reconcileError.set(
         'Cannot reach Campus Commander. Reconcile did not start.',
       );
+    } finally {
+      // The request has terminated. Release its mark unless a 202 accepted it for a
+      // later read, and leave a newer request's mark alone (R2-F1).
+      this.releaseReconcile(operation.operationId, token);
     }
   }
 
@@ -318,9 +328,21 @@ export class JobDetailStore {
   private clearReconcileState(): void {
     this.reconciling.set(new Set());
     this.acceptedMarks.clear();
+    this.pendingReconciles.clear();
     this.startedNoticeFor = null;
     this.reconcileError.set('');
     this.notice.set('');
+  }
+
+  /**
+   * Releases the mark of a terminated Reconcile request. A 202 acceptance keeps its
+   * mark for a later read. A newer request for the same operation keeps its own mark.
+   */
+  private releaseReconcile(operationId: string, token: symbol): void {
+    if (this.pendingReconciles.get(operationId) !== token) return;
+    this.pendingReconciles.delete(operationId);
+    if (this.acceptedMarks.has(operationId)) return;
+    this.setReconciling(operationId, false);
   }
 
   /** One read of the job, Latest activity, and the visible operations page. */
