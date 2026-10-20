@@ -114,7 +114,7 @@ try {
     // The environment already holds a published inventory. Refresh through the
     // menu the same way a reviewer does.
     await publishedRefresh.click();
-    await page.getByRole('menuitem', { name: 'Refresh all' }).click();
+    await page.getByRole('menuitem', { name: 'Refresh Devices' }).click();
   }
   // The grid keeps the published inventory while the next sync runs. The
   // projection reports a new checkedAt when a sync completes, and the running
@@ -139,7 +139,7 @@ try {
     `Sync: status ${sync.status}, generation ${sync.generation}, ${sync.deviceCount} devices, ${syncSeconds.toFixed(1)} s from ${sync.startedAt} to ${sync.checkedAt}\n`,
   );
   process.stdout.write(
-    `Refresh all: ${refreshSeconds.toFixed(1)} s from the click to the completed sync\n`,
+    `Refresh Devices: ${refreshSeconds.toFixed(1)} s from the click to the completed sync\n`,
   );
   const count = page.getByText(
     `${formattedCount} matching devices · ${formattedCount} in district`,

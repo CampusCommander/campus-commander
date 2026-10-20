@@ -173,25 +173,36 @@ function setup(options: {
   const fixture = TestBed.createComponent(DevicesPage);
   fixture.detectChanges();
   const element: HTMLElement = fixture.nativeElement;
+  /** The expand icon is part of the button text, so the label excludes it. */
+  const buttonLabel = (candidate: Element) =>
+    candidate.textContent
+      ?.replace('arrow_drop_down', '')
+      .replace(/\s+/g, ' ')
+      .trim();
   const button = (name: string) =>
     [...element.querySelectorAll('button')].find(
-      (candidate) => candidate.textContent?.trim() === name,
+      (candidate) => buttonLabel(candidate) === name,
     );
+  const dropdownIcon = (name: string) =>
+    button(name)?.querySelector('.dropdown-icon') ?? null;
   const menuItem = (name: string) =>
     [
       ...document.querySelectorAll<HTMLButtonElement>('button[mat-menu-item]'),
     ].find((candidate) => candidate.textContent?.trim() === name);
-  const openBulk = async () => {
-    button('Bulk Actions')?.click();
+  const openMenu = async (name: string) => {
+    button(name)?.click();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
   };
+  const openBulk = () => openMenu('Bulk Actions');
   return {
     store,
     element,
     button,
+    dropdownIcon,
     menuItem,
+    openMenu,
     openBulk,
     writeAccess,
     fixture,
@@ -448,6 +459,89 @@ it('passes the resume of a session to the grid', () => {
   expect(grid.resumeRevision()).toBe(1);
 });
 
+describe('toolbar dropdown buttons', () => {
+  const triggers = ['Refresh', 'Bulk Actions'] as const;
+
+  it.each(triggers)(
+    'renders %s as an outlined dropdown trigger with the expand icon',
+    (name) => {
+      const { button, dropdownIcon } = setup({ sync: ready(), page: counted });
+      const trigger = button(name)!;
+      expect(trigger.classList.contains('mat-mdc-outlined-button')).toBe(true);
+      expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      const icon = dropdownIcon(name)!;
+      expect(icon.textContent?.trim()).toBe('arrow_drop_down');
+      expect(icon.getAttribute('aria-hidden')).toBe('true');
+      expect(icon.classList.contains('dropdown-icon-open')).toBe(false);
+    },
+  );
+
+  it.each(triggers)(
+    'opens the %s menu and rotates its icon while the menu is open',
+    async (name) => {
+      const { button, dropdownIcon, fixture, openMenu } = setup({
+        sync: ready(),
+        page: counted,
+      });
+      const trigger = button(name)!;
+      await openMenu(name);
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(dropdownIcon(name)!.classList.contains('dropdown-icon-open')).toBe(
+        true,
+      );
+
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          keyCode: 27,
+          bubbles: true,
+        } as KeyboardEventInit),
+      );
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(dropdownIcon(name)!.classList.contains('dropdown-icon-open')).toBe(
+        false,
+      );
+    },
+  );
+
+  it('runs the full sync from Refresh Devices', async () => {
+    const { store, menuItem, openMenu } = setup({
+      sync: ready(),
+      page: counted,
+    });
+    await openMenu('Refresh');
+    expect(menuItem('Refresh all')).toBeUndefined();
+    expect(menuItem('Refresh Devices')).toBeDefined();
+    menuItem('Refresh Devices')!.click();
+    expect(store.refreshAll).toHaveBeenCalled();
+  });
+
+  it('disables Refresh Devices while a refresh runs', async () => {
+    const { store, menuItem, render, openMenu } = setup({
+      sync: ready(),
+      page: counted,
+    });
+    await openMenu('Refresh');
+    expect(menuItem('Refresh Devices')?.disabled).toBe(false);
+
+    store.sync.set(ready({ status: 'running' }));
+    render();
+    expect(menuItem('Refresh Devices')?.disabled).toBe(true);
+  });
+
+  it('shows Refreshing… and disables the Refresh trigger while a refresh runs', () => {
+    const { button } = setup({
+      sync: ready({ status: 'running' }),
+      page: counted,
+    });
+    expect(button('Refreshing…')).toMatchObject({ disabled: true });
+  });
+});
+
 describe('Bulk Actions', () => {
   it('reads the Google write access state when the person can write', () => {
     const { writeAccess } = setup({ sync: ready(), page: counted });
@@ -677,7 +771,11 @@ describe('Bulk Actions', () => {
     );
     expect(element.querySelector('#bulk-note')).toBeNull();
     const bulk = [...element.querySelectorAll('button')].find(
-      (candidate) => candidate.textContent?.trim() === 'Bulk Actions',
+      (candidate) =>
+        candidate.textContent
+          ?.replace('arrow_drop_down', '')
+          .replace(/\s+/g, ' ')
+          .trim() === 'Bulk Actions',
     );
     bulk?.click();
     second.detectChanges();
