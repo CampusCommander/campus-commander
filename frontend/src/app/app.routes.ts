@@ -6,7 +6,6 @@ import { ConnectionStore } from './google-connection/connection.store';
 import { schoolsReadable } from './schools/schools.store';
 import { devicesReadable } from './devices/devices.store';
 import { jobsReadable } from './jobs/jobs.store';
-import { deviceUpdateWritable } from './devices/device-update.guard';
 
 const authenticated: CanActivateFn = async () => {
   const auth = inject(AuthStore),
@@ -84,17 +83,6 @@ export const routes: Routes = [
         loadComponent: () => import('./jobs/jobs').then((m) => m.JobsPage),
       },
       {
-        path: 'jobs/:displayId/receipt',
-        title: 'Update job created · Campus Commander',
-        canActivate: [
-          () =>
-            jobsReadable(inject(AuthStore)) ||
-            inject(Router).parseUrl('/account'),
-        ],
-        loadComponent: () =>
-          import('./jobs/job-receipt').then((m) => m.JobReceiptPage),
-      },
-      {
         path: 'jobs/:displayId',
         title: 'Job details · Campus Commander',
         canActivate: [
@@ -104,44 +92,6 @@ export const routes: Routes = [
         ],
         loadComponent: () =>
           import('./jobs/job-detail').then((m) => m.JobDetailPage),
-      },
-      {
-        path: 'devices/update',
-        title: 'Update devices · Campus Commander',
-        canActivate: [
-          () =>
-            devicesReadable(inject(AuthStore)) ||
-            inject(Router).parseUrl('/devices'),
-          deviceUpdateWritable,
-        ],
-        loadComponent: () =>
-          import('./devices/device-update').then((m) => m.DeviceUpdatePage),
-      },
-      {
-        path: 'devices/update/previews/:previewId/confirm',
-        title: 'Confirm update · Campus Commander',
-        canActivate: [
-          () =>
-            devicesReadable(inject(AuthStore)) ||
-            inject(Router).parseUrl('/devices'),
-        ],
-        loadComponent: () =>
-          import('./devices/device-update-confirm').then(
-            (m) => m.DeviceUpdateConfirmPage,
-          ),
-      },
-      {
-        path: 'devices/update/previews/:previewId',
-        title: 'Review preview · Campus Commander',
-        canActivate: [
-          () =>
-            devicesReadable(inject(AuthStore)) ||
-            inject(Router).parseUrl('/devices'),
-        ],
-        loadComponent: () =>
-          import('./devices/device-update-preview').then(
-            (m) => m.DeviceUpdatePreviewPage,
-          ),
       },
       {
         path: 'devices/:deviceId',
