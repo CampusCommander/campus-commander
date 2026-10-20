@@ -6,9 +6,13 @@ import {
   jobFilterLabel,
   jobFilterQuery,
   progressLines,
+  progressPercent,
+  recentLine,
+  runningLine,
   scopeLabel,
   statusTone,
   validJobId,
+  waitingLine,
   type JobFilter,
 } from './job-fields';
 
@@ -311,4 +315,78 @@ it('accepts only the job display IDs of this slice', () => {
   expect(validJobId('REF-004')).toBe(true);
   expect(validJobId('JOB-999')).toBe(false);
   expect(validJobId('UPD-14')).toBe(false);
+});
+
+describe('activity lines', () => {
+  it('names the requester and the progress of a running job', () => {
+    expect(runningLine(summary())).toBe('36 of 48 complete · Maya Chen');
+  });
+
+  it('never promises a start time for a held job', () => {
+    const line = waitingLine(summary({ status: 'held' }));
+    expect(line).toBe('Held · Google backoff · Starts when Google allows');
+    expect(line).not.toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it('names the waiting dispatch of a queued job', () => {
+    expect(waitingLine(summary({ status: 'queued' }))).toBe(
+      'Queued · Waiting for dispatch',
+    );
+  });
+
+  it('reads an unknown outcome as needs review, never as success', () => {
+    const line = recentLine(
+      summary({
+        status: 'needs-review',
+        finishedAt: '2026-09-05T14:42:00Z',
+        progress: {
+          total: 6,
+          succeeded: 4,
+          failed: 1,
+          unknown: 1,
+          skipped: 0,
+          pending: 0,
+        },
+      }),
+    );
+    expect(line).toBe('Needs review · 4 succeeded · 1 failed · 1 unknown');
+    expect(line).not.toContain('Completed');
+  });
+
+  it('counts the devices read by a completed refresh', () => {
+    expect(
+      recentLine(
+        summary({
+          action: 'refresh-inventory',
+          status: 'completed',
+          progress: {
+            total: null,
+            succeeded: 7000,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            pending: null,
+          },
+        }),
+      ),
+    ).toBe('Completed · 7,000 devices read');
+  });
+
+  it('has a determinate share only when the job has a total', () => {
+    expect(progressPercent(summary())).toBe(75);
+    expect(
+      progressPercent(
+        summary({
+          progress: {
+            total: null,
+            succeeded: 3200,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            pending: null,
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
 });
