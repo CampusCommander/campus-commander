@@ -601,6 +601,46 @@ test('R3 response loss then refusal: the read-back settles the applied write', a
   assert.equal(verified.value, 'Room 1');
 });
 
+test('R3 response loss then a 400 or 404: the read-back settles the applied write', async () => {
+  for (const answer of [
+    { kind: 'rejected', status: 400, reason: 'badRequest' },
+    { kind: 'not-found', status: 404, reason: 'notFound' },
+  ]) {
+    const db = database({ claim: () => claimed([op(1, 'd1')]) });
+    const source = reader([
+      {
+        parts: {
+          d1: { kind: 'retry', status: 0, reason: 'timeout', transient: 1 },
+        },
+      },
+      { reuse: true, parts: { d1: { ...answer, transient: 1 } } },
+    ]);
+    source.deviceStates = async (_c, _customer, ids) => {
+      source.calls.push({ name: 'deviceStates', ids: [...ids] });
+      return [
+        {
+          deviceId: 'd1',
+          status: 'found',
+          device: { deviceId: 'd1', annotatedLocation: 'Room 1' },
+        },
+      ];
+    };
+    const { create, sleeps } = jobs({ db, reader: source });
+    const result = await create.runBatch(
+      batchRequest,
+      AbortSignal.timeout(5000),
+    );
+    assert.equal(result.outcome, 'settled');
+    assert.ok(sleeps[0] >= 20_000, 'No GET starts before verifyAfter.');
+    const [write, readBack] = settlements(db);
+    assert.equal(JSON.parse(write.values[5])[0].outcome, 'unknown');
+    assert.equal(readBack.values[4], 'read-back');
+    const verified = JSON.parse(readBack.values[5])[0];
+    assert.equal(verified.outcome, 'succeeded');
+    assert.equal(verified.verifiedBy, 'read-back');
+  }
+});
+
 test('a read-back compares blank and reports a missing device as not-found', async () => {
   const db = database({
     claim: () => claimed([op(1, 'd1'), op(2, 'd2')]),
