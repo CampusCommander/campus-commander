@@ -400,4 +400,39 @@ describe('Shell connection status', () => {
 
     expect(request).not.toHaveBeenCalled();
   });
+
+  it('starts the timed reads when a mounted shell gains diagnostics:read', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    const request = vi.fn(async () => Response.json(serviceHealth('ready')));
+    const session = signal<LiveSession | null>(operator(['schools:read']));
+    configureLive(session, request);
+    const fixture = TestBed.createComponent(Shell);
+    fixture.detectChanges();
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(61_000);
+    await flushPromises();
+    expect(request).not.toHaveBeenCalled();
+
+    // The session ends, then the same person resumes with diagnostics:read.
+    // The shell stays mounted, as it does when a session is restored.
+    session.set(null);
+    TestBed.tick();
+    await flushPromises();
+    expect(request).not.toHaveBeenCalled();
+
+    session.set(operator(['diagnostics:read']));
+    TestBed.tick();
+    await flushPromises();
+    fixture.detectChanges();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(footerStatus(fixture)).toBe('Services ready');
+
+    await vi.advanceTimersByTimeAsync(61_000);
+    await flushPromises();
+    fixture.detectChanges();
+
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(footerStatus(fixture)).toBe('Services ready');
+  });
 });
