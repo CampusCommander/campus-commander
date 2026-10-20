@@ -17,7 +17,7 @@ export interface JobStreamOptions {
   opened: () => void;
   /** One `job-changed` message payload. */
   changed: (data: string) => void;
-  /** Every close, whether stopped, replaced, or reconnecting. Live updates end. */
+  /** Every close or lost connection. Live updates end until the next open. */
   closed?: () => void;
 }
 
@@ -74,8 +74,15 @@ export class JobStream {
       this.options.changed((message as MessageEvent<string>).data);
     });
     stream.addEventListener('error', () => {
-      // EventSource retries while CONNECTING. A closed stream reopens after the delay.
-      if (current() && stream.readyState === CLOSED) this.scheduleReopen();
+      if (!current()) return;
+      if (stream.readyState === CLOSED) {
+        // A closed stream reopens after the delay.
+        this.scheduleReopen();
+        return;
+      }
+      // EventSource retries while CONNECTING. Live updates end until the next open,
+      // and the native reconnection keeps its own retry.
+      this.options.closed?.();
     });
   }
 
