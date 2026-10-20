@@ -506,10 +506,12 @@ function respond(response: ServerResponse, statusCode: number, body: object) {
 }
 
 class DispatchError extends Error {
-  constructor(
-    readonly statusCode: number,
-    readonly code: string,
-  ) {
+  readonly statusCode: number;
+  readonly code: string;
+
+  constructor(statusCode: number, code: string) {
     super(code);
+    this.statusCode = statusCode;
+    this.code = code;
   }
 }

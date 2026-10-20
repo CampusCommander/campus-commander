@@ -15,7 +15,12 @@ import {
 } from '@campus/google-connection';
 import type { EntitySyncBatchRequest } from '@campus/application-contracts';
 import { DeviceSync, type DeviceSyncRequest } from './device-sync';
-import { WorkerRedis, noEntityCache, type EntityCache } from './entity-cache';
+import {
+  WorkerRedis,
+  deferredEntityCache,
+  noEntityCache,
+  type EntityCache,
+} from './entity-cache';
 import { EntitySyncBatch } from './entity-sync';
 import {
   DeviceUpdateJobs,
@@ -46,19 +51,17 @@ export class GoogleWorker {
     process.env['CC_DEVICE_UPDATE_BATCH_SIZE'],
   );
 
-  /** The device write jobs of one process. Redis is not needed for the write path. */
+  /**
+   * The device write jobs of one process. A Redis configuration or secret that
+   * is missing reports `cache-unavailable`, so every publication row stays for
+   * the relay (R1-F2). Writes themselves need no Redis.
+   */
   private updates(pool: Pool, cipher: CredentialCipher): DeviceUpdateJobs {
     return new DeviceUpdateJobs(
       pool,
       cipher,
       new GoogleDeviceReader(),
-      (() => {
-        try {
-          return this.cache();
-        } catch {
-          return noEntityCache;
-        }
-      })(),
+      deferredEntityCache(() => this.cache()),
       { batchSize: this.batchSize },
     );
   }
