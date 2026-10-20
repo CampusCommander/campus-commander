@@ -1709,6 +1709,24 @@ describe('the Refresh menu requests', () => {
     },
   );
 
+  it.each(['Refresh Selected', 'Refresh Domain'])(
+    'shows the error paragraph for a 403 %s answer',
+    async (action) => {
+      const request = routes({
+        '/api/devices/selection/refresh': () =>
+          Response.json({ reason: 'forbidden' }, { status: 403 }),
+        '/api/devices/domain/refresh': () =>
+          Response.json({ reason: 'forbidden' }, { status: 403 }),
+      });
+      const store = setup(request);
+      if (action === 'Refresh Selected') await store.refreshSelection();
+      else await store.refreshDomain();
+      expect(store.error()).toBe('The refresh could not start.');
+      expect(store.refreshStatus()).toBe('');
+      expect(store.refreshPending()).toBe(false);
+    },
+  );
+
   it('posts an empty body for Refresh Domain', async () => {
     const request = routes({
       '/api/devices/domain/refresh': () =>
@@ -1830,6 +1848,113 @@ describe('the Refresh menu requests', () => {
     release(selectionAnswer(JOB_ID));
     await done;
     expect(store.refreshStatus()).toBe('');
+    expect(store.refreshPending()).toBe(false);
+  });
+
+  it('drops a late 409 sync reread after another person signs in', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    let release: (response: Response) => void = () => undefined;
+    const held = new Promise<Response>((resolve) => (release = resolve));
+    let reads = 0;
+    const request = vi.fn((path: string, body?: unknown) => {
+      if (path === '/api/devices/domain/refresh')
+        return Promise.resolve(
+          Response.json({ reason: 'device-sync-running' }, { status: 409 }),
+        );
+      if (path === '/api/devices/sync' && body === undefined)
+        return reads++ === 0
+          ? held
+          : Promise.resolve(Response.json({ sync: state('ready') }));
+      return Promise.reject(new TypeError('Failed to fetch'));
+    });
+    const store = setup(request, session);
+    // The first effect run records the current person before the sign-out.
+    TestBed.tick();
+    const done = store.refreshDomain();
+    await vi.waitFor(() => expect(reads).toBe(1));
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    // The new person reads a ready status. Then the old person's held answer arrives.
+    await store.loadSync();
+    expect(store.sync()?.status).toBe('ready');
+    release(Response.json({ sync: state('running') }));
+    await done;
+    expect(store.sync()?.status).toBe('ready');
+    expect(store.syncLoaded()).toBe(true);
+    expect(store.error()).toBe('');
+    expect(store.refreshStatus()).toBe('');
+    expect(store.refreshPending()).toBe(false);
+  });
+
+  it('drops a late failed 409 sync reread after another person signs in', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    let release: (response: Response) => void = () => undefined;
+    const held = new Promise<Response>((resolve) => (release = resolve));
+    let reads = 0;
+    const request = vi.fn((path: string, body?: unknown) => {
+      if (path === '/api/devices/domain/refresh')
+        return Promise.resolve(
+          Response.json({ reason: 'device-sync-running' }, { status: 409 }),
+        );
+      if (path === '/api/devices/sync' && body === undefined)
+        return reads++ === 0
+          ? held
+          : Promise.resolve(Response.json({ sync: state('ready') }));
+      return Promise.reject(new TypeError('Failed to fetch'));
+    });
+    const store = setup(request, session);
+    TestBed.tick();
+    const done = store.refreshDomain();
+    await vi.waitFor(() => expect(reads).toBe(1));
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    await store.loadSync();
+    release(Response.json({}, { status: 503 }));
+    await done;
+    expect(store.sync()?.status).toBe('ready');
+    expect(store.error()).toBe('');
+    expect(store.refreshPending()).toBe(false);
+  });
+
+  it('drops a late Refresh Devices 409 sync reread after another person signs in', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    let release: (response: Response) => void = () => undefined;
+    const held = new Promise<Response>((resolve) => (release = resolve));
+    let reads = 0;
+    const request = vi.fn((path: string, body?: unknown) => {
+      if (path === '/api/devices/sync' && body !== undefined)
+        return Promise.resolve(
+          Response.json({ reason: 'device-sync-running' }, { status: 409 }),
+        );
+      if (path === '/api/devices/sync')
+        return reads++ === 0
+          ? held
+          : Promise.resolve(Response.json({ sync: state('ready') }));
+      return Promise.reject(new TypeError('Failed to fetch'));
+    });
+    const store = setup(request, session);
+    TestBed.tick();
+    const done = store.refreshAll();
+    await vi.waitFor(() => expect(reads).toBe(1));
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    await store.loadSync();
+    release(Response.json({ sync: state('running') }));
+    await done;
+    expect(store.sync()?.status).toBe('ready');
+    expect(store.error()).toBe('');
     expect(store.refreshPending()).toBe(false);
   });
 
