@@ -647,3 +647,126 @@ test('other page failures do not retry', async (t) => {
   assert.equal(calls.length, 1);
   assert.equal(slept, false);
 });
+
+const writeScope =
+  'https://www.googleapis.com/auth/admin.directory.device.chromeos';
+
+test('patchAnnotatedLocations sends one PATCH part with only annotatedLocation', async (t) => {
+  const { google, scopes } = stubBatch(t, (part) => ({
+    status: 200,
+    body: {
+      deviceId: part.key,
+      annotatedLocation: part.body.annotatedLocation,
+    },
+  }));
+  const sent = [];
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).patchAnnotatedLocations(
+    credential,
+    'C0123456',
+    [
+      { deviceId: 'd1', value: 'Room 1' },
+      { deviceId: 'd2', value: null },
+    ],
+    signal(),
+    { onSend: (ids) => void sent.push(ids) },
+  );
+  assert.deepEqual(scopes, [writeScope], 'The write token uses the write scope.');
+  assert.equal(
+    google.requests[0].url,
+    'https://www.googleapis.com/batch/admin/directory_v1',
+  );
+  assert.deepEqual(
+    google.sent[0].map((part) => [
+      part.method,
+      part.path,
+      part.query.projection,
+      part.body,
+    ]),
+    [
+      [
+        'PATCH',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d1',
+        'FULL',
+        { annotatedLocation: 'Room 1' },
+      ],
+      [
+        'PATCH',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d2',
+        'FULL',
+        { annotatedLocation: null },
+      ],
+    ],
+    'Clear sends a null annotatedLocation and no other field.',
+  );
+  assert.ok(google.sent[0][0].query.fields, 'The part reads the field list.');
+  assert.deepEqual(sent, [['d1', 'd2']], 'onSend names the sent requests.');
+  assert.equal(result.succeeded.size, 2);
+  assert.equal(result.failed.size, 0);
+});
+
+test('patchAnnotatedLocations splits into multipart rounds of its batch size', async (t) => {
+  const { google } = stubBatch(t, (part) => ({
+    status: 200,
+    body: { deviceId: part.key },
+  }));
+  await new GoogleDeviceReader({ batch: fastBatch() }).patchAnnotatedLocations(
+    credential,
+    'C0123456',
+    [
+      { deviceId: 'd1', value: 'A' },
+      { deviceId: 'd2', value: 'B' },
+      { deviceId: 'd3', value: 'C' },
+    ],
+    signal(),
+    { batchSize: 2 },
+  );
+  assert.deepEqual(google.keys(), [['d1', 'd2'], ['d3']]);
+});
+
+test('patchAnnotatedLocations rejects a batch size above 250', async (t) => {
+  stubBatch(t, (part) => ({ status: 200, body: { deviceId: part.key } }));
+  await assert.rejects(
+    new GoogleDeviceReader({ batch: fastBatch() }).patchAnnotatedLocations(
+      credential,
+      'C0123456',
+      [{ deviceId: 'd1', value: 'A' }],
+      signal(),
+      { batchSize: 251 },
+    ),
+    { name: 'BatchServiceError', code: 'invalid-option' },
+  );
+});
+
+test('deviceStates reports one state per device and reads the inventory scope', async (t) => {
+  const { google, scopes } = stubBatch(t, (part) =>
+    part.key === 'd2'
+      ? { status: 404, body: { error: { code: 404 } } }
+      : directoryDevice(part.key),
+  );
+  const states = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).deviceStates(credential, 'C0123456', ['d1', 'd2', 'd1'], signal());
+  assert.deepEqual(scopes, [deviceScope]);
+  assert.deepEqual(google.keys(), [['d1', 'd2']]);
+  assert.deepEqual(
+    states.map((state) => [state.deviceId, state.status]),
+    [
+      ['d1', 'found'],
+      ['d2', 'missing'],
+    ],
+  );
+});
+
+test('deviceStates keeps a failed part for its caller to settle', async (t) => {
+  stubBatch(t, () => ({
+    status: 403,
+    body: { error: { code: 403, errors: [{ reason: 'forbidden' }] } },
+  }));
+  const states = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).deviceStates(credential, 'C0123456', ['d1'], signal());
+  assert.equal(states[0].status, 'failed');
+  assert.equal(states[0].failure.kind, 'auth');
+});
