@@ -56,6 +56,8 @@ export class DevicesPage implements OnInit, OnDestroy {
   private readonly chips = viewChildren<ElementRef<HTMLButtonElement>>('chip');
   protected readonly sync = this.store.sync;
   protected readonly editingIndex = signal<number | null>(null);
+  protected readonly refreshMenuOpen = signal(false);
+  protected readonly bulkMenuOpen = signal(false);
   protected readonly copied = signal('');
   protected readonly editing = computed(() => {
     const index = this.editingIndex();

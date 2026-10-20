@@ -76,6 +76,14 @@ p {
   border-radius: var(--cc-radius-control);
   padding: var(--cc-card-padding);
 }
+/* The Devices toolbar menus are overlay content. Open each menu 4 px from its button. */
+.devices-toolbar-menu {
+  margin-block-start: var(--cc-space-xs);
+}
+.devices-toolbar-menu.mat-menu-above {
+  margin-block-start: 0;
+  margin-block-end: var(--cc-space-xs);
+}
 .error {
   color: var(--cc-status-error-text);
 }

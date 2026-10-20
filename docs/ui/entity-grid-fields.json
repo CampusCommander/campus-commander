@@ -237,7 +237,7 @@
     ]
   },
   "menus": {
-    "Refresh": ["Refresh selected", "Refresh all"],
+    "Refresh": ["Refresh Selected", "Refresh Devices", "Refresh Domain"],
     "Bulk Actions": [
       "Import",
       "Export",

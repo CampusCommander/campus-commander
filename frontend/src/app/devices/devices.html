@@ -111,28 +111,59 @@
     </div>
     <div class="actions">
       <button
-        mat-button
+        mat-stroked-button
         type="button"
         [matMenuTriggerFor]="refreshMenu"
         [disabled]="store.refreshing()"
+        (menuOpened)="refreshMenuOpen.set(true)"
+        (menuClosed)="refreshMenuOpen.set(false)"
       >
         {{ store.refreshing() ? 'Refreshing…' : 'Refresh' }}
+        <span
+          class="material-symbols-outlined dropdown-icon"
+          iconPositionEnd
+          aria-hidden="true"
+          [class.dropdown-icon-open]="refreshMenuOpen()"
+          >arrow_drop_down</span
+        >
       </button>
-      <mat-menu #refreshMenu="matMenu">
-        <button mat-menu-item type="button" (click)="refresh()">
-          Refresh all
+      <mat-menu
+        #refreshMenu="matMenu"
+        xPosition="before"
+        class="devices-toolbar-menu"
+      >
+        <button
+          mat-menu-item
+          type="button"
+          [disabled]="store.refreshing()"
+          (click)="refresh()"
+        >
+          Refresh Devices
         </button>
       </mat-menu>
       <button
-        mat-button
+        mat-stroked-button
         type="button"
         [matMenuTriggerFor]="bulkMenu"
         [disabled]="!canBulk()"
         [attr.aria-describedby]="note() ? 'bulk-note' : null"
+        (menuOpened)="bulkMenuOpen.set(true)"
+        (menuClosed)="bulkMenuOpen.set(false)"
       >
         Bulk Actions
+        <span
+          class="material-symbols-outlined dropdown-icon"
+          iconPositionEnd
+          aria-hidden="true"
+          [class.dropdown-icon-open]="bulkMenuOpen()"
+          >arrow_drop_down</span
+        >
       </button>
-      <mat-menu #bulkMenu="matMenu">
+      <mat-menu
+        #bulkMenu="matMenu"
+        xPosition="before"
+        class="devices-toolbar-menu"
+      >
         <button
           mat-menu-item
           type="button"
