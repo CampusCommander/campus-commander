@@ -1,0 +1,174 @@
+@if (field(); as current) {
+<section
+  #editor
+  class="editor card"
+  role="dialog"
+  [attr.aria-labelledby]="id + '-title'"
+  (keydown.escape)="close()"
+>
+  <h2 [id]="id + '-title'">{{ current.label }}</h2>
+  @switch (current.id) { @case ('jobId') {
+  <label class="field"
+    >Job ID
+    <input
+      type="text"
+      maxlength="16"
+      placeholder="UPD-014"
+      [value]="jobId()"
+      (input)="jobId.set($any($event.target).value)"
+    />
+  </label>
+  @if (jobId().trim() && !draft()) {
+  <p class="error">Use a job ID such as UPD-014 or REF-004.</p>
+  } } @case ('status') {
+  <fieldset>
+    <legend>Status</legend>
+    @for (status of statusOptions; track status) {
+    <label class="check"
+      ><input
+        type="checkbox"
+        [checked]="statuses().includes(status)"
+        (change)="toggleStatus(status, $any($event.target).checked)"
+      />{{ statusLabels[status] }}</label
+    >
+    }
+  </fieldset>
+  } @case ('action') {
+  <fieldset>
+    <legend>Action</legend>
+    @for (action of actionOptions; track action) {
+    <label class="check"
+      ><input
+        type="checkbox"
+        [checked]="actions().includes(action)"
+        (change)="toggleAction(action, $any($event.target).checked)"
+      />{{ actionLabel(action) }}</label
+    >
+    }
+  </fieldset>
+  } @case ('entityType') {
+  <fieldset>
+    <legend>Entity type</legend>
+    <label class="check"
+      ><input
+        type="checkbox"
+        [checked]="entities().includes('device')"
+        (change)="toggleEntity($any($event.target).checked)"
+      />Device</label
+    >
+  </fieldset>
+  } @case ('requestedBy') {
+  <label class="field"
+    >Find a person
+    <input
+      #personSearch
+      type="search"
+      aria-label="Find a person"
+      [value]="personQuery()"
+      (input)="search($any($event.target).value)"
+    />
+  </label>
+  @if (peopleState() === 'loading') {
+  <p role="status">Searching for people…</p>
+  } @else if (peopleState() === 'unavailable') {
+  <p class="error">Requesters are unavailable.</p>
+  } @else if (people().length === 0) {
+  <p>No requesters match.</p>
+  } @else {
+  <ul class="people">
+    @for (candidate of people(); track candidate.id) {
+    <li>
+      <button
+        type="button"
+        [class.selected]="person()?.id === candidate.id"
+        [attr.aria-pressed]="person()?.id === candidate.id"
+        (click)="choosePerson(candidate)"
+      >
+        {{ candidate.displayName }}
+      </button>
+    </li>
+    }
+  </ul>
+  } } @default {
+  <label class="field"
+    >From
+    <input
+      type="datetime-local"
+      [value]="from()"
+      (input)="setFrom($any($event.target).value)"
+    />
+  </label>
+  <label class="field"
+    >To
+    <input
+      type="datetime-local"
+      [value]="to()"
+      (input)="setTo($any($event.target).value)"
+    />
+  </label>
+  @if (invalidRange()) {
+  <p class="error">The start must be before the end.</p>
+  } } }
+  <div class="editor-actions">
+    <button mat-button type="button" (click)="close()">Cancel</button>
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="!draft()"
+      (click)="apply()"
+    >
+      Apply
+    </button>
+  </div>
+</section>
+} @else if (entering()) {
+<div class="entry">
+  <input
+    #entry
+    type="text"
+    role="combobox"
+    aria-label="Filter field"
+    aria-autocomplete="list"
+    [attr.aria-expanded]="suggestions().length > 0"
+    [attr.aria-controls]="id + '-list'"
+    [attr.aria-activedescendant]="activeId()"
+    [value]="text()"
+    (input)="typed($any($event.target).value)"
+    (keydown)="keydown($event)"
+  />
+  <div
+    class="suggestions card"
+    [id]="id + '-list'"
+    role="listbox"
+    aria-label="Filter suggestions"
+  >
+    @for (group of groups(); track group.name) {
+    <div role="group" [attr.aria-label]="group.name">
+      <p class="group-label" aria-hidden="true">{{ group.name }}</p>
+      @for (choice of group.items; track choice.id) {
+      <div
+        role="option"
+        [id]="choice.id"
+        [attr.aria-selected]="choice.id === activeId()"
+        [class.active]="choice.id === activeId()"
+        tabindex="-1"
+        (mousedown)="$event.preventDefault()"
+        (click)="choose(choice)"
+        (keydown.enter)="choose(choice)"
+      >
+        {{ choice.label }}
+      </div>
+      }
+    </div>
+    }
+  </div>
+  <p class="visually-hidden" aria-live="polite">
+    {{ suggestions().length }} suggestions
+  </p>
+</div>
+} @else {
+<button #trigger type="button" class="add-filter" (click)="start()">
+  <span class="material-symbols-outlined" aria-hidden="true">add</span>
+  Add a filter
+</button>
+}
