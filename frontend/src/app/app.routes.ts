@@ -95,6 +95,17 @@ export const routes: Routes = [
           import('./jobs/job-receipt').then((m) => m.JobReceiptPage),
       },
       {
+        path: 'jobs/:displayId',
+        title: 'Job details · Campus Commander',
+        canActivate: [
+          () =>
+            jobsReadable(inject(AuthStore)) ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () =>
+          import('./jobs/job-detail').then((m) => m.JobDetailPage),
+      },
+      {
         path: 'devices/update',
         title: 'Update devices · Campus Commander',
         canActivate: [
