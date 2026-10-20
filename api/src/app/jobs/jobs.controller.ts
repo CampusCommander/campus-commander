@@ -24,6 +24,8 @@ import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { DeviceEventsService } from '../devices/device-events.service';
 import { streamEvents } from '../devices/device-events';
+import { requireReconcileActions } from '../devices/device-updates-actions';
+import { OrchestrationService } from '../orchestration/orchestration.service';
 import { JobsService } from './jobs.service';
 import { seesEveryJob } from './jobs';
 import { recheckJobStream } from './jobs-stream';
@@ -65,6 +67,9 @@ const operationsQuerySchema = z.strictObject({
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
+/** One operation number names one stored operation. `all` belongs to the flow, never to this route. */
+const operationNumberSchema = z.coerce.number().int().min(1).max(2_147_483_647);
+
 const requestersQuerySchema = z.strictObject({
   query: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(20).optional(),
@@ -90,6 +95,7 @@ export class JobsController {
     private readonly jobs: JobsService,
     private readonly auth: AuthService,
     private readonly deviceEvents: DeviceEventsService,
+    private readonly orchestration: OrchestrationService,
   ) {}
 
   @Get()
@@ -207,6 +213,33 @@ export class JobsController {
       input.attention === true,
       input.cursor,
       input.limit,
+    );
+  }
+
+  /** Start the read-back of one `unknown` operation (design section 2.6). */
+  @Post(':displayId/operations/:operationNumber/reconcile')
+  @HttpCode(202)
+  async reconcile(
+    @Req() request: AuthenticatedRequest,
+    @Param('displayId') displayId: string,
+    @Param('operationNumber') operationNumber: string,
+  ) {
+    const id = jobDisplayIdSchema.parse(displayId);
+    const number = operationNumberSchema.parse(operationNumber);
+    const customerId = await this.jobs.customer(request.session);
+    await requireReconcileActions(
+      this.auth,
+      request.session,
+      customerId,
+      request.correlationId,
+    );
+    return this.jobs.reconcile(
+      request.session,
+      customerId,
+      id,
+      number,
+      request.correlationId,
+      this.orchestration,
     );
   }
 }
