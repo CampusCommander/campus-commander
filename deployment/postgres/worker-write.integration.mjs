@@ -264,8 +264,12 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
       async remove(keys) {
         calls.push({ name: 'remove', keys });
       },
-      async removeMembers() {},
-      async extendMembers() {},
+      async removeMembers() {
+        return undefined;
+      },
+      async extendMembers() {
+        return undefined;
+      },
       async increment(key) {
         calls.push({ name: 'increment', key });
       },
@@ -273,14 +277,16 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         if (options.failPublish) throw options.failPublish;
         calls.push({ name: 'publish', channel, message });
       },
-      async close() {},
+      async close() {
+        return undefined;
+      },
     };
   };
 
   const run = (
     jobId,
     batch,
-    { reader, cache = cacheOf(), batchSize = 250, token, attempt } = {},
+    { reader, cache = cacheOf(), batchSize = 250, token } = {},
   ) =>
     new DeviceUpdateJobs(
       pool,
@@ -294,6 +300,21 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         jobId,
         dispatchToken: token,
         batch,
+        correlationId: randomUUID(),
+      },
+      AbortSignal.timeout(120_000),
+    );
+  const runFinish = (jobId, { reader, cache = cacheOf(), token } = {}) =>
+    new DeviceUpdateJobs(
+      pool,
+      { open: () => ({ subject: 'fixture@example.invalid' }) },
+      reader,
+      cache,
+    ).runFinish(
+      {
+        customerId: customer,
+        jobId,
+        dispatchToken: token,
         correlationId: randomUUID(),
       },
       AbortSignal.timeout(120_000),
@@ -452,13 +473,7 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           signal,
           options,
         ) => {
-          const first = await patch(
-            credential,
-            customerId,
-            [writes[0]],
-            signal,
-            options,
-          );
+          await patch(credential, customerId, [writes[0]], signal, options);
           sent += 1;
           await options.onSend?.(['d-sent']);
           throw new BatchServiceError(
@@ -886,6 +901,21 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           failure: 'permission-denied',
         });
         assert.equal(later.calls.length, 0, 'A stopped claim sends no part.');
+        // A1: the finish fences operation 2 after its lease and grace, then
+        // reads it back.
+        assert.equal((await operation(jobId, 2)).status, 'dispatched');
+        await admin(
+          "UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '2 minutes' WHERE job_id=$1 AND batch=0",
+          [jobId],
+        );
+        const finished = await runFinish(jobId, {
+          reader: readerOf({ rounds: [], state: () => 'Room 12' }),
+          token,
+        });
+        assert.equal(finished.outcome, 'finished');
+        const readBack = await operation(jobId, 2);
+        assert.equal(readBack.status, 'succeeded');
+        assert.equal(readBack.verified_by, 'read-back');
         await releaseAll();
       },
     );

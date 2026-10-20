@@ -481,8 +481,29 @@ export async function qualifyDeviceWritesOnMock({
       [customer, deviceIds[1]],
     );
     assert.equal(after.rowCount, 0, 'A converging list deletes the overlay.');
+    // Item 14: a Clear after the Replace leaves null in the row.
+    const clear = await seedJob({
+      devices: [deviceIds[1]],
+      value: null,
+      mode: 'clear',
+    });
+    const clearExecution = await waitExecution(
+      await startFlow(clear.jobId, clear.token, clear.batchCount),
+    );
+    assert.equal(
+      clearExecution.state.current,
+      'SUCCESS',
+      JSON.stringify(clearExecution),
+    );
+    assert.equal((await operations(clear.jobId))[0].status, 'succeeded');
+    device = (await byIds([deviceIds[1]]))[0];
+    assert.equal(
+      device.annotatedLocation,
+      null,
+      'Clear leaves null in the row that by-ids returns.',
+    );
     results.push(
-      'Replace then a lagged list keeps the written value, and a flush then a list deletes the overlay: pass',
+      'Replace then a lagged list keeps the written value, a flush then a list deletes the overlay, and Clear leaves null: pass',
     );
   }
 
