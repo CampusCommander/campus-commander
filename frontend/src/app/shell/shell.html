@@ -131,6 +131,9 @@
       }}</span
     >
     <div class="header-actions">
+      @if (jobsReadable()) {
+      <app-job-activity />
+      }
       <a
         mat-icon-button
         routerLink="/account"

@@ -1,0 +1,183 @@
+@if (readable()) {
+<div class="activity">
+  <button
+    #trigger
+    mat-icon-button
+    type="button"
+    aria-haspopup="dialog"
+    [attr.aria-label]="buttonLabel()"
+    [attr.aria-expanded]="open()"
+    [class.open]="open()"
+    (click)="toggle()"
+  >
+    @if (store.runningCount() > 0) {
+    <span class="ring" aria-hidden="true"></span>
+    }
+    <mat-icon fontSet="material-symbols-outlined">notifications</mat-icon>
+    @if (store.runningCount() > 0) {
+    <span class="badge" aria-hidden="true"
+      >{{ count(store.runningCount()) }}</span
+    >
+    } @if (store.attention()) {
+    <span class="attention-dot" aria-hidden="true"></span>
+    }
+  </button>
+
+  @if (open()) {
+  <div
+    #panel
+    class="panel"
+    role="dialog"
+    aria-labelledby="activity-title"
+    aria-describedby="activity-subtitle"
+    tabindex="-1"
+    (keydown.escape)="close()"
+  >
+    <div class="panel-head">
+      <h2 id="activity-title">Activity</h2>
+      <span id="activity-subtitle">District activity</span>
+    </div>
+
+    <div class="panel-body">
+      @if (store.summary(); as activity) { @if (activity.running.count === 0 &&
+      activity.waiting.count === 0 && activity.recent.count === 0) {
+      <p class="message">
+        No jobs are running or waiting. No job finished in the last 24 hours.
+      </p>
+      } @if (activity.running.count > 0) {
+      <section class="section" aria-labelledby="activity-running-title">
+        <h3 id="activity-running-title">
+          Running · {{ count(activity.running.count) }}
+        </h3>
+        <ul class="rows">
+          @for (job of activity.running.jobs; track job.jobId) {
+          <li>
+            <a
+              class="row"
+              [routerLink]="['/jobs', job.displayId]"
+              (click)="close(false)"
+            >
+              <span class="spinner" aria-hidden="true"></span>
+              <span class="row-body">
+                <span class="row-title"
+                  >{{ job.displayId }} · {{ actionLabel(job.action) }}</span
+                >
+                <span class="row-sub">{{ runningLine(job) }}</span>
+                <span
+                  class="bar"
+                  [class.indeterminate]="progressPercent(job) === null"
+                  aria-hidden="true"
+                  ><span
+                    class="bar-fill"
+                    [style.width.%]="progressPercent(job)"
+                  ></span
+                ></span>
+              </span>
+              <span class="row-meta">
+                @if (job.startedAt) {
+                <time
+                  [attr.datetime]="job.startedAt"
+                  [attr.title]="'Started ' + formatTimestamp(job.startedAt)"
+                  [attr.aria-label]="
+                    elapsed(job) + ', started ' + formatTimestamp(job.startedAt)
+                  "
+                  >{{ elapsed(job) }}</time
+                >
+                }
+              </span>
+            </a>
+          </li>
+          }
+        </ul>
+      </section>
+      } @if (activity.waiting.count > 0) {
+      <section class="section" aria-labelledby="activity-waiting-title">
+        <h3 id="activity-waiting-title">
+          Waiting · {{ count(activity.waiting.count) }}
+        </h3>
+        <ul class="rows">
+          @for (job of activity.waiting.jobs; track job.jobId) {
+          <li>
+            <a
+              class="row"
+              [routerLink]="['/jobs', job.displayId]"
+              (click)="close(false)"
+            >
+              <mat-icon
+                class="row-icon"
+                fontSet="material-symbols-outlined"
+                aria-hidden="true"
+                >schedule</mat-icon
+              >
+              <span class="row-body">
+                <span class="row-title"
+                  >{{ job.displayId }} · {{ actionLabel(job.action) }}</span
+                >
+                <span class="row-sub">{{ waitingLine(job) }}</span>
+              </span>
+              <span class="row-meta">{{ scopeLabel(job.scope) }}</span>
+            </a>
+          </li>
+          }
+        </ul>
+      </section>
+      } @if (activity.recent.count > 0) {
+      <section class="section" aria-labelledby="activity-recent-title">
+        <h3 id="activity-recent-title">
+          Recent · {{ count(activity.recent.count) }} · last 24 hours
+        </h3>
+        <ul class="rows">
+          @for (job of activity.recent.jobs; track job.jobId) {
+          <li>
+            <a
+              class="row"
+              [routerLink]="['/jobs', job.displayId]"
+              (click)="close(false)"
+            >
+              <mat-icon
+                [class]="'row-icon tone-' + statusTone(job.status)"
+                fontSet="material-symbols-outlined"
+                aria-hidden="true"
+                >{{ recentIcon(job.status) }}</mat-icon
+              >
+              <span class="row-body">
+                <span class="row-title"
+                  >{{ job.displayId }} · {{ actionLabel(job.action) }}</span
+                >
+                <span [class]="'row-sub tone-' + statusTone(job.status)"
+                  >{{ recentLine(job) }}</span
+                >
+              </span>
+              <span class="row-meta">
+                @if (job.finishedAt) {
+                <time
+                  [attr.datetime]="job.finishedAt"
+                  [attr.title]="formatTimestamp(job.finishedAt)"
+                  [attr.aria-label]="formatTimestamp(job.finishedAt)"
+                  >{{ clockTime(job.finishedAt) }}</time
+                >
+                }
+              </span>
+            </a>
+          </li>
+          }
+        </ul>
+      </section>
+      } } @else if (store.error()) {
+      <p class="message error" role="alert">{{ store.error() }}</p>
+      } @else {
+      <p class="message">Loading job activity</p>
+      }
+    </div>
+
+    <div class="panel-foot">
+      <a routerLink="/jobs" (click)="close(false)">View all jobs</a>
+      <span class="live">
+        @if (store.live()) { Updated live } @else { Updates pause while the
+        connection is down }
+      </span>
+    </div>
+  </div>
+  }
+</div>
+}
