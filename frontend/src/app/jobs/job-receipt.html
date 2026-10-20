@@ -1,0 +1,36 @@
+<div class="job-receipt">
+  <header class="page-header">
+    <h1>{{ title() }}</h1>
+    <p class="subtitle">{{ subtitle() }}</p>
+  </header>
+
+  @if (status() === 'loading') {
+  <section class="card" aria-label="Loading the job receipt" aria-busy="true">
+    <p role="status">Loading the job receipt…</p>
+    <div class="skeleton" aria-hidden="true"></div>
+    <div class="skeleton" aria-hidden="true"></div>
+  </section>
+  } @else if (problem(); as problem) {
+  <app-device-update-problem
+    [problem]="problem"
+    [busy]="preparing()"
+    busyLabel="Preparing preview…"
+    [detail]="prepareDetail()"
+    (action)="act($event)"
+  />
+  } @else if (job(); as job) {
+  <section class="card" aria-labelledby="receipt-heading">
+    <h2 id="receipt-heading">{{ heading }}</h2>
+    <p>{{ countLine() }}</p>
+    <p>{{ nextStep }}</p>
+    <div class="actions">
+      <button mat-button type="button" (click)="backToDevices()">
+        Back to devices
+      </button>
+      <button mat-flat-button type="button" (click)="viewJob()">
+        View job
+      </button>
+    </div>
+  </section>
+  }
+</div>
