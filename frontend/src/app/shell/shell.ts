@@ -1,4 +1,11 @@
-import { Component, effect, inject, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  effect,
+  inject,
+  OnDestroy,
+  OnInit,
+  signal,
+} from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import {
   Router,
@@ -14,7 +21,10 @@ import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import { DevicesStore } from '../devices/devices.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
-import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
+import {
+  DiagnosticsStore,
+  diagnosticsReadable,
+} from '../diagnostics/diagnostics.store';
 import { schoolsReadable } from '../schools/schools.store';
 import { JobActivity } from '../jobs/job-activity';
 import { jobsReadable } from '../jobs/jobs.store';
@@ -33,7 +43,7 @@ import { jobsReadable } from '../jobs/jobs.store';
   templateUrl: './shell.html',
   styleUrl: './shell.css',
 })
-export class Shell implements OnInit {
+export class Shell implements OnInit, OnDestroy {
   protected readonly auth = inject(AuthStore);
   protected readonly schoolsReadable = () => schoolsReadable(this.auth);
   protected readonly jobsReadable = () => jobsReadable(this.auth);
@@ -52,8 +62,10 @@ export class Shell implements OnInit {
     });
   }
   ngOnInit() {
-    if (this.auth.session()?.identity.permissions.includes('diagnostics:read'))
-      void this.diagnostics.refresh();
+    if (diagnosticsReadable(this.auth)) this.diagnostics.watch();
+  }
+  ngOnDestroy() {
+    this.diagnostics.unwatch();
   }
   protected focusGoogleHealth(event: MouseEvent) {
     if (
