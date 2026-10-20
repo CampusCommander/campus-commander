@@ -357,7 +357,10 @@ export class DevicesStore {
 
   /** Read the status. `denied` means a 401 or 403 answer. `failed` means any other failure. */
   private async readSync(): Promise<'read' | 'denied' | 'failed'> {
+    // Another person signed in while this read was in flight. Its answer belongs to the old person.
+    const epoch = this.epoch;
     const response = await this.call('/api/devices/sync');
+    if (epoch !== this.epoch) return 'failed';
     if (!response) return 'failed';
     if (!response.ok) {
       this.error.set('Device inventory status is unavailable.');
@@ -371,10 +374,12 @@ export class DevicesStore {
         .nullable()
         .parse((await response.json()).sync);
     } catch {
+      if (epoch !== this.epoch) return 'failed';
       // A 200 answer with an unreadable body counts as a failed read. The reopen then retries.
       this.error.set('Device inventory status is unavailable.');
       return 'failed';
     }
+    if (epoch !== this.epoch) return 'failed';
     this.error.set('');
     this.setSync(answer);
     this.syncLoaded.set(true);
@@ -456,8 +461,9 @@ export class DevicesStore {
         );
         return;
       }
-      // A 401 or 403 answer ends the session. The shell reports it, and no status line stays.
-      if (response.status === 401 || response.status === 403) return;
+      // A 401 answer ends the session. The shell reports it, and no status line stays.
+      // A 403 answer is an ordinary failure like every other status.
+      if (response.status === 401) return;
       if (response.status === 409 && body?.reason === 'selection-expired')
         this.refreshStatus.set(SELECTION_EXPIRED_TEXT);
       else if (response.status === 422 && body?.reason === 'nothing-selected')
@@ -490,7 +496,8 @@ export class DevicesStore {
         return;
       }
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) return;
+        // A 401 answer ends the session. The shell reports it, and no status line stays.
+        if (response.status === 401) return;
         this.error.set(refreshStartFailureText(body?.reason));
         return;
       }
