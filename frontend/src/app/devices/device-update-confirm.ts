@@ -14,8 +14,6 @@ import type {
   DeviceUpdatePreview,
   DeviceUpdateTarget,
 } from '@campus/application-contracts';
-import { z } from 'zod';
-import { AuthStore } from '../auth.store';
 import {
   acknowledgementLabel,
   confirmationHeading,
@@ -29,14 +27,11 @@ import {
   type FlowProblemKind,
 } from './device-update-flow';
 import { DeviceUpdateFlow } from './device-update-flow';
+import {
+  DeviceUpdateConfirmationStore,
+  type SubmittedConfirmation,
+} from './device-update-confirmation.store';
 import { DeviceUpdateProblem } from './device-update-problem';
-
-/** The confirmation that the page submitted, kept until its acceptance is known. */
-const submittedConfirmationSchema = z.strictObject({
-  previewId: z.uuid(),
-  manifestDigest: z.string().regex(/^[a-f0-9]{64}$/),
-});
-type SubmittedConfirmation = z.infer<typeof submittedConfirmationSchema>;
 
 /**
  * The confirmation of design 2.4 (frame 97:57). It restates the frozen scope and
@@ -51,8 +46,8 @@ type SubmittedConfirmation = z.infer<typeof submittedConfirmationSchema>;
 export class DeviceUpdateConfirmPage {
   readonly previewId = input.required<string>();
   private readonly flow = inject(DeviceUpdateFlow);
+  private readonly confirmations = inject(DeviceUpdateConfirmationStore);
   private readonly router = inject(Router);
-  private readonly auth = inject(AuthStore);
 
   protected readonly preview = signal<DeviceUpdatePreview | null>(null);
   protected readonly targets = signal<DeviceUpdateTarget[]>([]);
@@ -124,7 +119,7 @@ export class DeviceUpdateConfirmPage {
     this.prepareDetail.set('');
     // A reload of an uncertain confirmation keeps the submitted request and its
     // recovery. The preview read would answer 410 after expiry and hide the job.
-    const retained = this.retainedConfirmation(id);
+    const retained = this.confirmations.retained(id);
     if (retained) {
       this.submitted.set(retained);
       this.showProblem('confirm-uncertain', null);
@@ -186,7 +181,7 @@ export class DeviceUpdateConfirmPage {
     replay: boolean,
   ): Promise<void> {
     this.submitted.set(submitted);
-    this.retainConfirmation(submitted);
+    this.confirmations.retain(submitted);
     this.creating.set(true);
     const result = await this.flow.confirm(
       submitted.previewId,
@@ -194,7 +189,7 @@ export class DeviceUpdateConfirmPage {
     );
     this.creating.set(false);
     if (result.ok) {
-      this.releaseConfirmation(submitted.previewId);
+      this.confirmations.release(submitted.previewId);
       this.submitted.set(null);
       await this.router.navigate(['/jobs', result.value.displayId, 'receipt']);
       return;
@@ -211,7 +206,7 @@ export class DeviceUpdateConfirmPage {
       );
       return;
     }
-    this.releaseConfirmation(submitted.previewId);
+    this.confirmations.release(submitted.previewId);
     this.submitted.set(null);
     this.showProblem(
       result.answer,
@@ -249,68 +244,35 @@ export class DeviceUpdateConfirmPage {
   private async prepareNewPreview(): Promise<void> {
     if (this.creating()) return;
     this.creating.set(true);
-    const result = await this.flow.prepareFromDraft();
+    this.prepareDetail.set('');
+    const preparation = await this.confirmations.preparePreview();
     this.creating.set(false);
-    if (result.ok) {
-      await this.router.navigate([
-        '/devices/update/previews',
-        result.value.previewId,
-      ]);
-      return;
-    }
-    this.showProblem(
-      result.answer,
-      result.expiresAt,
-      this.preview()?.displayId ?? null,
-    );
-    if (result.answer === 'offline')
-      this.prepareDetail.set(
-        'Cannot reach Campus Commander. Your draft stays in this tab.',
-      );
-  }
-
-  /** The tab keeps one uncertain confirmation for each person and preview. */
-  private confirmationKey(previewId: string): string | null {
-    const principal = this.auth.session()?.identity.id;
-    return principal
-      ? `cc.device-update-confirmation.${principal}.${previewId}`
-      : null;
-  }
-
-  private retainConfirmation(submitted: SubmittedConfirmation): void {
-    const key = this.confirmationKey(submitted.previewId);
-    if (!key) return;
-    try {
-      sessionStorage.setItem(key, JSON.stringify(submitted));
-    } catch {
-      // The page still holds the submission in memory.
-    }
-  }
-
-  private releaseConfirmation(previewId: string): void {
-    const key = this.confirmationKey(previewId);
-    if (!key) return;
-    try {
-      sessionStorage.removeItem(key);
-    } catch {
-      // A blocked storage area holds nothing to remove.
-    }
-  }
-
-  private retainedConfirmation(
-    previewId: string,
-  ): SubmittedConfirmation | null {
-    const key = this.confirmationKey(previewId);
-    if (!key) return null;
-    try {
-      const raw = sessionStorage.getItem(key);
-      if (!raw) return null;
-      const parsed = submittedConfirmationSchema.safeParse(JSON.parse(raw));
-      if (parsed.success) return parsed.data;
-      sessionStorage.removeItem(key);
-      return null;
-    } catch {
-      return null;
+    const displayId = this.preview()?.displayId ?? null;
+    switch (preparation.kind) {
+      case 'receipt':
+        await this.router.navigate([
+          '/jobs',
+          preparation.receipt.displayId,
+          'receipt',
+        ]);
+        return;
+      case 'preview':
+        await this.router.navigate([
+          '/devices/update/previews',
+          preparation.preview.previewId,
+        ]);
+        return;
+      case 'uncertain':
+        this.submitted.set(preparation.submitted);
+        this.showProblem('confirm-uncertain', null, displayId);
+        return;
+      case 'problem':
+        this.showProblem(preparation.answer, preparation.expiresAt, displayId);
+        if (preparation.answer === 'offline')
+          this.prepareDetail.set(
+            'Cannot reach Campus Commander. Your draft stays in this tab.',
+          );
+        return;
     }
   }
 

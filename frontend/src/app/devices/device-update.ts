@@ -5,12 +5,10 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
-import {
-  deviceUpdatePreviewSchema,
-  type DeviceUpdateMode,
-} from '@campus/application-contracts';
-import { AuthStore } from '../auth.store';
+import type { DeviceUpdateMode } from '@campus/application-contracts';
 import { DeviceUpdateDraftStore } from './device-update-draft.store';
+import { problemSummary, type FlowProblemKind } from './device-update-flow';
+import { DeviceUpdateConfirmationStore } from './device-update-confirmation.store';
 import {
   deviceCountText,
   deviceUpdateValueError,
@@ -34,7 +32,7 @@ import { DevicesStore } from './devices.store';
 export class DeviceUpdatePage implements OnInit {
   protected readonly store = inject(DevicesStore);
   protected readonly draft = inject(DeviceUpdateDraftStore);
-  private readonly auth = inject(AuthStore);
+  private readonly confirmations = inject(DeviceUpdateConfirmationStore);
   private readonly router = inject(Router);
   protected readonly loading = signal(true);
   protected readonly count = signal<number | null>(null);
@@ -138,67 +136,72 @@ export class DeviceUpdatePage implements OnInit {
     if (!this.canSave()) return;
     this.saving.set(true);
     this.saveError.set('');
-    const mode: DeviceUpdateMode = this.draft.mode();
-    const request =
-      mode === 'clear'
-        ? { ...this.key, mode }
-        : { ...this.key, mode, value: this.draft.value() };
-    try {
-      const response = await this.auth.request(
-        '/api/devices/updates/previews',
-        request,
+    const preparation = await this.confirmations.preparePreview();
+    this.saving.set(false);
+    if (preparation.kind === 'receipt') {
+      await this.router.navigate([
+        '/jobs',
+        preparation.receipt.displayId,
+        'receipt',
+      ]);
+      return;
+    }
+    if (preparation.kind === 'preview') {
+      this.offline.set(false);
+      await this.router.navigate([
+        '/devices/update/previews',
+        preparation.preview.previewId,
+      ]);
+      return;
+    }
+    if (preparation.kind === 'uncertain') {
+      // The retained confirmation waits for its replay. The confirmation page owns
+      // the uncertain state and its Retry, so this page does not create a preview.
+      await this.router.navigate([
+        '/devices/update/previews',
+        preparation.submitted.previewId,
+        'confirm',
+      ]);
+      return;
+    }
+    this.showPrepareProblem(preparation.answer);
+  }
+
+  /** The draft page keeps its own inline answers for a failed preview request. */
+  private showPrepareProblem(answer: FlowProblemKind): void {
+    if (answer === 'selection-expired') {
+      this.expired.set(true);
+      return;
+    }
+    if (answer === 'connection-required') {
+      this.saveError.set(
+        'Connect Google Workspace before you prepare an update preview.',
       );
-      const body: unknown = await response.json().catch(() => null);
-      if (response.ok) {
-        const preview = deviceUpdatePreviewSchema.safeParse(body);
-        if (!preview.success) {
-          this.saveError.set('The preview answer was not readable. Retry.');
-          return;
-        }
-        this.offline.set(false);
-        await this.router.navigate([
-          '/devices/update/previews',
-          preview.data.previewId,
-        ]);
-        return;
-      }
-      const reason = (body as { reason?: unknown } | null)?.reason;
-      if (response.status === 409 && reason === 'selection-expired') {
-        this.expired.set(true);
-        return;
-      }
-      if (response.status === 409 && reason === 'connection-required') {
-        this.saveError.set(
-          'Connect Google Workspace before you prepare an update preview.',
-        );
-        return;
-      }
-      if (response.status === 422 && reason === 'nothing-selected') {
-        this.saveError.set(
-          'No devices are selected. Return to Devices and select the devices again.',
-        );
-        return;
-      }
-      if (response.status === 422 && reason === 'selection-too-large') {
-        this.saveError.set(
-          'The selection holds more than 100,000 devices. Narrow the filters and select again.',
-        );
-        return;
-      }
-      if (response.status === 403) {
-        this.saveError.set(
-          'Your access changed. Update device is unavailable.',
-        );
-        return;
-      }
-      this.saveError.set('The preview was not prepared. Retry.');
-    } catch {
+      return;
+    }
+    if (answer === 'nothing-selected') {
+      this.saveError.set(
+        'No devices are selected. Return to Devices and select the devices again.',
+      );
+      return;
+    }
+    if (answer === 'selection-too-large') {
+      this.saveError.set(
+        'The selection holds more than 100,000 devices. Narrow the filters and select again.',
+      );
+      return;
+    }
+    if (answer === 'forbidden') {
+      this.saveError.set('Your access changed. Update device is unavailable.');
+      return;
+    }
+    if (answer === 'offline') {
       this.offline.set(true);
       this.saveError.set(
         'Cannot reach Campus Commander. Your draft stays in this tab.',
       );
-    } finally {
-      this.saving.set(false);
+      return;
     }
+    this.saveError.set(problemSummary(answer));
   }
 }

@@ -18,6 +18,10 @@ import {
   type FlowProblemKind,
 } from '../devices/device-update-flow';
 import { DeviceUpdateFlow } from '../devices/device-update-flow';
+import {
+  DeviceUpdateConfirmationStore,
+  type SubmittedConfirmation,
+} from '../devices/device-update-confirmation.store';
 import { DeviceUpdateProblem } from '../devices/device-update-problem';
 import {
   RECEIPT_HEADING,
@@ -40,6 +44,7 @@ export class JobReceiptPage {
   readonly displayId = input.required<string>();
   private readonly auth = inject(AuthStore);
   private readonly flow = inject(DeviceUpdateFlow);
+  private readonly confirmations = inject(DeviceUpdateConfirmationStore);
   private readonly router = inject(Router);
 
   protected readonly job = signal<JobDetail | null>(null);
@@ -47,8 +52,13 @@ export class JobReceiptPage {
     'loading',
   );
   protected readonly problem = signal<FlowProblem | null>(null);
+  /** The retained confirmation that a failed replay must send again. */
+  protected readonly submitted = signal<SubmittedConfirmation | null>(null);
   protected readonly preparing = signal(false);
   protected readonly prepareDetail = signal('');
+  protected readonly busyLabel = computed(() =>
+    this.submitted() ? 'Retrying confirmation…' : 'Preparing preview…',
+  );
   protected readonly heading = RECEIPT_HEADING;
   protected readonly nextStep = RECEIPT_NEXT_STEP;
   private generation = 0;
@@ -80,6 +90,7 @@ export class JobReceiptPage {
     this.status.set('loading');
     this.job.set(null);
     this.problem.set(null);
+    this.submitted.set(null);
     this.prepareDetail.set('');
     try {
       const response = await this.auth.request(
@@ -133,29 +144,74 @@ export class JobReceiptPage {
         void this.router.navigate(['/google-connection']);
         break;
       case 'retry':
-        void this.load(this.displayId());
+        void this.retry();
         break;
     }
+  }
+
+  private async retry(): Promise<void> {
+    if (!this.submitted()) {
+      void this.load(this.displayId());
+      return;
+    }
+    if (this.preparing()) return;
+    this.preparing.set(true);
+    this.prepareDetail.set('');
+    const replay = await this.confirmations.resolvePending();
+    this.preparing.set(false);
+    if (replay.kind === 'receipt') {
+      await this.router.navigate([
+        '/jobs',
+        replay.receipt.displayId,
+        'receipt',
+      ]);
+      return;
+    }
+    if (replay.kind === 'problem') {
+      this.submitted.set(null);
+      this.showProblem(replay.answer, replay.expiresAt);
+      return;
+    }
+    if (replay.kind === 'uncertain') {
+      this.submitted.set(replay.submitted);
+      this.showProblem('confirm-uncertain', null);
+      return;
+    }
+    void this.load(this.displayId());
   }
 
   private async prepareNewPreview(): Promise<void> {
     if (this.preparing()) return;
     this.preparing.set(true);
     this.prepareDetail.set('');
-    const result = await this.flow.prepareFromDraft();
+    const preparation = await this.confirmations.preparePreview();
     this.preparing.set(false);
-    if (result.ok) {
-      await this.router.navigate([
-        '/devices/update/previews',
-        result.value.previewId,
-      ]);
-      return;
+    switch (preparation.kind) {
+      case 'receipt':
+        await this.router.navigate([
+          '/jobs',
+          preparation.receipt.displayId,
+          'receipt',
+        ]);
+        return;
+      case 'preview':
+        await this.router.navigate([
+          '/devices/update/previews',
+          preparation.preview.previewId,
+        ]);
+        return;
+      case 'uncertain':
+        this.submitted.set(preparation.submitted);
+        this.showProblem('confirm-uncertain', null);
+        return;
+      case 'problem':
+        this.showProblem(preparation.answer, preparation.expiresAt);
+        if (preparation.answer === 'offline')
+          this.prepareDetail.set(
+            'Cannot reach Campus Commander. Your draft stays in this tab.',
+          );
+        return;
     }
-    this.showProblem(result.answer, result.expiresAt);
-    if (result.answer === 'offline')
-      this.prepareDetail.set(
-        'Cannot reach Campus Commander. Your draft stays in this tab.',
-      );
   }
 
   private showProblem(kind: FlowProblemKind, expiresAt: string | null): void {

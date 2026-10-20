@@ -33,6 +33,7 @@ export type FlowAnswerKind =
   | 'forbidden'
   | 'preview-not-found'
   | 'selection-expired'
+  | 'selection-too-large'
   | 'nothing-selected';
 
 /** A page-level state. `offline` and the unreadable answers add the read failures. */
@@ -128,6 +129,8 @@ export function flowAnswer(
     return 'connection-required';
   if (status === 409 && reason === 'selection-expired')
     return 'selection-expired';
+  if (status === 422 && reason === 'selection-too-large')
+    return 'selection-too-large';
   if (status === 422 && reason === 'nothing-to-update')
     return 'nothing-to-update';
   if (status === 422 && reason === 'nothing-selected')
@@ -268,6 +271,17 @@ export function flowProblem(
         ],
         actions: [backToDevices(), returnToDraft(true)],
       };
+    case 'selection-too-large':
+      return {
+        kind,
+        title: 'The selection is too large',
+        subtitle: PRESERVED,
+        heading: 'Narrow the filters and select again',
+        paragraphs: [
+          'The selection holds more than 100,000 devices. Narrow the filters before you prepare a new preview.',
+        ],
+        actions: [backToDevices(), returnToDraft(true)],
+      };
     case 'nothing-selected':
       return {
         kind,
@@ -360,6 +374,12 @@ export function flowProblem(
         actions: [backToDevices(), retry],
       };
   }
+}
+
+/** The title and heading of one problem as a short inline message. */
+export function problemSummary(kind: FlowProblemKind): string {
+  const problem = flowProblem(kind);
+  return `${problem.title}. ${problem.heading}.`;
 }
 
 /** "Review 6 device updates". The device noun stays singular before `update`. */
