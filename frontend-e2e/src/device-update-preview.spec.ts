@@ -81,16 +81,33 @@ const job = {
   },
 };
 
+interface ApiControl {
+  previewCreates: number;
+  confirmations: number;
+  previewReads: number;
+  /** A later confirmation replay answers with its receipt. */
+  replaySucceeds: boolean;
+}
+
 /**
  * The draft page, the preview, the confirmation, and the receipt need the session,
  * the selection, the write access state, and the job reads.
  */
 async function mockApi(
   page: Page,
-  options: { expired?: boolean; lostConfirmation?: boolean } = {},
-) {
-  let previewReads = 0;
-  let confirmations = 0;
+  options: {
+    expired?: boolean;
+    lostConfirmation?: boolean;
+    lostReplay?: boolean;
+    confirmExpired?: boolean;
+  } = {},
+): Promise<ApiControl> {
+  const control: ApiControl = {
+    previewCreates: 0,
+    confirmations: 0,
+    previewReads: 0,
+    replaySucceeds: false,
+  };
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -185,7 +202,8 @@ async function mockApi(
           checkedAt: observedAt,
         },
       });
-    if (path === '/api/devices/updates/previews' && method === 'POST')
+    if (path === '/api/devices/updates/previews' && method === 'POST') {
+      control.previewCreates += 1;
       return route.fulfill({
         status: 201,
         json: options.expired
@@ -199,22 +217,39 @@ async function mockApi(
             }
           : preview,
       });
+    }
     if (
       path === `/api/devices/updates/previews/${previewId}/targets` ||
       path === `/api/devices/updates/previews/${nextPreviewId}/targets`
     )
       return route.fulfill({ json: { targets, nextCursor: null } });
     if (path === `/api/devices/updates/previews/${previewId}/confirm`) {
+      control.confirmations += 1;
+      if (options.confirmExpired)
+        return route.fulfill({
+          status: 410,
+          json: {
+            reason: 'preview-expired',
+            expiresAt: '2026-10-19T12:15:00.000Z',
+          },
+        });
       if (options.lostConfirmation) {
-        confirmations += 1;
-        if (confirmations === 1) return route.abort('failed');
+        if (options.lostReplay && !control.replaySucceeds)
+          return route.abort('failed');
+        if (!options.lostReplay && control.confirmations === 1)
+          return route.abort('failed');
         return route.fulfill({ status: 200, json: receipt });
       }
       return route.fulfill({ status: 201, json: receipt });
     }
     if (path === `/api/devices/updates/previews/${previewId}`) {
-      previewReads += 1;
-      if (options.expired || (options.lostConfirmation && previewReads > 1))
+      control.previewReads += 1;
+      if (
+        options.expired ||
+        (options.lostConfirmation &&
+          control.confirmations > 0 &&
+          control.previewReads > 1)
+      )
         return route.fulfill({
           status: 410,
           json: {
@@ -243,6 +278,7 @@ async function mockApi(
       return route.fulfill({ json: request.postDataJSON() });
     return route.fulfill({ status: 404, json: {} });
   });
+  return control;
 }
 
 test('creates an update job from the draft through the receipt', async ({
@@ -433,6 +469,170 @@ test('replays an uncertain confirmation and opens its receipt', async ({
   await expect(
     page.getByText('Job UPD-006 · Accepted', { exact: true }),
   ).toBeVisible();
+});
+
+test('replays the confirmation after browser Back and opens its receipt', async ({
+  page,
+}) => {
+  const control = await mockApi(page, { lostConfirmation: true });
+  await page.goto('/devices/update');
+  await page.getByLabel('Annotated location').fill('North lab');
+  await page.getByRole('button', { name: 'Save and preview' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review 6 device updates', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Continue to confirmation' }).click();
+  await page
+    .getByRole('checkbox', {
+      name: 'I reviewed all 6 devices and their final values.',
+    })
+    .check();
+  await page.getByRole('button', { name: 'Create update job' }).click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'The confirmation did not finish',
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  // The preview read answers 410. The retained confirmation replays first.
+  await page.goBack();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Job UPD-006 · Accepted', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('No job created', { exact: false })).toHaveCount(
+    0,
+  );
+  expect(control.previewCreates).toBe(1);
+  expect(control.confirmations).toBe(2);
+  expect(
+    await page.evaluate(() =>
+      Object.keys(sessionStorage).filter((key) =>
+        key.startsWith('cc.device-update-confirmation.'),
+      ),
+    ),
+  ).toEqual([]);
+});
+
+test('keeps an uncertain replay on the preview page and retries it', async ({
+  page,
+}, testInfo) => {
+  const control = await mockApi(page, {
+    lostConfirmation: true,
+    lostReplay: true,
+  });
+  await page.goto('/devices/update');
+  await page.getByLabel('Annotated location').fill('North lab');
+  await page.getByRole('button', { name: 'Save and preview' }).click();
+  await page.getByRole('button', { name: 'Continue to confirmation' }).click();
+  await page
+    .getByRole('checkbox', {
+      name: 'I reviewed all 6 devices and their final values.',
+    })
+    .check();
+  await page.getByRole('button', { name: 'Create update job' }).click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'The confirmation did not finish',
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await page.goBack();
+  await expect(
+    page.getByRole('heading', {
+      name: 'The confirmation did not finish',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('The result is unknown', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('No job created', { exact: false })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole('button', { name: 'Prepare new preview' }),
+  ).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 960 });
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('device-update-preview-uncertain.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+  control.replaySucceeds = true;
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created', exact: true }),
+  ).toBeVisible();
+  expect(control.confirmations).toBe(3);
+});
+
+test('replays a retained confirmation before Save and preview creates a preview', async ({
+  page,
+}) => {
+  const control = await mockApi(page);
+  await page.goto('/devices/update');
+  await page.evaluate(
+    ([key, id, digest]) =>
+      sessionStorage.setItem(
+        key,
+        JSON.stringify({ previewId: id, manifestDigest: digest }),
+      ),
+    [
+      `cc.device-update-confirmation.${principal}.${previewId}`,
+      previewId,
+      'a'.repeat(64),
+    ],
+  );
+  await page.getByLabel('Annotated location').fill('North lab');
+  await page.getByRole('button', { name: 'Save and preview' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created', exact: true }),
+  ).toBeVisible();
+  expect(control.confirmations).toBe(1);
+  expect(control.previewCreates).toBe(0);
+});
+
+test('clears a retained confirmation when its replay proves the preview expired', async ({
+  page,
+}) => {
+  const control = await mockApi(page, { expired: true, confirmExpired: true });
+  await page.goto('/devices/update');
+  await page.evaluate(
+    ([key, id, digest]) =>
+      sessionStorage.setItem(
+        key,
+        JSON.stringify({ previewId: id, manifestDigest: digest }),
+      ),
+    [
+      `cc.device-update-confirmation.${principal}.${previewId}`,
+      previewId,
+      'a'.repeat(64),
+    ],
+  );
+  await page.getByLabel('Annotated location').fill('North lab');
+  await page.getByRole('button', { name: 'Save and preview' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review 6 device updates', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Preview PV-007', { exact: false }),
+  ).toBeVisible();
+  expect(control.confirmations).toBe(1);
+  expect(control.previewCreates).toBe(1);
+  expect(
+    await page.evaluate(() =>
+      Object.keys(sessionStorage).filter((key) =>
+        key.startsWith('cc.device-update-confirmation.'),
+      ),
+    ),
+  ).toEqual([]);
 });
 
 test('keeps the draft when the preview expired and prepares a new preview', async ({
