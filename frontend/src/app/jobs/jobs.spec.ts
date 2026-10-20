@@ -50,9 +50,10 @@ const job = (overrides: Partial<JobSummary> = {}): JobSummary => ({
 const page = (
   jobs: JobSummary[],
   nextCursor: string | null = null,
+  matching = jobs.length,
 ): JobList => ({
   jobs,
-  matching: jobs.length,
+  matching,
   nextCursor,
   observedAt: '2026-10-19T12:01:00.000Z',
 });
@@ -62,10 +63,12 @@ function setup(options: {
   filters?: JobFilter[];
   loading?: boolean;
   loaded?: boolean;
+  reading?: boolean;
   offline?: boolean;
   stale?: boolean;
   error?: string;
   hasPrevious?: boolean;
+  shownIndex?: number;
   grants?: { action: string }[];
 }) {
   const pageSignal = signal<JobList | null>(options.page ?? null);
@@ -75,13 +78,13 @@ function setup(options: {
     page: pageSignal,
     loading: signal(options.loading ?? false),
     loaded: signal(options.loaded ?? true),
-    reading: signal(false),
+    reading: signal(options.reading ?? false),
     refreshing: signal(false),
     offline: signal(options.offline ?? false),
     stale: signal(options.stale ?? false),
     error: signal(options.error ?? ''),
     pageIndex: signal(0),
-    shownIndex: signal(0),
+    shownIndex: signal(options.shownIndex ?? 0),
     hasPrevious: computed(() => options.hasPrevious ?? false),
     hasNext: computed(() => !!pageSignal()?.nextCursor),
     init: vi.fn().mockResolvedValue(undefined),
@@ -202,6 +205,26 @@ it('shows the count, read time, and row range in the footer', () => {
   expect(footer).toContain('2 jobs');
   expect(footer).toContain('Updated');
   expect(footer).toContain('Rows 1–2 of 2');
+  expect(element.querySelector('[aria-label="Previous page"]')).toHaveProperty(
+    'disabled',
+    true,
+  );
+  expect(element.querySelector('[aria-label="Next page"]')).toHaveProperty(
+    'disabled',
+    true,
+  );
+});
+
+it('keeps the shown page range and blocks paging during a read', () => {
+  const { element } = setup({
+    page: page([job()], 'cursor-3', 51),
+    shownIndex: 1,
+    hasPrevious: true,
+    reading: true,
+  });
+  const footer = element.querySelector('.grid-footer')?.textContent ?? '';
+  expect(footer).toContain('Rows 51–51 of 51');
+  expect(footer).toContain('51 jobs');
   expect(element.querySelector('[aria-label="Previous page"]')).toHaveProperty(
     'disabled',
     true,

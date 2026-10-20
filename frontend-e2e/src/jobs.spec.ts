@@ -110,7 +110,10 @@ async function signIn(
     fail?: 'none' | 'http' | 'abort';
   } = {},
 ) {
-  const state = { fail: options.fail ?? 'none' };
+  const state = {
+    fail: options.fail ?? 'none',
+    identity: 'maya' as 'maya' | 'alex',
+  };
   const grants = options.grants ?? [
     'jobs:read',
     'devices:read',
@@ -132,8 +135,9 @@ async function signIn(
       return route.fulfill({
         json: {
           identity: {
-            id: maya.id,
-            displayName: 'District operator',
+            id: state.identity === 'alex' ? alex.id : maya.id,
+            displayName:
+              state.identity === 'alex' ? 'Alex Rivera' : 'District operator',
             permissionVersion: 1,
             permissions: [],
             grants: grants.map((action) => ({
@@ -473,4 +477,38 @@ test('shows Jobs to a jobs:read holder and hides Devices', async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByRole('link', { name: 'Jobs' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Devices' })).toHaveCount(0);
+});
+
+test('clears the previous person jobs after another person signs in', async ({
+  page,
+}) => {
+  const state = await signIn(page);
+  await page.goto('/jobs');
+  await expect(page.getByRole('cell', { name: /UPD-014/ })).toBeVisible();
+  // The regression only exists while the document keeps the root store.
+  await page.evaluate(() => {
+    (globalThis as unknown as { jobsDocument?: string }).jobsDocument = 'kept';
+  });
+
+  state.identity = 'alex';
+  state.fail = 'http';
+  await page.getByRole('button', { name: 'Open user menu' }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Sign in', exact: true }),
+  ).toBeVisible();
+
+  await page.goBack();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { jobsDocument?: string }).jobsDocument,
+    ),
+  ).toBe('kept');
+  await expect(
+    page.getByRole('button', { name: 'Open user menu' }),
+  ).toContainText('Alex Rivera');
+  await expect(page.getByRole('alert')).toHaveText(
+    'Job status is unavailable.',
+  );
+  await expect(page.getByText('UPD-014')).toHaveCount(0);
 });

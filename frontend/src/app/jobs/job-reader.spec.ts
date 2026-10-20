@@ -101,6 +101,83 @@ describe('JobReader', () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
+  it('supersedes a failed-read retry when the stream opens', async () => {
+    const read = vi
+      .fn<() => Promise<JobRevisions | null>>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(one('job-a', 1));
+    const reader = new JobReader(read);
+    await reader.request();
+    expect(read).toHaveBeenCalledTimes(1);
+    // The failed read scheduled a retry after 5 s.
+    reader.opened();
+    await vi.advanceTimersByTimeAsync(249);
+    expect(read).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(reader.revision('job-a')).toBe(1);
+  });
+
+  it('stops without a retry when a read in flight fails', async () => {
+    let finish: (revisions: JobRevisions | null) => void = () => undefined;
+    const read = vi.fn(
+      () =>
+        new Promise<JobRevisions | null>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const reader = new JobReader(read);
+    const first = reader.request();
+    reader.stop();
+    finish(null);
+    await first;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops a dirty in-flight read without another read', async () => {
+    let finish: (revisions: JobRevisions | null) => void = () => undefined;
+    const read = vi.fn(
+      () =>
+        new Promise<JobRevisions | null>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const reader = new JobReader(read);
+    const first = reader.request();
+    reader.changed({ jobId: 'job-a', revision: 2 });
+    // The debounce timer fired during the read and queued one more read.
+    await vi.advanceTimersByTimeAsync(250);
+    reader.stop();
+    finish(one('job-a', 1));
+    await first;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a request that arrives after a stop when the stopped read finishes', async () => {
+    const finishes: ((revisions: JobRevisions | null) => void)[] = [];
+    const read = vi.fn(
+      () =>
+        new Promise<JobRevisions | null>((resolve) => {
+          finishes.push(resolve);
+        }),
+    );
+    const reader = new JobReader(read);
+    const first = reader.request();
+    reader.stop();
+    // The page mounted again while the old read still runs.
+    expect(await reader.request()).toBe(false);
+    finishes[0](null);
+    await flush();
+    expect(read).toHaveBeenCalledTimes(2);
+    finishes[1](one('job-a', 1));
+    await first;
+    await flush();
+    expect(reader.revision('job-a')).toBe(1);
+  });
+
   it('never overlaps reads and reads once more after a request during a read', async () => {
     let finish: (revisions: JobRevisions) => void = () => undefined;
     const read = vi.fn(

@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import type { JobPerson, JobSummary } from '@campus/application-contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +7,21 @@ import { JOBS_PAGE_SIZE, JobsStore, jobsReadable } from './jobs.store';
 import type { JobEventSource } from './jobs.store';
 
 const customerId = 'C0123456';
+const maya = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const alex = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+const sessionFor = (id: string) => ({
+  identity: {
+    id,
+    displayName: id === alex ? 'Alex Rivera' : 'Maya Chen',
+    permissionVersion: 1,
+    permissions: [],
+    grants: [{ action: 'jobs:read', scope: { kind: 'district', customerId } }],
+    preferences: { theme: 'light', navigationCollapsed: false },
+  },
+  csrfToken: 'a'.repeat(64),
+  expiresAt: '2026-10-20T12:00:00.000Z',
+});
 
 const job = (overrides: Partial<JobSummary> = {}): JobSummary => ({
   jobId: '0f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
@@ -73,23 +88,12 @@ class FakeStream {
 
 function setup(
   request: (path: string) => Promise<Response> = async () => list([job()]),
+  session: WritableSignal<ReturnType<typeof sessionFor> | null> = signal(
+    sessionFor(maya),
+  ),
 ) {
   const stream = new FakeStream();
   const requestMock = vi.fn(request);
-  const session = signal({
-    identity: {
-      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      displayName: 'District operator',
-      permissionVersion: 1,
-      permissions: [],
-      grants: [
-        { action: 'jobs:read', scope: { kind: 'district', customerId } },
-      ],
-      preferences: { theme: 'light', navigationCollapsed: false },
-    },
-    csrfToken: 'a'.repeat(64),
-    expiresAt: '2026-10-20T12:00:00.000Z',
-  });
   TestBed.configureTestingModule({
     providers: [
       {
@@ -194,6 +198,87 @@ it('pages with the API cursor and returns with Previous', async () => {
   await vi.waitFor(() =>
     expect(store.page()?.jobs[0].displayId).toBe('UPD-014'),
   );
+  expect(store.pageIndex()).toBe(0);
+});
+
+it('serializes Next and Previous while a cursor read is held', async () => {
+  const held: ((response: Response) => void)[] = [];
+  const { store, requestMock } = setup((path) =>
+    path.includes('cursor=')
+      ? new Promise<Response>((resolve) => held.push(resolve))
+      : Promise.resolve(list([job()], 'cursor-2', 51)),
+  );
+  await store.init();
+  expect(store.hasNext()).toBe(true);
+
+  store.next();
+  await flush();
+  expect(store.reading()).toBe(true);
+  expect(store.pageIndex()).toBe(1);
+  // A repeated Next and a Previous wait for the read in flight.
+  store.next();
+  store.previous();
+  expect(store.pageIndex()).toBe(1);
+  expect(store.shownIndex()).toBe(0);
+  expect(
+    requestMock.mock.calls.filter(([path]) => path.includes('cursor=cursor-2')),
+  ).toHaveLength(1);
+
+  held[0](list([job({ displayId: 'UPD-002' })], null, 51));
+  await vi.waitFor(() => {
+    expect(store.shownIndex()).toBe(1);
+    expect(store.reading()).toBe(false);
+  });
+  expect(store.pageIndex()).toBe(1);
+  expect(store.page()?.jobs[0].displayId).toBe('UPD-002');
+  expect(store.hasPrevious()).toBe(true);
+  expect(store.hasNext()).toBe(false);
+  // Rows 51–51 of 51: the shown page, not the requested one, sets the range.
+  expect(JOBS_PAGE_SIZE * store.shownIndex() + 1).toBe(51);
+
+  store.previous();
+  await vi.waitFor(() => {
+    expect(store.shownIndex()).toBe(0);
+    expect(store.reading()).toBe(false);
+  });
+  expect(store.pageIndex()).toBe(0);
+  expect(requestMock.mock.calls.at(-1)?.[0]).toBe(
+    `/api/jobs?limit=${JOBS_PAGE_SIZE}`,
+  );
+});
+
+it('keeps the shown page and cursor when a paging read fails', async () => {
+  let fail = true;
+  const { store, requestMock } = setup(async (path) =>
+    path.includes('cursor=')
+      ? fail
+        ? new Response(null, { status: 500 })
+        : list([job({ displayId: 'UPD-002' })], null, 51)
+      : list([job()], 'cursor-2', 51),
+  );
+  await store.init();
+
+  store.next();
+  await vi.waitFor(() => expect(store.stale()).toBe(true));
+  expect(store.page()?.jobs[0].displayId).toBe('UPD-014');
+  expect(store.shownIndex()).toBe(0);
+  expect(store.pageIndex()).toBe(1);
+  expect(store.hasPrevious()).toBe(false);
+  expect(store.hasNext()).toBe(true);
+
+  fail = false;
+  store.next();
+  await vi.waitFor(() => {
+    expect(store.shownIndex()).toBe(1);
+    expect(store.reading()).toBe(false);
+  });
+  expect(
+    requestMock.mock.calls.filter(([path]) => path.includes('cursor=cursor-2')),
+  ).toHaveLength(2);
+  expect(store.page()?.jobs[0].displayId).toBe('UPD-002');
+
+  store.previous();
+  await vi.waitFor(() => expect(store.shownIndex()).toBe(0));
   expect(store.pageIndex()).toBe(0);
 });
 
@@ -321,6 +406,115 @@ it('reads requesters for the actor autocomplete', async () => {
   expect(requestMock).toHaveBeenCalledWith(
     '/api/jobs/requesters?query=May&limit=20',
   );
+});
+
+it('clears one person jobs before another person held read lands', async () => {
+  const session = signal<ReturnType<typeof sessionFor> | null>(
+    sessionFor(maya),
+  );
+  const pending: ((response: Response) => void)[] = [];
+  const { store } = setup(
+    () => new Promise<Response>((resolve) => pending.push(resolve)),
+    session,
+  );
+  TestBed.tick();
+  const init = store.init();
+  await flush();
+  pending[0](list([job()]));
+  await init;
+  expect(store.page()?.jobs).toHaveLength(1);
+  expect(store.loaded()).toBe(true);
+
+  session.set(null);
+  TestBed.tick();
+  session.set(sessionFor(alex));
+  TestBed.tick();
+  // The previous person's rows are gone before the new read answers.
+  expect(store.page()).toBeNull();
+  expect(store.loaded()).toBe(false);
+  expect(store.loading()).toBe(true);
+  expect(pending).toHaveLength(2);
+
+  pending[1](list([job({ displayId: 'UPD-101' })]));
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  expect(store.page()?.jobs[0].displayId).toBe('UPD-101');
+});
+
+it('shows unavailable instead of the previous person rows when the next read fails', async () => {
+  const session = signal<ReturnType<typeof sessionFor> | null>(
+    sessionFor(maya),
+  );
+  let fail = false;
+  const { store } = setup(
+    async () => (fail ? new Response(null, { status: 500 }) : list([job()])),
+    session,
+  );
+  TestBed.tick();
+  await store.init();
+  expect(store.page()?.jobs).toHaveLength(1);
+
+  fail = true;
+  session.set(null);
+  TestBed.tick();
+  session.set(sessionFor(alex));
+  TestBed.tick();
+  await vi.waitFor(() => expect(store.loading()).toBe(false));
+  expect(store.page()).toBeNull();
+  expect(store.loaded()).toBe(false);
+  expect(store.stale()).toBe(false);
+  expect(store.error()).toBe('Job status is unavailable.');
+});
+
+it('rejects a late answer for the previous person', async () => {
+  const session = signal<ReturnType<typeof sessionFor> | null>(
+    sessionFor(maya),
+  );
+  const pending: ((response: Response) => void)[] = [];
+  const { store } = setup(
+    () => new Promise<Response>((resolve) => pending.push(resolve)),
+    session,
+  );
+  TestBed.tick();
+  const init = store.init();
+  await flush();
+  expect(pending).toHaveLength(1);
+
+  session.set(null);
+  TestBed.tick();
+  session.set(sessionFor(alex));
+  TestBed.tick();
+  expect(store.page()).toBeNull();
+
+  // The previous person's read answers after the next person signed in.
+  pending[0](list([job()]));
+  await flush();
+  expect(store.page()).toBeNull();
+  expect(store.loaded()).toBe(false);
+  expect(store.loading()).toBe(true);
+  expect(pending).toHaveLength(2);
+
+  pending[1](list([job({ displayId: 'UPD-101' })]));
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  expect(store.page()?.jobs[0].displayId).toBe('UPD-101');
+  await init;
+});
+
+it('keeps the state while the same person resumes', async () => {
+  const session = signal<ReturnType<typeof sessionFor> | null>(
+    sessionFor(maya),
+  );
+  const { store, requestMock } = setup(undefined, session);
+  TestBed.tick();
+  await store.init();
+  const reads = requestMock.mock.calls.length;
+
+  session.set(null);
+  TestBed.tick();
+  session.set(sessionFor(maya));
+  TestBed.tick();
+  expect(store.page()?.jobs).toHaveLength(1);
+  expect(store.loaded()).toBe(true);
+  expect(requestMock).toHaveBeenCalledTimes(reads);
 });
 
 it('leaves the page and stops the stream', async () => {
