@@ -1158,6 +1158,24 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         });
         const response = await run(jobId, 0, { reader, token, batchSize: 1 });
         assert.equal(response.outcome, 'stopped');
+        // The stopping request released its lease before the heartbeat age, so
+        // only the stopped claim can refresh the heartbeat (A2, ruling 7).
+        const released = await adminRow(
+          `SELECT attempt_id,
+            lease_expires_at IS NULL OR lease_expires_at <= clock_timestamp() AS clear
+            FROM cc.device_update_batches WHERE job_id=$1 AND batch=0`,
+          [jobId],
+        );
+        assert.equal(
+          released.attempt_id,
+          null,
+          'The stopping request released.',
+        );
+        assert.equal(
+          released.clear,
+          true,
+          'The initial lease is not live before the heartbeat age.',
+        );
         for (const batch of [1, 2]) {
           await admin(
             "UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '11 minutes' WHERE job_id=$1",
@@ -1166,6 +1184,11 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           const later = readerOf({ rounds: [], state: () => 'Room 12' });
           const stopped = await run(jobId, batch, { reader: later, token });
           assert.equal(stopped.outcome, 'stopped');
+          assert.equal(
+            await tokenOf(jobId),
+            token,
+            'A stopped claim keeps the token.',
+          );
           const fresh = await adminRow(
             "SELECT heartbeat_at > clock_timestamp()-interval '1 minute' AS fresh FROM cc.device_update_jobs WHERE job_id=$1",
             [jobId],
