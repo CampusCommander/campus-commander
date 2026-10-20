@@ -13,6 +13,8 @@ Google sign-in and Workspace responses use a simulator. This environment does no
 6. Select **Sign in to Campus Commander**.
 7. Select **Sign in as review administrator** on the simulated provider page.
 
+A session lasts 8 hours. It also ends after 30 minutes without a request.
+
 The simulated sign-in provider uses a second loopback port with the same development certificate.
 Your browser also requests certificate acceptance there when needed.
 Sign-in returns you to the application as **Review administrator**.
