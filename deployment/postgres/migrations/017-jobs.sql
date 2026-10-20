@@ -677,12 +677,17 @@ BEGIN
       END IF;
       lost:=held.attempt_id;
     END IF;
-    -- S1 (round 2): only the operations that this claim changes lock, in operation_number order: the
-    -- pending operations of the batch and the dispatched operations of a lapsed attempt.
-    PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.batch=p_batch AND
-        (o.status='pending' OR (o.status='dispatched' AND o.attempt_id=lost))
-      ORDER BY o.operation_number FOR UPDATE;
-    IF NOT FOUND THEN
+    -- S1 (round 2, R1-F1): the operations that this call changes lock in one pass, in operation_number
+    -- order: the job's pending operations, which a stop below skips, and the dispatched operations of a
+    -- lapsed attempt. A stop that a later wait finds then holds every row it changes already, so the
+    -- detail row below is the last row lock of the path. The header lock makes these statuses stable, so
+    -- the eligibility read needs no lock.
+    IF EXISTS(SELECT 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.batch=p_batch AND
+        (o.status='pending' OR (o.status='dispatched' AND o.attempt_id=lost))) THEN
+      PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND
+          (o.status='pending' OR (o.status='dispatched' AND o.batch=p_batch AND o.attempt_id=lost))
+        ORDER BY o.operation_number FOR UPDATE;
+    ELSE
       -- S1 (B2c ruling 7): the detail row locks after the batch and operation rows. The clock reads
       -- after that wait, and the token repeats on the locked row, so a call that a wait superseded
       -- writes nothing.
@@ -716,10 +721,12 @@ BEGIN
   END IF;
   IF stopped IS NOT NULL THEN
     -- S1 (round 3, R2-F2): the stop skips every pending operation of the job, so that complete set locks
-    -- first, in operation_number order, and no write below waits. After that wait the clock reads again,
-    -- and the token repeats on the locked detail row, so a call that the wait superseded changes nothing
-    -- (S3). A stop stays a stop: access that returns during the wait reopens no dispatch (section 5.6).
-    -- The connection row locks last, so the publication insert never waits on it.
+    -- first, in operation_number order, and no write below waits. A stop found at the first decision locks
+    -- the set here; a stop found after the batch or detail wait re-locks rows that this call already holds
+    -- (R1-F1). After that wait the clock reads again, and the token repeats on the locked detail row, so a
+    -- call that the wait superseded changes nothing (S3). A stop stays a stop: access that returns during
+    -- the wait reopens no dispatch (section 5.6). The connection row locks last, so the publication insert
+    -- never waits on it; a stop found after the credential read holds it already.
     PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='pending'
       ORDER BY o.operation_number FOR UPDATE;
     -- S1 (B2c contract C4): the detail row locks after the operation rows and before the connection row.
