@@ -21,10 +21,7 @@ import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import { DevicesStore } from '../devices/devices.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
-import {
-  DiagnosticsStore,
-  diagnosticsReadable,
-} from '../diagnostics/diagnostics.store';
+import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
 import { schoolsReadable } from '../schools/schools.store';
 import { JobActivity } from '../jobs/job-activity';
 import { jobsReadable } from '../jobs/jobs.store';
@@ -62,7 +59,9 @@ export class Shell implements OnInit, OnDestroy {
     });
   }
   ngOnInit() {
-    if (diagnosticsReadable(this.auth)) this.diagnostics.watch();
+    // The store enforces diagnostics:read. Watching for the shell lifetime means a
+    // session that resumes with the permission starts the reads without a remount.
+    this.diagnostics.watch();
   }
   ngOnDestroy() {
     this.diagnostics.unwatch();

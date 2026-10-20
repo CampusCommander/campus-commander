@@ -112,9 +112,25 @@ export class DiagnosticsStore implements OnDestroy {
 
   /** Read the connection status now. The Diagnostics page and the shell share it. */
   async refresh(): Promise<void> {
+    // Keep the fence of the person who asked. The wait for a timed read must not
+    // carry this read across a sign-out or another person.
+    const epoch = this.epoch;
+    const identity = this.identity;
     // A timed read may be in flight. Wait for it so this read starts from current state.
     if (this.reading) await this.reading.catch(() => undefined);
+    // Drop the queued read when that person signed out or another person arrived.
+    if (!this.authorizedRead(epoch, identity)) return;
     await this.read(false);
+  }
+
+  /** The person who asked for a read still holds the read fence and the permission. */
+  private authorizedRead(epoch: number, identity: string | null): boolean {
+    return (
+      identity !== null &&
+      identity === this.identity &&
+      epoch === this.epoch &&
+      diagnosticsReadable(this.auth)
+    );
   }
 
   async run(operation: DiagnosticOperation) {
