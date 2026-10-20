@@ -394,7 +394,9 @@ test('a failed publication after a refused start still reports the refusal', asy
   database.connection.query = (text, values = []) => {
     if (text.includes('SELECT p.publication_id,p.job_id')) {
       reads += 1;
-      return Promise.resolve({ rows: reads > 1 ? [{ publication_id: '7' }] : [] });
+      return Promise.resolve({
+        rows: reads > 1 ? [{ publication_id: '7' }] : [],
+      });
     }
     return originalQuery(text, values);
   };

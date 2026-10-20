@@ -988,7 +988,9 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
         );
         await service.relay();
         assert.equal((await publications(jobId)).length, 0);
-        const event = take('job').filter((one) => one.jobId === jobId).at(-1);
+        const event = take('job')
+          .filter((one) => one.jobId === jobId)
+          .at(-1);
         assert.ok(event, 'The relay published the row the admission left.');
         assert.equal(event.revision, Number((await jobRow(jobId)).revision));
       },
