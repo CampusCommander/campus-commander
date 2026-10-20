@@ -674,14 +674,9 @@ export async function runDeviceWriteAttacks(options) {
       throw error;
     }
     subscribers.push(next);
-    for (const one of previous) {
-      try {
-        await one.unsubscribe();
-        await one.quit();
-      } catch {
-        one.destroy();
-      }
-    }
+    // The old connections point at the stopped server. A command such as QUIT
+    // would queue on a reconnect that never completes, so close them directly.
+    for (const one of previous) one.destroy();
     return next;
   };
   const subscriber = await subscribeOn(await connectRedis());
@@ -808,20 +803,20 @@ export async function runDeviceWriteAttacks(options) {
       only,
     });
   } finally {
-    // The subscribers hold open sockets. Without this close the process never ends.
+    // The subscribers hold open sockets. Without this close the process never
+    // ends. A graceful QUIT would queue on a reconnecting client, so destroy.
     for (const one of subscribers.splice(0)) {
       try {
-        await one.unsubscribe();
-        await one.quit();
-      } catch {
         one.destroy();
+      } catch {
+        /* The client is already closed. */
       }
     }
     for (const one of ownedClients.splice(0)) {
       try {
-        await one.quit();
-      } catch {
         one.destroy();
+      } catch {
+        /* The client is already closed. */
       }
     }
     for (const stream of streamClients.splice(0)) {
