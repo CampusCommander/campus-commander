@@ -11,6 +11,11 @@ import {
 import type { GoogleWorker } from './google-connection';
 import { EntityCacheError } from './entity-cache';
 import { DeviceSyncError, deviceSyncRequestSchema } from './device-sync';
+import {
+  deviceUpdateBatchRequestSchema,
+  deviceUpdateFinishRequestSchema,
+  deviceUpdateReconcileRequestSchema,
+} from './device-update';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -235,6 +240,132 @@ export async function handleEntitySyncDispatch(
     else respond(response, 503, { error: 'entity-sync-unavailable' });
   }
   return true;
+}
+
+const executionIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+
+const deviceUpdateBatchDispatchSchema = deviceUpdateBatchRequestSchema.extend({
+  executionId: executionIdSchema,
+});
+
+const deviceUpdateFinishDispatchSchema =
+  deviceUpdateFinishRequestSchema.extend({
+    executionId: executionIdSchema,
+  });
+
+const deviceUpdateReconcileDispatchSchema =
+  deviceUpdateReconcileRequestSchema.extend({
+    executionId: executionIdSchema,
+  });
+
+/** One write batch. Every Google outcome and every fenced result answers 200. */
+export async function handleDeviceUpdateBatchDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (
+    request.method !== 'POST' ||
+    request.url !== '/dispatch/device-update-batch'
+  )
+    return false;
+  if (rejected(request, response, context)) return true;
+  try {
+    const { executionId, ...input } = deviceUpdateBatchDispatchSchema.parse(
+      await readJson(request),
+    );
+    const answer = await google.updateDevices(input, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status:
+        answer.outcome === 'stopped'
+          ? 'stopped'
+          : answer.outcome === 'busy'
+            ? 'busy'
+            : 'completed',
+      ...answer,
+    });
+  } catch (error) {
+    respondUpdateError(response, error, 'device-update-unavailable');
+  }
+  return true;
+}
+
+/** The finish step of one job. It is idempotent (section 5.10). */
+export async function handleDeviceUpdateFinishDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (
+    request.method !== 'POST' ||
+    request.url !== '/dispatch/device-update-finish'
+  )
+    return false;
+  if (rejected(request, response, context)) return true;
+  try {
+    const { executionId, ...input } = deviceUpdateFinishDispatchSchema.parse(
+      await readJson(request),
+    );
+    const answer = await google.finishDeviceUpdate(input, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status: answer.outcome === 'finished' ? 'finished' : answer.outcome,
+      ...answer,
+    });
+  } catch (error) {
+    respondUpdateError(response, error, 'device-update-unavailable');
+  }
+  return true;
+}
+
+/** One reconcile read: one operation, or every unknown operation (ruling 2). */
+export async function handleDeviceUpdateReconcileDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (
+    request.method !== 'POST' ||
+    request.url !== '/dispatch/device-update-reconcile'
+  )
+    return false;
+  if (rejected(request, response, context)) return true;
+  try {
+    const { executionId, ...input } =
+      deviceUpdateReconcileDispatchSchema.parse(await readJson(request));
+    const answer = await google.reconcileDeviceUpdate(input, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status: 'completed',
+      ...answer,
+    });
+  } catch (error) {
+    respondUpdateError(response, error, 'device-update-unavailable');
+  }
+  return true;
+}
+
+function respondUpdateError(
+  response: ServerResponse,
+  error: unknown,
+  unavailable: string,
+): void {
+  if (error instanceof DispatchError)
+    respond(response, error.statusCode, { error: error.code });
+  else if (error instanceof z.ZodError)
+    respond(response, 400, { error: 'invalid-payload' });
+  else if (error instanceof DeviceSyncError && error.code === 'attempt-fenced')
+    respond(response, 200, { outcome: 'attempt-fenced', status: 'completed' });
+  else if (error instanceof DeviceSyncError)
+    respond(response, 503, { error: error.code });
+  else respond(response, 503, { error: unavailable });
 }
 
 export function readDispatchSecret(path: string): string {

@@ -138,6 +138,8 @@ export interface BatchCall<T> {
   /** The success `page` is shared with the result. Every other event field is a copy. */
   onResponse?(event: BatchResponseEvent<T>): void | Promise<void>;
   onBatch?(event: BatchRoundEvent): void | Promise<void>;
+  /** Called with the request IDs right before the multipart request leaves the worker. */
+  onSend?(requestIds: readonly string[]): void | Promise<void>;
 }
 
 export type BatchServiceErrorCode =
@@ -671,6 +673,8 @@ class BatchRun<T> {
     const started = this.clock.now();
     let response: BatchHttpResponse | undefined;
     let failure: unknown;
+    // The caller learns which requests left the worker before any part of them can answer.
+    await this.call.onSend?.(entries.map((entry) => entry.request.id));
     try {
       response = await client.request({
         url: this.call.batchUrl,
