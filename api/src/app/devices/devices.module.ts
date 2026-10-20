@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { CacheModule } from '../cache/cache.module';
 import { ConfigurationModule } from '../configuration/configuration.module';
 import { DatabaseModule } from '../database/database.module';
+import { JobServiceModule } from '../jobs/job-service.module';
 import { OrchestrationModule } from '../orchestration/orchestration.module';
 import { StorageModule } from '../storage/storage.module';
 import { DeviceEventsService } from './device-events.service';
@@ -18,6 +19,7 @@ import { DevicesService } from './devices.service';
     CacheModule,
     ConfigurationModule,
     DatabaseModule,
+    JobServiceModule,
     OrchestrationModule,
     StorageModule,
   ],

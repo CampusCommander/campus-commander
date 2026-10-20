@@ -153,6 +153,14 @@ export class CacheService implements OnApplicationShutdown {
   async exists(key: string) {
     return this.execute((client) => client.exists(key));
   }
+  /** Publish one event on a channel. The job service and the relay carry the job events. */
+  async publish(channel: string, message: string) {
+    return this.execute((client) => client.publish(channel, message));
+  }
+  /** Increment one counter. The relay bumps the query generation of a published change (D10). */
+  async increment(key: string) {
+    return this.execute((client) => client.incr(key));
+  }
   /** Claim members for `seconds` each. Returns the members that held no live claim. */
   async addMembers(
     key: string,

@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   isAuthorized,
@@ -30,6 +32,7 @@ import {
   type JobUnknownActivityOperation,
   type SessionResponse,
 } from '@campus/application-contracts';
+import type { JobServiceOrchestration } from './job-service';
 
 /** One query result, as the API uses it. */
 interface QueryResult {
@@ -458,6 +461,70 @@ export class Jobs {
           ? String(page[page.length - 1]?.['operation_number'])
           : null,
     });
+  }
+
+  /**
+   * Reconcile one `unknown` operation (design section 2.6). The route claims the read-back with a new
+   * attempt and starts one reconcile flow. An operation under a live read-back lease claims nothing,
+   * so it answers 202 without a second flow.
+   */
+  async reconcile(
+    session: SessionResponse,
+    customerId: string,
+    displayId: string,
+    operationNumber: number,
+    correlationId: string,
+    orchestration: JobServiceOrchestration,
+  ): Promise<JobOperation> {
+    const job = await this.header(session, customerId, displayId);
+    if (!job) throw new NotFoundException({ reason: 'job-not-found' });
+    const jobId = String(job['job_id']);
+    const row = (
+      await this.rows(
+        `SELECT o.*, u.mode FROM cc.device_update_operations o
+          JOIN cc.jobs j ON j.job_id=o.job_id
+          JOIN cc.device_update_jobs u ON u.job_id=o.job_id
+          WHERE j.customer_id=$3 AND j.display_id=$4
+            AND cc.job_visible($1,$2,$3,j.requested_by) AND o.operation_number=$5`,
+        [...this.actor(session), customerId, displayId, operationNumber],
+      )
+    )[0];
+    // A refresh job holds no operation rows, so it also answers operation-not-found.
+    if (!row) throw new NotFoundException({ reason: 'operation-not-found' });
+    if (String(row['status']) !== 'unknown')
+      throw new ConflictException({ reason: 'operation-settled' });
+    const attempt = randomUUID();
+    const claimed = (
+      await this.rows(
+        `SELECT cc.claim_device_update_verification($1,$2,$3::jsonb,$4,$5,$6) AS result`,
+        [
+          customerId,
+          jobId,
+          JSON.stringify([operationNumber]),
+          attempt,
+          null,
+          null,
+        ],
+      )
+    )[0];
+    const held = Array.isArray(claimed?.['result']) ? claimed['result'] : [];
+    if (held.length > 0) {
+      try {
+        await orchestration.startDeviceUpdateReconcile({
+          customerId,
+          jobId,
+          operationNumber,
+          verifyAttempt: attempt,
+          correlationId,
+        });
+      } catch {
+        // The claim expires after 120 seconds, so the person can try again (design 653).
+        throw new ServiceUnavailableException({
+          reason: 'reconcile-unavailable',
+        });
+      }
+    }
+    return jobOperation(row, displayId);
   }
 
   async activity(

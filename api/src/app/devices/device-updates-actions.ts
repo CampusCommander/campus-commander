@@ -35,3 +35,21 @@ export async function requireDeviceUpdateActions(
       correlationId,
     );
 }
+
+/** Reconcile reads one job and starts one write flow, so it requires both actions (design 469). */
+export const RECONCILE_ACTIONS = ['jobs:read', 'devices:write'] as const;
+
+export async function requireReconcileActions(
+  auth: DeviceUpdateAuthorizer,
+  session: SessionResponse,
+  customerId: string,
+  correlationId: string,
+): Promise<void> {
+  for (const action of RECONCILE_ACTIONS)
+    await auth.authorize(
+      session,
+      action,
+      { kind: 'district', customerId },
+      correlationId,
+    );
+}

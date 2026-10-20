@@ -1485,6 +1485,37 @@ BEGIN
 END;
 $$;
 
+-- The job service marks the hold registry entry of one cleaned job. It runs after the compare-and-delete
+-- script, so hold_cleaned_at names a hold that the job service already tried to delete. A previous owner
+-- never marks a newer owner's hold: the release script keeps that hold, and this mark only records the
+-- cleanup of this job's registry entry.
+CREATE FUNCTION cc.clean_device_update_hold(p_customer text,p_job uuid) RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz;
+BEGIN
+  -- S2: a null identifier never matches a header.
+  IF p_customer IS NULL OR p_job IS NULL THEN
+    RAISE EXCEPTION 'The hold cleanup is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- The hold write and the admission take the same customer lock, so cleanup never interleaves with them.
+  PERFORM pg_advisory_xact_lock(hashtext('cc.job-admission:'||p_customer)::bigint);
+  -- S1: the header row locks before the detail row, as every other write-job writer takes them.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-update' THEN RETURN false; END IF;
+  -- The caller's own filter names these four terminal statuses. The fence repeats it here, so a direct
+  -- call never marks the registry entry of a live job (round 2, eng-lead ruling 3).
+  IF job.status NOT IN ('completed','completed-with-errors','failed','needs-review') THEN RETURN false; END IF;
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  -- S3: only a job with a written hold and no cleanup mark takes the mark.
+  IF detail.job_id IS NULL OR detail.hold_written_at IS NULL OR detail.hold_cleaned_at IS NOT NULL THEN
+    RETURN false;
+  END IF;
+  UPDATE cc.device_update_jobs SET hold_cleaned_at=now_at WHERE job_id=p_job;
+  RETURN true;
+END;
+$$;
+
 -- The receipt of one accepted job. B3 returns it on creation and on a duplicate confirmation.
 CREATE FUNCTION cc.device_update_receipt(p_job uuid) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -1882,6 +1913,7 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.prepare_device_update_finish(text,uuid,uuid,text),cc.finish_device_update_job(text,uuid,uuid,text),
   cc.finalize_device_update_job(text,uuid,text),
   cc.report_device_update_backoff(text,uuid,uuid,integer,uuid,integer),cc.accept_device_update_hold(text),
+  cc.clean_device_update_hold(text,uuid),
   cc.purge_jobs(text,integer),cc.device_update_receipt(uuid),
   cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,jsonb,integer),
   cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
