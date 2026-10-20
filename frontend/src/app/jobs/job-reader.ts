@@ -44,6 +44,15 @@ export class JobReader {
   }
 
   /**
+   * Marks the reader dirty without a job event. A successful `seen` request uses it so
+   * its reread computes the new `attention` (design 3.4).
+   */
+  invalidate(): void {
+    this.dirty = true;
+    this.schedule(this.debounceMs);
+  }
+
+  /**
    * Every stream open, first or after a reconnect, marks every reader dirty.
    * An open supersedes a failed-read backoff and resynchronizes after the debounce.
    */
@@ -77,11 +86,6 @@ export class JobReader {
   clear(): void {
     this.stop();
     this.revisions.clear();
-  }
-
-  private invalidate(): void {
-    this.dirty = true;
-    this.schedule(this.debounceMs);
   }
 
   private schedule(delay: number): void {

@@ -17,6 +17,8 @@ export interface JobStreamOptions {
   opened: () => void;
   /** One `job-changed` message payload. */
   changed: (data: string) => void;
+  /** Every close, whether stopped, replaced, or reconnecting. Live updates end. */
+  closed?: () => void;
 }
 
 /**
@@ -82,6 +84,7 @@ export class JobStream {
     this.watchdog = undefined;
     this.stream?.close();
     this.stream = null;
+    this.options.closed?.();
   }
 
   private watch(): void {
