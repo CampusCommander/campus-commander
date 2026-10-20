@@ -180,21 +180,26 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         const result = { succeeded: new Map(), failed: new Map() };
         for (const round of script.rounds) {
           if (signal.aborted) break;
-          if (round.kill) throw new Error('worker killed');
           const ids = round.ids;
           await options.onSend?.(ids);
+          // A gated round holds its answers until the test releases them.
+          if (round.gate) await round.gate;
           for (const id of ids) {
             const answer = round.parts[id];
             const event = {
               id,
-              status: answer.status,
+              status:
+                answer.status ?? (answer.kind === 'success' ? 200 : undefined),
               attempts: answer.attempts ?? { quota: 0, transient: 0 },
               request: { id, method: 'PATCH', path: `/devices/${id}` },
               outcome:
                 answer.kind === 'success'
                   ? {
                       kind: 'success',
-                      page: { deviceId: id },
+                      page:
+                        answer.value === undefined
+                          ? { deviceId: id }
+                          : { deviceId: id, annotatedLocation: answer.value },
                       pageIndex: 0,
                       hasNextPage: false,
                     }
@@ -286,14 +291,21 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
   const run = (
     jobId,
     batch,
-    { reader, cache = cacheOf(), batchSize = 250, token } = {},
+    {
+      reader,
+      cache = cacheOf(),
+      batchSize = 250,
+      token,
+      pool: assigned = pool,
+      sleep,
+    } = {},
   ) =>
     new DeviceUpdateJobs(
-      pool,
+      assigned,
       { open: () => ({ subject: 'fixture@example.invalid' }) },
       reader,
       cache,
-      { batchSize },
+      { batchSize, ...(sleep ? { sleep } : {}) },
     ).runBatch(
       {
         customerId: customer,
@@ -640,24 +652,91 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
     );
 
     await check(
-      'a duplicate request answers done and sends nothing',
+      'two concurrent requests for one batch send one part and the second answers done',
       async () => {
-        const { jobId } = await makeJob({ devices: ['d-duplicate'] });
+        const { jobId } = await makeJob({ devices: ['d-overlap'] });
+        await seedDevice('d-overlap');
         const token = await tokenOf(jobId);
+        let releaseFirst;
+        const gate = new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
         const first = readerOf({
           rounds: [
             {
-              ids: ['d-duplicate'],
-              parts: { 'd-duplicate': { kind: 'success' } },
+              ids: ['d-overlap'],
+              parts: { 'd-overlap': { kind: 'success' } },
+              gate,
             },
           ],
           state: () => 'Room 12',
         });
-        await run(jobId, 0, { reader: first, token });
+        const running = run(jobId, 0, { reader: first, token });
+        // Wait until the first attempt's claim commits and its lease is live.
+        let firstAttempt = null;
+        for (;;) {
+          const held = await adminRow(
+            'SELECT attempt_id FROM cc.device_update_batches WHERE job_id=$1 AND batch=0',
+            [jobId],
+          );
+          if (held?.attempt_id) {
+            firstAttempt = held.attempt_id;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        let busySeen;
+        const sawBusy = new Promise((resolve) => {
+          busySeen = resolve;
+        });
+        let polls = 0;
         const second = readerOf({ rounds: [], state: () => 'Room 12' });
-        const response = await run(jobId, 0, { reader: second, token });
-        assert.deepEqual(response, { outcome: 'done' });
-        assert.equal(second.calls.length, 0);
+        const overlap = run(jobId, 0, {
+          reader: second,
+          token,
+          sleep: async () => {
+            polls += 1;
+            if (polls === 1) busySeen();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          },
+        });
+        await sawBusy;
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT attempt_id FROM cc.device_update_batches WHERE job_id=$1 AND batch=0',
+              [jobId],
+            )
+          ).attempt_id,
+          firstAttempt,
+          'The first attempt still owns the lease.',
+        );
+        releaseFirst();
+        const [firstAnswer, secondAnswer] = await Promise.all([
+          running,
+          overlap,
+        ]);
+        assert.deepEqual(firstAnswer, {
+          outcome: 'settled',
+          failure: null,
+          published: 1,
+          removed: 0,
+        });
+        assert.deepEqual(
+          secondAnswer,
+          { outcome: 'done' },
+          'The second request answers done after the release.',
+        );
+        assert.equal(
+          first.calls.filter((call) => call.name === 'patch').length,
+          1,
+          'One Google request serves both dispatches.',
+        );
+        assert.equal(
+          second.calls.filter((call) => call.name === 'patch').length,
+          0,
+          'The overlapping dispatch sends no part.',
+        );
         await releaseAll();
       },
     );
@@ -710,28 +789,61 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
       },
     );
 
-    await check('a publication row survives a Redis failure', async () => {
-      const { jobId } = await makeJob({ devices: ['d-publish'] });
-      const token = await tokenOf(jobId);
-      const cache = cacheOf();
-      cache.publish = async () => {
-        throw new EntityCacheError();
-      };
-      const reader = readerOf({
-        rounds: [
-          { ids: ['d-publish'], parts: { 'd-publish': { kind: 'success' } } },
-        ],
-        state: () => 'Room 12',
-      });
-      const response = await run(jobId, 0, { reader, cache, token });
-      assert.equal(response.outcome, 'settled');
-      const rows = await admin(
-        'SELECT publication_id FROM cc.job_publications WHERE job_id=$1',
-        [jobId],
-      );
-      assert.ok(rows.length >= 1, 'The row stays for the relay.');
-      await releaseAll();
-    });
+    await check(
+      'a Redis failure keeps the settlement publication with its devices and revision',
+      async () => {
+        const { jobId } = await makeJob({ devices: ['d-publish'] });
+        await seedDevice('d-publish');
+        const token = await tokenOf(jobId);
+        const cache = cacheOf();
+        let failures = 0;
+        cache.publish = async () => {
+          failures += 1;
+          throw new EntityCacheError();
+        };
+        const reader = readerOf({
+          rounds: [
+            { ids: ['d-publish'], parts: { 'd-publish': { kind: 'success' } } },
+          ],
+          state: () => 'Room 12',
+        });
+        const response = await run(jobId, 0, { reader, cache, token });
+        assert.equal(response.outcome, 'settled');
+        assert.equal(failures, 1, 'The Redis failure hook ran.');
+        const rows = await admin(
+          `SELECT p.publication_id, p.revision, p.device_ids, p.removed_ids
+            FROM cc.job_publications p WHERE p.job_id=$1 ORDER BY p.publication_id`,
+          [jobId],
+        );
+        const published = rows.filter((row) =>
+          row.device_ids.includes('d-publish'),
+        );
+        assert.equal(
+          published.length,
+          1,
+          'The settlement row keeps its device and stays for the relay.',
+        );
+        assert.deepEqual(published[0].device_ids, ['d-publish']);
+        assert.deepEqual(published[0].removed_ids, []);
+        const job = await adminRow(
+          'SELECT revision FROM cc.jobs WHERE job_id=$1',
+          [jobId],
+        );
+        assert.equal(
+          String(published[0].revision),
+          String(job.revision),
+          'The row keeps the committed revision.',
+        );
+        assert.equal(
+          calls.filter((call) =>
+            call.text.includes('complete_job_publications'),
+          ).length,
+          0,
+          'The worker deletes no row after the failure.',
+        );
+        await releaseAll();
+      },
+    );
 
     await check(
       '1001 unknown operations read back in five chunks under 250 results',
@@ -810,54 +922,167 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
     );
 
     await check(
-      'a killed runner leaves dispatched operations that a retry fences and reads back',
+      'an empty write recording fences the attempt and leaves its operations dispatched',
       async () => {
-        const { jobId } = await makeJob({ devices: ['d-kill-1', 'd-kill-2'] });
+        const { jobId } = await makeJob({ devices: ['d-fenced-record'] });
         const token = await tokenOf(jobId);
-        // The first attempt claims, then dies before the write leaves.
-        const dying = readerOf({ rounds: [], state: () => 'Room 12' });
-        dying.patchAnnotatedLocations = async () => {
-          throw new DeviceSyncError('worker-stopping');
-        };
-        await assert.rejects(
-          run(jobId, 0, { reader: dying, token }),
-          (error) => error.code === 'worker-stopping',
-        );
-        const dispatched = await admin(
-          'SELECT status FROM cc.device_update_operations WHERE job_id=$1 ORDER BY 1',
-          [jobId],
-        );
-        assert.deepEqual(
-          dispatched.map((row) => row.status),
-          ['dispatched', 'dispatched'],
-        );
-        // The lease and the grace lapse while no worker runs.
-        await admin(
-          "UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '2 minutes' WHERE job_id=$1",
-          [jobId],
-        );
-        await admin(
-          "UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '3 minutes' WHERE job_id=$1",
-          [jobId],
-        );
-        const retry = readerOf({ rounds: [], state: () => 'Room 12' });
-        const answer = await run(jobId, 0, { reader: retry, token });
-        assert.equal(answer.outcome, 'settled');
-        const rows = await admin(
-          'SELECT status,verified_by FROM cc.device_update_operations WHERE job_id=$1 ORDER BY 1',
-          [jobId],
-        );
-        assert.deepEqual(
-          rows.map((row) => [row.status, row.verified_by]),
-          [
-            ['succeeded', 'read-back'],
-            ['succeeded', 'read-back'],
+        const reader = readerOf({
+          rounds: [
+            {
+              ids: ['d-fenced-record'],
+              parts: { 'd-fenced-record': { kind: 'success' } },
+            },
           ],
+          state: () => 'Room 12',
+        });
+        // Expire the lease after the round renewal and before the recording.
+        let expired = false;
+        const expiring = {
+          async query(text, values = []) {
+            if (text.includes('settle_device_update_operations') && !expired) {
+              expired = true;
+              await admin(
+                "UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '1 minute' WHERE job_id=$1 AND batch=0",
+                [jobId],
+              );
+            }
+            return pool.query(text, values);
+          },
+        };
+        const response = await run(jobId, 0, {
+          reader,
+          token,
+          pool: expiring,
+        });
+        assert.equal(expired, true, 'The recording ran with an expired lease.');
+        assert.deepEqual(
+          response,
+          { outcome: 'attempt-fenced' },
+          'An empty recording is a fence, not a settlement.',
         );
         assert.equal(
-          retry.calls.filter((call) => call.name === 'patch').length,
+          (await operation(jobId, 1)).status,
+          'dispatched',
+          'The operation stays dispatched for a later attempt.',
+        );
+        const batch = await adminRow(
+          'SELECT attempt_id FROM cc.device_update_batches WHERE job_id=$1 AND batch=0',
+          [jobId],
+        );
+        assert.notEqual(batch.attempt_id, null, 'The lease stays held.');
+        assert.equal(
+          calls.filter((call) =>
+            call.text.includes('release_device_update_batch'),
+          ).length,
           0,
-          'A fenced operation sends no part.',
+          'A fenced recording never releases.',
+        );
+        await releaseAll();
+      },
+    );
+
+    await check(
+      'a success after a retry records the returned value and the retry history',
+      async () => {
+        const { jobId } = await makeJob({
+          devices: ['d-evidence'],
+          value: 'Room 12',
+        });
+        await seedDevice('d-evidence');
+        const token = await tokenOf(jobId);
+        const reader = readerOf({
+          rounds: [
+            {
+              ids: ['d-evidence'],
+              parts: {
+                'd-evidence': {
+                  kind: 'retry',
+                  status: 503,
+                  reason: 'backendError',
+                  attempts: { quota: 0, transient: 1 },
+                },
+              },
+            },
+            {
+              ids: ['d-evidence'],
+              parts: {
+                'd-evidence': {
+                  kind: 'success',
+                  value: 'Normalized Room 12',
+                  attempts: { quota: 0, transient: 1 },
+                },
+              },
+            },
+          ],
+          state: () => 'Room 12',
+        });
+        const response = await run(jobId, 0, {
+          reader,
+          token,
+          batchSize: 1,
+        });
+        assert.equal(response.outcome, 'settled');
+        const row = await adminRow(
+          `SELECT status, verified_by, observed_value, google_status,
+            quota_retries, transient_retries
+            FROM cc.device_update_operations
+            WHERE job_id=$1 AND operation_number=1`,
+          [jobId],
+        );
+        assert.equal(row.status, 'succeeded');
+        assert.equal(row.verified_by, 'write-response');
+        assert.equal(
+          row.observed_value,
+          'Normalized Room 12',
+          "The row keeps Google's observation, not the request.",
+        );
+        assert.equal(row.google_status, 200);
+        assert.equal(row.quota_retries, 0);
+        assert.equal(row.transient_retries, 1);
+        const deviceRow = await adminRow(
+          'SELECT annotated_location FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+          [customer, 'd-evidence'],
+        );
+        assert.equal(deviceRow.annotated_location, 'Normalized Room 12');
+        const overlay = await adminRow(
+          "SELECT value FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id=$2 AND field='annotatedLocation'",
+          [customer, 'd-evidence'],
+        );
+        assert.equal(overlay.value, 'Normalized Room 12');
+        await releaseAll();
+      },
+    );
+
+    await check(
+      'a verification-read credential error settles unknown and the finish continues',
+      async () => {
+        const { jobId } = await makeJob({ devices: ['d-credential'] });
+        const token = await tokenOf(jobId);
+        await admin(
+          "UPDATE cc.device_update_operations SET status='unknown' WHERE job_id=$1",
+          [jobId],
+        );
+        await admin(
+          'UPDATE cc.google_connection SET active=false WHERE customer_id=$1',
+          [customer],
+        );
+        const reader = readerOf({ rounds: [], state: () => 'Room 12' });
+        const response = await runFinish(jobId, { reader, token });
+        assert.equal(response.outcome, 'finished');
+        const row = await adminRow(
+          'SELECT status, outcome_reason FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1',
+          [jobId],
+        );
+        assert.equal(row.status, 'unknown');
+        assert.equal(row.outcome_reason, 'verification-failed');
+        assert.equal(
+          settlements().filter((call) => call.values[4] === 'read-back').length,
+          1,
+          'The chunk settles instead of failing the request.',
+        );
+        await admin(
+          'UPDATE cc.google_connection SET active=true WHERE customer_id=$1',
+          [customer],
         );
         await releaseAll();
       },
@@ -883,11 +1108,14 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
                 },
               },
             },
-            { ids: [], parts: {}, kill: true },
           ],
           state: () => 'Room 12',
         });
-        await assert.rejects(run(jobId, 0, { reader, token, batchSize: 1 }));
+        const response = await run(jobId, 0, { reader, token, batchSize: 1 });
+        assert.deepEqual(response, {
+          outcome: 'stopped',
+          failure: 'permission-denied',
+        });
         assert.equal((await header(jobId)).failure, 'permission-denied');
         const later = readerOf({ rounds: [], state: () => 'Room 12' });
         const same = await run(jobId, 0, { reader: later, token });
@@ -901,21 +1129,6 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           failure: 'permission-denied',
         });
         assert.equal(later.calls.length, 0, 'A stopped claim sends no part.');
-        // A1: the finish fences operation 2 after its lease and grace, then
-        // reads it back.
-        assert.equal((await operation(jobId, 2)).status, 'dispatched');
-        await admin(
-          "UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '2 minutes' WHERE job_id=$1 AND batch=0",
-          [jobId],
-        );
-        const finished = await runFinish(jobId, {
-          reader: readerOf({ rounds: [], state: () => 'Room 12' }),
-          token,
-        });
-        assert.equal(finished.outcome, 'finished');
-        const readBack = await operation(jobId, 2);
-        assert.equal(readBack.status, 'succeeded');
-        assert.equal(readBack.verified_by, 'read-back');
         await releaseAll();
       },
     );
@@ -953,6 +1166,15 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           const later = readerOf({ rounds: [], state: () => 'Room 12' });
           const stopped = await run(jobId, batch, { reader: later, token });
           assert.equal(stopped.outcome, 'stopped');
+          const fresh = await adminRow(
+            "SELECT heartbeat_at > clock_timestamp()-interval '1 minute' AS fresh FROM cc.device_update_jobs WHERE job_id=$1",
+            [jobId],
+          );
+          assert.equal(
+            fresh.fresh,
+            true,
+            'A stopped claim refreshes the heartbeat.',
+          );
           const recovery = await result(
             'SELECT cc.recover_device_update_jobs($1) AS result',
             [customer],
@@ -960,7 +1182,7 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           assert.deepEqual(
             recovery.starts.filter((start) => start.jobId === jobId),
             [],
-            'A stopped claim refreshes the heartbeat.',
+            'A stopped claim prevents a later start from recovering the job.',
           );
         }
         await releaseAll();

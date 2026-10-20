@@ -1,22 +1,23 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import test from 'node:test';
+import { z } from 'zod';
 import {
   entityEventSchema,
   jobEventSchema,
 } from '@campus/application-contracts';
-import {
-  BatchServiceError,
-  GoogleConnectionError,
-} from '@campus/google-connection';
+import { BatchServiceError } from '@campus/google-connection';
 import {
   DEVICE_UPDATE_BATCH_SIZE_LIMIT,
   DeviceUpdateJobs,
   classifyWrite,
+  deviceUpdateReconcileRequestSchema,
   resolveDeviceUpdateBatchSize,
 } from './device-update.ts';
+import { handleDeviceUpdateReconcileDispatch } from './dispatch.ts';
 import { DeviceSyncError } from './device-sync.ts';
-import { EntityCacheError } from './entity-cache.ts';
+import { EntityCacheError, deferredEntityCache } from './entity-cache.ts';
 
 const customerId = 'C0123456';
 const jobId = randomUUID();
@@ -58,6 +59,7 @@ const part = (
     kind = 'success',
     status = 200,
     reason = null,
+    value = undefined,
     quota = 0,
     transient = 0,
   } = {},
@@ -69,7 +71,10 @@ const part = (
     kind === 'success'
       ? {
           kind: 'success',
-          page: { deviceId: id },
+          page:
+            value === undefined
+              ? { deviceId: id }
+              : { deviceId: id, annotatedLocation: value },
           pageIndex: 0,
           hasNextPage: false,
         }
@@ -222,7 +227,10 @@ function database(overrides = {}) {
   const calls = [];
   const operations = new Map();
   let ticks = 0;
-  const stamp = () => new Date(base + ++ticks * 1000);
+  const stamp = () =>
+    overrides.clock
+      ? new Date(overrides.clock())
+      : new Date(base + ++ticks * 1000);
   const answer = (name, values) => {
     if (name === 'claim_device_update_batch')
       return overrides.claim ? overrides.claim(values) : claimed([op(1, 'd1')]);
@@ -315,38 +323,41 @@ function jobs(options = {}) {
   const sleeps = [];
   const create = new DeviceUpdateJobs(
     options.db ?? database(options.database),
-    { open: () => ({ subject: 'fixture@example.invalid' }) },
+    options.cipher ?? { open: () => ({ subject: 'fixture@example.invalid' }) },
     options.reader ?? reader(),
     options.cache ?? cache(),
     {
       batchSize: options.batchSize,
       timers,
-      sleep: async (milliseconds) => {
-        sleeps.push(milliseconds);
-        if (options.onSleep) await options.onSleep(milliseconds);
-      },
+      now: options.now ?? Date.now,
+      sleep:
+        options.sleep ??
+        (async (milliseconds) => {
+          sleeps.push(milliseconds);
+          if (options.onSleep) await options.onSleep(milliseconds);
+        }),
     },
   );
   return { create, timers: timerSet, sleeps };
 }
 
-/** Timers whose callbacks the test fires by hand. */
+/** Timers whose callbacks the test fires by hand. Each one records its delay. */
 function realishTimers() {
   const timeouts = new Map();
   const intervals = new Map();
   let sequence = 0;
   const timers = {
-    setTimeout(callback) {
+    setTimeout(callback, delay) {
       const id = ++sequence;
-      timeouts.set(id, callback);
+      timeouts.set(id, { callback, delay });
       return id;
     },
     clearTimeout(id) {
       timeouts.delete(id);
     },
-    setInterval(callback) {
+    setInterval(callback, delay) {
       const id = ++sequence;
-      intervals.set(id, callback);
+      intervals.set(id, { callback, delay });
       return id;
     },
     clearInterval(id) {
@@ -356,14 +367,14 @@ function realishTimers() {
   return {
     timers,
     fireTimeout() {
-      const [id, callback] = [...timeouts.entries()][0] ?? [];
-      if (callback === undefined) return false;
+      const [id, entry] = [...timeouts.entries()][0] ?? [];
+      if (entry === undefined) return false;
       timeouts.delete(id);
-      callback();
+      entry.callback();
       return true;
     },
     fireInterval() {
-      for (const callback of [...intervals.values()]) callback();
+      for (const entry of [...intervals.values()]) entry.callback();
     },
     get timeoutCount() {
       return timeouts.size;
@@ -371,8 +382,64 @@ function realishTimers() {
     get intervalCount() {
       return intervals.size;
     },
+    delays() {
+      return [...timeouts.values(), ...intervals.values()].map(
+        (entry) => entry.delay,
+      );
+    },
   };
 }
+
+/**
+ * Timers and a clock that the test advances together. A due callback runs when
+ * `advance` reaches its delay, and every scheduled delay is recorded.
+ */
+function advancingTimers(start = 0) {
+  let now = start;
+  let sequence = 0;
+  const timers = new Map();
+  const schedule = (kind) => (callback, delay) => {
+    const id = ++sequence;
+    timers.set(id, { kind, due: now + delay, delay, callback });
+    return id;
+  };
+  const handle = {
+    setTimeout: schedule('timeout'),
+    clearTimeout: (id) => timers.delete(id),
+    setInterval: schedule('interval'),
+    clearInterval: (id) => timers.delete(id),
+  };
+  return {
+    timers: handle,
+    get now() {
+      return now;
+    },
+    advance(milliseconds) {
+      const target = now + milliseconds;
+      for (;;) {
+        const next = [...timers.entries()]
+          .filter(([, entry]) => entry.due <= target)
+          .sort((a, b) => a[1].due - b[1].due)[0];
+        if (next === undefined) break;
+        const [id, entry] = next;
+        now = entry.due;
+        if (entry.kind === 'timeout') timers.delete(id);
+        else entry.due = now + entry.delay;
+        entry.callback();
+      }
+      now = target;
+    },
+    delays() {
+      return [...timers.values()].map((entry) => entry.delay);
+    },
+    get count() {
+      return timers.size;
+    },
+  };
+}
+
+/** Let queued promise work run. */
+const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 const names = (calls) => calls.map((call) => call.name);
 const settlements = (db) =>
@@ -393,6 +460,10 @@ test('classification covers each row of section 7.1', () => {
     operation: op(1, 'd1'),
     sent: false,
     succeeded: false,
+    value: null,
+    hasValue: false,
+    status: null,
+    attempts: { quota: 0, transient: 0 },
     final: null,
     settled: false,
     ...extra,
@@ -411,10 +482,36 @@ test('classification covers each row of section 7.1', () => {
   });
   const run = (entry, stop = null) => classifyWrite(entry, stop).outcome;
 
-  assert.deepEqual(run(tracked({ succeeded: true })), {
+  assert.deepEqual(
+    run(
+      tracked({
+        succeeded: true,
+        status: 200,
+        hasValue: true,
+        value: 'Normalized Room 1',
+        attempts: { quota: 0, transient: 1 },
+      }),
+    ),
+    {
+      operationNumber: 1,
+      outcome: 'succeeded',
+      verifiedBy: 'write-response',
+      googleStatus: 200,
+      googleReason: null,
+      quotaRetries: 0,
+      transientRetries: 1,
+      value: 'Normalized Room 1',
+    },
+  );
+  // A 2xx body without the field names no value. The settlement defaults it.
+  assert.deepEqual(run(tracked({ succeeded: true, status: 200 })), {
     operationNumber: 1,
     outcome: 'succeeded',
     verifiedBy: 'write-response',
+    googleStatus: 200,
+    googleReason: null,
+    quotaRetries: 0,
+    transientRetries: 0,
   });
   assert.deepEqual(
     run(tracked({ sent: true, final: failed('rejected', 403, 'forbidden') })),
@@ -475,8 +572,15 @@ test('classification covers each row of section 7.1', () => {
   );
 });
 
-test('a batch claims, writes, stamps the round with its renewal, and releases', async () => {
-  const db = database({ claim: () => claimed([op(1, 'd1'), op(2, 'd2')]) });
+test('item 18: the round-1 settlement takes the renewal stamp, so a later refresh wins', async () => {
+  // A refresh read stamped after round 1's renewal must beat the write. The
+  // worker proves it by stamping the settlement with that renewal time.
+  const renewalStamp = new Date(base + 50_000);
+  const refreshStamp = new Date(base + 60_000);
+  const db = database({
+    claim: () => claimed([op(1, 'd1'), op(2, 'd2')]),
+    renew: () => renewalStamp,
+  });
   const redis = cache();
   const source = reader([
     { parts: { d1: { kind: 'success' }, d2: { kind: 'success' } } },
@@ -490,24 +594,35 @@ test('a batch claims, writes, stamps the round with its renewal, and releases', 
     published: 2,
     removed: 0,
   });
-  assert.deepEqual(names(db.calls), [
-    'claim_device_update_batch',
-    'renew_device_update_batch',
-    'settle_device_update_operations',
-    'release_device_update_batch',
-  ]);
+  assert.deepEqual(
+    names(db.calls).filter((name) => name !== 'clock_timestamp'),
+    [
+      'claim_device_update_batch',
+      'renew_device_update_batch',
+      'settle_device_update_operations',
+      'release_device_update_batch',
+    ],
+  );
   assert.equal(
-    names(db.calls).includes('clock_timestamp'),
+    names(db.calls).includes('report_device_update_backoff'),
     false,
-    'A round renewal stamps its settlement; the worker makes no separate heartbeat call.',
+    'The worker makes no separate heartbeat call (ruling 7).',
   );
   const settled = settlements(db)[0];
   assert.equal(settled.values[4], 'write');
-  assert.equal(settled.values[3], db.calls[0].values[4]);
+  assert.equal(
+    settled.values[3],
+    db.calls.find((call) => call.name === 'claim_device_update_batch')
+      .values[4],
+  );
   assert.equal(
     settled.values[6],
-    new Date(base + 1000).toISOString(),
-    'The settlement carries the renewal time after the round.',
+    renewalStamp.toISOString(),
+    'The settlement carries the renewal time after round 1.',
+  );
+  assert.ok(
+    refreshStamp.getTime() > Date.parse(settled.values[6]),
+    'A refresh read after that renewal carries the later stamp.',
   );
   assert.deepEqual(
     JSON.parse(settled.values[5]).map((result) => result.outcome),
@@ -735,17 +850,54 @@ test('a read-back compares blank and reports a missing device as not-found', asy
 
 test('a failed read-back part leaves the operation unknown with verification-failed', async () => {
   const db = database({ claim: () => claimed([op(1, 'd1')]) });
-  const source = reader([
-    { mint: new GoogleConnectionError('network-failure') },
-  ]);
+  const source = reader(
+    [
+      {
+        parts: {
+          d1: { kind: 'retry', status: 0, reason: 'timeout', transient: 1 },
+        },
+      },
+      {
+        reuse: true,
+        parts: {
+          d1: {
+            kind: 'auth',
+            status: 403,
+            reason: 'forbidden',
+            transient: 1,
+          },
+        },
+      },
+    ],
+    [
+      [
+        {
+          deviceId: 'd1',
+          status: 'failed',
+          failure: {
+            kind: 'auth',
+            status: 403,
+            reason: 'forbidden',
+            attempts: { quota: 0, transient: 0 },
+            body: null,
+          },
+        },
+      ],
+    ],
+  );
   const { create } = jobs({ db, reader: source });
   const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
   assert.equal(answer.outcome, 'stopped');
-  assert.equal(answer.failure, 'network-failure');
-  const settled = settlements(db)[0];
-  assert.equal(JSON.parse(settled.values[5])[0].outcome, 'skipped');
-  assert.equal(settled.values[7], 'network-failure');
-  assert.equal(source.calls[0].rounds, 0, 'A mint failure sends no part.');
+  const readBack = settlements(db).at(-1);
+  assert.equal(readBack.values[4], 'read-back');
+  const result = JSON.parse(readBack.values[5])[0];
+  assert.equal(result.outcome, 'unknown');
+  assert.equal(result.outcomeReason, 'verification-failed');
+  assert.equal(
+    source.calls.filter((call) => call.name === 'deviceStates').length,
+    1,
+    'The failed part settles without a later GET.',
+  );
 });
 
 test('a fatal batch error settles sent operations unknown and keeps a 2xx', async () => {
@@ -911,7 +1063,10 @@ test('a duplicate dispatch answers done and sends no part', async () => {
   const { create } = jobs({ db, reader: source });
   const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
   assert.deepEqual(answer, { outcome: 'done' });
-  assert.deepEqual(names(db.calls), ['claim_device_update_batch']);
+  assert.deepEqual(
+    names(db.calls).filter((name) => name !== 'clock_timestamp'),
+    ['claim_device_update_batch'],
+  );
   assert.equal(source.calls.length, 0);
 });
 
@@ -1375,4 +1530,668 @@ test('a store failure answers nothing and leaves the lease to lapse', async () =
       error instanceof DeviceSyncError && error.code === 'store-unavailable',
   );
   assert.equal(names(db.calls).includes('release_device_update_batch'), false);
+});
+
+test('an empty or partial write recording fences the attempt and releases nothing', async () => {
+  for (const complete of [false, true]) {
+    const db = database({
+      claim: () => claimed([op(1, 'd1'), op(2, 'd2')]),
+      settle: () => ({
+        outcome: 'settled',
+        settled: complete
+          ? [
+              {
+                operationNumber: 1,
+                deviceId: 'd1',
+                status: 'succeeded',
+                batch: 0,
+              },
+            ]
+          : [],
+        published: complete ? ['d1'] : [],
+        removed: [],
+        publication: null,
+      }),
+    });
+    const source = reader([
+      { parts: { d1: { kind: 'success' }, d2: { kind: 'success' } } },
+    ]);
+    const { create } = jobs({ db, reader: source });
+    const answer = await create.runBatch(
+      batchRequest,
+      AbortSignal.timeout(5000),
+    );
+    assert.deepEqual(
+      answer,
+      { outcome: 'attempt-fenced' },
+      complete
+        ? 'A partial recording fences too.'
+        : 'An empty recording fences.',
+    );
+    assert.equal(
+      names(db.calls).includes('release_device_update_batch'),
+      false,
+      'A fenced attempt never releases its lease.',
+    );
+    assert.equal(
+      source.calls.filter((call) => call.name === 'deviceStates').length,
+      0,
+      'No read-back runs after the fence.',
+    );
+  }
+});
+
+test('a success records the observed value, its status, and the retry history', async () => {
+  const db = database({ claim: () => claimed([op(1, 'd1')]) });
+  const source = reader([
+    {
+      parts: {
+        d1: {
+          kind: 'retry',
+          status: 503,
+          reason: 'backendError',
+          transient: 1,
+        },
+      },
+    },
+    {
+      reuse: true,
+      parts: {
+        d1: { kind: 'success', value: 'Normalized Room 1', transient: 1 },
+      },
+    },
+  ]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  const result = JSON.parse(settlements(db)[0].values[5])[0];
+  assert.deepEqual(result, {
+    operationNumber: 1,
+    outcome: 'succeeded',
+    verifiedBy: 'write-response',
+    googleStatus: 200,
+    googleReason: null,
+    quotaRetries: 0,
+    transientRetries: 1,
+    value: 'Normalized Room 1',
+  });
+});
+
+test('a cache that cannot be configured keeps its publication row', async () => {
+  const element = {
+    publicationId: 11,
+    jobId,
+    displayId,
+    requestedBy,
+    revision: 2,
+    statusChanged: false,
+    deviceIds: ['d1'],
+    removedIds: [],
+    batch: 0,
+    batchCount: 2,
+  };
+  const db = database({
+    claim: () => claimed([op(1, 'd1')]),
+    settle: () => ({
+      outcome: 'settled',
+      settled: [
+        { operationNumber: 1, deviceId: 'd1', status: 'succeeded', batch: 0 },
+      ],
+      published: ['d1'],
+      removed: [],
+      publication: element,
+    }),
+  });
+  const { create } = jobs({
+    db,
+    reader: reader([{ parts: { d1: { kind: 'success' } } }]),
+    cache: deferredEntityCache(() => {
+      throw new Error('connection-store-unavailable');
+    }),
+  });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(
+    names(db.calls).includes('complete_job_publications'),
+    false,
+    'A no-op cache never acknowledges publication.',
+  );
+});
+
+test('a verification read with a credential error settles unknown and the finish continues', async () => {
+  for (const detail of [
+    'credential-changed',
+    'connection-disconnected',
+    'restore-revalidation-required',
+  ]) {
+    const db = database({
+      fail: { read_device_update_verification: detail },
+      verificationClaim: (() => {
+        let claimedChunks = 0;
+        return () => {
+          claimedChunks += 1;
+          if (claimedChunks > 1) return [];
+          return [
+            {
+              operationNumber: 1,
+              deviceId: 'd1',
+              serialNumber: null,
+              baselineValue: null,
+              requestedValue: 'Room 1',
+            },
+          ];
+        };
+      })(),
+    });
+    const { create } = jobs({ db });
+    const answer = await create.runFinish(
+      { customerId, jobId, dispatchToken, correlationId },
+      AbortSignal.timeout(5000),
+    );
+    assert.equal(answer.outcome, 'finished', detail);
+    assert.equal(answer.readBack.unknown, 1);
+    const readBack = settlements(db)[0];
+    assert.equal(readBack.values[4], 'read-back');
+    assert.deepEqual(JSON.parse(readBack.values[5]), [
+      {
+        operationNumber: 1,
+        outcome: 'unknown',
+        outcomeReason: 'verification-failed',
+      },
+    ]);
+    assert.equal(
+      names(db.calls).includes('finish_device_update_job'),
+      true,
+      'The finish reaches its final step.',
+    );
+  }
+});
+
+test('an envelope that cannot open is a read-back failure, not a request failure', async () => {
+  const db = database({
+    verificationClaim: (() => {
+      let claimedChunks = 0;
+      return () => {
+        claimedChunks += 1;
+        if (claimedChunks > 1) return [];
+        return [
+          {
+            operationNumber: 1,
+            deviceId: 'd1',
+            serialNumber: null,
+            baselineValue: null,
+            requestedValue: 'Room 1',
+          },
+        ];
+      };
+    })(),
+    verificationRead: () => ({
+      outcome: 'held',
+      checkedAt: new Date(base).toISOString(),
+      generation: 1,
+      credentialId: randomUUID(),
+      envelope: { sealed: true },
+      operations: [
+        {
+          operationNumber: 1,
+          deviceId: 'd1',
+          serialNumber: null,
+          baselineValue: null,
+          requestedValue: 'Room 1',
+          verifyAfter: new Date(base).toISOString(),
+          verifyLeaseExpiresAt: new Date(base + 120_000).toISOString(),
+        },
+      ],
+    }),
+  });
+  const { create } = jobs({
+    db,
+    cipher: {
+      open: () => {
+        throw new Error('envelope-unavailable');
+      },
+    },
+  });
+  const answer = await create.runFinish(
+    { customerId, jobId, dispatchToken, correlationId },
+    AbortSignal.timeout(5000),
+  );
+  assert.equal(answer.outcome, 'finished');
+  const readBack = settlements(db)[0];
+  assert.equal(readBack.values[4], 'read-back');
+  assert.equal(
+    JSON.parse(readBack.values[5])[0].outcomeReason,
+    'verification-failed',
+  );
+});
+
+test('a verification-read store failure stays a request failure', async () => {
+  const db = database({
+    fail: { read_device_update_verification: 'store down' },
+    verificationClaim: () => [
+      {
+        operationNumber: 1,
+        deviceId: 'd1',
+        serialNumber: null,
+        baselineValue: null,
+        requestedValue: 'Room 1',
+      },
+    ],
+  });
+  const { create } = jobs({ db });
+  await assert.rejects(
+    create.runFinish(
+      { customerId, jobId, dispatchToken, correlationId },
+      AbortSignal.timeout(5000),
+    ),
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'store-unavailable',
+  );
+});
+
+test('a takeover read-back runs under the claim bounds', async () => {
+  let clockAt = new Date(base);
+  const db = database({
+    claim: () => {
+      // The claim reads its fence time between these two clock reads.
+      clockAt = new Date(base + 1_000);
+      return claimed([], [op(1, 'd1')]);
+    },
+    clock: () => clockAt,
+  });
+  const source = reader(
+    [],
+    [
+      [
+        {
+          deviceId: 'd1',
+          status: 'found',
+          device: { deviceId: 'd1', annotatedLocation: 'Room 1' },
+        },
+      ],
+    ],
+  );
+  const { create, sleeps } = jobs({
+    db,
+    reader: source,
+    // A worker clock 60 s ahead must not shorten or extend the window.
+    now: () => base + 60_000,
+  });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.deepEqual(sleeps, [], 'The claim time is already past the fence.');
+  assert.deepEqual(source.calls[0].ids, ['d1']);
+  assert.equal(
+    JSON.parse(settlements(db)[0].values[5])[0].verifiedBy,
+    'read-back',
+  );
+});
+
+test('a takeover read-back past its lease settles unknown without a GET', async () => {
+  let clockCalls = 0;
+  const db = database({
+    claim: () => claimed([], [op(1, 'd1')]),
+    // The claim reads twice. The read-back then finds the 120 s lease near its end.
+    clock: () => new Date(base + (clockCalls++ < 2 ? 0 : 110_000)),
+  });
+  const source = reader(
+    [],
+    [
+      [
+        {
+          deviceId: 'd1',
+          status: 'found',
+          device: { deviceId: 'd1', annotatedLocation: 'Room 1' },
+        },
+      ],
+    ],
+  );
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(
+    source.calls.filter((call) => call.name === 'deviceStates').length,
+    0,
+    'No GET leaves inside the 15 s margin.',
+  );
+  const readBack = settlements(db).at(-1);
+  assert.equal(readBack.values[4], 'read-back');
+  assert.equal(
+    JSON.parse(readBack.values[5])[0].outcomeReason,
+    'verification-failed',
+  );
+});
+
+test('verifyAfter is measured on the database clock, not a worker clock ahead', async () => {
+  let dbNow = base;
+  const db = database({
+    clock: () => new Date(dbNow),
+    verificationClaim: (() => {
+      let claimedChunks = 0;
+      return () => {
+        claimedChunks += 1;
+        if (claimedChunks > 1) return [];
+        return [
+          {
+            operationNumber: 3,
+            deviceId: 'd3',
+            serialNumber: null,
+            baselineValue: null,
+            requestedValue: 'Room 3',
+          },
+        ];
+      };
+    })(),
+    verificationRead: () => ({
+      outcome: 'held',
+      checkedAt: new Date(base).toISOString(),
+      generation: 1,
+      credentialId: randomUUID(),
+      envelope: { sealed: true },
+      operations: [
+        {
+          operationNumber: 3,
+          deviceId: 'd3',
+          serialNumber: null,
+          baselineValue: null,
+          requestedValue: 'Room 3',
+          verifyAfter: new Date(base + 30_000).toISOString(),
+          verifyLeaseExpiresAt: new Date(base + 120_000).toISOString(),
+        },
+      ],
+    }),
+  });
+  const source = reader(
+    [],
+    [
+      [
+        {
+          deviceId: 'd3',
+          status: 'found',
+          device: { deviceId: 'd3', annotatedLocation: 'Room 3' },
+        },
+      ],
+    ],
+  );
+  const sleeps = [];
+  const { create } = jobs({
+    db,
+    reader: source,
+    // The worker clock is 60 s ahead of the database clock.
+    now: () => base + 60_000,
+    sleep: async (milliseconds) => {
+      sleeps.push(milliseconds);
+      dbNow += milliseconds;
+    },
+  });
+  const answer = await create.runReconcile(
+    {
+      customerId,
+      jobId,
+      operationNumber: 3,
+      verifyAttempt: randomUUID(),
+      correlationId,
+    },
+    AbortSignal.timeout(5000),
+  );
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(
+    sleeps[0],
+    30_000,
+    'The wait is 30 s on the database clock although the worker clock is ahead.',
+  );
+  assert.equal(answer.readBack.verified, 1);
+});
+
+test('a read-back inside the 15 s lease margin settles unknown without a GET', async () => {
+  const db = database({
+    clock: () => new Date(base),
+    verificationClaim: (() => {
+      let claimedChunks = 0;
+      return () => {
+        claimedChunks += 1;
+        if (claimedChunks > 1) return [];
+        return [
+          {
+            operationNumber: 3,
+            deviceId: 'd3',
+            serialNumber: null,
+            baselineValue: null,
+            requestedValue: 'Room 3',
+          },
+        ];
+      };
+    })(),
+    verificationRead: () => ({
+      outcome: 'held',
+      checkedAt: new Date(base).toISOString(),
+      generation: 1,
+      credentialId: randomUUID(),
+      envelope: { sealed: true },
+      operations: [
+        {
+          operationNumber: 3,
+          deviceId: 'd3',
+          serialNumber: null,
+          baselineValue: null,
+          requestedValue: 'Room 3',
+          verifyAfter: new Date(base).toISOString(),
+          // The lease ends inside the 15 s margin.
+          verifyLeaseExpiresAt: new Date(base + 10_000).toISOString(),
+        },
+      ],
+    }),
+  });
+  const source = reader();
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runReconcile(
+    {
+      customerId,
+      jobId,
+      operationNumber: 3,
+      verifyAttempt: randomUUID(),
+      correlationId,
+    },
+    AbortSignal.timeout(5000),
+  );
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(source.calls.length, 0, 'No GET leaves inside the margin.');
+  assert.equal(
+    JSON.parse(settlements(db)[0].values[5])[0].outcomeReason,
+    'verification-failed',
+  );
+});
+
+test('the worker renews the lease every 30 s while a part waits', async () => {
+  const clock = advancingTimers(base);
+  const db = database({ claim: () => claimed([op(1, 'd1')]) });
+  const source = reader([{ hang: true }]);
+  const stopping = new AbortController();
+  const { create } = jobs({
+    db,
+    reader: source,
+    timers: clock.timers,
+    now: () => clock.now,
+  });
+  const running = create.runBatch(batchRequest, stopping.signal);
+  await flush();
+  await flush();
+  assert.ok(
+    clock.delays().includes(30_000),
+    'The renewal interval runs every 30 s.',
+  );
+  const renewals = () =>
+    db.calls.filter((call) => call.name === 'renew_device_update_batch').length;
+  assert.equal(renewals(), 0, 'No round ended yet.');
+  clock.advance(30_000);
+  await flush();
+  assert.equal(renewals(), 1);
+  clock.advance(30_000);
+  await flush();
+  assert.equal(renewals(), 2);
+  clock.advance(30_000);
+  await flush();
+  assert.equal(renewals(), 3);
+  stopping.abort();
+  const answer = await running;
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(source.calls[0].aborted, true);
+});
+
+test('a renewal delayed by the pool lets the watchdog abort 150 s after its start', async () => {
+  const clock = advancingTimers(base);
+  let releaseRenew;
+  const pending = new Promise((resolve) => {
+    releaseRenew = resolve;
+  });
+  const db = database({
+    claim: () => claimed([op(1, 'd1')]),
+    renew: async () => {
+      await pending;
+      return new Date(clock.now);
+    },
+  });
+  const source = reader([{ hang: true }]);
+  const stopping = new AbortController();
+  const { create } = jobs({
+    db,
+    reader: source,
+    timers: clock.timers,
+    now: () => clock.now,
+  });
+  const running = create.runBatch(batchRequest, stopping.signal);
+  await flush();
+  await flush();
+  clock.advance(30_000);
+  await flush();
+  assert.equal(
+    db.calls.filter((call) => call.name === 'renew_device_update_batch').length,
+    1,
+    'The renewal request is in flight.',
+  );
+  assert.ok(
+    clock.delays().includes(150_000),
+    'The watchdog is armed at the start of the renewal request.',
+  );
+  clock.advance(100_000);
+  await flush();
+  assert.equal(
+    source.calls[0].aborted,
+    false,
+    'The watchdog waits 150 s from the renewal start.',
+  );
+  clock.advance(50_000);
+  await flush();
+  assert.equal(
+    source.calls[0].aborted,
+    true,
+    'The watchdog aborts 150 s after the renewal start.',
+  );
+  releaseRenew();
+  const answer = await running;
+  assert.equal(answer.outcome, 'settled');
+});
+
+test('a numeric Reconcile request requires a verification attempt', async () => {
+  const request = { customerId, jobId, operationNumber: 3, correlationId };
+  for (const verifyAttempt of [undefined, null, '', 'not-a-uuid'])
+    assert.equal(
+      deviceUpdateReconcileRequestSchema.safeParse({
+        ...request,
+        verifyAttempt,
+      }).success,
+      false,
+      String(verifyAttempt),
+    );
+  assert.equal(
+    deviceUpdateReconcileRequestSchema.safeParse({
+      ...request,
+      verifyAttempt: randomUUID(),
+    }).success,
+    true,
+  );
+  assert.equal(
+    deviceUpdateReconcileRequestSchema.safeParse({
+      customerId,
+      jobId,
+      operationNumber: 'all',
+      correlationId,
+    }).success,
+    true,
+    '`all` claims its own attempts.',
+  );
+  const source = reader();
+  const { create } = jobs({ db: database(), reader: source });
+  await assert.rejects(
+    create.runReconcile(request, AbortSignal.timeout(5000)),
+    (error) => error instanceof z.ZodError,
+  );
+  assert.equal(source.calls.length, 0);
+});
+
+test('a Reconcile request without its attempt answers invalid-payload', async () => {
+  const context = { secret: 's'.repeat(32), signal: AbortSignal.timeout(5000) };
+  const received = [];
+  const google = {
+    reconcileDeviceUpdate: async (input) => {
+      received.push(input);
+      return { outcome: 'not-held' };
+    },
+  };
+  const send = (body) => {
+    const request = Readable.from([Buffer.from(JSON.stringify(body))]);
+    request.method = 'POST';
+    request.url = '/dispatch/device-update-reconcile';
+    request.headers = {
+      authorization: `Bearer ${context.secret}`,
+      'content-type': 'application/json',
+    };
+    const response = {
+      statusCode: 0,
+      payload: null,
+      writeHead(statusCode) {
+        this.statusCode = statusCode;
+      },
+      end(text) {
+        this.payload = JSON.parse(text);
+      },
+    };
+    return { request, response };
+  };
+  const body = {
+    executionId: 'exec-1',
+    customerId,
+    jobId,
+    operationNumber: '3',
+    correlationId,
+  };
+  for (const verifyAttempt of [undefined, null, 'not-a-uuid']) {
+    const { request, response } = send({ ...body, verifyAttempt });
+    assert.equal(
+      await handleDeviceUpdateReconcileDispatch(
+        request,
+        response,
+        context,
+        google,
+      ),
+      true,
+    );
+    assert.equal(response.statusCode, 400, String(verifyAttempt));
+    assert.deepEqual(response.payload, { error: 'invalid-payload' });
+  }
+  assert.equal(
+    received.length,
+    0,
+    'An invalid request never reaches the worker.',
+  );
+  const valid = send({ ...body, verifyAttempt: randomUUID() });
+  await handleDeviceUpdateReconcileDispatch(
+    valid.request,
+    valid.response,
+    context,
+    google,
+  );
+  assert.equal(valid.response.statusCode, 200);
+  assert.equal(received.length, 1);
+  assert.equal(received[0].verifyAttempt === undefined, false);
 });
