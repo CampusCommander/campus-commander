@@ -4347,6 +4347,14 @@ export async function qualifyDeviceWriteJobs({
           FROM cc.device_update_jobs WHERE job_id=$1`,
         [jobId],
       );
+    // A fixture that rotates the dispatch token changes one detail field on purpose. Every other field
+    // of the detail row stays comparable, so a call that writes heartbeat_at or first_claimed_at after
+    // the rotation still fails its own check.
+    const withoutDispatchToken = (detail) => {
+      const rest = { ...detail };
+      delete rest.dispatch_token;
+      return rest;
+    };
     const batchRow = (jobId, batch = 0) =>
       adminRow(
         `SELECT attempt_id,execution_id,lease_expires_at,settled_at
@@ -8337,6 +8345,23 @@ export async function qualifyDeviceWriteJobs({
         'An invalid input changes nothing.',
       );
     };
+    // R1-F3: the verification read takes the global access lock first, before every row lock. An
+    // invalid input rejects while another session holds that lock, so a check that still waited on it
+    // would answer 55P03 under the short lock timeout instead of its defined error.
+    const rejectsBeforeGlobalLock = async ({ sql, values }) => {
+      await descendantHeld({
+        rows: [['SELECT pg_advisory_xact_lock(7240173008)', []]],
+        sql,
+        values,
+        expect: (answer) =>
+          assert.equal(
+            answer.code,
+            '22023',
+            'An invalid input rejects before the global access lock.',
+          ),
+      });
+      await rejects(result(sql, values), '22023');
+    };
 
     // R2-F1: a success without the provenance of its kind (design sections 5.7 and 7.1, eng-lead
     // ruling 1). At 768f8c3 it reached the locks and committed a success that published no device.
@@ -8948,6 +8973,118 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    // B2c R1-F1: a stop that a later wait finds skips every pending operation of the job. That set
+    // locks in operation_number order before the detail row, so a claim that waits on another batch's
+    // operation holds no detail row in that wait. At 3804b6b the claim locked the detail row first.
+    await ruleCheck(
+      'B2c R1-F1 a late stop takes the pending operation set before the detail row',
+      async () => {
+        const owner = await principal(`${randomUUID()}`, [
+          ['devices:read', district()],
+          ['devices:write', district()],
+          ['devices:bulk-actions', district()],
+        ]);
+        const job = await makeJob({
+          devices: ['r1f1-a', 'r1f1-b'],
+          batchSize: 1,
+          createdBy: owner,
+        });
+        const admitted = await admit(false);
+        assert.equal(
+          admitted.jobId,
+          job.jobId,
+          'The admission picks this job.',
+        );
+        const first = await connect('cc-migrator', 'cc-app');
+        const second = await connect('cc-migrator', 'cc-app');
+        const observer = await connect('cc-migrator', 'cc-app');
+        const caller = await connect('cc-app', 'cc-app');
+        let pending = null;
+        try {
+          // The claim of batch 0 waits on its own operation. The confirmer loses access in that wait.
+          // The other batch keeps a pending operation that a second session holds.
+          await first.query('BEGIN');
+          await first.query(...heldOperation(job.jobId, 1));
+          await second.query('BEGIN');
+          await second.query(...heldOperation(job.jobId, 2));
+          const firstPid = await pidOf(first);
+          const secondPid = await pidOf(second);
+          const callerPid = await pidOf(caller);
+          pending = caller
+            .query(claimSql, [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              0,
+              randomUUID(),
+              'r1f1-next',
+            ])
+            .then(
+              (queried) => ({ rows: queried.rows }),
+              (error) => ({ code: error.code, message: error.message }),
+            );
+          assert.equal(
+            await waitsFor(callerPid, firstPid),
+            true,
+            'The claim waits on the operation of its batch.',
+          );
+          await migrator.query(
+            'UPDATE cc.application_principals SET enabled=false WHERE id=$1',
+            [owner],
+          );
+          await first.query('ROLLBACK');
+          assert.equal(
+            await waitsFor(callerPid, secondPid),
+            true,
+            'The stopped claim waits on the pending operation of the other batch.',
+          );
+          await observer.query('BEGIN');
+          const detail = await observer
+            .query(
+              'SELECT 1 FROM cc.device_update_jobs WHERE job_id=$1 FOR UPDATE NOWAIT',
+              [job.jobId],
+            )
+            .then(
+              () => true,
+              (error) => error.code,
+            );
+          await observer.query('ROLLBACK');
+          assert.equal(
+            detail,
+            true,
+            'The late stop holds no detail row while it waits on a pending operation.',
+          );
+          await second.query('ROLLBACK');
+          const answer = await pending;
+          assert.equal(answer.code, undefined, answer.message);
+          assert.equal(answer.rows[0].result.outcome, 'stopped');
+          assert.equal(answer.rows[0].result.failure, 'permission-changed');
+          assert.deepEqual(
+            (await skipStamps(job.jobId)).map((row) => [
+              row.status,
+              row.outcome_reason,
+            ]),
+            [
+              ['skipped', 'permission-changed'],
+              ['skipped', 'permission-changed'],
+            ],
+          );
+        } finally {
+          await observer.query('ROLLBACK').catch(() => undefined);
+          await first.query('ROLLBACK').catch(() => undefined);
+          await second.query('ROLLBACK').catch(() => undefined);
+          if (pending) await pending;
+          await Promise.allSettled([
+            observer.end(),
+            first.end(),
+            second.end(),
+            caller.end(),
+          ]);
+        }
+        await endJob(job.jobId);
+      },
+    );
+
     await ruleCheck(
       'R2-F2 a stopped claim returns superseded when the token rotates in the skip wait',
       async () => {
@@ -9399,7 +9536,7 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
-    // Item 2: a chunk claim waits on its own operation while the next operation stays free.
+    // Item 2: a completed chunk claim holds only the rows of its chunk, and no row outside the chunk.
     await ruleCheck(
       'B2c item 2 a chunk claim locks only its chunk',
       async () => {
@@ -9408,31 +9545,39 @@ export async function qualifyDeviceWriteJobs({
           batchSize: 2,
         });
         await unknownOperations(job.jobId);
-        const holder = await connect('cc-migrator', 'cc-app');
-        const caller = await connect('cc-app', 'cc-app');
+        const claimer = await connect('cc-app', 'cc-app');
+        const control = await connect('cc-migrator', 'cc-app');
         const observer = await connect('cc-migrator', 'cc-app');
-        let pending = null;
         try {
-          await holder.query('BEGIN');
-          await holder.query(...heldOperation(job.jobId, 1));
-          const holderPid = await pidOf(holder);
-          const callerPid = await pidOf(caller);
-          pending = caller
+          // The claim runs inside its own transaction, so every lock that it took is still held when
+          // the probes ask for the rows.
+          await claimer.query('BEGIN');
+          const answer = await claimer.query(
+            'SELECT cc.claim_device_update_verification($1,$2,$3,$4,$5,$6) AS result',
+            [customer, job.jobId, null, randomUUID(), 0, 1],
+          );
+          assert.deepEqual(
+            answer.rows[0].result.map((row) => row.operationNumber),
+            [1],
+          );
+          await control.query('BEGIN');
+          const inside = await control
             .query(
-              'SELECT cc.claim_device_update_verification($1,$2,$3,$4,$5,$6) AS result',
-              [customer, job.jobId, null, randomUUID(), 0, 1],
+              'SELECT 1 FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1 FOR UPDATE NOWAIT',
+              [job.jobId],
             )
             .then(
-              (queried) => ({ rows: queried.rows }),
-              (error) => ({ code: error.code, message: error.message }),
+              () => true,
+              (error) => error.code,
             );
+          await control.query('ROLLBACK');
           assert.equal(
-            await waitsFor(callerPid, holderPid),
-            true,
-            'The chunk claim waits on the operation of its chunk.',
+            inside,
+            '55P03',
+            'The completed claim holds the operation of its chunk.',
           );
           await observer.query('BEGIN');
-          const free = await observer
+          const outside = await observer
             .query(
               'SELECT 1 FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=2 FOR UPDATE NOWAIT',
               [job.jobId],
@@ -9443,25 +9588,16 @@ export async function qualifyDeviceWriteJobs({
             );
           await observer.query('ROLLBACK');
           assert.equal(
-            free,
+            outside,
             true,
-            'An operation outside the chunk stays free in the claim wait.',
-          );
-          await holder.query('ROLLBACK');
-          const answer = await pending;
-          assert.equal(answer.code, undefined, answer.message);
-          assert.deepEqual(
-            answer.rows[0].result.map((row) => row.operationNumber),
-            [1],
+            'A completed chunk claim leaves an operation outside the chunk free.',
           );
         } finally {
-          await observer.query('ROLLBACK').catch(() => undefined);
-          await holder.query('ROLLBACK').catch(() => undefined);
-          if (pending) await pending;
+          await claimer.query('ROLLBACK').catch(() => undefined);
           await Promise.allSettled([
+            control.end(),
             observer.end(),
-            holder.end(),
-            caller.end(),
+            claimer.end(),
           ]);
         }
         await endJob(job.jobId);
@@ -9746,11 +9882,13 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
-    // Item 10: a null input and a list outside its domain reject before any lock.
+    // Item 10: a null input and a list outside its domain reject before any lock. The holder takes the
+    // global access lock, the first lock that this read takes (R1-F3).
     await ruleCheck(
       'B2c item 10 a null input and an invalid list reject before any lock',
       async () => {
         const job = await provenanceJob('b2c10-a', 'read-back');
+        const before = await jobState(job.jobId, 'b2c10-a');
         for (const values of [
           [customer, null, job.attempt, JSON.stringify([1])],
           [null, job.jobId, job.attempt, JSON.stringify([1])],
@@ -9769,13 +9907,66 @@ export async function qualifyDeviceWriteJobs({
           [customer, job.jobId, job.attempt, JSON.stringify([1.5])],
           [customer, job.jobId, job.attempt, JSON.stringify(['1'])],
         ])
-          await rejectsBeforeLocks({
-            jobId: job.jobId,
-            deviceId: 'b2c10-a',
+          await rejectsBeforeGlobalLock({
             sql: 'SELECT cc.read_device_update_verification($1,$2,$3,$4) AS result',
             values,
           });
+        assert.deepEqual(
+          await jobState(job.jobId, 'b2c10-a'),
+          before,
+          'An invalid verification read changes nothing.',
+        );
         await endJob(job.jobId);
+      },
+    );
+
+    // Item 10, R1-F3: the read repeats its hold after the connection wait. A hold that lapses in that
+    // wait answers not-held with no envelope, and a hold that stays answers held with a post-wait
+    // checkedAt (Q4).
+    await ruleCheck(
+      'B2c item 10 a verification read repeats its hold after the connection wait',
+      async () => {
+        const held = await provenanceJob('b2c10-held', 'read-back');
+        const kept = await waitedOn({
+          rows: [heldConnectionRow()],
+          sql: 'SELECT cc.read_device_update_verification($1,$2,$3,$4) AS result',
+          values: [customer, held.jobId, held.attempt, JSON.stringify([1])],
+          during: () => sleep(200),
+        });
+        assert.equal(kept.answer.code, undefined, kept.answer.message);
+        assert.equal(
+          kept.answer.rows[0].result.outcome,
+          'held',
+          'A hold that stays across the connection wait answers held.',
+        );
+        assert.ok(
+          Date.parse(kept.answer.rows[0].result.checkedAt) >=
+            kept.releasedAt.getTime(),
+          'The checkedAt of a held answer follows the connection wait.',
+        );
+        await endJob(held.jobId);
+
+        const lapsed = await provenanceJob('b2c10-lapsed', 'read-back');
+        const gone = await waitedOn({
+          rows: [heldConnectionRow()],
+          sql: 'SELECT cc.read_device_update_verification($1,$2,$3,$4) AS result',
+          values: [customer, lapsed.jobId, lapsed.attempt, JSON.stringify([1])],
+          during: async () => {
+            await migrator.query(
+              `UPDATE cc.device_update_operations SET verify_lease_expires_at=clock_timestamp()-interval '1 minute'
+                WHERE job_id=$1 AND operation_number=1`,
+              [lapsed.jobId],
+            );
+            await sleep(200);
+          },
+        });
+        assert.equal(gone.answer.code, undefined, gone.answer.message);
+        assert.deepEqual(
+          gone.answer.rows[0].result,
+          { outcome: 'not-held' },
+          'A hold that lapses in the connection wait answers not-held with no envelope.',
+        );
+        await endJob(lapsed.jobId);
       },
     );
 
@@ -10038,9 +10229,14 @@ export async function qualifyDeviceWriteJobs({
           before.detail.dispatch_token,
         );
         assert.deepEqual(
+          withoutDispatchToken(after.detail),
+          withoutDispatchToken(before.detail),
+          'A superseded claim changes no detail row but the token that the test rotated.',
+        );
+        assert.deepEqual(
           { ...after, detail: null },
           { ...before, detail: null },
-          'A superseded claim changes no row but the token that the test rotated.',
+          'A superseded claim changes no other row but the token that the test rotated.',
         );
         await endJob(job.jobId);
       },
@@ -10396,9 +10592,14 @@ export async function qualifyDeviceWriteJobs({
           before.detail.dispatch_token,
         );
         assert.deepEqual(
+          withoutDispatchToken(after.detail),
+          withoutDispatchToken(before.detail),
+          'A superseded done claim writes neither heartbeat_at nor first_claimed_at.',
+        );
+        assert.deepEqual(
           { ...after, detail: null },
           { ...before, detail: null },
-          'A superseded done claim changes no row but the rotated token.',
+          'A superseded done claim changes no other row but the rotated token.',
         );
         await endJob(job.jobId);
       },
