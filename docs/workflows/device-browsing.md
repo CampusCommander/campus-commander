@@ -207,10 +207,17 @@ The battery coverage page (`105:146`) is excluded. Device details list the recen
 The stale frame `108:605` was re-inspected on 2026-10-06. It shows the observation banner with Refresh inventory and no row marker.
 D11 changes that composition. The banner reports refresh progress, and stale rows mute the Device contact cell.
 
+## Owner decisions — 2026-10-20
+
+- The Refresh menu holds Refresh Selected, Refresh Devices, and Refresh Domain.
+- Refresh Selected reads the selected devices from Google again.
+- Refresh Devices is the full device sync.
+- Refresh Domain reads the domain details again, then runs the full device sync. The device sync carries each device's org unit and battery data.
+
 ## Exclusions
 
 - School column and any school entity.
-- Refresh selected and Bulk Actions. They arrive with the first device action. Selection itself is in scope.
+- Bulk Actions. It arrives with the first device action. Selection itself is in scope.
 - Excel export, cell range selection, and clipboard copy.
 - In-grid editors, Update device, commands, status changes, and CSV.
 - Saved filters and personal grid preferences ([G12](../workflow-gaps.md#remaining-product-and-interaction-gaps)).

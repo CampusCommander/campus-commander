@@ -26,7 +26,11 @@ import {
   previewTargetRow,
   type PreviewRow,
 } from './device-update-rows';
-import { parseSelection, selectionStorageKey } from './device-selection';
+import {
+  parseSelection,
+  selectionStorageKey,
+  hasSelection,
+} from './device-selection';
 import { selectionIdsSql, type SqlStatement } from './device-query';
 
 /** A preview expires 15 minutes after its preparation. */
@@ -159,11 +163,6 @@ function receiptOf(value: unknown): DeviceUpdateJobReceipt {
   return deviceUpdateJobReceiptSchema.parse(value);
 }
 
-const selected = (state: ReturnType<typeof parseSelection>['state']) =>
-  state.terms.length > 0 ||
-  state.groups.length > 0 ||
-  state.additions.length > 0;
-
 export class DeviceUpdates {
   private readonly database: UpdatesDatabase;
   private readonly cache: UpdatesCache;
@@ -196,7 +195,7 @@ export class DeviceUpdates {
     });
     if (expiredAt)
       throw new ConflictException({ reason: 'selection-expired', expiredAt });
-    if (!selected(state))
+    if (!hasSelection(state))
       throw new UnprocessableEntityException({ reason: 'nothing-selected' });
     const sql = selectionIdsSql(current.customerId, state);
     const rows = (await this.database.connection.query(sql.text, sql.values))

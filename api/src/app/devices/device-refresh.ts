@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { HttpException, ServiceUnavailableException } from '@nestjs/common';
 import {
   ENTITY_INFLIGHT_SECONDS,
   ENTITY_SYNC_BATCH_SIZE,
@@ -9,8 +10,8 @@ import type { CacheService } from '../cache/cache.service';
 import type { OrchestrationService } from '../orchestration/orchestration.service';
 
 /**
- * Start one refresh job for stale devices. Each device ID stays claimed for two minutes
- * after its last claim, so overlapping queries do not dispatch it twice.
+ * Start one refresh job for device IDs. Each device ID stays claimed for two minutes
+ * after its last claim, so overlapping requests do not dispatch it twice.
  */
 export class DeviceRefresh {
   // Explicit fields: Node's type-stripping test runner rejects parameter properties.
@@ -28,8 +29,11 @@ export class DeviceRefresh {
     this.store = store;
   }
 
-  /** Returns the job ID, or null when nothing new needed a refresh or the flow could not start. */
-  async dispatch(
+  /**
+   * Start one job for the given IDs. Returns the job ID, or null when every ID is already
+   * claimed. A store or flow failure throws, because an explicit request reports its failure.
+   */
+  async request(
     actor: readonly [string, number],
     customerId: string,
     ids: readonly string[],
@@ -46,11 +50,14 @@ export class DeviceRefresh {
     try {
       fresh = await this.cache.addMembers(key, ids, ENTITY_INFLIGHT_SECONDS);
     } catch {
-      return null;
+      throw new ServiceUnavailableException({
+        reason: 'device-store-unavailable',
+      });
     }
     if (fresh.length === 0) return null;
     const jobId = randomUUID();
-    let created = false;
+    let createdId: string;
+    let batchCount: number;
     try {
       const job = entitySyncJobSchema.parse(
         await this.store(
@@ -66,21 +73,46 @@ export class DeviceRefresh {
           ],
         ),
       );
-      created = true;
+      createdId = job.jobId;
+      batchCount = job.batchCount;
+    } catch (error) {
+      await this.cache.removeMembers(key, fresh).catch(() => undefined);
+      if (error instanceof HttpException) throw error;
+      throw new ServiceUnavailableException({
+        reason: 'device-store-unavailable',
+      });
+    }
+    try {
       await this.orchestration.startEntitySync({
         customerId,
-        jobId,
-        batchCount: job.batchCount,
+        jobId: createdId,
+        batchCount,
         correlationId,
       });
-      return job.jobId;
     } catch {
-      if (created)
-        await this.store(
-          'SELECT cc.abandon_entity_sync_job($1,$2,$3,$4) AS result',
-          [...actor, customerId, jobId],
-        ).catch(() => undefined);
+      await this.store(
+        'SELECT cc.abandon_entity_sync_job($1,$2,$3,$4) AS result',
+        [...actor, customerId, createdId],
+      ).catch(() => undefined);
       await this.cache.removeMembers(key, fresh).catch(() => undefined);
+      throw new ServiceUnavailableException({
+        reason: 'orchestration-unavailable',
+      });
+    }
+    return createdId;
+  }
+
+  /** Returns the job ID, or null when nothing new needed a refresh or the refresh failed. */
+  async dispatch(
+    actor: readonly [string, number],
+    customerId: string,
+    ids: readonly string[],
+    correlationId: string,
+  ): Promise<string | null> {
+    try {
+      return await this.request(actor, customerId, ids, correlationId);
+    } catch {
+      // A page read leaves its grid unchanged when the refresh cannot start.
       return null;
     }
   }

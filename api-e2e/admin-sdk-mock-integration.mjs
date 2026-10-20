@@ -604,6 +604,135 @@ async function runAdminSdkMockIntegration({
     'the provider probe grants the write scope',
   );
 
+  // Refresh Selected re-reads the selected devices through the get-by-IDs pipeline.
+  const refreshResults = [];
+  {
+    const chosen = page.rows.slice(0, 3).map((row) => row.deviceId);
+    assert.equal(chosen.length, 3, 'The grid holds three devices to refresh.');
+    const tabId = randomUUID();
+    const key = { gridId: 'devices', tabId };
+    const changed = await call('/api/devices/selection/ops', {
+      method: 'POST',
+      headers: headers(),
+      body: { ...key, ops: [{ op: 'select', ids: chosen }] },
+    });
+    assert.equal(changed.status, 200, changed.text);
+    assert.equal(
+      JSON.parse(changed.text).selection.selectedCount,
+      3,
+      'The stored selection holds three devices.',
+    );
+    const subscriber = redis.duplicate();
+    const events = [];
+    subscriber.on('error', () => undefined);
+    await subscriber.connect();
+    await subscriber.subscribe(
+      `cc:entity-events:${mock.customerId}`,
+      (message) => {
+        try {
+          events.push(JSON.parse(message));
+        } catch {
+          /* The assertion below reports a malformed message. */
+        }
+      },
+    );
+    try {
+      const refreshed = await call('/api/devices/selection/refresh', {
+        method: 'POST',
+        headers: headers(),
+        body: key,
+      });
+      assert.equal(refreshed.status, 201, refreshed.text);
+      const answer = JSON.parse(refreshed.text).refresh;
+      assert.equal(answer.selected, 3);
+      assert.ok(answer.jobId, 'Refresh Selected starts one job.');
+      const deadline = Date.now() + 60_000;
+      let batch;
+      for (;;) {
+        batch = events.find(
+          (event) =>
+            event.type === 'entity-batch' && event.jobId === answer.jobId,
+        );
+        if (batch) break;
+        assert.ok(
+          Date.now() < deadline,
+          `Refresh Selected published no entity-batch for three devices: ${JSON.stringify(events)}`,
+        );
+        await delay(500);
+      }
+      assert.deepEqual([...batch.deviceIds].sort(), [...chosen].sort());
+      let job;
+      const jobDeadline = Date.now() + 60_000;
+      for (;;) {
+        const listed = await call(
+          '/api/jobs?action=refresh-inventory&limit=100',
+        );
+        assert.equal(listed.status, 200, listed.text);
+        job = JSON.parse(listed.text).jobs.find(
+          (entry) => entry.jobId === answer.jobId,
+        );
+        if (job?.status === 'completed') break;
+        assert.ok(
+          Date.now() < jobDeadline,
+          `The Refresh Selected job did not complete: ${JSON.stringify(job)}`,
+        );
+        await delay(500);
+      }
+      assert.match(job.displayId, /^REF-\d{3,}$/);
+      assert.deepEqual(job.scope, { kind: 'devices', deviceCount: 3 });
+      refreshResults.push(
+        'Refresh Selected publishes an entity-batch for three devices and the Jobs list shows a completed REF job with three devices: pass',
+      );
+    } finally {
+      await subscriber.unsubscribe(`cc:entity-events:${mock.customerId}`);
+      await subscriber.quit();
+    }
+  }
+
+  // Refresh Domain reads the domain details again, then runs the full device sync.
+  {
+    const before = JSON.parse(
+      (await call('/api/google-connection')).text,
+    ).connection;
+    assert.ok(
+      before?.observedAt,
+      'The connection records an observation time before Refresh Domain.',
+    );
+    const refreshed = await call('/api/devices/domain/refresh', {
+      method: 'POST',
+      headers: headers(),
+      body: {},
+    });
+    assert.equal(refreshed.status, 201, refreshed.text);
+    const answer = JSON.parse(refreshed.text).refresh;
+    assert.deepEqual(answer.domain, { status: 'refreshed', reason: null });
+    assert.equal(answer.sync.status, 'running');
+    const after = JSON.parse(
+      (await call('/api/google-connection')).text,
+    ).connection;
+    assert.ok(
+      Date.parse(after.observedAt) > Date.parse(before.observedAt),
+      'Refresh Domain records a newer observation time.',
+    );
+    const deadline = Date.now() + syncTimeoutMs();
+    let domainState;
+    for (;;) {
+      const response = await call('/api/devices/sync');
+      assert.equal(response.status, 200, response.text);
+      domainState = JSON.parse(response.text).sync;
+      if (domainState.status !== 'running') break;
+      assert.ok(
+        Date.now() < deadline,
+        `The Refresh Domain sync did not settle within ${syncTimeoutMs() / 1000} seconds.`,
+      );
+      await delay(2000);
+    }
+    assert.equal(domainState.status, 'ready', JSON.stringify(domainState));
+    refreshResults.push(
+      'Refresh Domain answers refreshed, records a newer observation time, and the full sync ends ready: pass',
+    );
+  }
+
   const quota = await mock.quota();
   const record = {
     tier: mock.tier,
@@ -711,6 +840,7 @@ async function runAdminSdkMockIntegration({
     'the provider probe mints one write-scope token and sends one GET with maxResults=1 to the mock: pass',
     'removing the write scope denies access, and a delegation grant through the mock control restores granted: pass',
     'a revoked delegation denies access, and a 403 on the list reads unavailable with permission-denied: pass',
+    ...refreshResults,
     ...writeResults,
   ];
 }
