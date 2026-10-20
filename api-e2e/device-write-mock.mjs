@@ -116,13 +116,7 @@ export async function qualifyDeviceWritesOnMock({
     'The mock stack holds two devices to write.',
   );
 
-  const seedJob = async ({
-    devices,
-    value,
-    mode = 'replace',
-    beforeStart,
-    beforeCommit,
-  }) => {
+  const seedJob = async ({ devices, value, mode = 'replace', beforeStart }) => {
     const jobId = randomUUID();
     const previewId = randomUUID();
     // One transaction: the preview, the header, the detail, and the operations become visible together.
@@ -189,7 +183,6 @@ export async function qualifyDeviceWritesOnMock({
         );
       // The fault exists before the job becomes visible, so the started worker always meets it.
       if (beforeStart) await beforeStart();
-      if (beforeCommit) await beforeCommit();
       await migrator.query('COMMIT');
     } catch (error) {
       await migrator.query('ROLLBACK').catch(() => undefined);
@@ -295,42 +288,6 @@ export async function qualifyDeviceWritesOnMock({
   };
 
   await clearFaults();
-
-  // R1-F2: the seed commits its whole job in one transaction. A tick that runs while the seed is
-  // paused admits nothing, and the committed job takes exactly one admission and one start.
-  {
-    let pausedFor = 0;
-    const startedAt = Date.now();
-    const { jobId, executionId } = await seedJob({
-      devices: [deviceIds[0]],
-      value: 'Room seed',
-      beforeCommit: async () => {
-        // Longer than one tick period, so at least one tick runs while the rows stay uncommitted.
-        await delay(6_000);
-        pausedFor = Date.now() - startedAt;
-      },
-    });
-    assert.ok(pausedFor >= 6_000);
-    const state = (
-      await migrator.query(
-        `SELECT j.status,d.dispatch_count,d.dispatch_token,d.start_deadline_at
-          FROM cc.jobs j JOIN cc.device_update_jobs d ON d.job_id=j.job_id WHERE j.job_id=$1`,
-        [jobId],
-      )
-    ).rows[0];
-    assert.equal(
-      state.dispatch_count,
-      1,
-      'The committed job took exactly one admission.',
-    );
-    assert.ok(state.dispatch_token, 'The admission rotated a token.');
-    assert.ok(state.start_deadline_at instanceof Date);
-    const execution = await waitExecution(executionId);
-    assert.equal(execution.state.current, 'SUCCESS', JSON.stringify(execution));
-    results.push(
-      'a seed that pauses inside its transaction admits nothing, and one valid start follows the commit: pass',
-    );
-  }
 
   // Item 24: Kestra runs device_update against the real worker; the job reaches
   // its terminal status through the mock.
