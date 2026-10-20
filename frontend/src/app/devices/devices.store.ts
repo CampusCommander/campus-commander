@@ -10,11 +10,13 @@ import {
   DEVICE_BY_IDS_LIMIT,
   ENTITY_EVENTS_PING_SECONDS,
   deviceDetailSchema,
+  deviceDomainRefreshSchema,
   deviceFreshnessSchema,
   deviceOrgUnitsSchema,
   deviceGroupPageSchema,
   devicePageSchema,
   deviceRowsSchema,
+  deviceSelectionRefreshSchema,
   deviceSyncStateSchema,
   deviceStreamEventSchema,
   type DeviceDetail,
@@ -30,10 +32,23 @@ import {
 } from '@campus/application-contracts';
 import type { GridState } from 'ag-grid-community';
 import { AuthStore } from '../auth.store';
+import { CustomerStore } from '../customer-settings/customer.store';
+import { ConnectionStore } from '../google-connection/connection.store';
 import { GROUP_LIMIT, type DeviceView } from './device-datasource';
 import { samePredicates } from './device-filter-model';
+import {
+  DOMAIN_REFRESHED_TEXT,
+  NOTHING_SELECTED_TEXT,
+  SELECTION_EXPIRED_TEXT,
+  SELECTION_TOO_LARGE_TEXT,
+  domainFailureText,
+  refreshAlreadyReadingText,
+  refreshStartFailureText,
+  refreshStartedText,
+} from './device-refresh-messages';
 import { DeviceRowRefresh } from './device-row-refresh';
 import {
+  DEVICE_GRID_ID,
   DeviceSelectionProvider,
   deviceSelectionTab,
 } from './device-selection';
@@ -164,6 +179,8 @@ interface CountedQuery {
 @Injectable({ providedIn: 'root' })
 export class DevicesStore {
   private readonly auth = inject(AuthStore);
+  private readonly customer = inject(CustomerStore);
+  private readonly connection = inject(ConnectionStore);
   /** Opens the device event stream. Tests replace it. */
   eventSource: (url: string) => DeviceEventSource = (url) =>
     new EventSource(url);
@@ -226,6 +243,13 @@ export class DevicesStore {
   } | null>(null);
   /** A full sync runs. */
   readonly refreshing = computed(() => this.sync()?.status === 'running');
+  /** A start or outcome message for the footer status panel (GRID-01). */
+  readonly refreshStatus = signal('');
+  /** The requests from the Refresh menu that are still pending, by sequence. */
+  private readonly refreshRequests = signal<ReadonlySet<number>>(new Set());
+  readonly refreshPending = computed(() => this.refreshRequests().size > 0);
+  /** The next refresh request replaces the answer of an earlier one. */
+  private refreshSequence = 0;
   readonly readable = computed(() => devicesReadable(this.auth));
   private stream: DeviceEventSource | null = null;
   /** Devices is mounted. */
@@ -265,6 +289,9 @@ export class DevicesStore {
   /** Browsing state belongs to one person. Another sign-in starts clean. */
   private reset(): void {
     this.epoch++;
+    this.refreshSequence++;
+    this.refreshStatus.set('');
+    this.refreshRequests.set(new Set());
     this.dropped = null;
     this.sync.set(null);
     this.syncLoaded.set(false);
@@ -315,6 +342,9 @@ export class DevicesStore {
     this.streamWanted = false;
     this.dropped = null;
     this.reopenAttempts = 0;
+    // A late refresh answer must not reach the footer after the page closes.
+    this.refreshSequence++;
+    this.refreshStatus.set('');
     this.closeStream();
     clearTimeout(this.reopenTimer);
     clearTimeout(this.recountTimer);
@@ -327,7 +357,10 @@ export class DevicesStore {
 
   /** Read the status. `denied` means a 401 or 403 answer. `failed` means any other failure. */
   private async readSync(): Promise<'read' | 'denied' | 'failed'> {
+    // Another person signed in while this read was in flight. Its answer belongs to the old person.
+    const epoch = this.epoch;
     const response = await this.call('/api/devices/sync');
+    if (epoch !== this.epoch) return 'failed';
     if (!response) return 'failed';
     if (!response.ok) {
       this.error.set('Device inventory status is unavailable.');
@@ -341,10 +374,12 @@ export class DevicesStore {
         .nullable()
         .parse((await response.json()).sync);
     } catch {
+      if (epoch !== this.epoch) return 'failed';
       // A 200 answer with an unreadable body counts as a failed read. The reopen then retries.
       this.error.set('Device inventory status is unavailable.');
       return 'failed';
     }
+    if (epoch !== this.epoch) return 'failed';
     this.error.set('');
     this.setSync(answer);
     this.syncLoaded.set(true);
@@ -376,27 +411,134 @@ export class DevicesStore {
 
   /** Start a full sync. The full-sync event reports its end (D12). */
   async refreshAll(): Promise<void> {
-    const response = await this.call('/api/devices/sync', {});
-    if (!response) return;
-    const body = await response.json().catch(() => null);
-    if (response.status === 409 && body?.reason === 'device-sync-running') {
-      await this.loadSync();
-    } else if (!response.ok) {
-      this.error.set(
-        body?.reason === 'orchestration-unavailable'
-          ? 'Campus Commander could not start the refresh. Check Diagnostics.'
-          : 'The refresh could not start.',
-      );
-    } else {
-      const started = deviceSyncStateSchema.safeParse(body?.sync);
-      if (!started.success) {
-        // A 200 answer with an unreadable body never starts a refresh.
+    const attempt = this.beginRefresh();
+    try {
+      const response = await this.call('/api/devices/sync', {});
+      if (!attempt.current() || !response) return;
+      const body = await response.json().catch(() => null);
+      if (!attempt.current()) return;
+      if (response.status === 409 && body?.reason === 'device-sync-running') {
+        await this.loadSync();
+      } else if (!response.ok) {
+        this.error.set(refreshStartFailureText(body?.reason));
+      } else {
+        const started = deviceSyncStateSchema.safeParse(body?.sync);
+        if (!started.success) {
+          // A 200 answer with an unreadable body never starts a refresh.
+          this.error.set('The refresh could not start.');
+          return;
+        }
+        this.error.set('');
+        this.setSync(started.data);
+      }
+    } finally {
+      attempt.end();
+    }
+  }
+
+  /** Refresh Selected: read the selected devices from Google again. */
+  async refreshSelection(): Promise<void> {
+    const attempt = this.beginRefresh();
+    try {
+      const response = await this.call('/api/devices/selection/refresh', {
+        gridId: DEVICE_GRID_ID,
+        tabId: this.selectionTab,
+      });
+      if (!attempt.current() || !response) return;
+      const body = await response.json().catch(() => null);
+      if (!attempt.current()) return;
+      if (response.ok) {
+        const refresh = deviceSelectionRefreshSchema.safeParse(body?.refresh);
+        if (!refresh.success) {
+          this.error.set('The refresh could not start.');
+          return;
+        }
+        this.error.set('');
+        this.refreshStatus.set(
+          refresh.data.jobId === null
+            ? refreshAlreadyReadingText(refresh.data.selected)
+            : refreshStartedText(refresh.data.selected),
+        );
+        return;
+      }
+      // A 401 answer ends the session. The shell reports it, and no status line stays.
+      // A 403 answer is an ordinary failure like every other status.
+      if (response.status === 401) return;
+      if (response.status === 409 && body?.reason === 'selection-expired')
+        this.refreshStatus.set(SELECTION_EXPIRED_TEXT);
+      else if (response.status === 422 && body?.reason === 'nothing-selected')
+        this.refreshStatus.set(NOTHING_SELECTED_TEXT);
+      else if (
+        response.status === 422 &&
+        body?.reason === 'selection-too-large'
+      )
+        this.refreshStatus.set(SELECTION_TOO_LARGE_TEXT);
+      else {
+        this.error.set(refreshStartFailureText(body?.reason));
+        return;
+      }
+      this.error.set('');
+    } finally {
+      attempt.end();
+    }
+  }
+
+  /** Refresh Domain: start the full sync, then read the domain details again. */
+  async refreshDomain(): Promise<void> {
+    const attempt = this.beginRefresh();
+    try {
+      const response = await this.call('/api/devices/domain/refresh', {});
+      if (!attempt.current() || !response) return;
+      const body = await response.json().catch(() => null);
+      if (!attempt.current()) return;
+      if (response.status === 409 && body?.reason === 'device-sync-running') {
+        await this.loadSync();
+        return;
+      }
+      if (!response.ok) {
+        // A 401 answer ends the session. The shell reports it, and no status line stays.
+        if (response.status === 401) return;
+        this.error.set(refreshStartFailureText(body?.reason));
+        return;
+      }
+      const answer = deviceDomainRefreshSchema.safeParse(body?.refresh);
+      if (!answer.success) {
         this.error.set('The refresh could not start.');
         return;
       }
       this.error.set('');
-      this.setSync(started.data);
+      // The full sync starts before the domain check. Apply it even when the check failed.
+      this.setSync(answer.data.sync);
+      if (answer.data.domain.status === 'refreshed') {
+        this.refreshStatus.set(DOMAIN_REFRESHED_TEXT);
+        // The shell shows the new domain details.
+        void this.customer.refresh();
+        void this.connection.refresh();
+      } else {
+        this.refreshStatus.set(domainFailureText(answer.data.domain.reason));
+      }
+    } finally {
+      attempt.end();
     }
+  }
+
+  /** Clear the last status line and count the request that follows. */
+  private beginRefresh(): { current: () => boolean; end: () => void } {
+    const sequence = ++this.refreshSequence;
+    const epoch = this.epoch;
+    this.refreshStatus.set('');
+    this.refreshRequests.update((value) => new Set(value).add(sequence));
+    return {
+      current: () => sequence === this.refreshSequence && epoch === this.epoch,
+      end: () =>
+        this.refreshRequests.update((value) => {
+          // A reset already cleared the request. A late end must not clear a newer one.
+          if (!value.has(sequence)) return value;
+          const next = new Set(value);
+          next.delete(sequence);
+          return next;
+        }),
+    };
   }
 
   /** Reconnect after an offline period: reload the status and the grid, and reopen the stream. */

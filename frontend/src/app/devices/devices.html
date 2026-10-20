@@ -114,7 +114,7 @@
         mat-stroked-button
         type="button"
         [matMenuTriggerFor]="refreshMenu"
-        [disabled]="store.refreshing()"
+        [disabled]="store.refreshing() || store.refreshPending()"
         (menuOpened)="refreshMenuOpen.set(true)"
         (menuClosed)="refreshMenuOpen.set(false)"
       >
@@ -135,10 +135,38 @@
         <button
           mat-menu-item
           type="button"
-          [disabled]="store.refreshing()"
+          [disabled]="
+            store.refreshing() ||
+            store.refreshPending() ||
+            selectedCount() === 0
+          "
+          (click)="refreshSelection()"
+        >
+          <span class="refresh-menu-label">Refresh Selected</span>
+          @if (selectedCount() === 0) {
+          <span class="refresh-menu-support">{{ refreshSelectedSupport }}</span>
+          }
+        </button>
+        <button
+          mat-menu-item
+          type="button"
+          [disabled]="store.refreshing() || store.refreshPending()"
           (click)="refresh()"
         >
-          Refresh Devices
+          <span class="refresh-menu-label">Refresh Devices</span>
+        </button>
+        <button
+          mat-menu-item
+          type="button"
+          [disabled]="
+            store.refreshing() || store.refreshPending() || !canDiagnose()
+          "
+          (click)="refreshDomain()"
+        >
+          <span class="refresh-menu-label">Refresh Domain</span>
+          @if (!canDiagnose()) {
+          <span class="refresh-menu-support">{{ refreshDomainSupport }}</span>
+          }
         </button>
       </mat-menu>
       <button

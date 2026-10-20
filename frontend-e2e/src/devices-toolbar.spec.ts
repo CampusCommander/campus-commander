@@ -13,6 +13,7 @@ const grants = [
   { action: 'devices:read', scope: { kind: 'district', customerId } },
   { action: 'devices:write', scope: { kind: 'district', customerId } },
   { action: 'devices:bulk-actions', scope: { kind: 'district', customerId } },
+  { action: 'connection:diagnose', scope: { kind: 'district', customerId } },
 ];
 const rows = Array.from({ length: 6 }, (_, index) => ({
   deviceId: `synthetic-device-${index + 1}`,
@@ -33,8 +34,31 @@ const rows = Array.from({ length: 6 }, (_, index) => ({
   stale: false,
 }));
 
+/** The state after Refresh Domain starts the full sync. */
+const running = {
+  customerId,
+  generation: 1,
+  status: 'running',
+  observedAt,
+  deviceCount: rows.length,
+  failure: null,
+  telemetryFailure: null,
+  startedAt: '2026-10-20T12:00:00.000Z',
+  checkedAt: null,
+  stale: false,
+};
+
+interface SessionOptions {
+  /** The server-side selection count. Refresh Selected disables at 0. */
+  selectedCount?: number;
+  /** The grants of the signed-in person. */
+  grants?: typeof grants;
+}
+
 /** The Devices page needs the session, a published inventory, and the write access state. */
-async function signIn(page: Page) {
+async function signIn(page: Page, options: SessionOptions = {}) {
+  const selectedCount = options.selectedCount ?? rows.length;
+  const sessionGrants = options.grants ?? grants;
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/application')
@@ -54,7 +78,7 @@ async function signIn(page: Page) {
             displayName: 'District operator',
             permissionVersion: 1,
             permissions: [],
-            grants,
+            grants: sessionGrants,
             preferences: { theme: 'light', navigationCollapsed: false },
           },
           csrfToken: 'a'.repeat(64),
@@ -67,10 +91,30 @@ async function signIn(page: Page) {
           selection: {
             terms: [],
             groups: [],
-            added: rows.length,
+            added: selectedCount,
             excluded: 0,
-            selectedCount: rows.length,
+            selectedCount,
             expiredAt: null,
+          },
+        },
+      });
+    if (path === '/api/devices/selection/refresh')
+      return route.fulfill({
+        status: 201,
+        json: {
+          refresh: {
+            jobId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            selected: rows.length,
+          },
+        },
+      });
+    if (path === '/api/devices/domain/refresh')
+      return route.fulfill({
+        status: 201,
+        json: {
+          refresh: {
+            sync: running,
+            domain: { status: 'refreshed', reason: null },
           },
         },
       });
@@ -139,8 +183,8 @@ async function signIn(page: Page) {
   });
 }
 
-async function openDevices(page: Page) {
-  await signIn(page);
+async function openDevices(page: Page, options: SessionOptions = {}) {
+  await signIn(page, options);
   await page.goto('/devices');
   await expect(
     page.getByRole('heading', { name: 'Devices', exact: true }),
@@ -203,6 +247,27 @@ async function screenshot(page: Page, testInfo: TestInfo, name: string) {
   });
 }
 
+/** A focused screenshot of one control, with room for its surroundings. */
+async function screenshotTarget(
+  page: Page,
+  testInfo: TestInfo,
+  name: string,
+  target: Locator,
+  padding = 16,
+) {
+  const box = await target.boundingBox();
+  if (!box) throw new Error('The screenshot target is not visible.');
+  await page.screenshot({
+    path: testInfo.outputPath(name),
+    clip: {
+      x: Math.max(0, box.x - padding),
+      y: Math.max(0, box.y - padding),
+      width: box.width + padding * 2,
+      height: box.height + padding * 2,
+    },
+  });
+}
+
 /**
  * Axe reports zero violations for the page and the open menu.
  * The CDK overlay container sits directly under body, outside the page landmarks, so the
@@ -249,6 +314,89 @@ for (const theme of ['light', 'dark'] as const) {
       await expect.poll(() => rotation(icon)).toBe(0);
       await expect(trigger).toBeFocused();
     }
+  });
+}
+
+const withoutDiagnose = grants.filter(
+  (grant) => grant.action !== 'connection:diagnose',
+);
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`shows each unavailable Refresh item in the ${theme} theme`, async ({
+    page,
+  }, testInfo) => {
+    const { refresh } = await openDevices(page, {
+      selectedCount: 0,
+      grants: withoutDiagnose,
+    });
+    await page.evaluate((value) => {
+      document.documentElement.dataset['theme'] = value;
+    }, theme);
+    const menu = await openMenu(page, refresh);
+    const items = menu.getByRole('menuitem');
+    await expect(items).toHaveCount(3);
+
+    const selected = items.nth(0);
+    await expect(selected).toBeDisabled();
+    await expect(selected).toContainText('Refresh Selected');
+    await expect(selected).toContainText('Select devices to refresh.');
+    await expect(items.nth(1)).toBeEnabled();
+
+    const domain = items.nth(2);
+    await expect(domain).toBeDisabled();
+    await expect(domain).toContainText('Refresh Domain');
+    await expect(domain).toContainText(
+      'Requires the Check Google connection permission.',
+    );
+
+    await expectNoAxeViolations(page);
+    await screenshotTarget(
+      page,
+      testInfo,
+      `devices-refresh-unavailable-${theme}.png`,
+      menu,
+    );
+  });
+}
+
+test('reaches each enabled Refresh item by keyboard', async ({ page }) => {
+  const { refresh } = await openDevices(page);
+  await tabTo(page, refresh);
+  await page.keyboard.press('Enter');
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  const items = menu.getByRole('menuitem');
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toBeFocused();
+  await expect(items.nth(0)).toContainText('Refresh Selected');
+  await page.keyboard.press('ArrowDown');
+  await expect(items.nth(1)).toBeFocused();
+  await expect(items.nth(1)).toContainText('Refresh Devices');
+  await page.keyboard.press('ArrowDown');
+  await expect(items.nth(2)).toBeFocused();
+  await expect(items.nth(2)).toContainText('Refresh Domain');
+});
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`shows the domain refresh status in the footer in the ${theme} theme`, async ({
+    page,
+  }, testInfo) => {
+    const { refresh } = await openDevices(page);
+    await page.evaluate((value) => {
+      document.documentElement.dataset['theme'] = value;
+    }, theme);
+    const menu = await openMenu(page, refresh);
+    await menu.getByRole('menuitem', { name: /Refresh Domain/ }).click();
+    const status = page.getByText('Domain details refreshed.');
+    await expect(status).toBeVisible();
+    await expectNoAxeViolations(page);
+    await screenshotTarget(
+      page,
+      testInfo,
+      `devices-refresh-status-${theme}.png`,
+      status.locator('xpath=..'),
+      8,
+    );
   });
 }
 

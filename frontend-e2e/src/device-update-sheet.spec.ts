@@ -284,7 +284,7 @@ async function openSheet(page: Page) {
   await page.getByRole('button', { name: 'Bulk Actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Update device' }).click();
   const sheet = page.locator('.bulk-sheet');
-  await expect(sheet).not.toHaveClass(/is-closed/);
+  await expect(sheet).toHaveClass(/is-open/);
   await expect(sheet).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
   return sheet;
 }
@@ -324,6 +324,60 @@ async function expectNoAxeViolations(page: Page) {
     .analyze();
   expect(results.violations).toEqual([]);
 }
+
+test('hides a sheet that starts closed at the first paint', async ({
+  page,
+}) => {
+  // The Devices page renders the closed sheet after the inventory loads. Record
+  // the sheet's first painted frame and every transition it starts, so the test
+  // fails if the closed sheet is ever painted open or slides out on page load.
+  await page.addInitScript(() => {
+    const evidence = { visibility: '', transitions: [] as string[] };
+    (
+      window as unknown as { __sheetFirstPaint: typeof evidence }
+    ).__sheetFirstPaint = evidence;
+    document.addEventListener(
+      'transitionrun',
+      (event) => {
+        const target = event.target as HTMLElement;
+        if (target.classList?.contains('bulk-sheet'))
+          evidence.transitions.push(event.propertyName);
+      },
+      true,
+    );
+    const sample = () => {
+      const sheet = document.querySelector('.bulk-sheet');
+      if (sheet && !evidence.visibility) {
+        evidence.visibility = getComputedStyle(sheet).visibility;
+        return;
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await mockApi(page);
+  await page.goto('/devices');
+  await expect(
+    page.getByRole('button', { name: 'Bulk Actions', exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('.bulk-sheet')).toBeAttached();
+  await page.waitForTimeout(300);
+  const evidence = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __sheetFirstPaint: { visibility: string; transitions: string[] };
+        }
+      ).__sheetFirstPaint,
+  );
+  expect(evidence.visibility).toBe('hidden');
+  expect(evidence.transitions).toEqual([]);
+  // The loose heading locator of the api-e2e Devices flow resolves to one element.
+  await expect(
+    page.getByRole('heading', { name: 'Devices', level: 1 }),
+  ).toHaveCount(1);
+  await expectNoAxeViolations(page);
+});
 
 for (const theme of ['light', 'dark'] as const) {
   test(`runs every sheet step in the ${theme} theme`, async ({ page }) => {
@@ -383,7 +437,7 @@ for (const theme of ['light', 'dark'] as const) {
     await screenshot(page, `sheet-done-${theme}.png`);
 
     await sheet.getByRole('button', { name: 'Done' }).click();
-    await expect(sheet).toHaveClass(/is-closed/);
+    await expect(sheet).not.toHaveClass(/is-open/);
     await expect(
       page.getByRole('button', { name: 'Bulk Actions', exact: true }),
     ).toBeFocused();

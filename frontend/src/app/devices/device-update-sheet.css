@@ -24,6 +24,9 @@
     visibility 0s linear 0s;
 }
 
+/* The closed position is the base style. Angular inserts the sheet before it
+   applies the open class, so a sheet that starts closed is hidden at the first
+   paint and never slides out on page load. */
 .bulk-sheet {
   position: fixed;
   z-index: 31;
@@ -36,14 +39,6 @@
   background: var(--cc-surface-card);
   border-inline-start: 1px solid var(--cc-border);
   box-shadow: -4px 0 16px rgb(32 33 36 / 12%);
-  transform: translateX(0);
-  visibility: visible;
-  transition:
-    transform 250ms cubic-bezier(0.2, 0, 0, 1),
-    visibility 0s linear 0s;
-}
-
-.bulk-sheet.is-closed {
   transform: translateX(calc(100% + 24px));
   visibility: hidden;
   transition:
@@ -51,9 +46,17 @@
     visibility 0s linear 200ms;
 }
 
+.bulk-sheet.is-open {
+  transform: translateX(0);
+  visibility: visible;
+  transition:
+    transform 250ms cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear 0s;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bulk-sheet,
-  .bulk-sheet.is-closed,
+  .bulk-sheet.is-open,
   .sheet-scrim,
   .sheet-scrim.is-visible {
     transition: none;

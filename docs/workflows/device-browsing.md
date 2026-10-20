@@ -212,7 +212,7 @@ D11 changes that composition. The banner reports refresh progress, and stale row
 - The Refresh menu holds Refresh Selected, Refresh Devices, and Refresh Domain.
 - Refresh Selected reads the selected devices from Google again.
 - Refresh Devices is the full device sync.
-- Refresh Domain reads the domain details again, then runs the full device sync. The device sync carries each device's org unit and battery data.
+- Refresh Domain starts the full device sync, then reads the domain details again. The device sync carries each device's org unit and battery data.
 
 ## Exclusions
 

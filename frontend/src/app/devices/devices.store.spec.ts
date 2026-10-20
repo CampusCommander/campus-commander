@@ -2,6 +2,8 @@ import { signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { AuthStore } from '../auth.store';
+import { CustomerStore } from '../customer-settings/customer.store';
+import { ConnectionStore } from '../google-connection/connection.store';
 import type { DevicePredicate, DeviceRow } from '@campus/application-contracts';
 import { deviceSyncStateSchema } from '@campus/application-contracts';
 import { DevicesStore } from './devices.store';
@@ -53,6 +55,14 @@ function setup(
           session,
           interrupted: () => false,
         },
+      },
+      {
+        provide: CustomerStore,
+        useValue: { refresh: vi.fn().mockResolvedValue(undefined) },
+      },
+      {
+        provide: ConnectionStore,
+        useValue: { refresh: vi.fn().mockResolvedValue(undefined) },
       },
     ],
   });
@@ -1605,5 +1615,395 @@ describe('the stale count of a new query', () => {
     await store.rows(0, 100);
     await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(4));
     await vi.waitFor(() => expect(store.freshness()).toBeNull());
+  });
+});
+
+describe('the Refresh menu requests', () => {
+  const JOB_ID = '44444444-4444-4444-8444-444444444444';
+  const selectionAnswer = (jobId: string | null, selected = 6) =>
+    Response.json(
+      { refresh: { jobId, selected } },
+      { status: jobId === null ? 200 : 201 },
+    );
+  const domainAnswer = (
+    sync: object,
+    status: 'refreshed' | 'failed',
+    reason: string | null,
+  ) =>
+    Response.json(
+      { refresh: { sync, domain: { status, reason } } },
+      { status: 201 },
+    );
+
+  it('posts the grid key for Refresh Selected and names the started job', async () => {
+    const request = routes({
+      '/api/devices/selection/refresh': () => selectionAnswer(JOB_ID),
+    });
+    const store = setup(request);
+    await store.refreshSelection();
+    expect(request).toHaveBeenCalledWith('/api/devices/selection/refresh', {
+      gridId: 'devices',
+      tabId: store.selectionTab,
+    });
+    expect(store.refreshStatus()).toBe(
+      'Refresh started for 6 devices. Rows update as Google answers.',
+    );
+    expect(store.error()).toBe('');
+    expect(store.refreshPending()).toBe(false);
+  });
+
+  it('names a selection that another refresh already reads', async () => {
+    const request = routes({
+      '/api/devices/selection/refresh': () => selectionAnswer(null),
+    });
+    const store = setup(request);
+    await store.refreshSelection();
+    expect(store.refreshStatus()).toBe(
+      'Another refresh already reads these 6 devices.',
+    );
+  });
+
+  it.each([
+    [
+      409,
+      { reason: 'selection-expired', expiredAt: '2026-10-20T12:00:00.000Z' },
+      'Your selection expired. Select the devices again.',
+    ],
+    [422, { reason: 'nothing-selected' }, 'The selection holds no devices.'],
+    [
+      422,
+      { reason: 'selection-too-large' },
+      'The selection holds more than 100,000 devices. Use Refresh Devices to read every device.',
+    ],
+  ])(
+    'shows the answer of a %i %o Refresh Selected',
+    async (status, body, text) => {
+      const request = routes({
+        '/api/devices/selection/refresh': () => Response.json(body, { status }),
+      });
+      const store = setup(request);
+      await store.refreshSelection();
+      expect(store.refreshStatus()).toBe(text);
+      expect(store.error()).toBe('');
+    },
+  );
+
+  it.each([
+    [
+      'orchestration-unavailable',
+      'Campus Commander could not start the refresh. Check Diagnostics.',
+    ],
+    ['device-store-unavailable', 'The refresh could not start.'],
+    ['connection-required', 'The refresh could not start.'],
+  ])(
+    'shows the error paragraph for a %s Refresh Selected failure',
+    async (reason, text) => {
+      const request = routes({
+        '/api/devices/selection/refresh': () =>
+          Response.json({ reason }, { status: 503 }),
+      });
+      const store = setup(request);
+      await store.refreshSelection();
+      expect(store.error()).toBe(text);
+      expect(store.refreshStatus()).toBe('');
+    },
+  );
+
+  it.each(['Refresh Selected', 'Refresh Domain'])(
+    'shows the error paragraph for a 403 %s answer',
+    async (action) => {
+      const request = routes({
+        '/api/devices/selection/refresh': () =>
+          Response.json({ reason: 'forbidden' }, { status: 403 }),
+        '/api/devices/domain/refresh': () =>
+          Response.json({ reason: 'forbidden' }, { status: 403 }),
+      });
+      const store = setup(request);
+      if (action === 'Refresh Selected') await store.refreshSelection();
+      else await store.refreshDomain();
+      expect(store.error()).toBe('The refresh could not start.');
+      expect(store.refreshStatus()).toBe('');
+      expect(store.refreshPending()).toBe(false);
+    },
+  );
+
+  it('posts an empty body for Refresh Domain', async () => {
+    const request = routes({
+      '/api/devices/domain/refresh': () =>
+        domainAnswer(state('running'), 'refreshed', null),
+    });
+    const store = setup(request);
+    await store.refreshDomain();
+    expect(request).toHaveBeenCalledWith('/api/devices/domain/refresh', {});
+  });
+
+  it('applies the sync and refreshes the shell after the domain check', async () => {
+    const running = state('running');
+    const request = routes({
+      '/api/devices/domain/refresh': () =>
+        domainAnswer(running, 'refreshed', null),
+    });
+    const store = setup(request);
+    await store.refreshDomain();
+    expect(store.sync()).toEqual(running);
+    expect(store.refreshStatus()).toBe('Domain details refreshed.');
+    expect(TestBed.inject(CustomerStore).refresh).toHaveBeenCalledTimes(1);
+    expect(TestBed.inject(ConnectionStore).refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['busy', 'another Google check ran in the last 30 seconds'],
+    ['unavailable', 'Campus Commander cannot run the Google check now'],
+    ['permission-denied', 'Google access denied'],
+  ])(
+    'applies the sync and names the failed domain check: %s',
+    async (reason, cause) => {
+      const running = state('running');
+      const request = routes({
+        '/api/devices/domain/refresh': () =>
+          domainAnswer(running, 'failed', reason),
+      });
+      const store = setup(request);
+      await store.refreshDomain();
+      expect(store.sync()).toEqual(running);
+      expect(store.refreshStatus()).toBe(
+        `Domain details did not refresh: ${cause}.`,
+      );
+      expect(TestBed.inject(CustomerStore).refresh).not.toHaveBeenCalled();
+      expect(TestBed.inject(ConnectionStore).refresh).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rereads the sync state when a full sync already runs', async () => {
+    const request = routes({
+      '/api/devices/domain/refresh': () =>
+        Response.json({ reason: 'device-sync-running' }, { status: 409 }),
+      '/api/devices/sync': () => Response.json({ sync: state('running') }),
+    });
+    const store = setup(request);
+    await store.refreshDomain();
+    expect(store.sync()?.status).toBe('running');
+    expect(store.refreshStatus()).toBe('');
+    expect(store.error()).toBe('');
+    expect(statusReads(request)).toBe(1);
+    expect(TestBed.inject(CustomerStore).refresh).not.toHaveBeenCalled();
+    expect(TestBed.inject(ConnectionStore).refresh).not.toHaveBeenCalled();
+  });
+
+  it('counts a refresh request as pending until its answer arrives', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const hold = new Promise<Response>((resolve) => (release = resolve));
+    const request = vi.fn(() => hold);
+    const store = setup(request);
+    const done = store.refreshSelection();
+    expect(store.refreshPending()).toBe(true);
+    release(selectionAnswer(JOB_ID));
+    await done;
+    expect(store.refreshPending()).toBe(false);
+  });
+
+  it('clears the last status line when the next refresh starts', async () => {
+    const request = routes({
+      '/api/devices/selection/refresh': () => selectionAnswer(JOB_ID),
+    });
+    const store = setup(request);
+    await store.refreshSelection();
+    expect(store.refreshStatus()).not.toBe('');
+    let release: (response: Response) => void = () => undefined;
+    const hold = new Promise<Response>((resolve) => (release = resolve));
+    request.mockImplementationOnce(() => hold);
+    const next = store.refreshDomain();
+    expect(store.refreshStatus()).toBe('');
+    release(domainAnswer(state('running'), 'refreshed', null));
+    await next;
+    expect(store.refreshStatus()).toBe('Domain details refreshed.');
+  });
+
+  it('clears the status line when the page leaves', async () => {
+    const request = routes({
+      '/api/devices/selection/refresh': () => selectionAnswer(JOB_ID),
+    });
+    const store = setup(request);
+    await store.refreshSelection();
+    store.leave();
+    expect(store.refreshStatus()).toBe('');
+  });
+
+  it('drops a late answer after another person signs in', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    let release: (response: Response) => void = () => undefined;
+    const hold = new Promise<Response>((resolve) => (release = resolve));
+    const request = vi.fn(() => hold);
+    const store = setup(request, session);
+    // The first effect run records the current person before the sign-out.
+    TestBed.tick();
+    const done = store.refreshSelection();
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    expect(store.refreshStatus()).toBe('');
+    release(selectionAnswer(JOB_ID));
+    await done;
+    expect(store.refreshStatus()).toBe('');
+    expect(store.refreshPending()).toBe(false);
+  });
+
+  it('drops a late 409 sync reread after another person signs in', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    let release: (response: Response) => void = () => undefined;
+    const held = new Promise<Response>((resolve) => (release = resolve));
+    let reads = 0;
+    const request = vi.fn((path: string, body?: unknown) => {
+      if (path === '/api/devices/domain/refresh')
+        return Promise.resolve(
+          Response.json({ reason: 'device-sync-running' }, { status: 409 }),
+        );
+      if (path === '/api/devices/sync' && body === undefined)
+        return reads++ === 0
+          ? held
+          : Promise.resolve(Response.json({ sync: state('ready') }));
+      return Promise.reject(new TypeError('Failed to fetch'));
+    });
+    const store = setup(request, session);
+    // The first effect run records the current person before the sign-out.
+    TestBed.tick();
+    const done = store.refreshDomain();
+    await vi.waitFor(() => expect(reads).toBe(1));
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    // The new person reads a ready status. Then the old person's held answer arrives.
+    await store.loadSync();
+    expect(store.sync()?.status).toBe('ready');
+    release(Response.json({ sync: state('running') }));
+    await done;
+    expect(store.sync()?.status).toBe('ready');
+    expect(store.syncLoaded()).toBe(true);
+    expect(store.error()).toBe('');
+    expect(store.refreshStatus()).toBe('');
+    expect(store.refreshPending()).toBe(false);
+  });
+
+  it('drops a late failed 409 sync reread after another person signs in', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    let release: (response: Response) => void = () => undefined;
+    const held = new Promise<Response>((resolve) => (release = resolve));
+    let reads = 0;
+    const request = vi.fn((path: string, body?: unknown) => {
+      if (path === '/api/devices/domain/refresh')
+        return Promise.resolve(
+          Response.json({ reason: 'device-sync-running' }, { status: 409 }),
+        );
+      if (path === '/api/devices/sync' && body === undefined)
+        return reads++ === 0
+          ? held
+          : Promise.resolve(Response.json({ sync: state('ready') }));
+      return Promise.reject(new TypeError('Failed to fetch'));
+    });
+    const store = setup(request, session);
+    TestBed.tick();
+    const done = store.refreshDomain();
+    await vi.waitFor(() => expect(reads).toBe(1));
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    await store.loadSync();
+    release(Response.json({}, { status: 503 }));
+    await done;
+    expect(store.sync()?.status).toBe('ready');
+    expect(store.error()).toBe('');
+    expect(store.refreshPending()).toBe(false);
+  });
+
+  it('drops a late Refresh Devices 409 sync reread after another person signs in', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    let release: (response: Response) => void = () => undefined;
+    const held = new Promise<Response>((resolve) => (release = resolve));
+    let reads = 0;
+    const request = vi.fn((path: string, body?: unknown) => {
+      if (path === '/api/devices/sync' && body !== undefined)
+        return Promise.resolve(
+          Response.json({ reason: 'device-sync-running' }, { status: 409 }),
+        );
+      if (path === '/api/devices/sync')
+        return reads++ === 0
+          ? held
+          : Promise.resolve(Response.json({ sync: state('ready') }));
+      return Promise.reject(new TypeError('Failed to fetch'));
+    });
+    const store = setup(request, session);
+    TestBed.tick();
+    const done = store.refreshAll();
+    await vi.waitFor(() => expect(reads).toBe(1));
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    await store.loadSync();
+    release(Response.json({ sync: state('running') }));
+    await done;
+    expect(store.sync()?.status).toBe('ready');
+    expect(store.error()).toBe('');
+    expect(store.refreshPending()).toBe(false);
+  });
+
+  it('keeps a newer request pending when an earlier one ends', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    const releases: ((response: Response) => void)[] = [];
+    const request = vi.fn(
+      () => new Promise<Response>((resolve) => releases.push(resolve)),
+    );
+    const store = setup(request, session);
+    TestBed.tick();
+    const first = store.refreshSelection();
+    // Another person signs in and starts a request while the first one is pending.
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    const second = store.refreshSelection();
+    expect(store.refreshPending()).toBe(true);
+    releases[0](selectionAnswer(JOB_ID));
+    await first;
+    expect(store.refreshPending()).toBe(true);
+    releases[1](selectionAnswer(JOB_ID));
+    await second;
+    expect(store.refreshPending()).toBe(false);
+  });
+
+  it('leaves no pending state after a 401 and the same person resumes', async () => {
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    const request = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ code: 'access-changed' }, { status: 401 }),
+      );
+    const store = setup(request, session);
+    // The first effect run records the current person before the sign-out.
+    TestBed.tick();
+    await store.refreshSelection();
+    expect(store.refreshPending()).toBe(false);
+    expect(store.refreshStatus()).toBe('');
+    session.set(null);
+    TestBed.tick();
+    session.set(sessionFor('actor'));
+    TestBed.tick();
+    expect(store.refreshPending()).toBe(false);
+    expect(store.refreshStatus()).toBe('');
   });
 });

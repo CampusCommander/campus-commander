@@ -236,7 +236,7 @@ export class DevicesController {
     return { refresh };
   }
 
-  /** Re-read the domain details, then run the full device sync. */
+  /** Run the full device sync, then re-read the domain details. */
   @Post('domain/refresh')
   async refreshDomain(@Req() request: AuthenticatedRequest) {
     const current = await this.current(request);
