@@ -39,7 +39,8 @@ export type FlowAnswerKind =
 export type FlowProblemKind =
   | FlowAnswerKind
   | 'preview-unavailable'
-  | 'confirm-unavailable'
+  | 'confirm-uncertain'
+  | 'confirm-receipt-unavailable'
   | 'job-unavailable'
   | 'job-forbidden'
   | 'job-not-found'
@@ -138,6 +139,20 @@ export function flowAnswer(
 export function flowExpiry(body: unknown): string | null {
   const expiresAt = (body as { expiresAt?: unknown } | null)?.expiresAt;
   return typeof expiresAt === 'string' ? expiresAt : null;
+}
+
+/**
+ * An answer to a replayed confirmation can hide a job that the first request created.
+ * The API checks current authority and the frozen action version before it returns an
+ * existing receipt (`deployment/postgres/migrations/017-jobs.sql`), so a revoked grant
+ * or an obsolete preview answers before the receipt.
+ */
+export function confirmationMayExist(answer: FlowProblemKind): boolean {
+  return (
+    answer === 'forbidden' ||
+    answer === 'permission-changed' ||
+    answer === 'preview-changed'
+  );
 }
 
 /** The frame-style state of one answer. The card drafts every string for owner review. */
@@ -309,16 +324,29 @@ export function flowProblem(
         ],
         actions: [backToDevices(), retry],
       };
-    case 'confirm-unavailable':
+    case 'confirm-uncertain':
       return {
         kind,
-        title: 'The update job was not created',
-        subtitle: PRESERVED,
-        heading: 'Campus Commander could not create the job',
+        title: 'The confirmation did not finish',
+        subtitle: 'The result is unknown',
+        heading: 'Retry the confirmation',
         paragraphs: [
-          'The confirmation did not finish. Retry to review the preview again.',
+          'Campus Commander did not answer the confirmation, or the answer was not readable. The update job may exist.',
+          'Retry sends the same confirmation. If the job exists, Campus Commander returns its receipt.',
         ],
         actions: [backToDevices(), retry],
+      };
+    case 'confirm-receipt-unavailable':
+      return {
+        kind,
+        title: 'The update job may exist',
+        subtitle: 'The receipt is unavailable',
+        heading: 'Check Jobs for the update job',
+        paragraphs: [
+          'Campus Commander could not return the receipt for this confirmation. The update job may exist.',
+          'Review the Jobs page before you prepare another preview.',
+        ],
+        actions: [backToDevices(), backToJobs],
       };
     case 'preview-unavailable':
       return {
@@ -590,17 +618,22 @@ export class DeviceUpdateFlow {
     }
   }
 
-  /** The confirmation of design 2.4. A duplicate answer opens the same receipt. */
+  /**
+   * The confirmation of design 2.4. A duplicate answer opens the same receipt.
+   * An answer that names no design state leaves acceptance unknown, because the
+   * request may have committed before the answer was lost.
+   */
   async confirm(
-    preview: DeviceUpdatePreview,
+    previewId: string,
+    manifestDigest: string,
   ): Promise<FlowRead<DeviceUpdateJobReceipt>> {
     const request: DeviceUpdateConfirmRequest = {
-      manifestDigest: preview.manifestDigest,
+      manifestDigest,
       acknowledged: true,
     };
     try {
       const response = await this.auth.request(
-        `/api/devices/updates/previews/${encodeURIComponent(preview.previewId)}/confirm`,
+        `/api/devices/updates/previews/${encodeURIComponent(previewId)}/confirm`,
         request,
       );
       const body: unknown = await response.json().catch(() => null);
@@ -608,11 +641,15 @@ export class DeviceUpdateFlow {
         const receipt = deviceUpdateJobReceiptSchema.safeParse(body);
         return receipt.success
           ? { ok: true, value: receipt.data }
-          : { ok: false, answer: 'confirm-unavailable', expiresAt: null };
+          : { ok: false, answer: 'confirm-uncertain', expiresAt: null };
       }
-      return this.failure(response.status, body, 'confirm-unavailable');
+      return {
+        ok: false,
+        answer: flowAnswer(response.status, body) ?? 'confirm-uncertain',
+        expiresAt: flowExpiry(body),
+      };
     } catch {
-      return { ok: false, answer: 'offline', expiresAt: null };
+      return { ok: false, answer: 'confirm-uncertain', expiresAt: null };
     }
   }
 

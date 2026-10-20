@@ -14,9 +14,12 @@ import type {
   DeviceUpdatePreview,
   DeviceUpdateTarget,
 } from '@campus/application-contracts';
+import { z } from 'zod';
+import { AuthStore } from '../auth.store';
 import {
   acknowledgementLabel,
   confirmationHeading,
+  confirmationMayExist,
   confirmationMetaLine,
   confirmationSentence,
   confirmTitle,
@@ -27,6 +30,13 @@ import {
 } from './device-update-flow';
 import { DeviceUpdateFlow } from './device-update-flow';
 import { DeviceUpdateProblem } from './device-update-problem';
+
+/** The confirmation that the page submitted, kept until its acceptance is known. */
+const submittedConfirmationSchema = z.strictObject({
+  previewId: z.uuid(),
+  manifestDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+type SubmittedConfirmation = z.infer<typeof submittedConfirmationSchema>;
 
 /**
  * The confirmation of design 2.4 (frame 97:57). It restates the frozen scope and
@@ -42,6 +52,7 @@ export class DeviceUpdateConfirmPage {
   readonly previewId = input.required<string>();
   private readonly flow = inject(DeviceUpdateFlow);
   private readonly router = inject(Router);
+  private readonly auth = inject(AuthStore);
 
   protected readonly preview = signal<DeviceUpdatePreview | null>(null);
   protected readonly targets = signal<DeviceUpdateTarget[]>([]);
@@ -52,6 +63,8 @@ export class DeviceUpdateConfirmPage {
   protected readonly acknowledged = signal(false);
   protected readonly creating = signal(false);
   protected readonly prepareDetail = signal('');
+  /** The submitted confirmation, kept until its acceptance is known. */
+  private readonly submitted = signal<SubmittedConfirmation | null>(null);
   private generation = 0;
 
   protected readonly title = computed(() => {
@@ -89,6 +102,9 @@ export class DeviceUpdateConfirmPage {
       !this.creating() &&
       (this.preview()?.eligible ?? 0) > 0,
   );
+  protected readonly busyLabel = computed(() =>
+    this.submitted() ? 'Retrying confirmation…' : 'Preparing preview…',
+  );
 
   constructor() {
     effect(() => {
@@ -106,6 +122,15 @@ export class DeviceUpdateConfirmPage {
     this.problem.set(null);
     this.acknowledged.set(false);
     this.prepareDetail.set('');
+    // A reload of an uncertain confirmation keeps the submitted request and its
+    // recovery. The preview read would answer 410 after expiry and hide the job.
+    const retained = this.retainedConfirmation(id);
+    if (retained) {
+      this.submitted.set(retained);
+      this.showProblem('confirm-uncertain', null);
+      return;
+    }
+    this.submitted.set(null);
     const summary = await this.flow.readPreview(id);
     if (generation !== this.generation) return;
     if (!summary.ok) {
@@ -141,18 +166,58 @@ export class DeviceUpdateConfirmPage {
   protected async create(): Promise<void> {
     const preview = this.preview();
     if (!preview || !this.canCreate()) return;
+    await this.submit(
+      {
+        previewId: preview.previewId,
+        manifestDigest: preview.manifestDigest,
+      },
+      false,
+    );
+  }
+
+  /**
+   * Send the confirmation, or replay the retained one. An uncertain answer keeps the
+   * submitted identity and digest so a retry sends the identical request. Once the
+   * preview expired a GET would answer `410`, but the POST still returns the receipt
+   * of a job that the first request created.
+   */
+  private async submit(
+    submitted: SubmittedConfirmation,
+    replay: boolean,
+  ): Promise<void> {
+    this.submitted.set(submitted);
+    this.retainConfirmation(submitted);
     this.creating.set(true);
-    const result = await this.flow.confirm(preview);
+    const result = await this.flow.confirm(
+      submitted.previewId,
+      submitted.manifestDigest,
+    );
     this.creating.set(false);
     if (result.ok) {
+      this.releaseConfirmation(submitted.previewId);
+      this.submitted.set(null);
       await this.router.navigate(['/jobs', result.value.displayId, 'receipt']);
       return;
     }
-    this.showProblem(result.answer, result.expiresAt, preview.displayId);
-    if (result.answer === 'offline')
-      this.prepareDetail.set(
-        'Cannot reach Campus Commander. Your draft stays in this tab.',
+    if (result.answer === 'confirm-uncertain') {
+      this.showProblem('confirm-uncertain', null, this.preview()?.displayId);
+      return;
+    }
+    if (replay && confirmationMayExist(result.answer)) {
+      this.showProblem(
+        'confirm-receipt-unavailable',
+        null,
+        this.preview()?.displayId,
       );
+      return;
+    }
+    this.releaseConfirmation(submitted.previewId);
+    this.submitted.set(null);
+    this.showProblem(
+      result.answer,
+      result.expiresAt,
+      this.preview()?.displayId,
+    );
   }
 
   protected act(id: FlowActionId): void {
@@ -172,9 +237,12 @@ export class DeviceUpdateConfirmPage {
       case 'open-google-connection':
         void this.router.navigate(['/google-connection']);
         break;
-      case 'retry':
-        void this.load(this.previewId());
+      case 'retry': {
+        const submitted = this.submitted();
+        if (submitted) void this.submit(submitted, true);
+        else void this.load(this.previewId());
         break;
+      }
     }
   }
 
@@ -199,6 +267,51 @@ export class DeviceUpdateConfirmPage {
       this.prepareDetail.set(
         'Cannot reach Campus Commander. Your draft stays in this tab.',
       );
+  }
+
+  /** The tab keeps one uncertain confirmation for each person and preview. */
+  private confirmationKey(previewId: string): string | null {
+    const principal = this.auth.session()?.identity.id;
+    return principal
+      ? `cc.device-update-confirmation.${principal}.${previewId}`
+      : null;
+  }
+
+  private retainConfirmation(submitted: SubmittedConfirmation): void {
+    const key = this.confirmationKey(submitted.previewId);
+    if (!key) return;
+    try {
+      sessionStorage.setItem(key, JSON.stringify(submitted));
+    } catch {
+      // The page still holds the submission in memory.
+    }
+  }
+
+  private releaseConfirmation(previewId: string): void {
+    const key = this.confirmationKey(previewId);
+    if (!key) return;
+    try {
+      sessionStorage.removeItem(key);
+    } catch {
+      // A blocked storage area holds nothing to remove.
+    }
+  }
+
+  private retainedConfirmation(
+    previewId: string,
+  ): SubmittedConfirmation | null {
+    const key = this.confirmationKey(previewId);
+    if (!key) return null;
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = submittedConfirmationSchema.safeParse(JSON.parse(raw));
+      if (parsed.success) return parsed.data;
+      sessionStorage.removeItem(key);
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   private showProblem(

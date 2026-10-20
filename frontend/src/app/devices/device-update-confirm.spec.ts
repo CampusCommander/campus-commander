@@ -387,6 +387,142 @@ it('shows the expired state and prepares a new preview from the draft', async ()
   ]);
 });
 
+it('keeps an uncertain confirmation across a reload and replays it', async () => {
+  let previewReads = 0;
+  let confirmations = 0;
+  const { element, button, request, navigate, toggle, settle, fixture } = setup(
+    {
+      previewReply: async () => {
+        previewReads += 1;
+        return previewReads === 1
+          ? Response.json(preview)
+          : Response.json(
+              {
+                reason: 'preview-expired',
+                expiresAt: '2026-10-19T12:15:00.000Z',
+              },
+              { status: 410 },
+            );
+      },
+      confirmReply: async () => {
+        confirmations += 1;
+        if (confirmations === 1) throw new TypeError('Failed to fetch');
+        return Response.json(receipt, { status: 200 });
+      },
+    },
+  );
+  await settle();
+  await toggle();
+  button('Create update job')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The confirmation did not finish',
+  );
+  expect(element.textContent).toContain('The result is unknown');
+  expect(element.textContent).toContain(
+    'Retry sends the same confirmation. If the job exists, Campus Commander returns its receipt.',
+  );
+  expect(element.textContent).not.toContain('No job created');
+  expect(element.textContent).not.toContain('Prepare new preview');
+
+  // A reload keeps the submitted request. It never reads the expired preview.
+  fixture.destroy();
+  const reload = TestBed.createComponent(DeviceUpdateConfirmPage);
+  reload.componentRef.setInput('previewId', previewId);
+  reload.detectChanges();
+  const settleReload = async () => {
+    for (let pass = 0; pass < 6; pass++) {
+      await new Promise((resolve) => setTimeout(resolve));
+      reload.detectChanges();
+      await reload.whenStable();
+    }
+    reload.detectChanges();
+  };
+  await settleReload();
+  const reloaded: HTMLElement = reload.nativeElement;
+  expect(reloaded.querySelector('h1')?.textContent?.trim()).toBe(
+    'The confirmation did not finish',
+  );
+  expect(reloaded.textContent).not.toContain('No job created');
+  expect(previewReads).toBe(1);
+
+  const retry = [...reloaded.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent?.trim() === 'Retry',
+  ) as HTMLButtonElement;
+  retry.click();
+  await settleReload();
+  expect(confirmations).toBe(2);
+  expect(request).toHaveBeenCalledWith(
+    `/api/devices/updates/previews/${previewId}/confirm`,
+    { manifestDigest: 'a'.repeat(64), acknowledged: true },
+  );
+  expect(navigate).toHaveBeenCalledWith(['/jobs', 'UPD-006', 'receipt']);
+  expect(
+    sessionStorage.getItem(
+      `cc.device-update-confirmation.${principal}.${previewId}`,
+    ),
+  ).toBeNull();
+});
+
+it.each([
+  [
+    'an unreadable 201 answer',
+    async () => Response.json({ unexpected: true }, { status: 201 }),
+  ],
+  ['a 500 answer', async () => Response.json({}, { status: 500 })],
+])(
+  'treats %s as an uncertain confirmation and replays it',
+  async (_name, firstReply) => {
+    let confirmations = 0;
+    const { element, button, navigate, toggle, settle } = setup({
+      confirmReply: async () => {
+        confirmations += 1;
+        return confirmations === 1
+          ? firstReply()
+          : Response.json(receipt, { status: 200 });
+      },
+    });
+    await settle();
+    await toggle();
+    button('Create update job')?.click();
+    await settle();
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'The confirmation did not finish',
+    );
+    expect(element.textContent).not.toContain('No job created');
+    button('Retry')?.click();
+    await settle();
+    expect(navigate).toHaveBeenCalledWith(['/jobs', 'UPD-006', 'receipt']);
+  },
+);
+
+it('keeps acceptance unknown when a replay cannot return the receipt', async () => {
+  let confirmations = 0;
+  const { element, button, navigate, toggle, settle } = setup({
+    confirmReply: async () => {
+      confirmations += 1;
+      if (confirmations === 1) throw new TypeError('Failed to fetch');
+      return Response.json({ reason: 'permission-changed' }, { status: 409 });
+    },
+  });
+  await settle();
+  await toggle();
+  button('Create update job')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The confirmation did not finish',
+  );
+  button('Retry')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The update job may exist',
+  );
+  expect(element.textContent).not.toContain('No job created');
+  expect(element.textContent).not.toContain('Prepare new preview');
+  button('View jobs')?.click();
+  expect(navigate).toHaveBeenCalledWith(['/jobs']);
+});
+
 it('shows the loading state before the approved scope arrives', () => {
   const { element } = setup({
     previewReply: () =>

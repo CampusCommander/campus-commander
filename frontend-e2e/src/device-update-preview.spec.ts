@@ -85,7 +85,12 @@ const job = {
  * The draft page, the preview, the confirmation, and the receipt need the session,
  * the selection, the write access state, and the job reads.
  */
-async function mockApi(page: Page, options: { expired?: boolean } = {}) {
+async function mockApi(
+  page: Page,
+  options: { expired?: boolean; lostConfirmation?: boolean } = {},
+) {
+  let previewReads = 0;
+  let confirmations = 0;
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -199,18 +204,26 @@ async function mockApi(page: Page, options: { expired?: boolean } = {}) {
       path === `/api/devices/updates/previews/${nextPreviewId}/targets`
     )
       return route.fulfill({ json: { targets, nextCursor: null } });
-    if (path === `/api/devices/updates/previews/${previewId}/confirm`)
+    if (path === `/api/devices/updates/previews/${previewId}/confirm`) {
+      if (options.lostConfirmation) {
+        confirmations += 1;
+        if (confirmations === 1) return route.abort('failed');
+        return route.fulfill({ status: 200, json: receipt });
+      }
       return route.fulfill({ status: 201, json: receipt });
-    if (path === `/api/devices/updates/previews/${previewId}`)
-      return options.expired
-        ? route.fulfill({
-            status: 410,
-            json: {
-              reason: 'preview-expired',
-              expiresAt: '2026-10-19T12:15:00.000Z',
-            },
-          })
-        : route.fulfill({ json: preview });
+    }
+    if (path === `/api/devices/updates/previews/${previewId}`) {
+      previewReads += 1;
+      if (options.expired || (options.lostConfirmation && previewReads > 1))
+        return route.fulfill({
+          status: 410,
+          json: {
+            reason: 'preview-expired',
+            expiresAt: '2026-10-19T12:15:00.000Z',
+          },
+        });
+      return route.fulfill({ json: preview });
+    }
     if (path === `/api/devices/updates/previews/${nextPreviewId}`)
       return route.fulfill({
         json: {
@@ -360,6 +373,66 @@ test('creates an update job from the draft through the receipt', async ({
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test('replays an uncertain confirmation and opens its receipt', async ({
+  page,
+}, testInfo) => {
+  await mockApi(page, { lostConfirmation: true });
+  await page.goto(`/devices/update/previews/${previewId}/confirm`);
+  await expect(
+    page.getByRole('heading', {
+      name: 'Confirm 6 device updates',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole('checkbox', {
+      name: 'I reviewed all 6 devices and their final values.',
+    })
+    .check();
+  await page.getByRole('button', { name: 'Create update job' }).click();
+
+  await expect(
+    page.getByRole('heading', {
+      name: 'The confirmation did not finish',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('The result is unknown', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Prepare new preview' }),
+  ).toHaveCount(0);
+  await expect(page.getByText('No job created', { exact: false })).toHaveCount(
+    0,
+  );
+
+  // A reload keeps the submitted confirmation instead of reading the expired preview.
+  await page.reload();
+  await expect(
+    page.getByRole('heading', {
+      name: 'The confirmation did not finish',
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await page.setViewportSize({ width: 1280, height: 960 });
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('device-update-confirm-uncertain.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Job UPD-006 · Accepted', { exact: true }),
+  ).toBeVisible();
 });
 
 test('keeps the draft when the preview expired and prepares a new preview', async ({

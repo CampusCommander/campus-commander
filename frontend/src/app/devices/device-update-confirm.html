@@ -14,7 +14,7 @@
   <app-device-update-problem
     [problem]="problem"
     [busy]="creating()"
-    busyLabel="Preparing preview…"
+    [busyLabel]="busyLabel()"
     [detail]="prepareDetail()"
     (action)="act($event)"
   />
