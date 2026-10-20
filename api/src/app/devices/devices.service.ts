@@ -65,6 +65,8 @@ import {
 } from './device-query';
 import { DevicePager, type Rows } from './device-pager';
 import { DeviceRefresh } from './device-refresh';
+import { DeviceSelectionRefresh } from './device-selection-refresh';
+import type { SelectionRefreshAnswer } from './device-selection-refresh';
 
 const conflicts = ['device-sync-running', 'connection-changed'];
 
@@ -93,6 +95,7 @@ const rowsOf =
 @Injectable()
 export class DevicesService {
   private readonly refresh: DeviceRefresh;
+  private readonly selectionRefresh: DeviceSelectionRefresh;
   readonly pager: DevicePager;
 
   constructor(
@@ -102,6 +105,11 @@ export class DevicesService {
   ) {
     this.refresh = new DeviceRefresh(cache, orchestration, (sql, values) =>
       this.result(sql, values),
+    );
+    this.selectionRefresh = new DeviceSelectionRefresh(
+      database,
+      cache,
+      this.refresh,
     );
     this.pager = new DevicePager(cache);
   }
@@ -170,6 +178,21 @@ export class DevicesService {
       });
     }
     return started;
+  }
+
+  /** Re-read the selected devices from Google. Removed devices stay out of the job. */
+  async refreshSelection(
+    session: SessionResponse,
+    customerId: string,
+    key: DeviceSelectionKey,
+    correlationId: string,
+  ): Promise<SelectionRefreshAnswer> {
+    return this.selectionRefresh.request(
+      session,
+      customerId,
+      key,
+      correlationId,
+    );
   }
 
   /** Check authority and read in one transaction. The check takes no locks. */

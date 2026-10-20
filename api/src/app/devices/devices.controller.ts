@@ -15,10 +15,12 @@ import type { Response } from 'express';
 import { z } from 'zod';
 import {
   deviceByIdsSchema,
+  deviceDomainRefreshSchema,
   deviceGroupQuerySchema,
   deviceQuerySchema,
   deviceSelectionChangeSchema,
   deviceSelectionKeySchema,
+  deviceSelectionRefreshSchema,
   deviceSelectionResolveSchema,
   entityEventSchema,
   entityEventsChannel,
@@ -27,8 +29,11 @@ import {
 } from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
+import { GoogleConnectionService } from '../auth/google-connection.service';
 import { DeviceEventsService } from './device-events.service';
 import { streamEvents } from './device-events';
+import { DeviceDomainRefresh } from './device-domain-refresh';
+import { selectionRefreshStatus } from './device-selection-refresh';
 import { deviceForward, recheckDeviceStream } from './device-stream';
 import { DevicesService } from './devices.service';
 
@@ -50,11 +55,38 @@ const entityListener = {
 @Controller('api/devices')
 @UseGuards(AuthGuard)
 export class DevicesController {
+  private readonly domainRefresh: DeviceDomainRefresh;
+
   constructor(
     private readonly devices: DevicesService,
     private readonly auth: AuthService,
     private readonly deviceEvents: DeviceEventsService,
-  ) {}
+    connection: GoogleConnectionService,
+  ) {
+    this.domainRefresh = new DeviceDomainRefresh({
+      authorize: (session, customerId, correlationId) =>
+        this.auth.authorize(
+          session,
+          'connection:diagnose',
+          { kind: 'district', customerId },
+          correlationId,
+        ),
+      requestSync: (session, current, correlationId) =>
+        this.devices.requestSync(session, current, correlationId),
+      checkHealth: (
+        session,
+        customerId,
+        generation,
+        capabilities,
+        correlationId,
+      ) =>
+        connection.checkHealth(
+          session,
+          { customerId, generation, capabilities },
+          correlationId,
+        ),
+    });
+  }
 
   /** Resolve the connected customer, then require devices:read for it. */
   private async current(request: AuthenticatedRequest) {
@@ -176,6 +208,47 @@ export class DevicesController {
         input.groupRoutes,
         input.predicates,
         input.by,
+      ),
+    };
+  }
+
+  /** Re-read the selected devices from Google. The get-by-IDs pipeline is unchanged. */
+  @Post('selection/refresh')
+  async refreshSelection(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const key = deviceSelectionKeySchema.parse(body);
+    const current = await this.current(request);
+    if (!current)
+      throw new ConflictException({ reason: 'connection-required' });
+    const refresh = deviceSelectionRefreshSchema.parse(
+      await this.devices.refreshSelection(
+        request.session,
+        current.customerId,
+        key,
+        request.correlationId,
+      ),
+    );
+    // A fully claimed selection starts no job and answers 200.
+    response.status(selectionRefreshStatus(refresh));
+    return { refresh };
+  }
+
+  /** Re-read the domain details, then run the full device sync. */
+  @Post('domain/refresh')
+  async refreshDomain(@Req() request: AuthenticatedRequest) {
+    const current = await this.current(request);
+    if (!current)
+      throw new ConflictException({ reason: 'connection-required' });
+    return {
+      refresh: deviceDomainRefreshSchema.parse(
+        await this.domainRefresh.request(
+          request.session,
+          current,
+          request.correlationId,
+        ),
       ),
     };
   }
