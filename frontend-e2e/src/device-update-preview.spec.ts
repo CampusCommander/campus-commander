@@ -565,6 +565,17 @@ test('keeps an uncertain replay on the preview page and retries it', async ({
   });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
+  await page.getByRole('button', { name: 'Choose theme' }).click();
+  await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('device-update-preview-uncertain-dark.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
   control.replaySucceeds = true;
   await page.getByRole('button', { name: 'Retry' }).click();
   await expect(
