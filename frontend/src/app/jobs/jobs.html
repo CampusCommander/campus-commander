@@ -193,7 +193,7 @@
           type="button"
           class="page-button"
           aria-label="Previous page"
-          [disabled]="!store.hasPrevious()"
+          [disabled]="!store.hasPrevious() || store.reading()"
           (click)="previous()"
         >
           <span class="material-symbols-outlined" aria-hidden="true"
@@ -204,7 +204,7 @@
           type="button"
           class="page-button"
           aria-label="Next page"
-          [disabled]="!store.hasNext()"
+          [disabled]="!store.hasNext() || store.reading()"
           (click)="next()"
         >
           <span class="material-symbols-outlined" aria-hidden="true"

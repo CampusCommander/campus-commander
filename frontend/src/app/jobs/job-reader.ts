@@ -27,6 +27,8 @@ export class JobReader {
   private queued = false;
   private reading = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** Increments on stop. A continuation from an earlier run schedules no work. */
+  private generation = 0;
 
   constructor(private readonly read: JobRead) {}
 
@@ -41,9 +43,14 @@ export class JobReader {
     this.invalidate();
   }
 
-  /** Every stream open, first or after a reconnect, marks every reader dirty. */
+  /**
+   * Every stream open, first or after a reconnect, marks every reader dirty.
+   * An open supersedes a failed-read backoff and resynchronizes after the debounce.
+   */
   opened(): void {
-    this.invalidate();
+    this.dirty = true;
+    this.clearTimer();
+    this.schedule(this.debounceMs);
   }
 
   /**
@@ -60,9 +67,16 @@ export class JobReader {
 
   /** Stops scheduled reads. Held revisions stay, so a return to the page keeps its baseline. */
   stop(): void {
+    this.generation++;
     this.clearTimer();
     this.dirty = false;
     this.queued = false;
+  }
+
+  /** Forgets the held revisions of another person. */
+  clear(): void {
+    this.stop();
+    this.revisions.clear();
   }
 
   private invalidate(): void {
@@ -92,6 +106,8 @@ export class JobReader {
     this.reading = true;
     // A read answers every invalidation that arrived before it started.
     this.dirty = false;
+    // A stop invalidates this continuation. A request after the stop still runs.
+    const generation = this.generation;
     let revisions: JobRevisions | null;
     try {
       revisions = await this.read();
@@ -99,6 +115,13 @@ export class JobReader {
       revisions = null;
     }
     this.reading = false;
+    if (generation !== this.generation) {
+      if (this.queued) {
+        this.queued = false;
+        return this.run();
+      }
+      return false;
+    }
     if (revisions === null) {
       // The read failed. Keep the revisions and the dirty state, then retry after 5 s.
       this.dirty = true;

@@ -69,8 +69,10 @@ export class JobsStore {
   readonly pageIndex = signal(0);
   /** The page whose rows are shown. It trails pageIndex until the next page arrives. */
   readonly shownIndex = signal(0);
+  /** A paging read is in flight. Further paging waits for it. */
+  readonly navigating = signal(false);
   private readonly cursors = signal<readonly (string | null)[]>([null]);
-  readonly hasPrevious = computed(() => this.pageIndex() > 0);
+  readonly hasPrevious = computed(() => this.shownIndex() > 0);
   readonly hasNext = computed(() => !!this.page()?.nextCursor);
 
   private readonly reader = new JobReader(() => this.read());
@@ -80,19 +82,25 @@ export class JobsStore {
   private watchdog?: ReturnType<typeof setTimeout>;
   /** Increments on a query change. A late answer for the old query is dropped. */
   private queryRevision = 0;
+  /** Increments on sign-in by another person. Late answers for the old person are dropped. */
+  private epoch = 0;
   private identity: string | null = null;
+  /** The session ended. The same person can resume it. */
+  private away = false;
 
   constructor() {
     effect(() => {
       const identity = this.auth.session()?.identity.id ?? null;
       untracked(() => {
-        if (
-          this.identity !== null &&
-          identity !== null &&
-          identity !== this.identity
-        )
-          this.reset();
+        if (identity === null) {
+          this.away = this.identity !== null;
+          return;
+        }
+        const resumed = this.away && identity === this.identity;
+        this.away = false;
+        if (this.identity !== null && identity !== this.identity) this.reset();
         this.identity = identity;
+        if (resumed) this.resume();
       });
     });
   }
@@ -134,6 +142,7 @@ export class JobsStore {
     this.loading.set(true);
     this.error.set('');
     this.stale.set(false);
+    this.navigating.set(false);
     this.pageIndex.set(0);
     this.shownIndex.set(0);
     this.cursors.set([null]);
@@ -145,19 +154,27 @@ export class JobsStore {
   }
 
   next(): void {
+    if (this.reading() || this.navigating()) return;
     const cursor = this.page()?.nextCursor;
     if (!cursor) return;
-    const stack = this.cursors().slice(0, this.pageIndex() + 1);
+    // Navigation starts at the shown page, so a failed read never stacks a cursor twice.
+    const index = this.shownIndex() + 1;
+    const stack = this.cursors().slice(0, index);
     stack.push(cursor);
     this.cursors.set(stack);
-    this.pageIndex.set(stack.length - 1);
-    this.queryRevision++;
-    void this.reader.request();
+    this.go(index);
   }
 
   previous(): void {
-    if (this.pageIndex() === 0) return;
-    this.pageIndex.update((index) => index - 1);
+    if (this.reading() || this.navigating()) return;
+    const index = this.shownIndex() - 1;
+    if (index < 0) return;
+    this.go(index);
+  }
+
+  private go(index: number): void {
+    this.pageIndex.set(index);
+    this.navigating.set(true);
     this.queryRevision++;
     void this.reader.request();
   }
@@ -181,25 +198,40 @@ export class JobsStore {
   }
 
   private reset(): void {
+    this.epoch++;
     this.queryRevision++;
-    this.reader.stop();
+    this.reader.clear();
     this.filters.set([]);
     this.page.set(null);
     this.loading.set(true);
     this.loaded.set(false);
+    this.refreshing.set(false);
     this.offline.set(false);
     this.stale.set(false);
     this.error.set('');
+    this.navigating.set(false);
     this.pageIndex.set(0);
     this.shownIndex.set(0);
     this.cursors.set([null]);
     // The stream carries the session cookie. A new person needs a new stream.
-    if (this.stream) this.openStream();
+    if (this.streamWanted) {
+      this.openStream();
+      // Do not wait for the stream open to remove the previous person's rows.
+      void this.reader.request();
+    }
+  }
+
+  /** The same person resumed an interrupted session. A stream that a 401 closed opens again. */
+  private resume(): void {
+    if (!this.streamWanted || this.stream) return;
+    clearTimeout(this.reopenTimer);
+    this.openStream();
   }
 
   /** One read of the current query. Returns the revisions of a successful answer. */
   private async read(): Promise<JobRevisions | null> {
     const revision = this.queryRevision;
+    const epoch = this.epoch;
     const index = this.pageIndex();
     const cursor = this.cursors()[index] ?? null;
     const query = jobFilterQuery(this.filters(), cursor);
@@ -209,6 +241,7 @@ export class JobsStore {
     this.reading.set(true);
     try {
       const response = await this.auth.request(path);
+      if (epoch !== this.epoch || revision !== this.queryRevision) return [];
       if (!response.ok) {
         this.failed(false);
         return null;
@@ -217,10 +250,11 @@ export class JobsStore {
       try {
         list = jobListSchema.parse(await response.json());
       } catch {
+        if (epoch !== this.epoch || revision !== this.queryRevision) return [];
         this.failed(false);
         return null;
       }
-      if (revision !== this.queryRevision) return [];
+      if (epoch !== this.epoch || revision !== this.queryRevision) return [];
       this.page.set(list);
       this.loaded.set(true);
       this.loading.set(false);
@@ -230,10 +264,12 @@ export class JobsStore {
       this.shownIndex.set(index);
       return list.jobs;
     } catch {
+      if (epoch !== this.epoch || revision !== this.queryRevision) return [];
       this.failed(true);
       return null;
     } finally {
       this.reading.set(false);
+      if (revision === this.queryRevision) this.navigating.set(false);
     }
   }
 
