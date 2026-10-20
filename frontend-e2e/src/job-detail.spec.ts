@@ -6,6 +6,7 @@ const person = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   displayName: 'District Admin',
 };
+const alexId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 /**
  * The operation rows of frame 104:209. Six rows fill one page.
@@ -243,10 +244,18 @@ const runningOperations = operations.map((operation, index) => ({
 }));
 
 async function signIn(page: Page) {
-  const state = { reconcileStatus: 202 };
+  const state = {
+    reconcileStatus: 202,
+    identity: 'district' as 'district' | 'alex',
+    fail: false,
+  };
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
+    const grants =
+      state.identity === 'alex'
+        ? ['devices:read']
+        : ['jobs:read', 'devices:read', 'devices:write'];
     if (path === '/api/application')
       return route.fulfill({
         json: {
@@ -260,16 +269,15 @@ async function signIn(page: Page) {
       return route.fulfill({
         json: {
           identity: {
-            id: person.id,
-            displayName: person.displayName,
+            id: state.identity === 'alex' ? alexId : person.id,
+            displayName:
+              state.identity === 'alex' ? 'Alex Rivera' : person.displayName,
             permissionVersion: 1,
             permissions: [],
-            grants: ['jobs:read', 'devices:read', 'devices:write'].map(
-              (action) => ({
-                action,
-                scope: { kind: 'district', customerId },
-              }),
-            ),
+            grants: grants.map((action) => ({
+              action,
+              scope: { kind: 'district', customerId },
+            })),
             preferences: { theme: 'light', navigationCollapsed: false },
           },
           csrfToken: 'a'.repeat(64),
@@ -282,12 +290,16 @@ async function signIn(page: Page) {
         headers: { 'content-type': 'text/event-stream' },
         body: '',
       });
-    if (path === '/api/jobs/UPD-006') return route.fulfill({ json: reviewJob });
+    if (path === '/api/jobs/UPD-006')
+      return state.fail
+        ? route.fulfill({ status: 500 })
+        : route.fulfill({ json: reviewJob });
     if (path === '/api/jobs/UPD-014')
       return route.fulfill({ json: runningJob });
     if (path === '/api/jobs/REF-004')
       return route.fulfill({ json: refreshJob });
     if (path === '/api/jobs/UPD-006/operations') {
+      if (state.fail) return route.fulfill({ status: 500 });
       const attention = url.searchParams.get('attention') === 'true';
       return route.fulfill({
         json: {
@@ -516,6 +528,121 @@ test('shows a refresh job with counters and Latest activity only', async ({
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
+test('records the row range on the last attention page', async ({
+  page,
+}, testInfo) => {
+  await signIn(page);
+  const failedOperation = (index: number) => ({
+    ...operations[4],
+    operationId: `UPD-006-${index}`,
+    deviceId: `synthetic-device-${index}`,
+    serialNumber: `C0A1-90${String(index).padStart(2, '0')}`,
+  });
+  const sevenFailed = Array.from({ length: 7 }, (_, index) =>
+    failedOperation(index + 1),
+  );
+  await page.route('**/api/jobs/UPD-006', (route) =>
+    route.fulfill({
+      json: {
+        ...reviewJob,
+        scope: { kind: 'devices', deviceCount: 12 },
+        progress: {
+          total: 12,
+          succeeded: 5,
+          failed: 7,
+          unknown: 0,
+          skipped: 0,
+          pending: 0,
+        },
+        latestActivity: {
+          at: '2026-10-19T10:36:00.000Z',
+          failed: { count: 7, operations: [] },
+          unknown: { count: 0, operations: [] },
+        },
+      },
+    }),
+  );
+  await page.route('**/api/jobs/UPD-006/operations*', (route) => {
+    const url = new URL(route.request().url());
+    const attention = url.searchParams.get('attention') === 'true';
+    const cursor = url.searchParams.get('cursor');
+    if (!attention)
+      return route.fulfill({
+        json: { operations, nextCursor: '6' },
+      });
+    return route.fulfill({
+      json: cursor
+        ? { operations: sevenFailed.slice(6), nextCursor: null }
+        : { operations: sevenFailed.slice(0, 6), nextCursor: '6' },
+    });
+  });
+  await page.goto('/jobs/UPD-006');
+  await expect(page.getByText('Rows 1–6 of 12 operations')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Show 7 needing attention' }).click();
+  await expect(
+    page.getByText('Rows 1–6 matching operations · 12 total'),
+  ).toBeVisible();
+  await expect(page.locator('.operations-table tbody tr')).toHaveCount(6);
+
+  await page.getByRole('button', { name: 'Next operations page' }).click();
+  await expect(page.locator('.operations-table tbody tr')).toHaveCount(1);
+  await expect(
+    page.getByText('Rows 7–7 matching operations · 12 total'),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/^7 matching operations · 12 total$/),
+  ).toHaveCount(0);
+
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('job-detail-attention-last-page.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test('shows refresh activity with failed device counts', async ({
+  page,
+}, testInfo) => {
+  await signIn(page);
+  await page.route('**/api/jobs/REF-004', (route) =>
+    route.fulfill({
+      json: {
+        ...refreshJob,
+        status: 'completed-with-errors',
+        scope: { kind: 'devices', deviceCount: 12 },
+        progress: {
+          total: 12,
+          succeeded: 6,
+          failed: 6,
+          unknown: 0,
+          skipped: 0,
+          pending: 0,
+        },
+        latestActivity: {
+          at: '2026-10-19T10:21:42.000Z',
+          failed: { count: 6, operations: [] },
+          unknown: { count: 0, operations: [] },
+        },
+      },
+    }),
+  );
+  await page.goto('/jobs/REF-004');
+
+  await expect(page.locator('.activity p')).toContainText(
+    '6 devices read. 6 devices could not be read. The refresh completed with errors.',
+  );
+  await expect(page.getByText('Operation results')).toHaveCount(0);
+
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('job-detail-refresh-errors.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
 test('keeps long operation values inside the table', async ({
   page,
 }, testInfo) => {
@@ -614,4 +741,45 @@ test('inspects a failure and reconciles an unknown operation', async ({
     page.getByText('The operation settled. Reading the job again.'),
   ).toBeVisible();
   await expect(page.getByText('Reconciling')).toHaveCount(0);
+});
+
+test('clears the previous person job after another person signs in', async ({
+  page,
+}) => {
+  const state = await signIn(page);
+  await page.goto('/jobs/UPD-006');
+  await expect(page.getByText('Requested by District Admin')).toBeVisible();
+  await expect(page.getByText('C0A1-7F2D')).toBeVisible();
+  // The regression only exists while the document keeps the root store.
+  await page.evaluate(() => {
+    (
+      globalThis as unknown as { jobDetailDocument?: string }
+    ).jobDetailDocument = 'kept';
+  });
+
+  state.identity = 'alex';
+  state.fail = true;
+  await page.getByRole('button', { name: 'Open user menu' }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Sign in', exact: true }),
+  ).toBeVisible();
+
+  await page.goBack();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { jobDetailDocument?: string }).jobDetailDocument,
+    ),
+  ).toBe('kept');
+  await expect(
+    page.getByRole('button', { name: 'Open user menu' }),
+  ).toContainText('Alex Rivera');
+  await expect(
+    page.getByRole('heading', { name: 'Job details are unavailable' }),
+  ).toBeVisible();
+  // The previous person's requester, counters, and rows are gone.
+  await expect(page.getByText('Requested by District Admin')).toHaveCount(0);
+  await expect(page.getByText('C0A1-7F2D')).toHaveCount(0);
+  await expect(page.getByText('Operation results')).toHaveCount(0);
 });

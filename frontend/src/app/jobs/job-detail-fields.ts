@@ -240,34 +240,52 @@ function updateCounterLine(job: JobDetail): string {
 
 /** The drafted counter line of a refresh job. Its latest activity has no samples. */
 function refreshCounterLine(job: JobDetail): string {
-  const { succeeded, pending } = job.progress;
+  const { succeeded, failed, pending } = job.progress;
   const time = formatTime(job.latestActivity.at);
-  const read = `${succeeded.toLocaleString('en-US')} ${
-    succeeded === 1 ? 'device' : 'devices'
-  } read.`;
+  const parts = [
+    `${succeeded.toLocaleString('en-US')} ${
+      succeeded === 1 ? 'device' : 'devices'
+    } read.`,
+  ];
+  // A refresh reports failed device counts without operation samples (section 2.5).
+  if (failed > 0)
+    parts.push(
+      `${failed.toLocaleString('en-US')} ${
+        failed === 1 ? 'device' : 'devices'
+      } could not be read.`,
+    );
   switch (job.status) {
     case 'completed':
-      return `${time} · ${read} The refresh completed.`;
+      parts.push('The refresh completed.');
+      break;
     case 'completed-with-errors':
-      return `${time} · ${read} The refresh completed with errors.`;
+      parts.push('The refresh completed with errors.');
+      break;
     case 'failed':
-      return `${time} · ${read} The refresh failed.`;
+      parts.push('The refresh failed.');
+      break;
     case 'needs-review':
-      return `${time} · ${read} The refresh needs review.`;
+      parts.push('The refresh needs review.');
+      break;
     default:
-      return pending !== null && pending > 0
-        ? `${time} · ${read} ${spellCount(pending)} ${
-            pending === 1 ? 'device remains' : 'devices remain'
-          } to read.`
-        : `${time} · ${read} The refresh continues.`;
+      parts.push(
+        pending !== null && pending > 0
+          ? `${spellCount(pending)} ${
+              pending === 1 ? 'device remains' : 'devices remain'
+            } to read.`
+          : 'The refresh continues.',
+      );
   }
+  return `${time} · ${parts.join(' ')}`;
 }
 
 /**
  * The Latest activity line of section 2.5. Sample lines name each failed and unknown
  * operation of the whole job. Counters supply the time and totals when no sample exists.
+ * A refresh job has no operations, so its counters always supply the line.
  */
 export function latestActivityLine(job: JobDetail): string {
+  if (job.action === 'refresh-inventory') return refreshCounterLine(job);
   const { failed, unknown } = job.latestActivity;
   if (failed.operations.length || unknown.operations.length) {
     const sentences = [
@@ -295,9 +313,7 @@ export function latestActivityLine(job: JobDetail): string {
     ];
     return `${formatTime(job.latestActivity.at)} · ${sentences.join(' ')}`;
   }
-  return job.action === 'refresh-inventory'
-    ? refreshCounterLine(job)
-    : updateCounterLine(job);
+  return updateCounterLine(job);
 }
 
 /** The footer of the operations grid for the current filter and page. */
@@ -318,11 +334,16 @@ export function operationsFooter(
       : `0 of ${total} operations`;
   const start = options.pageIndex * options.pageSize + 1;
   const end = start + options.shown - 1;
-  if (options.attention)
-    return options.hasNext
-      ? `Rows ${start.toLocaleString('en-US')}–${end.toLocaleString('en-US')} matching operations · ${total} total`
-      : `${options.shown.toLocaleString('en-US')} matching ${
-          options.shown === 1 ? 'operation' : 'operations'
-        } · ${total} total`;
+  if (options.attention) {
+    // The single-page frame 231:4707 reads "2 matching operations · 6 total".
+    // A later page keeps its row range, so the range never collapses to a page length.
+    if (options.pageIndex === 0 && !options.hasNext) {
+      const matching = attentionCount(job);
+      return `${matching.toLocaleString('en-US')} matching ${
+        matching === 1 ? 'operation' : 'operations'
+      } · ${total} total`;
+    }
+    return `Rows ${start.toLocaleString('en-US')}–${end.toLocaleString('en-US')} matching operations · ${total} total`;
+  }
   return `Rows ${start.toLocaleString('en-US')}–${end.toLocaleString('en-US')} of ${total} operations`;
 }

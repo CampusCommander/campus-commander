@@ -166,6 +166,28 @@ describe('latest activity', () => {
     );
   });
 
+  it('drafts the value-differs, invalid-response, ambiguous, and unknown-reason failures', () => {
+    const failure = (outcomeReason: string | null, googleStatus = 500) => {
+      const current = sampleJob();
+      current.latestActivity.failed.operations[0] = {
+        ...current.latestActivity.failed.operations[0],
+        outcomeReason,
+        googleStatus,
+      };
+      return latestActivityLine(current);
+    };
+    expect(failure('value-differs')).toContain(
+      'C0A1-7F77 does not hold the requested value.',
+    );
+    expect(failure('invalid-response')).toContain(
+      'Google returned an invalid response for C0A1-7F77.',
+    );
+    expect(failure('ambiguous')).toContain(
+      'The outcome for C0A1-7F77 is uncertain.',
+    );
+    expect(failure(null)).toContain('The update failed for C0A1-7F77.');
+  });
+
   it('renders the counter line of frame 228:4524', () => {
     const current = job({
       status: 'running',
@@ -234,6 +256,9 @@ describe('latest activity', () => {
     expect(latestActivityLine({ ...base, status: 'failed' })).toBe(
       `${time} · 36 devices read. The refresh failed.`,
     );
+    expect(latestActivityLine({ ...base, status: 'needs-review' })).toBe(
+      `${time} · 36 devices read. The refresh needs review.`,
+    );
     expect(
       latestActivityLine({
         ...base,
@@ -247,6 +272,67 @@ describe('latest activity', () => {
         }),
       }),
     ).toBe(`${time} · 36 devices read. The refresh completed with errors.`);
+  });
+
+  it('keeps the refresh line when failed device counts are nonzero', () => {
+    const time = formatTime('2026-10-19T10:42:00.000Z');
+    const partial = job({
+      displayId: 'REF-004',
+      action: 'refresh-inventory',
+      status: 'completed-with-errors',
+      field: null,
+      mode: null,
+      requestedValue: null,
+      progress: progress({
+        total: 12,
+        succeeded: 6,
+        failed: 6,
+        unknown: 0,
+        pending: 0,
+      }),
+      latestActivity: {
+        at: '2026-10-19T10:42:00.000Z',
+        failed: { count: 6, operations: [] },
+        unknown: { count: 0, operations: [] },
+      },
+    });
+    expect(latestActivityLine(partial)).toBe(
+      `${time} · 6 devices read. 6 devices could not be read. The refresh completed with errors.`,
+    );
+    expect(latestActivityLine(partial)).not.toContain('operations failed');
+    expect(latestActivityLine({ ...partial, status: 'failed' })).toBe(
+      `${time} · 6 devices read. 6 devices could not be read. The refresh failed.`,
+    );
+    expect(latestActivityLine({ ...partial, status: 'completed' })).toBe(
+      `${time} · 6 devices read. 6 devices could not be read. The refresh completed.`,
+    );
+  });
+
+  it('drafts a running refresh without a known pending count', () => {
+    const time = formatTime('2026-10-19T10:42:00.000Z');
+    const current = job({
+      displayId: 'REF-004',
+      action: 'refresh-inventory',
+      status: 'running',
+      field: null,
+      mode: null,
+      requestedValue: null,
+      progress: progress({
+        total: null,
+        succeeded: 36,
+        failed: 0,
+        unknown: 0,
+        pending: null,
+      }),
+      latestActivity: {
+        at: '2026-10-19T10:42:00.000Z',
+        failed: { count: 0, operations: [] },
+        unknown: { count: 0, operations: [] },
+      },
+    });
+    expect(latestActivityLine(current)).toBe(
+      `${time} · 36 devices read. The refresh continues.`,
+    );
   });
 
   it('falls back to counters when a count has no sample', () => {
@@ -377,6 +463,21 @@ describe('job detail fields', () => {
         },
       ),
     ).toBe('Rows 7–12 matching operations · 48 total');
+    expect(
+      operationsFooter(
+        job({
+          scope: { kind: 'devices', deviceCount: 12 },
+          progress: progress({ total: 12, failed: 7, unknown: 0 }),
+        }),
+        {
+          attention: true,
+          pageIndex: 1,
+          pageSize: 6,
+          shown: 1,
+          hasNext: false,
+        },
+      ),
+    ).toBe('Rows 7–7 matching operations · 12 total');
     expect(
       operationsFooter(current, {
         attention: false,
