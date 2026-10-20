@@ -1,0 +1,344 @@
+<div class="job-detail">
+  <header class="page-header">
+    <h1>{{ heading() }}</h1>
+    @if (subtitle()) {
+    <p class="subtitle">{{ subtitle() }}</p>
+    }
+  </header>
+
+  @if (store.job(); as job) {
+  <div class="toolbar">
+    <a mat-stroked-button routerLink="/jobs">Back to jobs</a>
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="store.offline() || store.refreshing()"
+      (click)="refresh()"
+    >
+      Refresh
+    </button>
+  </div>
+
+  @if (store.offline()) {
+  <section class="banner" aria-labelledby="job-offline-title">
+    <h2 id="job-offline-title">
+      <strong>Offline</strong> · Showing the last received job state
+    </h2>
+    <p>
+      Reconnect to receive current outcomes. Existing jobs continue on the
+      server.
+    </p>
+  </section>
+  } @else if (store.stale()) {
+  <section class="banner" aria-labelledby="job-stale-title">
+    <h2 id="job-stale-title">Job state is stale</h2>
+    <p>
+      Showing the last received job state. Current data stays visible during
+      refresh.
+    </p>
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="store.refreshing()"
+      (click)="refresh()"
+    >
+      Refresh
+    </button>
+  </section>
+  }
+
+  <section class="identity card" aria-labelledby="job-identity-title">
+    <div class="identity-head">
+      <h2 id="job-identity-title">{{ scope() }}</h2>
+      <span [class]="'status-chip tone-' + statusTone(job.status)">
+        <span class="dot" aria-hidden="true"></span>{{ statusLabel(job.status)
+        }}
+      </span>
+    </div>
+    <p class="identity-meta">{{ identity() }}</p>
+  </section>
+
+  <section class="counters-section" aria-labelledby="job-counts-title">
+    <h2 id="job-counts-title" class="visually-hidden">Operation counts</h2>
+    <dl class="counters">
+      @for (counter of counters(); track counter.key) {
+      <div class="counter">
+        <dt>{{ counter.label }}</dt>
+        <dd [class]="'value tone-' + counter.tone">
+          {{ counterText(counter) }}
+        </dd>
+      </div>
+      }
+    </dl>
+  </section>
+
+  @if (!isRefresh()) {
+  <section class="operations" aria-labelledby="operations-title">
+    <div class="operations-head">
+      <h2 id="operations-title">Operation results</h2>
+      <div class="operations-actions">
+        @if (store.attention() || attention() > 0) {
+        <button mat-stroked-button type="button" (click)="toggleAttention()">
+          {{ store.attention() ? 'Show all operations' : 'Show ' + attention() +
+          ' needing attention' }}
+        </button>
+        }
+      </div>
+    </div>
+
+    @if (store.reconcileError()) {
+    <p class="error" role="alert">{{ store.reconcileError() }}</p>
+    } @if (store.notice()) {
+    <p class="notice" role="status">{{ store.notice() }}</p>
+    } @if (store.operationsError()) {
+    <p class="error" role="alert">
+      {{ store.operationsError() }}
+      <button
+        mat-button
+        type="button"
+        [disabled]="store.reading()"
+        (click)="refresh()"
+      >
+        Retry
+      </button>
+    </p>
+    } @if (inspecting(); as failure) {
+    <section
+      id="failure-panel"
+      class="failure-panel card"
+      role="region"
+      aria-labelledby="failure-title"
+      (keydown.escape)="closeInspect()"
+    >
+      <div class="panel-head">
+        <h2 id="failure-title">
+          Failure details · {{ failure.serialNumber || failure.deviceId }}
+        </h2>
+        <button
+          id="failure-close"
+          mat-button
+          type="button"
+          (click)="closeInspect()"
+        >
+          Close
+        </button>
+      </div>
+      <dl class="failure-facts">
+        <div>
+          <dt>Outcome reason</dt>
+          <dd><code>{{ failure.outcomeReason ?? 'Not recorded' }}</code></dd>
+        </div>
+        <div>
+          <dt>Google status</dt>
+          <dd>{{ failure.googleStatus ?? 'Not reported' }}</dd>
+        </div>
+        <div>
+          <dt>Google reason</dt>
+          <dd><code>{{ failure.googleReason ?? 'Not reported' }}</code></dd>
+        </div>
+        <div>
+          <dt>Updated</dt>
+          <dd>
+            <time [attr.datetime]="failure.updatedAt"
+              >{{ formatTimestamp(failure.updatedAt) }}</time
+            >
+          </dd>
+        </div>
+      </dl>
+    </section>
+    }
+
+    <div class="grid-region">
+      <div
+        class="table-scroll"
+        tabindex="0"
+        role="region"
+        aria-label="Operation results table"
+        [attr.aria-busy]="store.reading()"
+      >
+        <table class="operations-table">
+          <caption class="visually-hidden">
+            Operation results for job {{ job.displayId }}
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Device</th>
+              <th scope="col">Operation</th>
+              <th scope="col">Before</th>
+              <th scope="col">Requested</th>
+              <th scope="col">Outcome</th>
+              <th scope="col">Updated</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            @if (store.reading() && store.operations().length === 0) {
+            <tr class="message-row">
+              <td colspan="7">
+                <div class="grid-message" role="status">
+                  <p>Loading operations…</p>
+                </div>
+              </td>
+            </tr>
+            } @else if (store.operations().length === 0) {
+            <tr class="message-row">
+              <td colspan="7">
+                <div class="grid-message" role="status">
+                  <p>
+                    {{ store.attention() ? 'No operations need attention.' : 'No
+                    operations recorded for this job.' }}
+                  </p>
+                </div>
+              </td>
+            </tr>
+            } @for (operation of store.operations(); track
+            operation.operationId) {
+            <tr>
+              <td>
+                <div class="device-cell">
+                  @if (canOpenDevices()) {
+                  <a
+                    class="details"
+                    [routerLink]="['/devices', operation.deviceId]"
+                    [attr.aria-label]="'Open device ' + (operation.serialNumber || operation.deviceId)"
+                  >
+                    <span class="material-symbols-outlined" aria-hidden="true"
+                      >visibility</span
+                    >
+                  </a>
+                  }
+                  <span
+                    >{{ operation.serialNumber || operation.deviceId }}</span
+                  >
+                </div>
+              </td>
+              <td>{{ fieldLabel(job.field) }}</td>
+              <td>{{ beforeText(operation) }}</td>
+              <td>{{ requestedText(operation) }}</td>
+              <td>
+                @if (store.reconciling().has(operation.operationId)) {
+                <span class="status-chip small tone-info"
+                  ><span class="dot" aria-hidden="true"></span>Reconciling</span
+                >
+                } @else {
+                <span
+                  [class]="'status-chip small tone-' + outcomeTone(operation.outcome)"
+                  ><span class="dot" aria-hidden="true"></span>{{
+                  outcomeLabels[operation.outcome] }}</span
+                >
+                }
+              </td>
+              <td>
+                <time
+                  [attr.datetime]="operation.updatedAt"
+                  [attr.title]="formatTimestamp(operation.updatedAt)"
+                  >{{ formatTime(operation.updatedAt) }}</time
+                >
+              </td>
+              <td class="row-actions">
+                @if (operation.outcome === 'failed') {
+                <button
+                  mat-button
+                  type="button"
+                  [attr.data-operation]="operation.operationId"
+                  aria-controls="failure-panel"
+                  [attr.aria-expanded]="inspecting()?.operationId === operation.operationId"
+                  (click)="inspect(operation)"
+                >
+                  Inspect failure
+                </button>
+                } @else if (operation.outcome === 'unknown' && canReconcile() &&
+                !store.reconciling().has(operation.operationId)) {
+                <button mat-button type="button" (click)="reconcile(operation)">
+                  Reconcile
+                </button>
+                }
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <footer class="grid-footer">
+        <span class="footer-count" role="status">{{ footer() }}</span>
+        <div class="footer-paging">
+          <button
+            type="button"
+            class="page-button"
+            aria-label="Previous operations page"
+            [disabled]="!store.hasPrevious() || store.reading()"
+            (click)="previous()"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >chevron_left</span
+            >
+          </button>
+          <button
+            type="button"
+            class="page-button"
+            aria-label="Next operations page"
+            [disabled]="!store.hasNext() || store.reading()"
+            (click)="next()"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >chevron_right</span
+            >
+          </button>
+        </div>
+      </footer>
+    </div>
+  </section>
+  }
+
+  <section class="activity card" aria-labelledby="activity-title">
+    <h2 id="activity-title">Latest activity</h2>
+    <p>{{ activity() }}</p>
+  </section>
+  } @else if (store.missing()) {
+  <section class="card state" aria-labelledby="job-missing-title">
+    <h2 id="job-missing-title">Job not found</h2>
+    <p>This job does not exist or was removed.</p>
+    <div class="actions">
+      <a mat-stroked-button routerLink="/jobs">Back to jobs</a>
+    </div>
+  </section>
+  } @else if (store.offline()) {
+  <section class="card state" aria-labelledby="job-offline-state-title">
+    <h2 id="job-offline-state-title">Cannot reach Campus Commander</h2>
+    <p>Job details need a connection. Existing jobs continue on the server.</p>
+    <div class="actions">
+      <a mat-stroked-button routerLink="/jobs">Back to jobs</a>
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="store.reading()"
+        (click)="refresh()"
+      >
+        Retry
+      </button>
+    </div>
+  </section>
+  } @else if (store.error()) {
+  <section class="card state" aria-labelledby="job-unavailable-title">
+    <h2 id="job-unavailable-title">Job details are unavailable</h2>
+    <p>The job read did not complete. Check the connection and retry.</p>
+    <div class="actions">
+      <a mat-stroked-button routerLink="/jobs">Back to jobs</a>
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="store.reading()"
+        (click)="refresh()"
+      >
+        Retry
+      </button>
+    </div>
+  </section>
+  } @else {
+  <section class="card state" aria-label="Loading the job" aria-busy="true">
+    <p role="status">Loading job details…</p>
+    <div class="skeleton" aria-hidden="true"></div>
+    <div class="skeleton short" aria-hidden="true"></div>
+  </section>
+  }
+</div>

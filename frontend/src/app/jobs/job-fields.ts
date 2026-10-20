@@ -195,6 +195,48 @@ export function progressLines(job: JobSummary): [string, string] {
     : updateProgress(job);
 }
 
+/** "10:40 AM". A Recent row carries its exact timestamp on the time element. */
+export function formatClockTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/** The one line of a Waiting row. A held job never promises a start time (mockup note 5). */
+export function waitingLine(job: JobSummary): string {
+  const label = JOB_STATUS_LABELS[job.status];
+  return job.status === 'held'
+    ? `${label} · Google backoff · Starts when Google allows`
+    : `${label} · Waiting for dispatch`;
+}
+
+/** The status label with its counts for a Recent row. An unknown outcome keeps its label. */
+export function recentLine(job: JobSummary): string {
+  const label = JOB_STATUS_LABELS[job.status];
+  const [primary, exceptions] = progressLines(job);
+  switch (job.status) {
+    case 'completed-with-errors':
+    case 'failed':
+    case 'needs-review':
+      return `${label} · ${primary} · ${exceptions}`;
+    default:
+      return `${label} · ${primary}`;
+  }
+}
+
+/** The share of a job that is complete. A job without a total has no determinate bar. */
+export function progressPercent(job: JobSummary): number | null {
+  const { total, succeeded } = job.progress;
+  if (total === null || total === 0) return null;
+  return Math.min(100, Math.round((succeeded / total) * 100));
+}
+
+/** The progress and requester line of a Running row. */
+export function runningLine(job: JobSummary): string {
+  return `${progressLines(job)[0]} · ${job.requestedBy.displayName}`;
+}
+
 /** "Sep 5, 10:40 AM". A different year carries its year to stay unambiguous. */
 export function formatTimestamp(iso: string, now = new Date()): string {
   const date = new Date(iso);

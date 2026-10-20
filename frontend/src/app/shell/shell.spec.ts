@@ -9,6 +9,7 @@ import { DevicesStore } from '../devices/devices.store';
 import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
+import { JobActivityStore } from '../jobs/job-activity.store';
 import { Shell } from './shell';
 
 @Component({ selector: 'app-test-route', template: '' })
@@ -81,6 +82,19 @@ function configure(
           refresh: vi.fn(),
         },
       },
+      {
+        provide: JobActivityStore,
+        useValue: {
+          summary: signal(null),
+          loading: signal(true),
+          loaded: signal(false),
+          error: signal(''),
+          live: signal(false),
+          runningCount: signal(0),
+          attention: signal(false),
+          seen: vi.fn().mockResolvedValue(undefined),
+        },
+      },
     ],
   });
 }
@@ -128,6 +142,32 @@ describe('Shell header title', () => {
 
   it('shows Your account on the account page', async () => {
     expect(headerTitle(await renderAt('/account'))).toBe('Your account');
+  });
+});
+
+describe('Shell activity button', () => {
+  it('shows the Activity button to a jobs:read holder before Help', async () => {
+    configure({ grants: [{ action: 'jobs:read' }] });
+    const fixture = await renderAt('/account');
+    const actions = (fixture.nativeElement as HTMLElement).querySelector(
+      '.header-actions',
+    );
+    expect(actions?.firstElementChild?.tagName.toLowerCase()).toBe(
+      'app-job-activity',
+    );
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        'button[aria-label^="Activity:"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it('hides the Activity button without jobs:read or devices:read', async () => {
+    configure({ grants: [{ action: 'schools:read' }] });
+    const fixture = await renderAt('/account');
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('app-job-activity'),
+    ).toBeNull();
   });
 });
 

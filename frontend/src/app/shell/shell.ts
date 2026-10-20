@@ -16,6 +16,7 @@ import { DevicesStore } from '../devices/devices.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
 import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
 import { schoolsReadable } from '../schools/schools.store';
+import { JobActivity } from '../jobs/job-activity';
 import { jobsReadable } from '../jobs/jobs.store';
 
 @Component({
@@ -27,6 +28,7 @@ import { jobsReadable } from '../jobs/jobs.store';
     MatButtonModule,
     MatIconModule,
     MatMenuModule,
+    JobActivity,
   ],
   templateUrl: './shell.html',
   styleUrl: './shell.css',
