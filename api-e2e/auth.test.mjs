@@ -552,8 +552,12 @@ test(
         clientId: 'synthetic-client',
         clientSecretRef: await secret('oidc-secret', password),
         publicOrigin,
-        sessionLifetimeSeconds: 300,
-        sessionIdleSeconds: 60,
+        // The interactive review commands keep the product session lengths
+        // (deployment/src/lib/deployment.ts). Automated runs keep short
+        // sessions, so their expiry checks finish quickly.
+        ...(clientReview && !mockIntegration
+          ? {}
+          : { sessionLifetimeSeconds: 300, sessionIdleSeconds: 60 }),
       };
       const redisConfig = join(directory, 'redis.conf');
       const redisOperatorPassword = randomUUID();
