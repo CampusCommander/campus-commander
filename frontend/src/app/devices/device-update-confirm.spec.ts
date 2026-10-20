@@ -289,6 +289,37 @@ it('summarises a clear preview', async () => {
   );
 });
 
+it('summarises a first value when some devices have none', async () => {
+  const rows = [target(1, { observedValue: null }), target(2)];
+  const { element, settle } = setup({
+    previewReply: async () =>
+      Response.json({ ...preview, selected: 2, eligible: 2 }),
+    targetsReply: async () =>
+      Response.json({ targets: rows, nextCursor: null }),
+  });
+  await settle();
+  expect(element.textContent).toContain(
+    'Annotated location changes from Science wing or no value to North lab. Other fields remain unchanged.',
+  );
+});
+
+it('summarises a first value when no device has one', async () => {
+  const rows = [
+    target(1, { observedValue: null }),
+    target(2, { observedValue: null }),
+  ];
+  const { element, settle } = setup({
+    previewReply: async () =>
+      Response.json({ ...preview, selected: 2, eligible: 2 }),
+    targetsReply: async () =>
+      Response.json({ targets: rows, nextCursor: null }),
+  });
+  await settle();
+  expect(element.textContent).toContain(
+    'Annotated location is set to North lab. Other fields remain unchanged.',
+  );
+});
+
 it('opens the preview with Back to preview', async () => {
   const { button, navigate, settle } = setup();
   await settle();
