@@ -116,71 +116,87 @@ export async function qualifyDeviceWritesOnMock({
     'The mock stack holds two devices to write.',
   );
 
-  const seedJob = async ({ devices, value, mode = 'replace', beforeStart }) => {
+  const seedJob = async ({
+    devices,
+    value,
+    mode = 'replace',
+    beforeStart,
+    beforeCommit,
+  }) => {
     const jobId = randomUUID();
     const previewId = randomUUID();
-    await migrator.query(
-      `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+    // One transaction: the preview, the header, the detail, and the operations become visible together.
+    // A tick that runs during the seed cannot admit a half-written job (R1-F2).
+    await migrator.query('BEGIN');
+    try {
+      await migrator.query(
+        `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
         generation,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
       VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotatedLocation',$6,$7,$8,$8,0,0,
         'manifest-digest',clock_timestamp()+interval '1 hour')`,
-      [
-        previewId,
-        customer,
-        principal.id,
-        principal.permission_version,
-        connection.generation,
-        mode,
-        mode === 'clear' ? null : value,
-        devices.length,
-      ],
-    );
-    await migrator.query(
-      `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+        [
+          previewId,
+          customer,
+          principal.id,
+          principal.permission_version,
+          connection.generation,
+          mode,
+          mode === 'clear' ? null : value,
+          devices.length,
+        ],
+      );
+      await migrator.query(
+        `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
         target_count,correlation_id,created_at)
       VALUES($1,cc.job_display_id('UPD',nextval('cc.job_number_upd')),$2,'device-update','devices','accepted',$3,$4,
         $5,$6,clock_timestamp())`,
-      [
-        jobId,
-        customer,
-        principal.id,
-        connection.generation,
-        devices.length,
-        randomUUID(),
-      ],
-    );
-    await migrator.query(
-      `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,confirmer_permission_version,
-        delegated_subject,batch_size,batch_count)
-      VALUES($1,$2,'annotatedLocation',$3,$4,$5,$6,$7,$8,1)`,
-      [
-        jobId,
-        previewId,
-        mode,
-        mode === 'clear' ? null : value,
-        principal.id,
-        principal.permission_version,
-        mock.adminEmail,
-        devices.length,
-      ],
-    );
-    for (const [index, deviceId] of devices.entries())
-      await migrator.query(
-        `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
-          baseline_value,requested_value,batch,status)
-        VALUES($1,$2,$3,$4,'/School A',NULL,$5,0,'pending')`,
         [
           jobId,
-          index + 1,
-          deviceId,
-          `SN-${deviceId}`,
-          mode === 'clear' ? null : value,
+          customer,
+          principal.id,
+          connection.generation,
+          devices.length,
+          randomUUID(),
         ],
       );
+      await migrator.query(
+        `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,confirmer_permission_version,
+        delegated_subject,batch_size,batch_count)
+      VALUES($1,$2,'annotatedLocation',$3,$4,$5,$6,$7,$8,1)`,
+        [
+          jobId,
+          previewId,
+          mode,
+          mode === 'clear' ? null : value,
+          principal.id,
+          principal.permission_version,
+          mock.adminEmail,
+          devices.length,
+        ],
+      );
+      for (const [index, deviceId] of devices.entries())
+        await migrator.query(
+          `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
+          baseline_value,requested_value,batch,status)
+        VALUES($1,$2,$3,$4,'/School A',NULL,$5,0,'pending')`,
+          [
+            jobId,
+            index + 1,
+            deviceId,
+            `SN-${deviceId}`,
+            mode === 'clear' ? null : value,
+          ],
+        );
+      // The fault exists before the job becomes visible, so the started worker always meets it.
+      if (beforeStart) await beforeStart();
+      if (beforeCommit) await beforeCommit();
+      await migrator.query('COMMIT');
+    } catch (error) {
+      await migrator.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    }
     // The job service tick admits the accepted job and starts its flow (B5). Wait for that one
-    // admission and one start, then read the execution the API recorded. A check that installs a
-    // mock fault does it before the start, so the worker meets the fault.
-    if (beforeStart) await beforeStart();
+    // admission and one start, then read the execution the API recorded.
     const deadline = Date.now() + totalMs;
     let executionId;
     for (;;) {
@@ -279,6 +295,42 @@ export async function qualifyDeviceWritesOnMock({
   };
 
   await clearFaults();
+
+  // R1-F2: the seed commits its whole job in one transaction. A tick that runs while the seed is
+  // paused admits nothing, and the committed job takes exactly one admission and one start.
+  {
+    let pausedFor = 0;
+    const startedAt = Date.now();
+    const { jobId, executionId } = await seedJob({
+      devices: [deviceIds[0]],
+      value: 'Room seed',
+      beforeCommit: async () => {
+        // Longer than one tick period, so at least one tick runs while the rows stay uncommitted.
+        await delay(6_000);
+        pausedFor = Date.now() - startedAt;
+      },
+    });
+    assert.ok(pausedFor >= 6_000);
+    const state = (
+      await migrator.query(
+        `SELECT j.status,d.dispatch_count,d.dispatch_token,d.start_deadline_at
+          FROM cc.jobs j JOIN cc.device_update_jobs d ON d.job_id=j.job_id WHERE j.job_id=$1`,
+        [jobId],
+      )
+    ).rows[0];
+    assert.equal(
+      state.dispatch_count,
+      1,
+      'The committed job took exactly one admission.',
+    );
+    assert.ok(state.dispatch_token, 'The admission rotated a token.');
+    assert.ok(state.start_deadline_at instanceof Date);
+    const execution = await waitExecution(executionId);
+    assert.equal(execution.state.current, 'SUCCESS', JSON.stringify(execution));
+    results.push(
+      'a seed that pauses inside its transaction admits nothing, and one valid start follows the commit: pass',
+    );
+  }
 
   // Item 24: Kestra runs device_update against the real worker; the job reaches
   // its terminal status through the mock.

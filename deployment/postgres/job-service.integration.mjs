@@ -267,6 +267,23 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
     orchestration,
     clock: () => now,
   });
+  // A job service whose publisher fails the way a Redis outage fails it. Every other command works,
+  // so the check isolates publication from the committed dispatch decision (R1-F1).
+  const failingPublisher = () =>
+    new JobService({
+      database,
+      cache: {
+        get: (key) => cache.get(key),
+        set: (key, value, seconds) => cache.set(key, value, seconds),
+        release: (key, item) => cache.release(key, item),
+        publish: async () => {
+          throw new Error('redis unavailable');
+        },
+        increment: (key) => cache.increment(key),
+      },
+      orchestration,
+      clock: () => now,
+    });
   const workerCache = () => {
     const calls = [];
     return {
@@ -541,6 +558,42 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
         assert.equal(await service.cleanup(customer), 1);
         assert.equal(await cached(jobHoldKey(customer)), null);
         assert.ok((await detail(first.jobId)).hold_cleaned_at instanceof Date);
+      },
+    );
+
+    await check(
+      'the hold cleanup refuses a job that has not reached a terminal status',
+      async () => {
+        await settle();
+        const { jobId } = await makeJob({ devices: ['b5-clean1'] });
+        await service.admit(customer);
+        await admin(
+          'UPDATE cc.device_update_jobs SET hold_written_at=clock_timestamp() WHERE job_id=$1',
+          [jobId],
+        );
+        assert.equal((await jobRow(jobId)).status, 'running');
+        // A direct runtime-role call changes nothing for the running job (round 2, ruling 3).
+        assert.equal(
+          await result('SELECT cc.clean_device_update_hold($1,$2) AS result', [
+            customer,
+            jobId,
+          ]),
+          false,
+        );
+        assert.equal((await detail(jobId)).hold_cleaned_at, null);
+        // The terminal status still takes the mark.
+        await admin(
+          `UPDATE cc.jobs SET status='completed',finished_at=clock_timestamp() WHERE job_id=$1`,
+          [jobId],
+        );
+        assert.equal(
+          await result('SELECT cc.clean_device_update_hold($1,$2) AS result', [
+            customer,
+            jobId,
+          ]),
+          true,
+        );
+        assert.ok((await detail(jobId)).hold_cleaned_at instanceof Date);
       },
     );
 
@@ -907,6 +960,79 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
         assert.equal(flow.jobId, jobId);
         assert.equal(flow.operationNumber, 'all');
         assert.equal('verifyAttempt' in flow, false);
+      },
+    );
+
+    await check(
+      'a failed publication after admission keeps its row for the relay and still starts the job',
+      async () => {
+        await settle();
+        const { jobId } = await makeJob({ devices: ['b5-pubfail1'] });
+        const before = starts.length;
+        assert.equal(await failingPublisher().admit(customer), false);
+        const row = await detail(jobId);
+        assert.equal((await jobRow(jobId)).status, 'running');
+        assert.equal(row.dispatch_count, 1);
+        assert.equal(typeof row.kestra_execution_id, 'string');
+        assert.equal(starts.length, before + 1);
+        // The failed send left its row for the relay.
+        const left = await publications(jobId);
+        assert.ok(
+          left.some((one) => one.status_changed),
+          JSON.stringify(left),
+        );
+        await admin(
+          `UPDATE cc.job_publications SET created_at=clock_timestamp()-interval '6 seconds'
+            WHERE job_id=$1`,
+          [jobId],
+        );
+        await service.relay();
+        assert.equal((await publications(jobId)).length, 0);
+        const event = take('job').filter((one) => one.jobId === jobId).at(-1);
+        assert.ok(event, 'The relay published the row the admission left.');
+        assert.equal(event.revision, Number((await jobRow(jobId)).revision));
+      },
+    );
+
+    await check(
+      'a failed publication after a reaper run keeps its row and still starts reconcile for all',
+      async () => {
+        await settle();
+        const { jobId } = await makeJob({ devices: ['b5-pubfail2'] });
+        await service.admit(customer);
+        const token = await tokenOf(jobId);
+        await claim(jobId, token, 0, randomUUID());
+        await admin(
+          `UPDATE cc.device_update_jobs SET dispatch_count=3,heartbeat_at=clock_timestamp()-interval '11 minutes'
+            WHERE job_id=$1`,
+          [jobId],
+        );
+        await expireBatches(jobId);
+        const reconcileBefore = reconciles.length;
+        assert.equal(await failingPublisher().recover(customer), true);
+        const header = await jobRow(jobId);
+        assert.equal(header.status, 'needs-review', JSON.stringify(header));
+        assert.deepEqual(
+          (await operations(jobId)).map((row) => row.status),
+          ['unknown'],
+        );
+        assert.equal(reconciles.length, reconcileBefore + 1);
+        const flow = reconciles.at(-1);
+        assert.equal(flow.jobId, jobId);
+        assert.equal(flow.operationNumber, 'all');
+        assert.equal('verifyAttempt' in flow, false);
+        const left = await publications(jobId);
+        assert.ok(
+          left.some((one) => one.status_changed),
+          JSON.stringify(left),
+        );
+        await admin(
+          `UPDATE cc.job_publications SET created_at=clock_timestamp()-interval '6 seconds'
+            WHERE job_id=$1`,
+          [jobId],
+        );
+        await service.relay();
+        assert.equal((await publications(jobId)).length, 0);
       },
     );
 
