@@ -17,9 +17,9 @@ const entityChannel = (customer) => `cc:entity-events:${customer}`;
 /**
  * Design section 8.3, items 5, 9, 14, 15, and 24 on the mock stack.
  *
- * Each check seeds a write job through the migrator pattern of B2, admits it
- * through cc.admit_device_update_job, and starts the deployed device_update
- * flow through the Kestra API. The real worker writes to admin-sdk-mock.
+ * Each check seeds a write job through the migrator pattern of B2 and waits for the
+ * job service to admit it and start the deployed device_update flow through the
+ * Kestra API. The real worker writes to admin-sdk-mock.
  */
 export async function qualifyDeviceWritesOnMock({
   migrator,
@@ -116,7 +116,7 @@ export async function qualifyDeviceWritesOnMock({
     'The mock stack holds two devices to write.',
   );
 
-  const seedJob = async ({ devices, value, mode = 'replace' }) => {
+  const seedJob = async ({ devices, value, mode = 'replace', beforeStart }) => {
     const jobId = randomUUID();
     const previewId = randomUUID();
     await migrator.query(
@@ -177,47 +177,36 @@ export async function qualifyDeviceWritesOnMock({
           mode === 'clear' ? null : value,
         ],
       );
-    const admitted = (
-      await migrator.query(
-        'SELECT cc.admit_device_update_job($1,$2) AS result',
-        [customer, false],
-      )
-    ).rows[0].result;
-    assert.equal(admitted.jobId, jobId, JSON.stringify(admitted));
-    const detail = (
-      await migrator.query(
-        'SELECT dispatch_token,batch_count FROM cc.device_update_jobs WHERE job_id=$1',
-        [jobId],
-      )
-    ).rows[0];
-    return {
-      jobId,
-      token: detail.dispatch_token,
-      batchCount: detail.batch_count,
-    };
-  };
-
-  const startFlow = async (jobId, token, batchCount) => {
-    const form = new FormData();
-    for (const [key, value] of Object.entries({
-      customerId: customer,
-      jobId,
-      dispatchToken: token,
-      batches: JSON.stringify([...Array(batchCount).keys()]),
-      correlationId: randomUUID(),
-    }))
-      form.set(key, String(value));
-    const response = await fetch(
-      `${kestra.origin}/api/v1/main/executions/campus.application/device_update`,
-      {
-        method: 'POST',
-        headers: { authorization: kestra.authorization },
-        body: form,
-      },
-    );
-    const text = await response.text();
-    assert.equal(response.status, 200, text);
-    return JSON.parse(text).id;
+    // The job service tick admits the accepted job and starts its flow (B5). Wait for that one
+    // admission and one start, then read the execution the API recorded. A check that installs a
+    // mock fault does it before the start, so the worker meets the fault.
+    if (beforeStart) await beforeStart();
+    const deadline = Date.now() + totalMs;
+    let executionId;
+    for (;;) {
+      const state = (
+        await migrator.query(
+          `SELECT j.status,j.failure,d.kestra_execution_id
+            FROM cc.jobs j JOIN cc.device_update_jobs d ON d.job_id=j.job_id WHERE j.job_id=$1`,
+          [jobId],
+        )
+      ).rows[0];
+      if (state.kestra_execution_id) {
+        executionId = state.kestra_execution_id;
+        break;
+      }
+      assert.notEqual(
+        state.status,
+        'failed',
+        `The job service failed the seeded job: ${state.failure}`,
+      );
+      assert.ok(
+        Date.now() < deadline,
+        'The job service admitted and started the seeded job.',
+      );
+      await delay(250);
+    }
+    return { jobId, executionId };
   };
 
   const waitExecution = async (executionId) => {
@@ -294,13 +283,11 @@ export async function qualifyDeviceWritesOnMock({
   // Item 24: Kestra runs device_update against the real worker; the job reaches
   // its terminal status through the mock.
   {
-    const { jobId, token, batchCount } = await seedJob({
+    const { jobId, executionId } = await seedJob({
       devices: [deviceIds[0]],
       value: 'Room 24',
     });
-    const execution = await waitExecution(
-      await startFlow(jobId, token, batchCount),
-    );
+    const execution = await waitExecution(executionId);
     assert.equal(execution.state.current, 'SUCCESS', JSON.stringify(execution));
     const state = await job(jobId);
     assert.equal(state.status, 'completed', JSON.stringify(state));
@@ -332,17 +319,19 @@ export async function qualifyDeviceWritesOnMock({
       }
     });
     try {
-      const { jobId, token, batchCount } = await seedJob({
+      let hang;
+      const { jobId, executionId } = await seedJob({
         devices: [deviceIds[0]],
         value: 'Room 5',
+        beforeStart: async () => {
+          hang = await addFault({
+            kind: 'hang',
+            method: 'directory.chromeosdevices.patch',
+            ms: 12000,
+            count: 1,
+          });
+        },
       });
-      const hang = await addFault({
-        kind: 'hang',
-        method: 'directory.chromeosdevices.patch',
-        ms: 12000,
-        count: 1,
-      });
-      const executionId = await startFlow(jobId, token, batchCount);
       const deadline = Date.now() + 60_000;
       let remaining;
       for (;;) {
@@ -403,19 +392,18 @@ export async function qualifyDeviceWritesOnMock({
 
   // Item 9: the write scope is missing during the batch.
   {
-    const { jobId, token, batchCount } = await seedJob({
+    const { jobId, executionId } = await seedJob({
       devices: [deviceIds[0]],
       value: 'Room 9',
-    });
-    await addFault({
-      kind: 'remove-scope',
-      clientId: mock.key.client_id,
-      scope: writeScope,
+      beforeStart: () =>
+        addFault({
+          kind: 'remove-scope',
+          clientId: mock.key.client_id,
+          scope: writeScope,
+        }),
     });
     try {
-      const execution = await waitExecution(
-        await startFlow(jobId, token, batchCount),
-      );
+      const execution = await waitExecution(executionId);
       assert.equal(
         execution.state.current,
         'SUCCESS',
@@ -442,13 +430,11 @@ export async function qualifyDeviceWritesOnMock({
   // Item 14: Replace then a list behind the mock's search lag keeps the written
   // value. A flush and a later list delete the overlay.
   {
-    const { jobId, token, batchCount } = await seedJob({
+    const { jobId, executionId } = await seedJob({
       devices: [deviceIds[1]],
       value: 'Room 14',
     });
-    const execution = await waitExecution(
-      await startFlow(jobId, token, batchCount),
-    );
+    const execution = await waitExecution(executionId);
     assert.equal(execution.state.current, 'SUCCESS', JSON.stringify(execution));
     assert.equal((await operations(jobId))[0].status, 'succeeded');
     let device = (await byIds([deviceIds[1]]))[0];
@@ -487,9 +473,7 @@ export async function qualifyDeviceWritesOnMock({
       value: null,
       mode: 'clear',
     });
-    const clearExecution = await waitExecution(
-      await startFlow(clear.jobId, clear.token, clear.batchCount),
-    );
+    const clearExecution = await waitExecution(clear.executionId);
     assert.equal(
       clearExecution.state.current,
       'SUCCESS',

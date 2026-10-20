@@ -6,6 +6,7 @@ import { qualifyDeviceUpdates } from './device-updates.integration.mjs';
 import { qualifyEntityEntries } from './entity-entries.integration.mjs';
 import { qualifyWorkerWrites } from './worker-write.integration.mjs';
 import { qualifyJobsApi } from './jobs-api.integration.mjs';
+import { qualifyJobService } from './job-service.integration.mjs';
 import { qualifyRestoredAccess } from './restore-access.integration.mjs';
 import { qualifyGoogleLifecycle } from './google-lifecycle.integration.mjs';
 import { qualifyGoogleHealth } from './google-health.integration.mjs';
@@ -596,6 +597,13 @@ try {
   );
   results.push(
     ...(await qualifyJobsApi({
+      runtime,
+      migrator: migrators[0],
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyJobService({
       runtime,
       migrator: migrators[0],
       issuer,

@@ -101,7 +101,7 @@
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "command": "node --import ./libs/application-contracts/test-register.mjs deployment/postgres/integration.mjs"
+        "command": "node --import ./libs/application-contracts/test-register.mjs --import ./deployment/postgres/api-types.mjs deployment/postgres/integration.mjs"
       },
       "dependsOn": ["build"]
     },
