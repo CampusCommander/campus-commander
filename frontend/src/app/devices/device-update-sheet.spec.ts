@@ -810,6 +810,50 @@ it('shows a loading state when it enters Confirm', async () => {
   );
 });
 
+it('shows a loading state when Back to preview re-reads the frozen scope', async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let entered: () => void = () => undefined;
+  const reached = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  let previewReads = 0;
+  const { element, fixture, type, save, settle } = await setup({
+    request: async (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(preview, { status: 201 });
+      if (path === previewReadPath) {
+        previewReads++;
+        if (previewReads === 2) {
+          entered();
+          await gate;
+        }
+        return Response.json(preview);
+      }
+      if (path.includes('/targets'))
+        return Response.json({ targets, nextCursor: null });
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await reachConfirm(element, type, save, settle);
+  clickButton(element, 'Back to preview');
+  await reached;
+  fixture.detectChanges();
+  expect(element.textContent).toContain('Loading the preview…');
+  expect(element.querySelector('li.step.is-active')?.textContent).toContain(
+    'Review',
+  );
+  expect(element.textContent).not.toContain('Continue to confirmation');
+
+  release();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 6 device updates',
+  );
+});
+
 it('shows a 410 expired preview when it enters Confirm', async () => {
   const { element, type, save, settle } = await setup({
     request: (path) => {
