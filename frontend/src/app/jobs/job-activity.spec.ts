@@ -2,10 +2,11 @@ import { Component, computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { JobActivity, JobSummary } from '@campus/application-contracts';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { AuthStore } from '../auth.store';
 import { JobActivity as JobActivityPanel } from './job-activity';
 import { JobActivityStore } from './job-activity.store';
+import type { JobEventSource } from './job-stream';
 
 const maya = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const customerId = 'C0123456';
@@ -468,4 +469,130 @@ it('shows the error sentence when the summary is unavailable', async () => {
   await open(fixture);
   const alert = dialog(fixture)?.querySelector('[role="alert"]');
   expect(alert?.textContent).toContain('Activity is unavailable.');
+});
+
+/** One event stream of the real activity store. */
+class FakeSource {
+  readyState = 0;
+  readonly listeners = new Map<string, ((event: Event) => void)[]>();
+
+  addEventListener(name: string, listener: (event: Event) => void): void {
+    const listeners = this.listeners.get(name) ?? [];
+    listeners.push(listener);
+    this.listeners.set(name, listeners);
+  }
+
+  close(): void {
+    this.readyState = 2;
+  }
+
+  emit(name: string, event: Event = new Event(name)): void {
+    for (const listener of this.listeners.get(name) ?? []) listener(event);
+  }
+}
+
+const flushPromises = async () => {
+  for (let index = 0; index < 10; index++) await Promise.resolve();
+};
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+it('removes a Recent row from the open panel at its 24-hour expiry', async () => {
+  vi.useFakeTimers();
+  const observedAt = '2026-10-19T12:00:00.000Z';
+  const nextExpiryAt = '2026-10-20T11:30:30.000Z';
+  let expired = false;
+  const request = vi.fn(async (path: string) => {
+    // A failed seen request changes no summary, so only the expiry timer rereads.
+    if (path === '/api/jobs/activity/seen')
+      return new Response(null, { status: 500 });
+    return Response.json(
+      expired
+        ? activity({ observedAt: nextExpiryAt })
+        : activity({
+            observedAt,
+            recent: {
+              count: 1,
+              jobs: [
+                job({
+                  displayId: 'UPD-012',
+                  status: 'completed',
+                  finishedAt: '2026-10-19T11:30:30.000Z',
+                  progress: {
+                    total: 48,
+                    succeeded: 48,
+                    failed: 0,
+                    unknown: 0,
+                    skipped: 0,
+                    pending: 0,
+                  },
+                }),
+              ],
+              nextExpiryAt,
+            },
+          }),
+    );
+  });
+  TestBed.configureTestingModule({
+    imports: [JobActivityPanel],
+    providers: [
+      provideRouter([{ path: '**', component: TestRoute }]),
+      {
+        provide: AuthStore,
+        useValue: {
+          session: signal({
+            identity: {
+              id: maya,
+              displayName: 'Maya Chen',
+              permissionVersion: 1,
+              permissions: [],
+              grants: [
+                {
+                  action: 'jobs:read',
+                  scope: { kind: 'district', customerId },
+                },
+              ],
+              preferences: { theme: 'light', navigationCollapsed: false },
+            },
+            csrfToken: 'a'.repeat(64),
+            expiresAt: '2026-10-20T12:00:00.000Z',
+          }),
+          metadata: signal({ phase: 3 }),
+          request,
+        },
+      },
+    ],
+  });
+  const store = TestBed.inject(JobActivityStore);
+  store.eventSource = () => new FakeSource() as unknown as JobEventSource;
+  const fixture = TestBed.createComponent(JobActivityPanel);
+  TestBed.tick();
+  fixture.detectChanges();
+  await flushPromises();
+  expect(store.summary()?.recent.count).toBe(1);
+
+  button(fixture)?.click();
+  fixture.detectChanges();
+  expect(dialog(fixture)?.textContent).toContain('Recent · 1 · last 24 hours');
+  expect(
+    dialog(fixture)?.querySelector('a.row[href="/jobs/UPD-012"]'),
+  ).not.toBeNull();
+
+  const delay = Date.parse(nextExpiryAt) - Date.parse(observedAt);
+  await vi.advanceTimersByTimeAsync(delay - 1);
+  await flushPromises();
+  fixture.detectChanges();
+  expect(
+    dialog(fixture)?.querySelector('a.row[href="/jobs/UPD-012"]'),
+  ).not.toBeNull();
+
+  expired = true;
+  await vi.advanceTimersByTimeAsync(1);
+  await flushPromises();
+  fixture.detectChanges();
+  expect(store.summary()?.recent.count).toBe(0);
+  expect(dialog(fixture)?.textContent).not.toContain('Recent ·');
+  expect(dialog(fixture)?.querySelector('a.row')).toBeNull();
 });
