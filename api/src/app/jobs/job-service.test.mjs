@@ -487,6 +487,23 @@ test('a Redis failure keeps the relay rows for the next run', async () => {
   );
 });
 
+test('an unavailable database makes the relay wait for the next run', async () => {
+  const database = {
+    calls: [],
+    connection: {
+      query: async () => {
+        throw new Error('database unavailable');
+      },
+    },
+  };
+  const service = serviceOf({
+    database,
+    cache: cacheOf(),
+    orchestration: orchestrationOf(),
+  });
+  assert.equal(await service.relay(), true);
+});
+
 test('one relay run executes at a time', async () => {
   let release;
   const blocked = new Promise((resolve) => {

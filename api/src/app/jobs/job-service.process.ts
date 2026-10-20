@@ -37,7 +37,8 @@ export class JobServiceProcess
       void this.tick();
     }, JOB_TICK_MS);
     this.relayer = setInterval(() => {
-      void this.jobs.relay();
+      // The relay never rejects: a failed run keeps its rows for the next tick.
+      void this.jobs.relay().catch(() => undefined);
     }, JOB_RELAY_MS);
     this.ticker.unref?.();
     this.relayer.unref?.();

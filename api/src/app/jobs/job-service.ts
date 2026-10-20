@@ -429,9 +429,10 @@ export class JobService {
     if (this.relaying) return false;
     this.relaying = true;
     try {
+      // A database outage skips this run; the next timer tick retries.
       const customers = await this.rows(
         'SELECT DISTINCT customer_id FROM cc.job_publications ORDER BY customer_id',
-      );
+      ).catch(() => []);
       for (const row of customers) {
         try {
           await this.relayCustomer(String(row['customer_id']));
