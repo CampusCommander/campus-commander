@@ -193,6 +193,76 @@ it('summarises a clear job as removals', async () => {
   );
 });
 
+it('agrees with a completed job after a reload', async () => {
+  const completed: JobDetail = {
+    ...job,
+    status: 'completed',
+    startedAt: '2026-10-19T12:00:30.000Z',
+    finishedAt: '2026-10-19T12:01:00.000Z',
+    progress: {
+      total: 6,
+      succeeded: 6,
+      failed: 0,
+      unknown: 0,
+      skipped: 0,
+      pending: 0,
+    },
+  };
+  const { element, request, fixture, settle, settleOn } = setup({
+    jobReply: async () => Response.json(completed),
+  });
+  await settle();
+  expect(element.textContent).toContain('Job UPD-006 · Completed');
+  expect(element.textContent).toContain(
+    '6 devices · 6 annotated-location updates. All Google changes completed.',
+  );
+  expect(element.textContent).not.toContain(
+    'Google changes have not completed',
+  );
+
+  fixture.destroy();
+  const reload = TestBed.createComponent(JobReceiptPage);
+  reload.componentRef.setInput('displayId', 'UPD-006');
+  reload.detectChanges();
+  await settleOn(reload);
+  const reloaded: HTMLElement = reload.nativeElement;
+  expect(reloaded.textContent).toContain('Job UPD-006 · Completed');
+  expect(reloaded.textContent).toContain(
+    '6 devices · 6 annotated-location updates. All Google changes completed.',
+  );
+  expect(reloaded.textContent).not.toContain(
+    'Google changes have not completed',
+  );
+  expect(
+    request.mock.calls.filter(([path]) => path === '/api/jobs/UPD-006'),
+  ).toHaveLength(2);
+});
+
+it('agrees with a job that completed with errors', async () => {
+  const { element, settle } = setup({
+    jobReply: async () =>
+      Response.json({
+        ...job,
+        status: 'completed-with-errors',
+        startedAt: '2026-10-19T12:00:30.000Z',
+        finishedAt: '2026-10-19T12:01:00.000Z',
+        progress: {
+          total: 6,
+          succeeded: 5,
+          failed: 1,
+          unknown: 0,
+          skipped: 0,
+          pending: 0,
+        },
+      }),
+  });
+  await settle();
+  expect(element.textContent).toContain('Job UPD-006 · Completed with errors');
+  expect(element.textContent).toContain(
+    'Some Google changes did not complete.',
+  );
+});
+
 it('reads GET /api/jobs/:displayId on the first view and on a reload', async () => {
   const { request, fixture, settle, settleOn } = setup();
   await settle();

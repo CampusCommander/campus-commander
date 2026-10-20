@@ -9,7 +9,8 @@ export function receiptSubtitle(job: JobDetail): string {
 
 /**
  * "6 devices · 6 annotated-location updates. Google changes have not completed."
- * The frame names both counters, so the line keeps both.
+ * The frame names both counters, so the line keeps both. A reload can return a
+ * finished job, so the last sentence follows the returned status.
  */
 export function receiptCountLine(job: JobDetail): string {
   const devices = job.scope.deviceCount ?? job.progress.total ?? 0;
@@ -20,7 +21,23 @@ export function receiptCountLine(job: JobDetail): string {
       : 'annotated-location updates';
   return `${deviceCountText(devices)} · ${updates.toLocaleString(
     'en-US',
-  )} ${noun}. Google changes have not completed.`;
+  )} ${noun}. ${receiptCompletionSentence(job)}`;
+}
+
+/** The completion sentence of the status that the job read returned. */
+export function receiptCompletionSentence(job: JobDetail): string {
+  switch (job.status) {
+    case 'completed':
+      return 'All Google changes completed.';
+    case 'completed-with-errors':
+      return 'Some Google changes did not complete.';
+    case 'needs-review':
+      return 'Some Google changes need review.';
+    case 'failed':
+      return 'Google changes did not complete.';
+    default:
+      return 'Google changes have not completed.';
+  }
 }
 
 /** The durable receipt copy of frame 104:74. */
