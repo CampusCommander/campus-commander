@@ -1,8 +1,8 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, type WritableSignal } from '@angular/core';
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { AuthStore } from '../auth.store';
 import { CustomerStore } from '../customer-settings/customer.store';
 import { DevicesStore } from '../devices/devices.store';
@@ -80,6 +80,8 @@ function configure(
           stale: () => false,
           health: signal(null),
           refresh: vi.fn(),
+          watch: vi.fn(),
+          unwatch: vi.fn(),
         },
       },
       {
@@ -190,5 +192,247 @@ describe('Shell navigation', () => {
     configure({ grants: [{ action: 'schools:read' }] });
     const fixture = await renderAt('/account');
     expect(nav(fixture, 'Jobs')).toBeNull();
+  });
+});
+
+function operator(
+  permissions: string[],
+  id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+) {
+  return {
+    identity: {
+      id,
+      displayName: 'District operator',
+      permissionVersion: 1,
+      permissions,
+      grants: [] as { action: string; scope: object }[],
+      preferences: { theme: 'light' as const, navigationCollapsed: false },
+    },
+    csrfToken: 'a'.repeat(64),
+    expiresAt: '2026-10-20T12:00:00.000Z',
+  };
+}
+
+type LiveSession = ReturnType<typeof operator>;
+
+/** The Shell with the real DiagnosticsStore and a request the test controls. */
+function configureLive(
+  session: WritableSignal<LiveSession | null>,
+  request: (path: string) => Promise<Response>,
+) {
+  TestBed.configureTestingModule({
+    providers: [
+      provideRouter([{ path: '**', component: TestRoute }]),
+      {
+        provide: AuthStore,
+        useValue: {
+          session,
+          metadata: signal({ phase: 3 }),
+          error: signal(null),
+          interrupted: signal(false),
+          loading: signal(false),
+          logout: vi.fn(),
+          resume: vi.fn(),
+          savePreferences: vi.fn(),
+          can: () => false,
+          request,
+        },
+      },
+      {
+        provide: CustomerStore,
+        useValue: { customer: signal(null), readable: () => false },
+      },
+      {
+        provide: ConnectionStore,
+        useValue: { connection: signal(null), readable: () => false },
+      },
+      {
+        provide: DevicesStore,
+        useValue: { readable: () => false },
+      },
+      {
+        provide: GoogleHealthStore,
+        useValue: { readable: () => false, summary: () => '' },
+      },
+      {
+        provide: JobActivityStore,
+        useValue: {
+          summary: signal(null),
+          loading: signal(true),
+          loaded: signal(false),
+          error: signal(''),
+          live: signal(false),
+          runningCount: signal(0),
+          attention: signal(false),
+          seen: vi.fn().mockResolvedValue(undefined),
+        },
+      },
+    ],
+  });
+}
+
+const serviceHealth = (status: 'ready' | 'not-ready') => ({
+  status,
+  observedAt: new Date().toISOString(),
+  checks: [{ name: 'PostgreSQL', status }],
+});
+
+const flushPromises = async () => {
+  for (let index = 0; index < 10; index++) await Promise.resolve();
+};
+
+function setVisibility(state: DocumentVisibilityState) {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => state,
+  });
+}
+
+function footerStatus(fixture: ComponentFixture<Shell>): string {
+  const links = (fixture.nativeElement as HTMLElement).querySelectorAll(
+    'footer a',
+  );
+  return links[0]?.textContent?.trim() ?? '';
+}
+
+describe('Shell connection status', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    setVisibility('visible');
+  });
+
+  it('keeps Services ready past 60 seconds with a timed read', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    const request = vi.fn(async () => Response.json(serviceHealth('ready')));
+    const session = signal<LiveSession | null>(operator(['diagnostics:read']));
+    configureLive(session, request);
+    const fixture = TestBed.createComponent(Shell);
+    fixture.detectChanges();
+    await flushPromises();
+    fixture.detectChanges();
+    expect(footerStatus(fixture)).toBe('Services ready');
+
+    await vi.advanceTimersByTimeAsync(61_000);
+    await flushPromises();
+    fixture.detectChanges();
+
+    expect(footerStatus(fixture)).toBe('Services ready');
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it('shows a failed read and clears it on the next read', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    let failing = true;
+    const request = vi.fn(async () =>
+      failing
+        ? new Response(null, { status: 503 })
+        : Response.json(serviceHealth('ready')),
+    );
+    const session = signal<LiveSession | null>(operator(['diagnostics:read']));
+    configureLive(session, request);
+    const fixture = TestBed.createComponent(Shell);
+    fixture.detectChanges();
+    await flushPromises();
+    fixture.detectChanges();
+    expect(footerStatus(fixture)).toBe('Connection status unavailable');
+
+    failing = false;
+    await vi.advanceTimersByTimeAsync(30_000);
+    await flushPromises();
+    fixture.detectChanges();
+
+    expect(footerStatus(fixture)).toBe('Services ready');
+  });
+
+  it('does not read while the tab is hidden and reads at once when visible', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    setVisibility('hidden');
+    const request = vi.fn(async () => Response.json(serviceHealth('ready')));
+    const session = signal<LiveSession | null>(operator(['diagnostics:read']));
+    configureLive(session, request);
+    const fixture = TestBed.createComponent(Shell);
+    fixture.detectChanges();
+    await flushPromises();
+    expect(request).not.toHaveBeenCalled();
+
+    setVisibility('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushPromises();
+    fixture.detectChanges();
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(footerStatus(fixture)).toBe('Services ready');
+  });
+
+  it('stops the timed read after a sign-out', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    const request = vi.fn(async () => Response.json(serviceHealth('ready')));
+    const session = signal<LiveSession | null>(operator(['diagnostics:read']));
+    configureLive(session, request);
+    const fixture = TestBed.createComponent(Shell);
+    fixture.detectChanges();
+    await flushPromises();
+    expect(request).toHaveBeenCalledTimes(1);
+
+    session.set(null);
+    TestBed.tick();
+    await vi.advanceTimersByTimeAsync(61_000);
+    await flushPromises();
+
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts no read without diagnostics:read', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    const request = vi.fn(async () => Response.json(serviceHealth('ready')));
+    const session = signal<LiveSession | null>(operator(['schools:read']));
+    configureLive(session, request);
+    const fixture = TestBed.createComponent(Shell);
+    fixture.detectChanges();
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(61_000);
+    await flushPromises();
+
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('starts the timed reads when a mounted shell gains diagnostics:read', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
+    const request = vi.fn(async () => Response.json(serviceHealth('ready')));
+    const session = signal<LiveSession | null>(operator(['schools:read']));
+    configureLive(session, request);
+    const fixture = TestBed.createComponent(Shell);
+    fixture.detectChanges();
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(61_000);
+    await flushPromises();
+    expect(request).not.toHaveBeenCalled();
+
+    // The session ends, then the same person resumes with diagnostics:read.
+    // The shell stays mounted, as it does when a session is restored.
+    session.set(null);
+    TestBed.tick();
+    await flushPromises();
+    expect(request).not.toHaveBeenCalled();
+
+    session.set(operator(['diagnostics:read']));
+    TestBed.tick();
+    await flushPromises();
+    fixture.detectChanges();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(footerStatus(fixture)).toBe('Services ready');
+
+    await vi.advanceTimersByTimeAsync(61_000);
+    await flushPromises();
+    fixture.detectChanges();
+
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(footerStatus(fixture)).toBe('Services ready');
   });
 });
