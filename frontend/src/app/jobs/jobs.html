@@ -1,0 +1,217 @@
+<div class="jobs">
+  <header class="page-header">
+    <h1>Jobs</h1>
+    <p class="subtitle">
+      District activity · Updates, commands, imports and exports
+    </p>
+  </header>
+
+  @if (store.offline()) {
+  <section class="banner" aria-labelledby="jobs-offline-title">
+    <h2 id="jobs-offline-title">
+      <strong>Offline</strong> · Showing the last received job state
+    </h2>
+    <p>
+      Reconnect to receive current outcomes. Existing jobs continue on the
+      server.
+    </p>
+  </section>
+  } @else if (store.stale()) {
+  <section class="banner" aria-labelledby="jobs-stale-title">
+    <h2 id="jobs-stale-title">Job state is stale</h2>
+    <p>
+      Showing the last received job state. Current data stays visible during
+      refresh.
+    </p>
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="store.refreshing()"
+      (click)="refresh()"
+    >
+      Refresh
+    </button>
+  </section>
+  } @if (store.error()) {
+  <p class="error" role="alert">{{ store.error() }}</p>
+  }
+
+  <div class="filter-row">
+    <div class="filters">
+      @for (filter of filters(); track $index) {
+      <span class="chip">
+        <button
+          type="button"
+          #chip
+          class="chip-body"
+          (click)="editingIndex.set($index)"
+        >
+          {{ filterLabel(filter) }}
+        </button>
+        <button
+          type="button"
+          class="chip-remove"
+          [attr.aria-label]="'Remove filter ' + filterLabel(filter)"
+          (click)="remove($index)"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >close</span
+          >
+        </button>
+      </span>
+      } @if (filters().length < 20 || editing()) {
+      <app-job-filter
+        [editing]="editing()"
+        [requesters]="loadRequesters"
+        (applied)="apply($event)"
+        (closed)="editorClosed()"
+      />
+      } @if (filters().length) {
+      <button mat-button type="button" (click)="clear()">Clear filters</button>
+      }
+    </div>
+    <div class="actions">
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="store.offline() || store.refreshing()"
+        (click)="refresh()"
+      >
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <div class="grid-region">
+    <div class="table-scroll" [attr.aria-busy]="store.reading()">
+      <table class="jobs-table">
+        <caption class="visually-hidden">
+          Jobs, newest first
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Job</th>
+            <th scope="col">Status</th>
+            <th scope="col">Progress</th>
+            <th scope="col">Scope</th>
+            <th scope="col">Requested by</th>
+            <th scope="col" aria-sort="descending">
+              Created<svg
+                class="sort-icon"
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+              >
+                <path d="M12 4l-6 6h4v10h4V10h4z" fill="currentColor" />
+              </svg>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (store.loading() && !store.page()) {
+          <tr class="message-row">
+            <td colspan="6">
+              <div class="grid-message" role="status">
+                <h2>Loading jobs</h2>
+                <p>Retrieving job status and operation counts.</p>
+              </div>
+            </td>
+          </tr>
+          } @else if (noJobs()) {
+          <tr class="message-row">
+            <td colspan="6">
+              <div class="grid-message" role="status">
+                <h2>No jobs yet</h2>
+                <p>
+                  Submitted updates, commands, imports, and exports will appear
+                  here.
+                </p>
+                @if (canOpenDevices()) {
+                <a mat-stroked-button routerLink="/devices">Open Devices</a>
+                }
+              </div>
+            </td>
+          </tr>
+          } @else if (noMatches()) {
+          <tr class="message-row">
+            <td colspan="6">
+              <div class="grid-message" role="status">
+                <h2>No jobs match these filters</h2>
+                <p>Change or clear the filters to view jobs.</p>
+                <button mat-stroked-button type="button" (click)="clear()">
+                  Clear filters
+                </button>
+              </div>
+            </td>
+          </tr>
+          } @for (job of rows(); track job.jobId) {
+          <tr>
+            <td>
+              <div class="job-cell">
+                <a
+                  class="details"
+                  [routerLink]="['/jobs', job.displayId]"
+                  [attr.aria-label]="'Open details for job ' + job.displayId"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >visibility</span
+                  >
+                </a>
+                <div class="job-text">
+                  <span class="job-id">{{ job.displayId }}</span>
+                  <span class="line">{{ actionLabel(job.action) }}</span>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span [class]="'status-chip tone-' + statusTone(job.status)"
+                ><span class="dot" aria-hidden="true"></span>{{
+                statusLabel(job.status) }}</span
+              >
+            </td>
+            <td class="progress">
+              <span>{{ progressLines(job)[0] }}</span>
+              <span class="line">{{ progressLines(job)[1] }}</span>
+            </td>
+            <td>{{ scopeLabel(job.scope) }}</td>
+            <td>{{ job.requestedBy.displayName }}</td>
+            <td>
+              <span>{{ formatTimestamp(job.createdAt) }}</span>
+              <span class="line">{{ durationLine(job) }}</span>
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <footer class="grid-footer">
+      <span class="footer-count" role="status">{{ footerCount() }}</span>
+      <div class="footer-paging">
+        <span class="footer-rows">{{ footerRows() }}</span>
+        <button
+          type="button"
+          class="page-button"
+          aria-label="Previous page"
+          [disabled]="!store.hasPrevious() || store.reading()"
+          (click)="previous()"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >chevron_left</span
+          >
+        </button>
+        <button
+          type="button"
+          class="page-button"
+          aria-label="Next page"
+          [disabled]="!store.hasNext() || store.reading()"
+          (click)="next()"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >chevron_right</span
+          >
+        </button>
+      </div>
+    </footer>
+  </div>
+</div>
