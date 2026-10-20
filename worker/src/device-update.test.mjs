@@ -15,7 +15,10 @@ import {
   deviceUpdateReconcileRequestSchema,
   resolveDeviceUpdateBatchSize,
 } from './device-update.ts';
-import { handleDeviceUpdateReconcileDispatch } from './dispatch.ts';
+import {
+  handleDeviceUpdateBatchDispatch,
+  handleDeviceUpdateReconcileDispatch,
+} from './dispatch.ts';
 import { DeviceSyncError } from './device-sync.ts';
 import { EntityCacheError, deferredEntityCache } from './entity-cache.ts';
 
@@ -184,13 +187,25 @@ function reader(rounds = [], states = []) {
       return result;
     },
     async deviceStates(_credential, _customer, ids, signal) {
-      this.calls.push({
+      const call = {
         name: 'deviceStates',
         ids: [...ids],
         aborted: signal.aborted,
-      });
+      };
+      this.calls.push(call);
       const nextState = states.shift();
       if (nextState instanceof Error) throw nextState;
+      // A held read-back waits for the abort of its window, as a real GET does.
+      if (nextState?.hang === true) {
+        await new Promise((resolve) => {
+          if (signal.aborted) resolve(undefined);
+          else signal.addEventListener('abort', resolve, { once: true });
+        });
+        call.aborted = signal.aborted;
+        throw Object.assign(new Error('read-back aborted'), {
+          name: 'AbortError',
+        });
+      }
       return (
         nextState ??
         ids.map((id) => ({
@@ -440,6 +455,14 @@ function advancingTimers(start = 0) {
 
 /** Let queued promise work run. */
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+/** Let queued promise work run until the condition holds. */
+async function until(predicate, limit = 50) {
+  for (let count = 0; count < limit; count += 1) {
+    if (predicate()) return;
+    await flush();
+  }
+}
 
 const names = (calls) => calls.map((call) => call.name);
 const settlements = (db) =>
@@ -2002,6 +2025,81 @@ test('a read-back inside the 15 s lease margin settles unknown without a GET', a
   );
 });
 
+test('a delayed database clock read aborts the read-back GET at the lease-minus-15-second boundary', async () => {
+  const clock = advancingTimers(base);
+  let clockReads = 0;
+  const db = database({
+    clock: () => {
+      const value = new Date(clock.now);
+      clockReads += 1;
+      // The read-back clock read captures t=0 and answers 2 s later.
+      if (clockReads === 1) clock.advance(2_000);
+      return value;
+    },
+    verificationRead: () => ({
+      outcome: 'held',
+      checkedAt: new Date(base).toISOString(),
+      generation: 1,
+      credentialId: randomUUID(),
+      envelope: { sealed: true },
+      operations: [
+        {
+          operationNumber: 3,
+          deviceId: 'd3',
+          serialNumber: null,
+          baselineValue: null,
+          requestedValue: 'Room 3',
+          verifyAfter: new Date(base).toISOString(),
+          verifyLeaseExpiresAt: new Date(base + 120_000).toISOString(),
+        },
+      ],
+    }),
+  });
+  const source = reader([], [{ hang: true }]);
+  const { create } = jobs({
+    db,
+    reader: source,
+    timers: clock.timers,
+    now: () => clock.now,
+  });
+  const running = create.runReconcile(
+    {
+      customerId,
+      jobId,
+      operationNumber: 3,
+      verifyAttempt: randomUUID(),
+      correlationId,
+    },
+    new AbortController().signal,
+  );
+  await flush();
+  await flush();
+  assert.equal(source.calls.length, 1, 'One GET is in flight.');
+  // The read-back clock read answered at t=2 s. The lease ends at t=120 s, so the
+  // GET must abort at t=105 s even though the response value names t=0.
+  clock.advance(102_000);
+  await flush();
+  assert.equal(
+    source.calls[0].aborted,
+    false,
+    'The GET stays open until the lease margin.',
+  );
+  clock.advance(1_000);
+  await flush();
+  assert.equal(
+    source.calls[0].aborted,
+    true,
+    'The GET aborts at the lease-minus-15-second boundary.',
+  );
+  const answer = await running;
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(answer.readBack.unknown, 1);
+  assert.equal(
+    JSON.parse(settlements(db)[0].values[5])[0].outcomeReason,
+    'verification-failed',
+  );
+});
+
 test('the worker renews the lease every 30 s while a part waits', async () => {
   const clock = advancingTimers(base);
   const db = database({ claim: () => claimed([op(1, 'd1')]) });
@@ -2038,7 +2136,7 @@ test('the worker renews the lease every 30 s while a part waits', async () => {
   assert.equal(source.calls[0].aborted, true);
 });
 
-test('a renewal delayed by the pool lets the watchdog abort 150 s after its start', async () => {
+test('a pending renewal keeps the previous watchdog deadline and the call aborts at 150 s', async () => {
   const clock = advancingTimers(base);
   let releaseRenew;
   const pending = new Promise((resolve) => {
@@ -2069,27 +2167,106 @@ test('a renewal delayed by the pool lets the watchdog abort 150 s after its star
     1,
     'The renewal request is in flight.',
   );
-  assert.ok(
-    clock.delays().includes(150_000),
-    'The watchdog is armed at the start of the renewal request.',
-  );
-  clock.advance(100_000);
+  // The claim started the deadline at the base time. The unanswered renewal at
+  // 30 s must not move it (R2-F1).
+  clock.advance(119_000);
   await flush();
   assert.equal(
     source.calls[0].aborted,
     false,
-    'The watchdog waits 150 s from the renewal start.',
+    'The claim deadline still holds while the renewal is unanswered.',
   );
-  clock.advance(50_000);
+  clock.advance(1_000);
   await flush();
   assert.equal(
     source.calls[0].aborted,
     true,
-    'The watchdog aborts 150 s after the renewal start.',
+    'The watchdog aborts 150 s after the successful claim.',
   );
   releaseRenew();
   const answer = await running;
   assert.equal(answer.outcome, 'settled');
+});
+
+test('a renewal that fails during the final drain answers non-2xx and releases nothing', async () => {
+  const clock = advancingTimers(base);
+  let renewals = 0;
+  let rejectPeriodic;
+  const held = new Promise((_, reject) => {
+    rejectPeriodic = reject;
+  });
+  const db = database({
+    claim: () => claimed([op(1, 'd1')]),
+    renew: async () => {
+      renewals += 1;
+      // The periodic renewal stays in flight. The after-round renewal succeeds.
+      if (renewals === 1) await held;
+      return new Date(clock.now);
+    },
+  });
+  let openRound;
+  const gate = new Promise((resolve) => {
+    openRound = resolve;
+  });
+  const source = reader([{ gate, parts: { d1: { kind: 'success' } } }]);
+  const { create } = jobs({
+    db,
+    reader: source,
+    timers: clock.timers,
+    now: () => clock.now,
+  });
+  const signal = new AbortController().signal;
+  const request = Readable.from([
+    Buffer.from(
+      JSON.stringify({
+        executionId: 'exec-1',
+        customerId,
+        jobId,
+        dispatchToken,
+        batch: 0,
+        correlationId,
+      }),
+    ),
+  ]);
+  request.method = 'POST';
+  request.url = '/dispatch/device-update-batch';
+  request.headers = {
+    authorization: `Bearer ${'s'.repeat(32)}`,
+    'content-type': 'application/json',
+  };
+  const response = {
+    statusCode: 0,
+    payload: null,
+    writeHead(statusCode) {
+      this.statusCode = statusCode;
+    },
+    end(text) {
+      this.payload = JSON.parse(text);
+    },
+  };
+  const handled = handleDeviceUpdateBatchDispatch(
+    request,
+    response,
+    { secret: 's'.repeat(32), signal },
+    { updateDevices: (input) => create.runBatch(input, signal) },
+  );
+  await flush();
+  await flush();
+  clock.advance(30_000);
+  await flush();
+  assert.equal(renewals, 1, 'The periodic renewal is in flight.');
+  openRound();
+  await until(() => settlements(db).length === 1);
+  assert.equal(renewals, 2, 'The after-round renewal succeeded.');
+  rejectPeriodic(new Error('pool timeout'));
+  await handled;
+  assert.equal(response.statusCode, 503);
+  assert.deepEqual(response.payload, { error: 'store-unavailable' });
+  assert.equal(
+    names(db.calls).includes('release_device_update_batch'),
+    false,
+    'A renewal failure never releases the lease.',
+  );
 });
 
 test('a numeric Reconcile request requires a verification attempt', async () => {
