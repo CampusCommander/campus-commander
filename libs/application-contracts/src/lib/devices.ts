@@ -3,6 +3,7 @@ import {
   googleCustomerIdSchema,
   googleFailureSchema,
 } from './google-connection';
+import { googleHealthFailureSchema } from './google-health';
 
 const timestamp = z.iso.datetime({ offset: true });
 const deviceId = z.string().min(1).max(128);
@@ -325,6 +326,37 @@ export const deviceSyncStateSchema = z.strictObject({
   stale: z.boolean(),
 });
 export type DeviceSyncState = z.infer<typeof deviceSyncStateSchema>;
+
+/** The answer of Refresh Selected. `selected` counts the devices the job reads. */
+export const deviceSelectionRefreshSchema = z.strictObject({
+  jobId: z.uuid().nullable(),
+  selected: z.number().int().min(1).max(100_000),
+});
+export type DeviceSelectionRefreshAnswer = z.infer<
+  typeof deviceSelectionRefreshSchema
+>;
+
+/** The answer of Refresh Domain. The sync and the domain read report separately. */
+const deviceDomainRefreshShape = z.strictObject({
+  sync: deviceSyncStateSchema,
+  domain: z.strictObject({
+    status: z.enum(['refreshed', 'failed']),
+    /** A passed check carries no reason. A failed check names its cause. */
+    reason: z
+      .union([googleHealthFailureSchema, z.enum(['busy', 'unavailable'])])
+      .nullable(),
+  }),
+});
+export const deviceDomainRefreshSchema = deviceDomainRefreshShape.refine(
+  (answer: z.infer<typeof deviceDomainRefreshShape>) =>
+    (answer.domain.reason === null) === (answer.domain.status === 'refreshed'),
+  {
+    message: 'A refreshed check carries no reason. A failed check names one.',
+  },
+);
+export type DeviceDomainRefreshAnswer = z.infer<
+  typeof deviceDomainRefreshSchema
+>;
 
 export const deviceOrgUnitSchema = z.strictObject({
   path: orgUnitPath,

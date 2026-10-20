@@ -8,7 +8,9 @@ import {
   deviceOrgUnitsSchema,
   deviceSelectionChangeSchema,
   deviceSelectionKeySchema,
+  deviceSelectionRefreshSchema,
   deviceSelectionSpecSchema,
+  deviceDomainRefreshSchema,
   deviceGroupQuerySchema,
   deviceGroupingSchema,
   deviceDetailSchema,
@@ -391,6 +393,98 @@ test('freshness reports the stale count and whether a refresh runs', () => {
   );
   assert.equal(
     deviceFreshnessSchema.safeParse({ stale: -1, refreshing: false }).success,
+    false,
+  );
+});
+
+const syncState = {
+  customerId: 'C0123456',
+  generation: 1,
+  status: 'running',
+  observedAt: null,
+  deviceCount: 0,
+  failure: null,
+  telemetryFailure: null,
+  startedAt: '2026-10-20T12:00:00.000Z',
+  checkedAt: null,
+  stale: false,
+};
+
+test('a selection refresh answer names its job and its device count', () => {
+  const jobId = '33333333-3333-4333-8333-333333333333';
+  assert.deepEqual(deviceSelectionRefreshSchema.parse({ jobId, selected: 3 }), {
+    jobId,
+    selected: 3,
+  });
+  assert.equal(
+    deviceSelectionRefreshSchema.safeParse({ jobId: null, selected: 3 })
+      .success,
+    true,
+  );
+  assert.equal(
+    deviceSelectionRefreshSchema.safeParse({ jobId: null, selected: 0 })
+      .success,
+    false,
+  );
+  assert.equal(
+    deviceSelectionRefreshSchema.safeParse({ jobId: 'job-1', selected: 3 })
+      .success,
+    false,
+  );
+  assert.equal(
+    deviceSelectionRefreshSchema.safeParse({ jobId, selected: 100_001 })
+      .success,
+    false,
+  );
+  assert.equal(
+    deviceSelectionRefreshSchema.safeParse({ jobId, selected: 3, extra: true })
+      .success,
+    false,
+  );
+});
+
+test('a domain refresh answer pairs a status with exactly one reason rule', () => {
+  assert.deepEqual(
+    deviceDomainRefreshSchema.parse({
+      sync: syncState,
+      domain: { status: 'refreshed', reason: null },
+    }),
+    { sync: syncState, domain: { status: 'refreshed', reason: null } },
+  );
+  assert.deepEqual(
+    deviceDomainRefreshSchema.parse({
+      sync: syncState,
+      domain: { status: 'failed', reason: 'quota' },
+    }).domain,
+    { status: 'failed', reason: 'quota' },
+  );
+  for (const reason of ['busy', 'unavailable', 'permission-denied'])
+    assert.equal(
+      deviceDomainRefreshSchema.safeParse({
+        sync: syncState,
+        domain: { status: 'failed', reason },
+      }).success,
+      true,
+    );
+  assert.equal(
+    deviceDomainRefreshSchema.safeParse({
+      sync: syncState,
+      domain: { status: 'refreshed', reason: 'quota' },
+    }).success,
+    false,
+  );
+  assert.equal(
+    deviceDomainRefreshSchema.safeParse({
+      sync: syncState,
+      domain: { status: 'failed', reason: null },
+    }).success,
+    false,
+  );
+  assert.equal(
+    deviceDomainRefreshSchema.safeParse({
+      sync: syncState,
+      domain: { status: 'failed', reason: 'unknown' },
+    }).success,
     false,
   );
 });
