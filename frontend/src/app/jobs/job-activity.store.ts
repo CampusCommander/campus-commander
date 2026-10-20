@@ -106,6 +106,11 @@ export class JobActivityStore {
     try {
       const response = await this.auth.request('/api/jobs/activity/seen', {});
       if (!current()) return;
+      if (response.status === 403) {
+        // A denial clears the summary and every indicator, as a denied read does.
+        this.denied();
+        return;
+      }
       if (!response.ok) return;
       const parsed = jobSeenSchema.safeParse(
         await response.json().catch(() => null),
@@ -166,11 +171,7 @@ export class JobActivityStore {
       if (!current()) return [];
       if (response.status === 403) {
         // A 403 clears the summary and every indicator of the button.
-        this.summary.set(null);
-        this.loading.set(false);
-        this.loaded.set(false);
-        this.error.set('Activity is unavailable.');
-        this.clearExpiry();
+        this.denied();
         return [];
       }
       if (!response.ok) {
@@ -201,6 +202,18 @@ export class JobActivityStore {
       this.failed(true);
       return null;
     }
+  }
+
+  /**
+   * A 403 clears the summary and every indicator of the button (scope 7).
+   * Both a denied read and a denied `seen` request use this path.
+   */
+  private denied(): void {
+    this.summary.set(null);
+    this.loading.set(false);
+    this.loaded.set(false);
+    this.error.set('Activity is unavailable.');
+    this.clearExpiry();
   }
 
   private failed(offline: boolean): void {

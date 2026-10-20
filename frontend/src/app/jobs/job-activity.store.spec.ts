@@ -218,6 +218,29 @@ it('rereads after a reconnect open', async () => {
   expect(requestMock).toHaveBeenCalledTimes(reads + 1);
 });
 
+it('ends live updates while the stream reconnects and rereads on the next open', async () => {
+  vi.useFakeTimers();
+  const { store, stream, requestMock, openSource } = setup();
+  await flush();
+  stream.emit('open');
+  expect(store.live()).toBe(true);
+  const reads = requestMock.mock.calls.length;
+
+  // A lost connection leaves a native EventSource in CONNECTING (readyState 0).
+  stream.readyState = 0;
+  stream.emit('error');
+  expect(store.live()).toBe(false);
+  // The browser keeps its own retry. No close and no client reopen take part.
+  expect(openSource).toHaveBeenCalledTimes(1);
+
+  stream.emit('open');
+  expect(store.live()).toBe(true);
+  await vi.advanceTimersByTimeAsync(250);
+  await flush();
+  expect(requestMock).toHaveBeenCalledTimes(reads + 1);
+  expect(openSource).toHaveBeenCalledTimes(1);
+});
+
 it('clears the dot after seen succeeds, without an event or a reconnect', async () => {
   vi.useFakeTimers();
   let attention = true;
@@ -271,7 +294,35 @@ it('leaves the dot after a failed seen request and sends it again next time', as
   expect(seenCalls).toBe(2);
 });
 
-it('rereads at nextExpiryAt no sooner than 60 s after the read', async () => {
+it('clears the summary and the indicators when seen is denied', async () => {
+  const { store, requestMock, openSource } = setup(async (path) =>
+    path === '/api/jobs/activity/seen'
+      ? new Response(null, { status: 403 })
+      : Response.json(
+          activity({
+            running: { count: 1, jobs: [job()] },
+            attention: true,
+          }),
+        ),
+  );
+  await flush();
+  expect(store.runningCount()).toBe(1);
+  expect(store.attention()).toBe(true);
+
+  await store.seen();
+  expect(store.summary()).toBeNull();
+  expect(store.runningCount()).toBe(0);
+  expect(store.attention()).toBe(false);
+  expect(store.loading()).toBe(false);
+  expect(store.error()).toBe('Activity is unavailable.');
+  // No job event and no reconnect take part, and no reread follows the denial.
+  expect(openSource).toHaveBeenCalledTimes(1);
+  expect(
+    requestMock.mock.calls.filter(([path]) => path === '/api/jobs/activity'),
+  ).toHaveLength(1);
+});
+
+it('rereads no sooner than 60 s after a read when the next expiry is closer', async () => {
   vi.useFakeTimers();
   let recent = true;
   const { store, requestMock } = setup(async () =>
@@ -311,6 +362,63 @@ it('rereads at nextExpiryAt no sooner than 60 s after the read', async () => {
   await flush();
   expect(requestMock).toHaveBeenCalledTimes(2);
   expect(store.summary()?.recent.count).toBe(0);
+});
+
+it('drops a Recent job at its 24-hour expiry without an event or a reconnect', async () => {
+  vi.useFakeTimers();
+  const observedAt = '2026-10-19T12:00:00.000Z';
+  const finishedAt = '2026-10-19T11:30:30.000Z';
+  const nextExpiryAt = '2026-10-20T11:30:30.000Z';
+  let expired = false;
+  const { store, requestMock, openSource } = setup(async () =>
+    Response.json(
+      expired
+        ? activity({ observedAt: nextExpiryAt })
+        : activity({
+            observedAt,
+            recent: {
+              count: 1,
+              jobs: [
+                job({
+                  displayId: 'UPD-012',
+                  status: 'completed',
+                  finishedAt,
+                  progress: {
+                    total: 48,
+                    succeeded: 48,
+                    failed: 0,
+                    unknown: 0,
+                    skipped: 0,
+                    pending: 0,
+                  },
+                }),
+              ],
+              nextExpiryAt,
+            },
+          }),
+    ),
+  );
+  await flush();
+  expect(store.summary()?.recent.count).toBe(1);
+  expect(store.summary()?.recent.jobs).toHaveLength(1);
+  const reads = requestMock.mock.calls.length;
+  const delay = Date.parse(nextExpiryAt) - Date.parse(observedAt);
+  // The 24-hour delay comes from observedAt, not from finishedAt, and exceeds the floor.
+  expect(delay).toBeGreaterThan(ACTIVITY_EXPIRY_FLOOR_MS);
+
+  expired = true;
+  await vi.advanceTimersByTimeAsync(delay - 1);
+  await flush();
+  expect(requestMock).toHaveBeenCalledTimes(reads);
+  expect(store.summary()?.recent.jobs).toHaveLength(1);
+
+  await vi.advanceTimersByTimeAsync(1);
+  await flush();
+  expect(requestMock).toHaveBeenCalledTimes(reads + 1);
+  expect(store.summary()?.recent.count).toBe(0);
+  expect(store.summary()?.recent.jobs).toHaveLength(0);
+  // No job event and no reconnect take part.
+  expect(openSource).toHaveBeenCalledTimes(1);
 });
 
 it('drops a held answer of the previous person', async () => {
@@ -385,6 +493,41 @@ it('ignores a held seen answer of the previous person', async () => {
   expect(
     requestMock.mock.calls.filter(([path]) => path === '/api/jobs/activity'),
   ).toHaveLength(reads);
+});
+
+it('ignores a held seen 403 of the previous person', async () => {
+  const session = signal<ReturnType<typeof sessionFor> | null>(
+    sessionFor(maya),
+  );
+  const heldSeen: ((response: Response) => void)[] = [];
+  const { store } = setup(
+    (path) =>
+      path === '/api/jobs/activity/seen'
+        ? new Promise<Response>((resolve) => heldSeen.push(resolve))
+        : Promise.resolve(
+            Response.json(activity({ running: { count: 1, jobs: [job()] } })),
+          ),
+    session,
+  );
+  await flush();
+  const seen = store.seen();
+  await flush();
+  expect(heldSeen).toHaveLength(1);
+
+  session.set(null);
+  TestBed.tick();
+  session.set(sessionFor(alex));
+  TestBed.tick();
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  expect(store.runningCount()).toBe(1);
+
+  // The previous person's denial arrives after the next person signed in.
+  heldSeen[0](new Response(null, { status: 403 }));
+  await seen;
+  await flush();
+  expect(store.summary()).not.toBeNull();
+  expect(store.runningCount()).toBe(1);
+  expect(store.error()).toBe('');
 });
 
 it('leaves no stale state after a 401 seen answer and a new sign-in', async () => {
