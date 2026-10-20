@@ -120,6 +120,11 @@ export class DeviceUpdatePreviewPage {
       );
       return;
     }
+    // The summary counts every frozen target. An empty list contradicts it.
+    if (summary.value.selected > 0 && targets.value.length === 0) {
+      this.showProblem('preview-unavailable', null, summary.value.displayId);
+      return;
+    }
     this.preview.set(summary.value);
     this.targets.set(targets.value);
     this.status.set('ready');

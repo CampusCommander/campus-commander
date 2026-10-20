@@ -330,6 +330,19 @@ it.each([
   },
 );
 
+it('shows an unavailable state when the target list contradicts the counts', async () => {
+  const { element, settle } = setup({
+    targetsReply: async () => Response.json({ targets: [], nextCursor: null }),
+  });
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The preview is unavailable',
+  );
+  expect(element.textContent).toContain(
+    'Campus Commander could not read the preview',
+  );
+});
+
 it('disables the recovery actions while a new preview prepares', async () => {
   let release: () => void = () => {
     throw new Error('Preview preparation not started');
