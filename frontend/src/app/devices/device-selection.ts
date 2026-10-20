@@ -113,6 +113,11 @@ function deviceOps(
 export class DeviceSelectionProvider implements ServerSideSelectionProvider {
   /** The latest selection that the API reported, for the status bar. */
   readonly spec = signal<DeviceSelectionSpec | null>(null);
+  /**
+   * Counts every applied selection change. The spec holds counts, so a same-count
+   * row replacement leaves it unchanged. This count tells those changes apart.
+   */
+  readonly revision = signal(0);
 
   constructor(
     private readonly call: (
@@ -163,8 +168,10 @@ export class DeviceSelectionProvider implements ServerSideSelectionProvider {
   }): Promise<void> {
     const context = this.context();
     const ops = params.ops.flatMap((op) => deviceOps(op, context));
+    if (!ops.length) return;
     for (const part of sized(ops, opsBudget, opBatch))
       this.keep(await this.post('/ops', { ...key(params), ops: part }));
+    this.revision.update((value) => value + 1);
   }
 
   async resolveSelected(params: {

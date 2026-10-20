@@ -47,6 +47,8 @@ const preview: DeviceUpdatePreview = {
   manifestDigest: 'a'.repeat(64),
 };
 
+const previewReadPath = `/api/devices/updates/previews/${previewId}`;
+
 const targets = [
   {
     deviceId: 'synthetic-device-1',
@@ -136,12 +138,18 @@ async function setup(options: SetupOptions = {}) {
   const spec = signal<DeviceSelectionSpec | null>(
     options.spec === undefined ? selection(options.count ?? 6) : options.spec,
   );
+  const revision = signal(0);
   const getSpec = vi.fn(async () => {
     if (options.spec === undefined) spec.set(selection(options.count ?? 6));
     return { terms: [], selectedCount: spec()?.selectedCount ?? 0 };
   });
+  /** One applied selection change: the grid sends ops, so the revision moves. */
+  const mutate = (next: DeviceSelectionSpec) => {
+    spec.set(next);
+    revision.update((value) => value + 1);
+  };
   const devices = {
-    selection: { getSpec, spec },
+    selection: { getSpec, spec, revision },
     selectionTab: tabId,
     selectedView: signal(false),
     offline: signal(false),
@@ -151,6 +159,8 @@ async function setup(options: SetupOptions = {}) {
       if (options.request) return options.request(path, body);
       if (path === '/api/devices/updates/previews')
         return Response.json(preview, { status: 201 });
+      if (path === `/api/devices/updates/previews/${previewId}`)
+        return Response.json(preview);
       if (path.includes('/targets'))
         return Response.json({ targets, nextCursor: null });
       if (path.endsWith('/confirm'))
@@ -238,6 +248,8 @@ async function setup(options: SetupOptions = {}) {
     fixture,
     element,
     spec,
+    revision,
+    mutate,
     request,
     navigate,
     closed,
@@ -434,12 +446,12 @@ it('moves focus to the sheet headline when it opens', async () => {
 });
 
 it('shows the selection-change note and keeps the frozen preview', async () => {
-  const { element, spec, type, save, settle } = await setup();
+  const { element, mutate, type, save, settle } = await setup();
   await type('North lab');
   await save();
   expect(element.textContent).not.toContain(SELECTION_CHANGED_NOTE);
 
-  spec.set(selection(7));
+  mutate(selection(7));
   await settle();
   expect(element.textContent).toContain(SELECTION_CHANGED_NOTE);
   // The frozen targets stay visible.
@@ -453,6 +465,32 @@ it('shows the selection-change note and keeps the frozen preview', async () => {
       candidate.click();
   });
   await settle();
+  expect(element.textContent).toContain(SELECTION_CHANGED_NOTE);
+});
+
+it('shows the note when a row is replaced at the same count', async () => {
+  const { element, mutate, type, save, settle } = await setup();
+  await type('North lab');
+  await save();
+  expect(element.textContent).not.toContain(SELECTION_CHANGED_NOTE);
+
+  // Devices 1, 2, 3 become 2, 3, 4: every count stays the same.
+  mutate(selection(6));
+  await settle();
+  expect(element.textContent).toContain(SELECTION_CHANGED_NOTE);
+  expect(element.textContent).toContain('C0A1-0001');
+  expect(element.textContent).toContain(
+    '6 devices · 6 field changes · 0 excluded',
+  );
+
+  element.querySelectorAll('button').forEach((candidate) => {
+    if (candidate.textContent?.trim() === 'Continue to confirmation')
+      candidate.click();
+  });
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Confirm 6 device updates',
+  );
   expect(element.textContent).toContain(SELECTION_CHANGED_NOTE);
 });
 
@@ -549,6 +587,7 @@ it('shows a 403 permission change inside the Confirm step', async () => {
     request: (path) => {
       if (path === '/api/devices/updates/previews')
         return Response.json(preview, { status: 201 });
+      if (path === previewReadPath) return Response.json(preview);
       if (path.includes('/targets'))
         return Response.json({ targets, nextCursor: null });
       if (path.endsWith('/confirm'))
@@ -627,6 +666,8 @@ it('shows the receipt answers of a clear job as removals', async () => {
           { ...preview, mode: 'clear', value: null },
           { status: 201 },
         );
+      if (path === previewReadPath)
+        return Response.json({ ...preview, mode: 'clear', value: null });
       if (path.includes('/targets'))
         return Response.json({ targets, nextCursor: null });
       if (path.endsWith('/confirm'))
@@ -656,6 +697,7 @@ it('shows a job read failure as not found', async () => {
     request: (path) => {
       if (path === '/api/devices/updates/previews')
         return Response.json(preview, { status: 201 });
+      if (path === previewReadPath) return Response.json(preview);
       if (path.includes('/targets'))
         return Response.json({ targets, nextCursor: null });
       if (path.endsWith('/confirm'))
@@ -682,4 +724,304 @@ it('shows a job read failure as not found', async () => {
     'Job not found',
   );
   expect(element.textContent).toContain('This job is unavailable');
+});
+
+const clickButton = (element: HTMLElement, name: string) => {
+  element.querySelectorAll('button').forEach((candidate) => {
+    if (candidate.textContent?.replace(/\s+/g, ' ').trim() === name)
+      candidate.click();
+  });
+};
+
+/** Save the draft and open the Confirm step. */
+async function reachConfirm(
+  element: HTMLElement,
+  type: (value: string) => Promise<void>,
+  save: () => Promise<void>,
+  settle: () => Promise<void>,
+) {
+  await type('North lab');
+  await save();
+  clickButton(element, 'Continue to confirmation');
+  await settle();
+}
+
+it('re-reads the frozen preview when it enters Confirm', async () => {
+  const { element, request, type, save, settle } = await setup();
+  await type('North lab');
+  await save();
+  const reads = () =>
+    request.mock.calls.filter(([path]) => path === previewReadPath).length;
+  expect(reads()).toBe(0);
+
+  clickButton(element, 'Continue to confirmation');
+  await settle();
+  expect(reads()).toBe(1);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Confirm 6 device updates',
+  );
+  expect(element.querySelector('li.step.is-active')?.textContent).toContain(
+    'Confirm',
+  );
+});
+
+it('shows a loading state when it enters Confirm', async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let entered: () => void = () => undefined;
+  const reached = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const { element, fixture, type, save, settle } = await setup({
+    request: async (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(preview, { status: 201 });
+      if (path === previewReadPath) {
+        entered();
+        await gate;
+        return Response.json(preview);
+      }
+      if (path.includes('/targets'))
+        return Response.json({ targets, nextCursor: null });
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await type('North lab');
+  await save();
+  clickButton(element, 'Continue to confirmation');
+  await reached;
+  fixture.detectChanges();
+  expect(element.textContent).toContain('Loading the approved scope…');
+  expect(element.querySelector('li.step.is-active')?.textContent).toContain(
+    'Confirm',
+  );
+  expect(
+    [...element.querySelectorAll('button')].some(
+      (candidate) => candidate.textContent?.trim() === 'Create update job',
+    ),
+  ).toBe(false);
+
+  release();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Confirm 6 device updates',
+  );
+});
+
+it('shows a 410 expired preview when it enters Confirm', async () => {
+  const { element, type, save, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(preview, { status: 201 });
+      if (path.includes('/targets'))
+        return Response.json({ targets, nextCursor: null });
+      if (path === previewReadPath)
+        return Response.json(
+          {
+            reason: 'preview-expired',
+            expiresAt: '2026-10-19T12:15:00.000Z',
+          },
+          { status: 410 },
+        );
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await reachConfirm(element, type, save, settle);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Preview expired',
+  );
+  expect(element.querySelector('li.step.is-active')?.textContent).toContain(
+    'Confirm',
+  );
+  expect(element.textContent).not.toContain('Create update job');
+});
+
+it('shows a 403 permission change when it enters Confirm', async () => {
+  const { element, type, save, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(preview, { status: 201 });
+      if (path.includes('/targets'))
+        return Response.json({ targets, nextCursor: null });
+      if (path === previewReadPath)
+        return Response.json({ reason: 'forbidden' }, { status: 403 });
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await reachConfirm(element, type, save, settle);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update device is unavailable',
+  );
+  expect(element.textContent).toContain(
+    'Your access does not permit this update',
+  );
+  expect(element.querySelector('li.step.is-active')?.textContent).toContain(
+    'Confirm',
+  );
+});
+
+it('shows the offline state when it enters Confirm and keeps the draft', async () => {
+  const { element, draft, type, save, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(preview, { status: 201 });
+      if (path.includes('/targets'))
+        return Response.json({ targets, nextCursor: null });
+      if (path === previewReadPath)
+        return Promise.reject(new TypeError('offline'));
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await reachConfirm(element, type, save, settle);
+  expect(element.textContent).toContain('Cannot reach Campus Commander');
+  expect(element.querySelector('li.step.is-active')?.textContent).toContain(
+    'Confirm',
+  );
+  expect(draft.value()).toBe('North lab');
+});
+
+it('shows a failed frozen read inside Review after Back to preview', async () => {
+  let targetReads = 0;
+  const { element, type, save, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(preview, { status: 201 });
+      if (path === previewReadPath) return Response.json(preview);
+      if (path.includes('/targets')) {
+        targetReads++;
+        if (targetReads > 2)
+          return Response.json({ reason: 'forbidden' }, { status: 403 });
+        return Response.json({ targets, nextCursor: null });
+      }
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await reachConfirm(element, type, save, settle);
+  clickButton(element, 'Back to preview');
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update device is unavailable',
+  );
+  expect(element.querySelector('li.step.is-active')?.textContent).toContain(
+    'Review',
+  );
+});
+
+it('ignores a successful confirmation from an earlier opening', async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started: () => void = () => undefined;
+  const sent = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const {
+    element,
+    input,
+    draft,
+    type,
+    save,
+    acknowledge,
+    settle,
+    close,
+    open,
+  } = await setup({
+    request: async (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(preview, { status: 201 });
+      if (path === previewReadPath) return Response.json(preview);
+      if (path.includes('/targets'))
+        return Response.json({ targets, nextCursor: null });
+      if (path.endsWith('/confirm')) {
+        started();
+        await gate;
+        return Response.json(receipt, { status: 201 });
+      }
+      if (path === '/api/jobs/UPD-006') return Response.json(job);
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await reachConfirm(element, type, save, settle);
+  await acknowledge();
+  clickButton(element, 'Create update job');
+  await sent;
+
+  element
+    .querySelector<HTMLButtonElement>('button[aria-label="Close"]')
+    ?.click();
+  await close();
+  await open();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update 6 devices',
+  );
+  expect(input()?.value).toBe('North lab');
+
+  release();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update 6 devices',
+  );
+  expect(element.textContent).not.toContain('Job UPD-006 · Running');
+  expect(draft.value()).toBe('North lab');
+  expect(
+    sessionStorage.getItem(
+      `cc.device-update-confirmation.${principal}.${previewId}`,
+    ),
+  ).toBeNull();
+});
+
+it('keeps an uncertain confirmation out of a later opening', async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started: () => void = () => undefined;
+  const sent = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const { element, draft, type, save, acknowledge, settle, close, open } =
+    await setup({
+      request: async (path) => {
+        if (path === '/api/devices/updates/previews')
+          return Response.json(preview, { status: 201 });
+        if (path === previewReadPath) return Response.json(preview);
+        if (path.includes('/targets'))
+          return Response.json({ targets, nextCursor: null });
+        if (path.endsWith('/confirm')) {
+          started();
+          await gate;
+          throw new TypeError('offline');
+        }
+        return Response.json({}, { status: 404 });
+      },
+    });
+  await reachConfirm(element, type, save, settle);
+  await acknowledge();
+  clickButton(element, 'Create update job');
+  await sent;
+
+  element
+    .querySelector<HTMLButtonElement>('button[aria-label="Close"]')
+    ?.click();
+  await close();
+  await open();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update 6 devices',
+  );
+
+  release();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update 6 devices',
+  );
+  expect(element.textContent).not.toContain('The confirmation did not finish');
+  expect(draft.value()).toBe('North lab');
+  expect(
+    sessionStorage.getItem(
+      `cc.device-update-confirmation.${principal}.${previewId}`,
+    ),
+  ).not.toBeNull();
 });

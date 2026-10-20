@@ -133,6 +133,7 @@ function setup(options: {
     position: signal<number | null>(null),
     selection: {
       spec: signal(selectionSpec),
+      revision: signal(0),
       getSpec: vi.fn(),
     },
     selectionTab: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',

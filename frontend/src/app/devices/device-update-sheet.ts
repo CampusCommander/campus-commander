@@ -249,16 +249,18 @@ export class DeviceUpdateSheet {
   /** The current selection, independent of the frozen preview. */
   private readonly selectionSignature = computed(() => {
     const spec = this.store.selection.spec();
-    return spec
-      ? JSON.stringify({
-          terms: spec.terms,
-          groups: spec.groups,
-          added: spec.added,
-          excluded: spec.excluded,
-          selectedCount: spec.selectedCount,
-          expiredAt: spec.expiredAt,
-        })
-      : null;
+    if (!spec) return null;
+    return JSON.stringify({
+      terms: spec.terms,
+      groups: spec.groups,
+      added: spec.added,
+      excluded: spec.excluded,
+      selectedCount: spec.selectedCount,
+      expiredAt: spec.expiredAt,
+      // The counts cannot tell one row from another. The revision counts every
+      // applied selection change, so a same-count row replacement still warns.
+      revision: this.store.selection.revision(),
+    });
   });
   protected readonly selectionChanged = computed(
     () =>
@@ -377,28 +379,33 @@ export class DeviceUpdateSheet {
 
   /** Read the stored selection. It reports the count and an expired selection. */
   async loadSelection(): Promise<void> {
+    const generation = this.generation;
     this.loadingSelection.set(true);
     this.selectionError.set('');
     this.editOffline.set(false);
     this.selectionExpired.set(false);
     try {
       await this.store.selection.getSpec(this.key);
+      if (generation !== this.generation) return;
       const spec = this.store.selection.spec();
       this.loadedCount.set(spec?.selectedCount ?? 0);
       if (spec?.expiredAt) this.selectionExpired.set(true);
     } catch {
+      if (generation !== this.generation) return;
       if (this.store.offline()) this.editOffline.set(true);
       else
         this.selectionError.set(
           'Campus Commander could not read the device selection.',
         );
     } finally {
-      this.loadingSelection.set(false);
+      if (generation === this.generation) this.loadingSelection.set(false);
     }
   }
 
   protected close(): void {
     if (!this.open()) return;
+    // A closed sheet abandons every answer of this opening.
+    this.generation++;
     this.closed.emit();
   }
 
@@ -439,21 +446,39 @@ export class DeviceUpdateSheet {
     this.step.set('edit');
   }
 
-  protected goReview(): void {
-    if (!this.preview()) return;
+  /** Back to preview re-reads the frozen scope before it shows the review. */
+  protected async goReview(): Promise<void> {
+    const preview = this.preview();
+    if (!preview) return;
+    const generation = ++this.generation;
     this.problem.set(null);
     this.problemDetail.set('');
-    this.status.set('ready');
     this.step.set('review');
+    await this.readFrozen(preview.previewId, generation);
   }
 
-  protected goConfirm(): void {
-    if (!this.preview() || !this.canContinue()) return;
+  /**
+   * A step entry re-reads the frozen preview and its targets before it offers a
+   * control, so expiry, permission, and offline answers keep their entry state.
+   */
+  protected async goConfirm(): Promise<void> {
+    const preview = this.preview();
+    if (!preview || !this.canContinue()) return;
+    const generation = ++this.generation;
     this.acknowledged.set(false);
     this.problem.set(null);
     this.problemDetail.set('');
-    this.status.set('ready');
     this.step.set('confirm');
+    // A retained confirmation may still hold the receipt of an existing job. A
+    // preview read would answer 410 after expiry and hide it.
+    const retained = this.confirmations.retained(preview.previewId);
+    if (retained) {
+      this.submitted.set(retained);
+      this.showProblem('confirm-uncertain');
+      return;
+    }
+    this.submitted.set(null);
+    await this.readFrozen(preview.previewId, generation);
   }
 
   protected setAcknowledged(checked: boolean): void {
@@ -585,6 +610,7 @@ export class DeviceUpdateSheet {
     submitted: SubmittedConfirmation,
     replay: boolean,
   ): Promise<void> {
+    const generation = this.generation;
     this.submitted.set(submitted);
     this.confirmations.retain(submitted);
     this.creating.set(true);
@@ -592,22 +618,32 @@ export class DeviceUpdateSheet {
       submitted.previewId,
       submitted.manifestDigest,
     );
-    this.creating.set(false);
     if (result.ok) {
+      // The answer settles the retained record even after the sheet closed.
       this.confirmations.release(submitted.previewId);
+      if (generation !== this.generation) return;
+      this.creating.set(false);
       this.submitted.set(null);
       this.openReceipt(result.value);
       return;
     }
     if (result.answer === 'confirm-uncertain') {
+      // Keep the record for a replay, but never change a later opening.
+      if (generation !== this.generation) return;
+      this.creating.set(false);
       this.showProblem('confirm-uncertain');
       return;
     }
     if (replay && confirmationMayExist(result.answer)) {
+      if (generation !== this.generation) return;
+      this.creating.set(false);
       this.showProblem('confirm-receipt-unavailable');
       return;
     }
+    // A named answer settles the record even after the sheet closed.
     this.confirmations.release(submitted.previewId);
+    if (generation !== this.generation) return;
+    this.creating.set(false);
     this.submitted.set(null);
     this.showProblem(
       result.answer,
@@ -710,16 +746,19 @@ export class DeviceUpdateSheet {
       await this.reloadConfirm();
       return;
     }
-    // Review: read the frozen targets again.
+    // Review: read the frozen preview again.
     const preview = this.preview();
-    if (preview) await this.readTargets(preview, this.generation);
+    if (preview) {
+      const generation = ++this.generation;
+      await this.readFrozen(preview.previewId, generation);
+    }
   }
 
-  /** Re-read the preview and targets of the Confirm step. */
-  private async reloadConfirm(): Promise<void> {
-    const previewId = this.preview()?.previewId;
-    if (!previewId) return;
-    const generation = ++this.generation;
+  /** Read the frozen summary and every target for the active step. */
+  private async readFrozen(
+    previewId: string,
+    generation: number,
+  ): Promise<void> {
     this.status.set('loading');
     this.problem.set(null);
     const summary = await this.flow.readPreview(previewId);
@@ -740,12 +779,20 @@ export class DeviceUpdateSheet {
     }
     this.preview.set(summary.value);
     this.targets.set(targets.value);
-    this.acknowledged.set(false);
     if (summary.value.eligible === 0) {
       this.showProblem('nothing-to-update', null, summary.value.displayId);
       return;
     }
     this.status.set('ready');
+  }
+
+  /** Re-read the preview and targets of the Confirm step. */
+  private async reloadConfirm(): Promise<void> {
+    const previewId = this.preview()?.previewId;
+    if (!previewId) return;
+    const generation = ++this.generation;
+    this.acknowledged.set(false);
+    await this.readFrozen(previewId, generation);
   }
 
   /** Prepare a new preview from the durable draft and open Review. */

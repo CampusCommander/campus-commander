@@ -112,6 +112,9 @@ interface ApiOptions {
   targetsStatus?: 200 | 410;
   confirmStatus?: 200 | 403;
   abortPreview?: boolean;
+  /** The frozen preview read that the sheet makes when it enters a step. */
+  previewReadStatus?: 410 | 403;
+  abortPreviewRead?: boolean;
 }
 
 /** The Devices page and the update routes needed by the sheet. */
@@ -125,6 +128,23 @@ async function mockApi(page: Page, options: ApiOptions = {}) {
     if (method === 'POST' && routePath === '/api/devices/updates/previews') {
       if (options.abortPreview) return route.abort('failed');
       return route.fulfill({ status: 201, json: preview });
+    }
+    if (
+      method === 'GET' &&
+      routePath === `/api/devices/updates/previews/${previewId}`
+    ) {
+      if (options.abortPreviewRead) return route.abort('failed');
+      if (options.previewReadStatus === 410)
+        return route.fulfill({
+          status: 410,
+          json: {
+            reason: 'preview-expired',
+            expiresAt: '2026-10-19T12:15:00.000Z',
+          },
+        });
+      if (options.previewReadStatus === 403)
+        return route.fulfill({ status: 403, json: { reason: 'forbidden' } });
+      return route.fulfill({ json: preview });
     }
     if (
       method === 'GET' &&
@@ -386,6 +406,67 @@ test('shows a 410 expired preview inside Review', async ({ page }) => {
   await expect(
     sheet.getByRole('button', { name: 'Continue to confirmation' }),
   ).toHaveCount(0);
+  await expectNoAxeViolations(page);
+});
+
+test('shows a 410 expired preview inside Confirm before approval', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 990 });
+  await mockApi(page, { previewReadStatus: 410 });
+  await openDevices(page);
+  const sheet = await openSheet(page);
+  await fillDraft(page);
+  await savePreview(page);
+  await sheet.getByRole('button', { name: 'Continue to confirmation' }).click();
+  await expect(
+    sheet.getByRole('heading', { name: 'Preview expired' }),
+  ).toBeVisible();
+  await expect(
+    sheet.getByText('Prepare a new preview before confirming'),
+  ).toBeVisible();
+  await expect(
+    sheet.getByRole('button', { name: 'Create update job' }),
+  ).toHaveCount(0);
+  await expect(sheet.locator('li.step.is-active')).toContainText('Confirm');
+  await expectNoAxeViolations(page);
+});
+
+test('shows a 403 permission change when Confirm opens', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 990 });
+  await mockApi(page, { previewReadStatus: 403 });
+  await openDevices(page);
+  const sheet = await openSheet(page);
+  await fillDraft(page);
+  await savePreview(page);
+  await sheet.getByRole('button', { name: 'Continue to confirmation' }).click();
+  await expect(
+    sheet.getByRole('heading', { name: 'Update device is unavailable' }),
+  ).toBeVisible();
+  await expect(
+    sheet.getByText('Your access does not permit this update'),
+  ).toBeVisible();
+  await expect(sheet.locator('li.step.is-active')).toContainText('Confirm');
+  await expectNoAxeViolations(page);
+});
+
+test('shows the offline state when Confirm opens', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 990 });
+  await mockApi(page, { abortPreviewRead: true });
+  await openDevices(page);
+  const sheet = await openSheet(page);
+  await fillDraft(page);
+  await savePreview(page);
+  await sheet.getByRole('button', { name: 'Continue to confirmation' }).click();
+  await expect(
+    sheet.getByRole('heading', { name: 'Cannot reach Campus Commander' }),
+  ).toBeVisible();
+  await expect(
+    sheet.getByText(
+      'Campus Commander did not answer. Check the connection and retry.',
+    ),
+  ).toBeVisible();
+  await expect(sheet.locator('li.step.is-active')).toContainText('Confirm');
   await expectNoAxeViolations(page);
 });
 
