@@ -4347,6 +4347,14 @@ export async function qualifyDeviceWriteJobs({
           FROM cc.device_update_jobs WHERE job_id=$1`,
         [jobId],
       );
+    // A fixture that rotates the dispatch token changes one detail field on purpose. Every other field
+    // of the detail row stays comparable, so a call that writes heartbeat_at or first_claimed_at after
+    // the rotation still fails its own check.
+    const withoutDispatchToken = (detail) => {
+      const rest = { ...detail };
+      delete rest.dispatch_token;
+      return rest;
+    };
     const batchRow = (jobId, batch = 0) =>
       adminRow(
         `SELECT attempt_id,execution_id,lease_expires_at,settled_at
@@ -8337,6 +8345,23 @@ export async function qualifyDeviceWriteJobs({
         'An invalid input changes nothing.',
       );
     };
+    // R1-F3: the verification read takes the global access lock first, before every row lock. An
+    // invalid input rejects while another session holds that lock, so a check that still waited on it
+    // would answer 55P03 under the short lock timeout instead of its defined error.
+    const rejectsBeforeGlobalLock = async ({ sql, values }) => {
+      await descendantHeld({
+        rows: [['SELECT pg_advisory_xact_lock(7240173008)', []]],
+        sql,
+        values,
+        expect: (answer) =>
+          assert.equal(
+            answer.code,
+            '22023',
+            'An invalid input rejects before the global access lock.',
+          ),
+      });
+      await rejects(result(sql, values), '22023');
+    };
 
     // R2-F1: a success without the provenance of its kind (design sections 5.7 and 7.1, eng-lead
     // ruling 1). At 768f8c3 it reached the locks and committed a success that published no device.
@@ -8948,6 +8973,118 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    // B2c R1-F1: a stop that a later wait finds skips every pending operation of the job. That set
+    // locks in operation_number order before the detail row, so a claim that waits on another batch's
+    // operation holds no detail row in that wait. At 3804b6b the claim locked the detail row first.
+    await ruleCheck(
+      'B2c R1-F1 a late stop takes the pending operation set before the detail row',
+      async () => {
+        const owner = await principal(`${randomUUID()}`, [
+          ['devices:read', district()],
+          ['devices:write', district()],
+          ['devices:bulk-actions', district()],
+        ]);
+        const job = await makeJob({
+          devices: ['r1f1-a', 'r1f1-b'],
+          batchSize: 1,
+          createdBy: owner,
+        });
+        const admitted = await admit(false);
+        assert.equal(
+          admitted.jobId,
+          job.jobId,
+          'The admission picks this job.',
+        );
+        const first = await connect('cc-migrator', 'cc-app');
+        const second = await connect('cc-migrator', 'cc-app');
+        const observer = await connect('cc-migrator', 'cc-app');
+        const caller = await connect('cc-app', 'cc-app');
+        let pending = null;
+        try {
+          // The claim of batch 0 waits on its own operation. The confirmer loses access in that wait.
+          // The other batch keeps a pending operation that a second session holds.
+          await first.query('BEGIN');
+          await first.query(...heldOperation(job.jobId, 1));
+          await second.query('BEGIN');
+          await second.query(...heldOperation(job.jobId, 2));
+          const firstPid = await pidOf(first);
+          const secondPid = await pidOf(second);
+          const callerPid = await pidOf(caller);
+          pending = caller
+            .query(claimSql, [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              0,
+              randomUUID(),
+              'r1f1-next',
+            ])
+            .then(
+              (queried) => ({ rows: queried.rows }),
+              (error) => ({ code: error.code, message: error.message }),
+            );
+          assert.equal(
+            await waitsFor(callerPid, firstPid),
+            true,
+            'The claim waits on the operation of its batch.',
+          );
+          await migrator.query(
+            'UPDATE cc.application_principals SET enabled=false WHERE id=$1',
+            [owner],
+          );
+          await first.query('ROLLBACK');
+          assert.equal(
+            await waitsFor(callerPid, secondPid),
+            true,
+            'The stopped claim waits on the pending operation of the other batch.',
+          );
+          await observer.query('BEGIN');
+          const detail = await observer
+            .query(
+              'SELECT 1 FROM cc.device_update_jobs WHERE job_id=$1 FOR UPDATE NOWAIT',
+              [job.jobId],
+            )
+            .then(
+              () => true,
+              (error) => error.code,
+            );
+          await observer.query('ROLLBACK');
+          assert.equal(
+            detail,
+            true,
+            'The late stop holds no detail row while it waits on a pending operation.',
+          );
+          await second.query('ROLLBACK');
+          const answer = await pending;
+          assert.equal(answer.code, undefined, answer.message);
+          assert.equal(answer.rows[0].result.outcome, 'stopped');
+          assert.equal(answer.rows[0].result.failure, 'permission-changed');
+          assert.deepEqual(
+            (await skipStamps(job.jobId)).map((row) => [
+              row.status,
+              row.outcome_reason,
+            ]),
+            [
+              ['skipped', 'permission-changed'],
+              ['skipped', 'permission-changed'],
+            ],
+          );
+        } finally {
+          await observer.query('ROLLBACK').catch(() => undefined);
+          await first.query('ROLLBACK').catch(() => undefined);
+          await second.query('ROLLBACK').catch(() => undefined);
+          if (pending) await pending;
+          await Promise.allSettled([
+            observer.end(),
+            first.end(),
+            second.end(),
+            caller.end(),
+          ]);
+        }
+        await endJob(job.jobId);
+      },
+    );
+
     await ruleCheck(
       'R2-F2 a stopped claim returns superseded when the token rotates in the skip wait',
       async () => {
@@ -8969,6 +9106,18 @@ export async function qualifyDeviceWriteJobs({
         assert.notEqual(
           after.detail.dispatch_token,
           before.detail.dispatch_token,
+        );
+        // B2c item 23: the stopped answer writes heartbeat_at and first_claimed_at, so a superseded
+        // call must change neither of them.
+        assert.equal(
+          after.detail.heartbeat_at?.getTime(),
+          before.detail.heartbeat_at?.getTime(),
+          'A superseded stopped claim writes no heartbeat.',
+        );
+        assert.equal(
+          after.detail.first_claimed_at?.getTime(),
+          before.detail.first_claimed_at?.getTime(),
+          'A superseded stopped claim writes no first claim.',
         );
         assert.deepEqual(
           { ...after, detail: null },
@@ -9280,6 +9429,1929 @@ export async function qualifyDeviceWriteJobs({
           privileges.owner_only,
           true,
           `${signature} grants EXECUTE to its owner only.`,
+        );
+      },
+    );
+
+    // ---- B2c: the worker contract checks of the addendum (addendum:723-783) and the F1 lock order.
+    // Item numbers below are the item numbers of the card, so they keep the addendum numbers. ----
+    const claimChunk = (jobId, cursor, limit, attempt = randomUUID()) =>
+      result(
+        'SELECT cc.claim_device_update_verification($1,$2,$3,$4,$5,$6) AS result',
+        [customer, jobId, null, attempt, cursor, limit],
+      );
+    const readVerification = (jobId, operations, attempt) =>
+      result(
+        'SELECT cc.read_device_update_verification($1,$2,$3,$4) AS result',
+        [customer, jobId, attempt, JSON.stringify(operations)],
+      );
+    const settleSql9 =
+      'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7,$8,$9) AS result';
+    const settleWith = (
+      jobId,
+      token,
+      attempt,
+      kind,
+      outcomes,
+      observedAt,
+      failure = null,
+      scopeFailure = null,
+    ) =>
+      result(settleSql9, [
+        customer,
+        jobId,
+        token,
+        attempt,
+        kind,
+        JSON.stringify(outcomes),
+        observedAt,
+        failure,
+        scopeFailure,
+      ]);
+    const scopeRow = (jobId) =>
+      adminRow(
+        'SELECT scope_observations,scope_failure FROM cc.device_update_jobs WHERE job_id=$1',
+        [jobId],
+      );
+    const unknownOperations = (jobId) =>
+      admin(
+        'UPDATE cc.device_update_operations SET status=$2 WHERE job_id=$1',
+        [jobId, 'unknown'],
+      );
+    const newestPublication = (jobId) =>
+      adminRow(
+        `SELECT publication_id,revision,status_changed FROM cc.job_publications
+          WHERE job_id=$1 ORDER BY publication_id DESC LIMIT 1`,
+        [jobId],
+      );
+    // A job that holds one claimed batch. The admission picks it, and the harness closes every other
+    // open write job before the check runs.
+    const claimedJob = async (devices, batchSize = devices.length) => {
+      const job = await makeJob({ devices, batchSize });
+      const admitted = await admit(false);
+      assert.equal(admitted.jobId, job.jobId, 'The admission picks this job.');
+      const attempt = randomUUID();
+      const claimed = await claim(
+        job.jobId,
+        admitted.dispatchToken,
+        0,
+        attempt,
+      );
+      assert.equal(claimed.outcome, 'claimed');
+      return { ...job, token: admitted.dispatchToken, attempt, claimed };
+    };
+    const newOwner = async () =>
+      principal(`${randomUUID()}`, [
+        ['devices:read', district()],
+        ['devices:write', district()],
+        ['devices:bulk-actions', district()],
+      ]);
+
+    // Item 1: one pass claims 1,001 unknown operations in chunks of 250, each exactly once.
+    await ruleCheck(
+      'B2c item 1 the read-back claim returns 1,001 unknown operations in chunks of 250',
+      async () => {
+        const devices = Array.from(
+          { length: 1001 },
+          (_, index) => `b2c1-${index}`,
+        );
+        const job = await makeJob({ devices, batchSize: 250 });
+        await unknownOperations(job.jobId);
+        const lengths = [];
+        const numbers = [];
+        let cursor = 0;
+        for (let round = 0; round < 6; round += 1) {
+          const chunk = await claimChunk(job.jobId, cursor, 250);
+          lengths.push(chunk.length);
+          numbers.push(...chunk.map((row) => row.operationNumber));
+          if (chunk.length > 0) cursor = chunk.at(-1).operationNumber;
+        }
+        assert.deepEqual(lengths, [250, 250, 250, 250, 1, 0]);
+        assert.deepEqual(
+          numbers,
+          Array.from({ length: 1001 }, (_, index) => index + 1),
+          'Each pass claims each operation once.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 2: a completed chunk claim holds only the rows of its chunk, and no row outside the chunk.
+    await ruleCheck(
+      'B2c item 2 a chunk claim locks only its chunk',
+      async () => {
+        const job = await makeJob({
+          devices: ['b2c2-a', 'b2c2-b'],
+          batchSize: 2,
+        });
+        await unknownOperations(job.jobId);
+        const claimer = await connect('cc-app', 'cc-app');
+        const control = await connect('cc-migrator', 'cc-app');
+        const observer = await connect('cc-migrator', 'cc-app');
+        try {
+          // The claim runs inside its own transaction, so every lock that it took is still held when
+          // the probes ask for the rows.
+          await claimer.query('BEGIN');
+          const answer = await claimer.query(
+            'SELECT cc.claim_device_update_verification($1,$2,$3,$4,$5,$6) AS result',
+            [customer, job.jobId, null, randomUUID(), 0, 1],
+          );
+          assert.deepEqual(
+            answer.rows[0].result.map((row) => row.operationNumber),
+            [1],
+          );
+          await control.query('BEGIN');
+          const inside = await control
+            .query(
+              'SELECT 1 FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1 FOR UPDATE NOWAIT',
+              [job.jobId],
+            )
+            .then(
+              () => true,
+              (error) => error.code,
+            );
+          await control.query('ROLLBACK');
+          assert.equal(
+            inside,
+            '55P03',
+            'The completed claim holds the operation of its chunk.',
+          );
+          await observer.query('BEGIN');
+          const outside = await observer
+            .query(
+              'SELECT 1 FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=2 FOR UPDATE NOWAIT',
+              [job.jobId],
+            )
+            .then(
+              () => true,
+              (error) => error.code,
+            );
+          await observer.query('ROLLBACK');
+          assert.equal(
+            outside,
+            true,
+            'A completed chunk claim leaves an operation outside the chunk free.',
+          );
+        } finally {
+          await claimer.query('ROLLBACK').catch(() => undefined);
+          await Promise.allSettled([
+            control.end(),
+            observer.end(),
+            claimer.end(),
+          ]);
+        }
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 3: a negative cursor and a limit outside 1 to 250 reject before any lock.
+    await ruleCheck(
+      'B2c item 3 a bad cursor or limit rejects before any lock',
+      async () => {
+        const job = await heldJob('b2c3-a');
+        for (const values of [
+          [customer, job.jobId, null, job.attempt, -1, null],
+          [customer, job.jobId, null, job.attempt, 0, 0],
+          [customer, job.jobId, null, job.attempt, 0, 251],
+        ])
+          await rejectsBeforeLocks({
+            jobId: job.jobId,
+            deviceId: 'b2c3-a',
+            sql: 'SELECT cc.claim_device_update_verification($1,$2,$3,$4,$5,$6) AS result',
+            values,
+          });
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 4: a null cursor and a null limit claim every eligible operation.
+    await ruleCheck(
+      'B2c item 4 a null cursor and a null limit claim every eligible operation',
+      async () => {
+        const job = await makeJob({ devices: ['b2c4-a', 'b2c4-b', 'b2c4-c'] });
+        await unknownOperations(job.jobId);
+        const chunk = await claimChunk(job.jobId, null, null);
+        assert.deepEqual(
+          chunk.map((row) => row.operationNumber),
+          [1, 2, 3],
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 5: the read-back exception acts on a terminal job, so a chunk claim still returns its
+    // unknown operations after the final finish answers needs-review.
+    await ruleCheck(
+      'B2c item 5 a chunk claim claims the unknown operations of a terminal job',
+      async () => {
+        const job = await makeJob({
+          devices: ['b2c5-a', 'b2c5-b'],
+          batchSize: 2,
+        });
+        const admitted = await admit(false);
+        assert.equal(
+          admitted.jobId,
+          job.jobId,
+          'The admission picks this job.',
+        );
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        assert.equal(
+          (
+            await prepareFinish(
+              job.jobId,
+              admitted.dispatchToken,
+              'network-failure',
+            )
+          ).outcome,
+          'ready',
+        );
+        const finished = await finishJob(job.jobId);
+        assert.equal(finished.status, 'needs-review');
+        const chunk = await claimChunk(job.jobId, 0, 250);
+        assert.deepEqual(
+          chunk.map((row) => row.operationNumber),
+          [2],
+          'The terminal job still claims its unknown operation.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 6: one attempt holds two listed operations, so the answer carries the envelope and both.
+    await ruleCheck(
+      'B2c item 6 an attempt that holds two listed operations receives held',
+      async () => {
+        const job = await claimedJob(['b2c6-a', 'b2c6-b']);
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              verifiedBy: 'write-response',
+            },
+            {
+              operationNumber: 2,
+              outcome: 'unknown',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        const answer = await readVerification(job.jobId, [1, 2], job.attempt);
+        assert.equal(answer.outcome, 'held');
+        assert.equal(answer.generation, generation);
+        assert.equal(answer.credentialId, connection.credential_id);
+        assert.equal(typeof answer.envelope, 'object');
+        assert.equal(typeof answer.checkedAt, 'string');
+        assert.equal(Number.isNaN(Date.parse(answer.checkedAt)), false);
+        assert.deepEqual(
+          answer.operations.map((row) => row.operationNumber),
+          [1, 2],
+        );
+        assert.deepEqual(
+          answer.operations.map((row) => row.deviceId),
+          ['b2c6-a', 'b2c6-b'],
+        );
+        for (const row of answer.operations) {
+          assert.equal(row.serialNumber, `SN-${row.deviceId}`);
+          assert.equal(row.baselineValue, null);
+          assert.equal(row.requestedValue, 'Room 12');
+          assert.equal(typeof row.verifyAfter, 'string');
+          assert.equal(typeof row.verifyLeaseExpiresAt, 'string');
+        }
+        await stop(job.jobId, job.token, 0, job.attempt);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 7: every hold that does not match answers not-held without an envelope.
+    await ruleCheck(
+      'B2c item 7 a foreign attempt, a lapsed lease, a settled operation, and an unlisted operation give not-held',
+      async () => {
+        const job = await claimedJob(['b2c7-a', 'b2c7-b']);
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              verifiedBy: 'write-response',
+            },
+            {
+              operationNumber: 2,
+              outcome: 'unknown',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        assert.equal(
+          (await readVerification(job.jobId, [1, 2], job.attempt)).outcome,
+          'held',
+        );
+        assert.deepEqual(
+          await readVerification(job.jobId, [1, 2], randomUUID()),
+          { outcome: 'not-held' },
+          'Another attempt holds no listed operation.',
+        );
+        assert.deepEqual(
+          await readVerification(job.jobId, [99], job.attempt),
+          { outcome: 'not-held' },
+          'An operation outside the list is not a hold.',
+        );
+        await migrator.query(
+          `UPDATE cc.device_update_operations SET verify_lease_expires_at=clock_timestamp()-interval '1 minute'
+            WHERE job_id=$1 AND operation_number=1`,
+          [job.jobId],
+        );
+        assert.deepEqual(
+          await readVerification(job.jobId, [1], job.attempt),
+          { outcome: 'not-held' },
+          'A lapsed lease is not a hold.',
+        );
+        const settled = await settleWith(
+          job.jobId,
+          null,
+          job.attempt,
+          'read-back',
+          [
+            {
+              operationNumber: 2,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'read-back',
+            },
+          ],
+          new Date(),
+        );
+        assert.equal(settled.settled.length, 1);
+        assert.deepEqual(
+          await readVerification(job.jobId, [2], job.attempt),
+          { outcome: 'not-held' },
+          'A settled operation is not a hold.',
+        );
+        await stop(job.jobId, job.token, 0, job.attempt);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 8: the global lock comes first, so no row is held while the read waits for it.
+    await ruleCheck(
+      'B2c item 8 a verification read takes the global access lock before any row lock',
+      async () => {
+        const job = await provenanceJob('b2c8-a', 'read-back');
+        await globalLockFirst({
+          name: 'A verification read',
+          sql: 'SELECT cc.read_device_update_verification($1,$2,$3,$4) AS result',
+          values: [customer, job.jobId, job.attempt, JSON.stringify([1])],
+          free: [
+            freeHeader(job.jobId),
+            [
+              'detail',
+              'SELECT 1 FROM cc.device_update_jobs WHERE job_id=$1 FOR UPDATE NOWAIT',
+              [job.jobId],
+            ],
+            [
+              'operation',
+              'SELECT 1 FROM cc.device_update_operations WHERE job_id=$1 FOR UPDATE NOWAIT',
+              [job.jobId],
+            ],
+          ],
+        });
+        assert.equal(
+          (await readVerification(job.jobId, [1], job.attempt)).outcome,
+          'held',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 9: the credential read raises the detail of a moved generation and of a disconnected
+    // connection.
+    await ruleCheck(
+      'B2c item 9 a verification read raises the credential detail',
+      async () => {
+        const job = await provenanceJob('b2c9-a', 'read-back');
+        const read = () =>
+          result(
+            'SELECT cc.read_device_update_verification($1,$2,$3,$4) AS result',
+            [customer, job.jobId, job.attempt, JSON.stringify([1])],
+          );
+        await migrator.query(
+          'UPDATE cc.jobs SET generation=generation+1 WHERE job_id=$1',
+          [job.jobId],
+        );
+        await rejects(read(), null, 'credential-changed');
+        await migrator.query(
+          'UPDATE cc.jobs SET generation=$2 WHERE job_id=$1',
+          [job.jobId, generation],
+        );
+        await migrator.query(
+          'UPDATE cc.google_connection SET active=false WHERE customer_id=$1',
+          [customer],
+        );
+        await rejects(read(), null, 'connection-disconnected');
+        await migrator.query(
+          'UPDATE cc.google_connection SET active=true WHERE customer_id=$1',
+          [customer],
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 10: a null input and a list outside its domain reject before any lock. The holder takes the
+    // global access lock, the first lock that this read takes (R1-F3).
+    await ruleCheck(
+      'B2c item 10 a null input and an invalid list reject before any lock',
+      async () => {
+        const job = await provenanceJob('b2c10-a', 'read-back');
+        const before = await jobState(job.jobId, 'b2c10-a');
+        for (const values of [
+          [customer, null, job.attempt, JSON.stringify([1])],
+          [null, job.jobId, job.attempt, JSON.stringify([1])],
+          [customer, job.jobId, null, JSON.stringify([1])],
+          [customer, job.jobId, job.attempt, null],
+          [customer, job.jobId, job.attempt, JSON.stringify([])],
+          [
+            customer,
+            job.jobId,
+            job.attempt,
+            JSON.stringify(
+              Array.from({ length: 251 }, (_, index) => index + 1),
+            ),
+          ],
+          [customer, job.jobId, job.attempt, JSON.stringify([0])],
+          [customer, job.jobId, job.attempt, JSON.stringify([1.5])],
+          [customer, job.jobId, job.attempt, JSON.stringify(['1'])],
+        ])
+          await rejectsBeforeGlobalLock({
+            sql: 'SELECT cc.read_device_update_verification($1,$2,$3,$4) AS result',
+            values,
+          });
+        assert.deepEqual(
+          await jobState(job.jobId, 'b2c10-a'),
+          before,
+          'An invalid verification read changes nothing.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 10, R1-F3: the read repeats its hold after the connection wait. A hold that lapses in that
+    // wait answers not-held with no envelope, and a hold that stays answers held with a post-wait
+    // checkedAt (Q4).
+    await ruleCheck(
+      'B2c item 10 a verification read repeats its hold after the connection wait',
+      async () => {
+        const held = await provenanceJob('b2c10-held', 'read-back');
+        const kept = await waitedOn({
+          rows: [heldConnectionRow()],
+          sql: 'SELECT cc.read_device_update_verification($1,$2,$3,$4) AS result',
+          values: [customer, held.jobId, held.attempt, JSON.stringify([1])],
+          during: () => sleep(200),
+        });
+        assert.equal(kept.answer.code, undefined, kept.answer.message);
+        assert.equal(
+          kept.answer.rows[0].result.outcome,
+          'held',
+          'A hold that stays across the connection wait answers held.',
+        );
+        assert.ok(
+          Date.parse(kept.answer.rows[0].result.checkedAt) >=
+            kept.releasedAt.getTime(),
+          'The checkedAt of a held answer follows the connection wait.',
+        );
+        await endJob(held.jobId);
+
+        const lapsed = await provenanceJob('b2c10-lapsed', 'read-back');
+        const gone = await waitedOn({
+          rows: [heldConnectionRow()],
+          sql: 'SELECT cc.read_device_update_verification($1,$2,$3,$4) AS result',
+          values: [customer, lapsed.jobId, lapsed.attempt, JSON.stringify([1])],
+          during: async () => {
+            await migrator.query(
+              `UPDATE cc.device_update_operations SET verify_lease_expires_at=clock_timestamp()-interval '1 minute'
+                WHERE job_id=$1 AND operation_number=1`,
+              [lapsed.jobId],
+            );
+            await sleep(200);
+          },
+        });
+        assert.equal(gone.answer.code, undefined, gone.answer.message);
+        assert.deepEqual(
+          gone.answer.rows[0].result,
+          { outcome: 'not-held' },
+          'A hold that lapses in the connection wait answers not-held with no envelope.',
+        );
+        await endJob(lapsed.jobId);
+      },
+    );
+
+    // Item 11: the read changes no operation row, header revision, or publication row.
+    await ruleCheck(
+      'B2c item 11 a verification read changes no row',
+      async () => {
+        const job = await provenanceJob('b2c11-a', 'read-back');
+        const before = await jobState(job.jobId, 'b2c11-a');
+        assert.equal(
+          (await readVerification(job.jobId, [1], job.attempt)).outcome,
+          'held',
+        );
+        assert.deepEqual(await jobState(job.jobId, 'b2c11-a'), before);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 12: the runtime role executes the read, and PUBLIC does not.
+    await ruleCheck(
+      'B2c item 12 only the runtime role executes a verification read',
+      async () => {
+        const job = await provenanceJob('b2c12-a', 'read-back');
+        assert.equal(
+          (await readVerification(job.jobId, [1], job.attempt)).outcome,
+          'held',
+        );
+        const privileges = await adminRow(
+          `SELECT count(*)=1 AS present,
+            bool_and(EXISTS(SELECT 1 FROM aclexplode(p.proacl) a JOIN pg_roles r ON r.oid=a.grantee
+              WHERE a.privilege_type='EXECUTE' AND r.rolname='cc-app')) AS runtime_granted,
+            bool_and(NOT EXISTS(SELECT 1 FROM aclexplode(p.proacl) a
+              WHERE a.privilege_type='EXECUTE' AND a.grantee=0)) AS public_denied
+           FROM pg_proc p WHERE p.oid=to_regprocedure('cc.read_device_update_verification(text,uuid,uuid,jsonb)')`,
+        );
+        assert.equal(privileges.present, true);
+        assert.equal(privileges.runtime_granted, true);
+        assert.equal(privileges.public_denied, true);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 13: a write settlement records the outcomes, the failure, one revision, and one publication.
+    await ruleCheck(
+      'B2c item 13 a write settlement records its outcomes, the job failure, one revision, and one publication',
+      async () => {
+        const job = await claimedJob(
+          ['b2c13-a', 'b2c13-b', 'b2c13-c', 'b2c13-d'],
+          2,
+        );
+        const before = await jobRow(job.jobId);
+        const published = await publications(job.jobId);
+        const answer = await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              googleStatus: 403,
+              googleReason: 'forbidden',
+              verifiedBy: 'write-response',
+            },
+            {
+              operationNumber: 2,
+              outcome: 'failed',
+              googleStatus: 403,
+              googleReason: 'forbidden',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'delegation-not-authorized',
+        );
+        assert.deepEqual(
+          answer.settled.map((row) => [row.operationNumber, row.status]),
+          [
+            [1, 'failed'],
+            [2, 'failed'],
+          ],
+        );
+        assert.equal(answer.publication.jobId, job.jobId);
+        assert.deepEqual(answer.publication.deviceIds, []);
+        const after = await jobRow(job.jobId);
+        assert.equal(after.failure, 'delegation-not-authorized');
+        assert.equal(Number(after.revision), Number(before.revision) + 1);
+        assert.equal(await publications(job.jobId), published + 1);
+        assert.equal(
+          (await newestPublication(job.jobId)).revision,
+          after.revision,
+        );
+        await stop(job.jobId, job.token, 0, job.attempt);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 14: the first failure stays, and a fenced call records no failure.
+    await ruleCheck(
+      'B2c item 14 an earlier job failure stays and a fenced settlement records no failure',
+      async () => {
+        const job = await claimedJob(['b2c14-a', 'b2c14-b'], 1);
+        assert.equal(
+          (await claim(job.jobId, job.token, 1, job.attempt)).outcome,
+          'claimed',
+        );
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'quota',
+        );
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 2,
+              outcome: 'failed',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'network-failure',
+        );
+        assert.equal((await jobRow(job.jobId)).failure, 'quota');
+        await stop(job.jobId, job.token, 0, job.attempt);
+        await stop(job.jobId, job.token, 1, job.attempt);
+        await endJob(job.jobId);
+
+        const fenced = await claimedJob(['b2c14-c']);
+        const before = await jobState(fenced.jobId, 'b2c14-c');
+        const answer = await settleWith(
+          fenced.jobId,
+          randomUUID(),
+          fenced.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'provider-unavailable',
+        );
+        assert.equal(answer.outcome, 'fenced');
+        assert.deepEqual(await jobState(fenced.jobId, 'b2c14-c'), before);
+        await endJob(fenced.jobId);
+      },
+    );
+
+    // Item 15: a failure outside the enumeration and a read-back failure reject before any lock.
+    await ruleCheck(
+      'B2c item 15 an unknown failure code and a read-back failure reject before any lock',
+      async () => {
+        const write = await claimedJob(['b2c15-a']);
+        await rejectsBeforeLocks({
+          jobId: write.jobId,
+          deviceId: 'b2c15-a',
+          sql: settleSql9,
+          values: [
+            customer,
+            write.jobId,
+            write.token,
+            write.attempt,
+            'write',
+            JSON.stringify([{ operationNumber: 1, outcome: 'failed' }]),
+            new Date(),
+            'unlisted-failure',
+            null,
+          ],
+        });
+        await endJob(write.jobId);
+        const read = await provenanceJob('b2c15-b', 'read-back');
+        await rejectsBeforeLocks({
+          jobId: read.jobId,
+          deviceId: 'b2c15-b',
+          sql: settleSql9,
+          values: [
+            customer,
+            read.jobId,
+            null,
+            read.attempt,
+            'read-back',
+            JSON.stringify([{ operationNumber: 1, outcome: 'failed' }]),
+            new Date(),
+            'quota',
+            null,
+          ],
+        });
+        await endJob(read.jobId);
+      },
+    );
+
+    // Item 16: the next claim of the job stops on the recorded failure and skips the pending operations.
+    await ruleCheck(
+      'B2c item 16 a recorded job failure stops the next claim and skips the pending operations',
+      async () => {
+        const job = await claimedJob(['b2c16-a', 'b2c16-b'], 1);
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'delegation-not-authorized',
+        );
+        const stopped = await claim(job.jobId, job.token, 1, randomUUID());
+        assert.equal(stopped.outcome, 'stopped');
+        assert.equal(stopped.failure, 'delegation-not-authorized');
+        assert.equal(stopped.operations, undefined);
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => [
+            row.operation_number,
+            row.status,
+            row.outcome_reason,
+          ]),
+          [
+            [1, 'failed', null],
+            [2, 'skipped', 'delegation-not-authorized'],
+          ],
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 17: a token that is not current still answers superseded, and it writes nothing.
+    await ruleCheck(
+      'B2c item 17 a token that is not current still answers superseded',
+      async () => {
+        const job = await claimedJob(['b2c17-a']);
+        const before = await jobState(job.jobId, 'b2c17-a');
+        await rotateToken(job.jobId);
+        const answer = await claim(job.jobId, job.token, 0, randomUUID());
+        assert.equal(answer.outcome, 'superseded');
+        const after = await jobState(job.jobId, 'b2c17-a');
+        assert.notEqual(
+          after.detail.dispatch_token,
+          before.detail.dispatch_token,
+        );
+        assert.deepEqual(
+          withoutDispatchToken(after.detail),
+          withoutDispatchToken(before.detail),
+          'A superseded claim changes no detail row but the token that the test rotated.',
+        );
+        assert.deepEqual(
+          { ...after, detail: null },
+          { ...before, detail: null },
+          'A superseded claim changes no other row but the token that the test rotated.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 18: a stopped claim answers stopped before busy, and the later batches skip too.
+    await ruleCheck(
+      'B2c item 18 a claim of a stopped job answers stopped before busy and skips the later batches',
+      async () => {
+        const job = await claimedJob(
+          ['b2c18-a', 'b2c18-b', 'b2c18-c', 'b2c18-d'],
+          2,
+        );
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              googleStatus: 403,
+              googleReason: 'forbidden',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'permission-denied',
+        );
+        const stopped = await claim(job.jobId, job.token, 0, randomUUID());
+        assert.equal(stopped.outcome, 'stopped');
+        assert.equal(stopped.failure, 'permission-denied');
+        assert.deepEqual(
+          (await operations(job.jobId)).map((row) => [
+            row.operation_number,
+            row.status,
+            row.outcome_reason,
+          ]),
+          [
+            [1, 'failed', null],
+            [2, 'dispatched', null],
+            [3, 'skipped', 'permission-denied'],
+            [4, 'skipped', 'permission-denied'],
+          ],
+        );
+        const later = await claim(job.jobId, job.token, 1, randomUUID());
+        assert.equal(later.outcome, 'stopped');
+        assert.equal(later.failure, 'permission-denied');
+        await expireBatches(job.jobId);
+        assert.equal(
+          (await prepareFinish(job.jobId, job.token)).outcome,
+          'ready',
+        );
+        const fenced = (await operations(job.jobId)).find(
+          (row) => row.operation_number === 2,
+        );
+        assert.equal(fenced.status, 'unknown');
+        assert.equal(fenced.outcome_reason, 'interrupted');
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 19: a stopped claim writes its heartbeat, so the tick keeps the live token.
+    await ruleCheck(
+      'B2c item 19 a stopped claim writes its heartbeat so the tick keeps the token',
+      async () => {
+        const owner = await newOwner();
+        const job = await makeJob({
+          devices: ['b2c19-a', 'b2c19-b', 'b2c19-c'],
+          batchSize: 1,
+          createdBy: owner,
+        });
+        const admitted = await admit(false);
+        assert.equal(
+          admitted.jobId,
+          job.jobId,
+          'The admission picks this job.',
+        );
+        const token = admitted.dispatchToken;
+        const attempt = randomUUID();
+        assert.equal(
+          (await claim(job.jobId, token, 0, attempt)).outcome,
+          'claimed',
+        );
+        await settleWith(
+          job.jobId,
+          token,
+          attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        await stop(job.jobId, token, 0, attempt);
+        await migrator.query(
+          'UPDATE cc.application_principals SET enabled=false WHERE id=$1',
+          [owner],
+        );
+        for (const batch of [1, 2]) {
+          await migrator.query(
+            `UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '11 minutes'
+              WHERE job_id=$1`,
+            [job.jobId],
+          );
+          const aged = (await detailRow(job.jobId)).heartbeat_at;
+          const stopped = await claim(job.jobId, token, batch, randomUUID());
+          assert.equal(stopped.outcome, 'stopped');
+          assert.equal(stopped.failure, 'permission-changed');
+          const state = await detailRow(job.jobId);
+          assert.equal(state.dispatch_token, token);
+          assert.ok(
+            state.heartbeat_at > aged,
+            'The stopped claim writes a fresh heartbeat.',
+          );
+          const tick = await recover();
+          assert.ok(
+            !tick.starts.some((start) => start.jobId === job.jobId),
+            'The tick returns no start for the live execution.',
+          );
+          const counts = await adminRow(
+            'SELECT dispatch_count FROM cc.device_update_jobs WHERE job_id=$1',
+            [job.jobId],
+          );
+          assert.equal(counts.dispatch_count, 1);
+        }
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 20: a done claim writes its heartbeat, so the tick keeps the live token.
+    await ruleCheck(
+      'B2c item 20 a done claim writes its heartbeat so the tick keeps the token',
+      async () => {
+        const job = await claimedJob(['b2c20-a']);
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        await stop(job.jobId, job.token, 0, job.attempt);
+        await migrator.query(
+          `UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '11 minutes'
+            WHERE job_id=$1`,
+          [job.jobId],
+        );
+        const aged = (await detailRow(job.jobId)).heartbeat_at;
+        const done = await claim(job.jobId, job.token, 0, randomUUID());
+        assert.equal(done.outcome, 'done');
+        const state = await adminRow(
+          'SELECT dispatch_token,dispatch_count,heartbeat_at FROM cc.device_update_jobs WHERE job_id=$1',
+          [job.jobId],
+        );
+        assert.ok(
+          state.heartbeat_at > aged,
+          'The done claim writes a fresh heartbeat.',
+        );
+        assert.equal(state.dispatch_token, job.token);
+        assert.equal(state.dispatch_count, 1);
+        const tick = await recover();
+        assert.ok(
+          !tick.starts.some((start) => start.jobId === job.jobId),
+          'The tick returns no start for the live execution.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 21: a stopped first claim records the execution, so the tick never abandons the start.
+    await ruleCheck(
+      'B2c item 21 a stopped first claim keeps the tick from abandoning the start',
+      async () => {
+        const owner = await newOwner();
+        const job = await makeJob({ devices: ['b2c21-a'], createdBy: owner });
+        const admitted = await admit(false);
+        assert.equal(
+          admitted.jobId,
+          job.jobId,
+          'The admission picks this job.',
+        );
+        const token = admitted.dispatchToken;
+        await migrator.query(
+          'UPDATE cc.application_principals SET enabled=false WHERE id=$1',
+          [owner],
+        );
+        const stopped = await claim(job.jobId, token, 0, randomUUID());
+        assert.equal(stopped.outcome, 'stopped');
+        assert.equal(stopped.failure, 'permission-changed');
+        const saved = await adminRow(
+          'SELECT first_claimed_at FROM cc.device_update_jobs WHERE job_id=$1',
+          [job.jobId],
+        );
+        assert.ok(saved.first_claimed_at instanceof Date);
+        assert.equal((await jobRow(job.jobId)).started_at, null);
+        await migrator.query(
+          `UPDATE cc.device_update_jobs SET start_deadline_at=clock_timestamp()-interval '1 minute'
+            WHERE job_id=$1`,
+          [job.jobId],
+        );
+        let tick = await recover();
+        assert.ok(
+          !tick.starts.some((start) => start.jobId === job.jobId),
+          'The tick never abandons a start that recorded a claim.',
+        );
+        assert.equal((await jobRow(job.jobId)).status, 'running');
+        for (let round = 0; round < 3; round += 1) {
+          await migrator.query(
+            `UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '11 minutes'
+              WHERE job_id=$1`,
+            [job.jobId],
+          );
+          tick = await recover();
+        }
+        const final = await jobRow(job.jobId);
+        assert.equal(final.status, 'failed');
+        assert.equal(final.failure, 'permission-changed');
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT dispatch_count FROM cc.device_update_jobs WHERE job_id=$1',
+              [job.jobId],
+            )
+          ).dispatch_count,
+          3,
+        );
+      },
+    );
+
+    // Item 22: a stopped and a done answer stamp their heartbeat after the detail wait.
+    await ruleCheck(
+      'B2c item 22 a stopped or done claim stamps its heartbeat after a detail wait',
+      async () => {
+        const stoppedJob = await releasedBatch('b2c22-s');
+        await migrator.query(
+          'UPDATE cc.application_principals SET enabled=false WHERE id=$1',
+          [stoppedJob.owner],
+        );
+        const stopped = await waitedOn({
+          rows: [heldDetailRow(stoppedJob.jobId)],
+          ...nextClaim(stoppedJob),
+          during: () => sleep(200),
+        });
+        assert.equal(stopped.answer.code, undefined, stopped.answer.message);
+        assert.equal(stopped.answer.rows[0].result.outcome, 'stopped');
+        const stoppedSaved = await detailRow(stoppedJob.jobId);
+        assert.ok(
+          stoppedSaved.heartbeat_at >= stopped.releasedAt,
+          'The stopped claim stamps its heartbeat after the release.',
+        );
+        await endJob(stoppedJob.jobId);
+
+        const doneJob = await claimedJob(['b2c22-d']);
+        await settleWith(
+          doneJob.jobId,
+          doneJob.token,
+          doneJob.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        await stop(doneJob.jobId, doneJob.token, 0, doneJob.attempt);
+        const done = await waitedOn({
+          rows: [heldDetailRow(doneJob.jobId)],
+          sql: claimSql,
+          values: [
+            customer,
+            doneJob.jobId,
+            doneJob.token,
+            0,
+            randomUUID(),
+            'b2c22-done',
+          ],
+          during: () => sleep(200),
+        });
+        assert.equal(done.answer.code, undefined, done.answer.message);
+        assert.equal(done.answer.rows[0].result.outcome, 'done');
+        const doneSaved = await detailRow(doneJob.jobId);
+        assert.ok(
+          doneSaved.heartbeat_at >= done.releasedAt,
+          'The done claim stamps its heartbeat after the release.',
+        );
+        await endJob(doneJob.jobId);
+      },
+    );
+
+    // Item 23: a done claim rechecks its token after the batch wait, and a busy claim writes nothing.
+    await ruleCheck(
+      'B2c item 23 a done claim returns superseded when the token rotates in its batch wait',
+      async () => {
+        const job = await claimedJob(['b2c23-a']);
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        await stop(job.jobId, job.token, 0, job.attempt);
+        const before = await jobState(job.jobId, 'b2c23-a');
+        const answer = await waitedOn({
+          rows: [heldBatchRow(job.jobId)],
+          sql: claimSql,
+          values: [
+            customer,
+            job.jobId,
+            job.token,
+            0,
+            randomUUID(),
+            'b2c23-done',
+          ],
+          during: () => rotateToken(job.jobId),
+        });
+        assert.equal(answer.answer.code, undefined, answer.answer.message);
+        assert.equal(
+          answer.answer.rows[0].result.outcome,
+          'superseded',
+          'A done claim rechecks its token after the batch wait.',
+        );
+        const after = await jobState(job.jobId, 'b2c23-a');
+        assert.notEqual(
+          after.detail.dispatch_token,
+          before.detail.dispatch_token,
+        );
+        assert.deepEqual(
+          withoutDispatchToken(after.detail),
+          withoutDispatchToken(before.detail),
+          'A superseded done claim writes neither heartbeat_at nor first_claimed_at.',
+        );
+        assert.deepEqual(
+          { ...after, detail: null },
+          { ...before, detail: null },
+          'A superseded done claim changes no other row but the rotated token.',
+        );
+        await endJob(job.jobId);
+      },
+    );
+
+    await ruleCheck('B2c item 23 a busy claim writes nothing', async () => {
+      const job = await claimedJob(['b2c23-b']);
+      const before = await jobState(job.jobId, 'b2c23-b');
+      const busy = await claim(job.jobId, job.token, 0, randomUUID());
+      assert.equal(busy.outcome, 'busy');
+      assert.deepEqual(await jobState(job.jobId, 'b2c23-b'), before);
+      await endJob(job.jobId);
+    });
+
+    // Item 24: the preparation and the reaper skip with the recorded job failure, or interrupted.
+    await ruleCheck(
+      'B2c item 24 the preparation and the reaper skip pending operations with the recorded job failure',
+      async () => {
+        const prepared = await claimedJob(['b2c24-a', 'b2c24-b'], 1);
+        await settleWith(
+          prepared.jobId,
+          prepared.token,
+          prepared.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'quota',
+        );
+        await stop(prepared.jobId, prepared.token, 0, prepared.attempt);
+        assert.equal(
+          (await prepareFinish(prepared.jobId, prepared.token)).outcome,
+          'ready',
+        );
+        assert.deepEqual(
+          (await operations(prepared.jobId)).map((row) => [
+            row.operation_number,
+            row.status,
+            row.outcome_reason,
+          ]),
+          [
+            [1, 'failed', null],
+            [2, 'skipped', 'quota'],
+          ],
+          'The preparation skips a pending operation with the recorded failure.',
+        );
+        await endJob(prepared.jobId);
+
+        const guard = await claimedJob(['b2c24-c', 'b2c24-d'], 1);
+        await stop(guard.jobId, guard.token, 0, guard.attempt);
+        assert.equal(
+          (await prepareFinish(guard.jobId, guard.token)).outcome,
+          'ready',
+        );
+        assert.deepEqual(
+          (await operations(guard.jobId)).map((row) => [
+            row.operation_number,
+            row.status,
+            row.outcome_reason,
+          ]),
+          [
+            [1, 'unknown', 'interrupted'],
+            [2, 'skipped', 'interrupted'],
+          ],
+          'Without a recorded failure the preparation skips with interrupted.',
+        );
+        await endJob(guard.jobId);
+
+        const reaped = await claimedJob(['b2c24-e', 'b2c24-f'], 1);
+        await settleWith(
+          reaped.jobId,
+          reaped.token,
+          reaped.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'quota',
+        );
+        await expireBatches(reaped.jobId);
+        assert.equal((await finalize(reaped.jobId)).outcome, 'finalized');
+        assert.deepEqual(
+          (await operations(reaped.jobId)).map((row) => [
+            row.operation_number,
+            row.status,
+            row.outcome_reason,
+          ]),
+          [
+            [1, 'failed', null],
+            [2, 'skipped', 'quota'],
+          ],
+          'The reaper skips a pending operation with the recorded failure.',
+        );
+
+        const reaperGuard = await claimedJob(['b2c24-g', 'b2c24-h'], 1);
+        await expireBatches(reaperGuard.jobId);
+        assert.equal((await finalize(reaperGuard.jobId)).outcome, 'finalized');
+        assert.deepEqual(
+          (await operations(reaperGuard.jobId)).map((row) => [
+            row.operation_number,
+            row.status,
+            row.outcome_reason,
+          ]),
+          [
+            [1, 'unknown', 'interrupted'],
+            [2, 'skipped', 'interrupted'],
+          ],
+          'Without a recorded failure the reaper skips with interrupted.',
+        );
+      },
+    );
+
+    // Item 25: the final finish carries the element of its publication row, and no other answer does.
+    await ruleCheck(
+      'B2c item 25 the final finish carries the publication element of its row',
+      async () => {
+        const job = await claimedJob(['b2c25-a', 'b2c25-b']);
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        await stop(job.jobId, job.token, 0, job.attempt);
+        await expireBatches(job.jobId);
+        assert.equal(
+          (await prepareFinish(job.jobId, job.token)).outcome,
+          'ready',
+        );
+        const finished = await finishJob(job.jobId);
+        assert.equal(finished.status, 'needs-review');
+        assert.ok(
+          finished.publication && typeof finished.publication === 'object',
+        );
+        const newest = await newestPublication(job.jobId);
+        assert.equal(
+          Number(finished.publication.publicationId),
+          Number(newest.publication_id),
+          'The element names the row that this finish records.',
+        );
+        assert.equal(
+          Number(finished.publication.revision),
+          Number((await jobRow(job.jobId)).revision),
+        );
+        assert.equal(finished.publication.statusChanged, true);
+        const again = await finishJob(job.jobId);
+        assert.equal(again.outcome, 'finished');
+        assert.equal(again.publication, undefined);
+        const busy = await claimedJob(['b2c25-busy']);
+        assert.equal(
+          (await finishWithToken(busy.jobId, busy.token)).outcome,
+          'busy',
+        );
+        assert.equal(
+          (await finishWithToken(busy.jobId, busy.token)).publication,
+          undefined,
+        );
+        await expireBatches(busy.jobId);
+        assert.equal(
+          (await finishWithToken(busy.jobId, busy.token)).outcome,
+          'not-prepared',
+        );
+        assert.equal(
+          (await finishWithToken(busy.jobId, busy.token)).publication,
+          undefined,
+        );
+        await endJob(busy.jobId);
+        const late = await claimedJob(['b2c25-c']);
+        await rotateToken(late.jobId);
+        const superseded = await finishWithToken(late.jobId, late.token, null);
+        assert.equal(superseded.outcome, 'superseded');
+        assert.equal(superseded.publication, undefined);
+        await endJob(late.jobId);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 26 (C7): each new signature resolves, and no replaced signature does.
+    await ruleCheck(
+      'B2c item 26 to_regprocedure resolves each new signature and no replaced signature',
+      async () => {
+        const signatures = await adminRow(
+          `SELECT to_regprocedure('cc.claim_device_update_verification(text,uuid,jsonb,uuid,integer,integer)') IS NOT NULL AS claim_new,
+            to_regprocedure('cc.claim_device_update_verification(text,uuid,jsonb,uuid)') IS NULL AS claim_old_gone,
+            to_regprocedure('cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz,text,text)') IS NOT NULL AS settle_new,
+            to_regprocedure('cc.settle_device_update_operations(text,uuid,uuid,uuid,text,jsonb,timestamptz)') IS NULL AS settle_old_gone,
+            to_regprocedure('cc.read_device_update_verification(text,uuid,uuid,jsonb)') IS NOT NULL AS read_new`,
+        );
+        assert.equal(
+          signatures.claim_new,
+          true,
+          'The new claim signature exists.',
+        );
+        assert.equal(
+          signatures.claim_old_gone,
+          true,
+          'The four-argument claim signature is gone.',
+        );
+        assert.equal(
+          signatures.settle_new,
+          true,
+          'The new settlement signature exists.',
+        );
+        assert.equal(
+          signatures.settle_old_gone,
+          true,
+          'The seven-argument settlement signature is gone.',
+        );
+        assert.equal(
+          signatures.read_new,
+          true,
+          'The verification read signature exists.',
+        );
+      },
+    );
+
+    // C3: the settlement returns the element of its own publication row.
+    await ruleCheck(
+      'B2c C3 a write settlement returns the publication element of its row',
+      async () => {
+        const job = await provenanceJob('b2c26-a', 'write');
+        const answer = await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              value: 'Room 12',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        assert.ok(answer.publication && typeof answer.publication === 'object');
+        assert.equal(answer.publication.jobId, job.jobId);
+        assert.equal(
+          Number(answer.publication.revision),
+          Number((await jobRow(job.jobId)).revision),
+        );
+        assert.equal(answer.publication.batch, 0);
+        assert.deepEqual(answer.publication.deviceIds, ['b2c26-a']);
+        assert.equal(
+          Number(answer.publication.publicationId),
+          Number((await newestPublication(job.jobId)).publication_id),
+        );
+        assert.equal(answer.publication.statusChanged, false);
+        await stop(job.jobId, job.token, 0, job.attempt);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 27: the first failure stays, and a later scope observation still records.
+    await ruleCheck(
+      'B2c item 27 an earlier job failure stays while a later scope observation records',
+      async () => {
+        const job = await claimedJob(['b2c27-a', 'b2c27-b']);
+        const first = await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              googleStatus: 403,
+              googleReason: 'forbidden',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'permission-denied',
+        );
+        assert.equal(first.settled.length, 1);
+        const second = await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 2,
+              outcome: 'failed',
+              googleStatus: 403,
+              googleReason: 'invalid_scope',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'permission-denied',
+          'scope-mismatch',
+        );
+        assert.equal(second.settled.length, 1);
+        assert.equal((await jobRow(job.jobId)).failure, 'permission-denied');
+        assert.deepEqual(await scopeRow(job.jobId), {
+          scope_observations: 1,
+          scope_failure: 'scope-mismatch',
+        });
+        await stop(job.jobId, job.token, 0, job.attempt);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 28: each scope observation counts, and the latest code wins.
+    await ruleCheck(
+      'B2c item 28 each scope observation counts and the latest code wins',
+      async () => {
+        const job = await claimedJob(['b2c28-a', 'b2c28-b']);
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'permission-denied',
+          'scope-mismatch',
+        );
+        await settleWith(
+          job.jobId,
+          job.token,
+          job.attempt,
+          'write',
+          [
+            {
+              operationNumber: 2,
+              outcome: 'failed',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'permission-denied',
+          'delegation-not-authorized',
+        );
+        assert.deepEqual(await scopeRow(job.jobId), {
+          scope_observations: 2,
+          scope_failure: 'delegation-not-authorized',
+        });
+        assert.equal((await jobRow(job.jobId)).failure, 'permission-denied');
+        await stop(job.jobId, job.token, 0, job.attempt);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 29: a fenced settlement and a settlement that changes nothing record no observation.
+    await ruleCheck(
+      'B2c item 29 a fenced settlement and an empty settlement record no scope observation',
+      async () => {
+        const fenced = await claimedJob(['b2c29-a']);
+        const fencedAnswer = await settleWith(
+          fenced.jobId,
+          randomUUID(),
+          fenced.attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'quota',
+          'scope-mismatch',
+        );
+        assert.equal(fencedAnswer.outcome, 'fenced');
+        assert.deepEqual(await scopeRow(fenced.jobId), {
+          scope_observations: 0,
+          scope_failure: null,
+        });
+        await endJob(fenced.jobId);
+
+        const empty = await claimedJob(['b2c29-b', 'b2c29-c']);
+        const emptyAnswer = await settleWith(
+          empty.jobId,
+          empty.token,
+          empty.attempt,
+          'write',
+          [
+            {
+              operationNumber: 99,
+              outcome: 'failed',
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+          'quota',
+          'scope-mismatch',
+        );
+        assert.equal(emptyAnswer.outcome, 'settled');
+        assert.deepEqual(emptyAnswer.settled, []);
+        assert.equal(emptyAnswer.publication, null);
+        assert.deepEqual(await scopeRow(empty.jobId), {
+          scope_observations: 0,
+          scope_failure: null,
+        });
+        await endJob(empty.jobId);
+      },
+    );
+
+    // Item 30: an out-of-domain scope input rejects before any lock.
+    await ruleCheck(
+      'B2c item 30 an out-of-domain scope input rejects before any lock',
+      async () => {
+        const job = await claimedJob(['b2c30-a']);
+        for (const values of [
+          [
+            customer,
+            job.jobId,
+            job.token,
+            job.attempt,
+            'write',
+            JSON.stringify([{ operationNumber: 1, outcome: 'failed' }]),
+            new Date(),
+            'permission-denied',
+            'connection-changed',
+          ],
+          [
+            customer,
+            job.jobId,
+            job.token,
+            job.attempt,
+            'write',
+            JSON.stringify([{ operationNumber: 1, outcome: 'failed' }]),
+            new Date(),
+            null,
+            'scope-mismatch',
+          ],
+        ])
+          await rejectsBeforeLocks({
+            jobId: job.jobId,
+            deviceId: 'b2c30-a',
+            sql: settleSql9,
+            values,
+          });
+        await endJob(job.jobId);
+        const read = await provenanceJob('b2c30-b', 'read-back');
+        await rejectsBeforeLocks({
+          jobId: read.jobId,
+          deviceId: 'b2c30-b',
+          sql: settleSql9,
+          values: [
+            customer,
+            read.jobId,
+            null,
+            read.attempt,
+            'read-back',
+            JSON.stringify([{ operationNumber: 1, outcome: 'failed' }]),
+            new Date(),
+            'permission-denied',
+            'scope-mismatch',
+          ],
+        });
+        await endJob(read.jobId);
+      },
+    );
+
+    // Item 31: only the settlement function names the scope columns.
+    await ruleCheck(
+      'B2c item 31 only the settlement function names the scope columns',
+      async () => {
+        const names = await admin(
+          `SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+            WHERE n.nspname='cc' AND (p.prosrc LIKE '%scope_observations%' OR p.prosrc LIKE '%scope_failure%')
+            ORDER BY p.proname`,
+        );
+        assert.deepEqual(
+          names.map((row) => row.proname),
+          ['settle_device_update_operations'],
+        );
+      },
+    );
+
+    // Item 32: the columns hold their domain, and the partial index exists.
+    await ruleCheck(
+      'B2c item 32 the scope columns hold their domain and the partial index exists',
+      async () => {
+        const job = await makeJob({ devices: ['b2c32-a'] });
+        assert.deepEqual(await scopeRow(job.jobId), {
+          scope_observations: 0,
+          scope_failure: null,
+        });
+        await rejects(
+          migrator.query(
+            'UPDATE cc.device_update_jobs SET scope_observations=-1 WHERE job_id=$1',
+            [job.jobId],
+          ),
+          '23514',
+        );
+        await rejects(
+          migrator.query(
+            "UPDATE cc.device_update_jobs SET scope_observations=0,scope_failure='scope-mismatch' WHERE job_id=$1",
+            [job.jobId],
+          ),
+          '23514',
+        );
+        await rejects(
+          migrator.query(
+            'UPDATE cc.device_update_jobs SET scope_observations=1,scope_failure=NULL WHERE job_id=$1',
+            [job.jobId],
+          ),
+          '23514',
+        );
+        await rejects(
+          migrator.query(
+            "UPDATE cc.device_update_jobs SET scope_observations=0,scope_failure='permission-changed' WHERE job_id=$1",
+            [job.jobId],
+          ),
+          '23514',
+        );
+        const index = await adminRow(
+          `SELECT indexdef FROM pg_indexes WHERE schemaname='cc' AND tablename='device_update_jobs'
+            AND indexname='device_update_jobs_scope_observations'`,
+        );
+        assert.ok(index, 'The partial index exists.');
+        assert.match(index.indexdef, /WHERE \(scope_observations > 0\)/);
+        await endJob(job.jobId);
+      },
+    );
+
+    // Item 33 (F1): the upsert takes the connection row before its device rows.
+    await ruleCheck(
+      'B2c item 33 an upsert locks the connection row before its device rows',
+      async () => {
+        await upsert(
+          [device('b2c-f1-x', { annotatedLocation: 'Old' })],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const holder = await connect('cc-migrator', 'cc-app');
+        const caller = await connect('cc-app', 'cc-app');
+        const probe = await connect('cc-migrator', 'cc-app');
+        let pending = null;
+        try {
+          await holder.query('BEGIN');
+          await holder.query(...heldConnectionRow());
+          const holderPid = await pidOf(holder);
+          const callerPid = await pidOf(caller);
+          pending = caller
+            .query('SELECT cc.upsert_devices($1,$2,$3,$4) AS result', [
+              customer,
+              JSON.stringify([device('b2c-f1-x'), device('b2c-f1-y')]),
+              new Date(),
+              'list',
+            ])
+            .then(
+              (queried) => ({ rows: queried.rows }),
+              (error) => ({ code: error.code, message: error.message }),
+            );
+          assert.equal(
+            await waitsFor(callerPid, holderPid),
+            true,
+            'The upsert waits on the connection row.',
+          );
+          await probe.query('BEGIN');
+          const free = await probe
+            .query(
+              'SELECT 1 FROM cc.devices WHERE customer_id=$1 AND device_id=$2 FOR UPDATE NOWAIT',
+              [customer, 'b2c-f1-x'],
+            )
+            .then(
+              () => true,
+              (error) => error.code,
+            );
+          await probe.query('ROLLBACK');
+          assert.equal(
+            free,
+            true,
+            'The existing device row stays free while the upsert waits for the connection row.',
+          );
+          await holder.query('ROLLBACK');
+          const answer = await pending;
+          assert.equal(answer.code, undefined, answer.message);
+          assert.equal(answer.rows[0].result, 2);
+        } finally {
+          await probe.query('ROLLBACK').catch(() => undefined);
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (pending) await pending;
+          await Promise.allSettled([probe.end(), holder.end(), caller.end()]);
+        }
+        assert.ok(await deviceRow('b2c-f1-y'));
+      },
+    );
+
+    // Item 34 (F1): an upsert and a full-sync finish form no deadlock.
+    await ruleCheck(
+      'B2c item 34 an upsert and a full-sync finish form no deadlock',
+      async () => {
+        await upsert(
+          [device('b2c-f1-dx', { annotatedLocation: 'Old' })],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const sync = await makeSync();
+        const candidate = await adminRow(
+          `SELECT (SELECT d.last_entity_sync FROM cc.devices d
+              WHERE d.customer_id=$1 AND d.device_id='b2c-f1-dx')
+            < (SELECT s.sync_started_at FROM cc.device_sync_state s WHERE s.customer_id=$1) AS candidate`,
+          [customer],
+        );
+        assert.equal(
+          candidate.candidate,
+          true,
+          'The device X is a removal candidate of the sync.',
+        );
+        const holder = await connect('cc-migrator', 'cc-app');
+        const finisher = await connect('cc-app', 'cc-app');
+        const upsertCaller = await connect('cc-app', 'cc-app');
+        let finishPending = null;
+        let upsertPending = null;
+        try {
+          await holder.query('BEGIN');
+          await holder.query(...heldConnectionRow());
+          const holderPid = await pidOf(holder);
+          const finisherPid = await pidOf(finisher);
+          finishPending = finisher
+            .query('SELECT cc.finish_device_sync($1,$2,$3,$4,$5) AS result', [
+              customer,
+              sync.id,
+              sync.attempt,
+              null,
+              null,
+            ])
+            .then(
+              (queried) => ({ rows: queried.rows }),
+              (error) => ({ code: error.code, message: error.message }),
+            );
+          assert.equal(
+            await waitsFor(finisherPid, holderPid),
+            true,
+            'The finish waits on the connection row.',
+          );
+          const upsertPid = await pidOf(upsertCaller);
+          upsertPending = upsertCaller
+            .query('SELECT cc.upsert_devices($1,$2,$3,$4) AS result', [
+              customer,
+              JSON.stringify([device('b2c-f1-dx'), device('b2c-f1-dy')]),
+              new Date(),
+              'list',
+            ])
+            .then(
+              (queried) => ({ rows: queried.rows }),
+              (error) => ({ code: error.code, message: error.message }),
+            );
+          assert.equal(
+            await waitsForAny(upsertPid, [holderPid, finisherPid]),
+            true,
+            'The upsert waits on the connection row behind the holder and the finish.',
+          );
+          await holder.query('ROLLBACK');
+          const [finished, upserted] = await Promise.all([
+            finishPending,
+            upsertPending,
+          ]);
+          assert.notEqual(
+            finished.code,
+            '40P01',
+            'The full-sync finish does not deadlock.',
+          );
+          assert.notEqual(
+            upserted.code,
+            '40P01',
+            'The upsert does not deadlock.',
+          );
+          assert.equal(finished.code, undefined, finished.message);
+          assert.equal(upserted.code, undefined, upserted.message);
+          assert.equal(upserted.rows[0].result, 2);
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          if (finishPending) await finishPending;
+          if (upsertPending) await upsertPending;
+          await Promise.allSettled([
+            holder.end(),
+            finisher.end(),
+            upsertCaller.end(),
+          ]);
+        }
+        assert.ok(await deviceRow('b2c-f1-dy'));
+        await resetSync();
+      },
+    );
+
+    // Item 58 (Q3): a malformed element raises, and no device row, publication, or sync-state change stays.
+    await ruleCheck(
+      'B2c item 58 a malformed upsert element leaves no row, publication, or sync change',
+      async () => {
+        const before = {
+          publications: (
+            await adminRow(
+              'SELECT count(*)::int AS count FROM cc.job_publications WHERE customer_id=$1',
+              [customer],
+            )
+          ).count,
+          sync: await adminRow(
+            `SELECT sync_id,sync_attempt,sync_expires_at,failure,failure_requested_by,telemetry_failure,
+              telemetry_failure_requested_by,generation,observed_at,device_count,checked_at
+              FROM cc.device_sync_state WHERE customer_id=$1`,
+            [customer],
+          ),
+        };
+        const error = await rejects(
+          upsert(
+            [device('q3-a'), device('q3-b', { lastContact: 'not-a-time' })],
+            new Date(),
+          ),
+        );
+        assert.equal(error.code, '22007');
+        assert.equal(await deviceRow('q3-a'), undefined);
+        assert.equal(await deviceRow('q3-b'), undefined);
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT count(*)::int AS count FROM cc.job_publications WHERE customer_id=$1',
+              [customer],
+            )
+          ).count,
+          before.publications,
+        );
+        assert.deepEqual(
+          await adminRow(
+            `SELECT sync_id,sync_attempt,sync_expires_at,failure,failure_requested_by,telemetry_failure,
+              telemetry_failure_requested_by,generation,observed_at,device_count,checked_at
+              FROM cc.device_sync_state WHERE customer_id=$1`,
+            [customer],
+          ),
+          before.sync,
         );
       },
     );
