@@ -12,6 +12,7 @@ function setup(
     offline: signal(false),
     groupLimit: signal(false),
     sync: signal({ stale: false }),
+    refreshStatus: signal(''),
     selection: { spec: signal<DeviceSelectionSpec | null>(null) },
   };
   TestBed.configureTestingModule({
@@ -82,5 +83,27 @@ it('says when an open group lists only its first devices', () => {
   render();
   expect(element.textContent).toContain(
     'Open groups list their first 1,000 devices. Add a filter to see the rest.',
+  );
+});
+
+const refreshMessages = [
+  'Refresh started for 6 devices. Rows update as Google answers.',
+  'Another refresh already reads these 6 devices.',
+  'Domain details refreshed.',
+  'Domain details did not refresh: another Google check ran in the last 30 seconds.',
+  'Domain details did not refresh: Campus Commander cannot run the Google check now.',
+  'Domain details did not refresh: Google access denied.',
+  'Your selection expired. Select the devices again.',
+  'The selection holds no devices.',
+  'The selection holds more than 100,000 devices. Use Refresh Devices to read every device.',
+];
+
+it.each(refreshMessages)('shows the refresh status line: %s', (message) => {
+  const { store, element, render } = setup(null);
+  expect(element.querySelector('.refresh-status')).toBeNull();
+  store.refreshStatus.set(message);
+  render();
+  expect(element.querySelector('.refresh-status')?.textContent?.trim()).toBe(
+    message,
   );
 });

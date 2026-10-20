@@ -35,6 +35,10 @@ import {
   telemetryFailureText,
 } from './device-fields';
 import { DEVICE_WRITE_SCOPE, updateDeviceNote } from './device-update-messages';
+import {
+  REFRESH_DOMAIN_SUPPORT,
+  REFRESH_SELECTED_SUPPORT,
+} from './device-refresh-messages';
 import { DeviceWriteAccessStore } from './device-write-access.store';
 
 @Component({
@@ -135,6 +139,15 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly canBulk = computed(() =>
     this.authorized('devices:bulk-actions'),
   );
+  protected readonly canDiagnose = computed(() =>
+    this.authorized('connection:diagnose'),
+  );
+  /** The selection that Refresh Selected reads. */
+  protected readonly selectedCount = computed(
+    () => this.store.selection.spec()?.selectedCount ?? 0,
+  );
+  protected readonly refreshSelectedSupport = REFRESH_SELECTED_SUPPORT;
+  protected readonly refreshDomainSupport = REFRESH_DOMAIN_SUPPORT;
   protected readonly note = computed(() =>
     updateDeviceNote({
       offline: this.store.offline(),
@@ -178,6 +191,14 @@ export class DevicesPage implements OnInit, OnDestroy {
 
   protected refresh(): void {
     void this.store.refreshAll();
+  }
+
+  protected refreshSelection(): void {
+    void this.store.refreshSelection();
+  }
+
+  protected refreshDomain(): void {
+    void this.store.refreshDomain();
   }
 
   protected reconnect(): void {

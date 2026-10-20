@@ -31,6 +31,9 @@ import { selectionScope } from './device-selection';
       @if (scope(); as text) {
         <p>{{ text }}</p>
       }
+      @if (store.refreshStatus(); as text) {
+        <p class="refresh-status">{{ text }}</p>
+      }
       @if (store.groupLimit()) {
         <p>
           Open groups list their first 1,000 devices. Add a filter to see the
@@ -48,6 +51,9 @@ import { selectionScope } from './device-selection';
     }
     p {
       margin: 0;
+    }
+    .refresh-status {
+      color: var(--cc-text-primary);
     }
   `,
 })

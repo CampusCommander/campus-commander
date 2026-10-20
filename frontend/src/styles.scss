@@ -84,6 +84,20 @@ p {
   margin-block-start: 0;
   margin-block-end: var(--cc-space-xs);
 }
+/* A Material 3 menu item with supporting text shows the label over the reason. */
+.devices-toolbar-menu .mat-mdc-menu-item:has(.refresh-menu-support) {
+  min-height: 64px;
+  padding-block: var(--cc-space-sm);
+}
+.devices-toolbar-menu .refresh-menu-label,
+.devices-toolbar-menu .refresh-menu-support {
+  display: block;
+}
+.devices-toolbar-menu .refresh-menu-support {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
 .error {
   color: var(--cc-status-error-text);
 }

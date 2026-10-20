@@ -411,6 +411,7 @@ function mounted() {
           offline: signal(false),
           sync: signal(null),
           groupLimit: signal(false),
+          refreshStatus: signal(''),
           selection: { spec: signal(null) },
         },
       },

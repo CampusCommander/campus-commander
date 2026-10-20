@@ -62,7 +62,12 @@ const ready = (extra: Partial<DeviceSyncState> = {}): DeviceSyncState => ({
   ...extra,
 });
 
-const allActions = ['devices:read', 'devices:write', 'devices:bulk-actions'];
+const allActions = [
+  'devices:read',
+  'devices:write',
+  'devices:bulk-actions',
+  'connection:diagnose',
+];
 const grantedAccess: DeviceWriteAccess = {
   state: 'granted',
   scope: 'https://www.googleapis.com/auth/admin.directory.device.chromeos',
@@ -138,12 +143,16 @@ function setup(options: {
     },
     selectionTab: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
     refreshing: computed(() => sync()?.status === 'running'),
+    refreshStatus: signal(''),
+    refreshPending: signal(false),
     init: vi.fn().mockResolvedValue(undefined),
     leave: vi.fn(),
     gridRows: {},
     freshness: signal(options.freshness ?? null),
     jobFailure: signal(null),
     refreshAll: vi.fn().mockResolvedValue(undefined),
+    refreshSelection: vi.fn().mockResolvedValue(undefined),
+    refreshDomain: vi.fn().mockResolvedValue(undefined),
     reconnect: vi.fn().mockResolvedValue(undefined),
     setPredicates: vi.fn(),
     rows: vi.fn(),
@@ -190,6 +199,19 @@ function setup(options: {
     [
       ...document.querySelectorAll<HTMLButtonElement>('button[mat-menu-item]'),
     ].find((candidate) => candidate.textContent?.trim() === name);
+  /** A Refresh menu item, matched by its label rather than its supporting text. */
+  const refreshItem = (name: string) =>
+    [
+      ...document.querySelectorAll<HTMLButtonElement>('button[mat-menu-item]'),
+    ].find(
+      (candidate) =>
+        candidate.querySelector('.refresh-menu-label')?.textContent?.trim() ===
+        name,
+    );
+  const refreshLabels = () =>
+    [...document.querySelectorAll('.refresh-menu-label')].map((label) =>
+      label.textContent?.trim(),
+    );
   const openMenu = async (name: string) => {
     button(name)?.click();
     fixture.detectChanges();
@@ -203,6 +225,8 @@ function setup(options: {
     button,
     dropdownIcon,
     menuItem,
+    refreshItem,
+    refreshLabels,
     openMenu,
     openBulk,
     writeAccess,
@@ -519,6 +543,81 @@ describe('toolbar dropdown buttons', () => {
     expect(menuItem('Refresh Devices')).toBeDefined();
     menuItem('Refresh Devices')!.click();
     expect(store.refreshAll).toHaveBeenCalled();
+  });
+
+  it('lists the three refresh items in order', async () => {
+    const { openMenu, refreshLabels } = setup({
+      sync: ready(),
+      page: counted,
+    });
+    await openMenu('Refresh');
+    expect(refreshLabels()).toEqual([
+      'Refresh Selected',
+      'Refresh Devices',
+      'Refresh Domain',
+    ]);
+  });
+
+  it('disables Refresh Selected with its supporting text at an empty selection', async () => {
+    const { openMenu, refreshItem } = setup({
+      sync: ready(),
+      page: counted,
+      selectionCount: 0,
+    });
+    await openMenu('Refresh');
+    const item = refreshItem('Refresh Selected')!;
+    expect(item.disabled).toBe(true);
+    expect(item.textContent).toContain('Select devices to refresh.');
+  });
+
+  it('starts Refresh Selected when the selection holds devices', async () => {
+    const { openMenu, refreshItem, store } = setup({
+      sync: ready(),
+      page: counted,
+    });
+    await openMenu('Refresh');
+    const item = refreshItem('Refresh Selected')!;
+    expect(item.disabled).toBe(false);
+    expect(item.textContent).not.toContain('Select devices to refresh.');
+    item.click();
+    expect(store.refreshSelection).toHaveBeenCalled();
+  });
+
+  it('disables Refresh Domain with its supporting text without connection:diagnose', async () => {
+    const { openMenu, refreshItem } = setup({
+      sync: ready(),
+      page: counted,
+      actions: allActions.filter((action) => action !== 'connection:diagnose'),
+    });
+    await openMenu('Refresh');
+    const item = refreshItem('Refresh Domain')!;
+    expect(item.disabled).toBe(true);
+    expect(item.textContent).toContain(
+      'Requires the Check Google connection permission.',
+    );
+  });
+
+  it('starts Refresh Domain with connection:diagnose', async () => {
+    const { openMenu, refreshItem, store } = setup({
+      sync: ready(),
+      page: counted,
+    });
+    await openMenu('Refresh');
+    const item = refreshItem('Refresh Domain')!;
+    expect(item.disabled).toBe(false);
+    expect(item.textContent).not.toContain(
+      'Requires the Check Google connection permission.',
+    );
+    item.click();
+    expect(store.refreshDomain).toHaveBeenCalled();
+  });
+
+  it('disables the Refresh trigger while a refresh request is pending', () => {
+    const { store, button, render } = setup({ sync: ready(), page: counted });
+    expect(button('Refresh')).toMatchObject({ disabled: false });
+    store.refreshPending.set(true);
+    render();
+    expect(button('Refresh')).toMatchObject({ disabled: true });
   });
 
   it('disables Refresh Devices while a refresh runs', async () => {
