@@ -408,6 +408,41 @@ test('shows the idle, running, and attention states and the open panel', async (
   });
 });
 
+test('keeps the whole panel inside the viewport above the breakpoint', async ({
+  page,
+}, testInfo) => {
+  const state: State = {
+    running: true,
+    waiting: true,
+    recent: true,
+    attention: false,
+    failSeen: false,
+  };
+  await fakeStream(page);
+  await signIn(page, state);
+  await page.goto('/account');
+  const panel = page.getByRole('dialog', { name: 'Activity' });
+
+  for (const width of [600, 561]) {
+    await page.setViewportSize({ width, height: 900 });
+    await bell(page).click();
+    await expect(panel).toBeVisible();
+    const box = await panel.boundingBox();
+    expect(box).not.toBeNull();
+    // Both edges stay inside the viewport at 600 px and just above the 560 px
+    // bottom-sheet breakpoint.
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width + 0.5);
+    if (width === 600)
+      await page.screenshot({
+        path: testInfo.outputPath('activity-panel-600.png'),
+        fullPage: true,
+      });
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+  }
+});
+
 test('shows the loading sentence while the first summary is pending', async ({
   page,
 }, testInfo) => {

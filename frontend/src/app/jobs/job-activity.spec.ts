@@ -330,21 +330,41 @@ it('shows the paused sentence when the stream is closed', async () => {
   expect(dialog(fixture)?.textContent).not.toContain('Updated live');
 });
 
-it('shows the section counts with capped rows and keeps View all jobs', async () => {
-  const running = Array.from({ length: 50 }, (_, index) =>
-    job({
-      jobId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
-      displayId: `UPD-${String(100 + index)}`,
-    }),
-  );
+it('shows the true section counts with capped rows and keeps View all jobs', async () => {
+  const rows = (prefix: string, count: number, status: JobSummary['status']) =>
+    Array.from({ length: count }, (_, index) =>
+      job({
+        jobId: `00000000-0000-4000-8000-${prefix === 'RUN' ? '1' : prefix === 'WAI' ? '2' : '3'}${String(index).padStart(11, '0')}`,
+        displayId: `${prefix}-${String(100 + index)}`,
+        status,
+      }),
+    );
   configure({
-    summary: activity({ running: { count: 60, jobs: running } }),
+    summary: activity({
+      running: { count: 60, jobs: rows('RUN', 50, 'running') },
+      waiting: { count: 70, jobs: rows('WAI', 50, 'queued') },
+      recent: {
+        count: 12,
+        jobs: rows('REC', 10, 'completed'),
+        nextExpiryAt: null,
+      },
+    }),
   });
   const fixture = await render();
   await open(fixture);
-  expect(dialog(fixture)?.textContent).toContain('Running · 60');
-  expect(dialog(fixture)?.querySelectorAll('a.row')).toHaveLength(50);
-  expect(dialog(fixture)?.textContent).toContain('View all jobs');
+
+  const panel = dialog(fixture) as HTMLElement;
+  expect(panel.textContent).toContain('Running · 60');
+  expect(panel.textContent).toContain('Waiting · 70');
+  expect(panel.textContent).toContain('Recent · 12 · last 24 hours');
+  const sections = Array.from(panel.querySelectorAll('section.section'));
+  expect(
+    sections.map((section) => section.querySelectorAll('a.row').length),
+  ).toEqual([50, 50, 10]);
+  expect(panel.textContent).toContain('View all jobs');
+  expect(panel.querySelector('.panel-foot a')?.getAttribute('href')).toBe(
+    '/jobs',
+  );
 });
 
 it('closes on Escape and returns focus to the button', async () => {
@@ -366,6 +386,56 @@ it('toggles closed with the button', async () => {
   button(fixture)?.click();
   fixture.detectChanges();
   expect(dialog(fixture)).toBeNull();
+});
+
+it('shifts the panel left when the button leaves less room than its width', async () => {
+  configure({ summary: activity() });
+  const fixture = await render();
+  await open(fixture);
+  const panel = dialog(fixture) as HTMLElement;
+  const trigger = button(fixture) as HTMLButtonElement;
+  // The reviewer measured this right edge at a 600 px viewport.
+  vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+    right: 344.5,
+  } as DOMRect);
+  vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({
+    width: 420,
+  } as DOMRect);
+
+  window.dispatchEvent(new Event('resize'));
+  // 344.5 + 84 - 420 = 8.5, so the left edge stays past the 8 px margin.
+  expect(panel.style.getPropertyValue('--shift')).toBe('-84px');
+
+  vi.mocked(trigger.getBoundingClientRect).mockReturnValue({
+    right: 1184,
+  } as DOMRect);
+  window.dispatchEvent(new Event('resize'));
+  expect(panel.style.getPropertyValue('--shift')).toBe('0px');
+});
+
+it('removes the Recent section when its count reaches zero', async () => {
+  const { summary } = configure({
+    summary: activity({
+      recent: {
+        count: 1,
+        jobs: [
+          job({
+            status: 'completed',
+            finishedAt: '2026-10-19T11:58:00.000Z',
+          }),
+        ],
+        nextExpiryAt: null,
+      },
+    }),
+  });
+  const fixture = await render();
+  await open(fixture);
+  expect(dialog(fixture)?.textContent).toContain('Recent · 1 · last 24 hours');
+
+  summary.set(activity());
+  fixture.detectChanges();
+  expect(dialog(fixture)?.textContent).not.toContain('Recent ·');
+  expect(dialog(fixture)?.querySelector('a.row')).toBeNull();
 });
 
 it('closes on an outside click without returning focus', async () => {

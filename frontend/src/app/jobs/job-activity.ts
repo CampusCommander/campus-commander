@@ -1,5 +1,6 @@
 import {
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
   afterNextRender,
@@ -48,10 +49,21 @@ export class JobActivity {
   private readonly auth = inject(AuthStore);
   private readonly element = inject(ElementRef<HTMLElement>);
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly trigger = viewChild('trigger', { read: ElementRef });
   private readonly panel = viewChild('panel', { read: ElementRef });
   protected readonly open = signal(false);
   protected readonly readable = computed(() => jobsReadable(this.auth));
+  /** The space between the panel and the viewport edge. It matches `--cc-space-sm`. */
+  private static readonly PANEL_MARGIN = 8;
+  /** Re-places the open panel when the viewport changes size. */
+  private readonly placeOnResize = () => this.place();
+
+  constructor() {
+    this.destroyRef.onDestroy(() =>
+      window.removeEventListener('resize', this.placeOnResize),
+    );
+  }
 
   /** The accessible name states the running count and the attention state. */
   protected readonly buttonLabel = computed(() => {
@@ -116,15 +128,40 @@ export class JobActivity {
     this.open.set(true);
     // Each opening marks the activity seen (design 3.4).
     void this.store.seen();
-    afterNextRender(() => this.panel()?.nativeElement?.focus(), {
-      injector: this.injector,
-    });
+    window.addEventListener('resize', this.placeOnResize);
+    afterNextRender(
+      () => {
+        this.place();
+        this.panel()?.nativeElement?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   protected close(returnFocus = true): void {
     if (!this.open()) return;
     this.open.set(false);
+    window.removeEventListener('resize', this.placeOnResize);
     if (returnFocus) this.trigger()?.nativeElement?.focus();
+  }
+
+  /**
+   * Keeps the panel inside the viewport. The panel is anchored to the button, and a
+   * narrow header leaves less horizontal room to the left than the panel width. A
+   * negative right offset moves the panel left just enough to keep both edges onscreen.
+   * The bottom-sheet rule overrides this offset below the breakpoint.
+   */
+  private place(): void {
+    const panel = this.panel()?.nativeElement as HTMLElement | undefined;
+    const trigger = this.trigger()?.nativeElement as HTMLElement | undefined;
+    if (!panel || !trigger) return;
+    const width = panel.getBoundingClientRect().width;
+    const available = trigger.getBoundingClientRect().right;
+    const shift = Math.max(
+      0,
+      Math.ceil(JobActivity.PANEL_MARGIN - (available - width)),
+    );
+    panel.style.setProperty('--shift', `${-shift}px`);
   }
 
   protected onDocumentClick(event: MouseEvent): void {

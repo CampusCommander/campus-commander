@@ -61,12 +61,12 @@ button[mat-icon-button].open {
 .panel {
   position: absolute;
   top: calc(100% + var(--cc-space-sm));
-  right: 0;
+  right: var(--shift, 0);
   z-index: 20;
   display: flex;
   flex-direction: column;
   width: min(420px, calc(100vw - 32px));
-  max-height: min(calc(100dvh - 88px), 640px);
+  max-height: min(100dvh - 88px, 640px);
   border: 1px solid var(--cc-border);
   border-radius: 8px;
   background: var(--cc-surface-card);
