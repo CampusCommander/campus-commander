@@ -330,6 +330,40 @@ it.each([
   },
 );
 
+it('disables the recovery actions while a new preview prepares', async () => {
+  let release: () => void = () => {
+    throw new Error('Preview preparation not started');
+  };
+  const { fixture, button, settle } = setup({
+    previewReply: async () =>
+      Response.json(
+        {
+          reason: 'preview-expired',
+          expiresAt: '2026-10-19T12:15:00.000Z',
+        },
+        { status: 410 },
+      ),
+    prepareReply: () =>
+      new Promise((resolve) => {
+        release = () =>
+          resolve(
+            Response.json(
+              { ...preview, previewId: nextPreviewId, displayId: 'PV-007' },
+              { status: 201 },
+            ),
+          );
+      }),
+  });
+  await settle();
+  button('Prepare new preview')?.click();
+  await new Promise((resolve) => setTimeout(resolve));
+  fixture.detectChanges();
+  expect(button('Preparing preview…')?.disabled).toBe(true);
+  expect(button('Return to draft')?.disabled).toBe(true);
+  release();
+  await settle();
+});
+
 it('shows a loading state before the preview arrives', async () => {
   let release: () => void = () => {
     throw new Error('Preview read not started');

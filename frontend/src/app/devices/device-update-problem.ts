@@ -32,8 +32,8 @@ export class DeviceUpdateProblem {
       : action.label;
   }
 
-  protected disabled(action: FlowAction): boolean {
-    return this.busy() && action.id === 'prepare-new-preview';
+  protected disabled(): boolean {
+    return this.busy();
   }
 
   protected emit(id: FlowActionId): void {

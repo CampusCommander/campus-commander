@@ -10,7 +10,7 @@
     <button
       mat-flat-button
       type="button"
-      [disabled]="disabled(action)"
+      [disabled]="disabled()"
       (click)="emit(action.id)"
     >
       {{ label(action) }}
@@ -19,7 +19,7 @@
     <button
       mat-button
       type="button"
-      [disabled]="disabled(action)"
+      [disabled]="disabled()"
       (click)="emit(action.id)"
     >
       {{ label(action) }}
