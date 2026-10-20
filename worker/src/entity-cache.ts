@@ -53,6 +53,31 @@ export const noEntityCache: EntityCache = {
   close: async () => undefined,
 };
 
+/**
+ * A cache that reports `cache-unavailable` until Redis is configured. The write
+ * path uses it so a missing secret or a bad configuration keeps its publication
+ * rows for the relay instead of deleting them (R1-F2).
+ */
+export function deferredEntityCache(resolve: () => EntityCache): EntityCache {
+  const cache = (): EntityCache => {
+    try {
+      return resolve();
+    } catch {
+      throw new EntityCacheError();
+    }
+  };
+  return {
+    setRecords: (entries) => cache().setRecords(entries),
+    remove: (keys) => cache().remove(keys),
+    removeMembers: (key, members) => cache().removeMembers(key, members),
+    extendMembers: (key, members, seconds) =>
+      cache().extendMembers(key, members, seconds),
+    increment: (key) => cache().increment(key),
+    publish: (channel, message) => cache().publish(channel, message),
+    close: async () => undefined,
+  };
+}
+
 const chunk = 500;
 
 export class WorkerRedis implements EntityCache {

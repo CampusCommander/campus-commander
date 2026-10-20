@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { MOCK_SCOPES, mockExitedError } from './admin-sdk-mock-fixture.mjs';
 import { GOOGLE_SETUP_SCOPES } from '../libs/application-contracts/src/lib/google-capabilities.ts';
+import { qualifyDeviceWritesOnMock } from './device-write-mock.mjs';
 import {
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
   deviceWriteAccessMessage,
@@ -221,6 +222,8 @@ async function runAdminSdkMockIntegration({
   publicOrigin,
   redis,
   customer,
+  migrator,
+  kestra,
 }) {
   // Every step below depends on the running mock. A stopped container fails
   // this flow with the mock log instead of a later connection error.
@@ -618,6 +621,16 @@ async function runAdminSdkMockIntegration({
   process.stdout.write(
     `Mock quota buckets after the sync: ${JSON.stringify(quota.buckets.map(({ api, projectId, subject, snapshot }) => ({ api, projectId, subject, count: snapshot.count, limit: snapshot.limit })))}\n`,
   );
+  const writeResults = await qualifyDeviceWritesOnMock({
+    migrator,
+    mock,
+    kestra,
+    customer,
+    call,
+    headers,
+    redis,
+    writeScope,
+  });
   return [
     `the mock credential connects with the mock administrator and customer ${mock.customerId}: pass`,
     `Refresh all publishes ${state.deviceCount} devices in ${syncSeconds.toFixed(1)} seconds: pass`,
@@ -626,5 +639,6 @@ async function runAdminSdkMockIntegration({
     'the provider probe mints one write-scope token and sends one GET with maxResults=1 to the mock: pass',
     'removing the write scope denies access, and a delegation grant through the mock control restores granted: pass',
     'a revoked delegation denies access, and a 403 on the list reads unavailable with permission-denied: pass',
+    ...writeResults,
   ];
 }

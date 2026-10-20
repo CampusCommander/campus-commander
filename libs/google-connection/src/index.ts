@@ -21,6 +21,12 @@ export {
 export { GoogleConnectionProvider, GoogleStoreError } from './lib/coordinator';
 export { GoogleDeviceReader } from './lib/devices';
 export type {
+  AnnotatedLocationBatchOptions,
+  AnnotatedLocationWrite,
+  DeviceState,
+  WrittenDevice,
+} from './lib/devices';
+export type {
   GoogleConnectionDatabase,
   GoogleReadRequest,
 } from './lib/coordinator';
