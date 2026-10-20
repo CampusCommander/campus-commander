@@ -62,6 +62,26 @@
 .action-note button {
   flex: none;
 }
+/* Material 3 dropdown buttons: the expand icon follows the label and rotates while open. */
+.dropdown-icon {
+  margin-inline-start: var(--cc-space-xs);
+  font-size: 24px;
+  vertical-align: middle;
+  transform: rotate(0deg);
+  /* Close uses the menu exit timing: 100 ms after a 25 ms delay. */
+  transition: transform 100ms linear 25ms;
+}
+.dropdown-icon-open {
+  transform: rotate(180deg);
+  /* Open uses the menu enter timing: 120 ms, cubic-bezier(0, 0, 0.2, 1). */
+  transition: transform 120ms cubic-bezier(0, 0, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-icon,
+  .dropdown-icon-open {
+    transition: none;
+  }
+}
 .chip {
   display: inline-flex;
   align-items: center;
