@@ -293,6 +293,8 @@ it('shows the expired state and prepares a new preview from the draft', async ()
     'Your draft remains available. A new preview rechecks targets, permissions, current values, and expiry.',
   );
   expect(draft.value()).toBe('North lab');
+  button('Return to draft')?.click();
+  expect(navigate).toHaveBeenCalledWith(['/devices/update']);
   button('Prepare new preview')?.click();
   await settle();
   expect(request).toHaveBeenCalledWith('/api/devices/updates/previews', {
