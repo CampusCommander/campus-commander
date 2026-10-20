@@ -39,6 +39,27 @@ const preview: DeviceUpdatePreview = {
   manifestDigest: 'a'.repeat(64),
 };
 
+const receipt = {
+  jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  displayId: 'UPD-006',
+  status: 'accepted' as const,
+  deviceCount: 6,
+  updateCount: 6,
+};
+
+const confirmationKey = `cc.device-update-confirmation.${principal}.${preview.previewId}`;
+
+/** Keep the confirmation that an uncertain answer left behind. */
+function retainConfirmation(): void {
+  sessionStorage.setItem(
+    confirmationKey,
+    JSON.stringify({
+      previewId: preview.previewId,
+      manifestDigest: 'a'.repeat(64),
+    }),
+  );
+}
+
 function setup(options: {
   count?: number;
   expiredAt?: string | null;
@@ -76,9 +97,15 @@ function setup(options: {
         provide: AuthStore,
         useValue: {
           session: signal({
-            identity: { id: principal },
+            identity: { id: principal, grants: [] },
             expiresAt: '2026-10-20T12:00:00.000Z',
             csrfToken: 'a'.repeat(64),
+          }),
+          metadata: signal({
+            phase: 3,
+            authenticationConfigured: true,
+            version: 'test',
+            build: 'client-review',
           }),
           request,
         },
@@ -342,4 +369,104 @@ it('shows a loading state before the selection arrives', async () => {
   release({ terms: [], selectedCount: 6 });
   await ready();
   expect(element.textContent).not.toContain('Loading the selection…');
+});
+
+it('replays a retained confirmation before Save and preview creates a preview', async () => {
+  retainConfirmation();
+  const { ready, type, submit, request, navigate, draft } = setup({
+    count: 6,
+    request: async (path) =>
+      String(path).endsWith('/confirm')
+        ? Response.json(receipt, { status: 200 })
+        : Response.json(preview, { status: 201 }),
+  });
+  await ready();
+  await type('North lab');
+  await submit();
+  expect(request).toHaveBeenCalledWith(
+    `/api/devices/updates/previews/${preview.previewId}/confirm`,
+    { manifestDigest: 'a'.repeat(64), acknowledged: true },
+  );
+  expect(navigate).toHaveBeenCalledWith(['/jobs', 'UPD-006', 'receipt']);
+  expect(request).not.toHaveBeenCalledWith(
+    '/api/devices/updates/previews',
+    expect.anything(),
+  );
+  expect(sessionStorage.getItem(confirmationKey)).toBeNull();
+  expect(draft.value()).toBe('North lab');
+});
+
+it('prepares the preview when a replay proves the retained confirmation expired', async () => {
+  retainConfirmation();
+  const { ready, type, submit, request, navigate } = setup({
+    count: 6,
+    request: async (path, body) => {
+      if (String(path).endsWith('/confirm'))
+        return Response.json({ reason: 'preview-expired' }, { status: 410 });
+      if (path === '/api/devices/updates/previews' && body !== undefined)
+        return Response.json(preview, { status: 201 });
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await ready();
+  await type('North lab');
+  await submit();
+  expect(request).toHaveBeenCalledWith('/api/devices/updates/previews', {
+    gridId: 'devices',
+    tabId,
+    mode: 'replace',
+    value: 'North lab',
+  });
+  expect(navigate).toHaveBeenCalledWith([
+    '/devices/update/previews',
+    preview.previewId,
+  ]);
+  expect(sessionStorage.getItem(confirmationKey)).toBeNull();
+});
+
+it('shows the replay answer and keeps the draft when the preview changed', async () => {
+  retainConfirmation();
+  const { element, ready, type, submit, request } = setup({
+    count: 6,
+    request: async (path) =>
+      String(path).endsWith('/confirm')
+        ? Response.json({ reason: 'preview-changed' }, { status: 409 })
+        : Response.json({}, { status: 404 }),
+  });
+  await ready();
+  await type('North lab');
+  await submit();
+  expect(element.textContent).toContain(
+    'Preview changed. Review the current targets in a new preview.',
+  );
+  expect(request).not.toHaveBeenCalledWith(
+    '/api/devices/updates/previews',
+    expect.anything(),
+  );
+  expect(sessionStorage.getItem(confirmationKey)).toBeNull();
+});
+
+it('opens the confirmation recovery when a replay cannot answer', async () => {
+  retainConfirmation();
+  const { ready, type, submit, request, navigate } = setup({
+    count: 6,
+    request: async (path) => {
+      if (String(path).endsWith('/confirm'))
+        throw new TypeError('Failed to fetch');
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await ready();
+  await type('North lab');
+  await submit();
+  expect(navigate).toHaveBeenCalledWith([
+    '/devices/update/previews',
+    preview.previewId,
+    'confirm',
+  ]);
+  expect(request).not.toHaveBeenCalledWith(
+    '/api/devices/updates/previews',
+    expect.anything(),
+  );
+  expect(sessionStorage.getItem(confirmationKey)).not.toBeNull();
 });

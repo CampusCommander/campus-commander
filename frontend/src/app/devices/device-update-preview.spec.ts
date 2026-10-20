@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
+  DeviceUpdateJobReceipt,
   DeviceUpdatePreview,
   DeviceUpdateTarget,
 } from '@campus/application-contracts';
@@ -50,6 +51,27 @@ const targets: DeviceUpdateTarget[] = Array.from({ length: 6 }, (_, index) =>
   target(index),
 );
 
+const receipt: DeviceUpdateJobReceipt = {
+  jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  displayId: 'UPD-006',
+  status: 'accepted',
+  deviceCount: 6,
+  updateCount: 6,
+};
+
+const confirmationKey = `cc.device-update-confirmation.${principal}.${previewId}`;
+
+/** Keep the confirmation that an uncertain answer left behind. */
+function retainConfirmation(
+  id = previewId,
+  manifestDigest = 'a'.repeat(64),
+): void {
+  sessionStorage.setItem(
+    `cc.device-update-confirmation.${principal}.${id}`,
+    JSON.stringify({ previewId: id, manifestDigest }),
+  );
+}
+
 const session = {
   identity: {
     id: principal,
@@ -72,6 +94,7 @@ export interface PreviewSetup {
   previewReply?: () => Promise<Response>;
   targetsReply?: (cursor: string | null) => Promise<Response>;
   prepareReply?: () => Promise<Response>;
+  confirmReply?: () => Promise<Response>;
 }
 
 export function setup(options: PreviewSetup = {}) {
@@ -89,6 +112,10 @@ export function setup(options: PreviewSetup = {}) {
         { ...preview, previewId: nextPreviewId, displayId: 'PV-007' },
         { status: 201 },
       );
+    }
+    if (path.endsWith('/confirm')) {
+      if (options.confirmReply) return options.confirmReply();
+      return Response.json(receipt, { status: 200 });
     }
     if (path.startsWith('/api/devices/updates/previews/')) {
       if (options.previewReply) return options.previewReply();
@@ -279,6 +306,9 @@ it('shows the expired state and prepares a new preview from the draft', async ()
   });
   await settle();
   draft.setValue('North lab');
+  expect(
+    request.mock.calls.some(([path]) => String(path).endsWith('/confirm')),
+  ).toBe(false);
   expect(element.querySelector('h1')?.textContent?.trim()).toBe(
     'Preview expired',
   );
@@ -375,6 +405,105 @@ it('disables the recovery actions while a new preview prepares', async () => {
   expect(button('Return to draft')?.disabled).toBe(true);
   release();
   await settle();
+});
+
+it('replays a retained confirmation before showing the expired preview', async () => {
+  retainConfirmation();
+  const { element, request, navigate, settle } = setup({
+    previewReply: async () =>
+      Response.json(
+        {
+          reason: 'preview-expired',
+          expiresAt: '2026-10-19T12:15:00.000Z',
+        },
+        { status: 410 },
+      ),
+    confirmReply: async () => Response.json(receipt, { status: 200 }),
+  });
+  await settle();
+  // The expired preview hides a job that the lost confirmation created.
+  expect(request).toHaveBeenCalledWith(
+    `/api/devices/updates/previews/${previewId}/confirm`,
+    { manifestDigest: 'a'.repeat(64), acknowledged: true },
+  );
+  expect(navigate).toHaveBeenCalledWith(['/jobs', 'UPD-006', 'receipt']);
+  expect(element.textContent).not.toContain('No job created');
+  expect(sessionStorage.getItem(confirmationKey)).toBeNull();
+  expect(request).not.toHaveBeenCalledWith(
+    '/api/devices/updates/previews',
+    expect.anything(),
+  );
+});
+
+it('prepares a new preview when the replay proves the retained confirmation expired', async () => {
+  retainConfirmation();
+  const { element, request, navigate, button, settle } = setup({
+    previewReply: async () =>
+      Response.json(
+        {
+          reason: 'preview-expired',
+          expiresAt: '2026-10-19T12:15:00.000Z',
+        },
+        { status: 410 },
+      ),
+    confirmReply: async () =>
+      Response.json({ reason: 'preview-expired' }, { status: 410 }),
+  });
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Preview expired',
+  );
+  expect(sessionStorage.getItem(confirmationKey)).toBeNull();
+  button('Prepare new preview')?.click();
+  await settle();
+  expect(request).toHaveBeenCalledWith('/api/devices/updates/previews', {
+    gridId: 'devices',
+    tabId,
+    mode: 'replace',
+    value: '',
+  });
+  expect(navigate).toHaveBeenCalledWith([
+    '/devices/update/previews',
+    nextPreviewId,
+  ]);
+});
+
+it('keeps an uncertain replay on the preview page and retries it', async () => {
+  retainConfirmation();
+  let confirmations = 0;
+  const { element, request, navigate, button, settle } = setup({
+    previewReply: async () =>
+      Response.json(
+        {
+          reason: 'preview-expired',
+          expiresAt: '2026-10-19T12:15:00.000Z',
+        },
+        { status: 410 },
+      ),
+    confirmReply: async () => {
+      confirmations += 1;
+      if (confirmations === 1) throw new TypeError('Failed to fetch');
+      return Response.json(receipt, { status: 200 });
+    },
+  });
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The confirmation did not finish',
+  );
+  expect(element.textContent).toContain('The result is unknown');
+  expect(element.textContent).not.toContain('No job created');
+  expect(button('Prepare new preview')).toBeUndefined();
+  expect(sessionStorage.getItem(confirmationKey)).not.toBeNull();
+
+  button('Retry')?.click();
+  await settle();
+  expect(confirmations).toBe(2);
+  expect(request).toHaveBeenCalledWith(
+    `/api/devices/updates/previews/${previewId}/confirm`,
+    { manifestDigest: 'a'.repeat(64), acknowledged: true },
+  );
+  expect(navigate).toHaveBeenCalledWith(['/jobs', 'UPD-006', 'receipt']);
+  expect(sessionStorage.getItem(confirmationKey)).toBeNull();
 });
 
 it('shows a loading state before the preview arrives', async () => {
