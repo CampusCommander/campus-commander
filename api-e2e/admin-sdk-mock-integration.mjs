@@ -224,6 +224,13 @@ async function runAdminSdkMockIntegration({
   customer,
   migrator,
   kestra,
+  docker,
+  restartApi,
+  restartWorker,
+  redisName,
+  connectRedis,
+  restartRedis,
+  baseCommit,
 }) {
   // Every step below depends on the running mock. A stopped container fails
   // this flow with the mock log instead of a later connection error.
@@ -631,6 +638,71 @@ async function runAdminSdkMockIntegration({
     redis,
     writeScope,
   });
+  // Q1b: the adversarial attacks run after the P2 checks in the same fresh installation.
+  if (process.env.CC_Q1_ATTACKS === '1') {
+    const { runDeviceWriteAttacks } = await import(
+      './device-write-attacks.mjs'
+    );
+    const summary = await runDeviceWriteAttacks({
+      docker,
+      mock,
+      kestra,
+      migrator,
+      redis,
+      request,
+      ca,
+      publicOrigin,
+      customer,
+      restartApi,
+      restartWorker,
+      redisName,
+      kestraName: kestra.kestraName,
+      workerName: kestra.workerName,
+      connectRedis,
+      restartRedis,
+      baseCommit,
+    });
+    const failed = summary.results.filter((result) => result.status === 'fail');
+    const unverified = summary.results.filter(
+      (result) => result.status === 'unverified',
+    );
+    const observed = summary.results.filter(
+      (result) => result.status === 'observed',
+    );
+    writeResults.push(
+      `Q1b attacks: ${summary.results.length} ran, ${failed.length} with a failed check${
+        failed.length === 0
+          ? ''
+          : ` (${failed.map((result) => result.id).join(', ')})`
+      }, ${unverified.length} with no check${
+        unverified.length === 0
+          ? ''
+          : ` (${unverified.map((result) => result.id).join(', ')})`
+      }, ${observed.length} observations only${
+        observed.length === 0
+          ? ''
+          : ` (${observed.map((result) => result.id).join(', ')})`
+      }: ${failed.length === 0 ? 'pass' : 'fail'}`,
+    );
+    // R2: a genuine failed check must fail the test. The complete result record
+    // stays in dist/q1b/attacks.json, and the ruling-authorized S8 and S9
+    // outcomes are classified by the results themselves: S8 carries its revised
+    // end state, and S9's closed window reads unverified, which is not a fail.
+    if (failed.length > 0) {
+      const detail = failed
+        .map((result) => {
+          const labels = result.checks
+            .filter((check) => !check.pass)
+            .map((check) => check.label);
+          return `${result.id}: ${labels.join('; ')}`;
+        })
+        .join(' | ');
+      const ids = failed.map((result) => result.id).join(', ');
+      throw new Error(
+        `Q1b attacks reported failed checks (${ids}): ${detail}. The complete record is dist/q1b/attacks.json.`,
+      );
+    }
+  }
   return [
     `the mock credential connects with the mock administrator and customer ${mock.customerId}: pass`,
     `Refresh all publishes ${state.deviceCount} devices in ${syncSeconds.toFixed(1)} seconds: pass`,
