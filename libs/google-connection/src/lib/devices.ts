@@ -15,6 +15,9 @@ import {
   BatchServiceError,
   GoogleBatchService,
   type BatchFailure,
+  type BatchResult,
+  type BatchResponseEvent,
+  type BatchRoundEvent,
 } from './batch';
 import { GoogleConnectionError, failure, scopedClient } from './provider';
 
@@ -95,7 +98,37 @@ const batchResponseLimit = 4 * 1024 * 1024;
 const directoryDevice = devicePage.shape.chromeosdevices.unwrap().element;
 const telemetryConcurrency = 4;
 const telemetryDevice = telemetryPage.shape.devices.unwrap().element;
-function scopeFor(id: 'device-inventory' | 'device-telemetry'): string {
+
+/** The part answer of one annotated-location PATCH. Other fields stay out of the body. */
+const writtenDevice = z.object({
+  deviceId: z.string().min(1).max(128).optional(),
+  annotatedLocation: z.string().max(4096).nullable().optional(),
+});
+export type WrittenDevice = z.infer<typeof writtenDevice>;
+
+/** One approved write: the device and its final value. Clear sends null. */
+export interface AnnotatedLocationWrite {
+  deviceId: string;
+  value: string | null;
+}
+
+export interface AnnotatedLocationBatchOptions {
+  /** Parts of one multipart request. The worker setting defaults to 250. */
+  batchSize?: number;
+  onSend?(requestIds: readonly string[]): void | Promise<void>;
+  onResponse?(event: BatchResponseEvent<WrittenDevice>): void | Promise<void>;
+  onBatch?(event: BatchRoundEvent): void | Promise<void>;
+}
+
+/** One read-back answer per device. */
+export type DeviceState =
+  | { deviceId: string; status: 'found'; device: DeviceObservation }
+  | { deviceId: string; status: 'missing' }
+  | { deviceId: string; status: 'failed'; failure: BatchFailure };
+
+export function scopeFor(
+  id: 'device-inventory' | 'device-telemetry' | 'device-changes',
+): string {
   return GOOGLE_CAPABILITIES.find((capability) => capability.id === id)!.scope;
 }
 
@@ -402,6 +435,144 @@ export class GoogleDeviceReader {
       else if (failed) throw batchFailure(failed);
     }
     return { devices, missing };
+  }
+
+  /**
+   * One annotated-location PATCH per device through the batch service. The body names one field.
+   * Clear sends null. The write scope comes from the `device-changes` capability.
+   * Part failures stay in the result; the caller classifies them (design section 7.1).
+   */
+  async patchAnnotatedLocations(
+    credential: DelegatedCredential,
+    customerId: string,
+    writes: readonly AnnotatedLocationWrite[],
+    signal: AbortSignal,
+    options: AnnotatedLocationBatchOptions = {},
+  ): Promise<BatchResult<WrittenDevice>> {
+    googleCustomerIdSchema.parse(customerId);
+    if (writes.length > batchLimit)
+      throw new GoogleConnectionError('invalid-response');
+    const mint: { failure?: GoogleConnectionError } = {};
+    const result = await this.batch.execute({
+      batchUrl: batchEndpoint,
+      requests: writes.map((write) => ({
+        id: String(write.deviceId),
+        method: 'PATCH' as const,
+        path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(write.deviceId)}`,
+        query: { projection: 'FULL', fields: deviceFields },
+        body: { annotatedLocation: write.value },
+      })),
+      parse: (body) => writtenDevice.parse(body) as WrittenDevice,
+      getClient: async (runSignal) => {
+        try {
+          return await scopedClient(
+            credential,
+            scopeFor('device-changes'),
+            runSignal,
+            batchResponseLimit,
+          );
+        } catch (error) {
+          mint.failure = failure(error, 'token');
+          throw mint.failure;
+        }
+      },
+      signal,
+      options: { batchSize: options.batchSize ?? BATCH_DEFAULTS.batchSize },
+      ...(options.onSend ? { onSend: options.onSend } : {}),
+      ...(options.onResponse ? { onResponse: options.onResponse } : {}),
+      ...(options.onBatch ? { onBatch: options.onBatch } : {}),
+    });
+    // A mint failure ends every waiting request without an event. The caller keeps
+    // the code as the job failure (design section 7.2).
+    if (mint.failure && !signal.aborted) throw mint.failure;
+    return result;
+  }
+
+  /**
+   * One GET per device through the batch service. It returns one result per ID.
+   * `deviceBatch` stops on the first failure; a read-back settles each operation on its own.
+   */
+  async deviceStates(
+    credential: DelegatedCredential,
+    customerId: string,
+    deviceIds: readonly string[],
+    signal: AbortSignal,
+  ): Promise<DeviceState[]> {
+    googleCustomerIdSchema.parse(customerId);
+    const ids = [...new Set(deviceIds)];
+    if (ids.length === 0) return [];
+    if (ids.length > batchLimit)
+      throw new GoogleConnectionError('invalid-response');
+    const mint: { failure?: GoogleConnectionError } = {};
+    const states = new Map<string, DeviceState>();
+    const result = await this.batch.execute({
+      batchUrl: batchEndpoint,
+      requests: ids.map((id) => ({
+        id,
+        method: 'GET' as const,
+        path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(id)}`,
+        query: { projection: 'FULL', fields: deviceFields },
+      })),
+      parse: (body) => deviceObservation(directoryDevice.parse(body)),
+      getClient: async (runSignal) => {
+        try {
+          return await scopedClient(
+            credential,
+            scopeFor('device-inventory'),
+            runSignal,
+            batchResponseLimit,
+          );
+        } catch (error) {
+          mint.failure = failure(error, 'token');
+          throw mint.failure;
+        }
+      },
+      signal,
+    });
+    // A mint failure fails every part without an event. The caller settles each
+    // operation as unknown with verification-failed (ruling 1).
+    if (mint.failure && !signal.aborted) throw mint.failure;
+    for (const id of ids) {
+      const pages = result.succeeded.get(id);
+      if (pages) {
+        states.set(id, {
+          deviceId: id,
+          status: 'found',
+          device: pages[pages.length - 1],
+        });
+        continue;
+      }
+      const failed = result.failed.get(id);
+      if (failed?.kind === 'not-found') {
+        states.set(id, { deviceId: id, status: 'missing' });
+        continue;
+      }
+      states.set(id, {
+        deviceId: id,
+        status: 'failed',
+        failure: failed ?? {
+          kind: 'invalid-response',
+          status: 0,
+          reason: 'missing-part',
+          attempts: { quota: 0, transient: 0 },
+          body: null,
+        },
+      });
+    }
+    return ids.map(
+      (id) =>
+        states.get(id) ?? {
+          deviceId: id,
+          status: 'failed',
+          failure: {
+            kind: 'invalid-response',
+            status: 0,
+            reason: 'missing-part',
+            attempts: { quota: 0, transient: 0 },
+            body: null,
+          },
+        },
+    );
   }
 
   /**

@@ -979,6 +979,8 @@ test(
             publicOrigin,
             redis,
             customer: mock.customerId,
+            migrator,
+            kestra: kestraFixture,
           }))
             process.stdout.write(`${check}\n`);
           // The page budget of design section 5.11. The parent run seeds bare records.

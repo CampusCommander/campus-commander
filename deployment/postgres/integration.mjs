@@ -4,6 +4,7 @@ import { qualifyDeviceWriteJobs } from './device-write-jobs.integration.mjs';
 import { qualifyDeviceWriteAccess } from './device-write-access.integration.mjs';
 import { qualifyDeviceUpdates } from './device-updates.integration.mjs';
 import { qualifyEntityEntries } from './entity-entries.integration.mjs';
+import { qualifyWorkerWrites } from './worker-write.integration.mjs';
 import { qualifyJobsApi } from './jobs-api.integration.mjs';
 import { qualifyRestoredAccess } from './restore-access.integration.mjs';
 import { qualifyGoogleLifecycle } from './google-lifecycle.integration.mjs';
@@ -581,6 +582,13 @@ try {
   );
   results.push(
     ...(await qualifyEntityEntries({
+      runtime,
+      migrator: migrators[0],
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyWorkerWrites({
       runtime,
       migrator: migrators[0],
       issuer,

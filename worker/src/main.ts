@@ -10,6 +10,9 @@ import {
   handleGoogleDispatch,
   handleDeviceSyncDispatch,
   handleEntitySyncDispatch,
+  handleDeviceUpdateBatchDispatch,
+  handleDeviceUpdateFinishDispatch,
+  handleDeviceUpdateReconcileDispatch,
   readDispatchSecret,
 } from './dispatch';
 import { GoogleWorker } from './google-connection';
@@ -86,6 +89,33 @@ const handleRequest: RequestListener = async (request, response) => {
     )
   )
     return;
+  if (
+    await handleDeviceUpdateBatchDispatch(
+      request,
+      response,
+      { secret: dispatchSecret, signal: stopping.signal },
+      google,
+    )
+  )
+    return;
+  if (
+    await handleDeviceUpdateFinishDispatch(
+      request,
+      response,
+      { secret: dispatchSecret, signal: stopping.signal },
+      google,
+    )
+  )
+    return;
+  if (
+    await handleDeviceUpdateReconcileDispatch(
+      request,
+      response,
+      { secret: dispatchSecret, signal: stopping.signal },
+      google,
+    )
+  )
+    return;
   respond(response, 404, { error: 'not-found' });
 };
 
@@ -109,12 +139,11 @@ server.listen(port, '0.0.0.0', () => {
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
+    // A graceful stop of a batch settles the written parts and releases the lease
+    // before the pool closes (design section 5.4). Each statement keeps its
+    // query_timeout, so the wait stays bounded.
     stopping.abort();
-    void google.close().catch(() => {
-      console.error('Worker database shutdown failed');
-      process.exitCode = 1;
-    });
-    const deadline = setTimeout(() => server.closeAllConnections(), 5000);
+    const deadline = setTimeout(() => server.closeAllConnections(), 15_000);
     deadline.unref();
     server.close((error) => {
       clearTimeout(deadline);
@@ -122,6 +151,10 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         console.error('Worker shutdown failed');
         process.exitCode = 1;
       }
+      void google.close().catch(() => {
+        console.error('Worker database shutdown failed');
+        process.exitCode = 1;
+      });
     });
   });
 }

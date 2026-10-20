@@ -15,8 +15,20 @@ import {
 } from '@campus/google-connection';
 import type { EntitySyncBatchRequest } from '@campus/application-contracts';
 import { DeviceSync, type DeviceSyncRequest } from './device-sync';
-import { WorkerRedis, noEntityCache, type EntityCache } from './entity-cache';
+import {
+  WorkerRedis,
+  deferredEntityCache,
+  noEntityCache,
+  type EntityCache,
+} from './entity-cache';
 import { EntitySyncBatch } from './entity-sync';
+import {
+  DeviceUpdateJobs,
+  resolveDeviceUpdateBatchSize,
+  type DeviceUpdateBatchRequest,
+  type DeviceUpdateFinishRequest,
+  type DeviceUpdateReconcileRequest,
+} from './device-update';
 
 function secret(reference: SecretReference): Buffer {
   const path =
@@ -34,6 +46,25 @@ export class GoogleWorker {
   private pool?: Pool;
   private config?: DeploymentConfig;
   private redis?: WorkerRedis;
+  /** Section 9: reject a value outside 1 to 250 when the process starts. */
+  private readonly batchSize = resolveDeviceUpdateBatchSize(
+    process.env['CC_DEVICE_UPDATE_BATCH_SIZE'],
+  );
+
+  /**
+   * The device write jobs of one process. A Redis configuration or secret that
+   * is missing reports `cache-unavailable`, so every publication row stays for
+   * the relay (R1-F2). Writes themselves need no Redis.
+   */
+  private updates(pool: Pool, cipher: CredentialCipher): DeviceUpdateJobs {
+    return new DeviceUpdateJobs(
+      pool,
+      cipher,
+      new GoogleDeviceReader(),
+      deferredEntityCache(() => this.cache()),
+      { batchSize: this.batchSize },
+    );
+  }
 
   /** Redis for records, in-flight IDs, and events. The worker user shares the application password. */
   private cache(): WorkerRedis {
@@ -145,6 +176,30 @@ export class GoogleWorker {
       new GoogleDeviceReader(),
       this.cache(),
     ).run(input, signal);
+  }
+
+  /** One device write batch. Kestra repeats a failed batch with the same dispatch token. */
+  async updateDevices(input: DeviceUpdateBatchRequest, signal: AbortSignal) {
+    const { pool, cipher } = this.resources();
+    return this.updates(pool, cipher).runBatch(input, signal);
+  }
+
+  /** The finish step of one device update job (section 5.10). */
+  async finishDeviceUpdate(
+    input: DeviceUpdateFinishRequest,
+    signal: AbortSignal,
+  ) {
+    const { pool, cipher } = this.resources();
+    return this.updates(pool, cipher).runFinish(input, signal);
+  }
+
+  /** One Reconcile read of one operation, or of every unknown operation (ruling 2). */
+  async reconcileDeviceUpdate(
+    input: DeviceUpdateReconcileRequest,
+    signal: AbortSignal,
+  ) {
+    const { pool, cipher } = this.resources();
+    return this.updates(pool, cipher).runReconcile(input, signal);
   }
 
   async close() {
