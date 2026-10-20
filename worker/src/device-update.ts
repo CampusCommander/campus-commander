@@ -27,8 +27,11 @@ import { EntityCacheError, type EntityCache } from './entity-cache';
 export const DEVICE_UPDATE_BATCH_SIZE_LIMIT = 250;
 
 /** Reject a value outside 1 to 250 at start (addendum ruling 11). */
-export function resolveDeviceUpdateBatchSize(value: string | undefined): number {
-  if (value === undefined || value === '') return DEVICE_UPDATE_BATCH_SIZE_LIMIT;
+export function resolveDeviceUpdateBatchSize(
+  value: string | undefined,
+): number {
+  if (value === undefined || value === '')
+    return DEVICE_UPDATE_BATCH_SIZE_LIMIT;
   const parsed = Number(value);
   if (
     !Number.isInteger(parsed) ||
@@ -166,7 +169,9 @@ const preparationSchema = z.object({
 });
 
 const finishSchema = z.object({
-  outcome: z.enum(['superseded', 'finished', 'busy', 'not-prepared']).optional(),
+  outcome: z
+    .enum(['superseded', 'finished', 'busy', 'not-prepared'])
+    .optional(),
   jobId: z.uuid().optional(),
   status: z.string().optional(),
   succeeded: z.number().int().min(0).optional(),
@@ -319,7 +324,9 @@ export function partFailureCode(failed: BatchFailure): string {
 
 const scopeFailures = new Set(['delegation-not-authorized', 'scope-mismatch']);
 
-export function isScopeFailure(code: string | null | undefined): code is string {
+export function isScopeFailure(
+  code: string | null | undefined,
+): code is string {
   return code !== null && code !== undefined && scopeFailures.has(code);
 }
 
@@ -536,10 +543,13 @@ export class LeaseWatchdog {
 
   arm(milliseconds: number = this.milliseconds): void {
     this.clear();
-    this.handle = this.timers.setTimeout(() => {
-      this.handle = null;
-      this.onExpired();
-    }, Math.max(0, milliseconds));
+    this.handle = this.timers.setTimeout(
+      () => {
+        this.handle = null;
+        this.onExpired();
+      },
+      Math.max(0, milliseconds),
+    );
   }
 
   clear(): void {
@@ -773,9 +783,7 @@ export class DeviceUpdateJobs {
       // 1. The batch claim with its envelope. Only a busy claim polls.
       const claimed = await this.claimBatch(input, attempt, signal);
       if (claimed.outcome !== 'claimed')
-        return claimed.outcome === 'busy'
-          ? { outcome: 'busy' }
-          : claimed;
+        return claimed.outcome === 'busy' ? { outcome: 'busy' } : claimed;
       // A watchdog covers every request from the start of the claim that
       // established the lease (section 5.4).
       watchdog.arm(150_000 - (Date.now() - claimed.startedAt));
@@ -939,7 +947,10 @@ export class DeviceUpdateJobs {
           // A mint failure or a fatal batch error stops the job. The kept events
           // decide the outcomes of this settlement (sections 7.1 and 7.2).
           failureCode ??= stopCode;
-          if (error instanceof GoogleConnectionError && isScopeFailure(stopCode))
+          if (
+            error instanceof GoogleConnectionError &&
+            isScopeFailure(stopCode)
+          )
             mintScopeFailure = stopCode;
         }
       }
@@ -1252,9 +1263,7 @@ export class DeviceUpdateJobs {
         null,
         attempt,
         'read-back',
-        fallback.map((operation) =>
-          unknownReadBack(operation.operationNumber),
-        ),
+        fallback.map((operation) => unknownReadBack(operation.operationNumber)),
         stamp,
         null,
         null,
@@ -1359,9 +1368,7 @@ export class DeviceUpdateJobs {
     for (const operation of chunk) {
       const state = byId.get(operation.deviceId);
       if (state === undefined || state.status === 'failed') {
-        results.push(
-          unknownReadBack(operation.operationNumber),
-        );
+        results.push(unknownReadBack(operation.operationNumber));
         summary.unknown += 1;
         continue;
       }
@@ -1479,7 +1486,11 @@ export class DeviceUpdateJobs {
           ...(answer.status ? { status: answer.status } : {}),
           failure: answer.failure ?? null,
         };
-      if (answer.outcome === 'busy' && Date.now() < deadline && !signal.aborted) {
+      if (
+        answer.outcome === 'busy' &&
+        Date.now() < deadline &&
+        !signal.aborted
+      ) {
         await this.sleep(10_000, signal);
         continue;
       }

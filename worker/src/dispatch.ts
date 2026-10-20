@@ -248,10 +248,11 @@ const deviceUpdateBatchDispatchSchema = deviceUpdateBatchRequestSchema.extend({
   executionId: executionIdSchema,
 });
 
-const deviceUpdateFinishDispatchSchema =
-  deviceUpdateFinishRequestSchema.extend({
+const deviceUpdateFinishDispatchSchema = deviceUpdateFinishRequestSchema.extend(
+  {
     executionId: executionIdSchema,
-  });
+  },
+);
 
 const deviceUpdateReconcileDispatchSchema =
   deviceUpdateReconcileRequestSchema.extend({
@@ -337,8 +338,9 @@ export async function handleDeviceUpdateReconcileDispatch(
     return false;
   if (rejected(request, response, context)) return true;
   try {
-    const { executionId, ...input } =
-      deviceUpdateReconcileDispatchSchema.parse(await readJson(request));
+    const { executionId, ...input } = deviceUpdateReconcileDispatchSchema.parse(
+      await readJson(request),
+    );
     const answer = await google.reconcileDeviceUpdate(input, context.signal);
     respond(response, 200, {
       executionId,

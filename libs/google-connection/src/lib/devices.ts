@@ -454,34 +454,34 @@ export class GoogleDeviceReader {
       throw new GoogleConnectionError('invalid-response');
     const mint: { failure?: GoogleConnectionError } = {};
     const result = await this.batch.execute({
-        batchUrl: batchEndpoint,
-        requests: writes.map((write) => ({
-          id: String(write.deviceId),
-          method: 'PATCH' as const,
-          path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(write.deviceId)}`,
-          query: { projection: 'FULL', fields: deviceFields },
-          body: { annotatedLocation: write.value },
-        })),
-        parse: (body) => writtenDevice.parse(body) as WrittenDevice,
-        getClient: async (runSignal) => {
-          try {
-            return await scopedClient(
-              credential,
-              scopeFor('device-changes'),
-              runSignal,
-              batchResponseLimit,
-            );
-          } catch (error) {
-            mint.failure = failure(error, 'token');
-            throw mint.failure;
-          }
-        },
-        signal,
-        options: { batchSize: options.batchSize ?? BATCH_DEFAULTS.batchSize },
-        ...(options.onSend ? { onSend: options.onSend } : {}),
-        ...(options.onResponse ? { onResponse: options.onResponse } : {}),
-        ...(options.onBatch ? { onBatch: options.onBatch } : {}),
-      });
+      batchUrl: batchEndpoint,
+      requests: writes.map((write) => ({
+        id: String(write.deviceId),
+        method: 'PATCH' as const,
+        path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(write.deviceId)}`,
+        query: { projection: 'FULL', fields: deviceFields },
+        body: { annotatedLocation: write.value },
+      })),
+      parse: (body) => writtenDevice.parse(body) as WrittenDevice,
+      getClient: async (runSignal) => {
+        try {
+          return await scopedClient(
+            credential,
+            scopeFor('device-changes'),
+            runSignal,
+            batchResponseLimit,
+          );
+        } catch (error) {
+          mint.failure = failure(error, 'token');
+          throw mint.failure;
+        }
+      },
+      signal,
+      options: { batchSize: options.batchSize ?? BATCH_DEFAULTS.batchSize },
+      ...(options.onSend ? { onSend: options.onSend } : {}),
+      ...(options.onResponse ? { onResponse: options.onResponse } : {}),
+      ...(options.onBatch ? { onBatch: options.onBatch } : {}),
+    });
     // A mint failure ends every waiting request without an event. The caller keeps
     // the code as the job failure (design section 7.2).
     if (mint.failure && !signal.aborted) throw mint.failure;
@@ -506,29 +506,29 @@ export class GoogleDeviceReader {
     const mint: { failure?: GoogleConnectionError } = {};
     const states = new Map<string, DeviceState>();
     const result = await this.batch.execute({
-        batchUrl: batchEndpoint,
-        requests: ids.map((id) => ({
-          id,
-          method: 'GET' as const,
-          path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(id)}`,
-          query: { projection: 'FULL', fields: deviceFields },
-        })),
-        parse: (body) => deviceObservation(directoryDevice.parse(body)),
-        getClient: async (runSignal) => {
-          try {
-            return await scopedClient(
-              credential,
-              scopeFor('device-inventory'),
-              runSignal,
-              batchResponseLimit,
-            );
-          } catch (error) {
-            mint.failure = failure(error, 'token');
-            throw mint.failure;
-          }
-        },
-        signal,
-      });
+      batchUrl: batchEndpoint,
+      requests: ids.map((id) => ({
+        id,
+        method: 'GET' as const,
+        path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(id)}`,
+        query: { projection: 'FULL', fields: deviceFields },
+      })),
+      parse: (body) => deviceObservation(directoryDevice.parse(body)),
+      getClient: async (runSignal) => {
+        try {
+          return await scopedClient(
+            credential,
+            scopeFor('device-inventory'),
+            runSignal,
+            batchResponseLimit,
+          );
+        } catch (error) {
+          mint.failure = failure(error, 'token');
+          throw mint.failure;
+        }
+      },
+      signal,
+    });
     // A mint failure fails every part without an event. The caller settles each
     // operation as unknown with verification-failed (ruling 1).
     if (mint.failure && !signal.aborted) throw mint.failure;

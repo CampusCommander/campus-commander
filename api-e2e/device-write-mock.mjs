@@ -32,7 +32,8 @@ export async function qualifyDeviceWritesOnMock({
   writeScope,
 }) {
   const results = [];
-  const totalMs = Number(process.env.CC_MOCK_WRITE_TIMEOUT_SECONDS ?? 600) * 1000;
+  const totalMs =
+    Number(process.env.CC_MOCK_WRITE_TIMEOUT_SECONDS ?? 600) * 1000;
   // The flow is deployed by the job service at start (B5). This stack runs the
   // flow directly, so the check uploads the flow source first.
   const flowSource = await readFile(
@@ -65,7 +66,8 @@ export async function qualifyDeviceWritesOnMock({
     const response = await fetch(`${mock.controlUrl}${path}`, {
       method: options.method ?? 'GET',
       headers: { 'content-type': 'application/json' },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body:
+        options.body === undefined ? undefined : JSON.stringify(options.body),
     });
     assert.ok(
       [200, 201, 204].includes(response.status),
@@ -90,7 +92,10 @@ export async function qualifyDeviceWritesOnMock({
         ORDER BY p.created_at ASC LIMIT 1`,
     )
   ).rows[0];
-  assert.ok(principal, 'The mock stack holds a principal with devices:bulk-actions.');
+  assert.ok(
+    principal,
+    'The mock stack holds a principal with devices:bulk-actions.',
+  );
   const connection = (
     await migrator.query(
       'SELECT customer_id, generation FROM cc.google_connection WHERE customer_id=$1 AND active',
@@ -105,7 +110,11 @@ export async function qualifyDeviceWritesOnMock({
       [customer],
     )
   ).rows.map((row) => row.device_id);
-  assert.equal(deviceIds.length, 2, 'The mock stack holds two devices to write.');
+  assert.equal(
+    deviceIds.length,
+    2,
+    'The mock stack holds two devices to write.',
+  );
 
   const seedJob = async ({ devices, value, mode = 'replace' }) => {
     const jobId = randomUUID();
@@ -131,7 +140,14 @@ export async function qualifyDeviceWritesOnMock({
         target_count,correlation_id,created_at)
       VALUES($1,cc.job_display_id('UPD',nextval('cc.job_number_upd')),$2,'device-update','devices','accepted',$3,$4,
         $5,$6,clock_timestamp())`,
-      [jobId, customer, principal.id, connection.generation, devices.length, randomUUID()],
+      [
+        jobId,
+        customer,
+        principal.id,
+        connection.generation,
+        devices.length,
+        randomUUID(),
+      ],
     );
     await migrator.query(
       `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,confirmer_permission_version,
@@ -153,13 +169,19 @@ export async function qualifyDeviceWritesOnMock({
         `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
           baseline_value,requested_value,batch,status)
         VALUES($1,$2,$3,$4,'/School A',NULL,$5,0,'pending')`,
-        [jobId, index + 1, deviceId, `SN-${deviceId}`, mode === 'clear' ? null : value],
+        [
+          jobId,
+          index + 1,
+          deviceId,
+          `SN-${deviceId}`,
+          mode === 'clear' ? null : value,
+        ],
       );
     const admitted = (
-      await migrator.query('SELECT cc.admit_device_update_job($1,$2) AS result', [
-        customer,
-        false,
-      ])
+      await migrator.query(
+        'SELECT cc.admit_device_update_job($1,$2) AS result',
+        [customer, false],
+      )
     ).rows[0].result;
     assert.equal(admitted.jobId, jobId, JSON.stringify(admitted));
     const detail = (
@@ -168,7 +190,11 @@ export async function qualifyDeviceWritesOnMock({
         [jobId],
       )
     ).rows[0];
-    return { jobId, token: detail.dispatch_token, batchCount: detail.batch_count };
+    return {
+      jobId,
+      token: detail.dispatch_token,
+      batchCount: detail.batch_count,
+    };
   };
 
   const startFlow = async (jobId, token, batchCount) => {
@@ -337,7 +363,11 @@ export async function qualifyDeviceWritesOnMock({
         count: 1,
       });
       const execution = await waitExecution(executionId);
-      assert.equal(execution.state.current, 'SUCCESS', JSON.stringify(execution));
+      assert.equal(
+        execution.state.current,
+        'SUCCESS',
+        JSON.stringify(execution),
+      );
       const state = await job(jobId);
       assert.equal(state.status, 'completed', JSON.stringify(state));
       const rows = await operations(jobId);
@@ -347,9 +377,13 @@ export async function qualifyDeviceWritesOnMock({
       );
       const published = events.find(
         (event) =>
-          event.type === 'entity-batch' && event.deviceIds?.includes(deviceIds[0]),
+          event.type === 'entity-batch' &&
+          event.deviceIds?.includes(deviceIds[0]),
       );
-      assert.ok(published, `The read-back published entity-batch: ${JSON.stringify(events)}`);
+      assert.ok(
+        published,
+        `The read-back published entity-batch: ${JSON.stringify(events)}`,
+      );
       assert.equal(published.type, 'entity-batch');
       assert.equal(published.jobId, jobId);
       assert.deepEqual(published.deviceIds, [deviceIds[0]]);
@@ -382,7 +416,11 @@ export async function qualifyDeviceWritesOnMock({
       const execution = await waitExecution(
         await startFlow(jobId, token, batchCount),
       );
-      assert.equal(execution.state.current, 'SUCCESS', JSON.stringify(execution));
+      assert.equal(
+        execution.state.current,
+        'SUCCESS',
+        JSON.stringify(execution),
+      );
       const state = await job(jobId);
       assert.equal(state.status, 'failed', JSON.stringify(state));
       assert.equal(state.failure, 'delegation-not-authorized');
@@ -408,7 +446,9 @@ export async function qualifyDeviceWritesOnMock({
       devices: [deviceIds[1]],
       value: 'Room 14',
     });
-    const execution = await waitExecution(await startFlow(jobId, token, batchCount));
+    const execution = await waitExecution(
+      await startFlow(jobId, token, batchCount),
+    );
     assert.equal(execution.state.current, 'SUCCESS', JSON.stringify(execution));
     assert.equal((await operations(jobId))[0].status, 'succeeded');
     let device = (await byIds([deviceIds[1]]))[0];
@@ -425,8 +465,14 @@ export async function qualifyDeviceWritesOnMock({
       "SELECT 1 FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id=$2 AND field='annotatedLocation'",
       [customer, deviceIds[1]],
     );
-    assert.equal(overlays.rowCount, 1, 'The overlay waits for a converging list.');
-    await control(`/domains/${mock.customerId}/index/flush`, { method: 'POST' });
+    assert.equal(
+      overlays.rowCount,
+      1,
+      'The overlay waits for a converging list.',
+    );
+    await control(`/domains/${mock.customerId}/index/flush`, {
+      method: 'POST',
+    });
     await runSync();
     device = (await byIds([deviceIds[1]]))[0];
     assert.equal(device.annotatedLocation, 'Room 14');

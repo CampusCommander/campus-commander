@@ -72,7 +72,9 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
     },
   };
   const settlements = () =>
-    calls.filter((call) => call.text.includes('settle_device_update_operations'));
+    calls.filter((call) =>
+      call.text.includes('settle_device_update_operations'),
+    );
 
   const confirmer = await principal(`worker-${randomUUID()}`, [
     ['devices:read', district],
@@ -116,14 +118,7 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         target_count,correlation_id,created_at)
       VALUES($1,cc.job_display_id('UPD',nextval('cc.job_number_upd')),$2,'device-update','devices','accepted',$3,$4,
         $5,$6,clock_timestamp())`,
-      [
-        jobId,
-        customer,
-        confirmer,
-        generation,
-        devices.length,
-        randomUUID(),
-      ],
+      [jobId, customer, confirmer, generation, devices.length, randomUUID()],
     );
     await admin(
       `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,confirmer_permission_version,
@@ -171,7 +166,13 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
     const calls = [];
     return {
       calls,
-      async patchAnnotatedLocations(_credential, _customer, writes, signal, options) {
+      async patchAnnotatedLocations(
+        _credential,
+        _customer,
+        writes,
+        signal,
+        options,
+      ) {
         calls.push({
           name: 'patch',
           writes: writes.map((write) => ({ ...write })),
@@ -348,280 +349,351 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
   };
 
   try {
-    await check('a refusal fails one operation and reads back none of them', async () => {
-      for (const [answer, failure] of [
-        [{ status: 403, failureKind: 'auth', reason: 'forbidden' }, 'permission-denied'],
-        [{ status: 400, failureKind: 'rejected', reason: 'badRequest' }, null],
-        [{ status: 404, failureKind: 'not-found', reason: 'notFound' }, null],
-      ]) {
-        const { jobId } = await makeJob({ devices: ['d-refusal'] });
+    await check(
+      'a refusal fails one operation and reads back none of them',
+      async () => {
+        for (const [answer, failure] of [
+          [
+            { status: 403, failureKind: 'auth', reason: 'forbidden' },
+            'permission-denied',
+          ],
+          [
+            { status: 400, failureKind: 'rejected', reason: 'badRequest' },
+            null,
+          ],
+          [{ status: 404, failureKind: 'not-found', reason: 'notFound' }, null],
+        ]) {
+          const { jobId } = await makeJob({ devices: ['d-refusal'] });
+          const token = await tokenOf(jobId);
+          const reader = readerOf({
+            rounds: [{ ids: ['d-refusal'], parts: { 'd-refusal': answer } }],
+            state: () => 'Room 12',
+          });
+          const response = await run(jobId, 0, { reader, token });
+          assert.equal(
+            response.outcome,
+            failure === null ? 'settled' : 'stopped',
+            `status ${answer.status}`,
+          );
+          const row = await operation(jobId, 1);
+          assert.equal(row.status, 'failed');
+          assert.equal(
+            reader.calls.filter((one) => one.name === 'deviceStates').length,
+            0,
+          );
+          assert.equal((await header(jobId)).failure, failure);
+          await releaseAll();
+        }
+      },
+    );
+
+    await check(
+      'a lost request then a refusal is read back to succeeded',
+      async () => {
+        const { jobId } = await makeJob({ devices: ['d-lost'] });
         const token = await tokenOf(jobId);
         const reader = readerOf({
-          rounds: [{ ids: ['d-refusal'], parts: { 'd-refusal': answer } }],
+          rounds: [
+            {
+              ids: ['d-lost'],
+              parts: {
+                'd-lost': { kind: 'retry', status: 0, reason: 'timeout' },
+              },
+            },
+            {
+              ids: ['d-lost'],
+              parts: {
+                'd-lost': {
+                  status: 403,
+                  failureKind: 'auth',
+                  reason: 'forbidden',
+                  attempts: { quota: 0, transient: 1 },
+                },
+              },
+            },
+          ],
           state: () => 'Room 12',
         });
-        const response = await run(jobId, 0, { reader, token });
-        assert.equal(
-          response.outcome,
-          failure === null ? 'settled' : 'stopped',
-          `status ${answer.status}`,
-        );
+        const response = await run(jobId, 0, { reader, token, batchSize: 1 });
+        assert.equal(response.outcome, 'stopped');
+        assert.equal(response.failure, 'permission-denied');
         const row = await operation(jobId, 1);
-        assert.equal(row.status, 'failed');
-        assert.equal(reader.calls.filter((one) => one.name === 'deviceStates').length, 0);
-        assert.equal((await header(jobId)).failure, failure);
+        assert.equal(row.status, 'succeeded');
+        assert.equal(row.verified_by, 'read-back');
+        assert.equal(row.observed_value, 'Room 12');
+        assert.equal(
+          reader.calls.filter((one) => one.name === 'deviceStates').length,
+          1,
+        );
         await releaseAll();
-      }
-    });
+      },
+    );
 
-    await check('a lost request then a refusal is read back to succeeded', async () => {
-      const { jobId } = await makeJob({ devices: ['d-lost'] });
-      const token = await tokenOf(jobId);
-      const reader = readerOf({
-        rounds: [
-          {
-            ids: ['d-lost'],
-            parts: {
-              'd-lost': { kind: 'retry', status: 0, reason: 'timeout' },
+    await check(
+      'a fatal batch error keeps a 2xx and leaves the sent operation unknown',
+      async () => {
+        const { jobId } = await makeJob({ devices: ['d-kept', 'd-sent'] });
+        const token = await tokenOf(jobId);
+        const reader = readerOf({
+          rounds: [
+            {
+              ids: ['d-kept'],
+              parts: { 'd-kept': { kind: 'success' } },
             },
-          },
+          ],
+          state: () => 'Room 12',
+        });
+        const patch = reader.patchAnnotatedLocations;
+        let sent = 0;
+        reader.patchAnnotatedLocations = async (
+          credential,
+          customerId,
+          writes,
+          signal,
+          options,
+        ) => {
+          const first = await patch(
+            credential,
+            customerId,
+            [writes[0]],
+            signal,
+            options,
+          );
+          sent += 1;
+          await options.onSend?.(['d-sent']);
+          throw new BatchServiceError(
+            'malformed-response',
+            'malformed multipart',
+          );
+        };
+        const response = await run(jobId, 0, { reader, token, batchSize: 1 });
+        assert.equal(sent, 1);
+        assert.equal(response.outcome, 'stopped');
+        assert.equal(response.failure, 'invalid-response');
+        assert.equal((await operation(jobId, 1)).status, 'succeeded');
+        const second = await operation(jobId, 2);
+        assert.equal(
+          second.status,
+          'succeeded',
+          'The read-back of place 4 settles the sent operation.',
+        );
+        assert.equal(second.verified_by, 'read-back');
+        assert.equal((await header(jobId)).failure, 'invalid-response');
+        await releaseAll();
+      },
+    );
+
+    await check(
+      'a graceful stop returns unsent operations to pending and releases',
+      async () => {
+        const { jobId } = await makeJob({ devices: ['d-stop'] });
+        const token = await tokenOf(jobId);
+        const stopping = new AbortController();
+        const reader = readerOf({
+          rounds: [{ ids: ['d-stop'], parts: {} }],
+          state: () => 'Room 12',
+        });
+        const patch = reader.patchAnnotatedLocations;
+        reader.patchAnnotatedLocations = async (
+          credential,
+          customerId,
+          writes,
+          signal,
+          options,
+        ) => {
+          // The batch service stops sending once its signal aborts.
+          stopping.abort();
+          return patch(credential, customerId, writes, signal, options);
+        };
+        const response = await new DeviceUpdateJobs(
+          pool,
+          { open: () => ({}) },
+          reader,
+          cacheOf(),
+        ).runBatch(
           {
-            ids: ['d-lost'],
-            parts: {
-              'd-lost': {
-                status: 403,
-                failureKind: 'auth',
-                reason: 'forbidden',
-                attempts: { quota: 0, transient: 1 },
+            customerId: customer,
+            jobId,
+            dispatchToken: token,
+            batch: 0,
+            correlationId: randomUUID(),
+          },
+          stopping.signal,
+        );
+        assert.equal(response.outcome, 'settled');
+        const row = await operation(jobId, 1);
+        assert.equal(
+          row.status,
+          'pending',
+          'An unsent operation returns to pending.',
+        );
+        const batch = await adminRow(
+          'SELECT attempt_id,lease_expires_at FROM cc.device_update_batches WHERE job_id=$1 AND batch=0',
+          [jobId],
+        );
+        assert.equal(batch.attempt_id, null, 'The release clears the lease.');
+        await releaseAll();
+      },
+    );
+
+    await check(
+      'a mint failure skips the claimed operations and records the failure',
+      async () => {
+        const { jobId } = await makeJob({ devices: ['d-mint'] });
+        const token = await tokenOf(jobId);
+        const reader = readerOf({
+          rounds: [],
+          state: () => 'Room 12',
+        });
+        reader.patchAnnotatedLocations = async () => {
+          throw new GoogleConnectionError('network-failure');
+        };
+        const response = await run(jobId, 0, { reader, token });
+        assert.equal(response.outcome, 'stopped');
+        assert.equal(response.failure, 'network-failure');
+        const row = await operation(jobId, 1);
+        assert.equal(row.status, 'skipped');
+        assert.equal(row.outcome_reason, 'network-failure');
+        assert.equal((await header(jobId)).failure, 'network-failure');
+        assert.equal(
+          reader.calls.filter((one) => one.name === 'deviceStates').length,
+          0,
+        );
+        await releaseAll();
+      },
+    );
+
+    await check(
+      'a scope observation records its failure and its count',
+      async () => {
+        const { jobId } = await makeJob({
+          devices: ['d-scope-1', 'd-scope-2', 'd-scope-3'],
+        });
+        const token = await tokenOf(jobId);
+        const reader = readerOf({
+          rounds: [
+            {
+              ids: ['d-scope-1'],
+              parts: {
+                'd-scope-1': {
+                  status: 403,
+                  failureKind: 'auth',
+                  reason: 'forbidden',
+                },
               },
             },
-          },
-        ],
-        state: () => 'Room 12',
-      });
-      const response = await run(jobId, 0, { reader, token, batchSize: 1 });
-      assert.equal(response.outcome, 'stopped');
-      assert.equal(response.failure, 'permission-denied');
-      const row = await operation(jobId, 1);
-      assert.equal(row.status, 'succeeded');
-      assert.equal(row.verified_by, 'read-back');
-      assert.equal(row.observed_value, 'Room 12');
-      assert.equal(reader.calls.filter((one) => one.name === 'deviceStates').length, 1);
-      await releaseAll();
-    });
-
-    await check('a fatal batch error keeps a 2xx and leaves the sent operation unknown', async () => {
-      const { jobId } = await makeJob({ devices: ['d-kept', 'd-sent'] });
-      const token = await tokenOf(jobId);
-      const reader = readerOf({
-        rounds: [
-          {
-            ids: ['d-kept'],
-            parts: { 'd-kept': { kind: 'success' } },
-          },
-        ],
-        state: () => 'Room 12',
-      });
-      const patch = reader.patchAnnotatedLocations;
-      let sent = 0;
-      reader.patchAnnotatedLocations = async (credential, customerId, writes, signal, options) => {
-        const first = await patch(credential, customerId, [writes[0]], signal, options);
-        sent += 1;
-        await options.onSend?.(['d-sent']);
-        throw new BatchServiceError('malformed-response', 'malformed multipart');
-      };
-      const response = await run(jobId, 0, { reader, token, batchSize: 1 });
-      assert.equal(sent, 1);
-      assert.equal(response.outcome, 'stopped');
-      assert.equal(response.failure, 'invalid-response');
-      assert.equal((await operation(jobId, 1)).status, 'succeeded');
-      const second = await operation(jobId, 2);
-      assert.equal(
-        second.status,
-        'succeeded',
-        'The read-back of place 4 settles the sent operation.',
-      );
-      assert.equal(second.verified_by, 'read-back');
-      assert.equal((await header(jobId)).failure, 'invalid-response');
-      await releaseAll();
-    });
-
-    await check('a graceful stop returns unsent operations to pending and releases', async () => {
-      const { jobId } = await makeJob({ devices: ['d-stop'] });
-      const token = await tokenOf(jobId);
-      const stopping = new AbortController();
-      const reader = readerOf({
-        rounds: [{ ids: ['d-stop'], parts: {} }],
-        state: () => 'Room 12',
-      });
-      const patch = reader.patchAnnotatedLocations;
-      reader.patchAnnotatedLocations = async (
-        credential,
-        customerId,
-        writes,
-        signal,
-        options,
-      ) => {
-        // The batch service stops sending once its signal aborts.
-        stopping.abort();
-        return patch(credential, customerId, writes, signal, options);
-      };
-      const response = await new DeviceUpdateJobs(
-        pool,
-        { open: () => ({}) },
-        reader,
-        cacheOf(),
-      ).runBatch(
-        {
-          customerId: customer,
-          jobId,
-          dispatchToken: token,
-          batch: 0,
-          correlationId: randomUUID(),
-        },
-        stopping.signal,
-      );
-      assert.equal(response.outcome, 'settled');
-      const row = await operation(jobId, 1);
-      assert.equal(row.status, 'pending', 'An unsent operation returns to pending.');
-      const batch = await adminRow(
-        'SELECT attempt_id,lease_expires_at FROM cc.device_update_batches WHERE job_id=$1 AND batch=0',
-        [jobId],
-      );
-      assert.equal(batch.attempt_id, null, 'The release clears the lease.');
-      await releaseAll();
-    });
-
-    await check('a mint failure skips the claimed operations and records the failure', async () => {
-      const { jobId } = await makeJob({ devices: ['d-mint'] });
-      const token = await tokenOf(jobId);
-      const reader = readerOf({
-        rounds: [],
-        state: () => 'Room 12',
-      });
-      reader.patchAnnotatedLocations = async () => {
-        throw new GoogleConnectionError('network-failure');
-      };
-      const response = await run(jobId, 0, { reader, token });
-      assert.equal(response.outcome, 'stopped');
-      assert.equal(response.failure, 'network-failure');
-      const row = await operation(jobId, 1);
-      assert.equal(row.status, 'skipped');
-      assert.equal(row.outcome_reason, 'network-failure');
-      assert.equal((await header(jobId)).failure, 'network-failure');
-      assert.equal(reader.calls.filter((one) => one.name === 'deviceStates').length, 0);
-      await releaseAll();
-    });
-
-    await check('a scope observation records its failure and its count', async () => {
-      const { jobId } = await makeJob({
-        devices: ['d-scope-1', 'd-scope-2', 'd-scope-3'],
-      });
-      const token = await tokenOf(jobId);
-      const reader = readerOf({
-        rounds: [
-          {
-            ids: ['d-scope-1'],
-            parts: {
-              'd-scope-1': { status: 403, failureKind: 'auth', reason: 'forbidden' },
-            },
-          },
-          {
-            ids: ['d-scope-2'],
-            parts: {
-              'd-scope-2': {
-                status: 403,
-                failureKind: 'auth',
-                reason: 'invalid_scope',
-                body: { error: { errors: [{ reason: 'invalid_scope' }] } },
+            {
+              ids: ['d-scope-2'],
+              parts: {
+                'd-scope-2': {
+                  status: 403,
+                  failureKind: 'auth',
+                  reason: 'invalid_scope',
+                  body: { error: { errors: [{ reason: 'invalid_scope' }] } },
+                },
               },
             },
-          },
-          {
-            ids: ['d-scope-3'],
-            parts: {
-              'd-scope-3': {
-                status: 403,
-                failureKind: 'auth',
-                reason: 'invalid_scope',
-                body: { error: { errors: [{ reason: 'invalid_scope' }] } },
+            {
+              ids: ['d-scope-3'],
+              parts: {
+                'd-scope-3': {
+                  status: 403,
+                  failureKind: 'auth',
+                  reason: 'invalid_scope',
+                  body: { error: { errors: [{ reason: 'invalid_scope' }] } },
+                },
               },
             },
-          },
-        ],
-        state: () => 'Room 12',
-      });
-      const response = await run(jobId, 0, { reader, token, batchSize: 1 });
-      assert.equal(response.outcome, 'stopped');
-      const row = await header(jobId);
-      assert.equal(row.failure, 'permission-denied');
-      assert.equal(row.scope_observations, 2);
-      assert.equal(row.scope_failure, 'scope-mismatch');
-      const scopeParameters = settlements().map((call) => call.values[8]);
-      assert.equal(scopeParameters[0], null, 'The round-1 settlement carries no scope failure.');
-      assert.equal(scopeParameters[1], 'scope-mismatch');
-      await releaseAll();
-    });
+          ],
+          state: () => 'Room 12',
+        });
+        const response = await run(jobId, 0, { reader, token, batchSize: 1 });
+        assert.equal(response.outcome, 'stopped');
+        const row = await header(jobId);
+        assert.equal(row.failure, 'permission-denied');
+        assert.equal(row.scope_observations, 2);
+        assert.equal(row.scope_failure, 'scope-mismatch');
+        const scopeParameters = settlements().map((call) => call.values[8]);
+        assert.equal(
+          scopeParameters[0],
+          null,
+          'The round-1 settlement carries no scope failure.',
+        );
+        assert.equal(scopeParameters[1], 'scope-mismatch');
+        await releaseAll();
+      },
+    );
 
-    await check('a duplicate request answers done and sends nothing', async () => {
-      const { jobId } = await makeJob({ devices: ['d-duplicate'] });
-      const token = await tokenOf(jobId);
-      const first = readerOf({
-        rounds: [
-          { ids: ['d-duplicate'], parts: { 'd-duplicate': { kind: 'success' } } },
-        ],
-        state: () => 'Room 12',
-      });
-      await run(jobId, 0, { reader: first, token });
-      const second = readerOf({ rounds: [], state: () => 'Room 12' });
-      const response = await run(jobId, 0, { reader: second, token });
-      assert.deepEqual(response, { outcome: 'done' });
-      assert.equal(second.calls.length, 0);
-      await releaseAll();
-    });
-
-    await check('a batch keeps no entity entry and a read-back 404 removes its key', async () => {
-      const { jobId } = await makeJob({ devices: ['d-cache'] });
-      await seedDevice('d-cache');
-      const token = await tokenOf(jobId);
-      const cache = cacheOf();
-      const reader = readerOf({
-        rounds: [
-          {
-            ids: ['d-cache'],
-            parts: {
-              'd-cache': { kind: 'retry', status: 0, reason: 'timeout' },
+    await check(
+      'a duplicate request answers done and sends nothing',
+      async () => {
+        const { jobId } = await makeJob({ devices: ['d-duplicate'] });
+        const token = await tokenOf(jobId);
+        const first = readerOf({
+          rounds: [
+            {
+              ids: ['d-duplicate'],
+              parts: { 'd-duplicate': { kind: 'success' } },
             },
-          },
-          {
-            ids: ['d-cache'],
-            parts: {
-              'd-cache': {
-                status: 403,
-                failureKind: 'auth',
-                reason: 'forbidden',
-                attempts: { quota: 0, transient: 1 },
+          ],
+          state: () => 'Room 12',
+        });
+        await run(jobId, 0, { reader: first, token });
+        const second = readerOf({ rounds: [], state: () => 'Room 12' });
+        const response = await run(jobId, 0, { reader: second, token });
+        assert.deepEqual(response, { outcome: 'done' });
+        assert.equal(second.calls.length, 0);
+        await releaseAll();
+      },
+    );
+
+    await check(
+      'a batch keeps no entity entry and a read-back 404 removes its key',
+      async () => {
+        const { jobId } = await makeJob({ devices: ['d-cache'] });
+        await seedDevice('d-cache');
+        const token = await tokenOf(jobId);
+        const cache = cacheOf();
+        const reader = readerOf({
+          rounds: [
+            {
+              ids: ['d-cache'],
+              parts: {
+                'd-cache': { kind: 'retry', status: 0, reason: 'timeout' },
               },
             },
-          },
-        ],
-        state: () => 'Room 12',
-      });
-      reader.deviceStates = async (_credential, _customer, ids) => {
-        reader.calls.push({ name: 'deviceStates', ids: [...ids] });
-        return ids.map((id) => ({ deviceId: id, status: 'missing' }));
-      };
-      await run(jobId, 0, { reader, cache, token, batchSize: 1 });
-      assert.equal(
-        cache.calls.filter((call) => call.name === 'setRecords').length,
-        0,
-        'The write path stores no entity entry.',
-      );
-      const removed = cache.calls.filter((call) => call.name === 'remove');
-      assert.deepEqual(removed[0].keys, [`cc:entity:device:${customer}:d-cache`]);
-      assert.equal((await operation(jobId, 1)).status, 'failed');
-      await releaseAll();
-    });
+            {
+              ids: ['d-cache'],
+              parts: {
+                'd-cache': {
+                  status: 403,
+                  failureKind: 'auth',
+                  reason: 'forbidden',
+                  attempts: { quota: 0, transient: 1 },
+                },
+              },
+            },
+          ],
+          state: () => 'Room 12',
+        });
+        reader.deviceStates = async (_credential, _customer, ids) => {
+          reader.calls.push({ name: 'deviceStates', ids: [...ids] });
+          return ids.map((id) => ({ deviceId: id, status: 'missing' }));
+        };
+        await run(jobId, 0, { reader, cache, token, batchSize: 1 });
+        assert.equal(
+          cache.calls.filter((call) => call.name === 'setRecords').length,
+          0,
+          'The write path stores no entity entry.',
+        );
+        const removed = cache.calls.filter((call) => call.name === 'remove');
+        assert.deepEqual(removed[0].keys, [
+          `cc:entity:device:${customer}:d-cache`,
+        ]);
+        assert.equal((await operation(jobId, 1)).status, 'failed');
+        await releaseAll();
+      },
+    );
 
     await check('a publication row survives a Redis failure', async () => {
       const { jobId } = await makeJob({ devices: ['d-publish'] });
@@ -631,7 +703,9 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         throw new EntityCacheError();
       };
       const reader = readerOf({
-        rounds: [{ ids: ['d-publish'], parts: { 'd-publish': { kind: 'success' } } }],
+        rounds: [
+          { ids: ['d-publish'], parts: { 'd-publish': { kind: 'success' } } },
+        ],
         state: () => 'Room 12',
       });
       const response = await run(jobId, 0, { reader, cache, token });
@@ -644,196 +718,224 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
       await releaseAll();
     });
 
-    await check('1001 unknown operations read back in five chunks under 250 results', async () => {
-      const jobId = randomUUID();
-      const previewId = randomUUID();
-      await admin(
-        `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+    await check(
+      '1001 unknown operations read back in five chunks under 250 results',
+      async () => {
+        const jobId = randomUUID();
+        const previewId = randomUUID();
+        await admin(
+          `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
           generation,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
         VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotatedLocation','replace','Room 12',1001,1001,0,0,
           'manifest-digest',clock_timestamp()+interval '1 hour')`,
-        [previewId, customer, confirmer, version, generation],
-      );
-      await admin(
-        `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+          [previewId, customer, confirmer, version, generation],
+        );
+        await admin(
+          `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
           target_count,correlation_id,created_at)
         VALUES($1,cc.job_display_id('UPD',nextval('cc.job_number_upd')),$2,'device-update','devices','running',$3,$4,
           1001,$5,clock_timestamp())`,
-        [jobId, customer, confirmer, generation, randomUUID()],
-      );
-      await admin(
-        `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,confirmer_permission_version,
+          [jobId, customer, confirmer, generation, randomUUID()],
+        );
+        await admin(
+          `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,confirmer_permission_version,
           delegated_subject,batch_size,batch_count)
         VALUES($1,$2,'annotatedLocation','replace','Room 12',$3,$4,'admin@example.org',250,5)`,
-        [jobId, previewId, confirmer, version],
-      );
-      await admin(
-        `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
+          [jobId, previewId, confirmer, version],
+        );
+        await admin(
+          `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
           baseline_value,requested_value,batch,status,outcome_reason)
         SELECT $1,n,'bulk-'||n,'SN-bulk-'||n,'/School A',NULL,'Room 12',(n-1)/250,'unknown','interrupted'
         FROM generate_series(1,1001) n`,
-        [jobId],
-      );
-      const reader = readerOf({ rounds: [], state: () => 'Room 12' });
-      const cache = cacheOf();
-      const summary = await new DeviceUpdateJobs(
-        pool,
-        { open: () => ({}) },
-        reader,
-        cache,
-      ).runReconcile(
-        {
-          customerId: customer,
-          jobId,
-          operationNumber: 'all',
-          correlationId: randomUUID(),
-        },
-        AbortSignal.timeout(30_000),
-      );
-      assert.equal(summary.outcome, 'settled');
-      assert.equal(summary.readBack.claimed, 1001);
-      assert.equal(summary.readBack.settled, 1001);
-      assert.equal(summary.readBack.verified, 1001);
-      const chunks = settlements();
-      assert.equal(chunks.length, 5, 'Five chunks of 250, 250, 250, 250, and 1.');
-      for (const call of chunks)
-        assert.ok(JSON.parse(call.values[5]).length <= 250);
-      assert.equal(
-        (await adminRow(
-          "SELECT count(*)::int AS count FROM cc.device_update_operations WHERE job_id=$1 AND status='succeeded'",
-          [jobId],
-        )).count,
-        1001,
-      );
-      // Release the write slot for the checks that follow.
-      await admin("UPDATE cc.jobs SET status='completed' WHERE job_id=$1", [jobId]);
-    });
-
-    await check('a killed runner leaves dispatched operations that a retry fences and reads back', async () => {
-      const { jobId } = await makeJob({ devices: ['d-kill-1', 'd-kill-2'] });
-      const token = await tokenOf(jobId);
-      // The first attempt claims, then dies before the write leaves.
-      const dying = readerOf({ rounds: [], state: () => 'Room 12' });
-      dying.patchAnnotatedLocations = async () => {
-        throw new DeviceSyncError('worker-stopping');
-      };
-      await assert.rejects(
-        run(jobId, 0, { reader: dying, token }),
-        (error) => error.code === 'worker-stopping',
-      );
-      const dispatched = await admin(
-        'SELECT status FROM cc.device_update_operations WHERE job_id=$1 ORDER BY 1',
-        [jobId],
-      );
-      assert.deepEqual(
-        dispatched.map((row) => row.status),
-        ['dispatched', 'dispatched'],
-      );
-      // The lease and the grace lapse while no worker runs.
-      await admin(
-        "UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '2 minutes' WHERE job_id=$1",
-        [jobId],
-      );
-      await admin(
-        "UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '3 minutes' WHERE job_id=$1",
-        [jobId],
-      );
-      const retry = readerOf({ rounds: [], state: () => 'Room 12' });
-      const answer = await run(jobId, 0, { reader: retry, token });
-      assert.equal(answer.outcome, 'settled');
-      const rows = await admin(
-        'SELECT status,verified_by FROM cc.device_update_operations WHERE job_id=$1 ORDER BY 1',
-        [jobId],
-      );
-      assert.deepEqual(
-        rows.map((row) => [row.status, row.verified_by]),
-        [
-          ['succeeded', 'read-back'],
-          ['succeeded', 'read-back'],
-        ],
-      );
-      assert.equal(
-        retry.calls.filter((call) => call.name === 'patch').length,
-        0,
-        'A fenced operation sends no part.',
-      );
-      await releaseAll();
-    });
-
-    await check('a stopping settlement keeps the failure for later claims', async () => {
-      const { jobId } = await makeJob({
-        devices: ['d-a1-1', 'd-a1-2', 'd-a1-3', 'd-a1-4'],
-        batchSize: 2,
-      });
-      const token = await tokenOf(jobId);
-      const reader = readerOf({
-        rounds: [
-          {
-            ids: ['d-a1-1'],
-            parts: {
-              'd-a1-1': { status: 403, failureKind: 'auth', reason: 'forbidden' },
-            },
-          },
-          { ids: [], parts: {}, kill: true },
-        ],
-        state: () => 'Room 12',
-      });
-      await assert.rejects(run(jobId, 0, { reader, token, batchSize: 1 }));
-      assert.equal((await header(jobId)).failure, 'permission-denied');
-      const later = readerOf({ rounds: [], state: () => 'Room 12' });
-      const same = await run(jobId, 0, { reader: later, token });
-      assert.deepEqual(same, {
-        outcome: 'stopped',
-        failure: 'permission-denied',
-      });
-      const next = await run(jobId, 1, { reader: later, token });
-      assert.deepEqual(next, {
-        outcome: 'stopped',
-        failure: 'permission-denied',
-      });
-      assert.equal(later.calls.length, 0, 'A stopped claim sends no part.');
-      await releaseAll();
-    });
-
-    await check('a stopped claim refreshes the heartbeat so no start recovers', async () => {
-      const { jobId } = await makeJob({
-        devices: ['d-a2-1', 'd-a2-2', 'd-a2-3'],
-        batchSize: 1,
-      });
-      const token = await tokenOf(jobId);
-      const reader = readerOf({
-        rounds: [
-          {
-            ids: ['d-a2-1'],
-            parts: {
-              'd-a2-1': { status: 403, failureKind: 'auth', reason: 'forbidden' },
-            },
-          },
-        ],
-        state: () => 'Room 12',
-      });
-      const response = await run(jobId, 0, { reader, token, batchSize: 1 });
-      assert.equal(response.outcome, 'stopped');
-      for (const batch of [1, 2]) {
-        await admin(
-          "UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '11 minutes' WHERE job_id=$1",
           [jobId],
         );
-        const later = readerOf({ rounds: [], state: () => 'Room 12' });
-        const stopped = await run(jobId, batch, { reader: later, token });
-        assert.equal(stopped.outcome, 'stopped');
-        const recovery = await result(
-          'SELECT cc.recover_device_update_jobs($1) AS result',
-          [customer],
+        const reader = readerOf({ rounds: [], state: () => 'Room 12' });
+        const cache = cacheOf();
+        const summary = await new DeviceUpdateJobs(
+          pool,
+          { open: () => ({}) },
+          reader,
+          cache,
+        ).runReconcile(
+          {
+            customerId: customer,
+            jobId,
+            operationNumber: 'all',
+            correlationId: randomUUID(),
+          },
+          AbortSignal.timeout(30_000),
+        );
+        assert.equal(summary.outcome, 'settled');
+        assert.equal(summary.readBack.claimed, 1001);
+        assert.equal(summary.readBack.settled, 1001);
+        assert.equal(summary.readBack.verified, 1001);
+        const chunks = settlements();
+        assert.equal(
+          chunks.length,
+          5,
+          'Five chunks of 250, 250, 250, 250, and 1.',
+        );
+        for (const call of chunks)
+          assert.ok(JSON.parse(call.values[5]).length <= 250);
+        assert.equal(
+          (
+            await adminRow(
+              "SELECT count(*)::int AS count FROM cc.device_update_operations WHERE job_id=$1 AND status='succeeded'",
+              [jobId],
+            )
+          ).count,
+          1001,
+        );
+        // Release the write slot for the checks that follow.
+        await admin("UPDATE cc.jobs SET status='completed' WHERE job_id=$1", [
+          jobId,
+        ]);
+      },
+    );
+
+    await check(
+      'a killed runner leaves dispatched operations that a retry fences and reads back',
+      async () => {
+        const { jobId } = await makeJob({ devices: ['d-kill-1', 'd-kill-2'] });
+        const token = await tokenOf(jobId);
+        // The first attempt claims, then dies before the write leaves.
+        const dying = readerOf({ rounds: [], state: () => 'Room 12' });
+        dying.patchAnnotatedLocations = async () => {
+          throw new DeviceSyncError('worker-stopping');
+        };
+        await assert.rejects(
+          run(jobId, 0, { reader: dying, token }),
+          (error) => error.code === 'worker-stopping',
+        );
+        const dispatched = await admin(
+          'SELECT status FROM cc.device_update_operations WHERE job_id=$1 ORDER BY 1',
+          [jobId],
         );
         assert.deepEqual(
-          recovery.starts.filter((start) => start.jobId === jobId),
-          [],
-          'A stopped claim refreshes the heartbeat.',
+          dispatched.map((row) => row.status),
+          ['dispatched', 'dispatched'],
         );
-      }
-      await releaseAll();
-    });
+        // The lease and the grace lapse while no worker runs.
+        await admin(
+          "UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '2 minutes' WHERE job_id=$1",
+          [jobId],
+        );
+        await admin(
+          "UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '3 minutes' WHERE job_id=$1",
+          [jobId],
+        );
+        const retry = readerOf({ rounds: [], state: () => 'Room 12' });
+        const answer = await run(jobId, 0, { reader: retry, token });
+        assert.equal(answer.outcome, 'settled');
+        const rows = await admin(
+          'SELECT status,verified_by FROM cc.device_update_operations WHERE job_id=$1 ORDER BY 1',
+          [jobId],
+        );
+        assert.deepEqual(
+          rows.map((row) => [row.status, row.verified_by]),
+          [
+            ['succeeded', 'read-back'],
+            ['succeeded', 'read-back'],
+          ],
+        );
+        assert.equal(
+          retry.calls.filter((call) => call.name === 'patch').length,
+          0,
+          'A fenced operation sends no part.',
+        );
+        await releaseAll();
+      },
+    );
+
+    await check(
+      'a stopping settlement keeps the failure for later claims',
+      async () => {
+        const { jobId } = await makeJob({
+          devices: ['d-a1-1', 'd-a1-2', 'd-a1-3', 'd-a1-4'],
+          batchSize: 2,
+        });
+        const token = await tokenOf(jobId);
+        const reader = readerOf({
+          rounds: [
+            {
+              ids: ['d-a1-1'],
+              parts: {
+                'd-a1-1': {
+                  status: 403,
+                  failureKind: 'auth',
+                  reason: 'forbidden',
+                },
+              },
+            },
+            { ids: [], parts: {}, kill: true },
+          ],
+          state: () => 'Room 12',
+        });
+        await assert.rejects(run(jobId, 0, { reader, token, batchSize: 1 }));
+        assert.equal((await header(jobId)).failure, 'permission-denied');
+        const later = readerOf({ rounds: [], state: () => 'Room 12' });
+        const same = await run(jobId, 0, { reader: later, token });
+        assert.deepEqual(same, {
+          outcome: 'stopped',
+          failure: 'permission-denied',
+        });
+        const next = await run(jobId, 1, { reader: later, token });
+        assert.deepEqual(next, {
+          outcome: 'stopped',
+          failure: 'permission-denied',
+        });
+        assert.equal(later.calls.length, 0, 'A stopped claim sends no part.');
+        await releaseAll();
+      },
+    );
+
+    await check(
+      'a stopped claim refreshes the heartbeat so no start recovers',
+      async () => {
+        const { jobId } = await makeJob({
+          devices: ['d-a2-1', 'd-a2-2', 'd-a2-3'],
+          batchSize: 1,
+        });
+        const token = await tokenOf(jobId);
+        const reader = readerOf({
+          rounds: [
+            {
+              ids: ['d-a2-1'],
+              parts: {
+                'd-a2-1': {
+                  status: 403,
+                  failureKind: 'auth',
+                  reason: 'forbidden',
+                },
+              },
+            },
+          ],
+          state: () => 'Room 12',
+        });
+        const response = await run(jobId, 0, { reader, token, batchSize: 1 });
+        assert.equal(response.outcome, 'stopped');
+        for (const batch of [1, 2]) {
+          await admin(
+            "UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '11 minutes' WHERE job_id=$1",
+            [jobId],
+          );
+          const later = readerOf({ rounds: [], state: () => 'Room 12' });
+          const stopped = await run(jobId, batch, { reader: later, token });
+          assert.equal(stopped.outcome, 'stopped');
+          const recovery = await result(
+            'SELECT cc.recover_device_update_jobs($1) AS result',
+            [customer],
+          );
+          assert.deepEqual(
+            recovery.starts.filter((start) => start.jobId === jobId),
+            [],
+            'A stopped claim refreshes the heartbeat.',
+          );
+        }
+        await releaseAll();
+      },
+    );
   } finally {
     await migrator.query(
       'UPDATE cc.google_connection SET active=$2 WHERE customer_id=$1',
@@ -842,6 +944,8 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
     await releaseAll();
   }
   if (failures.length)
-    throw new Error(`Device write worker checks failed: ${failures.join(' | ')}`);
+    throw new Error(
+      `Device write worker checks failed: ${failures.join(' | ')}`,
+    );
   return results;
 }

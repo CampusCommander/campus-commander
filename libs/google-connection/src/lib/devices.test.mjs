@@ -672,7 +672,11 @@ test('patchAnnotatedLocations sends one PATCH part with only annotatedLocation',
     signal(),
     { onSend: (ids) => void sent.push(ids) },
   );
-  assert.deepEqual(scopes, [writeScope], 'The write token uses the write scope.');
+  assert.deepEqual(
+    scopes,
+    [writeScope],
+    'The write token uses the write scope.',
+  );
   assert.equal(
     google.requests[0].url,
     'https://www.googleapis.com/batch/admin/directory_v1',

@@ -5,7 +5,10 @@ import {
   entityEventSchema,
   jobEventSchema,
 } from '@campus/application-contracts';
-import { BatchServiceError, GoogleConnectionError } from '@campus/google-connection';
+import {
+  BatchServiceError,
+  GoogleConnectionError,
+} from '@campus/google-connection';
 import {
   DEVICE_UPDATE_BATCH_SIZE_LIMIT,
   DeviceUpdateJobs,
@@ -51,14 +54,25 @@ const claimed = (operations, readBack = []) => ({
 
 const part = (
   id,
-  { kind = 'success', status = 200, reason = null, quota = 0, transient = 0 } = {},
+  {
+    kind = 'success',
+    status = 200,
+    reason = null,
+    quota = 0,
+    transient = 0,
+  } = {},
 ) => ({
   id,
   status,
   attempts: { quota, transient },
   outcome:
     kind === 'success'
-      ? { kind: 'success', page: { deviceId: id }, pageIndex: 0, hasNextPage: false }
+      ? {
+          kind: 'success',
+          page: { deviceId: id },
+          pageIndex: 0,
+          hasNextPage: false,
+        }
       : kind === 'retry'
         ? {
             kind: 'retry',
@@ -91,7 +105,13 @@ const part = (
 function reader(rounds = [], states = []) {
   return {
     calls: [],
-    async patchAnnotatedLocations(_credential, _customer, writes, signal, options) {
+    async patchAnnotatedLocations(
+      _credential,
+      _customer,
+      writes,
+      signal,
+      options,
+    ) {
       const call = {
         name: 'patchAnnotatedLocations',
         writes: writes.map((write) => ({ ...write })),
@@ -159,7 +179,11 @@ function reader(rounds = [], states = []) {
       return result;
     },
     async deviceStates(_credential, _customer, ids, signal) {
-      this.calls.push({ name: 'deviceStates', ids: [...ids], aborted: signal.aborted });
+      this.calls.push({
+        name: 'deviceStates',
+        ids: [...ids],
+        aborted: signal.aborted,
+      });
       const nextState = states.shift();
       if (nextState instanceof Error) throw nextState;
       return (
@@ -267,10 +291,15 @@ function database(overrides = {}) {
       if (overrides.fail?.[name]) {
         const failure = overrides.fail[name];
         if (failure instanceof Error) throw failure;
-        throw Object.assign(new Error(name), { code: 'P0001', detail: failure });
+        throw Object.assign(new Error(name), {
+          code: 'P0001',
+          detail: failure,
+        });
       }
       if (name === 'claim_device_update_batch') {
-        const body = overrides.claim ? overrides.claim(values) : claimed([op(1, 'd1')]);
+        const body = overrides.claim
+          ? overrides.claim(values)
+          : claimed([op(1, 'd1')]);
         for (const operation of body.operations ?? [])
           operations.set(operation.operationNumber, operation.deviceId);
         return { rows: [{ result: body }] };
@@ -368,7 +397,12 @@ test('classification covers each row of section 7.1', () => {
     settled: false,
     ...extra,
   });
-  const failed = (kind, status, reason, attempts = { quota: 0, transient: 0 }) => ({
+  const failed = (
+    kind,
+    status,
+    reason,
+    attempts = { quota: 0, transient: 0 },
+  ) => ({
     kind,
     status,
     reason,
@@ -382,28 +416,36 @@ test('classification covers each row of section 7.1', () => {
     outcome: 'succeeded',
     verifiedBy: 'write-response',
   });
-  assert.deepEqual(run(tracked({ sent: true, final: failed('rejected', 403, 'forbidden') })), {
-    operationNumber: 1,
-    outcome: 'failed',
-    googleStatus: 403,
-    googleReason: 'forbidden',
-    quotaRetries: 0,
-    transientRetries: 0,
-    outcomeReason: 'forbidden',
-  });
+  assert.deepEqual(
+    run(tracked({ sent: true, final: failed('rejected', 403, 'forbidden') })),
+    {
+      operationNumber: 1,
+      outcome: 'failed',
+      googleStatus: 403,
+      googleReason: 'forbidden',
+      quotaRetries: 0,
+      transientRetries: 0,
+      outcomeReason: 'forbidden',
+    },
+  );
   assert.equal(
-    run(tracked({ sent: true, final: failed('not-found', 404, 'notFound') })).outcomeReason,
+    run(tracked({ sent: true, final: failed('not-found', 404, 'notFound') }))
+      .outcomeReason,
     'not-found',
   );
   assert.equal(
-    run(tracked({ sent: true, final: failed('quota', 429, 'rateLimitExceeded') }))
-      .outcomeReason,
+    run(
+      tracked({ sent: true, final: failed('quota', 429, 'rateLimitExceeded') }),
+    ).outcomeReason,
     'quota',
   );
   const transient = run(
     tracked({
       sent: true,
-      final: failed('transient', 503, 'backendError', { quota: 0, transient: 2 }),
+      final: failed('transient', 503, 'backendError', {
+        quota: 0,
+        transient: 2,
+      }),
     }),
   );
   assert.equal(transient.outcome, 'unknown');
@@ -423,7 +465,10 @@ test('classification covers each row of section 7.1', () => {
   assert.equal(run(tracked(), 'permission-denied').outcome, 'skipped');
   // A mint failure with no request: skipped under the stop, unknown after a send.
   const mint = failed('auth', 0, 'network-failure');
-  assert.equal(run(tracked({ final: mint }), 'network-failure').outcome, 'skipped');
+  assert.equal(
+    run(tracked({ final: mint }), 'network-failure').outcome,
+    'skipped',
+  );
   assert.equal(
     run(tracked({ sent: true, final: mint }), 'network-failure').outcome,
     'unknown',
@@ -433,7 +478,9 @@ test('classification covers each row of section 7.1', () => {
 test('a batch claims, writes, stamps the round with its renewal, and releases', async () => {
   const db = database({ claim: () => claimed([op(1, 'd1'), op(2, 'd2')]) });
   const redis = cache();
-  const source = reader([{ parts: { d1: { kind: 'success' }, d2: { kind: 'success' } } }]);
+  const source = reader([
+    { parts: { d1: { kind: 'success' }, d2: { kind: 'success' } } },
+  ]);
   const { create } = jobs({ db, reader: source, cache: redis });
   const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
 
@@ -489,9 +536,16 @@ test('first-attempt refusals fail without a read-back', async () => {
     const db = database({ claim: () => claimed([op(1, 'd1')]) });
     const source = reader([{ parts: { d1: answer } }]);
     const { create } = jobs({ db, reader: source });
-    const result = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
-    assert.equal(result.outcome, answer.kind === 'auth' ? 'stopped' : 'settled');
-    if (answer.kind === 'auth') assert.equal(result.failure, 'permission-denied');
+    const result = await create.runBatch(
+      batchRequest,
+      AbortSignal.timeout(5000),
+    );
+    assert.equal(
+      result.outcome,
+      answer.kind === 'auth' ? 'stopped' : 'settled',
+    );
+    if (answer.kind === 'auth')
+      assert.equal(result.failure, 'permission-denied');
     const settled = settlements(db)[0];
     assert.equal(JSON.parse(settled.values[5])[0].outcome, 'failed');
     assert.equal(
@@ -507,7 +561,11 @@ test('first-attempt refusals fail without a read-back', async () => {
 test('R3 response loss then refusal: the read-back settles the applied write', async () => {
   const db = database({ claim: () => claimed([op(1, 'd1')]) });
   const source = reader([
-    { parts: { d1: { kind: 'retry', status: 0, reason: 'timeout', transient: 1 } } },
+    {
+      parts: {
+        d1: { kind: 'retry', status: 0, reason: 'timeout', transient: 1 },
+      },
+    },
     {
       reuse: true,
       parts: {
@@ -637,7 +695,9 @@ test('a read-back compares blank and reports a missing device as not-found', asy
 
 test('a failed read-back part leaves the operation unknown with verification-failed', async () => {
   const db = database({ claim: () => claimed([op(1, 'd1')]) });
-  const source = reader([{ mint: new GoogleConnectionError('network-failure') }]);
+  const source = reader([
+    { mint: new GoogleConnectionError('network-failure') },
+  ]);
   const { create } = jobs({ db, reader: source });
   const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
   assert.equal(answer.outcome, 'stopped');
@@ -743,7 +803,11 @@ test('the watchdog aborts the call 150 s after the last renewal', async () => {
   const { create, timers } = jobs({ db, reader: source });
   const running = create.runBatch(batchRequest, AbortSignal.timeout(5000));
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(timers.fireTimeout(), true, 'The watchdog is armed after the claim.');
+  assert.equal(
+    timers.fireTimeout(),
+    true,
+    'The watchdog is armed after the claim.',
+  );
   const answer = await running;
   assert.equal(answer.outcome, 'settled');
   assert.equal(source.calls[0].aborted, true);
@@ -761,7 +825,10 @@ test('a recording that fails once with 40P01 settles on its second run', async (
       return undefined;
     },
   });
-  const { create } = jobs({ db, reader: reader([{ parts: { d1: { kind: 'success' } } }]) });
+  const { create } = jobs({
+    db,
+    reader: reader([{ parts: { d1: { kind: 'success' } } }]),
+  });
   const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
   assert.equal(answer.outcome, 'settled');
   assert.equal(attempts, 2);
@@ -772,7 +839,10 @@ test('a fenced write settlement stops the batch and answers attempt-fenced', asy
     claim: () => claimed([op(1, 'd1')]),
     settle: () => ({ outcome: 'fenced' }),
   });
-  const { create } = jobs({ db, reader: reader([{ parts: { d1: { kind: 'success' } } }]) });
+  const { create } = jobs({
+    db,
+    reader: reader([{ parts: { d1: { kind: 'success' } } }]),
+  });
   const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
   assert.deepEqual(answer, { outcome: 'attempt-fenced' });
   assert.equal(names(db.calls).includes('release_device_update_batch'), false);
@@ -812,7 +882,10 @@ test('a stopped claim answers stopped and sends no part', async () => {
   const source = reader();
   const { create } = jobs({ db, reader: source });
   const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
-  assert.deepEqual(answer, { outcome: 'stopped', failure: 'permission-denied' });
+  assert.deepEqual(answer, {
+    outcome: 'stopped',
+    failure: 'permission-denied',
+  });
   assert.equal(source.calls.length, 0);
 });
 
@@ -931,7 +1004,11 @@ test('a progress-only publication leaves its row to the relay', async () => {
     }),
   });
   const redis = cache();
-  const { create } = jobs({ db, reader: reader([{ parts: { d1: { kind: 'success' } } }]), cache: redis });
+  const { create } = jobs({
+    db,
+    reader: reader([{ parts: { d1: { kind: 'success' } } }]),
+    cache: redis,
+  });
   await create.runBatch(batchRequest, AbortSignal.timeout(5000));
   assert.deepEqual(redis.calls, []);
   assert.equal(names(db.calls).includes('complete_job_publications'), false);
@@ -942,7 +1019,9 @@ test('a Redis failure keeps the publication row for the relay', async () => {
     claim: () => claimed([op(1, 'd1')]),
     settle: () => ({
       outcome: 'settled',
-      settled: [{ operationNumber: 1, deviceId: 'd1', status: 'succeeded', batch: 0 }],
+      settled: [
+        { operationNumber: 1, deviceId: 'd1', status: 'succeeded', batch: 0 },
+      ],
       published: ['d1'],
       removed: [],
       publication: {
@@ -963,7 +1042,11 @@ test('a Redis failure keeps the publication row for the relay', async () => {
   redis.increment = async () => {
     throw new EntityCacheError();
   };
-  const { create } = jobs({ db, reader: reader([{ parts: { d1: { kind: 'success' } } }]), cache: redis });
+  const { create } = jobs({
+    db,
+    reader: reader([{ parts: { d1: { kind: 'success' } } }]),
+    cache: redis,
+  });
   const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
   assert.equal(answer.outcome, 'settled');
   assert.equal(names(db.calls).includes('complete_job_publications'), false);
@@ -1031,15 +1114,18 @@ test('the finish prepares, reads back a chunk, and returns the publication', asy
     }),
   });
   const redis = cache();
-  const source = reader([], [
+  const source = reader(
+    [],
     [
-      {
-        deviceId: 'd1',
-        status: 'found',
-        device: { deviceId: 'd1', annotatedLocation: 'Room 1' },
-      },
+      [
+        {
+          deviceId: 'd1',
+          status: 'found',
+          device: { deviceId: 'd1', annotatedLocation: 'Room 1' },
+        },
+      ],
     ],
-  ]);
+  );
   const { create } = jobs({ db, reader: source, cache: redis });
   const answer = await create.runFinish(
     { customerId, jobId, dispatchToken, correlationId },
@@ -1059,7 +1145,10 @@ test('the finish prepares, reads back a chunk, and returns the publication', asy
     'finish_device_update_job',
     'complete_job_publications',
   ]);
-  assert.equal(JSON.parse(settlements(db)[0].values[5])[0].verifiedBy, 'read-back');
+  assert.equal(
+    JSON.parse(settlements(db)[0].values[5])[0].verifiedBy,
+    'read-back',
+  );
   assert.equal(names(redis.calls).at(-1), 'publish');
 });
 
@@ -1124,18 +1213,27 @@ test('reconcile with a number reads its operation and settles it', async () => {
       ],
     }),
   });
-  const source = reader([], [
+  const source = reader(
+    [],
     [
-      {
-        deviceId: 'd3',
-        status: 'found',
-        device: { deviceId: 'd3', annotatedLocation: 'Room 3' },
-      },
+      [
+        {
+          deviceId: 'd3',
+          status: 'found',
+          device: { deviceId: 'd3', annotatedLocation: 'Room 3' },
+        },
+      ],
     ],
-  ]);
+  );
   const { create } = jobs({ db, reader: source });
   const answer = await create.runReconcile(
-    { customerId, jobId, operationNumber: '3', verifyAttempt: attempt, correlationId },
+    {
+      customerId,
+      jobId,
+      operationNumber: '3',
+      verifyAttempt: attempt,
+      correlationId,
+    },
     AbortSignal.timeout(5000),
   );
   assert.equal(answer.outcome, 'settled');
@@ -1186,8 +1284,20 @@ test('reconcile for all claims chunks until an empty claim', async () => {
   const source = reader(
     [],
     [
-      [{ deviceId: 'd1', status: 'found', device: { deviceId: 'd1', annotatedLocation: 'Room 1' } }],
-      [{ deviceId: 'd2', status: 'found', device: { deviceId: 'd2', annotatedLocation: 'Room 2' } }],
+      [
+        {
+          deviceId: 'd1',
+          status: 'found',
+          device: { deviceId: 'd1', annotatedLocation: 'Room 1' },
+        },
+      ],
+      [
+        {
+          deviceId: 'd2',
+          status: 'found',
+          device: { deviceId: 'd2', annotatedLocation: 'Room 2' },
+        },
+      ],
     ],
   );
   const { create } = jobs({ db, reader: source });
@@ -1215,10 +1325,14 @@ test('a store failure answers nothing and leaves the lease to lapse', async () =
     claim: () => claimed([op(1, 'd1')]),
     fail: { settle_device_update_operations: 'store down' },
   });
-  const { create } = jobs({ db, reader: reader([{ parts: { d1: { kind: 'success' } } }]) });
+  const { create } = jobs({
+    db,
+    reader: reader([{ parts: { d1: { kind: 'success' } } }]),
+  });
   await assert.rejects(
     create.runBatch(batchRequest, AbortSignal.timeout(5000)),
-    (error) => error instanceof DeviceSyncError && error.code === 'store-unavailable',
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'store-unavailable',
   );
   assert.equal(names(db.calls).includes('release_device_update_batch'), false);
 });
