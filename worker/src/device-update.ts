@@ -26,6 +26,9 @@ import { EntityCacheError, type EntityCache } from './entity-cache';
 /** The worker setting of section 9: one multipart request holds at most 250 parts. */
 export const DEVICE_UPDATE_BATCH_SIZE_LIMIT = 250;
 
+/** Section 5.4: abort 150 s after the start of the last successful claim or renewal. */
+const WRITE_WATCHDOG_MS = 150_000;
+
 /** Reject a value outside 1 to 250 at start (addendum ruling 11). */
 export function resolveDeviceUpdateBatchSize(
   value: string | undefined,
@@ -583,7 +586,7 @@ export class LeaseWatchdog {
   constructor(
     timers: DeviceUpdateTimers,
     onExpired: () => void,
-    milliseconds = 150_000,
+    milliseconds = WRITE_WATCHDOG_MS,
   ) {
     this.timers = timers;
     this.onExpired = onExpired;
@@ -716,6 +719,20 @@ export class DeviceUpdateJobs {
   }
 
   /**
+   * The database clock and the local time the read took. The elapsed time keeps a
+   * local deadline conservative when the response is delayed (R2-F2). It compares
+   * no absolute worker and database clocks.
+   */
+  private async clockWithElapsed(): Promise<{
+    stamp: Date;
+    elapsed: number;
+  }> {
+    const startedAt = this.now();
+    const stamp = await this.clock();
+    return { stamp, elapsed: Math.max(0, this.now() - startedAt) };
+  }
+
+  /**
    * One settlement. A deadlock (`40P01`) rolls back and runs again, up to 3 times,
    * while the lease lives (section 5.4).
    */
@@ -834,6 +851,8 @@ export class DeviceUpdateJobs {
     let renewalTimer: unknown = null;
     let renewalWork: Promise<void> = Promise.resolve();
     let renewalError: DeviceSyncError | null = null;
+    /** The error of the work before the drain. It rethrows after the release is refused. */
+    let requestError: unknown = null;
     try {
       // 1. The batch claim with its envelope. Only a busy claim polls.
       const claimed = await this.claimBatch(input, attempt, signal);
@@ -841,7 +860,7 @@ export class DeviceUpdateJobs {
         return claimed.outcome === 'busy' ? { outcome: 'busy' } : claimed;
       // A watchdog covers every request from the start of the claim that
       // established the lease (section 5.4).
-      watchdog.arm(150_000 - (Date.now() - claimed.startedAt));
+      watchdog.arm(WRITE_WATCHDOG_MS - (this.now() - claimed.startedAt));
       const body = claimSchema.parse(claimed.answer);
       claimedOperations = body.operations;
       for (const operation of [...body.operations, ...body.readBack])
@@ -931,9 +950,14 @@ export class DeviceUpdateJobs {
         removed += settled.removed?.length ?? 0;
         await this.publish(input.customerId, settled.publication ?? null);
       };
-      /** One renewal request. The watchdog counts from its start (section 5.4). */
+      /**
+       * One renewal request. While it stays unanswered the watchdog keeps the
+       * deadline of the last successful claim or renewal request (section 5.4,
+       * R2-F1). A success starts the next deadline at this request's start, so
+       * the time this request took counts against it.
+       */
       const renewLease = async (): Promise<Date> => {
-        watchdog.arm(150_000);
+        const startedAt = this.now();
         const renewed = await this.call(
           'SELECT cc.renew_device_update_batch($1,$2,$3,$4,$5) AS result',
           [
@@ -948,6 +972,8 @@ export class DeviceUpdateJobs {
           renewed instanceof Date ? renewed : new Date(String(renewed));
         if (Number.isNaN(stamp.getTime()))
           throw new DeviceSyncError('store-unavailable');
+        if (!callSignal.aborted)
+          watchdog.arm(WRITE_WATCHDOG_MS - (this.now() - startedAt));
         return stamp;
       };
       // The 30 s renewal runs independently of round completion (R1-F7). A
@@ -1017,7 +1043,6 @@ export class DeviceUpdateJobs {
               onBatch: async () => {
                 // The renewal after the round stamps its write responses (section 5.8).
                 if (callSignal.aborted) return;
-                const renewedAt = this.now();
                 let stamp: Date;
                 try {
                   stamp = await renewLease();
@@ -1035,7 +1060,6 @@ export class DeviceUpdateJobs {
                 }
                 const ids = roundIds;
                 roundIds = [];
-                watchdog.arm(150_000 - (this.now() - renewedAt));
                 await settleRound(ids, stamp);
               },
             },
@@ -1155,19 +1179,29 @@ export class DeviceUpdateJobs {
           );
       }
     } catch (error) {
-      if (error instanceof DeviceSyncError) {
-        storeFailure = true;
-        throw error;
-      }
-      throw error;
+      requestError = error;
     } finally {
       watchdog.clear();
       reporter?.stop();
       // Drain the renewal before the release so no lease extension follows it.
       if (renewalTimer !== null) this.timers.clearInterval(renewalTimer);
       renewalTimer = null;
-      await renewalWork;
+      try {
+        await renewalWork;
+      } catch (error) {
+        // The periodic renewal catches its own error, so this guard only holds a
+        // future change to that contract.
+        renewalError ??= storeError(error);
+      }
     }
+    // A renewal that fails while the work drains is a store failure. It forbids
+    // the release and answers non-2xx (R2-F3).
+    if (renewalError !== null) storeFailure = true;
+    if (requestError !== null) {
+      if (requestError instanceof DeviceSyncError) storeFailure = true;
+      throw requestError;
+    }
+    if (renewalError !== null) throw renewalError;
     // 5. The release ends the request when no operation of the attempt stays
     // dispatched. After a fenced settlement or a store failure it never runs.
     if (!fenced && !storeFailure && everySettled(tracked, claimedOperations))
@@ -1569,8 +1603,8 @@ export class DeviceUpdateJobs {
       return;
     }
     // Start no GET before verifyAfter, measured on the database clock.
-    let stamp = await this.clock();
-    for (let waits = 0; stamp.getTime() < after.getTime(); waits += 1) {
+    let reading = await this.clockWithElapsed();
+    for (let waits = 0; reading.stamp.getTime() < after.getTime(); waits += 1) {
       if (waits >= 60) {
         await this.settleUnreadChunk(
           customer,
@@ -1581,11 +1615,14 @@ export class DeviceUpdateJobs {
         );
         return;
       }
-      await this.sleep(after.getTime() - stamp.getTime(), signal);
-      stamp = await this.clock();
+      await this.sleep(after.getTime() - reading.stamp.getTime(), signal);
+      reading = await this.clockWithElapsed();
     }
-    // Abort the GET parts 15 s before the read-back lease ends (ruling 7).
-    const remaining = leaseEnd.getTime() - 15_000 - stamp.getTime();
+    // Abort the GET parts 15 s before the read-back lease ends (ruling 7). The
+    // local time of the clock read is deducted, so a delayed clock response never
+    // extends the GET past the boundary (R2-F2).
+    const remaining =
+      leaseEnd.getTime() - 15_000 - reading.stamp.getTime() - reading.elapsed;
     if (remaining <= 0) {
       await this.settleUnreadChunk(customer, jobId, attempt, numbers, summary);
       return;
@@ -1657,7 +1694,7 @@ export class DeviceUpdateJobs {
       attempt,
       'read-back',
       results,
-      stamp,
+      reading.stamp,
       null,
       null,
     );
