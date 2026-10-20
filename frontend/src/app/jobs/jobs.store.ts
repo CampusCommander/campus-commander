@@ -17,17 +17,12 @@ import {
 import { AuthStore } from '../auth.store';
 import { jobFilterQuery, sameFilters, type JobFilter } from './job-fields';
 import { JobReader, type JobRevisions } from './job-reader';
+import { JobStream, type JobEventSource } from './job-stream';
 
 /** Rows per page. The API caps a page at 100. */
 export const JOBS_PAGE_SIZE = 50;
 
-const CLOSED = 2;
-
-/** The part of EventSource that the store uses. Tests supply a fake. */
-export type JobEventSource = Pick<
-  EventSource,
-  'addEventListener' | 'close' | 'readyState'
->;
+export type { JobEventSource } from './job-stream';
 
 /** The Jobs navigation item and route need jobs:read or devices:read (design 2.1). */
 export function jobsReadable(auth: InstanceType<typeof AuthStore>): boolean {
@@ -76,10 +71,15 @@ export class JobsStore {
   readonly hasNext = computed(() => !!this.page()?.nextCursor);
 
   private readonly reader = new JobReader(() => this.read());
-  private stream: JobEventSource | null = null;
+  private readonly events = new JobStream({
+    open: () => this.eventSource('/api/jobs/events'),
+    reopenDelay: () => this.reopenDelay,
+    timeout: () => this.streamTimeout,
+    // Every stream open marks the reader dirty (section 3.4).
+    opened: () => this.reader.opened(),
+    changed: (data) => this.onEvent(data),
+  });
   private streamWanted = false;
-  private reopenTimer?: ReturnType<typeof setTimeout>;
-  private watchdog?: ReturnType<typeof setTimeout>;
   /** Increments on a query change. A late answer for the old query is dropped. */
   private queryRevision = 0;
   /** Increments on sign-in by another person. Late answers for the old person are dropped. */
@@ -108,7 +108,7 @@ export class JobsStore {
   /** Jobs mounted: open the stream and read the current page. */
   async init(): Promise<void> {
     this.streamWanted = true;
-    if (!this.stream) this.openStream();
+    this.events.start();
     if (!this.loaded()) this.loading.set(true);
     await this.reader.request();
   }
@@ -117,8 +117,7 @@ export class JobsStore {
   leave(): void {
     this.streamWanted = false;
     this.reader.stop();
-    this.closeStream();
-    clearTimeout(this.reopenTimer);
+    this.events.stop();
   }
 
   /** Refresh rereads job state only. It never dispatches provider work. */
@@ -215,7 +214,7 @@ export class JobsStore {
     this.cursors.set([null]);
     // The stream carries the session cookie. A new person needs a new stream.
     if (this.streamWanted) {
-      this.openStream();
+      this.events.restart();
       // Do not wait for the stream open to remove the previous person's rows.
       void this.reader.request();
     }
@@ -223,9 +222,8 @@ export class JobsStore {
 
   /** The same person resumed an interrupted session. A stream that a 401 closed opens again. */
   private resume(): void {
-    if (!this.streamWanted || this.stream) return;
-    clearTimeout(this.reopenTimer);
-    this.openStream();
+    if (!this.streamWanted || this.events.active) return;
+    this.events.start();
   }
 
   /** One read of the current query. Returns the revisions of a successful answer. */
@@ -283,54 +281,6 @@ export class JobsStore {
       this.error.set('');
       this.stale.set(!offline);
     }
-  }
-
-  private openStream(): void {
-    this.closeStream();
-    const stream = this.eventSource('/api/jobs/events');
-    this.stream = stream;
-    const current = () => this.stream === stream;
-    stream.addEventListener('open', () => {
-      if (!current()) return;
-      this.watch();
-      // Every stream open marks the reader dirty (section 3.4).
-      this.reader.opened();
-    });
-    stream.addEventListener('ping', () => {
-      if (current()) this.watch();
-    });
-    stream.addEventListener('job-changed', (message) => {
-      if (!current()) return;
-      this.watch();
-      this.onEvent((message as MessageEvent<string>).data);
-    });
-    stream.addEventListener('error', () => {
-      // EventSource retries while CONNECTING. A closed stream reopens after the delay.
-      if (current() && stream.readyState === CLOSED) this.scheduleReopen();
-    });
-  }
-
-  private closeStream(): void {
-    clearTimeout(this.watchdog);
-    this.stream?.close();
-    this.stream = null;
-  }
-
-  /** A stream without events past the timeout counts as dead. */
-  private watch(): void {
-    clearTimeout(this.watchdog);
-    if (this.streamTimeout > 0)
-      this.watchdog = setTimeout(() => {
-        if (this.streamWanted) this.scheduleReopen();
-      }, this.streamTimeout);
-  }
-
-  private scheduleReopen(): void {
-    this.closeStream();
-    clearTimeout(this.reopenTimer);
-    this.reopenTimer = setTimeout(() => {
-      if (this.streamWanted) this.openStream();
-    }, this.reopenDelay);
   }
 
   private onEvent(data: string): void {
