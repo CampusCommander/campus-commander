@@ -104,6 +104,15 @@ export const deviceUpdateTargetsSchema = z
   .array(deviceUpdateTargetSchema)
   .max(1000);
 
+/** The answer of `GET .../targets` (section 2.3). `nextCursor` pages the frozen targets. */
+export const deviceUpdateTargetsPageSchema = z.strictObject({
+  targets: deviceUpdateTargetsSchema,
+  nextCursor: z.string().min(1).max(1024).nullable(),
+});
+export type DeviceUpdateTargetsPage = z.infer<
+  typeof deviceUpdateTargetsPageSchema
+>;
+
 /** The confirmation body of section 2.4. */
 export const deviceUpdateConfirmRequestSchema = z.strictObject({
   manifestDigest,

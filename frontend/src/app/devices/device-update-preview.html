@@ -1,0 +1,92 @@
+<div class="device-update-preview">
+  <header class="page-header">
+    <h1>{{ title() }}</h1>
+    <p class="subtitle">{{ subtitle() }}</p>
+  </header>
+
+  @if (status() === 'loading') {
+  <section class="card" aria-label="Loading the preview" aria-busy="true">
+    <p role="status">Loading the preview…</p>
+    <div class="skeleton" aria-hidden="true"></div>
+    <div class="skeleton" aria-hidden="true"></div>
+  </section>
+  } @else if (problem(); as problem) {
+  <app-device-update-problem
+    [problem]="problem"
+    [busy]="preparing()"
+    busyLabel="Preparing preview…"
+    [detail]="prepareDetail()"
+    (action)="act($event)"
+  />
+  } @else if (preview(); as preview) {
+  <p class="counts">{{ countLine() }}</p>
+  <p>{{ frozen }}</p>
+  <p class="meta">{{ metaLine() }}</p>
+  @if (preview.stale) {
+  <p class="stale" role="status">{{ staleNote() }}</p>
+  }
+
+  <section class="grid-region">
+    <div
+      class="table-scroll"
+      tabindex="0"
+      role="group"
+      aria-label="Frozen update targets"
+    >
+      <table class="targets-table">
+        <caption class="visually-hidden">
+          Frozen update targets
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Device</th>
+            <th scope="col">Field</th>
+            <th scope="col">Observed value</th>
+            <th scope="col">Approved value</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (target of targets(); track target.deviceId + target.field) {
+          <tr>
+            <th scope="row">{{ device(target) }}</th>
+            <td>Annotated location</td>
+            <td>{{ observed(target) }}</td>
+            <td
+              [class.approved]="target.disposition === 'eligible'"
+              [class.not-updated]="target.disposition === 'excluded'"
+            >
+              {{ approved(target, preview.mode) }} @if (note(target)) {
+              <span class="line">{{ note(target) }}</span>
+              }
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (targets().length === 0) {
+    <p class="empty" role="status">
+      No frozen targets were returned. Retry the preview.
+    </p>
+    }
+  </section>
+
+  @if (preview.eligible === 0) {
+  <p class="note">
+    No device needs this change. Edit the draft to choose a different value.
+  </p>
+  }
+
+  <div class="actions">
+    <button mat-button type="button" (click)="editDraft()">Edit draft</button>
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="!canContinue()"
+      (click)="continueToConfirmation()"
+    >
+      Continue to confirmation
+    </button>
+  </div>
+  }
+</div>
