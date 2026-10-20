@@ -287,10 +287,10 @@ it('closes the chip editor when filters are cleared', () => {
   });
   button('Model contains: Lenovo')!.click();
   render();
-  expect(element.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(element.querySelector('.editor[role="dialog"]')).not.toBeNull();
   button('Clear filters')!.click();
   render();
-  expect(element.querySelector('[role="dialog"]')).toBeNull();
+  expect(element.querySelector('.editor[role="dialog"]')).toBeNull();
 });
 
 it('returns focus to the chip after cancelling its edit', async () => {
@@ -572,15 +572,51 @@ describe('Bulk Actions', () => {
     expect(menuItem('Change status')).toBeUndefined();
   });
 
-  it('opens the draft page from Update device', async () => {
-    const { openBulk, menuItem } = setup({ sync: ready(), page: counted });
+  it('opens the bulk action sheet from Update device', async () => {
+    const { openBulk, menuItem, fixture, element } = setup({
+      sync: ready(),
+      page: counted,
+    });
     const navigate = vi
       .spyOn(TestBed.inject(Router), 'navigate')
       .mockResolvedValue(true);
     await openBulk();
     expect(menuItem('Update device')?.disabled).toBe(false);
     menuItem('Update device')?.click();
-    expect(navigate).toHaveBeenCalledWith(['/devices/update']);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const sheet = element.querySelector('app-device-update-sheet');
+    const panel = sheet?.querySelector('section[role="dialog"]');
+    expect(panel?.classList.contains('is-closed')).toBe(false);
+    expect(panel?.querySelector('h1')?.textContent?.trim()).toBe(
+      'Update 6 devices',
+    );
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('returns focus to Bulk Actions after the sheet closes', async () => {
+    const { openBulk, menuItem, fixture, element, button } = setup({
+      sync: ready(),
+      page: counted,
+    });
+    await openBulk();
+    menuItem('Update device')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    element
+      .querySelector<HTMLButtonElement>(
+        'app-device-update-sheet button[aria-label="Close"]',
+      )
+      ?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      element.querySelector('app-device-update-sheet .bulk-sheet')?.classList,
+    ).toContain('is-closed');
+    expect(document.activeElement).toBe(button('Bulk Actions'));
   });
 
   it('disables Update device when the selection is empty', async () => {

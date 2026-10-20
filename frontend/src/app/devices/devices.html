@@ -142,6 +142,7 @@
         </button>
       </mat-menu>
       <button
+        #bulkButton
         mat-stroked-button
         type="button"
         [matMenuTriggerFor]="bulkMenu"
@@ -237,5 +238,6 @@
     />
   </div>
 
+  <app-device-update-sheet [open]="updateOpen()" (closed)="updateClosed()" />
   }
 </div>

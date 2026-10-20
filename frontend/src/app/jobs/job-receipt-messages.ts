@@ -40,7 +40,7 @@ export function receiptCompletionSentence(job: JobDetail): string {
   }
 }
 
-/** The durable receipt copy of frame 104:74. */
+/** The durable receipt copy of frame 104:74, revised for the bulk action sheet. */
 export const RECEIPT_HEADING = 'Your job is saved';
 export const RECEIPT_NEXT_STEP =
-  'You can leave this page. Return to Jobs to review progress and individual outcomes.';
+  'You can close this panel and follow progress in Jobs.';

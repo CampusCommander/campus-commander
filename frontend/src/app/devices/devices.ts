@@ -10,6 +10,7 @@ import {
   inject,
   signal,
   untracked,
+  viewChild,
   viewChildren,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
@@ -24,6 +25,7 @@ import { AuthStore } from '../auth.store';
 import { DevicesStore } from './devices.store';
 import { DeviceGrid } from './device-grid';
 import { DeviceFilter } from './device-filter';
+import { DeviceUpdateSheet } from './device-update-sheet';
 import { freshnessBanner } from './device-freshness';
 import type { DeviceView } from './device-datasource';
 import type { GridState } from 'ag-grid-community';
@@ -43,6 +45,7 @@ import { DeviceWriteAccessStore } from './device-write-access.store';
     MatMenuModule,
     DeviceGrid,
     DeviceFilter,
+    DeviceUpdateSheet,
   ],
   templateUrl: './devices.html',
   styleUrl: './devices.css',
@@ -54,10 +57,15 @@ export class DevicesPage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);
   private readonly chips = viewChildren<ElementRef<HTMLButtonElement>>('chip');
+  private readonly bulkButton = viewChild<
+    ElementRef<HTMLButtonElement>,
+    ElementRef<HTMLButtonElement>
+  >('bulkButton', { read: ElementRef });
   protected readonly sync = this.store.sync;
   protected readonly editingIndex = signal<number | null>(null);
   protected readonly refreshMenuOpen = signal(false);
   protected readonly bulkMenuOpen = signal(false);
+  protected readonly updateOpen = signal(false);
   protected readonly copied = signal('');
   protected readonly editing = computed(() => {
     const index = this.editingIndex();
@@ -176,9 +184,17 @@ export class DevicesPage implements OnInit, OnDestroy {
     void this.store.reconnect();
   }
 
-  /** Update device opens the draft page, not a dialog (design 1758). */
+  /** Update device opens the bulk action sheet over the grid (owner, 2026-10-20). */
   protected startUpdate(): void {
-    void this.router.navigate(['/devices/update']);
+    this.updateOpen.set(true);
+  }
+
+  /** Closing the sheet returns focus to the Bulk Actions button. */
+  protected updateClosed(): void {
+    this.updateOpen.set(false);
+    afterNextRender(() => this.bulkButton()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
   }
 
   /** Copy the scope that the denied message names (design 4.3). */

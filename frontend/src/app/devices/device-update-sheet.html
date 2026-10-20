@@ -1,0 +1,394 @@
+<div
+  class="sheet-scrim"
+  [class.is-visible]="open() && modal()"
+  aria-hidden="true"
+  (click)="dismiss()"
+></div>
+
+<section
+  class="bulk-sheet"
+  [class.is-closed]="!open()"
+  [class.is-modal]="modal()"
+  role="dialog"
+  [attr.aria-modal]="modal() && open() ? 'true' : null"
+  aria-labelledby="bulk-sheet-title"
+  [cdkTrapFocus]="modal() && open()"
+  [cdkTrapFocusAutoCapture]="false"
+  [attr.inert]="open() ? null : ''"
+>
+  <header class="sheet-head">
+    <div class="titles">
+      <h1 id="bulk-sheet-title" #sheetTitle tabindex="-1">{{ title() }}</h1>
+      <p class="subtitle">{{ subtitle() }}</p>
+    </div>
+    <button
+      class="icon-button"
+      type="button"
+      aria-label="Close"
+      (click)="close()"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">close</span>
+    </button>
+  </header>
+
+  <ol class="stepper" aria-label="Update device steps">
+    @for (item of steps(); track item.id) {
+    <li
+      class="step"
+      [class.is-done]="item.state === 'done'"
+      [class.is-active]="item.state === 'active'"
+      [attr.aria-current]="item.state === 'active' ? 'step' : null"
+    >
+      <span class="dot" aria-hidden="true">
+        @if (item.state === 'done') {
+        <span class="material-symbols-outlined tick">check</span>
+        } @else {
+        <span class="num">{{ item.number }}</span>
+        }
+      </span>
+      <span class="label">{{ item.label }}</span>
+      @if (item.state === 'done') {
+      <span class="visually-hidden">, completed</span>
+      } @else if (item.state === 'later') {
+      <span class="visually-hidden">, not started</span>
+      }
+    </li>
+    @if (!$last) {
+    <li class="connector" aria-hidden="true"></li>
+    } }
+  </ol>
+
+  <div class="sheet-body">
+    @if (step() === 'edit') { @if (editOffline()) {
+    <section class="banner" aria-labelledby="update-offline-title">
+      <h2 id="update-offline-title">Cannot reach Campus Commander</h2>
+      <p>
+        Your draft stays in this tab. Reconnect before you prepare a preview.
+      </p>
+      <button mat-stroked-button type="button" (click)="loadSelection()">
+        Retry
+      </button>
+    </section>
+    } @if (loadingSelection()) {
+    <section
+      aria-label="Loading the device selection"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <p role="status">Loading the selection…</p>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </section>
+    } @else if (expired()) {
+    <section aria-labelledby="selection-expired-title">
+      <h2 id="selection-expired-title">Select the devices again</h2>
+      <p>
+        The browsing selection expired. Approved jobs and their frozen targets
+        remain available.
+      </p>
+      <p>
+        Review the current filters before selecting devices again. New matches
+        do not join previously approved jobs.
+      </p>
+      <div class="inline-actions">
+        <button mat-flat-button type="button" (click)="close()">
+          Return to devices
+        </button>
+      </div>
+    </section>
+    } @else if (selectionError()) {
+    <section aria-labelledby="selection-error-title">
+      <h2 id="selection-error-title">The selection is unavailable</h2>
+      <p class="error" role="alert">{{ selectionError() }}</p>
+      <p>
+        Your draft stays in this tab. Return to Devices to check the selection.
+      </p>
+      <div class="inline-actions">
+        <button mat-stroked-button type="button" (click)="loadSelection()">
+          Retry
+        </button>
+        <button mat-button type="button" (click)="close()">
+          Return to devices
+        </button>
+      </div>
+    </section>
+    } @else if ((count() ?? 0) === 0) {
+    <section aria-labelledby="no-selection-title">
+      <h2 id="no-selection-title">No devices are selected</h2>
+      <p>
+        Return to Devices and select the devices to update. Your draft stays in
+        this tab.
+      </p>
+      <div class="inline-actions">
+        <button mat-flat-button type="button" (click)="close()">
+          Return to devices
+        </button>
+      </div>
+    </section>
+    } @else {
+    <section aria-labelledby="draft-summary">
+      <h2 id="draft-summary" class="summary">{{ summary() }}</h2>
+      <p class="mt-lg">
+        Your draft stays available when you filter, scroll, or refresh.
+      </p>
+
+      <form (ngSubmit)="prepare()">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>Annotated location</mat-label>
+          <input
+            matInput
+            name="annotatedLocation"
+            autocomplete="off"
+            [ngModel]="draft.value()"
+            (ngModelChange)="draft.setValue($event)"
+            [readonly]="draft.mode() === 'clear'"
+            [attr.aria-invalid]="showValueError()"
+            [attr.aria-describedby]="
+              showValueError() ? 'location-help location-error' : 'location-help'
+            "
+          />
+          <mat-hint id="location-help"
+            >{{ draft.mode() === 'clear' ? 'Clear value removes the annotation.
+            The typed value is not sent.' : 'Use 200 characters or fewer. Spaces
+            alone do not count.' }}</mat-hint
+          >
+          <mat-hint align="end">{{ length() }} of 200 characters</mat-hint>
+        </mat-form-field>
+        @if (showValueError()) {
+        <p id="location-error" class="error" role="alert">{{ valueError() }}</p>
+        }
+
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>Change mode</mat-label>
+          <mat-select
+            [value]="draft.mode()"
+            (selectionChange)="setMode($event.value)"
+          >
+            <mat-option value="replace"
+              >Update · Replace the existing value</mat-option
+            >
+            <mat-option value="clear">Clear value</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <p class="mt-lg">
+          Asset tag and notes remain unchanged. Telemetry is read-only.
+        </p>
+        <p class="mt-md">
+          To remove an annotation, choose Clear value explicitly.
+        </p>
+
+        @if (draft.storageError()) {
+        <p class="error" role="alert">{{ draft.storageError() }}</p>
+        } @if (saveError()) {
+        <p class="error" role="alert">{{ saveError() }}</p>
+        }
+      </form>
+    </section>
+    } } @else if (step() === 'review') { @if (problem(); as activeProblem) {
+    <app-device-update-problem
+      [problem]="activeProblem"
+      [busy]="busy()"
+      [busyLabel]="busyLabel()"
+      [detail]="problemDetail()"
+      (action)="act($event)"
+    />
+    } @else if (status() === 'loading') {
+    <section
+      aria-label="Loading the preview"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <p role="status">Loading the preview…</p>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </section>
+    } @else if (preview(); as activePreview) {
+    <p class="counts">{{ countLine() }}</p>
+    <p class="mt-sm">{{ frozen }}</p>
+    <p class="meta">{{ metaLine() }}</p>
+    @if (activePreview.stale) {
+    <p class="stale" role="status">{{ staleNote() }}</p>
+    } @if (selectionChanged()) {
+    <p class="notice" role="status">{{ SELECTION_CHANGED_NOTE }}</p>
+    }
+
+    <p class="list-label" id="targets-field">Annotated location</p>
+    <div class="targets-wrap">
+      <table class="targets">
+        <caption class="visually-hidden">
+          Frozen update targets
+        </caption>
+        <colgroup>
+          <col class="col-device" />
+          <col />
+          <col class="col-arrow" />
+          <col />
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">Device</th>
+            <th scope="col">Observed value</th>
+            <th scope="col"><span class="visually-hidden">Change</span></th>
+            <th scope="col">Approved value</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (target of targets(); track target.deviceId + target.field) {
+          <tr>
+            <th scope="row">{{ device(target) }}</th>
+            <td>{{ observed(target) }}</td>
+            <td class="arrow-cell" aria-hidden="true">
+              <span class="material-symbols-outlined">arrow_forward</span>
+            </td>
+            <td
+              [class.approved]="target.disposition === 'eligible'"
+              [class.not-updated]="target.disposition === 'excluded'"
+            >
+              {{ approved(target, activePreview.mode) }} @if (note(target)) {
+              <span class="line">{{ note(target) }}</span>
+              }
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (targets().length === 0) {
+    <p class="empty" role="status">
+      No frozen targets were returned for this preview.
+    </p>
+    } @if (activePreview.eligible === 0) {
+    <p class="note">
+      No device needs this change. Edit the draft to choose a different value.
+    </p>
+    } } } @else if (step() === 'confirm') { @if (problem(); as activeProblem) {
+    <app-device-update-problem
+      [problem]="activeProblem"
+      [busy]="busy()"
+      [busyLabel]="busyLabel()"
+      [detail]="problemDetail()"
+      (action)="act($event)"
+    />
+    } @else if (status() === 'loading') {
+    <section
+      aria-label="Loading the confirmation"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <p role="status">Loading the approved scope…</p>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </section>
+    } @else if (preview(); as activePreview) {
+    <section aria-labelledby="confirm-scope-title">
+      <h2 id="confirm-scope-title">{{ heading() }}</h2>
+      <p class="mt-md">{{ sentence() }}</p>
+      <p class="meta">{{ confirmMeta() }}</p>
+      <p class="meta">{{ expiry() }}</p>
+      @if (selectionChanged()) {
+      <p class="notice" role="status">{{ SELECTION_CHANGED_NOTE }}</p>
+      }
+      <mat-checkbox
+        class="acknowledgement"
+        [checked]="acknowledged()"
+        [disabled]="creating()"
+        (change)="setAcknowledged($event.checked)"
+      >
+        {{ label() }}
+      </mat-checkbox>
+    </section>
+    } } @else if (step() === 'done') { @if (problem(); as activeProblem) {
+    <app-device-update-problem
+      [problem]="activeProblem"
+      [busy]="busy()"
+      [busyLabel]="busyLabel()"
+      [detail]="problemDetail()"
+      (action)="act($event)"
+    />
+    } @else if (status() === 'loading') {
+    <section
+      aria-label="Loading the job receipt"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <p role="status">Loading the job receipt…</p>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </section>
+    } @else if (job(); as activeJob) {
+    <section aria-labelledby="receipt-heading">
+      <h2 id="receipt-heading">{{ receiptHeading }}</h2>
+      <p class="mt-md">{{ receiptLine() }}</p>
+      <p class="mt-md">{{ nextStep }}</p>
+    </section>
+    } }
+  </div>
+
+  @if (step() === 'edit' && editReady()) {
+  <div class="sheet-foot">
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="!canSave()"
+      [attr.aria-busy]="saving()"
+      (click)="prepare()"
+    >
+      {{ saving() ? 'Preparing preview…' : 'Save and preview' }}
+    </button>
+    <button
+      mat-button
+      type="button"
+      [disabled]="saving()"
+      (click)="reviewPending()"
+    >
+      Review pending devices
+    </button>
+    <button
+      mat-button
+      type="button"
+      [disabled]="saving() || !draft.changed()"
+      (click)="reset()"
+    >
+      Reset
+    </button>
+  </div>
+  } @else if (step() === 'review' && status() === 'ready' && !problem()) {
+  <div class="sheet-foot">
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="!canContinue()"
+      (click)="goConfirm()"
+    >
+      Continue to confirmation
+    </button>
+    <button mat-button type="button" (click)="goEdit()">Edit draft</button>
+  </div>
+  } @else if (step() === 'confirm' && status() === 'ready' && !problem()) {
+  <div class="sheet-foot">
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="!canCreate()"
+      [attr.aria-busy]="creating()"
+      (click)="create()"
+    >
+      {{ creating() ? 'Creating update job…' : 'Create update job' }}
+    </button>
+    <button
+      mat-button
+      type="button"
+      [disabled]="creating()"
+      (click)="goReview()"
+    >
+      Back to preview
+    </button>
+  </div>
+  } @else if (step() === 'done' && status() === 'ready' && !problem()) {
+  <div class="sheet-foot">
+    <button mat-flat-button type="button" (click)="viewJob()">View job</button>
+    <button mat-button type="button" (click)="close()">Done</button>
+  </div>
+  }
+</section>

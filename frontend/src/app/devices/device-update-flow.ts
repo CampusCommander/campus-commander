@@ -404,9 +404,11 @@ export function previewCountLine(preview: DeviceUpdatePreview): string {
 
 /** "Prepared Sep 5, 10:30 AM · Expires Sep 5, 10:45 AM · Preview PV-006". */
 export function previewMetaLine(preview: DeviceUpdatePreview): string {
+  // The preview ID stays on one line in the narrow sheet. U+2011 is a
+  // non-breaking hyphen, so the ID cannot break between PV and the number.
   return `Prepared ${formatTimestamp(preview.preparedAt)} · Expires ${formatTimestamp(
     preview.expiresAt,
-  )} · Preview ${preview.displayId}`;
+  )} · Preview\u00A0${preview.displayId.replace('-', '\u2011')}`;
 }
 
 /** The frozen-targets sentence of frame 97:21. */
