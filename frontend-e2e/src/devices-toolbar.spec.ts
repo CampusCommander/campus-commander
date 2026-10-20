@@ -247,6 +247,27 @@ async function screenshot(page: Page, testInfo: TestInfo, name: string) {
   });
 }
 
+/** A focused screenshot of one control, with room for its surroundings. */
+async function screenshotTarget(
+  page: Page,
+  testInfo: TestInfo,
+  name: string,
+  target: Locator,
+  padding = 16,
+) {
+  const box = await target.boundingBox();
+  if (!box) throw new Error('The screenshot target is not visible.');
+  await page.screenshot({
+    path: testInfo.outputPath(name),
+    clip: {
+      x: Math.max(0, box.x - padding),
+      y: Math.max(0, box.y - padding),
+      width: box.width + padding * 2,
+      height: box.height + padding * 2,
+    },
+  });
+}
+
 /**
  * Axe reports zero violations for the page and the open menu.
  * The CDK overlay container sits directly under body, outside the page landmarks, so the
@@ -329,10 +350,11 @@ for (const theme of ['light', 'dark'] as const) {
     );
 
     await expectNoAxeViolations(page);
-    await screenshot(
+    await screenshotTarget(
       page,
       testInfo,
       `devices-refresh-unavailable-${theme}.png`,
+      menu,
     );
   });
 }
@@ -365,9 +387,16 @@ for (const theme of ['light', 'dark'] as const) {
     }, theme);
     const menu = await openMenu(page, refresh);
     await menu.getByRole('menuitem', { name: /Refresh Domain/ }).click();
-    await expect(page.getByText('Domain details refreshed.')).toBeVisible();
+    const status = page.getByText('Domain details refreshed.');
+    await expect(status).toBeVisible();
     await expectNoAxeViolations(page);
-    await screenshot(page, testInfo, `devices-refresh-status-${theme}.png`);
+    await screenshotTarget(
+      page,
+      testInfo,
+      `devices-refresh-status-${theme}.png`,
+      status.locator('xpath=..'),
+      8,
+    );
   });
 }
 
