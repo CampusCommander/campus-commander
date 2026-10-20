@@ -18,8 +18,9 @@ Examples describe display requirements. They do not define new API payloads or b
 - Include stable row identity, readable identifying attributes, selection, and relevant school or OU context.
 - Put Import, Export, Update, Send command, Change status, and other entity actions inside Bulk Actions.
 - Keep supported menu items visible. Disable unavailable actions and explain their selection, permission, or connectivity requirement.
-- Refresh contains Refresh selected and Refresh all. Disable Refresh selected when selection is empty.
-- Refresh all targets the authorized entity dataset in the current district. Preserve filters, selection, drafts, and focus.
+- Refresh contains Refresh Selected, Refresh Devices, and Refresh Domain. Disable Refresh Selected when selection is empty.
+- Refresh Devices targets the authorized entity dataset in the current district. Preserve filters, selection, drafts, and focus.
+- Show Refresh and Bulk Actions as Material 3 outlined dropdown buttons. The `arrow_drop_down` icon follows the label and rotates 180° while the menu is open. The menu opens 4 px below the button, aligned to its end edge.
 - Keep Save, Clear, and Filter Changed or Show All in the conditional draft panel.
 - Disable selection-dependent actions when the selection is empty.
 - Use server-side row models. Do not load the district dataset solely to render the grid.

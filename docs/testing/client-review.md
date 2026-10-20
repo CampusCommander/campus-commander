@@ -60,7 +60,7 @@ The status bar count equals the `Google backend` count printed at startup.
 The battery column shows the classes that the mock reports.
 
 `npm exec nx run api-e2e:admin-sdk-mock-integration` runs the same flow without a browser.
-It connects the mock credential, runs Refresh all, compares the device count and one battery class with the mock, and removes the containers.
+It connects the mock credential, runs Refresh Devices, compares the device count and one battery class with the mock, and removes the containers.
 It exits 0 on success, so CI can run it.
 
 ### Recorded medium review run
@@ -69,7 +69,7 @@ The environment reached its ready banner 27 seconds after the command started on
 The shared Nx cache held the four build outputs, so the number measures the harness start.
 The banner reported `admin-sdk-mock 0.2.0, tier medium, 7000 devices`.
 
-**Refresh all** published 7,000 devices in 58.8 seconds, from the API sync projection.
+**Refresh Devices** published 7,000 devices in 58.8 seconds, from the API sync projection.
 The status bar held `7,000 matching devices · 7,000 in district`.
 `node api-e2e/client-review-mock-browser.mjs` saved `dist/client-review/devices-medium.png` and `dist/client-review/google-connection-medium.png`.
 The connection page listed `easton-consulting.com` as the primary domain and `k12.easton-consulting.com` as a verified alias.

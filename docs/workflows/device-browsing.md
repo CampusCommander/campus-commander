@@ -21,7 +21,7 @@ The eye icon in each row opens that device's details.
 The filter row follows [GRID-04](../ui/patterns.md#entity-grid).
 The administrator selects Add a filter, chooses a field or shortcut, and applies a typed value.
 Each applied filter appears as a chip. Clear filters removes all chips.
-The Refresh menu contains Refresh all. It runs a full device sync and keeps the active filters.
+The Refresh menu contains Refresh Devices. It runs a full device sync and keeps the active filters.
 The grid pages through the devices. The paging bar shows the row range and the page size.
 Each column header has a filter. The Filters side bar lists the same filters.
 The Columns side bar shows, hides, orders, and pins columns.
@@ -54,7 +54,7 @@ A device is stale 24 hours after its last read. A query that returns stale devic
 Redis caches the ordered device list of each grid query for 5 minutes.
 Pages read device records from Redis first and from Postgres for the rest.
 The server pushes refresh signals over Server-Sent Events. The grid updates refreshed rows in place.
-Refresh all reads the complete inventory. A failed full sync leaves every row in place and shows the stale state.
+Refresh Devices reads the complete inventory. A failed full sync leaves every row in place and shows the stale state.
 Collection leases, staging generations, and write overlays from the [architecture](../portfolio/03-architecture.md#synchronization-and-effective-reads) wait until device writes exist.
 
 The existing administrator sees every device.
@@ -129,8 +129,8 @@ These defaults are engineering choices, not owner decisions. Change them when th
 - Date filters exclude devices without a contact time.
 - A device becomes stale 24 hours after Campus Commander last read it. The threshold is a code constant per entity type.
 - Query results stay cached for 5 minutes. A completed full sync makes the cached results unreachable.
-- A sync that no worker starts within two minutes ends as interrupted. Refresh all then becomes available again.
-- The first visit shows no devices until an administrator runs Refresh all.
+- A sync that no worker starts within two minutes ends as interrupted. Refresh Devices then becomes available again.
+- The first visit shows no devices until an administrator runs Refresh Devices.
 - Pages hold 100 devices by default. The page size selector offers 50, 100, and 250.
 - Without a Google connection, Devices directs the administrator to the Google connection page.
 - The Columns side bar shows or hides Annotated location and Notes. It replaces the Columns menu in the filter row.
