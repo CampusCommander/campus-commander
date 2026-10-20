@@ -981,6 +981,46 @@ test(
             customer: mock.customerId,
             migrator,
             kestra: kestraFixture,
+            docker,
+            // Q1b scope item 1: replace the API container through startApi.
+            restartApi: async () => {
+              const exited = once(api, 'exit');
+              api.kill('SIGTERM');
+              await exited;
+              api = await startApi();
+            },
+            restartWorker: kestraFixture.restartWorker,
+            redisName: names[1],
+            connectRedis: () => redis.duplicate(),
+            // Q1b scope item 11: a Redis restart can change the published port.
+            restartRedis: async () => {
+              redis.destroy();
+              docker('stop', names[1]);
+              docker('start', names[1]);
+              const port = Number(
+                docker('port', names[1], '6379/tcp').split(':').at(-1),
+              );
+              assert.ok(Number.isInteger(port) && port > 0);
+              console.log(
+                `Redis fixture published port changed after restart: ${port !== redisPort}`,
+              );
+              redis = createClient({
+                url: `redis://127.0.0.1:${port}`,
+                password,
+              });
+              redis.on('error', () => undefined);
+              await Promise.race([
+                redis.connect(),
+                delay(15000).then(() => {
+                  throw new Error('Redis did not recover after restart');
+                }),
+              ]);
+              assert.equal(await redis.ping(), 'PONG');
+              return redis;
+            },
+            baseCommit: execFileSync('git', ['rev-parse', 'HEAD'], {
+              encoding: 'utf8',
+            }).trim(),
           }))
             process.stdout.write(`${check}\n`);
           // The page budget of design section 5.11. The parent run seeds bare records.

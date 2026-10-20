@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 export const reviewIdentities = new Map([
   ['administrator', 'Review administrator'],
   ['review-recipient', 'Review recipient'],
+  ['review-observer', 'Review observer'],
 ]);
 
 export async function reviewIdentityPage(parameters) {

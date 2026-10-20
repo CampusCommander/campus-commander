@@ -74,7 +74,7 @@ export async function startKestraFixture({
       .join('\n'),
     { mode: 0o600 },
   );
-  const startWorker = (name) =>
+  const startWorker = (name, environment = {}) =>
     docker(
       'run',
       '-d',
@@ -104,6 +104,10 @@ export async function startKestraFixture({
       `${directory}:${directory}:ro`,
       '-e',
       `WORKER_DISPATCH_SECRET_FILE=${join(directory, 'secrets/worker-dispatch')}`,
+      ...Object.entries(environment).flatMap(([key, value]) => [
+        '-e',
+        `${key}=${value}`,
+      ]),
       ...(extraCaCerts ? ['-e', `NODE_EXTRA_CA_CERTS=${extraCaCerts}`] : []),
       workerImage ?? nodeImage,
       'node',
@@ -206,6 +210,21 @@ export async function startKestraFixture({
     startKestra(port);
     await waitReady();
   };
+  const restartWorker = async (environment = {}) => {
+    docker('rm', '-f', workerName);
+    startWorker(workerName, environment);
+    workerOrigin = `http://127.0.0.1:${Number(docker('port', workerName, '3001/tcp').split(':').at(-1))}`;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      if (stopped?.()) break;
+      try {
+        if ((await fetch(`${workerOrigin}/health/live`)).ok) return;
+      } catch {
+        /* Await the worker restart. */
+      }
+      await delay(100);
+    }
+    assert.fail('The worker did not restart.');
+  };
   config.services.workers.endpoint.url = `http://${workerName}:3001`;
   config.services.kestra.endpoint.url = `http://${kestraName}:8080`;
   return {
@@ -233,5 +252,6 @@ export async function startKestraFixture({
     },
     rotateWorker,
     rotateKestraDispatch,
+    restartWorker,
   };
 }
