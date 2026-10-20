@@ -39,6 +39,6 @@ import { PlatformAccessService } from './platform-access.service';
     InvitationService,
     PlatformAccessService,
   ],
-  exports: [AuthService, AuthGuard, EnrollmentService],
+  exports: [AuthService, AuthGuard, EnrollmentService, GoogleConnectionService],
 })
 export class AuthModule {}

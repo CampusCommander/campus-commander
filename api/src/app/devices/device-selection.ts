@@ -38,6 +38,15 @@ export function emptySelection(): SelectionState {
   return { terms: [], groups: [], additions: [], exceptions: [] };
 }
 
+/** Whether the state holds any starting selection: a filter term, a group, or an addition. */
+export function hasSelection(state: SelectionState): boolean {
+  return (
+    state.terms.length > 0 ||
+    state.groups.length > 0 ||
+    state.additions.length > 0
+  );
+}
+
 export function selectionStorageKey(
   identityId: string,
   key: DeviceSelectionKey,
