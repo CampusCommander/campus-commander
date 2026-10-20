@@ -18,6 +18,7 @@ import {
 } from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
+import { JobService } from '../jobs/job-service';
 import { requireDeviceUpdateActions } from './device-updates-actions';
 import { DeviceUpdatesService } from './device-updates.service';
 import { DeviceWriteAccessRoutes } from './device-write-access-routes';
@@ -38,17 +39,20 @@ export class DeviceUpdatesController {
   private readonly updates: DeviceUpdatesService;
   private readonly auth: AuthService;
   private readonly writeAccess: DeviceWriteAccessRoutes;
+  private readonly jobs: JobService;
 
   constructor(
     devices: DevicesService,
     updates: DeviceUpdatesService,
     auth: AuthService,
     access: DeviceWriteAccessService,
+    jobs: JobService,
   ) {
     this.devices = devices;
     this.updates = updates;
     this.auth = auth;
     this.writeAccess = new DeviceWriteAccessRoutes(access);
+    this.jobs = jobs;
   }
 
   /** Resolve the connected customer, then require the read and both write actions for it. */
@@ -130,6 +134,9 @@ export class DeviceUpdatesController {
       input,
     );
     if (result.existing) response.status(200);
+    // After the commit, run admission (design section 2.4). A missed run repeats on the next tick.
+    if (!result.existing)
+      await this.jobs.admit(current.customerId).catch(() => undefined);
     return result.receipt;
   }
 }

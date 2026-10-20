@@ -4,8 +4,10 @@ import type { DeploymentConfig } from 'deployment';
 import type { ConfigurationService } from './configuration.service';
 
 export class ServiceResponseError extends Error {
-  constructor(readonly status: number) {
+  readonly status: number;
+  constructor(status: number) {
     super('The internal service rejected the request.');
+    this.status = status;
   }
 }
 
