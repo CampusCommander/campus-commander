@@ -360,6 +360,116 @@ test('recovery starts each element with its new token and starts one reconcile f
   assert.equal(reconcile.input.jobId, OTHER_JOB);
 });
 
+test('a failed publication after admission leaves the row for the relay and still starts the job', async () => {
+  const row = {
+    publication_id: '7',
+    job_id: JOB,
+    display_id: DISPLAY,
+    revision: '4',
+    requested_by: REQUESTER,
+  };
+  const database = admissionDatabase({ publications: [row] });
+  const cache = cacheOf({
+    publish: async () => {
+      throw new Error('redis unavailable');
+    },
+  });
+  const orchestration = orchestrationOf();
+  const service = serviceOf({ database, cache, orchestration });
+  assert.equal(await service.admit(CUSTOMER), false);
+  assert.equal(orchestration.calls.length, 1);
+  assert.equal(orchestration.calls[0].name, 'startDeviceUpdate');
+  // The publisher failed, so the row stays for the relay.
+  assert.ok(
+    !database.calls.some((call) =>
+      call.text.includes('cc.complete_job_publications'),
+    ),
+  );
+});
+
+test('a failed publication after a refused start still reports the refusal', async () => {
+  const database = admissionDatabase();
+  const originalQuery = database.connection.query.bind(database.connection);
+  let reads = 0;
+  database.connection.query = (text, values = []) => {
+    if (text.includes('SELECT p.publication_id,p.job_id')) {
+      reads += 1;
+      return Promise.resolve({ rows: reads > 1 ? [{ publication_id: '7' }] : [] });
+    }
+    return originalQuery(text, values);
+  };
+  const cache = cacheOf({
+    publish: async () => {
+      throw new Error('redis unavailable');
+    },
+  });
+  const orchestration = orchestrationOf({
+    startDeviceUpdate: () => {
+      throw new ServiceResponseError(400);
+    },
+  });
+  const service = serviceOf({ database, cache, orchestration });
+  assert.equal(await service.admit(CUSTOMER), true);
+  assert.ok(
+    database.calls.some((call) =>
+      call.text.includes('cc.abandon_device_update_start'),
+    ),
+  );
+  assert.ok(
+    !database.calls.some((call) =>
+      call.text.includes('cc.complete_job_publications'),
+    ),
+  );
+});
+
+test('a failed publication after a reaper run still starts the reconcile flow for all', async () => {
+  const database = databaseOf([
+    ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],
+    [
+      'SELECT cc.recover_device_update_jobs',
+      () => [{ result: { starts: [], reconciles: [OTHER_JOB] } }],
+    ],
+    [
+      'SELECT p.publication_id,p.job_id',
+      () => [
+        {
+          publication_id: '9',
+          job_id: OTHER_JOB,
+          display_id: DISPLAY,
+          revision: '5',
+          requested_by: REQUESTER,
+        },
+      ],
+    ],
+  ]);
+  const cache = cacheOf({
+    publish: async () => {
+      throw new Error('redis unavailable');
+    },
+  });
+  const orchestration = orchestrationOf();
+  const service = serviceOf({ database, cache, orchestration });
+  assert.equal(await service.recover(CUSTOMER), true);
+  const reconcile = orchestration.calls.find(
+    (call) => call.name === 'startDeviceUpdateReconcile',
+  );
+  assert.ok(reconcile, 'The reaper started the reconcile flow.');
+  assert.equal(reconcile.input.jobId, OTHER_JOB);
+  assert.equal(reconcile.input.operationNumber, 'all');
+  assert.equal('verifyAttempt' in reconcile.input, false);
+  assert.equal(
+    orchestration.calls.filter(
+      (call) => call.name === 'startDeviceUpdateReconcile',
+    ).length,
+    1,
+  );
+  assert.ok(
+    !database.calls.some((call) =>
+      call.text.includes('cc.complete_job_publications'),
+    ),
+  );
+});
+
 test('a failed reconcile start after a reaper run is not retried', async () => {
   const database = databaseOf([
     ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],

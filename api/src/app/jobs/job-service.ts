@@ -248,7 +248,8 @@ export class JobService {
       [customerId, held],
     );
     // An admission, a label, a refused start, and a reaper run publish at once (design sections 3.2, 6.5).
-    await this.publishRows(customerId, after);
+    // A publication failure leaves the rows for the relay and cancels no committed start (R1-F1).
+    await this.publishCommittedRows(customerId, after);
     if (!admitted) return false;
     return this.startLocked(customerId, admitted);
   }
@@ -292,7 +293,8 @@ export class JobService {
           'SELECT cc.abandon_device_update_start($1,$2,$3) AS result',
           [customerId, jobId, token],
         );
-        await this.publishRows(customerId, after);
+        // The refusal stands even when its publication fails. Cleanup and admission still follow.
+        await this.publishCommittedRows(customerId, after);
         return true;
       }
       return false;
@@ -323,7 +325,9 @@ export class JobService {
       : [];
     for (const start of starts)
       await this.startLocked(customerId, start as AdmittedJob);
-    await this.publishRows(customerId, after);
+    // The recovery result is committed. A publication failure leaves its rows for the relay and never
+    // drops the reconcile starts that the reaper asked for (R1-F1).
+    await this.publishCommittedRows(customerId, after);
     for (const jobId of reconciles) {
       try {
         // P2 claims the chunks of `all` itself, so the flow carries no verify attempt.
@@ -381,6 +385,17 @@ export class JobService {
       )
     )[0];
     return String(row?.['value'] ?? '0');
+  }
+
+  /**
+   * Publish the rows that a committed dispatch decision produced. A Redis failure leaves them for the
+   * relay and never cancels the start, the cleanup, or the admission that follows (R1-F1).
+   */
+  private async publishCommittedRows(
+    customerId: string,
+    after: string,
+  ): Promise<void> {
+    await this.publishRows(customerId, after).catch(() => undefined);
   }
 
   /**
