@@ -211,9 +211,10 @@ export function formatTime(iso: string): string {
   });
 }
 
-/** The operation number of `operationId` (`UPD-006-12` gives `12`). */
+/** The operation number of an update or status ID (`STS-002-12` gives `12`). */
 export function operationNumber(operationId: string): string | null {
-  return /^UPD-\d{3,}-(\d+)$/.exec(operationId)?.[1] ?? null;
+  // Commands offer no reconciliation (record default 4), so a CMD- ID stays invalid.
+  return /^(?:UPD|STS)-\d{3,}-(\d+)$/.exec(operationId)?.[1] ?? null;
 }
 
 /** Reconcile needs jobs:read and devices:write (design 2.1, OQ6). */
@@ -257,14 +258,30 @@ function spellCount(value: number): string {
     : value.toLocaleString('en-US');
 }
 
+/** The subject of a failure sentence. A command names its own reason. */
+export type FailureSubject = 'update' | 'status change' | 'command';
+
+/** The noun that a value-differs sentence reads after "requested". */
+function requestedNoun(subject: FailureSubject): string {
+  switch (subject) {
+    case 'update':
+      return 'value';
+    case 'status change':
+      return 'status';
+    case 'command':
+      return 'state';
+  }
+}
+
 /**
  * One failure sentence of the Latest activity line (design 2.5, OQ9).
  * A 401 or 403 that is not a quota refusal reads as a permission failure.
  * A status job names its status change; the default subject keeps the update copy.
+ * A command names its issue refusal. Only commandFailureSentence claims execution.
  */
 export function failureSentence(
   operation: JobFailedActivityOperation,
-  subject: 'update' | 'status change' = 'update',
+  subject: FailureSubject = 'update',
 ): string {
   const serial = operation.serialNumber || operation.deviceId;
   if (
@@ -278,9 +295,7 @@ export function failureSentence(
     case 'quota':
       return `Google quota stopped the ${subject} for ${serial}.`;
     case 'value-differs':
-      return `${serial} does not hold the requested ${
-        subject === 'update' ? 'value' : 'status'
-      }.`;
+      return `${serial} does not hold the requested ${requestedNoun(subject)}.`;
     case 'invalid-response':
       return `Google returned an invalid response for ${serial}.`;
     case 'ambiguous':
@@ -292,11 +307,17 @@ export function failureSentence(
   }
 }
 
-/** One failure sentence of a command job. It names no retry and no reconciliation. */
+/**
+ * One failure sentence of a command job. It names no retry and no reconciliation.
+ * A `command-failed` settlement is the only evidence that a device executed the
+ * command and failed. An issue refusal keeps its own reason.
+ */
 export function commandFailureSentence(
   operation: JobFailedActivityOperation,
 ): string {
-  return `${operation.serialNumber || operation.deviceId} reported an execution failure.`;
+  if (operation.outcomeReason === 'command-failed')
+    return `${operation.serialNumber || operation.deviceId} reported an execution failure.`;
+  return failureSentence(operation, 'command');
 }
 
 /** One uncertain command sentence. A command has no reconciliation (record default 4). */

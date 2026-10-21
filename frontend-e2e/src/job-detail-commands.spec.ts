@@ -511,6 +511,9 @@ test('renders the command job of state 09 in the light and dark themes', async (
     '1 Reboot command expired before execution.',
   );
   await expect(page.locator('.activity p')).toContainText(
+    'SYN-02 reported an execution failure.',
+  );
+  await expect(page.locator('.activity p')).toContainText(
     '2 commands wait for device execution.',
   );
   await expect(page.locator('.activity p')).not.toContainText('reconciliation');
@@ -682,6 +685,95 @@ test('renders the operations and requested status of a status job', async ({
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({
     path: testInfo.outputPath('job-detail-sts.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test('reconciles an unknown status operation through its numbered endpoint', async ({
+  page,
+}, testInfo) => {
+  await signIn(page);
+  await page.route('**/api/jobs/STS-002', (route) =>
+    route.fulfill({ json: { ...statusJob, status: 'needs-review' } }),
+  );
+  const requests: { method: string; path: string }[] = [];
+  await page.route(
+    '**/api/jobs/STS-002/operations/*/reconcile',
+    async (route) => {
+      const request = route.request();
+      requests.push({
+        method: request.method(),
+        path: new URL(request.url()).pathname,
+      });
+      await route.fulfill({ status: 202, body: '' });
+    },
+  );
+  await page.goto('/jobs/STS-002');
+
+  const row = page.locator('.operations-table tbody tr').nth(2);
+  await expect(row).toContainText('Unknown');
+  await row.getByRole('button', { name: 'Reconcile' }).click();
+
+  // The click reaches the numbered endpoint and the accepted state remains visible.
+  await expect
+    .poll(() => requests)
+    .toEqual([
+      { method: 'POST', path: '/api/jobs/STS-002/operations/3/reconcile' },
+    ]);
+  await expect(page.getByText('Reconcile started for SYN-13.')).toBeVisible();
+  await expect(row).toContainText('Reconciling');
+  await expect(row.getByRole('button', { name: 'Reconcile' })).toHaveCount(0);
+
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('job-detail-sts-reconcile.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test('does not call a refused command issue an execution failure', async ({
+  page,
+}, testInfo) => {
+  await signIn(page);
+  await page.route('**/api/jobs/CMD-001', (route) =>
+    route.fulfill({
+      json: {
+        ...commandJob,
+        latestActivity: {
+          at: secondsAgo(100),
+          failed: {
+            count: 1,
+            operations: [
+              {
+                operationId: 'CMD-001-2',
+                deviceId: 'synthetic-device-2',
+                serialNumber: 'SYN-02',
+                outcomeReason: 'quota',
+                googleStatus: 429,
+                googleReason: 'Quota exceeded.',
+                updatedAt: secondsAgo(100),
+              },
+            ],
+          },
+          unknown: { count: 0, operations: [] },
+        },
+      },
+    }),
+  );
+  await page.goto('/jobs/CMD-001');
+
+  // The issue never reached a device, so the line names the refusal.
+  const activity = page.locator('.activity p');
+  await expect(activity).toContainText(
+    'Google quota stopped the command for SYN-02.',
+  );
+  await expect(activity).not.toContainText('execution failure');
+
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('job-detail-cmd-issue-refusal.png'),
     fullPage: true,
   });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);

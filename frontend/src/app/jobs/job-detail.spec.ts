@@ -619,6 +619,23 @@ it('keeps Reconcile for an unknown status row but not for a command row', () => 
   expect(button(command.element, 'Inspect failure')).toBeUndefined();
 });
 
+it('sends a status Reconcile click to the store with its operation', () => {
+  const target = operation({
+    operationId: 'STS-002-3',
+    operation: 'disable',
+    baselineValue: 'ACTIVE',
+    requestedValue: 'DISABLED',
+    outcome: 'unknown',
+    outcomeReason: 'invalid-response',
+  });
+  const { element, store } = setup({
+    job: statusJob({ status: 'needs-review' }),
+    operations: [target],
+  });
+  button(element, 'Reconcile')?.click();
+  expect(store.reconcile).toHaveBeenCalledWith(target);
+});
+
 it('hides the device eye without devices:read', () => {
   const { element } = setup({ grants: ['jobs:read'] });
   expect(link(element, 'Open device C0A1-7F77')).toBeUndefined();

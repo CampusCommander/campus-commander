@@ -1,5 +1,6 @@
 import type {
   JobDetail,
+  JobFailedActivityOperation,
   JobOperation,
   JobProgress,
 } from '@campus/application-contracts';
@@ -123,6 +124,49 @@ const sampleJob = () =>
       },
     },
   });
+
+/**
+ * A command job whose Latest activity carries one failed sample. No pending
+ * operation remains, so the line holds the sample sentence alone.
+ */
+const commandJobWithFailure = (
+  failure: JobFailedActivityOperation,
+): JobDetail =>
+  job({
+    displayId: 'CMD-001',
+    action: 'reboot-devices',
+    status: 'awaiting-devices',
+    field: null,
+    mode: null,
+    commandType: 'REBOOT',
+    requestedValue: null,
+    progress: progress({
+      total: 1,
+      succeeded: 0,
+      failed: 1,
+      unknown: 0,
+      expired: 0,
+      pending: 0,
+    }),
+    latestActivity: {
+      at: '2026-10-20T19:08:00.000Z',
+      failed: { count: 1, operations: [failure] },
+      unknown: { count: 0, operations: [] },
+    },
+  });
+
+const commandFailure = (
+  overrides: Partial<JobFailedActivityOperation> = {},
+): JobFailedActivityOperation => ({
+  operationId: 'CMD-001-2',
+  deviceId: 'synthetic-device-2',
+  serialNumber: 'SYN-02',
+  outcomeReason: 'command-failed',
+  googleStatus: null,
+  googleReason: 'The device failed to execute the command.',
+  updatedAt: '2026-10-20T19:08:00.000Z',
+  ...overrides,
+});
 
 describe('latest activity', () => {
   it('renders the sample line of frames 104:209 and 231:4707', () => {
@@ -411,6 +455,35 @@ describe('latest activity', () => {
     expect(line).not.toContain('reconciliation');
   });
 
+  it('keeps execution-failure wording for a command-failed result', () => {
+    const line = latestActivityLine(commandJobWithFailure(commandFailure()));
+    expect(line).toBe(
+      `${formatTime('2026-10-20T19:08:00.000Z')} · SYN-02 reported an execution failure.`,
+    );
+  });
+
+  it('names a refused command issue without claiming device execution', () => {
+    const line = (outcomeReason: string | null, googleStatus: number | null) =>
+      latestActivityLine(
+        commandJobWithFailure(commandFailure({ outcomeReason, googleStatus })),
+      );
+
+    // An issue refusal never reached a device, so it is not an execution failure.
+    const quota = line('quota', 429);
+    expect(quota).toContain('Google quota stopped the command for SYN-02.');
+    expect(quota).not.toContain('execution failure');
+    expect(line('permission-denied', 403)).toContain(
+      'Permission failure on SYN-02.',
+    );
+    expect(line('not-found', 404)).toContain(
+      'SYN-02 was not found in Google Workspace.',
+    );
+    expect(line('rejected', 400)).toContain(
+      'Google rejected the command for SYN-02 (rejected).',
+    );
+    expect(line(null, null)).toContain('The command failed for SYN-02.');
+  });
+
   it('names a status change in the write counter line', () => {
     const current = job({
       displayId: 'STS-002',
@@ -570,10 +643,15 @@ describe('job detail fields', () => {
     });
   });
 
-  it('extracts the operation number from its stable ID', () => {
+  it('extracts the operation number from an update or status ID', () => {
     expect(operationNumber('UPD-006-12')).toBe('12');
     expect(operationNumber('UPD-1000-1')).toBe('1');
+    expect(operationNumber('STS-002-3')).toBe('3');
+    expect(operationNumber('STS-1000-12')).toBe('12');
+    // Commands offer no reconciliation (record default 4), so their IDs stay invalid.
+    expect(operationNumber('CMD-001-2')).toBeNull();
     expect(operationNumber('UPD-006')).toBeNull();
+    expect(operationNumber('XPD-006-1')).toBeNull();
   });
 
   it('requires jobs:read and devices:write for Reconcile', () => {
