@@ -5,6 +5,7 @@ import {
   ViewChild,
   afterNextRender,
   Injector,
+  computed,
   inject,
   effect,
 } from '@angular/core';
@@ -13,8 +14,9 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { GoogleHealthStore } from '../google-connection/health.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import {
-  GOOGLE_CUSTOMER_SCOPES,
+  GOOGLE_SETUP_SCOPES,
   GoogleHealthCapability,
+  delegationLinkScopes,
 } from '@campus/application-contracts';
 import { DatePipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
@@ -30,7 +32,9 @@ import { DiagnosticsStore } from './diagnostics.store';
 export class Diagnostics {
   protected readonly google = inject(GoogleHealthStore);
   protected readonly connection = inject(ConnectionStore);
-  protected readonly googleScopes = GOOGLE_CUSTOMER_SCOPES;
+  protected readonly googleScopes = computed(() =>
+    delegationLinkScopes(GOOGLE_SETUP_SCOPES, this.google.verifiedScopes()),
+  );
   private readonly destroy = inject(DestroyRef);
   protected async copyGoogle(value: string) {
     try {
