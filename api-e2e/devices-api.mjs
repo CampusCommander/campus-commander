@@ -77,7 +77,9 @@ export async function qualifyDevicesApi({
     assert.match(first.rows[0].lastEntitySync, /^\d{4}-\d{2}-\d{2}T/);
     const detail0 = await api.get(`${root}/synthetic-device-0`);
     assert.equal(detail0.status(), 200, await detail0.text());
-    assert.equal((await detail0.json()).device.removedAt, null);
+    const detail0Body = await detail0.json();
+    assert.equal(detail0Body.device.removedAt, null);
+    assert.equal(detail0Body.device.status, 'DEPROVISIONED');
     const units = await api.get(`${root}/org-units`);
     assert.equal(units.status(), 200, await units.text());
     assert.deepEqual((await units.json()).orgUnits, [
@@ -483,6 +485,7 @@ export async function qualifyDevicesApi({
       assert.deepEqual(Object.keys(cached).sort(), ['record', 'version']);
       assert.ok(Number.isSafeInteger(cached.version) && cached.version >= 1);
       assert.equal(cached.record.deviceId, 'synthetic-device-0');
+      assert.equal(cached.record.status, 'DEPROVISIONED');
       assert.equal(typeof cached.record.lastEntitySync, 'string');
       assert.ok(
         Date.parse(cached.record.lastEntitySync) > Date.parse(ready.observedAt),
