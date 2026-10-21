@@ -2,7 +2,11 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import {
+  GOOGLE_CAPABILITIES,
   GOOGLE_HEALTH_CAPABILITY_IDS,
+  GOOGLE_SETUP_SCOPES,
+  delegationLinkScopes,
+  type GoogleConnection,
   type GoogleHealth,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
@@ -33,7 +37,10 @@ const initial = (): GoogleHealth => ({
     correlationId: null,
   })),
 });
-function fixture(request: ReturnType<typeof vi.fn>) {
+function fixture(
+  request: ReturnType<typeof vi.fn>,
+  connection: GoogleConnection | null = null,
+) {
   const session = signal({
     identity: { id: 'actor', permissionVersion: 1 },
     csrfToken: 'first',
@@ -51,7 +58,7 @@ function fixture(request: ReturnType<typeof vi.fn>) {
       },
       {
         provide: ConnectionStore,
-        useValue: { readable: () => true, connection: () => null },
+        useValue: { readable: () => true, connection: () => connection },
       },
     ],
   });
@@ -59,6 +66,32 @@ function fixture(request: ReturnType<typeof vi.fn>) {
   TestBed.tick();
   return { store, session };
 }
+
+function connected(): GoogleConnection {
+  return {
+    customerId: 'C0123456',
+    generation: 1,
+    clientId: '123456789',
+    subject: 'admin@example.org',
+    observedAt: new Date().toISOString(),
+    confirmedAt: new Date().toISOString(),
+    observation: {
+      customerId: 'C0123456',
+      primaryDomain: 'example.org',
+      domains: [
+        {
+          name: 'example.org',
+          primary: true,
+          verified: true,
+          aliases: [],
+        },
+      ],
+    },
+  };
+}
+
+const SCHOOL_OU =
+  'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
 
 it('discards an older read that completes after the newer observation', async () => {
   const pending = deferred();
@@ -136,4 +169,105 @@ it('reports a capability that was never checked as out of date', async () => {
   await store.refresh();
   expect(store.stale(null)).toBe(true);
   expect(store.summary()).toBe('Google results are out of date');
+});
+
+it('lists all six capabilities in contract order', () => {
+  const request = vi.fn().mockResolvedValue(Response.json({ health: null }));
+  const { store } = fixture(request);
+  expect(store.capabilities.map((item) => item.id)).toEqual(
+    GOOGLE_HEALTH_CAPABILITY_IDS,
+  );
+});
+
+it('requests all six capabilities from Check Google access', async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValue(Response.json({ health: initial() }));
+  const { store } = fixture(request);
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  await store.check();
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(request.mock.calls[1][0]).toBe('/api/google-connection/health/check');
+  expect(request.mock.calls[1][1]).toMatchObject({
+    capabilities: GOOGLE_HEALTH_CAPABILITY_IDS,
+  });
+});
+
+it('does not count a failed school OU check as needing attention', async () => {
+  const health = initial();
+  const school = health.capabilities.find(
+    (item) => item.capability === 'school-ou-references',
+  )!;
+  school.failure = 'scope-mismatch';
+  school.scopeVerified = false;
+  school.checkedAt = null;
+  const request = vi.fn().mockResolvedValue(Response.json({ health }));
+  const { store } = fixture(request);
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  expect(store.summary()).toBe('Google: 5 last checks passed');
+});
+
+it('counts a failed setup capability out of the five', async () => {
+  const health = initial();
+  health.capabilities.find(
+    (item) => item.capability === 'device-changes',
+  )!.failure = 'scope-mismatch';
+  const request = vi.fn().mockResolvedValue(Response.json({ health }));
+  const { store } = fixture(request);
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  expect(store.summary()).toBe('Google: 1 of 5 capabilities need attention');
+});
+
+it('lists the setup scopes plus every verified scope once in the delegation link', async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValue(Response.json({ health: initial() }));
+  const { store } = fixture(request, connected());
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  const href = store.delegationHref();
+  expect(href).not.toBeNull();
+  const url = new URL(href!);
+  expect(url.searchParams.get('clientScopeToAdd')).toBe(
+    delegationLinkScopes(
+      GOOGLE_SETUP_SCOPES,
+      GOOGLE_CAPABILITIES.map((capability) => capability.scope),
+    ).join(','),
+  );
+  expect(url.searchParams.get('clientScopeToAdd')).toContain(SCHOOL_OU);
+  expect(url.searchParams.get('clientIdToAdd')).toBe('123456789');
+  expect(url.searchParams.get('overwriteClientId')).toBe('true');
+  expect(url.searchParams.get('dn')).toBe('example.org');
+});
+
+it('keeps an unverified school OU scope out of the delegation link', async () => {
+  const health = initial();
+  const school = health.capabilities.find(
+    (item) => item.capability === 'school-ou-references',
+  )!;
+  school.failure = 'scope-mismatch';
+  school.scopeVerified = false;
+  const request = vi.fn().mockResolvedValue(Response.json({ health }));
+  const { store } = fixture(request, connected());
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  const scopes = new URL(store.delegationHref()!).searchParams
+    .get('clientScopeToAdd')!
+    .split(',');
+  expect(scopes).toEqual(delegationLinkScopes(GOOGLE_SETUP_SCOPES, []));
+  expect(scopes).not.toContain(SCHOOL_OU);
+});
+
+it('shows no delegation link without a client ID', async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValue(Response.json({ health: initial() }));
+  const { store } = fixture(request, null);
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  expect(store.delegationHref()).toBeNull();
+});
+
+it('shows no delegation link without a health answer', async () => {
+  const request = vi.fn().mockResolvedValue(Response.json({ health: null }));
+  const { store } = fixture(request, connected());
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  expect(store.delegationHref()).toBeNull();
 });

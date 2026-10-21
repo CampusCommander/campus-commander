@@ -18,8 +18,7 @@ import { z } from 'zod';
 import {
   GOOGLE_HEALTH_RECOVERY,
   GOOGLE_SETUP_SCOPES,
-  delegationLink,
-  delegationLinkScopes,
+  buildDelegationLink,
   googleCandidateSchema,
   googleCredentialImportSchema,
   type GoogleCandidate,
@@ -62,7 +61,10 @@ export class GoogleConnectionPage implements OnInit, OnDestroy {
    * The link appears only after the page reads a numeric client ID.
    */
   protected readonly delegationHref = computed(() =>
-    this.buildDelegationLink(this.clientId(), GOOGLE_SETUP_SCOPES),
+    buildDelegationLink({
+      clientId: this.clientId(),
+      requested: GOOGLE_SETUP_SCOPES,
+    }),
   );
   /**
    * A failed review has no saved connection, so its verified list is empty.
@@ -72,11 +74,11 @@ export class GoogleConnectionPage implements OnInit, OnDestroy {
   protected readonly candidateDelegationHref = computed(() => {
     const candidate = this.candidate();
     return candidate
-      ? this.buildDelegationLink(
-          candidate.clientId,
-          GOOGLE_SETUP_SCOPES,
-          candidate.observation?.primaryDomain,
-        )
+      ? buildDelegationLink({
+          clientId: candidate.clientId,
+          requested: GOOGLE_SETUP_SCOPES,
+          domain: candidate.observation?.primaryDomain,
+        })
       : null;
   });
   protected subject = '';
@@ -164,23 +166,6 @@ export class GoogleConnectionPage implements OnInit, OnDestroy {
       !this.auth.interrupted() &&
       session === this.auth.session()?.csrfToken
     );
-  }
-
-  private buildDelegationLink(
-    clientId: string,
-    scopes: readonly string[],
-    domain?: string,
-  ) {
-    if (!/^[0-9]{1,32}$/.test(clientId)) return null;
-    try {
-      return delegationLink({
-        clientId,
-        scopes: delegationLinkScopes(scopes, []),
-        domain,
-      });
-    } catch {
-      return null;
-    }
   }
 
   protected async selectFile(event: Event) {
