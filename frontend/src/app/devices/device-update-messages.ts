@@ -64,6 +64,10 @@ export interface UpdateDeviceAvailability {
   /** Null before the first answer of GET /api/devices/updates/access. */
   access: DeviceWriteAccess | null;
   accessLoading: boolean;
+  /** The permission note of the family. Send command and Change status set their own. */
+  permissionMessage?: string;
+  /** The note of a person with no selected device. */
+  selectionMessage?: string;
 }
 
 function accessFailureText(failure: GoogleFailure | null): string {
@@ -88,13 +92,15 @@ export function updateDeviceNote(
     };
   if (!availability.canRead || !availability.canWrite || !availability.canBulk)
     return {
-      text: DEVICE_UPDATE_PERMISSION_MESSAGE,
+      text: availability.permissionMessage ?? DEVICE_UPDATE_PERMISSION_MESSAGE,
       actions: [],
       error: false,
     };
   if (availability.selectionCount === 0)
     return {
-      text: 'Select one or more devices to update.',
+      text:
+        availability.selectionMessage ??
+        'Select one or more devices to update.',
       actions: [],
       error: false,
     };

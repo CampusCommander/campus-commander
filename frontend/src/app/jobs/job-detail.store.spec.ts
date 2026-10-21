@@ -81,6 +81,28 @@ const operationsPage = (
   nextCursor: string | null = null,
 ): JobOperationsPage => ({ operations, nextCursor });
 
+/** A status job fixture. The display ID follows the route under test. */
+const statusDetail = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  detail({
+    displayId: 'STS-002',
+    action: 'disable-devices',
+    statusAction: 'disable',
+    field: null,
+    mode: null,
+    requestedValue: null,
+    ...overrides,
+  });
+
+/** The unknown status operation that Reconcile acts on. */
+const statusOperation = (overrides: Partial<JobOperation> = {}): JobOperation =>
+  operation({
+    operationId: 'STS-002-2',
+    operation: 'disable',
+    baselineValue: 'ACTIVE',
+    requestedValue: 'DISABLED',
+    ...overrides,
+  });
+
 const sessionFor = (id: string) => ({
   identity: {
     id,
@@ -393,6 +415,75 @@ describe('Reconcile', () => {
     await store.refresh();
     expect(store.reconciling().has('UPD-006-6')).toBe(false);
     expect(store.notice()).toBe('');
+  });
+
+  it('reconciles a disable operation through its numbered endpoint', async () => {
+    const target = statusOperation();
+    const { store, requestMock } = setup(async (path, body) => {
+      if (body !== undefined) return new Response(null, { status: 202 });
+      return path.includes('/operations')
+        ? Response.json(operationsPage([target]))
+        : Response.json(statusDetail());
+    });
+    await store.init('STS-002');
+    requestMock.mockClear();
+    await store.reconcile(target);
+    expect(requestMock).toHaveBeenCalledWith(
+      '/api/jobs/STS-002/operations/2/reconcile',
+      {},
+    );
+    expect(store.notice()).toBe('Reconcile started for C0A1-7F84.');
+    expect(store.reconciling().has('STS-002-2')).toBe(true);
+    expect(store.reconcileError()).toBe('');
+  });
+
+  it('reconciles a re-enable operation through its numbered endpoint', async () => {
+    const target = statusOperation({
+      operationId: 'STS-003-1',
+      operation: 'reenable',
+      baselineValue: 'DISABLED',
+      requestedValue: 'ACTIVE',
+    });
+    const { store, requestMock } = setup(async (path, body) => {
+      if (body !== undefined) return new Response(null, { status: 202 });
+      return path.includes('/operations')
+        ? Response.json(operationsPage([target]))
+        : Response.json(
+            statusDetail({
+              displayId: 'STS-003',
+              action: 'reenable-devices',
+              statusAction: 'reenable',
+            }),
+          );
+    });
+    await store.init('STS-003');
+    requestMock.mockClear();
+    await store.reconcile(target);
+    expect(requestMock).toHaveBeenCalledWith(
+      '/api/jobs/STS-003/operations/1/reconcile',
+      {},
+    );
+    expect(store.notice()).toBe('Reconcile started for C0A1-7F84.');
+    expect(store.reconciling().has('STS-003-1')).toBe(true);
+  });
+
+  it('does not reconcile a command operation', async () => {
+    const { store, requestMock } = setup(async (path, body) => {
+      if (body !== undefined) return new Response(null, { status: 202 });
+      return path.includes('/operations')
+        ? Response.json(operationsPage([statusOperation()]))
+        : Response.json(statusDetail());
+    });
+    await store.init('STS-002');
+    requestMock.mockClear();
+    await store.reconcile(
+      statusOperation({ operationId: 'CMD-001-2', operation: 'reboot' }),
+    );
+    expect(requestMock).not.toHaveBeenCalled();
+    expect(store.reconcileError()).toBe(
+      'Reconcile could not start. Try again.',
+    );
+    expect(store.reconciling().size).toBe(0);
   });
 
   it('reads the job again after a 409 operation-settled answer', async () => {

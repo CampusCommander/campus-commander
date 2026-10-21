@@ -71,7 +71,7 @@ const deviceRead = /^\/api\/devices\/[A-Za-z0-9_-]{1,128}$/;
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
   /^\/api\/devices\/(?:sync|query|groups|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh)$/;
-const jobDisplayIdPath = '(?:UPD|REF)-\\d{3,}';
+const jobDisplayIdPath = '(?:UPD|REF|CMD|STS)-\\d{3,}';
 const previewIdPath =
   '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
 const jobRead = new RegExp(

@@ -58,6 +58,152 @@ const sixOperations = (): JobOperation[] => [
   }),
 ];
 
+const commandOperation = (
+  overrides: Partial<JobOperation> = {},
+): JobOperation =>
+  operation({
+    operation: 'reboot',
+    baselineValue: null,
+    requestedValue: null,
+    ...overrides,
+  });
+
+/** The six command rows of the step 5 mockup, state 09. */
+const commandOperations = (): JobOperation[] => [
+  commandOperation({ operationId: 'CMD-001-1', serialNumber: '01P0T1V' }),
+  commandOperation({
+    operationId: 'CMD-001-2',
+    serialNumber: '02A1MB6',
+    outcome: 'failed',
+    outcomeReason: 'command-failed',
+    googleStatus: null,
+    googleReason: 'The device failed to execute the command.',
+  }),
+  commandOperation({
+    operationId: 'CMD-001-3',
+    serialNumber: '02QJANY',
+    outcome: 'pending',
+    commandId: '4100000003',
+    commandState: 'acknowledged',
+  }),
+  commandOperation({
+    operationId: 'CMD-001-4',
+    serialNumber: '04A9BVS',
+    outcome: 'pending',
+    commandId: '4100000004',
+    commandState: 'pending-delivery',
+  }),
+  commandOperation({
+    operationId: 'CMD-001-5',
+    serialNumber: '04XTBHJ',
+    outcome: 'expired',
+  }),
+  commandOperation({
+    operationId: 'CMD-001-6',
+    serialNumber: '08V5B5S',
+    outcome: 'unknown',
+    outcomeReason: 'not-observed',
+  }),
+];
+
+const commandJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  job({
+    displayId: 'CMD-001',
+    action: 'reboot-devices',
+    status: 'awaiting-devices',
+    field: null,
+    mode: null,
+    commandType: 'REBOOT',
+    requestedValue: null,
+    progress: {
+      total: 6,
+      succeeded: 1,
+      failed: 1,
+      unknown: 1,
+      skipped: 0,
+      expired: 1,
+      pending: 2,
+    },
+    latestActivity: {
+      at: '2026-10-20T19:08:00.000Z',
+      failed: {
+        count: 1,
+        operations: [
+          {
+            operationId: 'CMD-001-2',
+            deviceId: 'synthetic-device-2',
+            serialNumber: '02A1MB6',
+            outcomeReason: 'command-failed',
+            googleStatus: null,
+            googleReason: 'The device failed to execute the command.',
+            updatedAt: '2026-10-20T19:08:00.000Z',
+          },
+        ],
+      },
+      unknown: {
+        count: 1,
+        operations: [
+          {
+            operationId: 'CMD-001-6',
+            deviceId: 'synthetic-device-6',
+            serialNumber: '08V5B5S',
+            updatedAt: '2026-10-20T19:08:00.000Z',
+          },
+        ],
+      },
+    },
+    ...overrides,
+  });
+
+const statusJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  job({
+    displayId: 'STS-002',
+    action: 'disable-devices',
+    statusAction: 'disable',
+    status: 'completed',
+    field: null,
+    mode: null,
+    requestedValue: null,
+    progress: {
+      total: 2,
+      succeeded: 1,
+      failed: 1,
+      unknown: 0,
+      skipped: 0,
+      expired: 0,
+      pending: 0,
+    },
+    latestActivity: {
+      at: '2026-10-20T19:08:00.000Z',
+      failed: { count: 1, operations: [] },
+      unknown: { count: 0, operations: [] },
+    },
+    ...overrides,
+  });
+
+const statusOperations = (): JobOperation[] => [
+  operation({
+    operationId: 'STS-002-1',
+    serialNumber: '01P0T1V',
+    operation: 'disable',
+    baselineValue: 'ACTIVE',
+    requestedValue: 'DISABLED',
+    outcome: 'succeeded',
+    googleStatus: 200,
+  }),
+  operation({
+    operationId: 'STS-002-2',
+    serialNumber: '02A1MB6',
+    operation: 'disable',
+    baselineValue: 'ACTIVE',
+    requestedValue: 'DISABLED',
+    outcome: 'failed',
+    outcomeReason: 'status-conflict',
+    googleStatus: null,
+    googleReason: 'The device status does not match.',
+  }),
+];
+
 const job = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   jobId: '0f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
   displayId: 'UPD-006',
@@ -235,9 +381,9 @@ it('shows the identity, counters, and operations of frame 104:209', () => {
     'Succeeded',
     'Failed',
     'Unknown',
+    'Expired',
     'Pending',
     'Skipped',
-    'Expired',
     'Cancelled',
   ]);
   expect(
@@ -339,6 +485,155 @@ it('shows Reconcile only for an unknown row and the required actions', () => {
 
   const noJobsRead = setup({ grants: ['devices:read', 'devices:write'] });
   expect(button(noJobsRead.element, 'Reconcile')).toBeUndefined();
+});
+
+it('renders the command job of state 09 with counters, chips, and no Reconcile', () => {
+  const { element } = setup({
+    job: commandJob(),
+    operations: commandOperations(),
+  });
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Reboot devices',
+  );
+  expect(text(element)).toContain('Job CMD-001 · Awaiting devices');
+  expect(
+    element.querySelector('#job-identity-title')?.textContent?.trim(),
+  ).toBe('CMD-001 · 6 devices');
+
+  expect(
+    [...element.querySelectorAll('.counter dt')].map((label) =>
+      label.textContent?.trim(),
+    ),
+  ).toEqual([
+    'Succeeded',
+    'Failed',
+    'Unknown',
+    'Expired',
+    'Pending',
+    'Skipped',
+    'Cancelled',
+  ]);
+  expect(
+    [...element.querySelectorAll('.counter .value')].map((value) =>
+      value.textContent?.trim(),
+    ),
+  ).toEqual(['1', '1', '1', '1', '2', '0', '0']);
+
+  const rows = [...element.querySelectorAll<HTMLElement>('tbody tr')];
+  expect(rows).toHaveLength(6);
+  for (const row of rows) expect(row.textContent).toContain('Reboot');
+  expect(rows[0]?.textContent).toContain('Succeeded');
+  expect(rows[1]?.textContent).toContain('Failed');
+  expect(rows[1]?.textContent).toContain(
+    'The device failed to execute the command.',
+  );
+  expect(rows[2]?.textContent).toContain('Acknowledged');
+  expect(rows[3]?.textContent).toContain('Pending delivery');
+  expect(rows[4]?.textContent).toContain('Expired');
+  expect(rows[5]?.textContent).toContain('Unknown');
+  expect(rows[0]?.textContent).toContain('—');
+  expect(rows[0]?.textContent).toContain('Reboot');
+  expect(button(element, 'Inspect failure')).toBeDefined();
+  expect(button(element, 'Reconcile')).toBeUndefined();
+  expect(button(element, 'Show 3 needing attention')).toBeDefined();
+});
+
+it('gives a sent command its own chip', () => {
+  const { element } = setup({
+    job: commandJob(),
+    operations: [
+      commandOperation({
+        operationId: 'CMD-001-3',
+        outcome: 'pending',
+        commandId: '4100000003',
+        commandState: 'sent',
+      }),
+    ],
+  });
+  expect(text(element)).toContain('Sent');
+  expect(text(element)).not.toContain('Pending delivery');
+});
+
+it('renders the operations of a status job with the requested status', () => {
+  const { element } = setup({
+    job: statusJob(),
+    operations: statusOperations(),
+  });
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Disable devices',
+  );
+  expect(text(element)).toContain('Job STS-002 · Completed');
+  const rows = [...element.querySelectorAll<HTMLElement>('tbody tr')];
+  expect(rows).toHaveLength(2);
+  expect(rows[0]?.textContent).toContain('Disable');
+  expect(rows[0]?.textContent).toContain('Active');
+  expect(rows[0]?.textContent).toContain('Disabled');
+  expect(rows[0]?.textContent).toContain('Succeeded');
+  expect(rows[1]?.textContent).toContain('Failed');
+  expect(rows[1]?.textContent).toContain('The device status does not match.');
+
+  const reenable = setup({
+    job: statusJob({
+      displayId: 'STS-003',
+      action: 'reenable-devices',
+      statusAction: 'reenable',
+    }),
+    operations: [
+      operation({
+        operationId: 'STS-003-1',
+        operation: 'reenable',
+        baselineValue: 'DISABLED',
+        requestedValue: 'ACTIVE',
+      }),
+    ],
+  });
+  expect(reenable.element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Re-enable devices',
+  );
+  expect(text(reenable.element)).toContain('Re-enable');
+  expect(text(reenable.element)).toContain('Disabled');
+  expect(text(reenable.element)).toContain('Active');
+});
+
+it('keeps Reconcile for an unknown status row but not for a command row', () => {
+  const status = setup({
+    job: statusJob({ status: 'needs-review' }),
+    operations: [
+      operation({
+        operationId: 'STS-002-1',
+        operation: 'disable',
+        baselineValue: 'ACTIVE',
+        requestedValue: 'DISABLED',
+        outcome: 'unknown',
+        outcomeReason: 'invalid-response',
+      }),
+    ],
+  });
+  expect(button(status.element, 'Reconcile')).toBeDefined();
+
+  const command = setup({
+    job: commandJob({ status: 'needs-review' }),
+    operations: [commandOperations()[5]!],
+  });
+  expect(button(command.element, 'Reconcile')).toBeUndefined();
+  expect(button(command.element, 'Inspect failure')).toBeUndefined();
+});
+
+it('sends a status Reconcile click to the store with its operation', () => {
+  const target = operation({
+    operationId: 'STS-002-3',
+    operation: 'disable',
+    baselineValue: 'ACTIVE',
+    requestedValue: 'DISABLED',
+    outcome: 'unknown',
+    outcomeReason: 'invalid-response',
+  });
+  const { element, store } = setup({
+    job: statusJob({ status: 'needs-review' }),
+    operations: [target],
+  });
+  button(element, 'Reconcile')?.click();
+  expect(store.reconcile).toHaveBeenCalledWith(target);
 });
 
 it('hides the device eye without devices:read', () => {

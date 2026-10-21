@@ -24,7 +24,13 @@ export class DeviceUpdateProblem {
   readonly busyLabel = input('');
   /** An answer to a recovery action that needs its own line. */
   readonly detail = input('');
+  /** The heading id prefix. Each mounted sheet keeps unique ids. */
+  readonly idPrefix = input('problem');
   readonly action = output<FlowActionId>();
+
+  protected headingId(): string {
+    return `${this.idPrefix()}-${this.problem().kind}`;
+  }
 
   protected label(action: FlowAction): string {
     return this.busy() && action.primary && this.busyLabel()

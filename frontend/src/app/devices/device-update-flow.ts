@@ -52,6 +52,7 @@ export type FlowActionId =
   | 'prepare-new-preview'
   | 'back-to-devices'
   | 'back-to-jobs'
+  | 'back-to-choose'
   | 'open-google-connection'
   | 'retry';
 
@@ -147,14 +148,17 @@ export function flowExpiry(body: unknown): string | null {
 /**
  * An answer to a replayed confirmation can hide a job that the first request created.
  * The API checks current authority and the frozen action version before it returns an
- * existing receipt (`deployment/postgres/migrations/017-jobs.sql`), so a revoked grant
- * or an obsolete preview answers before the receipt.
+ * existing receipt (`deployment/postgres/migrations/017-jobs.sql`), and both action
+ * controllers check the Google connection before the confirm call. A revoked grant,
+ * an obsolete preview, or a missing connection therefore answers before the receipt.
+ * `connection-changed` is absent on purpose: the function checks it after the receipt.
  */
 export function confirmationMayExist(answer: FlowProblemKind): boolean {
   return (
     answer === 'forbidden' ||
     answer === 'permission-changed' ||
-    answer === 'preview-changed'
+    answer === 'preview-changed' ||
+    answer === 'connection-required'
   );
 }
 

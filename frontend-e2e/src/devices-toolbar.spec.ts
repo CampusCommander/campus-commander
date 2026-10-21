@@ -255,6 +255,8 @@ async function screenshotTarget(
   target: Locator,
   padding = 16,
 ) {
+  // The footer sits below the fold when the page carries permission notes.
+  await target.scrollIntoViewIfNeeded();
   const box = await target.boundingBox();
   if (!box) throw new Error('The screenshot target is not visible.');
   await page.screenshot({
