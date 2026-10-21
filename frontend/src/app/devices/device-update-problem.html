@@ -1,5 +1,5 @@
-<section class="card" [attr.aria-labelledby]="'problem-' + problem().kind">
-  <h2 [id]="'problem-' + problem().kind">{{ problem().heading }}</h2>
+<section class="card" [attr.aria-labelledby]="headingId()">
+  <h2 [id]="headingId()">{{ problem().heading }}</h2>
   @for (paragraph of problem().paragraphs; track $index) {
   <p>{{ paragraph }}</p>
   } @if (detail()) {
