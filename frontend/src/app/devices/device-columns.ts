@@ -34,6 +34,8 @@ function value(row: DeviceRow, field: DeviceSortField, now: number): string {
       return row.assetTag ?? '';
     case 'orgUnitPath':
       return row.orgUnitPath;
+    case 'status':
+      return row.status ?? '';
     case 'battery':
       return batteryText(row.battery);
     case 'lastContact':

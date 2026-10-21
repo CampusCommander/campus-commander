@@ -44,6 +44,7 @@ const record = (deviceId) => ({
     lastContact: null,
     annotatedLocation: null,
     notes: null,
+    status: null,
     battery: { status: 'no-report' },
     // One hour old, so Redis keeps the record for the 23 hours it stays fresh.
     lastEntitySync: new Date(Date.now() - 3_600_000).toISOString(),

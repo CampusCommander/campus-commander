@@ -15,6 +15,7 @@ const columns = {
   model: 'd.model',
   assetTag: 'd.asset_tag',
   orgUnitPath: 'd.org_unit_path',
+  status: 'd.status',
   lastContact: 'd.last_contact',
   annotatedLocation: 'd.annotated_location',
   notes: 'd.notes',
@@ -41,7 +42,7 @@ const groupOrder: Record<DeviceGroupField, string> = {
 const from =
   'FROM cc.device_sync_state s JOIN cc.devices d ON d.customer_id=s.customer_id';
 
-export const deviceColumns = `d.device_id,d.serial_number,d.model,d.asset_tag,d.org_unit_path,d.last_contact,d.annotated_location,d.notes,${batteryStatus} AS battery_status,d.battery_health,d.battery_capacity_percent,d.battery_reported_at,d.last_entity_sync`;
+export const deviceColumns = `d.device_id,d.serial_number,d.model,d.asset_tag,d.org_unit_path,d.last_contact,d.annotated_location,d.notes,d.status,${batteryStatus} AS battery_status,d.battery_health,d.battery_capacity_percent,d.battery_reported_at,d.last_entity_sync`;
 
 export interface SqlStatement {
   text: string;
@@ -85,6 +86,8 @@ function predicateClauses(
       if (missing.length)
         parts.push(`${batteryStatus}=ANY(${add(missing)}::text[])`);
       clauses.push(parts.length ? `(${parts.join(' OR ')})` : 'FALSE');
+    } else if (predicate.field === 'status') {
+      clauses.push(`d.status=ANY(${add(predicate.values)}::text[])`);
     } else if (predicate.field === 'lastContact') {
       clauses.push(
         `d.last_contact ${predicate.operator === 'before' ? '<' : '>='} ${add(predicate.value)}::timestamptz`,
@@ -242,6 +245,7 @@ export function deviceRowsByIdSql(
     ['d.last_contact', 'last_contact'],
     ['d.annotated_location', 'annotated_location'],
     ['d.notes', 'notes'],
+    ['d.status', 'status'],
     [batteryStatus, 'battery_status'],
     ['d.battery_health', 'battery_health'],
     ['d.battery_capacity_percent', 'battery_capacity_percent'],
@@ -312,6 +316,7 @@ export function deviceRow(
     lastContact: iso(row['last_contact']),
     annotatedLocation: row['annotated_location'],
     notes: row['notes'],
+    status: row['status'],
     battery:
       row['battery_status'] === 'reported'
         ? {

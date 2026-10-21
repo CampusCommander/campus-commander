@@ -5,6 +5,7 @@ import {
   deviceQuerySchema,
 } from '@campus/application-contracts';
 import {
+  deviceColumns,
   deviceDetail,
   devicePageSql,
   staleIdsSql,
@@ -134,6 +135,56 @@ test('empty, date, and battery sorts use fixed expressions', () => {
   );
 });
 
+test('a status filter binds the chosen Google values as text', () => {
+  const { rows, count } = query({
+    predicates: [{ field: 'status', operator: 'is', values: ['DISABLED'] }],
+  });
+  assert.match(rows.text, /AND d\.status=ANY\(\$2::text\[\]\) ORDER BY/);
+  assert.deepEqual(rows.values.slice(0, 2), ['C0123456', ['DISABLED']]);
+  assert.deepEqual(count.values, ['C0123456', ['DISABLED']]);
+  assert.ok(deviceColumns.includes('d.status'));
+  assert.ok(
+    deviceRowsByIdSql('C0123456', [
+      { deviceId: 'd1', version: null },
+    ]).text.includes('THEN d.status END AS status'),
+  );
+});
+
+test('status sorts in both directions with nulls last', () => {
+  const asc = query({ sort: { field: 'status', direction: 'asc' } });
+  assert.match(
+    asc.rows.text,
+    /ORDER BY d\.status ASC NULLS LAST,d\.device_id ASC OFFSET/,
+  );
+  const desc = query({ sort: { field: 'status', direction: 'desc' } });
+  assert.match(
+    desc.rows.text,
+    /ORDER BY d\.status DESC NULLS LAST,d\.device_id DESC OFFSET/,
+  );
+});
+
+test('the row mapping passes the Google status through', () => {
+  const base = {
+    device_id: 'd1',
+    serial_number: 'C0A1-7F2D',
+    model: null,
+    asset_tag: null,
+    org_unit_path: '/',
+    last_contact: null,
+    annotated_location: null,
+    notes: null,
+    status: 'RETIRED',
+    battery_status: 'no-report',
+    battery_health: null,
+    battery_capacity_percent: null,
+    battery_reported_at: null,
+    last_entity_sync: new Date('2026-10-05T12:00:00Z'),
+  };
+  const cutoff = Date.parse('2026-10-05T00:00:00Z');
+  assert.equal(deviceRow(base, cutoff).status, 'RETIRED');
+  assert.equal(deviceRow({ ...base, status: null }, cutoff).status, null);
+});
+
 test('rows map database values to the device contract', () => {
   const base = {
     device_id: 'd1',
@@ -144,6 +195,7 @@ test('rows map database values to the device contract', () => {
     last_contact: new Date('2026-10-05T12:00:00Z'),
     annotated_location: null,
     notes: null,
+    status: null,
     battery_status: 'reported',
     battery_health: 'replace-soon',
     battery_capacity_percent: 78,
@@ -430,6 +482,7 @@ test('rows report freshness against the cutoff and details report removal', () =
     last_contact: null,
     annotated_location: null,
     notes: null,
+    status: null,
     battery_status: 'no-report',
     battery_health: null,
     battery_capacity_percent: null,
@@ -557,6 +610,7 @@ test('removed devices never read as stale', () => {
     last_contact: null,
     annotated_location: null,
     notes: null,
+    status: null,
     battery_status: 'no-report',
     battery_health: null,
     battery_capacity_percent: null,

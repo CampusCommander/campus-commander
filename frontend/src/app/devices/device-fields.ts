@@ -84,6 +84,11 @@ function day(iso: string): string {
 }
 
 export function chipLabel(predicate: DevicePredicate): string {
+  // The Status column and filter arrive in a later change. The chip still reads its terms.
+  if (predicate.field === 'status')
+    return `Status · ${
+      predicate.values.length ? predicate.values.join(', ') : 'none'
+    }`;
   const label = fieldFor(predicate.field).label;
   if (predicate.field === 'battery')
     return `${label} · ${

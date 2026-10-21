@@ -188,6 +188,19 @@
       "inGridEditor": "multilineText",
       "filterable": true,
       "defaultVisible": false
+    },
+    {
+      "fieldId": "status",
+      "label": "Status",
+      "dataType": "enum",
+      "inGridEditor": null,
+      "filterable": true,
+      "defaultVisible": false,
+      "values": [
+        { "value": "ACTIVE", "label": "Active" },
+        { "value": "DISABLED", "label": "Disabled" },
+        { "value": "DEPROVISIONED", "label": "Deprovisioned" }
+      ]
     }
   ],
   "additionalFilterExamples": [

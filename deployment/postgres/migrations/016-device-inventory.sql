@@ -351,6 +351,7 @@ CREATE FUNCTION cc.device_record(d cc.devices,p_telemetry_failure text) RETURNS 
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT jsonb_build_object('deviceId',d.device_id,'serialNumber',d.serial_number,'model',d.model,'assetTag',d.asset_tag,
     'orgUnitPath',d.org_unit_path,'lastContact',d.last_contact,'annotatedLocation',d.annotated_location,'notes',d.notes,
+    'status',d.status,
     'battery',CASE WHEN p_telemetry_failure IS NOT NULL THEN jsonb_build_object('status','unavailable')
       WHEN d.battery_status='reported' THEN jsonb_build_object('status','reported','health',d.battery_health,
         'capacityPercent',d.battery_capacity_percent,'reportedAt',d.battery_reported_at)
