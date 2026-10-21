@@ -33,6 +33,7 @@ import {
   type SessionResponse,
 } from '@campus/application-contracts';
 import type { JobServiceOrchestration } from './job-service';
+import type { ReconcileCheck } from '../devices/device-updates-actions';
 
 /** One query result, as the API uses it. */
 interface QueryResult {
@@ -44,6 +45,13 @@ interface QueryClient {
 export interface JobsDatabase {
   connection: QueryClient;
 }
+
+/**
+ * One permission check of a Reconcile request. The route supplies it, so the service runs the
+ * checks in the order of the route: `read` before the job lookup, then the write check of the
+ * operation kind (design section 6).
+ */
+export type ReconcileAuthorizer = (check: ReconcileCheck) => Promise<void>;
 
 /** The seven filters of the Jobs grid (section 2.5). */
 export interface JobFilters {
@@ -525,6 +533,9 @@ export class Jobs {
    * Reconcile one `unknown` operation (design section 2.6). The route claims the read-back with a new
    * attempt and starts one reconcile flow. An operation under a live read-back lease claims nothing,
    * so it answers 202 without a second flow.
+   *
+   * The permission checks run in the order of the route: `jobs:read` before the job lookup, then the
+   * write permission of the operation kind (design section 6). A refused request claims nothing.
    */
   async reconcile(
     session: SessionResponse,
@@ -533,7 +544,10 @@ export class Jobs {
     operationNumber: number,
     correlationId: string,
     orchestration: JobServiceOrchestration,
+    authorize: ReconcileAuthorizer,
   ): Promise<JobOperation> {
+    // The job read comes first, so a caller without it learns nothing about the job.
+    await authorize('read');
     const job = await this.header(session, customerId, displayId);
     if (!job) throw new NotFoundException({ reason: 'job-not-found' });
     const jobId = String(job['job_id']);
@@ -549,10 +563,15 @@ export class Jobs {
     )[0];
     // A refresh job holds no operation rows, so it also answers operation-not-found.
     if (!row) throw new NotFoundException({ reason: 'operation-not-found' });
+    const operation = operationOf(row);
     // A command operation has no Reconcile: record default 4 keeps a lost answer unknown, and the
-    // job ends as Needs review (section 4 step 11).
-    if (String(row['action']) === 'reboot')
+    // job ends as Needs review (section 4 step 11). No permission allows it.
+    if (operation === 'reboot')
       throw new ConflictException({ reason: 'reconcile-unsupported' });
+    // A status operation reads the status back, so it takes `devices:status` instead of `devices:write`.
+    await authorize(
+      operation === 'disable' || operation === 'reenable' ? 'status' : 'update',
+    );
     if (String(row['status']) !== 'unknown')
       throw new ConflictException({ reason: 'operation-settled' });
     const attempt = randomUUID();
