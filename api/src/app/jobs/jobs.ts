@@ -549,6 +549,10 @@ export class Jobs {
     )[0];
     // A refresh job holds no operation rows, so it also answers operation-not-found.
     if (!row) throw new NotFoundException({ reason: 'operation-not-found' });
+    // A command operation has no Reconcile: record default 4 keeps a lost answer unknown, and the
+    // job ends as Needs review (section 4 step 11).
+    if (String(row['action']) === 'reboot')
+      throw new ConflictException({ reason: 'reconcile-unsupported' });
     if (String(row['status']) !== 'unknown')
       throw new ConflictException({ reason: 'operation-settled' });
     const attempt = randomUUID();
