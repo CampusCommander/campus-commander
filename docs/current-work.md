@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-20.
+Updated: 2026-10-21.
 
 ## Authorized now
 
@@ -15,6 +15,15 @@ On 2026-10-19 the owner queued two items after the bulk-actions stage. PRs #70 a
 2. Then add pre-filled delegation links to Diagnostics and to the denied prompt on the Devices page.
 
 Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
+
+### Step 5 device commands (signed off 2026-10-21)
+
+On 2026-10-21 the owner approved the step 5 screens: "That looks good".
+The [device commands record](workflows/device-commands.md) holds the approved composition and the wording defaults.
+The owner also gave this direction. Owner: "I also want to give the hint now that update device needs to be expanded to include the other editable fields."
+The step 4 record excludes four fields: org unit, asset ID, user, and notes (`docs/workflows/update-device-annotated-location.md:196`).
+The Update device expansion is the next workflow after the step 5 first build.
+A separate record defines it before any build.
 
 ### Device update record (signed off 2026-10-20)
 

@@ -11,6 +11,7 @@ import {
   orgUnitOptions,
   relativeTime,
   shortcutLabel,
+  statusText,
   suggestions,
   syncFailureText,
   telemetryFailureText,
@@ -53,6 +54,15 @@ describe('device fields', () => {
         },
         'Battery · Replace soon, No battery report',
       ],
+      [{ field: 'status', operator: 'is', values: [] }, 'Status · none'],
+      [
+        {
+          field: 'status',
+          operator: 'is',
+          values: ['DISABLED', 'DEPROVISIONED'],
+        },
+        'Status · Disabled, Deprovisioned',
+      ],
       [
         { field: 'lastContact', operator: 'before', value: day },
         'Device contact before: Oct 1, 2026',
@@ -70,7 +80,7 @@ describe('device fields', () => {
       'Serial contains "asset"',
     ]);
     const empty = suggestions('');
-    expect(empty.fields).toHaveLength(8);
+    expect(empty.fields).toHaveLength(9);
     expect(empty.shortcuts).toEqual([]);
   });
 
@@ -206,4 +216,18 @@ it('labels group keys the way the filters read', () => {
   expect(groupLabel('model', '')).toBe('No model');
   expect(groupLabel('model', 'Lenovo 100e')).toBe('Lenovo 100e');
   expect(groupLabel('battery', 'replace-soon')).toBe('Replace soon');
+});
+
+it('shows the three Google statuses as labels and any other value as Google sends it', () => {
+  expect(statusText('ACTIVE')).toBe('Active');
+  expect(statusText('DISABLED')).toBe('Disabled');
+  expect(statusText('DEPROVISIONED')).toBe('Deprovisioned');
+  expect(statusText('RETIRED')).toBe('RETIRED');
+  expect(statusText(null)).toBe('');
+});
+
+it('offers Status as a filter field', () => {
+  expect(suggestions('status').fields.map((field) => field.label)).toEqual([
+    'Status',
+  ]);
 });

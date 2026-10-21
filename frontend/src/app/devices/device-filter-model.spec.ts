@@ -10,6 +10,7 @@ import {
 const day = new Date(2026, 9, 1).toISOString();
 const predicates: DevicePredicate[] = [
   { field: 'serialNumber', operator: 'equals', value: 'C0A1-0001' },
+  { field: 'status', operator: 'is', values: ['DISABLED', 'DEPROVISIONED'] },
   { field: 'assetTag', operator: 'startsWith', value: 'HS-04' },
   { field: 'orgUnitPath', operator: 'in', values: ['/School A'] },
   { field: 'battery', operator: 'is', values: ['replace-soon', 'no-report'] },
@@ -28,6 +29,10 @@ it('round-trips every filter type through the grid filter model', () => {
   expect(model['battery']).toEqual({
     filterType: 'set',
     values: ['replace-soon', 'no-report'],
+  });
+  expect(model['status']).toEqual({
+    filterType: 'set',
+    values: ['DISABLED', 'DEPROVISIONED'],
   });
   expect(model['lastContact']).toEqual({
     filterType: 'date',
