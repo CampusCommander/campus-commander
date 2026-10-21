@@ -181,26 +181,47 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     );
     return row;
   };
+  const displaySequences = {
+    'device-update': ['UPD', 'cc.job_number_upd'],
+    'inventory-refresh': ['REF', 'cc.job_number_ref'],
+    'device-command': ['CMD', 'cc.job_number_cmd'],
+    'device-status': ['STS', 'cc.job_number_sts'],
+  };
   const nextDisplay = async (kind) =>
     (
       await adminRow(
-        `SELECT cc.job_display_id($1,nextval($2::regclass)) AS id`,
-        [
-          kind === 'device-update' ? 'UPD' : 'REF',
-          kind === 'device-update' ? 'cc.job_number_upd' : 'cc.job_number_ref',
-        ],
+        'SELECT cc.job_display_id($1,nextval($2::regclass)) AS id',
+        displaySequences[kind],
       )
     ).id;
   /** One write job with its preview, detail row, and operations. */
   const writeJob = async ({
     requestedBy,
+    action = 'annotated-location',
     operations = 1,
     failed = 0,
     unknown = 0,
     status = 'completed',
     createdAt = null,
   }) => {
+    const kind =
+      action === 'annotated-location'
+        ? 'device-update'
+        : action === 'reboot'
+          ? 'device-command'
+          : 'device-status';
+    const field = action === 'annotated-location' ? 'annotatedLocation' : null;
+    const mode = action === 'annotated-location' ? 'replace' : null;
+    const value =
+      action === 'annotated-location'
+        ? 'Room 12'
+        : action === 'disable'
+          ? 'DISABLED'
+          : action === 'reenable'
+            ? 'ACTIVE'
+            : null;
     const job = await header({
+      kind,
       requestedBy,
       targetCount: operations,
       status,
@@ -212,18 +233,32 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     const previewId = randomUUID();
     await admin(
       `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-        generation,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,1,$4,'annotatedLocation',
-        'replace','Room 12',$5,$5,0,0,'digest',clock_timestamp()+interval '1 hour')`,
-      [previewId, customer, requestedBy, generation, operations],
+        generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,1,$4,$5,$6,$7,$8,$9,$9,0,0,'digest',
+        clock_timestamp()+interval '1 hour')`,
+      [
+        previewId,
+        customer,
+        requestedBy,
+        generation,
+        action,
+        field,
+        mode,
+        value,
+        operations,
+      ],
     );
     await admin(
-      `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,
+      `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
         confirmer_permission_version,delegated_subject,batch_size,batch_count)
-      VALUES($1,$2,'annotatedLocation','replace','Room 12',$3,1,'admin@example.org',250,$4)`,
+      VALUES($1,$2,$3,$4,$5,$6,$7,1,'admin@example.org',250,$8)`,
       [
         job.job_id,
         previewId,
+        action,
+        field,
+        mode,
+        value,
         requestedBy,
         Math.max(1, Math.ceil(operations / 250)),
       ],
@@ -848,6 +883,69 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         [failed.job_id, running.job_id, refresh.job_id].sort(),
       );
     });
+
+    // Review round 1, R1: the two status actions share one kind, so each single selection must
+    // narrow the page and its count through the stored action.
+    await check(
+      'each status action filter selects its own job and counts it',
+      async () => {
+        await reset();
+        const disable = await writeJob({
+          requestedBy: auditor,
+          action: 'disable',
+        });
+        const reenable = await writeJob({
+          requestedBy: auditor,
+          action: 'reenable',
+        });
+        const reboot = await writeJob({
+          requestedBy: auditor,
+          action: 'reboot',
+        });
+        const listed = async (action) => {
+          const page = await jobs.list(
+            auditorSession,
+            customer,
+            { action },
+            undefined,
+            100,
+          );
+          return {
+            matching: page.matching,
+            ids: page.jobs.map((job) => job.jobId).sort(),
+            actions: page.jobs.map((job) => job.action).sort(),
+          };
+        };
+        assert.deepEqual(await listed(['disable-devices']), {
+          matching: 1,
+          ids: [disable.job_id],
+          actions: ['disable-devices'],
+        });
+        assert.deepEqual(await listed(['reenable-devices']), {
+          matching: 1,
+          ids: [reenable.job_id],
+          actions: ['reenable-devices'],
+        });
+        assert.deepEqual(
+          await listed(['disable-devices', 'reenable-devices']),
+          {
+            matching: 2,
+            ids: [disable.job_id, reenable.job_id].sort(),
+            actions: ['disable-devices', 'reenable-devices'],
+          },
+        );
+        assert.deepEqual(await listed(['reboot-devices']), {
+          matching: 1,
+          ids: [reboot.job_id],
+          actions: ['reboot-devices'],
+        });
+        assert.deepEqual(await listed(['reboot-devices', 'disable-devices']), {
+          matching: 2,
+          ids: [disable.job_id, reboot.job_id].sort(),
+          actions: ['disable-devices', 'reboot-devices'],
+        });
+      },
+    );
 
     await check(
       'the activity badge follows a job that starts and finishes',

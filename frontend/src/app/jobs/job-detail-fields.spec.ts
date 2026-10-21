@@ -32,6 +32,7 @@ const progress = (overrides: Partial<JobProgress> = {}): JobProgress => ({
   failed: 1,
   unknown: 1,
   skipped: 0,
+  expired: 0,
   pending: 0,
   ...overrides,
 });
@@ -53,6 +54,8 @@ const job = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   previewDisplayId: 'PV-006',
   field: 'annotatedLocation',
   mode: 'replace',
+  commandType: null,
+  statusAction: null,
   requestedValue: 'North lab',
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
@@ -78,6 +81,10 @@ const operation = (overrides: Partial<JobOperation> = {}): JobOperation => ({
   googleReason: null,
   observedValue: null,
   verifiedBy: null,
+  commandId: null,
+  commandState: null,
+  commandExpiresAt: null,
+  commandExecutedAt: null,
   updatedAt: '2026-10-19T10:36:00.000Z',
   ...overrides,
 });
@@ -351,15 +358,22 @@ describe('latest activity', () => {
 });
 
 describe('job detail fields', () => {
-  it('shows the six counters in frame order', () => {
+  it('shows the counters in frame order', () => {
     expect(jobCounters(progress())).toEqual([
       { key: 'succeeded', label: 'Succeeded', value: 4, tone: 'success' },
       { key: 'failed', label: 'Failed', value: 1, tone: 'error' },
       { key: 'unknown', label: 'Unknown', value: 1, tone: 'warning' },
       { key: 'pending', label: 'Pending', value: 0, tone: 'neutral' },
       { key: 'skipped', label: 'Skipped', value: 0, tone: 'neutral' },
+      { key: 'expired', label: 'Expired', value: 0, tone: 'neutral' },
       { key: 'cancelled', label: 'Cancelled', value: 0, tone: 'neutral' },
     ]);
+  });
+  it('counts expired operations beside failed and unknown', () => {
+    const counters = jobCounters(progress({ expired: 2 }));
+    expect(counters.find((counter) => counter.key === 'expired')?.value).toBe(
+      2,
+    );
   });
 
   it('keeps a null pending count distinct from zero', () => {

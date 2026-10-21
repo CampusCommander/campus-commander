@@ -43,6 +43,7 @@ const job = (overrides: Partial<JobSummary> = {}): JobSummary => ({
     failed: 0,
     unknown: 0,
     skipped: 0,
+    expired: 0,
     pending: 12,
   },
   failure: null,

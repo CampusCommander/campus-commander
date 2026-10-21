@@ -28,6 +28,10 @@ const operation = (overrides: Partial<JobOperation> = {}): JobOperation => ({
   googleReason: null,
   observedValue: 'North lab',
   verifiedBy: 'write-response',
+  commandId: null,
+  commandState: null,
+  commandExpiresAt: null,
+  commandExecutedAt: null,
   updatedAt: '2026-10-19T10:36:00.000Z',
   ...overrides,
 });
@@ -71,6 +75,7 @@ const job = (overrides: Partial<JobDetail> = {}): JobDetail => ({
     failed: 1,
     unknown: 1,
     skipped: 0,
+    expired: 0,
     pending: 0,
   },
   failure: null,
@@ -78,6 +83,8 @@ const job = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   previewDisplayId: 'PV-006',
   field: 'annotatedLocation',
   mode: 'replace',
+  commandType: null,
+  statusAction: null,
   requestedValue: 'North lab',
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
@@ -230,13 +237,14 @@ it('shows the identity, counters, and operations of frame 104:209', () => {
     'Unknown',
     'Pending',
     'Skipped',
+    'Expired',
     'Cancelled',
   ]);
   expect(
     [...element.querySelectorAll('.counter .value')].map((value) =>
       value.textContent?.trim(),
     ),
-  ).toEqual(['4', '1', '1', '0', '0', '0']);
+  ).toEqual(['4', '1', '1', '0', '0', '0', '0']);
 
   expect(
     [...element.querySelectorAll('th')].map((header) =>
@@ -368,6 +376,7 @@ it('shows the counter line for a job with no samples', () => {
       failed: 0,
       unknown: 0,
       skipped: 0,
+      expired: 0,
       pending: 12,
     },
     latestActivity: {
@@ -395,6 +404,7 @@ it('shows a refresh job with counters and Latest activity only', () => {
       failed: 0,
       unknown: 0,
       skipped: 0,
+      expired: 0,
       pending: null,
     },
     latestActivity: {
