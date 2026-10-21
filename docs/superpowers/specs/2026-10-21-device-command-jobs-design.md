@@ -143,7 +143,10 @@ getCommand uses the read-only inventory token, as read-back does (`step4:1034`).
 - A repeated status change has no second effect (`device-writes.js:152-159`). Status parts therefore keep quota retries.
 - Issue answers: a 2xx with a digit `commandId` gives `issued`. A 2xx without one gives `unknown` with `invalid-response`.
   A 404 or another refusal gives `failed` with `google_status` and `google_reason` (`batch.ts:417-436`, `worker/src/device-update.ts:417-576`).
-  A transient answer, a transport failure, or a request in flight at the end gives `unknown` with `ambiguous`.
+- Two other cases give `unknown` with `ambiguous`. Neither repeats the POST (`batch.ts:730-744, 799-805, 894-899`).
+  A transient refusal, such as a 503 part, does not tell whether Google stored the command.
+  A lost answer leaves a sent POST without a reply, and Google can hold an accepted command.
+  Its causes are the 10 s request timeout (`provider.ts:262`), another transport failure, and a request still in flight when the run ends.
 
 **Per-device results.** A batchChangeStatus part answers 200 even when every device fails (`device-writes.js:171-175`).
 `classifyStatus` therefore reports success (`batch.ts:422`). A new parser `statusResults(body, deviceIds)` reads `changeChromeOsDeviceStatusResults`.
@@ -241,14 +244,17 @@ DEVICE-01 requires live evidence before release (`docs/ui/patterns.md:198`). Liv
 
 Two new route families copy the `api/devices/updates` shape (`api/src/app/devices/device-updates.controller.ts:35-142`).
 
-| Route                                       | Body                                        | Answer                |
-| ------------------------------------------- | ------------------------------------------- | --------------------- |
-| `POST api/devices/commands/previews`        | `{ commandType: 'REBOOT' }`                 | Preview               |
-| `POST api/devices/status-changes/previews`  | `{ statusAction: 'disable' \| 'reenable' }` | Preview               |
-| `GET {family}/previews/:previewId`          | none                                        | Preview               |
-| `GET {family}/previews/:previewId/targets`  | none                                        | Page of at most 1,000 |
-| `POST {family}/previews/:previewId/confirm` | `{ manifestDigest, acknowledged: true }`    | Receipt               |
+| Route                                       | Body                                                       | Answer                |
+| ------------------------------------------- | ---------------------------------------------------------- | --------------------- |
+| `POST api/devices/commands/previews`        | `{ gridId, tabId, commandType: 'REBOOT' }`                 | Preview               |
+| `POST api/devices/status-changes/previews`  | `{ gridId, tabId, statusAction: 'disable' \| 'reenable' }` | Preview               |
+| `GET {family}/previews/:previewId`          | none                                                       | Preview               |
+| `GET {family}/previews/:previewId/targets`  | none                                                       | Page of at most 1,000 |
+| `POST {family}/previews/:previewId/confirm` | `{ manifestDigest, acknowledged: true }`                   | Receipt               |
 
+- Each preview body is a strict object. Its `gridId` and `tabId` reuse `deviceSelectionKeySchema` (`libs/application-contracts/src/lib/devices.ts:212`).
+  The step 4 request spreads the same two fields (`libs/application-contracts/src/lib/device-updates.ts:10-13, 40-51`).
+  The API reads the caller's stored selection with that key (`api/src/app/devices/device-updates.ts:181-195`). No request carries device IDs.
 - Each family maps to one menu entry and one permission, so its guards stay static. One family with an action body would gate on parsed input.
 - The write-access routes stay under `api/devices/updates` (`device-updates.controller.ts:71, 76`).
 - A new contract file `libs/application-contracts/src/lib/device-actions.ts` holds the preview, target, and body schemas.
@@ -265,25 +271,36 @@ Two new route families copy the `api/devices/updates` shape (`api/src/app/device
 
 Every test runs on admin-sdk-mock. No test calls Google.
 
-| Decision           | Target                                                          | Proof                                                                                    |
-| ------------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Job model          | Postgres integration in `deployment/postgres`                   | Kinds, IDs, `awaiting-devices` frees `jobs_one_running`, terminal rule with `expired`.   |
-| Eligibility        | `api` unit tests beside `device-updates.ts`                     | Each exclusion reason, the digest fields, zero eligible gives `nothing-to-update`.       |
-| Part allowlist     | `libs/google-connection/src/lib/allowlist.test.mjs`             | Every existing part shape passes. The new shapes pass. Other paths fail.                 |
-| Retry rules        | `batch-run.test.mjs` with `batch-fake.mjs`                      | An issue part sees no quota or transient repeat. A status part sees no transient repeat. |
-| Per-device results | `devices.test.mjs`                                              | Codes 5 and 9, other codes, missing and repeated IDs.                                    |
-| Mock round trips   | `admin-sdk-mock.test.mjs`                                       | Issue and poll states, code 9 on a second Disable, the 50-ID limit.                      |
-| Command lifecycle  | `worker` tests and Postgres integration                         | Issue settlement, finish to `awaiting-devices`, the schedule, every poll row, deadline.  |
-| Status changes     | `worker` tests and Postgres integration                         | Overlay on `status`, the lagged list keeps it, read-back compare, `entity-batch`.        |
-| Permissions        | Postgres integration and `api` route tests                      | Each route and SQL check refuses a person without the action or Bulk Actions.            |
-| Poll flow          | `deployment/kestra/device-update-flow.test.mjs` pattern         | The poll flow shape and its single worker request.                                       |
-| Six steps          | `api-e2e:phase3-auth-integration` and `frontend-e2e` (Chromium) | Card Q1 rehearses `record:149-156`.                                                      |
+| Decision           | Target                                                     | Proof                                                                                    |
+| ------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Job model          | Postgres integration in `deployment/postgres`              | Kinds, IDs, `awaiting-devices` frees `jobs_one_running`, terminal rule with `expired`.   |
+| Eligibility        | `api` unit tests beside `device-updates.ts`                | Each exclusion reason, the digest fields, zero eligible gives `nothing-to-update`.       |
+| Part allowlist     | `libs/google-connection/src/lib/allowlist.test.mjs`        | Every existing part shape passes. The new shapes pass. Other paths fail.                 |
+| Retry rules        | `batch-run.test.mjs` with `batch-fake.mjs`                 | An issue part sees no quota or transient repeat. A status part sees no transient repeat. |
+| Per-device results | `devices.test.mjs`                                         | Codes 5 and 9, other codes, missing and repeated IDs.                                    |
+| Mock round trips   | `admin-sdk-mock.test.mjs`                                  | Issue and poll states, code 9 on a second Disable, the 50-ID limit.                      |
+| Command lifecycle  | `worker` tests and Postgres integration                    | Issue settlement, finish to `awaiting-devices`, the schedule, every poll row, deadline.  |
+| Lost issue answer  | `api-e2e:admin-sdk-mock-integration`                       | Hang: one POST, one stored command, `needs-review`. 503: one POST, `unknown`.            |
+| Status changes     | `worker` tests and Postgres integration                    | Overlay on `status`, the lagged list keeps it, read-back compare, `entity-batch`.        |
+| Permissions        | Postgres integration and `api` route tests                 | Each route and SQL check refuses a person without the action or Bulk Actions.            |
+| Poll flow          | `deployment/kestra/device-update-flow.test.mjs` pattern    | The poll flow shape and its single worker request.                                       |
+| Six steps          | `api-e2e:client-review-mock` and `frontend-e2e` (Chromium) | Card Q1 rehearses `record:149-156`.                                                      |
 
 Mock facilities:
 
 - `PUT /clock` with `scale` compresses the command timeline (`mock:control/control.js:176-196`, `commands.js:112`).
+  The fixture starts at scale 1 (`api-e2e/admin-sdk-mock-fixture.mjs:244`). A test that raises `scale` restores scale 1 before it ends.
 - `PUT domains/{id}/settings` with `writes.commandExpirySeconds` shortens expiry (`control.js:243-244`, `mock:settings.js:30-32`).
-- `POST domains/{id}/faults` with kind `status` 503 or `reset` on `directory.chromeos.issueCommand` loses an issue answer (`control.js:249-252`, `mock:mock.js:116-127`).
+- `POST domains/{id}/faults` adds a rule for `directory.chromeos.issueCommand` (`control.js:249-252`, `mock:routes.js:67`).
+  Kinds `status` and `reset` end the call before the handler, so the mock stores no command (`mock:faults/faults.js:124-135`, `mock:mock.js:123-129`).
+  Inside a batch, `reset` becomes a transient part answer (`mock.js:124-127`). Both kinds prove the transient refusal only.
+- Kind `hang` sleeps `ms / scale` milliseconds. Admission and the handler then run, and the handler stores the command.
+  Sources: `faults.js:136-141`, `mock.js:130-137`, and `commands.js:114-117`. The batch answer waits for that part (`mock:batch/batch.js:23-46`).
+  A hang past the 10 s request timeout (`provider.ts:262`) therefore loses the answer of an accepted issue.
+  Step 4 uses 12,000 ms at scale 1 (`api-e2e/device-write-mock.mjs:315-341`). Under a raised scale, `ms` is at least `12,000 × scale`.
+  `ms` is at most 600,000 (`faults.js:67`), so a hang test runs at a scale of at most 50.
+- `GET domains/{id}/faults` reports `remaining` per rule (`faults.js:104, 108`). A rule with `count` 2 that ends at 1 proves one POST.
+- Command IDs rise by 1 in a domain from 4100000001 (`commands.js:21, 106-108`). getCommand reads a stored command by ID (`commands.js:120-157`).
 - The seed holds 2 % DISABLED and 5 % DEPROVISIONED devices (`findings:105`). An offline device never executes (`commands.js:113-116`).
 
 ## Card plan
@@ -313,7 +330,10 @@ A Re-enable preview of ACTIVE devices shows 0 eligible, and confirm answers 422.
 The device record reads DISABLED after one `entity-batch`. A list sync inside 300 s keeps DISABLED.
 
 **B5.** Scope: section 4 steps 1 to 4, 11, and 12. Acceptance: a Reboot job reaches `awaiting-devices`, and an Update device job then runs.
-A 503 issue fault gives `unknown` with no second POST at the mock. Reconcile answers 409 `reconcile-unsupported`.
+Lost answer: a one-device Reboot job meets a `hang` fault with `count` 2. Its real duration exceeds the 10 s timeout (section 8).
+The rule ends at `remaining` 1, and getCommand reads the stored command. The mock therefore accepted exactly one issue POST.
+The operation settles `unknown` with `ambiguous`, and the job ends `needs-review`. Reconcile answers 409 `reconcile-unsupported`.
+Transient refusal, a separate check: a `status` 503 fault with `count` 2 ends at `remaining` 1. The operation settles `unknown` with `ambiguous`.
 
 **B6.** Scope: section 4 steps 5 to 10. Acceptance: with `scale`, online devices reach `succeeded` and the job completes.
 With a short `commandExpirySeconds`, offline devices reach `expired`, and the job ends `completed-with-errors` or `failed`.
@@ -322,6 +342,7 @@ With a short `commandExpirySeconds`, offline devices reach `expired`, and the jo
 F1 replaces the `t_d703391b` status shims. F2 builds the Choose, Review, and Confirm steps (`record:92`). F3 shows the seven states and hides Reconcile for commands.
 
 **Q1.** Acceptance: each of the six steps of `record:149-156` passes on admin-sdk-mock, with screenshots.
+Step 5 loses an issuance answer with the section 8 `hang` fault. A 503 shows a transient refusal, not a lost answer.
 
 ## Risks and follow-ups
 
