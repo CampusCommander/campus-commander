@@ -14,6 +14,8 @@ export const actionSchema = z.enum([
   'security-events:read',
   'devices:read',
   'devices:write',
+  'devices:commands',
+  'devices:status',
   'devices:bulk-actions',
   'jobs:read',
 ]);
@@ -44,6 +46,8 @@ export const actionScopeKinds: Readonly<
   'security-events:read': ['platform', 'district', 'school'],
   'devices:read': ['platform', 'district'],
   'devices:write': ['platform', 'district'],
+  'devices:commands': ['platform', 'district'],
+  'devices:status': ['platform', 'district'],
   'devices:bulk-actions': ['platform', 'district'],
   'jobs:read': ['platform', 'district'],
 };

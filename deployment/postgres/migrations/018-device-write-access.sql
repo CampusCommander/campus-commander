@@ -1,6 +1,6 @@
--- B6: the write-access routes resolve the connected customer through a devices:write read.
--- The caller holds devices:write at the platform scope or at the district scope of the
--- customer. The function reads no credential, so it takes no advisory lock.
+-- B6: the write-access routes resolve the connected customer through a device write read.
+-- The caller holds devices:write, devices:commands, or devices:status at the platform scope or at the
+-- district scope of the customer. The function reads no credential, so it takes no advisory lock.
 CREATE FUNCTION cc.device_writer(p_actor uuid,p_version integer) RETURNS cc.google_connection
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE connection cc.google_connection;
@@ -8,7 +8,8 @@ BEGIN
   SELECT * INTO connection FROM cc.google_connection WHERE singleton;
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
-    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND g.action='devices:write' AND (
+    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action IN ('devices:write','devices:commands','devices:status') AND (
       g.scope='{"kind":"platform"}'::jsonb OR
       (g.scope->>'kind'='district' AND g.scope->>'customerId'=connection.customer_id))) THEN
     RAISE EXCEPTION 'Update devices requires permission.' USING ERRCODE='42501';
@@ -30,7 +31,7 @@ BEGIN
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
     NOT EXISTS(SELECT 1 FROM cc.application_grants g
-      WHERE g.principal_id=p_actor AND g.action='devices:write' AND
+      WHERE g.principal_id=p_actor AND g.action IN ('devices:write','devices:commands','devices:status') AND
       (g.scope='{"kind":"platform"}'::jsonb OR
       (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))) THEN
     RAISE EXCEPTION 'Update devices requires permission.' USING ERRCODE='42501';

@@ -212,12 +212,13 @@ export class DeviceUpdates {
     const result = await this.call<Record<string, unknown>>(
       this.database.connection,
       `SELECT cc.create_device_update_preview($1::uuid,$2::integer,$3::text,$4::integer,
-        $5::text,$6::text,$7::text,$8::jsonb,$9::integer) AS result`,
+        $5::text,$6::text,$7::text,$8::text,$9::jsonb,$10::integer) AS result`,
       [
         session.identity.id,
         session.identity.permissionVersion,
         current.customerId,
         current.generation,
+        'annotated-location',
         input.mode,
         value,
         digest,

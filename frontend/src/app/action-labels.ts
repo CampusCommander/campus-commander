@@ -14,6 +14,8 @@ export const actionLabels: Record<Action, string> = {
   'security-events:read': 'View security events',
   'devices:read': 'View devices',
   'devices:write': 'Update devices',
+  'devices:commands': 'Send device commands',
+  'devices:status': 'Change device status',
   'devices:bulk-actions': 'Run device bulk actions',
   'jobs:read': 'View jobs',
 };

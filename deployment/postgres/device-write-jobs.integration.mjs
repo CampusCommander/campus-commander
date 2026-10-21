@@ -49,7 +49,7 @@ export async function qualifyDeviceWriteJobs({
           WHERE lease_expires_at>clock_timestamp()`,
       );
       const rows = await admin(
-        "SELECT job_id FROM cc.jobs WHERE kind='device-update' AND status='running' ORDER BY created_at",
+        "SELECT job_id FROM cc.jobs WHERE kind IN ('device-update','device-command','device-status') AND status IN ('accepted','queued','held','running') ORDER BY created_at",
       );
       for (const row of rows)
         await migrator.query('SELECT cc.finalize_device_update_job($1,$2,$3)', [
@@ -231,8 +231,8 @@ export async function qualifyDeviceWriteJobs({
       ).permission_version;
       await admin(
         `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-          generation,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-        VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotatedLocation',$6,$7,$8,$8,0,0,
+          generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+        VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotated-location','annotatedLocation',$6,$7,$8,$8,0,0,
           'manifest-digest',clock_timestamp()+interval '1 hour')`,
         [
           previewId,
@@ -261,9 +261,9 @@ export async function qualifyDeviceWriteJobs({
         ],
       );
       await admin(
-        `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,confirmer_permission_version,
+        `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,confirmer_permission_version,
           delegated_subject,batch_size,batch_count)
-        VALUES($1,$2,'annotatedLocation',$3,$4,$5,$6,'admin@example.org',$7,$8)`,
+        VALUES($1,$2,'annotated-location','annotatedLocation',$3,$4,$5,$6,'admin@example.org',$7,$8)`,
         [
           jobId,
           previewId,
@@ -411,16 +411,18 @@ export async function qualifyDeviceWriteJobs({
       adminRow('SELECT * FROM cc.jobs WHERE job_id=$1', [jobId]);
     const deviceRow = (deviceId) =>
       adminRow(
-        'SELECT annotated_location,annotated_location_observed_at,removed_at FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+        `SELECT annotated_location,annotated_location_observed_at,status,status_observed_at,removed_at
+          FROM cc.devices WHERE customer_id=$1 AND device_id=$2`,
         [customer, deviceId],
       );
-    const overlay = async (deviceId) =>
+    const overlayOf = async (deviceId, field) =>
       (
         await admin(
-          'SELECT * FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id=$2',
-          [customer, deviceId],
+          'SELECT * FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id=$2 AND field=$3',
+          [customer, deviceId, field],
         )
       )[0];
+    const overlay = (deviceId) => overlayOf(deviceId, 'annotatedLocation');
     const publications = (jobId) =>
       result(
         'SELECT count(*)::int AS result FROM cc.job_publications WHERE job_id=$1',
@@ -566,8 +568,8 @@ export async function qualifyDeviceWriteJobs({
         const previewId = randomUUID();
         await admin(
           `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-            generation,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,1,$4,'annotatedLocation','replace',
+            generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,1,$4,'annotated-location','annotatedLocation','replace',
             'Room 12',1,1,0,0,'manifest-digest',clock_timestamp()-interval '25 hours')`,
           [previewId, customer, confirmer, generation],
         );
@@ -1439,6 +1441,132 @@ export async function qualifyDeviceWriteJobs({
         assert.equal(
           (await deviceRow('y1')).annotated_location_observed_at.getTime(),
           readAt.getTime(),
+        );
+      },
+    );
+
+    // Section 5 of the addendum: the status field follows the same overlay and observation rules.
+    await check(
+      'a status list converges its overlay and leaves a different annotated-location overlay',
+      async () => {
+        const listed = new Date(Date.now() - 60 * 60 * 1000);
+        await upsert(
+          [device('st1', { annotatedLocation: 'Room 12', status: 'DISABLED' })],
+          listed,
+        );
+        const job = await makeJob({ devices: ['st1'] });
+        const writtenAt = new Date(Date.now() - 30 * 60 * 1000);
+        await admin(
+          `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
+          VALUES($1,'st1','annotatedLocation','Room 12',$2::timestamptz,'write-response',$3,$2::timestamptz+interval '36 hours'),
+            ($1,'st1','status','DISABLED',$2::timestamptz,'write-response',$3,$2::timestamptz+interval '36 hours')`,
+          [customer, writtenAt, job.jobId],
+        );
+        const laggedAt = new Date();
+        await upsert(
+          [device('st1', { annotatedLocation: 'old', status: 'DISABLED' })],
+          laggedAt,
+        );
+        assert.equal(
+          await overlayOf('st1', 'status'),
+          undefined,
+          'The matching status list converges the status overlay.',
+        );
+        assert.ok(
+          await overlayOf('st1', 'annotatedLocation'),
+          'The different annotated-location list keeps that overlay.',
+        );
+        assert.equal((await deviceRow('st1')).status, 'DISABLED');
+        await upsert(
+          [device('st1', { annotatedLocation: 'old', status: 'ACTIVE' })],
+          new Date(laggedAt.getTime() + 1000),
+        );
+        assert.equal(
+          (await deviceRow('st1')).status,
+          'ACTIVE',
+          'The next ACTIVE list reads ACTIVE again.',
+        );
+        assert.equal((await deviceRow('st1')).annotated_location, 'Room 12');
+        await finalize(job.jobId);
+      },
+    );
+
+    await check(
+      'a refresh read moves the live status overlay and its stamp',
+      async () => {
+        const listed = new Date(Date.now() - 60 * 60 * 1000);
+        await upsert([device('st2', { status: 'ACTIVE' })], listed);
+        const job = await makeJob({ devices: ['st2'] });
+        const writtenAt = new Date(Date.now() - 45 * 60 * 1000);
+        await admin(
+          `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
+          VALUES($1,'st2','status','DISABLED',$2::timestamptz,'write-response',$3,$2::timestamptz+interval '36 hours')`,
+          [customer, writtenAt, job.jobId],
+        );
+        const readAt = new Date();
+        await upsert([device('st2', { status: 'DISABLED' })], readAt, 'read');
+        const first = await overlayOf('st2', 'status');
+        assert.equal(first.value, 'DISABLED');
+        assert.equal(first.source, 'refresh-read');
+        assert.equal(first.observed_at.getTime(), readAt.getTime());
+        assert.equal((await deviceRow('st2')).status, 'DISABLED');
+        assert.equal(
+          (await deviceRow('st2')).status_observed_at.getTime(),
+          readAt.getTime(),
+        );
+        const nextRead = new Date(readAt.getTime() + 1000);
+        await upsert([device('st2', { status: 'ACTIVE' })], nextRead, 'read');
+        const second = await overlayOf('st2', 'status');
+        assert.equal(second.value, 'ACTIVE');
+        assert.equal(second.source, 'refresh-read');
+        assert.equal(second.observed_at.getTime(), nextRead.getTime());
+        assert.equal((await deviceRow('st2')).status, 'ACTIVE');
+        await finalize(job.jobId);
+      },
+    );
+
+    await check(
+      'a current status read between divergent field stamps writes the observed status',
+      async () => {
+        const listed = new Date(Date.now() - 60 * 60 * 1000);
+        await upsert(
+          [device('st3', { annotatedLocation: 'old', status: 'ACTIVE' })],
+          listed,
+        );
+        const newer = new Date();
+        const older = new Date(newer.getTime() - 30 * 60 * 1000);
+        await admin(
+          `UPDATE cc.devices SET annotated_location='Room 12',annotated_location_observed_at=$2,
+            status='ACTIVE',status_observed_at=$3,last_entity_sync=$2
+          WHERE customer_id=$1 AND device_id='st3'`,
+          [customer, newer, older],
+        );
+        const readAt = new Date(newer.getTime() - 60 * 1000);
+        assert.equal(
+          await upsert(
+            [
+              device('st3', {
+                annotatedLocation: 'ignored',
+                status: 'DISABLED',
+              }),
+            ],
+            readAt,
+            'read',
+          ),
+          1,
+          'The status stamp admits the current read.',
+        );
+        const row = await deviceRow('st3');
+        assert.equal(row.status, 'DISABLED');
+        assert.equal(row.status_observed_at.getTime(), readAt.getTime());
+        assert.equal(
+          row.annotated_location,
+          'Room 12',
+          'The newer annotated-location observation wins.',
+        );
+        assert.equal(
+          row.annotated_location_observed_at.getTime(),
+          newer.getTime(),
         );
       },
     );
@@ -8250,8 +8378,8 @@ export async function qualifyDeviceWriteJobs({
       'S2 the claim revalidation helper is not executable by PUBLIC or the application role',
       async () => {
         for (const signature of [
-          'cc.write_capable(uuid,text)',
-          'cc.device_update_stop_reason(text,uuid,integer,integer)',
+          'cc.write_capable(uuid,text,text)',
+          'cc.device_update_stop_reason(text,uuid,integer,integer,text)',
         ]) {
           const privileges = await adminRow(
             `SELECT count(p.oid)=1 AS present,
@@ -11353,6 +11481,157 @@ export async function qualifyDeviceWriteJobs({
           ),
           before.sync,
         );
+      },
+    );
+
+    // B1 (device actions, section 1): a command job takes the CMD display ID, waits in
+    // awaiting-devices without the write slot, and the terminal rule counts expired beside failed.
+    await check(
+      'B1 command jobs take their own ID and free the write slot to await devices',
+      async () => {
+        const version = (
+          await adminRow(
+            'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+            [confirmer],
+          )
+        ).permission_version;
+        const actionJob = async (action, kind, prefix, sequence, devices) => {
+          const previewId = randomUUID();
+          const jobId = randomUUID();
+          await admin(
+            `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+              generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+            VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,$6,NULL,NULL,NULL,$7,$7,0,0,
+              'manifest-digest',clock_timestamp()+interval '1 hour')`,
+            [
+              previewId,
+              customer,
+              confirmer,
+              version,
+              generation,
+              action,
+              devices.length,
+            ],
+          );
+          const displayId = (
+            await adminRow(
+              `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+                target_count,correlation_id)
+              VALUES($1,cc.job_display_id('${prefix}',nextval('${sequence}')),$2,'${kind}','devices','accepted',$3,$4,
+                $5,$6) RETURNING display_id`,
+              [
+                jobId,
+                customer,
+                confirmer,
+                generation,
+                devices.length,
+                randomUUID(),
+              ],
+            )
+          ).display_id;
+          await admin(
+            `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
+              confirmer_permission_version,delegated_subject,batch_size,batch_count)
+            VALUES($1,$2,$3,NULL,NULL,NULL,$4,$5,'admin@example.org',250,1)`,
+            [jobId, previewId, action, confirmer, version],
+          );
+          for (const [index, deviceId] of devices.entries())
+            await admin(
+              `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,
+                org_unit_path,baseline_value,requested_value,batch,status,command_id,command_state,poll_after,
+                poll_deadline_at)
+              VALUES($1,$2,$3,$4,'/School A','ACTIVE',NULL,0,$5,$6,$7,clock_timestamp(),
+                clock_timestamp()+interval '7 days')`,
+              [
+                jobId,
+                index + 1,
+                deviceId,
+                `SN-${deviceId}`,
+                kind === 'device-command' ? 'issued' : 'pending',
+                kind === 'device-command' ? '4100000001' : null,
+                kind === 'device-command' ? 'pending-delivery' : null,
+              ],
+            );
+          return { jobId, displayId };
+        };
+        const command = await actionJob(
+          'reboot',
+          'device-command',
+          'CMD',
+          'cc.job_number_cmd',
+          ['cmd-a'],
+        );
+        assert.match(command.displayId, /^CMD-[0-9]{3,}$/);
+        const commandAdmit = await admit();
+        assert.equal(commandAdmit.jobId, command.jobId);
+        const waiting = await result(
+          'SELECT cc.finish_device_update_job($1,$2,$3) AS result',
+          [customer, command.jobId, commandAdmit.dispatchToken],
+        );
+        assert.equal(waiting.status, 'awaiting-devices');
+        assert.equal(waiting.finishedAt, null);
+        assert.equal(
+          (
+            await adminRow('SELECT finished_at FROM cc.jobs WHERE job_id=$1', [
+              command.jobId,
+            ])
+          ).finished_at,
+          null,
+        );
+        // The write slot is free while the command waits, so the next write job admits at once.
+        const update = await makeJob({ devices: ['cmd-b'] });
+        const updateAdmit = await admit();
+        assert.equal(updateAdmit.jobId, update.jobId);
+        assert.equal(
+          (
+            await adminRow('SELECT status FROM cc.jobs WHERE job_id=$1', [
+              command.jobId,
+            ])
+          ).status,
+          'awaiting-devices',
+        );
+        // The partial unique index still admits one running write job only.
+        await rejects(
+          admin("UPDATE cc.jobs SET status='running' WHERE job_id=$1", [
+            command.jobId,
+          ]),
+          '23505',
+        );
+        // Release the update job, then settle a status job whose last operation expired.
+        assert.equal(
+          (
+            await result(
+              'SELECT cc.finalize_device_update_job($1,$2,$3) AS result',
+              [customer, update.jobId, null],
+            )
+          ).status,
+          'failed',
+        );
+        const status = await actionJob(
+          'disable',
+          'device-status',
+          'STS',
+          'cc.job_number_sts',
+          ['sts-a', 'sts-b'],
+        );
+        assert.match(status.displayId, /^STS-[0-9]{3,}$/);
+        const statusAdmit = await admit();
+        assert.equal(statusAdmit.jobId, status.jobId);
+        await admin(
+          "UPDATE cc.device_update_operations SET status='succeeded',observed_value='DISABLED' WHERE job_id=$1 AND operation_number=1",
+          [status.jobId],
+        );
+        await admin(
+          "UPDATE cc.device_update_operations SET status='expired' WHERE job_id=$1 AND operation_number=2",
+          [status.jobId],
+        );
+        const finished = await result(
+          'SELECT cc.finish_device_update_job($1,$2,$3) AS result',
+          [customer, status.jobId, statusAdmit.dispatchToken],
+        );
+        assert.equal(finished.status, 'completed-with-errors');
+        assert.equal(finished.expired, 1);
+        assert.notEqual(finished.finishedAt, null);
       },
     );
   } finally {
