@@ -54,6 +54,7 @@ export const JOB_STATUS_LABELS: Readonly<Record<JobStatus, string>> = {
   queued: 'Queued',
   held: 'Held',
   running: 'Running',
+  'awaiting-devices': 'Awaiting devices',
   completed: 'Completed',
   'completed-with-errors': 'Completed with errors',
   failed: 'Failed',
@@ -67,6 +68,9 @@ export const JOB_STATUSES: readonly JobStatus[] = Object.keys(
 export const JOB_ACTIONS: readonly JobAction[] = [
   'update-device-annotations',
   'refresh-inventory',
+  'reboot-devices',
+  'disable-devices',
+  'reenable-devices',
 ];
 
 /** One tone per status for the chip dot and label (UI-04). */
@@ -80,6 +84,7 @@ export type JobStatusTone =
 export function statusTone(status: JobStatus): JobStatusTone {
   switch (status) {
     case 'running':
+    case 'awaiting-devices':
       return 'info';
     case 'held':
     case 'needs-review':
@@ -114,6 +119,7 @@ function counterLine(progress: JobProgress): string {
     progress.failed ? `${count(progress.failed)} failed` : '',
     progress.unknown ? `${count(progress.unknown)} unknown` : '',
     progress.skipped ? `${count(progress.skipped)} skipped` : '',
+    progress.expired ? `${count(progress.expired)} expired` : '',
   ]
     .filter(Boolean)
     .join(' · ');
@@ -136,6 +142,11 @@ function updateProgress(job: JobSummary): [string, string] {
       return [
         `${count(progress.succeeded)} of ${count(total)} complete`,
         counterLine(progress) || 'In progress',
+      ];
+    case 'awaiting-devices':
+      return [
+        `${count(progress.succeeded)} of ${count(total)} complete`,
+        counterLine(progress) || 'Waiting for each device',
       ];
     case 'completed':
       return [

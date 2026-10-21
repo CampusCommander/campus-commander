@@ -299,6 +299,7 @@ function database(overrides = {}) {
             failed: 0,
             unknown: 0,
             skipped: 0,
+            expired: 0,
             finishedAt: stamp().toISOString(),
             publication: null,
           };
@@ -1327,6 +1328,7 @@ test('the finish prepares, reads back a chunk, and returns the publication', asy
       failed: 0,
       unknown: 0,
       skipped: 0,
+      expired: 0,
       finishedAt: new Date(base).toISOString(),
       publication: element,
     }),

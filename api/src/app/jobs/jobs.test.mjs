@@ -33,6 +33,7 @@ const jobRow = (overrides = {}) => ({
   failed: 1,
   unknown: 0,
   skipped: 0,
+  expired: 0,
   failure: null,
   revision: 4,
   changed_at: new Date('2026-10-06T12:05:00.000Z'),
@@ -111,6 +112,7 @@ test('a refresh summary reads the REF- action, its requester, and its counters',
     failed: 1,
     unknown: 0,
     skipped: 0,
+    expired: 0,
     pending: 0,
   });
   assert.equal(summary.scope.kind, 'devices');
@@ -369,7 +371,7 @@ test('the activity answer caps each section and derives the window and attention
       [{ seen_at: new Date('2026-10-06T10:00:00.000Z') }],
     ],
     [
-      "j.status='running'",
+      "j.status IN ('running','awaiting-devices')",
       (values, text) =>
         text.includes('count(*)::int')
           ? [{ count: 51 }]
@@ -426,7 +428,7 @@ test('an empty activity window gives a null next expiry', async () => {
     ['clock_timestamp() AS now', [{ now: new Date() }]],
     ['FROM cc.job_activity_seen', []],
     [
-      "j.status='running'",
+      "j.status IN ('running','awaiting-devices')",
       (v, text) => (text.includes('count(*)') ? [{ count: 0 }] : []),
     ],
     [
