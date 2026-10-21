@@ -68,6 +68,10 @@ import {
 } from './device-action-messages';
 import { DeviceActionFlow } from './device-action-flow';
 import {
+  DeviceActionConfirmationStore,
+  type SubmittedActionConfirmation,
+} from './device-action-confirmation.store';
+import {
   confirmationMayExist,
   flowExpiry,
   type FlowActionId,
@@ -80,10 +84,10 @@ import { DEVICE_GRID_ID } from './device-selection';
 
 export type ActionSheetStep = 'choose' | 'review' | 'confirm' | 'done';
 
-/** The confirmation that the sheet submitted and may need to replay. */
-export interface SubmittedActionConfirmation {
-  previewId: string;
-  manifestDigest: string;
+/** One prepared preview and the selection signature it was prepared from. */
+interface PreparedPreview {
+  preview: DeviceActionPreview;
+  selection: string | null;
 }
 
 const STEP_LABELS: readonly { id: ActionSheetStep; label: string }[] = [
@@ -98,6 +102,16 @@ interface DisplayStep {
   number: number;
   state: 'done' | 'active' | 'later';
 }
+
+/** Answers that prove the prepared preview can no longer become a job. */
+const INVALID_PREVIEW_ANSWERS: ReadonlySet<FlowProblemKind> = new Set([
+  'preview-expired',
+  'preview-changed',
+  'preview-not-found',
+  'permission-changed',
+  'connection-changed',
+  'connection-required',
+]);
 
 interface ActionOption {
   action: DeviceAction;
@@ -135,6 +149,7 @@ export class DeviceActionSheet {
 
   protected readonly store = inject(DevicesStore);
   private readonly flow = inject(DeviceActionFlow);
+  private readonly confirmations = inject(DeviceActionConfirmationStore);
   private readonly connection = inject(ConnectionStore);
   private readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
@@ -148,8 +163,9 @@ export class DeviceActionSheet {
   protected readonly status = signal<'loading' | 'ready' | 'problem'>('ready');
   protected readonly problem = signal<FlowProblem | null>(null);
   protected readonly problemDetail = signal('');
+  /** The prepared preview of each action and the selection it came from. */
   private readonly previews = signal<
-    Partial<Record<DeviceAction, DeviceActionPreview>>
+    Partial<Record<DeviceAction, PreparedPreview>>
   >({});
   protected readonly targets = signal<DeviceActionTarget[]>([]);
   protected readonly receipt = signal<DeviceActionJobReceipt | null>(null);
@@ -200,13 +216,17 @@ export class DeviceActionSheet {
   });
   protected readonly options = computed<ActionOption[]>(() =>
     this.actions().map((action) => {
-      const preview = this.previews()[action];
+      const prepared = this.previews()[action];
       return {
         action,
         label: ACTION_LABELS[action],
         consequence: actionConsequence(action),
-        summary: preview
-          ? targetSummaryText(action, preview.eligible, preview.selected)
+        summary: prepared
+          ? targetSummaryText(
+              action,
+              prepared.preview.eligible,
+              prepared.preview.selected,
+            )
           : '',
       };
     }),
@@ -229,7 +249,7 @@ export class DeviceActionSheet {
   /** The preview of the chosen action, or null before its preparation. */
   protected readonly preview = computed<DeviceActionPreview | null>(() => {
     const action = this.selected();
-    return action ? (this.previews()[action] ?? null) : null;
+    return action ? (this.previewEntry(action)?.preview ?? null) : null;
   });
   protected readonly countLine = computed(() => {
     const preview = this.preview();
@@ -316,7 +336,8 @@ export class DeviceActionSheet {
   );
   protected readonly receiptLine = computed(() => {
     const job = this.job();
-    const action = this.selected();
+    // A recovered receipt opens without a chosen option, so the job names the action.
+    const action = this.selected() ?? actionOfJob(job);
     return job && action ? receiptActionLine(action, job) : '';
   });
   protected readonly jobDisplayId = computed(
@@ -442,12 +463,42 @@ export class DeviceActionSheet {
     this.selectionError.set('');
     this.chooseOffline.set(false);
     this.loadedCount.set(null);
+    this.loadingSelection.set(true);
     // Send command preselected Reboot, the only command (mockup choice 3).
     this.selected.set(this.family() === 'command' ? 'reboot' : null);
     afterNextRender(() => this.sheetTitle()?.nativeElement.focus(), {
       injector: this.injector,
     });
-    void this.loadSelection();
+    void this.begin();
+  }
+
+  /**
+   * Open the sheet at Choose, but first resolve every uncertain confirmation of this
+   * family. A retained record may already hold a job, so it answers before the sheet
+   * prepares another preview.
+   */
+  private async begin(): Promise<void> {
+    const generation = this.generation;
+    const replay = await this.confirmations.resolvePending(this.family());
+    if (generation !== this.generation) return;
+    if (replay.kind === 'receipt') {
+      this.openReceipt(replay.receipt);
+      return;
+    }
+    if (replay.kind === 'uncertain') {
+      this.submitted.set(replay.submitted);
+      this.step.set('confirm');
+      this.showProblem('confirm-uncertain', generation);
+      return;
+    }
+    if (replay.kind === 'problem') {
+      this.step.set('confirm');
+      this.showProblem(replay.answer, generation, {
+        expiresAt: replay.expiresAt,
+      });
+      return;
+    }
+    await this.loadSelection();
   }
 
   /** Read the stored selection. It reports the count and an expired selection. */
@@ -486,9 +537,10 @@ export class DeviceActionSheet {
     this.preparing.set(true);
     await Promise.all(
       this.actions().map(async (action) => {
+        const selection = this.selectionSignature();
         const prepared = await this.flow.prepare(this.family(), action);
         if (generation !== this.generation) return;
-        if (prepared.ok) this.storePreview(prepared.value);
+        if (prepared.ok) this.storePreview(prepared.value, selection);
       }),
     );
     if (generation === this.generation) this.preparing.set(false);
@@ -519,8 +571,21 @@ export class DeviceActionSheet {
     this.close();
   }
 
-  /** Review prepares or re-reads the frozen preview of the chosen action. */
+  /** Review re-reads the frozen preview of the chosen action, or prepares it. */
   protected async goReview(): Promise<void> {
+    await this.enterReview(true);
+  }
+
+  /** Confirm returns to the reviewed preview. Its frozen scope does not change. */
+  protected async backToPreview(): Promise<void> {
+    await this.enterReview(false);
+  }
+
+  /**
+   * Enter Review. A new scope from Choose replaces a preview of an older selection.
+   * A return from Confirm re-reads the same frozen preview and keeps its signature.
+   */
+  private async enterReview(replaceStale: boolean): Promise<void> {
     const action = this.selected();
     if (!action) return;
     const generation = ++this.generation;
@@ -531,21 +596,69 @@ export class DeviceActionSheet {
     this.step.set('review');
     this.targets.set([]);
     this.status.set('loading');
-    const known = this.previews()[action];
-    if (known) {
-      await this.readFrozen(known.previewId, generation);
+    const known = this.previewEntry(action);
+    if (
+      known &&
+      (!replaceStale || known.selection === this.selectionSignature())
+    ) {
+      await this.readFrozen(
+        known.preview.previewId,
+        generation,
+        known.selection,
+      );
       return;
     }
+    if (known) this.dropPreview(action);
+    await this.prepareForReview(action, generation);
+  }
+
+  /**
+   * Prepare the chosen action after every uncertain confirmation has an answer. A
+   * retained confirmation can hold the receipt of a job that already exists, so it
+   * answers before this sheet prepares a replacement preview.
+   */
+  private async prepareForReview(
+    action: DeviceAction,
+    generation: number,
+  ): Promise<void> {
+    this.problem.set(null);
+    this.problemDetail.set('');
+    this.targets.set([]);
+    this.preparing.set(true);
+    this.status.set('loading');
+    const replay = await this.confirmations.resolvePending(this.family());
+    if (generation !== this.generation) return;
+    if (replay.kind === 'receipt') {
+      this.preparing.set(false);
+      this.openReceipt(replay.receipt);
+      return;
+    }
+    if (replay.kind === 'uncertain') {
+      this.preparing.set(false);
+      this.submitted.set(replay.submitted);
+      this.step.set('confirm');
+      this.showProblem('confirm-uncertain', generation);
+      return;
+    }
+    if (replay.kind === 'problem') {
+      this.preparing.set(false);
+      this.showProblem(replay.answer, generation, {
+        expiresAt: replay.expiresAt,
+      });
+      return;
+    }
+    const selection = this.selectionSignature();
     const prepared = await this.flow.prepare(this.family(), action);
     if (generation !== this.generation) return;
+    this.preparing.set(false);
     if (!prepared.ok) {
       this.showProblem(prepared.answer, generation, {
         expiresAt: prepared.expiresAt,
       });
       return;
     }
-    this.storePreview(prepared.value);
-    await this.readPrepared(prepared.value, generation);
+    this.storePreview(prepared.value, selection);
+    await this.readPrepared(prepared.value, selection, generation);
   }
 
   /** The Review step re-reads the frozen scope before it shows the confirmation. */
@@ -560,12 +673,21 @@ export class DeviceActionSheet {
     this.status.set('loading');
     // A retained confirmation may already hold the job of this preview. A preview
     // read would answer 410 after expiry and hide the receipt.
-    const submitted = this.submitted();
-    if (submitted && submitted.previewId === preview.previewId) {
+    const retained = this.confirmations.retained(
+      this.family(),
+      preview.previewId,
+    );
+    if (retained) {
+      this.submitted.set(retained);
       this.showProblem('confirm-uncertain', generation);
       return;
     }
-    await this.readFrozen(preview.previewId, generation);
+    this.submitted.set(null);
+    await this.readFrozen(
+      preview.previewId,
+      generation,
+      this.frozenSelection(),
+    );
   }
 
   /** Change action returns to the choice and keeps the prepared previews. */
@@ -588,6 +710,7 @@ export class DeviceActionSheet {
     if (!preview || !this.canCreate()) return;
     await this.submit(
       {
+        family: this.family(),
         previewId: preview.previewId,
         manifestDigest: preview.manifestDigest,
       },
@@ -605,13 +728,16 @@ export class DeviceActionSheet {
   ): Promise<void> {
     const generation = this.generation;
     this.submitted.set(submitted);
+    this.confirmations.retain(submitted);
     this.creating.set(true);
     const result = await this.flow.confirm(
-      this.family(),
+      submitted.family,
       submitted.previewId,
       submitted.manifestDigest,
     );
     if (result.ok) {
+      // The answer settles the retained record even after the sheet closed.
+      this.confirmations.release(submitted.family, submitted.previewId);
       if (generation !== this.generation) return;
       this.creating.set(false);
       this.submitted.set(null);
@@ -630,6 +756,8 @@ export class DeviceActionSheet {
       this.showProblem('confirm-receipt-unavailable', generation);
       return;
     }
+    // A named answer settles the record even after the sheet closed.
+    this.confirmations.release(submitted.family, submitted.previewId);
     if (generation !== this.generation) return;
     this.creating.set(false);
     this.submitted.set(null);
@@ -732,11 +860,20 @@ export class DeviceActionSheet {
       return;
     }
     if (this.step() === 'review') {
-      const preview = this.preview();
-      if (preview) {
-        const generation = ++this.generation;
-        await this.readFrozen(preview.previewId, generation);
+      const action = this.selected();
+      if (!action) return;
+      const generation = ++this.generation;
+      const known = this.previewEntry(action);
+      if (known) {
+        await this.readFrozen(
+          known.preview.previewId,
+          generation,
+          known.selection,
+        );
+        return;
       }
+      // The preparation itself failed, so Retry prepares a preview again.
+      await this.prepareForReview(action, generation);
       return;
     }
     await this.loadSelection();
@@ -746,6 +883,7 @@ export class DeviceActionSheet {
   private async readFrozen(
     previewId: string,
     generation: number,
+    selection: string | null,
   ): Promise<void> {
     this.status.set('loading');
     this.problem.set(null);
@@ -767,9 +905,11 @@ export class DeviceActionSheet {
       });
       return;
     }
-    this.storePreview(summary.value);
+    this.storePreview(summary.value, selection);
     this.targets.set(targets.value);
-    this.frozenSelection.set(this.selectionSignature());
+    // The frozen signature is the selection that prepared this preview. A frozen
+    // reread must not adopt a newer selection.
+    this.frozenSelection.set(selection);
     if (summary.value.eligible === 0) {
       // The no-eligible state is not an error, and it lists every selected device.
       this.showProblem('nothing-to-update', generation, {
@@ -784,6 +924,7 @@ export class DeviceActionSheet {
   /** Read the targets of a preview that this sheet prepared. */
   private async readPrepared(
     preview: DeviceActionPreview,
+    selection: string | null,
     generation: number,
   ): Promise<void> {
     const targets = await this.flow.readTargets(
@@ -799,7 +940,7 @@ export class DeviceActionSheet {
       return;
     }
     this.targets.set(targets.value);
-    this.frozenSelection.set(this.selectionSignature());
+    this.frozenSelection.set(selection);
     if (preview.eligible === 0) {
       this.showProblem('nothing-to-update', generation, {
         displayId: preview.displayId,
@@ -810,11 +951,28 @@ export class DeviceActionSheet {
     this.status.set('ready');
   }
 
-  private storePreview(preview: DeviceActionPreview): void {
+  /** The prepared preview of one action, or null. */
+  private previewEntry(action: DeviceAction): PreparedPreview | null {
+    return this.previews()[action] ?? null;
+  }
+
+  private storePreview(
+    preview: DeviceActionPreview,
+    selection: string | null,
+  ): void {
     this.previews.update((current) => ({
       ...current,
-      [preview.action]: preview,
+      [preview.action]: { preview, selection },
     }));
+  }
+
+  /** Remove a prepared preview that can no longer become a job. */
+  private dropPreview(action: DeviceAction): void {
+    this.previews.update((current) => {
+      const next = { ...current };
+      delete next[action];
+      return next;
+    });
   }
 
   private showProblem(
@@ -841,6 +999,10 @@ export class DeviceActionSheet {
       }),
     );
     this.status.set('problem');
+    // A dead preview cannot answer a later Review. The next Review prepares a new
+    // preview instead of rereading the invalid one.
+    const action = this.selected();
+    if (action && INVALID_PREVIEW_ANSWERS.has(kind)) this.dropPreview(action);
     if (!options.keepTargets) this.targets.set([]);
   }
 
@@ -856,4 +1018,16 @@ function jobAnswer(status: number, body: unknown): FlowProblemKind {
   if (status === 404) return 'job-not-found';
   if (status === 403) return 'job-forbidden';
   return 'job-unavailable';
+}
+
+/** The action of a durable job, for a receipt that opens without a choice. */
+function actionOfJob(job: JobDetail | null): DeviceAction | null {
+  if (!job) return null;
+  if (job.commandType === 'REBOOT' || job.action === 'reboot-devices')
+    return 'reboot';
+  if (job.statusAction === 'reenable' || job.action === 'reenable-devices')
+    return 'reenable';
+  if (job.statusAction === 'disable' || job.action === 'disable-devices')
+    return 'disable';
+  return null;
 }
