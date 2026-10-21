@@ -11,7 +11,7 @@ function splitOnce(text, separator) {
     : [text.slice(0, index), text.slice(index + separator.length)];
 }
 
-/** Read the parts the service sent. `key` is the last path segment, decoded. */
+/** Read the parts the service sent. `key` is the last path segment without a method suffix, decoded. */
 export function parseBatchRequest(options) {
   const boundary = /boundary=([^;\s]+)/.exec(
     options.headers['content-type'],
@@ -40,12 +40,16 @@ export function parseBatchRequest(options) {
         }),
       );
       const text = rawBody.trim();
+      const segment = url.pathname.split('/').at(-1);
+      const name = segment.includes(':')
+        ? segment.slice(0, segment.indexOf(':'))
+        : segment;
       return {
         contentId,
         method,
         path: url.pathname,
         query: Object.fromEntries(url.searchParams),
-        key: decodeURIComponent(url.pathname.split('/').at(-1)),
+        key: decodeURIComponent(name),
         headers,
         body: text ? JSON.parse(text) : undefined,
       };
@@ -164,9 +168,19 @@ export function testClock() {
   return clock;
 }
 
+/** A GET part on an allowed shape: a ChromeOS device read. */
 export const thing = (id, extra = {}) => ({
   id,
   method: 'GET',
-  path: `/admin/directory/v1/things/${encodeURIComponent(id)}`,
+  path: `/admin/directory/v1/customer/C0123456/devices/chromeos/${encodeURIComponent(id)}`,
+  ...extra,
+});
+
+/** A POST part on an allowed shape: an issueCommand call. */
+export const command = (id, extra = {}) => ({
+  id,
+  method: 'POST',
+  path: `/admin/directory/v1/customer/C0123456/devices/chromeos/${encodeURIComponent(id)}:issueCommand`,
+  body: {},
   ...extra,
 });

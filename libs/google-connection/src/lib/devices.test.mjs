@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
 import { JWT, OAuth2Client } from 'google-auth-library';
-import { GoogleDeviceReader } from './devices.ts';
+import { GoogleDeviceReader, statusResults } from './devices.ts';
 import { GoogleBatchService } from './batch.ts';
 import { fakeGoogle } from './batch-fake.mjs';
 
@@ -773,4 +773,562 @@ test('deviceStates keeps a failed part for its caller to settle', async (t) => {
   }).deviceStates(credential, 'C0123456', ['d1'], signal());
   assert.equal(states[0].status, 'failed');
   assert.equal(states[0].failure.kind, 'auth');
+});
+
+const deviceStatusPath =
+  '/admin/directory/v1/customer/C0123456/devices/chromeos:batchChangeStatus';
+
+test('statusResults reads each requested device element', () => {
+  const results = statusResults(
+    {
+      changeChromeOsDeviceStatusResults: [
+        { deviceId: 'd1', response: {} },
+        { deviceId: 'd2', error: { code: 5, message: 'Device not found.' } },
+        {
+          deviceId: 'd3',
+          error: {
+            code: 9,
+            message: 'A device with status ACTIVE does not allow this action.',
+          },
+        },
+        { deviceId: 'd4', error: { code: 3, message: 'Invalid Input.' } },
+        { deviceId: 'other', response: {} },
+      ],
+    },
+    ['d1', 'd2', 'd3', 'd4', 'd5'],
+  );
+  assert.deepEqual(results, [
+    { deviceId: 'd1', outcome: 'succeeded', reason: null, googleReason: null },
+    {
+      deviceId: 'd2',
+      outcome: 'failed',
+      reason: 'not-found',
+      googleReason: 'Device not found.',
+    },
+    {
+      deviceId: 'd3',
+      outcome: 'failed',
+      reason: 'status-conflict',
+      googleReason: 'A device with status ACTIVE does not allow this action.',
+    },
+    {
+      deviceId: 'd4',
+      outcome: 'failed',
+      reason: 'rejected',
+      googleReason: 'Invalid Input.',
+    },
+    {
+      deviceId: 'd5',
+      outcome: 'unknown',
+      reason: 'invalid-response',
+      googleReason: null,
+    },
+  ]);
+});
+
+test('statusResults reports a repeated, unparseable, or absent element as unknown', () => {
+  const invalid = (deviceId) => ({
+    deviceId,
+    outcome: 'unknown',
+    reason: 'invalid-response',
+    googleReason: null,
+  });
+  const body = {
+    changeChromeOsDeviceStatusResults: [
+      { deviceId: 'd1', response: {} },
+      { deviceId: 'd1', response: {} },
+      { deviceId: 'd2', response: {}, error: { code: 9, message: 'both' } },
+      { deviceId: 'd3', response: null },
+      'not an element',
+    ],
+  };
+  assert.deepEqual(statusResults(body, ['d1', 'd2', 'd3', 'd4']), [
+    invalid('d1'),
+    invalid('d2'),
+    invalid('d3'),
+    invalid('d4'),
+  ]);
+  assert.deepEqual(statusResults({}, ['d1']), [invalid('d1')]);
+  assert.deepEqual(statusResults('<html>', ['d1']), [invalid('d1')]);
+  assert.deepEqual(
+    statusResults({ changeChromeOsDeviceStatusResults: 'nope' }, ['d1']),
+    [invalid('d1')],
+  );
+});
+
+test('statusResults reports a malformed duplicate as unknown beside an unaffected device', () => {
+  const invalid = (deviceId) => ({
+    deviceId,
+    outcome: 'unknown',
+    reason: 'invalid-response',
+    googleReason: null,
+  });
+  const valid = { deviceId: 'd1', response: {} };
+  const malformed = {
+    deviceId: 'd1',
+    error: { code: '9', message: 'Conflict' },
+  };
+  const unaffected = { deviceId: 'd2', response: {} };
+  for (const order of [
+    [valid, malformed],
+    [malformed, valid],
+  ]) {
+    assert.deepEqual(
+      statusResults(
+        { changeChromeOsDeviceStatusResults: [...order, unaffected] },
+        ['d1', 'd2'],
+      ),
+      [
+        invalid('d1'),
+        {
+          deviceId: 'd2',
+          outcome: 'succeeded',
+          reason: null,
+          googleReason: null,
+        },
+      ],
+      'A valid element and a malformed duplicate are two elements.',
+    );
+  }
+});
+
+test('changeDeviceStatus sends parts of up to 50 devices with the write scope', async (t) => {
+  const ids = Array.from({ length: 51 }, (_, index) => `d${index + 1}`);
+  const { google, scopes } = stubBatch(t, (part) => ({
+    status: 200,
+    body: {
+      changeChromeOsDeviceStatusResults: part.body.deviceIds.map((deviceId) =>
+        deviceId === 'd2'
+          ? { deviceId, error: { code: 9, message: 'No.' } }
+          : { deviceId, response: {} },
+      ),
+    },
+  }));
+  const sent = [];
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).changeDeviceStatus(
+    credential,
+    'C0123456',
+    ids.map((deviceId) => ({ deviceId, action: 'disable' })),
+    signal(),
+    {
+      onSend: (parts) =>
+        void sent.push(parts.map((part) => part.deviceIds.length)),
+    },
+  );
+  assert.deepEqual(
+    scopes,
+    [writeScope],
+    'The status part uses the write scope.',
+  );
+  assert.deepEqual(
+    sent,
+    [[50, 1]],
+    'onSend names the parts that left the worker.',
+  );
+  assert.deepEqual(
+    google.sent[0].map((part) => [
+      part.method,
+      part.path,
+      part.body.changeChromeOsDeviceStatusAction,
+      part.body.deviceIds.length,
+    ]),
+    [
+      [
+        'POST',
+        deviceStatusPath,
+        'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DISABLE',
+        50,
+      ],
+      [
+        'POST',
+        deviceStatusPath,
+        'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DISABLE',
+        1,
+      ],
+    ],
+  );
+  assert.deepEqual(
+    result.parts.map((part) => part.deviceIds.length),
+    [50, 1],
+  );
+  assert.equal(result.answers.length, 51);
+  assert.deepEqual(
+    result.answers.map((answer) => answer.deviceId),
+    ids,
+    'The answers keep the request order.',
+  );
+  assert.deepEqual(result.answers[1].result, {
+    deviceId: 'd2',
+    outcome: 'failed',
+    reason: 'status-conflict',
+    googleReason: 'No.',
+  });
+  assert.equal(
+    result.answers.filter((answer) => answer.result.outcome === 'succeeded')
+      .length,
+    50,
+  );
+});
+
+test('changeDeviceStatus starts a new part when the action changes', async (t) => {
+  const { google } = stubBatch(t, (part) => ({
+    status: 200,
+    body: {
+      changeChromeOsDeviceStatusResults: part.body.deviceIds.map(
+        (deviceId) => ({
+          deviceId,
+          response: {},
+        }),
+      ),
+    },
+  }));
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).changeDeviceStatus(
+    credential,
+    'C0123456',
+    [
+      { deviceId: 'd1', action: 'disable' },
+      { deviceId: 'd2', action: 'disable' },
+      { deviceId: 'd3', action: 'reenable' },
+    ],
+    signal(),
+  );
+  assert.deepEqual(
+    google.sent[0].map((part) => [
+      part.body.changeChromeOsDeviceStatusAction,
+      part.body.deviceIds,
+    ]),
+    [
+      ['CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DISABLE', ['d1', 'd2']],
+      ['CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_REENABLE', ['d3']],
+    ],
+  );
+  assert.deepEqual(
+    result.parts.map((part) => part.action),
+    ['disable', 'reenable'],
+  );
+});
+
+test('changeDeviceStatus keeps a failed part for every device it held', async (t) => {
+  stubBatch(t, () => ({
+    status: 503,
+    body: { error: { code: 503, message: 'Unavailable' } },
+  }));
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).changeDeviceStatus(
+    credential,
+    'C0123456',
+    [
+      { deviceId: 'd1', action: 'disable' },
+      { deviceId: 'd2', action: 'disable' },
+    ],
+    signal(),
+  );
+  assert.deepEqual(
+    result.answers.map((answer) => [
+      answer.deviceId,
+      answer.result,
+      answer.failure.kind,
+      answer.failure.status,
+    ]),
+    [
+      ['d1', null, 'transient', 503],
+      ['d2', null, 'transient', 503],
+    ],
+  );
+});
+
+test('changeDeviceStatus refuses a repeated device before it sends', async (t) => {
+  const { google } = stubBatch(t, (part) => ({ status: 200, body: {} }));
+  await assert.rejects(
+    new GoogleDeviceReader({ batch: fastBatch() }).changeDeviceStatus(
+      credential,
+      'C0123456',
+      [
+        { deviceId: 'd1', action: 'disable' },
+        { deviceId: 'd1', action: 'disable' },
+      ],
+      signal(),
+    ),
+    { name: 'GoogleConnectionError', code: 'invalid-response' },
+  );
+  assert.equal(google.sent.length, 0);
+});
+
+test('changeDeviceStatus reports a malformed duplicate as unknown on both surfaces', async (t) => {
+  const invalid = (deviceId) => ({
+    deviceId,
+    outcome: 'unknown',
+    reason: 'invalid-response',
+    googleReason: null,
+  });
+  const orders = [
+    [
+      { deviceId: 'd1', response: {} },
+      { deviceId: 'd1', error: { code: '9', message: 'Conflict' } },
+    ],
+    [
+      { deviceId: 'd1', error: { code: '9', message: 'Conflict' } },
+      { deviceId: 'd1', response: {} },
+    ],
+  ];
+  let round = 0;
+  stubBatch(t, () => ({
+    status: 200,
+    body: {
+      changeChromeOsDeviceStatusResults: [
+        ...orders[round++],
+        { deviceId: 'd2', response: {} },
+      ],
+    },
+  }));
+  const expected = [
+    invalid('d1'),
+    { deviceId: 'd2', outcome: 'succeeded', reason: null, googleReason: null },
+  ];
+  for (let attempt = 0; attempt < orders.length; attempt += 1) {
+    const pages = [];
+    const result = await new GoogleDeviceReader({
+      batch: fastBatch(),
+    }).changeDeviceStatus(
+      credential,
+      'C0123456',
+      [
+        { deviceId: 'd1', action: 'disable' },
+        { deviceId: 'd2', action: 'disable' },
+      ],
+      signal(),
+      {
+        onResponse: (event) => {
+          if (event.outcome.kind === 'success')
+            pages.push(...event.outcome.page);
+        },
+      },
+    );
+    assert.deepEqual(
+      pages,
+      expected,
+      'The onResponse page reports the malformed duplicate as unknown.',
+    );
+    assert.deepEqual(
+      result.answers.map((answer) => answer.result),
+      expected,
+      'The returned answers report the malformed duplicate as unknown.',
+    );
+  }
+});
+
+test('issueDeviceCommands sends one POST part per device with the write scope', async (t) => {
+  const commands = { d1: '4100000001', d2: '4100000002' };
+  const { google, scopes } = stubBatch(t, (part) => {
+    const deviceId = part.path.includes('/d1:') ? 'd1' : 'd2';
+    return { status: 200, body: { commandId: commands[deviceId] } };
+  });
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).issueDeviceCommands(
+    credential,
+    'C0123456',
+    [
+      { deviceId: 'd1', commandType: 'REBOOT' },
+      { deviceId: 'd2', commandType: 'REBOOT' },
+    ],
+    signal(),
+  );
+  assert.deepEqual(
+    scopes,
+    [writeScope],
+    'The issue token uses the write scope.',
+  );
+  assert.deepEqual(
+    google.sent[0].map((part) => [part.method, part.path, part.body]),
+    [
+      [
+        'POST',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d1:issueCommand',
+        { commandType: 'REBOOT' },
+      ],
+      [
+        'POST',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d2:issueCommand',
+        { commandType: 'REBOOT' },
+      ],
+    ],
+    'Reboot carries no payload.',
+  );
+  assert.deepEqual(result.succeeded.get('d1'), [{ commandId: '4100000001' }]);
+  assert.deepEqual(result.succeeded.get('d2'), [{ commandId: '4100000002' }]);
+});
+
+test('issueDeviceCommands keeps a refusal and a body without a commandId apart', async (t) => {
+  stubBatch(t, (part) =>
+    part.path.includes('/d1:')
+      ? {
+          status: 400,
+          body: {
+            error: {
+              code: 400,
+              message: 'The device must be active to receive a command.',
+              errors: [{ reason: 'failedPrecondition' }],
+            },
+          },
+        }
+      : { status: 200, body: {} },
+  );
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).issueDeviceCommands(
+    credential,
+    'C0123456',
+    [
+      { deviceId: 'd1', commandType: 'REBOOT' },
+      { deviceId: 'd2', commandType: 'REBOOT' },
+    ],
+    signal(),
+  );
+  assert.deepEqual(
+    [
+      result.failed.get('d1').kind,
+      result.failed.get('d1').status,
+      result.failed.get('d1').reason,
+    ],
+    ['rejected', 400, 'failedPrecondition'],
+  );
+  assert.deepEqual(
+    [result.failed.get('d2').kind, result.failed.get('d2').reason],
+    ['invalid-response', 'parse-failed'],
+  );
+  assert.equal(result.succeeded.size, 0);
+});
+
+test('deviceCommands reads one command per device with the inventory scope', async (t) => {
+  const { google, scopes } = stubBatch(t, (part) => {
+    const commandId = part.path.split('/').at(-1);
+    return {
+      status: 200,
+      body: {
+        commandId,
+        state: 'ACKED_BY_CLIENT',
+        issueTime: '2026-10-21T12:00:00Z',
+        commandExpireTime: '2026-10-27T12:00:00Z',
+      },
+    };
+  });
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).deviceCommands(
+    credential,
+    'C0123456',
+    [
+      { deviceId: 'd1', commandId: '4100000001' },
+      { deviceId: 'd2', commandId: '4100000002' },
+    ],
+    signal(),
+  );
+  assert.deepEqual(
+    scopes,
+    [deviceScope],
+    'The poll token uses the read-only inventory scope.',
+  );
+  assert.deepEqual(
+    google.sent[0].map((part) => [part.method, part.path]),
+    [
+      [
+        'GET',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d1/commands/4100000001',
+      ],
+      [
+        'GET',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d2/commands/4100000002',
+      ],
+    ],
+  );
+  assert.deepEqual(result.succeeded.get('d1'), [
+    {
+      commandId: '4100000001',
+      state: 'ACKED_BY_CLIENT',
+      issuedAt: '2026-10-21T12:00:00.000Z',
+      expiresAt: '2026-10-27T12:00:00.000Z',
+      result: null,
+      executedAt: null,
+      errorMessage: null,
+    },
+  ]);
+});
+
+test('deviceCommands reads an execution result and passes an unknown state through', async (t) => {
+  stubBatch(t, (part) =>
+    part.path.includes('/d1/')
+      ? {
+          status: 200,
+          body: {
+            commandId: '4100000001',
+            state: 'EXECUTED_BY_CLIENT',
+            commandExpireTime: '2026-10-27T12:00:00Z',
+            commandResult: {
+              result: 'FAILURE',
+              executeTime: '2026-10-21T12:05:00Z',
+              errorMessage: 'The device failed to execute the command.',
+            },
+          },
+        }
+      : { status: 200, body: { commandId: '4100000002', state: 'NEW_STATE' } },
+  );
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).deviceCommands(
+    credential,
+    'C0123456',
+    [
+      { deviceId: 'd1', commandId: '4100000001' },
+      { deviceId: 'd2', commandId: '4100000002' },
+    ],
+    signal(),
+  );
+  assert.deepEqual(result.succeeded.get('d1'), [
+    {
+      commandId: '4100000001',
+      state: 'EXECUTED_BY_CLIENT',
+      issuedAt: null,
+      expiresAt: '2026-10-27T12:00:00.000Z',
+      result: 'FAILURE',
+      executedAt: '2026-10-21T12:05:00.000Z',
+      errorMessage: 'The device failed to execute the command.',
+    },
+  ]);
+  assert.equal(result.succeeded.get('d2')[0].state, 'NEW_STATE');
+});
+
+test('deviceCommands refuses an answer for another command', async (t) => {
+  stubBatch(t, () => ({
+    status: 200,
+    body: { commandId: '4100000009', state: 'PENDING' },
+  }));
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).deviceCommands(
+    credential,
+    'C0123456',
+    [{ deviceId: 'd1', commandId: '4100000001' }],
+    signal(),
+  );
+  assert.equal(result.failed.get('d1').kind, 'invalid-response');
+});
+
+test('deviceCommands refuses a command ID that is not digits', async (t) => {
+  const { google } = stubBatch(t, () => ({ status: 200, body: {} }));
+  await assert.rejects(
+    new GoogleDeviceReader({ batch: fastBatch() }).deviceCommands(
+      credential,
+      'C0123456',
+      [{ deviceId: 'd1', commandId: '4-1' }],
+      signal(),
+    ),
+    { name: 'GoogleConnectionError', code: 'invalid-response' },
+  );
+  assert.equal(google.sent.length, 0);
 });

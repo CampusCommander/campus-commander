@@ -12,7 +12,7 @@ import {
 const get = (id, extra = {}) => ({
   id,
   method: 'GET',
-  path: `/admin/directory/v1/things/${encodeURIComponent(id)}`,
+  path: `/admin/directory/v1/customer/C0123456/devices/chromeos/${encodeURIComponent(id)}`,
   ...extra,
 });
 
@@ -39,7 +39,7 @@ test('buildMultipartBody writes each request as one application/http part', () =
   assert.equal(
     body,
     '--batch_x\r\nContent-Type: application/http\r\nContent-ID: <cc-1>\r\n\r\n' +
-      'GET /admin/directory/v1/things/a?projection=full&maxResults=5\r\n\r\n' +
+      'GET /admin/directory/v1/customer/C0123456/devices/chromeos/a?projection=full&maxResults=5\r\n\r\n' +
       '--batch_x\r\nContent-Type: application/http\r\nContent-ID: <cc-2>\r\n\r\n' +
       'PATCH /admin/directory/v1/users/b\r\nIf-Match: etag-1\r\n' +
       'Content-Type: application/json; charset=UTF-8\r\n\r\n{"suspended":true}\r\n' +
@@ -194,6 +194,7 @@ test('validateRequests rejects duplicate ids and fields that would break the mul
     get('odd>id\r\n'),
     get('b', {
       method: 'POST',
+      path: `/admin/directory/v1/customer/C0123456/devices/chromeos/b:issueCommand`,
       body: { ok: true },
       headers: { 'If-Match': 'etag' },
       query: { n: 1, flag: true },

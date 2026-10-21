@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { GoogleConnectionError } from './provider';
+import { GoogleConnectionError, googlePartAllowed } from './provider';
 
 /**
  * Google multipart batch service. One call sends many API calls of one resource type.
@@ -197,6 +197,10 @@ export function validateRequests(requests: readonly BatchRequest[]): void {
     )
       throw invalidRequest(
         `Request ${JSON.stringify(request.id)} needs an API-relative path without a query.`,
+      );
+    if (!googlePartAllowed(request.method, request.path))
+      throw invalidRequest(
+        `Request ${JSON.stringify(request.id)} names a path the part allowlist refuses.`,
       );
     if (request.body !== undefined && !BODY_METHODS.has(request.method))
       throw invalidRequest(
