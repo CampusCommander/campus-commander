@@ -70,8 +70,11 @@ export class DeviceDomainRefresh {
         refreshCapabilities,
         correlationId,
       );
+      // The stored state lists every capability. Only this refresh decides the answer.
       const failed = health.capabilities.find(
-        (entry: GoogleHealth['capabilities'][number]) => entry.failure !== null,
+        (entry: GoogleHealth['capabilities'][number]) =>
+          refreshCapabilities.includes(entry.capability) &&
+          entry.failure !== null,
       );
       return failed
         ? { status: 'failed', reason: failed.failure }

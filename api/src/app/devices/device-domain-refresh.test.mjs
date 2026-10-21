@@ -29,7 +29,7 @@ const started = {
   startedAt: new Date().toISOString(),
 };
 
-const health = (failures = [null, null]) => ({
+const health = (failures = [null, null], history = []) => ({
   customerId,
   generation: current.generation,
   observedAt: '2026-10-20T12:00:00.000Z',
@@ -52,6 +52,14 @@ const health = (failures = [null, null]) => ({
       lastSucceededAt: null,
       correlationId: null,
     },
+    ...history.map(({ capability, failure }) => ({
+      capability,
+      scopeVerified: failure === null,
+      failure,
+      checkedAt: '2026-10-20T12:00:00.000Z',
+      lastSucceededAt: null,
+      correlationId: null,
+    })),
   ],
 });
 
@@ -185,6 +193,31 @@ test('a failed check answers its own code', async () => {
     );
     assert.deepEqual(answer.value.domain, { status: 'failed', reason });
   }
+});
+
+test('a failure outside the refreshed capabilities does not fail the domain refresh', async () => {
+  const refresh = new DeviceDomainRefresh({
+    authorize: async () => undefined,
+    async requestSync() {
+      return started;
+    },
+    async checkHealth() {
+      return health(
+        [null, null],
+        [
+          {
+            capability: 'device-changes',
+            failure: 'delegation-not-authorized',
+          },
+        ],
+      );
+    },
+  });
+  const answer = await settle(() =>
+    refresh.request(session, current, correlationId),
+  );
+  assert.equal(answer.error, undefined, `The request answers: ${answer.error}`);
+  assert.deepEqual(answer.value.domain, { status: 'refreshed', reason: null });
 });
 
 test('a 429 answers busy and a lease failure leaves the sync running', async () => {
