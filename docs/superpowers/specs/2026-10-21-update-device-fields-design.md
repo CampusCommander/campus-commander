@@ -7,13 +7,15 @@ Owner direction, 2026-10-19: "We are building a doghouse. We dont need to choose
 
 ## Conventions
 
-- Code paths are relative to the repository root at `265a52a`. `1f91da3` changes only the record and two lines of `docs/current-work.md`, so every cited code line holds on `main`.
+- Code paths are relative to the repository root at `265a52a`. `main` then gained the record (`1f91da3`) and B5 (`c2ca3ac`, PR #82).
+- B5 shifts cited lines in 017, `worker/src/device-update.ts`, `api-e2e/device-write-mock.mjs`, and `deployment/postgres/device-write-jobs.integration.mjs`. The cited functions keep their names.
 - `record:N` cites the record at `1f91da3`. Its tree equals the record branch head `8406331`.
 - `step4:N` cites `2026-10-16-device-write-jobs-design.md`. `step5:N` cites `2026-10-21-device-command-jobs-design.md`.
 - `016`, `017`, and `018` name the files in `deployment/postgres/migrations/`. `ac/` is `libs/application-contracts/src/lib/`, `gc/` is `libs/google-connection/src/lib/`, `api/` is `api/src/app/`, and `fe/` is `frontend/src/app/`.
 - `worker:N` cites `worker/src/device-update.ts`. `mock:` names `node_modules/@campuscommander/admin-sdk-mock/dist/src/`, version 0.2.0.
 - `findings` names `~/engineering-team/workspace/update-device-fields/findings.md`. Its lines cite `2599a33`. `git diff 2599a33 265a52a` is not empty, so this design re-read every cited line at `265a52a`.
-- The reviewer approved B5 at `a3f3ef9` on `codex/device-actions-command-jobs`. Merge card `t_d99cb3c4` merges `main` into it. No B6 branch exists on 2026-10-21. Its scope is step5:179-204.
+- B5 merged into `main` as `c2ca3ac` on 2026-10-21. The B6 branch `codex/device-actions-command-polling` points at the B5 commit `304ae09`.
+- That B6 branch holds no commit of its own. B6 scope is step5:179-204.
 
 ## Decision summary
 
@@ -24,30 +26,43 @@ Owner direction, 2026-10-19: "We are building a doghouse. We dont need to choose
 5. A 2xx answer and a read-back reach one verdict through one compare. Paths compare without case.
 6. A new route reads `orgunits.list` for the OU picker. Setup lists the OU read scope.
 7. Today's platform and district grants cover every OU, so the move check needs no new argument.
+8. Every write limit counts code points. The Asset tag readers move to the same rule.
+9. Settlement checks each value against the domain of its outcome before any lock.
 
 ## 1. Contracts
 
-| Field ID            | Label              | Google property     | Modes              | Value                                                 |
-| ------------------- | ------------------ | ------------------- | ------------------ | ----------------------------------------------------- |
-| `annotatedLocation` | Annotated location | `annotatedLocation` | `replace`, `clear` | 1 to 200 code points                                  |
-| `assetTag`          | Asset tag          | `annotatedAssetId`  | `replace`          | 1 to 256 code points                                  |
-| `annotatedUser`     | Annotated user     | `annotatedUser`     | `replace`, `clear` | 1 to 100 code points                                  |
-| `notes`             | Notes              | `notes`             | `replace`, `clear` | 1 to 500 code points                                  |
-| `orgUnitPath`       | Organization unit  | `orgUnitPath`       | `move`             | A path that starts with `/`, at most 4,096 characters |
+| Field ID            | Label              | Google property     | Modes              | Value                                                                       |
+| ------------------- | ------------------ | ------------------- | ------------------ | --------------------------------------------------------------------------- |
+| `annotatedLocation` | Annotated location | `annotatedLocation` | `replace`, `clear` | 1 to 200 code points                                                        |
+| `assetTag`          | Asset tag          | `annotatedAssetId`  | `replace`          | 1 to 256 code points                                                        |
+| `annotatedUser`     | Annotated user     | `annotatedUser`     | `replace`, `clear` | 1 to 100 code points                                                        |
+| `notes`             | Notes              | `notes`             | `replace`, `clear` | 1 to 500 code points                                                        |
+| `orgUnitPath`       | Organization unit  | `orgUnitPath`       | `move`             | The path rule of `ac/devices.ts:10`: a leading `/`, 1 to 4,096 UTF-16 units |
 
 - The IDs are the device record keys (`ac/devices.ts:61-75`). The labels follow record default 6 (`record:92`). This table order is the contract order. Rows, bodies, and the digest use it.
 - A text value keeps the step 4 rule: code points, a visible character, and no trim (`ac/device-updates.ts:22-35`). The mock counts code points too (`mock:directory/common.js:90-91`).
-- 200 is built. 256 is the sync cap (`gc/devices.ts:47`, `016:39`). Google documents 100 and 500 (`record:30`). The mock enforces 100 and 500 and sets no Asset tag limit (`mock:directory/device-writes.js:11-16`).
+- Step 4 built the 200 limit. 256 is the sync cap (`gc/devices.ts:47`, `016:39`, `record:28-29`). Google documents 100 and 500 (`record:30`). The mock enforces 100 and 500 and sets no Asset tag limit (`mock:directory/device-writes.js:11-16`).
 - The contract therefore enforces all four limits. A refusal names the field label and the limit (`record:31`). Engineering copy, for example: `Asset tag holds 1 to 256 characters.`
 - New exports `DEVICE_UPDATE_FIELD_LIMITS` and `DEVICE_UPDATE_FIELD_LABELS` serve the client and the API.
 - Asset tag offers no Clear until the DEVICE-01 live check (`record:25`, `record:126`). Organization unit offers only Move. `org_unit_path` is NOT NULL (`016:40`), and the mock ignores a null path (`mock:directory/device-writes.js:44-47`).
 - Move sends the path that the OU tree returned, in Google's casing (section 6). The request carries the path (`record:49`). Prepend and Append stay out (`record:117`).
 
+Length policy:
+
+- Every write limit counts code points. A reader that bounds a written field at the write limit counts code points too.
+- Asset tag is the one such field. `z.string().max(256)` counts UTF-16 units (`node_modules/zod/v4/core/checks.js:329-332`).
+- U1 therefore moves three Asset tag readers to a 256-code-point bound: `gc/devices.ts:47`, `ac/devices.ts:44`, and `ac/devices.ts:65`.
+- `gc/devices.ts:47` also parses read parts and the PATCH answer through `directoryDevice` (`gc/devices.ts:98`, `:622`, `:965`).
+- PostgreSQL runs in UTF8 (`deployment/postgres/index.mjs:82-83`). Its `length()` counts code points, so `016:39` already applies the same rule.
+- The other text readers keep 4,096 UTF-16 units (`gc/devices.ts:50-51`, `ac/devices.ts:47-48`, `:68-69`). A written value holds at most 1,000 units.
+- A Move path uses the path rule of `ac/devices.ts:10`. That rule counts UTF-16 units, as every path reader does (`gc/devices.ts:48`).
+- Each path that the contract accepts also fits `016:40`.
+
 | Contract                                       | Change                                                                                                                                  |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Preview request (`ac/device-updates.ts:40-51`) | `{ gridId, tabId, changes }`. `changes` holds 1 to 5 strict objects `{ field, mode, value }`. Clear omits `value`. A field occurs once. |
 | Preview summary (`ac/device-updates.ts:56-86`) | `changes`, in contract order, replaces `mode` and `value`. New count `fieldChanges` counts eligible device-field rows (Figma `97:21`).  |
-| Target row (`ac/device-updates.ts:89-99`)      | The keys stay. One row per target device and change. `field` takes the five IDs. `approvedValue` widens to 4,096 characters.            |
+| Target row (`ac/device-updates.ts:89-99`)      | The keys stay. One row per target device and change. `field` takes the five IDs. `approvedValue` widens to 4,096 UTF-16 units (`:94`).  |
 | Job detail (`ac/jobs.ts:205-219`)              | `changes` replaces `field`, `mode`, and `requestedValue`. It is null for a command or status job.                                       |
 | Job operation (`ac/jobs.ts:138-163`)           | New key `field`, null for command and status rows. `operation` adds `move`. An update job answers one row per operation and field.      |
 
@@ -61,16 +76,16 @@ Owner direction, 2026-10-19: "We are building a doghouse. We dont need to choose
 
 Each change edits a migration in place, as step5:69 does. Development data is disposable (`AGENTS.md:27`).
 
-| Object                                                                         | Change                                                                                                                                                                                                                                  |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cc.device_update_changes`, new in 017                                         | `preview_id` (ON DELETE CASCADE), `field`, `mode`, `value`. Primary key `(preview_id, field)`. Checks: the field-mode pairs of section 1, `(mode='clear')=(value IS NULL)`, each length, and a leading `/` for a path.                  |
-| `cc.device_update_previews`, `cc.device_update_jobs` (`017:69-93`, `:113-147`) | Drop `field`, `mode`, `value`, and the checks that name them (`017:91-92`, `:146`). A job reads its changes through its unique `preview_id` (`017:115`). Previews gain `field_changes integer NOT NULL DEFAULT 0`.                      |
-| `cc.device_update_target_fields`, new in 017                                   | `(preview_id, ordinal)` references the target ON DELETE CASCADE. Columns `field`, `observed_value`, and `disposition`. Primary key `(preview_id, ordinal, field)`.                                                                      |
-| `cc.device_update_operation_fields`, new in 017                                | `(job_id, operation_number)` references the operation ON DELETE CASCADE. Columns `field`, `baseline_value`, `requested_value`, and `observed_value`. Primary key `(job_id, operation_number, field)`.                                   |
-| `cc.device_write_overlays` (`017:206-217`)                                     | The field check adds `assetTag`, `annotatedUser`, `notes`, and `orgUnitPath`.                                                                                                                                                           |
-| `cc.devices` (`016:34-58`)                                                     | `annotated_user` (section 5). Four current-value stamps beside `016:53-54`: `asset_tag_observed_at`, `annotated_user_observed_at`, `notes_observed_at`, and `org_unit_path_observed_at`.                                                |
-| `cc.upsert_devices` (`016:365-467`)                                            | `asset_tag`, `org_unit_path`, `notes`, and `annotated_user` leave the row rule (`016:403-410`) for the rule of `annotated_location` (`016:426-436`). The WHERE, RETURNING, `converged`, and `moved` clauses (`016:437-463`) cover them. |
-| Grants (`deployment/postgres/index.mjs:274-276`)                               | SELECT on the three new tables.                                                                                                                                                                                                         |
+| Object                                                                         | Change                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cc.device_update_changes`, new in 017                                         | `preview_id` (ON DELETE CASCADE), `field`, `mode`, `value`. Primary key `(preview_id, field)`. Checks: the field-mode pairs of section 1, `(mode='clear')=(value IS NULL)`, each length, and a leading `/` for a path.                                    |
+| `cc.device_update_previews`, `cc.device_update_jobs` (`017:69-93`, `:113-147`) | Drop `field`, `mode`, `value`, and the checks that name them (`017:91-92`, `:146`). A job reads its changes through its unique `preview_id` (`017:115`). Previews gain `field_changes integer NOT NULL DEFAULT 0`.                                        |
+| `cc.device_update_target_fields`, new in 017                                   | `(preview_id, ordinal)` references the target ON DELETE CASCADE. Columns `field`, `observed_value`, and `disposition`. Primary key `(preview_id, ordinal, field)`. `observed_value` holds null or at most 4,096 code points.                              |
+| `cc.device_update_operation_fields`, new in 017                                | `(job_id, operation_number)` references the operation ON DELETE CASCADE. Columns `field`, `baseline_value`, `requested_value`, and `observed_value`. Primary key `(job_id, operation_number, field)`. Each value holds null or at most 4,096 code points. |
+| `cc.device_write_overlays` (`017:206-217`)                                     | The field check adds `assetTag`, `annotatedUser`, `notes`, and `orgUnitPath`.                                                                                                                                                                             |
+| `cc.devices` (`016:34-58`)                                                     | `annotated_user` (section 5). Four current-value stamps beside `016:53-54`: `asset_tag_observed_at`, `annotated_user_observed_at`, `notes_observed_at`, and `org_unit_path_observed_at`.                                                                  |
+| `cc.upsert_devices` (`016:365-467`)                                            | `asset_tag`, `org_unit_path`, `notes`, and `annotated_user` leave the row rule (`016:403-410`) for the rule of `annotated_location` (`016:426-436`). The WHERE, RETURNING, `converged`, and `moved` clauses (`016:437-463`) cover them.                   |
+| Grants (`deployment/postgres/index.mjs:274-276`)                               | SELECT on the three new tables.                                                                                                                                                                                                                           |
 
 Per-field values:
 
@@ -102,7 +117,8 @@ Google call:
 
 - `patchDevices` replaces `patchAnnotatedLocations` (`gc/devices.ts:669-713`). A write is `{ deviceId, fields }`. The body holds only the eligible fields of that device (`record:47`).
 - Clear sends `null` (`record:48`). The body names Asset tag `annotatedAssetId`. The other IDs equal Google's property names.
-- The part keeps `projection=FULL` and `fields=deviceFields` (`gc/devices.ts:686`). The answer parses as a directory device and maps through `deviceObservation` (`gc/devices.ts:369-381`).
+- The part keeps `projection=FULL` and `fields=deviceFields` (`gc/devices.ts:686`). The answer parses through `directoryDevice` and maps through `deviceObservation` (`gc/devices.ts:98`, `:369-381`).
+- After U1, every Asset tag that the contract accepts also parses in the answer (section 1, Length policy).
 - `writtenDevice` (`gc/devices.ts:103-107`) goes. A body that fails the parse is `invalid-response`, which settles `unknown` (step4:1329).
 - The part allowlist admits the PATCH path today (`gc/provider.ts:266`). The `device-changes` scope covers every field (`ac/google-capabilities.ts:69-81`).
 - `moveDevicesToOu` stays out, because it returns no per-device result (`record:121`).
@@ -121,10 +137,25 @@ Read-back (`worker:1833-1879`) runs the same compare on each observation of `dev
 
 Settlement (`017:914-1140`):
 
-- A status result keeps `value`. An update result can carry `values`. It maps each field of the operation to null or a string of at most 4,096 characters.
-- A `succeeded` update result carries `values`. A key set that differs from the fields of the operation raises 22023 before any lock (rule S2, `2026-10-19-device-write-worker-contracts.md:84-89`).
-- The field set of an operation never changes after confirm, so that check reads it without a lock.
-- The `applied` step (`017:1065-1081`) writes each observed value into its field row.
+- A status result keeps `value`. An update result carries `values`, an object keyed by field ID, and no `value`.
+- The checks below join the result checks at `017:941-972`, before the header lock at `017:973`.
+- A violation raises 22023 and changes nothing (rule S2, `2026-10-19-device-write-worker-contracts.md:84-89`).
+
+1. A `succeeded` result and a `failed` result with `value-differs` carry `values`. Other results carry none.
+2. Present `values` name exactly the field rows of their operation. Those rows never change after confirm, so the check reads them without a row lock.
+3. Each value fits the domain of its outcome. PostgreSQL `length()` counts code points.
+
+| Field               | `succeeded`: the published column                             | `failed`: evidence only           |
+| ------------------- | ------------------------------------------------------------- | --------------------------------- |
+| `annotatedLocation` | Null or at most 4,096 code points (`016:42`)                  | Null or at most 4,096 code points |
+| `assetTag`          | Null or at most 256 code points (`016:39`)                    | Null or at most 4,096 code points |
+| `annotatedUser`     | Null or at most 4,096 code points (section 5)                 | Null or at most 4,096 code points |
+| `notes`             | Null or at most 4,096 code points (`016:43`)                  | Null or at most 4,096 code points |
+| `orgUnitPath`       | Not null, a leading `/`, at most 4,096 code points (`016:40`) | Null or at most 4,096 code points |
+
+- The evidence domain is the `observed_value` check of the field rows (section 2). A failed result never publishes.
+- Today one check fits every value to the location column (`017:946`, `:959`). Under that check alone, a succeeded null path passes and then fails `016:40` under the locks.
+- The `applied` step (`017:1065-1081`) writes each value into its field row. A result without `values` leaves the field rows unchanged.
 - Publication pivots per device first. One UPDATE of `cc.devices` then sets each column and stamp that passes rule 2 (step4:1079). An UPDATE with two source rows for one target row applies only one of them.
 - Each published device and field gets an overlay with the step 4 values (`017:1094-1102`). The overlay lock (`017:1045-1049`) covers every field of the operation.
 - Only a `succeeded` operation publishes, as today (`017:1089`). A `value-differs` device keeps its cached values until the next refresh. `write_field` (`017:1023-1025`) keeps serving status jobs.
@@ -134,16 +165,16 @@ Replace, Clear, and Move each send an absolute final value, so step4:1360-1366 h
 
 ## 5. Annotated user
 
-| Layer     | Change                                                                                                                                                                                                          |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sync      | `devicePage` adds `annotatedUser`, at most 4,096 characters (`gc/devices.ts:39-57`). The list fields (`:544`) and `deviceFields` (`:93-94`) add it. `deviceObservation` maps it through `blank()` (`:369-381`). |
-| Storage   | `cc.devices` gains `annotated_user text CHECK(length(annotated_user)<=4096)` beside `016:42`. `cc.upsert_devices` inserts it (`016:390-397`). `cc.device_record` adds `annotatedUser` (`016:353-354`).          |
-| Contracts | `deviceObservationSchema` and the record shape add `annotatedUser` (`ac/devices.ts:39-50`, `:61-75`). The text field and sort field enums add it (`ac/devices.ts:111-128`).                                     |
-| API       | The column map (`api/devices/device-query.ts:13-22`) and `deviceRow` (`:305`) add `d.annotated_user`. U6 adds it to `selectionIdsSql` (`:400`), with `d.asset_tag` and `d.notes`.                               |
-| Grid      | `docs/ui/entity-grid-fields.json` adds an "Annotated user" text entry after Notes (`:184-191`), filterable and hidden by default. `fe/devices/device-fields.ts` adds the column (`:56`).                        |
-| Details   | An "Annotated user" row joins `fe/devices/device-detail.html:48-57`.                                                                                                                                            |
+| Layer     | Change                                                                                                                                                                                                            |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sync      | `devicePage` adds `annotatedUser`, at most 4,096 UTF-16 units (`gc/devices.ts:39-57`). The list fields (`:544`) and `deviceFields` (`:93-94`) add it. `deviceObservation` maps it through `blank()` (`:369-381`). |
+| Storage   | `cc.devices` gains `annotated_user text CHECK(length(annotated_user)<=4096)` beside `016:42`. `cc.upsert_devices` inserts it (`016:390-397`). `cc.device_record` adds `annotatedUser` (`016:353-354`).            |
+| Contracts | `deviceObservationSchema` and the record shape add `annotatedUser` (`ac/devices.ts:39-50`, `:61-75`). The text field and sort field enums add it (`ac/devices.ts:111-128`).                                       |
+| API       | The column map (`api/devices/device-query.ts:13-22`) and `deviceRow` (`:305`) add `d.annotated_user`. U6 adds it to `selectionIdsSql` (`:400`), with `d.asset_tag` and `d.notes`.                                 |
+| Grid      | `docs/ui/entity-grid-fields.json` adds an "Annotated user" text entry after Notes (`:184-191`), filterable and hidden by default. `fe/devices/device-fields.ts` adds the column (`:56`).                          |
+| Details   | An "Annotated user" row joins `fe/devices/device-detail.html:48-57`.                                                                                                                                              |
 
-- The bound is 4,096 characters, as for location and notes. A longer Google value then never fails a list page. One long asset ID fails a page today (`gc/devices.ts:47`, `:535`).
+- The reader bound is 4,096 UTF-16 units and the column bound 4,096 code points, as for location and notes. A longer Google value then never fails a list page. One long asset ID fails a page today (`gc/devices.ts:47`, `:535`).
 - A Redis entry without the key fails its strict parse and reads as absent (`api/devices/device-pager.ts:134-139`). The cache needs no rebuild step.
 - The mock seeds a person's address on one-to-one and staff devices (`mock:seed/devices.js:134-142`, `:179`).
 
@@ -179,27 +210,40 @@ Replace, Clear, and Move each send an absolute final value, so step4:1360-1366 h
 
 No test calls Google. Google answers come from admin-sdk-mock or from fakes.
 
-| Decision             | Target                                                              | Proof                                                                                                                                                                                    |
-| -------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Contracts            | `application-contracts:test`                                        | Each limit at N and N+1 code points, with the label in the message. Clear on Asset tag, a repeated field, and 0 or 6 changes fail.                                                       |
-| Preview rows, digest | `api:test` (`api/devices/*.test.mjs`)                               | Row dispositions, a path in other case as `unchanged`, `fieldChanges`, and the version 2 digest of a fixed input.                                                                        |
-| Schema and confirm   | `deployment:postgres-integration`                                   | The change checks, field rows at confirm, a version 1 preview answering `preview-changed`, and the purge cascade.                                                                        |
-| PATCH                | `google-connection:test` (`gc/admin-sdk-mock.test.mjs`)             | One PATCH sets four annotations and moves the device. `null` clears. Notes over 500 or an unknown OU (`mock:directory/orgunits.js:35-47`) answer 400 and change no field.                |
-| Checks and read-back | `worker:test`                                                       | A match gives `succeeded`. A differing field gives `value-differs`. A fake reader proves a path in other case, because the mock matches exact case (`mock:directory/orgunits.js:27-29`). |
-| Settlement           | `deployment:postgres-integration`                                   | Two fields of one device publish in one settlement. Each field gets its stamp and overlay. An older stamp publishes nothing.                                                             |
-| List lag             | `deployment:postgres-integration`                                   | Per field: a lagged list keeps the overlay value. An equal list deletes the overlay. A path converges without case.                                                                      |
-| Lost answer          | `api-e2e:admin-sdk-mock-integration` (`api-e2e/project.json:42-59`) | A `hang` of 12,000 ms on `directory.chromeosdevices.patch` (`api-e2e/device-write-mock.mjs:336-341`) outlasts the 10 s timeout (`gc/provider.ts:299`).                                   |
-| End-to-end lag       | `api-e2e:admin-sdk-mock-integration`                                | A Refresh all inside 300 s keeps the written values and the moved OU. `POST domains/{id}/index/flush` ends the lag (`mock:control/control.js:259-272`).                                  |
-| Annotated user       | `google-connection:test`, `api-e2e:admin-sdk-mock-integration`      | The seeded value reaches the record, the text filter, and the sort.                                                                                                                      |
-| OU tree              | `api:test`, `api-e2e:admin-sdk-mock-integration`, `frontend:test`   | `granted` lists the seeded tree. A `remove-scope` fault (pattern `api-e2e/device-write-mock.mjs:408-412`) gives `denied`. The setup lists name the scope.                                |
-| Access               | `deployment:postgres-integration`                                   | A person without `devices:write` or `devices:bulk-actions` receives `forbidden` for a Move preview.                                                                                      |
-| Six steps            | `api-e2e:client-review-mock`, `frontend-e2e:e2e` (Chromium)         | Card Q1 rehearses `record:134-139`.                                                                                                                                                      |
+| Decision             | Target                                                              | Proof                                                                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Contracts            | `application-contracts:test`                                        | Each limit at N and N+1 code points, with the label in the message. Asset tag accepts 256 supplementary characters. Clear on Asset tag, a repeated field, and 0 or 6 changes fail.                                             |
+| Asset tag readers    | `google-connection:test`, `application-contracts:test`              | A list page, a read part, the observation, and the record accept 256 supplementary characters. An Asset tag of 257 code points fails each of them.                                                                             |
+| Preview rows, digest | `api:test` (`api/devices/*.test.mjs`)                               | Row dispositions, a path in other case as `unchanged`, `fieldChanges`, and the version 2 digest of a fixed input.                                                                                                              |
+| Schema and confirm   | `deployment:postgres-integration`                                   | The change checks, field rows at confirm, a version 1 preview answering `preview-changed`, and the purge cascade.                                                                                                              |
+| PATCH                | `google-connection:test` (`gc/admin-sdk-mock.test.mjs`)             | One PATCH sets four annotations and moves the device. `null` clears. An Asset tag of 256 supplementary characters parses. Notes over 500 or an unknown OU (`mock:directory/orgunits.js:35-47`) answer 400 and change no field. |
+| Checks and read-back | `worker:test`                                                       | A match gives `succeeded`. A differing field gives `value-differs`. A fake reader proves a path in other case, because the mock matches exact case (`mock:directory/orgunits.js:27-29`).                                       |
+| Settlement           | `deployment:postgres-integration`                                   | Two fields of one device publish in one settlement. Each field gets its stamp and overlay. An older stamp publishes nothing.                                                                                                   |
+| Settlement domains   | `deployment:postgres-integration`                                   | `rejectsBeforeLocks` (`deployment/postgres/device-write-jobs.integration.mjs:8456-8475`) runs each invalid succeeded result. Each answers 22023 while another session holds the header.                                        |
+| List lag             | `deployment:postgres-integration`                                   | Per field: a lagged list keeps the overlay value. An equal list deletes the overlay. A path converges without case.                                                                                                            |
+| Lost answer          | `api-e2e:admin-sdk-mock-integration` (`api-e2e/project.json:42-59`) | The hang-then-403 scenario of `api-e2e/device-write-mock.mjs:315-393`, with Asset tag and Notes. Read-back settles both fields `succeeded`.                                                                                    |
+| End-to-end lag       | `api-e2e:admin-sdk-mock-integration`                                | A Refresh all inside 300 s keeps the written values and the moved OU. `POST domains/{id}/index/flush` ends the lag (`mock:control/control.js:259-272`).                                                                        |
+| Annotated user       | `google-connection:test`, `api-e2e:admin-sdk-mock-integration`      | The seeded value reaches the record, the text filter, and the sort.                                                                                                                                                            |
+| OU tree              | `api:test`, `api-e2e:admin-sdk-mock-integration`, `frontend:test`   | `granted` lists the seeded tree. A `remove-scope` fault (pattern `api-e2e/device-write-mock.mjs:408-412`) gives `denied`. The setup lists name the scope.                                                                      |
+| Access               | `deployment:postgres-integration`                                   | A person without `devices:write` or `devices:bulk-actions` receives `forbidden` for a Move preview.                                                                                                                            |
+| Six steps            | `api-e2e:client-review-mock`, `frontend-e2e:e2e` (Chromium)         | Card Q1 rehearses `record:134-139`.                                                                                                                                                                                            |
 
-The `hang` sleeps `ms / scale` and then runs the handler (`mock:faults/faults.js:136-141`). The PATCH therefore applies, and its answer is lost. Read-back then settles each field `succeeded`. Tests keep scale 1 (`api-e2e/admin-sdk-mock-fixture.mjs:244`).
+`rejectsBeforeLocks` runs four invalid succeeded results:
+
+- a null path
+- a path without a leading `/`
+- an Asset tag of 257 code points
+- `values` without one field of its operation
+
+Each changes nothing. The first three values settle as evidence in a `failed` `value-differs` result and publish nothing.
+
+The `hang` sleeps `ms / scale` and then runs the handler (`mock:faults/faults.js:136-141`). The PATCH therefore applies, and the 10 s timeout (`gc/provider.ts:299`) loses its answer.
+Without a refusal, the retry PATCH succeeds by write response. The scenario therefore waits until the mock consumes the hang, then adds a 403 (`api-e2e/device-write-mock.mjs:344-362`).
+Read-back then settles each field with `verified_by='read-back'` (`:372-375`). Tests keep scale 1 (`api-e2e/admin-sdk-mock-fixture.mjs:244`).
 
 ## Conflicts with B5 and B6
 
-| File                                                      | B5 at `a3f3ef9`                                        | B6, step5:179-204                      | Cards here |
+| File                                                      | B5, on `main` since `c2ca3ac`                          | B6, step5:179-204                      | Cards here |
 | --------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------- | ---------- |
 | `017-jobs.sql`, `cc.settle_device_update_operations`      | Adds the `issue` kind, its fences, and command columns | Settles polls and derives the status   | U5         |
 | `017-jobs.sql`, the claim, recovery, and finish functions | Changes the recovery and the finish preparation        | Adds the poll claim and due-poll reads | U5         |
@@ -208,31 +252,35 @@ The `hang` sleeps `ms / scale` and then runs the handler (`mock:faults/faults.js
 | `api-e2e/device-write-mock.mjs`                           | Adds 231 lines of command checks                       | Poll checks                            | U5, Q1     |
 | `api/src/app/jobs/jobs.ts`                                | Refuses Reconcile for commands                         | None                                   | U5, U6     |
 | `deployment/postgres/index.mjs`                           | None                                                   | Grants of the poll functions           | U5, U6     |
-| `deployment/bootstrap/application-edge.mjs`               | Widens the job ID pattern (`:78`)                      | None                                   | U2 (`:85`) |
+| `deployment/bootstrap/application-edge.mjs`               | Widens the job ID pattern (`:74`)                      | None                                   | U2 (`:85`) |
 
-U5 starts after B5 merges to `main`. When B6 is open at that time, the second of U5 and B6 to finish merges `main` before review.
+B5 is on `main`, so U5 starts from `main` and finds the cited 017 and worker lines there.
+When B6 is open at that time, the second of U5 and B6 to finish merges `main` before review.
 
 ## Card plan
 
 Each card that changes a contract updates every consumer, including `api-e2e` and the `frontend-e2e` fixtures.
 
-| ID  | Title                                                  | Profile  | Depends on         |
-| --- | ------------------------------------------------------ | -------- | ------------------ |
-| U1  | Inventory: Annotated user                              | backend  | none               |
-| U2  | Organization unit tree: setup scope and route          | backend  | none               |
-| U3  | Google calls: one PATCH with several fields            | backend  | U1                 |
-| U4  | List-lag protection for four more fields               | backend  | U1                 |
-| U5  | Write jobs: field rows, checks, read-back, publication | backend  | U3, U4, B5 merged  |
-| U6  | Previews and confirm for five fields                   | backend  | U5                 |
-| F1  | Devices grid and details: Annotated user               | frontend | U1, mockup         |
-| F2  | Update device sheet: text fields, review, and confirm  | frontend | U6, mockup         |
-| F3  | Update device sheet: Organization unit and picker      | frontend | U2, F2, mockup     |
-| F4  | Jobs: one row per device and field                     | frontend | U5, U6, mockup     |
-| Q1  | Rehearse the six completion steps                      | qa       | U1 to U6, F1 to F4 |
+| ID  | Title                                                  | Profile  | Depends on                          |
+| --- | ------------------------------------------------------ | -------- | ----------------------------------- |
+| U1  | Inventory: Annotated user and the Asset tag readers    | backend  | none                                |
+| U2  | Organization unit tree: setup scope and route          | backend  | none                                |
+| U3  | Google calls: one PATCH with several fields            | backend  | U1                                  |
+| U4  | List-lag protection for four more fields               | backend  | U1                                  |
+| U5  | Write jobs: field rows, checks, read-back, publication | backend  | U3, U4                              |
+| U6  | Previews and confirm for five fields                   | backend  | U5                                  |
+| F1  | Devices grid and details: Annotated user               | frontend | U1, mockup                          |
+| F2  | Update device sheet: text fields, review, and confirm  | frontend | U6, F1, mockup                      |
+| F3  | Update device sheet: Organization unit and picker      | frontend | U2, F2, mockup                      |
+| F4  | Jobs: one row per device and field                     | frontend | U5, U6, mockup                      |
+| F5  | Update device sheet: keep an unresolved confirmation   | frontend | F2, step 5 F2 merged (`t_80335e20`) |
+| Q1  | Rehearse the six completion steps                      | qa       | U1 to U6, F1 to F5                  |
 
 **U1.** Scope: the Sync, Storage, Contracts, and API rows of section 5. `annotated_user` keeps the row rule until U4.
+It also moves the three Asset tag readers to 256 code points (section 1, Length policy).
 Acceptance: after Refresh all on the mock, a seeded one-to-one device answers its `annotatedUser` in `GET api/devices`.
 The text filter and the sort on `annotatedUser` return that device. A device without the value answers null.
+The Asset tag readers row of section 8 passes.
 
 **U2.** Scope: section 6 Setup, Reader, Route, and Answer, with the denied message constant. It updates the scope tests (`fe/diagnostics/diagnostics.spec.ts:197-206`).
 Acceptance: the setup scope list names `admin.directory.orgunit.readonly`. The route answers `granted` with the seeded tree.
@@ -248,21 +296,26 @@ Acceptance: the List lag row of section 8 passes for each of the four fields.
 It also covers the job operation rows of section 1 (`api/jobs/jobs.ts:188-231`, `:482-522`).
 Until U6, confirm writes one `annotatedLocation` field row per operation from the preview columns.
 Acceptance: a job seeded with Asset tag and Notes on 3 mock devices ends `completed`. One `entity-batch` carries the 3 devices, and their records hold both values.
-A Move job ends `completed`, and the OU filter finds its devices in the destination. The Lost answer row of section 8 settles every field by read-back.
-The step 4 Annotated location suites pass. Job operations answer one row per device and field.
+A Move job ends `completed`, and the OU filter finds its devices in the destination.
+The Settlement domains and Lost answer rows of section 8 pass. The step 4 Annotated location suites pass.
+Job operations answer one row per device and field.
 
 **U6.** Scope: section 1 contracts, the preview objects of section 2, section 3, and the job detail query (`api/jobs/jobs.ts:415`, `:463-470`).
 It changes both preview callers (`api/devices/device-updates.ts:243`, `api/devices/device-actions.ts:234`) and the grant (`deployment/postgres/index.mjs:299`).
 Consumers keep one-field behavior: the sheet sends one change (`fe/devices/device-update-flow.ts:619-624`). The receipt and the job detail read `changes` (`fe/jobs/job-receipt-messages.ts:18-21`, `fe/jobs/job-detail-fields.ts:116-118`).
 Acceptance: a preview sets Asset tag and Notes on 6 devices. One device already holds the Notes value.
 The preview answers 6 eligible devices, `fieldChanges` 11, and 12 target rows.
-Each over-limit value answers 400 with the field label. Clear on Asset tag answers 400. Confirm creates 6 operations and 11 field rows. A version 1 preview answers 409 `preview-changed`.
+Each over-limit value answers 400 with the field label. An Asset tag of 256 supplementary characters previews, and 257 code points answer 400.
+Clear on Asset tag answers 400. Confirm creates 6 operations and 11 field rows. A version 1 preview answers 409 `preview-changed`.
 
-**F1.** Scope: the Grid and Details rows of section 5. Acceptance: completion step 3 passes (`record:136`).
+**F1.** Scope: the Grid and Details rows of section 5.
+Acceptance: a seeded one-to-one device shows its Annotated user in the optional column and in the details row. The text filter finds it.
+Completion step 3 also sets the value (`record:136`), so F2 and Q1 prove that step.
 
 **F2.** Scope: the Edit step with the four text fields and their modes, limits, and counters. Each field starts at "Leave unchanged" (`record:22`).
 It replaces the one-field draft store (`fe/devices/device-update-draft.store.ts:13-31`) and the sentence of `fe/devices/device-update-sheet.html:174-176`.
-It builds the Review rows per device and field, and the confirmation and receipt for several fields. Acceptance: completion steps 1, 4, and 5 pass (`record:134`, `:137`, `:138`).
+It builds the Review rows per device and field, and the confirmation and receipt for several fields.
+Acceptance: completion steps 1, 3, 4, and 5 pass (`record:134`, `:136`, `:137`, `:138`).
 
 **F3.** Scope: section 6 Picker and Disabled field, and the Move rows of Review and Confirm. Acceptance: completion steps 2 and 6 pass (`record:135`, `:139`).
 
@@ -271,14 +324,32 @@ Acceptance: the job of completion step 1 shows one row per device and field with
 
 **F1 to F4.** Each waits for the owner-approved mockup and its API card. Each closes its design gaps (`record:110-111`).
 
+**F5.** Follow-up `t_0f6b8547`. Scope: `replay()` keeps the record when `confirmationMayExist()` answers true (`fe/devices/device-update-confirmation.store.ts:130-155`).
+It reuses that helper with the `connection-required` answer of step 5 F2 (`04a486c:frontend/src/app/devices/device-update-flow.ts:156-163`).
+Until an answer settles acceptance, the record keeps the original person's key, the preview ID, and the digest (`fe/devices/device-update-confirmation.store.ts:13-17`, `:159-167`).
+The model is the `unresolved` replay of the action store (`04a486c:frontend/src/app/devices/device-action-confirmation.store.ts:142-151`).
+Both callers, `prepare()` and `prepareNewPreview()` (`fe/devices/device-update-sheet.ts:489-515`, `:799-833`), show the existing receipt-unavailable recovery (`:637-642`).
+Neither caller starts a replacement preview while acceptance stays unresolved. A 410 and the definitive answers keep today's recovery.
+F5 changes no API, copy, or composition. It edits the sheet after F2, so the two cards never collide.
+F3 and F5 both edit the sheet. The second of them to finish merges `main` before review.
+Acceptance, with mocked answers in `frontend:test` and `frontend-e2e:e2e` (Chromium):
+
+1. Lost answer: a confirmation without an answer keeps its record with the original person, preview ID, and digest.
+2. Automatic replay: through each caller, `forbidden`, `permission-changed`, `preview-changed`, and `connection-required` keep the record.
+   No preview request leaves the page, and the sheet shows the receipt-unavailable recovery.
+3. Closure or reload: after a closure or a reload, the next replay sends the same preview ID and digest.
+4. Receipt recovery: a later replay that answers the receipt clears the record and opens the receipt.
+5. A 410 still clears the record and lets the preview proceed. `connection-changed` still clears it and shows its message.
+
 **Q1.** Acceptance: each step of `record:134-139` passes on admin-sdk-mock, with screenshots. Lint, tests, and builds of the affected projects pass. Live write behavior stays "not verified" (`record:141`).
 
 ## Risks and follow-ups
 
 - Live Google writes stay unverified (`record:63`). The DEVICE-01 live check also decides Clear on Asset tag (`record:64`).
 - Google's PATCH atomicity and value normalization stay unverified. A normalized value settles `value-differs`, with Google's value as evidence.
+- Google's Asset tag limit and its counting unit stay unverified. The contract uses the sync cap (`record:28-29`).
 - An OU tree above 10,000 units answers `unavailable` with `invalid-response`. Google allows 40,000 OUs per customer (findings c).
 - A preview of 100,000 devices with five changes freezes 500,000 field rows. The device cap stays (step4:557).
 - Fresh installations now grant the scope that the disputed Schools page reads (`fe/schools/schools.ts:30`). This design changes no Schools code.
 - Follow-up: the label "School OU references" (`ac/google-capabilities.ts:31`) now also serves the device picker. A rename waits for the Schools decision.
-- Hotspots: the 017 settlement and `worker/src/device-update.ts` with B5 and B6. `016-device-inventory.sql` with U1 and U4, which run in order.
+- Hotspots: the 017 settlement and `worker/src/device-update.ts` with B6. `016-device-inventory.sql` with U1 and U4, which run in order. `fe/devices/device-update-sheet.ts` with F2, F3, and F5.
