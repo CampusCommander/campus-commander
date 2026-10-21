@@ -397,7 +397,7 @@ export function selectionIdsSql(
     : '';
   values.push(limit);
   return {
-    text: `SELECT d.device_id,d.serial_number,d.org_unit_path,d.annotated_location,d.last_entity_sync,d.removed_at ${from} WHERE s.customer_id=$1 AND ${chosen}${exceptions} ORDER BY d.device_id LIMIT $${values.length}`,
+    text: `SELECT d.device_id,d.serial_number,d.org_unit_path,d.annotated_location,d.status,d.status_observed_at,d.last_entity_sync,d.removed_at ${from} WHERE s.customer_id=$1 AND ${chosen}${exceptions} ORDER BY d.device_id LIMIT $${values.length}`,
     values,
   };
 }
