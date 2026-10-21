@@ -586,7 +586,11 @@ test('a settled command hides the last observation and keeps the stored command 
 
 test('status action filters map the public action onto its stored action in both queries', async () => {
   const selections = [
-    { action: ['disable-devices'], stored: 'disable', kinds: ['device-status'] },
+    {
+      action: ['disable-devices'],
+      stored: 'disable',
+      kinds: ['device-status'],
+    },
     {
       action: ['reenable-devices'],
       stored: 'reenable',

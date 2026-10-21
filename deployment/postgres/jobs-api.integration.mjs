@@ -939,14 +939,11 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           ids: [reboot.job_id],
           actions: ['reboot-devices'],
         });
-        assert.deepEqual(
-          await listed(['reboot-devices', 'disable-devices']),
-          {
-            matching: 2,
-            ids: [disable.job_id, reboot.job_id].sort(),
-            actions: ['disable-devices', 'reboot-devices'],
-          },
-        );
+        assert.deepEqual(await listed(['reboot-devices', 'disable-devices']), {
+          matching: 2,
+          ids: [disable.job_id, reboot.job_id].sort(),
+          actions: ['disable-devices', 'reboot-devices'],
+        });
       },
     );
 

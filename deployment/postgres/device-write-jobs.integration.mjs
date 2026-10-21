@@ -1544,7 +1544,12 @@ export async function qualifyDeviceWriteJobs({
         const readAt = new Date(newer.getTime() - 60 * 1000);
         assert.equal(
           await upsert(
-            [device('st3', { annotatedLocation: 'ignored', status: 'DISABLED' })],
+            [
+              device('st3', {
+                annotatedLocation: 'ignored',
+                status: 'DISABLED',
+              }),
+            ],
             readAt,
             'read',
           ),
@@ -1559,7 +1564,10 @@ export async function qualifyDeviceWriteJobs({
           'Room 12',
           'The newer annotated-location observation wins.',
         );
-        assert.equal(row.annotated_location_observed_at.getTime(), newer.getTime());
+        assert.equal(
+          row.annotated_location_observed_at.getTime(),
+          newer.getTime(),
+        );
       },
     );
 
