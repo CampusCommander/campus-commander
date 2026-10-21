@@ -11736,6 +11736,43 @@ export async function qualifyDeviceWriteJobs({
           issued.settled.map((row) => row.operationNumber),
           [1],
         );
+        // The issue shape rejects a missing command ID and a command ID on another outcome.
+        await rejects(
+          result(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              attempt,
+              'issue',
+              JSON.stringify([{ operationNumber: 1, outcome: 'issued' }]),
+              new Date(),
+            ],
+          ),
+          '22023',
+        );
+        await rejects(
+          result(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              attempt,
+              'issue',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'failed',
+                  commandId: '4100000001',
+                },
+              ]),
+              new Date(),
+            ],
+          ),
+          '22023',
+        );
         // The poll waits 15 s from this settlement, and the 7-day cap counts from the answer.
         const stored = await adminRow(
           `SELECT status,command_id,command_state,poll_after,poll_deadline_at,verified_by
