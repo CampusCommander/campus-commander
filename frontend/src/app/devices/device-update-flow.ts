@@ -52,6 +52,7 @@ export type FlowActionId =
   | 'prepare-new-preview'
   | 'back-to-devices'
   | 'back-to-jobs'
+  | 'back-to-choose'
   | 'open-google-connection'
   | 'retry';
 

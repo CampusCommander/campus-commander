@@ -1,0 +1,323 @@
+<div
+  class="sheet-scrim"
+  [class.is-visible]="open() && modal()"
+  aria-hidden="true"
+  (click)="dismiss()"
+></div>
+
+<section
+  class="bulk-sheet"
+  [class.is-open]="open()"
+  [class.is-modal]="modal()"
+  role="dialog"
+  [attr.aria-modal]="modal() && open() ? 'true' : null"
+  [attr.aria-labelledby]="titleId"
+  [cdkTrapFocus]="modal() && open()"
+  [cdkTrapFocusAutoCapture]="false"
+  [attr.inert]="open() ? null : ''"
+>
+  <header class="sheet-head">
+    <div class="titles">
+      <h1 [id]="titleId" #sheetTitle tabindex="-1">{{ title() }}</h1>
+      <p class="subtitle">{{ subtitle() }}</p>
+    </div>
+    <button
+      class="icon-button"
+      type="button"
+      aria-label="Close"
+      (click)="close()"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">close</span>
+    </button>
+  </header>
+
+  <ol class="stepper" [attr.aria-label]="copy().stepperLabel">
+    @for (item of steps(); track item.id) {
+    <li
+      class="step"
+      [class.is-done]="item.state === 'done'"
+      [class.is-active]="item.state === 'active'"
+      [attr.aria-current]="item.state === 'active' ? 'step' : null"
+    >
+      <span class="dot" aria-hidden="true">
+        @if (item.state === 'done') {
+        <span class="material-symbols-outlined tick">check</span>
+        } @else {
+        <span class="num">{{ item.number }}</span>
+        }
+      </span>
+      <span class="label">{{ item.label }}</span>
+      @if (item.state === 'done') {
+      <span class="visually-hidden">, completed</span>
+      } @else if (item.state === 'later') {
+      <span class="visually-hidden">, not started</span>
+      }
+    </li>
+    @if (!$last) {
+    <li class="connector" aria-hidden="true"></li>
+    } }
+  </ol>
+
+  <div class="sheet-body">
+    @if (step() === 'choose') { @if (chooseOffline()) {
+    <section class="banner" [attr.aria-labelledby]="id('choose-offline')">
+      <h2 [id]="id('choose-offline')">Cannot reach Campus Commander</h2>
+      <p>Reconnect before you prepare a preview.</p>
+      <button mat-stroked-button type="button" (click)="loadSelection()">
+        Retry
+      </button>
+    </section>
+    } @if (loadingSelection()) {
+    <section
+      aria-label="Loading the device selection"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <p role="status">Loading the selection…</p>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </section>
+    } @else if (expired()) {
+    <section [attr.aria-labelledby]="id('selection-expired')">
+      <h2 [id]="id('selection-expired')">Select the devices again</h2>
+      <p>
+        The browsing selection expired. Return to Devices and select the devices
+        again.
+      </p>
+      <div class="inline-actions">
+        <button mat-flat-button type="button" (click)="close()">
+          Return to devices
+        </button>
+      </div>
+    </section>
+    } @else if (selectionError()) {
+    <section [attr.aria-labelledby]="id('selection-error')">
+      <h2 [id]="id('selection-error')">The selection is unavailable</h2>
+      <p class="error" role="alert">{{ selectionError() }}</p>
+      <div class="inline-actions">
+        <button mat-stroked-button type="button" (click)="loadSelection()">
+          Retry
+        </button>
+        <button mat-button type="button" (click)="close()">
+          Return to devices
+        </button>
+      </div>
+    </section>
+    } @else if ((count() ?? 0) === 0) {
+    <section [attr.aria-labelledby]="id('no-selection')">
+      <h2 [id]="id('no-selection')">No devices are selected</h2>
+      <p>Return to Devices and select the devices for this action.</p>
+      <div class="inline-actions">
+        <button mat-flat-button type="button" (click)="close()">
+          Return to devices
+        </button>
+      </div>
+    </section>
+    } @else {
+    <p class="list-label" [id]="groupLabelId">{{ copy().chooseLabel }}</p>
+    <mat-radio-group
+      class="action-options"
+      [attr.aria-labelledby]="groupLabelId"
+      [value]="selected()"
+      (change)="select($event.value)"
+    >
+      @for (option of options(); track option.action) {
+      <mat-radio-button class="action-option" [value]="option.action">
+        <span class="option-label">{{ option.label }}</span>
+        <span class="option-line">{{ option.consequence }}</span>
+        @if (option.summary) {
+        <span class="option-line">{{ option.summary }}</span>
+        }
+      </mat-radio-button>
+      }
+    </mat-radio-group>
+    <p class="note">{{ excludedHelp }}</p>
+    } } @else if (step() === 'review') { @if (problem(); as activeProblem) {
+    <app-device-update-problem
+      [problem]="activeProblem"
+      [idPrefix]="family() + '-problem'"
+      [busy]="busy()"
+      [busyLabel]="busyLabel()"
+      [detail]="problemDetail()"
+      (action)="act($event)"
+    />
+    } @if (status() === 'loading' && !problem()) {
+    <section
+      aria-label="Loading the preview"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <p role="status">Loading the preview…</p>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </section>
+    } @else if (preview(); as activePreview) { @if (!problem()) {
+    <p class="counts">{{ countLine() }}</p>
+    <p class="mt-sm">{{ frozen }}</p>
+    <p class="meta">{{ metaLine() }}</p>
+    @if (activePreview.stale) {
+    <p class="stale" role="status">
+      Some observed statuses are more than 24 hours old. Review them before you
+      continue.
+    </p>
+    } @if (selectionChanged()) {
+    <p class="notice" role="status">{{ selectionChangedNote }}</p>
+    } } @if (targets().length > 0) {
+    <p class="list-label" [id]="targetsLabelId">{{ targetsLabelText() }}</p>
+    <div class="targets-wrap">
+      <table class="targets">
+        <caption class="visually-hidden">
+          {{ targetsCaptionText() }}
+        </caption>
+        <colgroup>
+          <col class="col-device" />
+          <col />
+          <col />
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">Device</th>
+            <th scope="col">Observed status</th>
+            <th scope="col">{{ targetColumn() }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (target of targets(); track target.deviceId) {
+          <tr>
+            <th scope="row">{{ device(target) }}</th>
+            <td>{{ observed(target) }}</td>
+            <td
+              [class.approved]="target.disposition === 'eligible'"
+              [class.not-updated]="target.disposition === 'excluded'"
+            >
+              {{ command(target) }} @if (note(target)) {
+              <span class="line">{{ note(target) }}</span>
+              }
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    } } } @else if (step() === 'confirm') { @if (problem(); as activeProblem) {
+    <app-device-update-problem
+      [problem]="activeProblem"
+      [idPrefix]="family() + '-problem'"
+      [busy]="busy()"
+      [busyLabel]="busyLabel()"
+      [detail]="problemDetail()"
+      (action)="act($event)"
+    />
+    } @else if (status() === 'loading') {
+    <section
+      aria-label="Loading the confirmation"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <p role="status">Loading the approved scope…</p>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </section>
+    } @else if (preview()) {
+    <section [attr.aria-labelledby]="id('confirm-scope')">
+      <h2 [id]="id('confirm-scope')">{{ heading() }}</h2>
+      @for (paragraph of paragraphs(); track $index) {
+      <p class="mt-md">{{ paragraph }}</p>
+      }
+      <p class="meta">{{ confirmMeta() }}</p>
+      <p class="meta">{{ expiry() }}</p>
+      @if (selectionChanged()) {
+      <p class="notice" role="status">{{ selectionChangedNote }}</p>
+      } @if (acknowledgement(); as label) {
+      <mat-checkbox
+        class="acknowledgement"
+        [checked]="acknowledged()"
+        [disabled]="creating()"
+        (change)="setAcknowledged($event.checked)"
+      >
+        {{ label }}
+      </mat-checkbox>
+      }
+    </section>
+    } } @else if (step() === 'done') { @if (problem(); as activeProblem) {
+    <app-device-update-problem
+      [problem]="activeProblem"
+      [idPrefix]="family() + '-problem'"
+      [busy]="busy()"
+      [busyLabel]="busyLabel()"
+      [detail]="problemDetail()"
+      (action)="act($event)"
+    />
+    } @else if (status() === 'loading') {
+    <section
+      aria-label="Loading the job receipt"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <p role="status">Loading the job receipt…</p>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </section>
+    } @else if (job()) {
+    <section [attr.aria-labelledby]="id('receipt')">
+      <h2 [id]="id('receipt')">{{ receiptHeading }}</h2>
+      <p class="mt-md">{{ receiptLine() }}</p>
+      <p class="mt-md">{{ nextStep }}</p>
+    </section>
+    } }
+  </div>
+
+  @if (step() === 'choose' && chooseReady()) {
+  <div class="sheet-foot">
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="!canReview()"
+      [attr.aria-busy]="preparing()"
+      (click)="goReview()"
+    >
+      {{ reviewLabel() }}
+    </button>
+  </div>
+  } @else if (step() === 'review' && status() === 'ready' && !problem()) {
+  <div class="sheet-foot">
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="!canContinue()"
+      (click)="goConfirm()"
+    >
+      Continue to confirmation
+    </button>
+    <button mat-button type="button" (click)="goChoose()">
+      {{ copy().backLabel }}
+    </button>
+  </div>
+  } @else if (step() === 'confirm' && status() === 'ready' && !problem()) {
+  <div class="sheet-foot">
+    <button
+      mat-flat-button
+      type="button"
+      [class.destructive]="destructive()"
+      [disabled]="!canCreate()"
+      [attr.aria-busy]="creating()"
+      (click)="create()"
+    >
+      {{ creating() ? createBusyLabel() : confirmButton() }}
+    </button>
+    <button
+      mat-button
+      type="button"
+      [disabled]="creating()"
+      (click)="goReview()"
+    >
+      Back to preview
+    </button>
+  </div>
+  } @else if (step() === 'done' && status() === 'ready' && !problem()) {
+  <div class="sheet-foot">
+    <button mat-flat-button type="button" (click)="viewJob()">View job</button>
+    <button mat-button type="button" (click)="close()">Done</button>
+  </div>
+  }
+</section>
