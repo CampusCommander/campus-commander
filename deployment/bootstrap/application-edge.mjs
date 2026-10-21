@@ -87,6 +87,13 @@ const deviceUpdateRead = new RegExp(
 const deviceUpdateWrite = new RegExp(
   `^/api/devices/updates/(?:access/check|previews|previews/${previewIdPath}/confirm)$`,
 );
+// The two action families of design section 7. Each family keeps one permission and one menu entry.
+const deviceActionRead = new RegExp(
+  `^/api/devices/(?:commands|status-changes)/previews/${previewIdPath}(?:/targets)?$`,
+);
+const deviceActionWrite = new RegExp(
+  `^/api/devices/(?:commands|status-changes)/previews(?:/${previewIdPath}/confirm)?$`,
+);
 const jobPage = new RegExp(`^/jobs(?:/${jobDisplayIdPath})?$`);
 const finish = (response, status, message) => {
   response.writeHead(status, {
@@ -134,7 +141,8 @@ export async function proxyApplication(
         deviceRead.test(pathname) ||
         schoolRead.test(pathname) ||
         jobRead.test(pathname) ||
-        deviceUpdateRead.test(pathname)));
+        deviceUpdateRead.test(pathname) ||
+        deviceActionRead.test(pathname)));
   const writable =
     postRoutes.has(pathname) ||
     (phase === 3 &&
@@ -147,7 +155,8 @@ export async function proxyApplication(
         deviceWrite.test(pathname) ||
         schoolWrite.test(pathname) ||
         jobWrite.test(pathname) ||
-        deviceUpdateWrite.test(pathname)));
+        deviceUpdateWrite.test(pathname) ||
+        deviceActionWrite.test(pathname)));
   const api = readable || writable;
   const page =
     pages.has(pathname) ||

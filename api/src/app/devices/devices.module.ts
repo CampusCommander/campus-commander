@@ -7,6 +7,11 @@ import { JobServiceModule } from '../jobs/job-service.module';
 import { OrchestrationModule } from '../orchestration/orchestration.module';
 import { StorageModule } from '../storage/storage.module';
 import { DeviceEventsService } from './device-events.service';
+import {
+  DeviceCommandsController,
+  DeviceStatusChangesController,
+} from './device-actions.controller';
+import { DeviceActionsService } from './device-actions.service';
 import { DeviceUpdatesController } from './device-updates.controller';
 import { DeviceUpdatesService } from './device-updates.service';
 import { DeviceWriteAccessService } from './device-write-access.service';
@@ -23,11 +28,17 @@ import { DevicesService } from './devices.service';
     OrchestrationModule,
     StorageModule,
   ],
-  controllers: [DeviceUpdatesController, DevicesController],
+  controllers: [
+    DeviceUpdatesController,
+    DeviceCommandsController,
+    DeviceStatusChangesController,
+    DevicesController,
+  ],
   providers: [
     DevicesService,
     DeviceEventsService,
     DeviceUpdatesService,
+    DeviceActionsService,
     DeviceWriteAccessService,
   ],
   // One subscriber connection serves the devices stream and the jobs stream.
