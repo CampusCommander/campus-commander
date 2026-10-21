@@ -126,6 +126,33 @@ export async function qualifyAccessRevocation({
     previous,
   );
   assert.equal(await auditCount(), beforeCount);
+  const revokedEntry = async (key) => {
+    const value = JSON.parse(await redis.get(key));
+    assert.equal(value.accessChanged, true);
+    assert.equal(value.csrfToken, undefined);
+    assert.equal(value.permissionVersion, undefined);
+    const ttl = await redis.ttl(key);
+    assert.ok(ttl > 0 && ttl <= 60, `The revoked entry TTL ${ttl} is bounded.`);
+  };
+  const concurrent = await Promise.all(
+    [0, 1].map(() =>
+      request(`${publicOrigin}/api/auth/session`, {
+        ca,
+        cookie: sessions[0].cookie,
+      }),
+    ),
+  );
+  for (const response of concurrent) {
+    assert.equal(response.status, 401);
+    assert.equal(JSON.parse(response.text).code, 'access-changed');
+  }
+  const sequential = await request(`${publicOrigin}/api/auth/session`, {
+    ca,
+    cookie: sessions[0].cookie,
+  });
+  assert.equal(sequential.status, 401);
+  assert.equal(JSON.parse(sequential.text).code, 'access-changed');
+  await revokedEntry(sessions[0].key);
   for (const [index, origin] of [publicOrigin, replicaOrigin].entries()) {
     const stale = sessions[index];
     for (const restored of [false, true]) {
@@ -136,7 +163,7 @@ export async function qualifyAccessRevocation({
       });
       assert.equal(response.status, 401);
       assert.equal(JSON.parse(response.text).code, 'access-changed');
-      assert.equal(await redis.get(stale.key), null);
+      await revokedEntry(stale.key);
     }
   }
   for (const origin of [publicOrigin, replicaOrigin]) {
@@ -161,7 +188,7 @@ export async function qualifyAccessRevocation({
   });
   assert.equal(afterRestart.status, 401);
   assert.equal(JSON.parse(afterRestart.text).code, 'access-changed');
-  assert.equal(await redis.get(sessions[1].key), null);
+  await revokedEntry(sessions[1].key);
   redis = await restartRedis();
   for (const [index, origin] of [publicOrigin, replicaOrigin].entries()) {
     const stale = sessions[index];
@@ -182,8 +209,17 @@ export async function qualifyAccessRevocation({
     });
     assert.equal(restored.status, 401);
     assert.equal(JSON.parse(restored.text).code, 'access-changed');
-    assert.equal(await redis.get(stale.key), null);
+    await revokedEntry(stale.key);
   }
+  await redis.expire(sessions[0].key, 1);
+  await delay(1100);
+  assert.equal(await redis.get(sessions[0].key), null);
+  const afterExpiry = await request(`${publicOrigin}/api/auth/session`, {
+    ca,
+    cookie: sessions[0].cookie,
+  });
+  assert.equal(afterExpiry.status, 401);
+  assert.equal(JSON.parse(afterExpiry.text).code, 'unauthenticated');
   assert.equal(
     (
       await request(`${publicOrigin}/api/auth/session`, {
@@ -220,6 +256,8 @@ export async function qualifyAccessRevocation({
         checks: [
           'preference write waits behind a concurrent permission-version change',
           'stale preference update and success audit both rejected',
+          'concurrent and later requests read the same access-changed reason',
+          'the revoked session entry expires and then reports no session',
           'both API replicas reject previous sessions',
           'restored Redis sessions cannot restore revoked access',
           'direct requests with guessed principal IDs disclose no data',
