@@ -56,6 +56,12 @@ export interface JobServiceOrchestration {
     verifyAttempt?: string;
     correlationId: string;
   }): Promise<string>;
+  /** Start the poll run of one awaiting-devices command job (design section 4 step 5). */
+  startDeviceCommandPoll(input: {
+    customerId: string;
+    jobId: string;
+    correlationId: string;
+  }): Promise<string>;
 }
 
 export interface JobServiceOptions {
@@ -149,7 +155,7 @@ export class JobService {
   async customers(): Promise<string[]> {
     const rows = await this.rows(
       `SELECT DISTINCT j.customer_id FROM cc.jobs j
-        WHERE j.kind IN ('device-update','device-command','device-status') AND (j.status IN ('accepted','queued','held','running')
+        WHERE j.kind IN ('device-update','device-command','device-status') AND (j.status IN ('accepted','queued','held','running','awaiting-devices')
           OR EXISTS(SELECT 1 FROM cc.device_update_jobs u WHERE u.job_id=j.job_id
             AND u.hold_written_at IS NOT NULL AND u.hold_cleaned_at IS NULL))
         ORDER BY j.customer_id`,
@@ -174,8 +180,39 @@ export class JobService {
         await this.step(() => this.cleanupLocked(customer));
         const refused = await this.step(() => this.admitLocked(customer));
         if (refused === true) await this.retryAfterRefusal(customer);
+        await this.step(() => this.pollLocked(customer));
       }
     });
+  }
+
+  /**
+   * Start one poll flow for each due command job (design section 4 step 5). The lease that the due
+   * function sets keeps one flow per job; a start that fails waits for that lease to lapse.
+   */
+  private async pollLocked(customerId: string): Promise<void> {
+    const due =
+      (await this.result<{ jobId?: unknown }[] | null>(
+        'SELECT cc.due_device_command_polls($1) AS result',
+        [customerId],
+      )) ?? [];
+    for (const one of Array.isArray(due) ? due : []) {
+      const jobId = String(one.jobId ?? '');
+      if (jobId === '') continue;
+      try {
+        const executionId = await this.orchestration.startDeviceCommandPoll({
+          customerId,
+          jobId,
+          correlationId: randomUUID(),
+        });
+        // A late record changes nothing: the lease already names another flow.
+        await this.result(
+          'SELECT cc.record_device_command_poll_start($1,$2,$3) AS result',
+          [customerId, jobId, executionId],
+        ).catch(() => undefined);
+      } catch {
+        // The ten-minute lease lapses, and the next tick retries.
+      }
+    }
   }
 
   /**

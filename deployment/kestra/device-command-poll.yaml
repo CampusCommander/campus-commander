@@ -1,0 +1,39 @@
+id: device_command_poll
+namespace: campus.application
+# One poll run of one awaiting-devices command job (design section 4 steps 5 to 7). The job service
+# starts this flow under a ten-minute lease, so one flow polls one job at a time. The worker repeats
+# its GET rounds while due operations remain, settles every answer, and releases the lease.
+inputs:
+  - id: customerId
+    type: STRING
+  - id: jobId
+    type: STRING
+  - id: correlationId
+    type: STRING
+tasks:
+  - id: poll
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/device-command-poll'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "customerId": inputs.customerId,
+        "jobId": inputs.jobId,
+        "correlationId": inputs.correlationId
+      } | json }}
+    timeout: PT1H
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT1H
+    # Only a failed worker request retries here. Every GET answer settles and returns 200, so a
+    # repeated run sends only the operations that are still due.
+    retry:
+      type: constant
+      interval: PT5S
+      maxAttempts: 3
+      warningOnRetry: false

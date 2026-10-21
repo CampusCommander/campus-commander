@@ -105,6 +105,27 @@ test('device_update finishes once after the batches and on flow failure', async 
   );
 });
 
+test('device_command_poll posts one worker request with the three inputs', async () => {
+  const flowDefinition = await flow('device-command-poll.yaml');
+  assert.equal(flowDefinition.id, 'device_command_poll');
+  assert.equal(flowDefinition.namespace, 'campus.application');
+  assert.deepEqual(
+    flowDefinition.inputs.map((input) => input.id),
+    ['customerId', 'jobId', 'correlationId'],
+  );
+  assert.equal(flowDefinition.concurrency, undefined);
+  assert.equal(flowDefinition.tasks.length, 1);
+  const [poll] = flowDefinition.tasks;
+  assert.equal(poll.id, 'poll');
+  assert.equal(poll.type, 'io.kestra.plugin.core.http.Request');
+  assert.equal(poll.method, 'POST');
+  assert.match(poll.uri, /\/dispatch\/device-command-poll$/);
+  assert.deepEqual(poll.retry, dispatchRetry);
+  for (const field of ['executionId', 'customerId', 'jobId', 'correlationId'])
+    assert.match(poll.body, new RegExp(`"${field}"`), field);
+  assert.equal(flowDefinition.errors, undefined);
+});
+
 test('device_update_reconcile has one task with the section 5.1 inputs', async () => {
   const flowDefinition = await flow('device-update-reconcile.yaml');
   assert.equal(flowDefinition.id, 'device_update_reconcile');

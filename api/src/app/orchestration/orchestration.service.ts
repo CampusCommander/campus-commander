@@ -207,6 +207,27 @@ export class OrchestrationService {
     });
   }
 
+  /** Start the poll run of one awaiting-devices command job (design section 4 step 5). */
+  async startDeviceCommandPoll(input: {
+    customerId: string;
+    jobId: string;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        jobId: z.uuid(),
+        correlationId: z.uuid(),
+      })
+      .parse(input);
+    await this.deployFlow('device-command-poll.yaml', 'device_command_poll');
+    return this.execute('device_command_poll', {
+      customerId: values.customerId,
+      jobId: values.jobId,
+      correlationId: values.correlationId,
+    });
+  }
+
   async check(correlationId: string) {
     await this.deployFlow('phase2-connection.yaml', 'phase2_connection');
     const marker = 'campus-commander-phase-2';
