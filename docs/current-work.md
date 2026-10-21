@@ -1,15 +1,26 @@
 # Current work
 
-Updated: 2026-10-16.
+Updated: 2026-10-20.
 
 ## Authorized now
 
-On 2026-10-16 the owner signed off the [device browsing workflow](workflows/device-browsing.md) after a walkthrough.
-The owner authorized development order step 4 to start after that sign-off. The owner chose the first device edit: "Update the annotated location".
+On 2026-10-20 the owner signed off development order step 4 after a walkthrough of the review build.
+On 2026-10-19 the owner queued two items after the bulk-actions stage. These items are authorized now:
+
+1. Verify every Google scope that Campus Commander uses in the Google health check. Show the result in Diagnostics.
+2. Then add pre-filled delegation links to Diagnostics and to the denied prompt on the Devices page.
+
+Step 5 requires its own authorization.
+Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
+
+### Device update record (signed off 2026-10-20)
+
+The owner authorized development order step 4 after the device browsing sign-off. The owner chose the first device edit: "Update the annotated location".
 Step 4 builds that edit on selected devices through preview, confirmation, a job, and visible results.
 The owner chose to build the jobs UI as part of this first edit. The [owner decisions of 2026-10-16](workflow-gaps.md#owner-decisions--2026-10-16) record the jobs scope.
-The [workflow record](workflows/update-device-annotated-location.md) defines this edit and the jobs UI. The owner resolves its open decisions before dependent implementation.
-Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
+The [workflow record](workflows/update-device-annotated-location.md) defines this edit and the jobs UI.
+Before the sign-off, the owner named three changes on 2026-10-20: 8-hour sessions, a bulk action side sheet, and Material 3 dropdown buttons with Refresh Selected and Refresh Domain.
+PRs #62, #63, #65, #66, and #67 built them.
 
 ### Device browsing record (signed off 2026-10-16)
 
@@ -74,7 +85,7 @@ Read-only device work does not depend on school creation, invitations, or comple
 Device-specific Google scopes and method support still require verification before real provider access.
 The existing test authorization does not include device writes.
 
-Steps 2 and 3 are complete. The owner signed off device browsing on 2026-10-16. Step 4 is active. Later steps require their own authorization.
+Steps 2, 3, and 4 are complete. The owner signed off device browsing on 2026-10-16 and device update on 2026-10-20. Later steps require their own authorization.
 Keep one workflow active. Finish its usable result before expanding the feature surface.
 
 ## How to choose and finish a task
