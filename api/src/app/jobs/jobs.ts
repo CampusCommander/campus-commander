@@ -499,7 +499,7 @@ export class Jobs {
         LEFT JOIN cc.device_update_jobs u ON u.job_id=o.job_id
         WHERE j.customer_id=$3 AND j.display_id=$4
           AND cc.job_visible($1,$2,$3,j.requested_by)
-          AND ($5::boolean IS NOT TRUE OR o.status IN ('failed','unknown'))
+          AND ($5::boolean IS NOT TRUE OR o.status IN ('failed','unknown','expired'))
           AND ($6::integer IS NULL OR o.operation_number>$6)
         ORDER BY o.operation_number LIMIT $7`,
       [

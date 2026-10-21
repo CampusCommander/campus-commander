@@ -1252,6 +1252,101 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     );
 
     await check(
+      'the attention page selects failed, unknown, and expired operations in number order',
+      async () => {
+        await reset();
+        // A command job suits the expired status (design section 4 step 9).
+        const job = await writeJob({
+          requestedBy: auditor,
+          action: 'reboot',
+          operations: 6,
+          failed: 0,
+          unknown: 0,
+          status: 'needs-review',
+        });
+        await admin(
+          `UPDATE cc.device_update_operations SET status='failed',outcome_reason='not-found',
+            google_status=404,google_reason='notFound',updated_at=clock_timestamp()
+          WHERE job_id=$1 AND operation_number=2`,
+          [job.job_id],
+        );
+        await admin(
+          `UPDATE cc.device_update_operations SET status='unknown',outcome_reason='ambiguous',
+            updated_at=clock_timestamp()
+          WHERE job_id=$1 AND operation_number=3`,
+          [job.job_id],
+        );
+        await admin(
+          `UPDATE cc.device_update_operations SET status='expired',outcome_reason='not-observed',
+            command_id='4100000001',updated_at=clock_timestamp()
+          WHERE job_id=$1 AND operation_number=4`,
+          [job.job_id],
+        );
+        await admin(
+          `UPDATE cc.device_update_operations SET status='issued',outcome_reason=NULL,
+            command_id='4100000002',command_state='sent',poll_after=clock_timestamp(),
+            poll_deadline_at=clock_timestamp()+interval '1 hour',updated_at=clock_timestamp()
+          WHERE job_id=$1 AND operation_number=5`,
+          [job.job_id],
+        );
+        await admin(
+          `UPDATE cc.device_update_operations SET status='skipped',
+            outcome_reason='permission-withdrawn',updated_at=clock_timestamp()
+          WHERE job_id=$1 AND operation_number=6`,
+          [job.job_id],
+        );
+        await admin(
+          `UPDATE cc.jobs SET succeeded=1,failed=1,unknown=1,skipped=1,expired=1,
+            revision=revision+1,changed_at=clock_timestamp() WHERE job_id=$1`,
+          [job.job_id],
+        );
+        const numbers = (page) =>
+          page.operations.map((operation) =>
+            Number(operation.operationId.split('-').at(-1)),
+          );
+        // The matching operations span two pages: failed, unknown, then expired.
+        const first = await jobs.operations(
+          auditorSession,
+          customer,
+          job.display_id,
+          true,
+          undefined,
+          2,
+        );
+        assert.deepEqual(numbers(first), [2, 3]);
+        assert.deepEqual(
+          first.operations.map((operation) => operation.outcome),
+          ['failed', 'unknown'],
+        );
+        assert.equal(first.nextCursor, '3');
+        const second = await jobs.operations(
+          auditorSession,
+          customer,
+          job.display_id,
+          true,
+          first.nextCursor,
+          2,
+        );
+        assert.deepEqual(numbers(second), [4]);
+        assert.deepEqual(
+          second.operations.map((operation) => operation.outcome),
+          ['expired'],
+        );
+        assert.equal(second.nextCursor, null);
+        const all = await jobs.operations(
+          auditorSession,
+          customer,
+          job.display_id,
+          false,
+          undefined,
+          10,
+        );
+        assert.deepEqual(numbers(all), [1, 2, 3, 4, 5, 6]);
+        assert.equal(all.nextCursor, null);
+      },
+    );
+
+    await check(
       'a refresh job returns empty Latest activity samples',
       async () => {
         await reset();
