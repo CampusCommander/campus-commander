@@ -97,8 +97,10 @@ export async function qualifyGoogleHealth({
     });
     await expect(customerPanel).toContainText('Last check passed');
     await expect(domainPanel).toContainText('Delegation not authorized');
+    // The health answer holds six results. The footer counts only the five
+    // setup capabilities, so a School OU result never needs attention.
     await expect(page.locator('footer')).toContainText(
-      '1 of 6 capabilities need attention',
+      '1 of 5 capabilities need attention',
     );
     await ready();
     await fault('domain-privilege-denied');
