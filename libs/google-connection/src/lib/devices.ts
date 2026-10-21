@@ -120,6 +120,223 @@ export interface AnnotatedLocationBatchOptions {
   onBatch?(event: BatchRoundEvent): void | Promise<void>;
 }
 
+/** The command ID format of the Directory API and the operation check. */
+const commandIdPattern = /^[0-9]{1,20}$/;
+/** Google accepts 1 to 50 device IDs in one batchChangeStatus part. */
+const statusPartLimit = 50;
+
+/** The status actions this build sends. */
+export type DeviceStatusAction = 'disable' | 'reenable';
+const statusActionNames: Readonly<Record<DeviceStatusAction, string>> = {
+  disable: 'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DISABLE',
+  reenable: 'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_REENABLE',
+};
+
+/** One device and its approved status change. */
+export interface DeviceStatusChange {
+  deviceId: string;
+  action: DeviceStatusAction;
+}
+
+/** One batchChangeStatus part: up to 50 device IDs under one action. */
+export interface DeviceStatusPart {
+  /** The caller key of the part. */
+  id: string;
+  action: DeviceStatusAction;
+  deviceIds: string[];
+}
+
+/** The answer of one device in a 2xx batchChangeStatus part (design section 3). */
+export interface DeviceStatusResult {
+  deviceId: string;
+  outcome: 'succeeded' | 'failed' | 'unknown';
+  /** `not-found` reads google.rpc.Code 5, `status-conflict` code 9. */
+  reason:
+    | 'not-found'
+    | 'status-conflict'
+    | 'rejected'
+    | 'invalid-response'
+    | null;
+  /** Google's message. Google sends a google.rpc.Code, not an HTTP status. */
+  googleReason: string | null;
+}
+
+/** One device answer, or the failed part that covers it. */
+export interface DeviceStatusAnswer {
+  deviceId: string;
+  /** Present when the part answered HTTP 2xx. */
+  result: DeviceStatusResult | null;
+  /** Present when the part failed. The caller classifies it by the step 4 rules. */
+  failure: BatchFailure | null;
+}
+
+/** A status change run: one answer per change in request order, and the parts sent. */
+export interface DeviceStatusBatch {
+  answers: DeviceStatusAnswer[];
+  parts: DeviceStatusPart[];
+}
+
+export interface DeviceStatusBatchOptions {
+  /** Parts of one multipart request. The worker setting defaults to 250. */
+  batchSize?: number;
+  onSend?(parts: readonly DeviceStatusPart[]): void | Promise<void>;
+  onResponse?(
+    event: BatchResponseEvent<DeviceStatusResult[]>,
+  ): void | Promise<void>;
+  onBatch?(event: BatchRoundEvent): void | Promise<void>;
+}
+
+/** A batch call of one result type per request. */
+export interface DeviceBatchOptions<T> {
+  /** Parts of one multipart request. The worker setting defaults to 250. */
+  batchSize?: number;
+  onSend?(requestIds: readonly string[]): void | Promise<void>;
+  onResponse?(event: BatchResponseEvent<T>): void | Promise<void>;
+  onBatch?(event: BatchRoundEvent): void | Promise<void>;
+}
+
+/** One command to issue. Reboot carries no payload. */
+export interface DeviceCommandIssue {
+  deviceId: string;
+  /** The Directory command type. The first build sends `REBOOT`. */
+  commandType: string;
+  /** A JSON payload string, as the Directory API expects. */
+  payload?: string;
+}
+
+/** The 2xx answer of one issueCommand call. */
+export interface IssuedDeviceCommand {
+  commandId: string;
+}
+
+/** One command to read. */
+export interface DeviceCommandPoll {
+  deviceId: string;
+  commandId: string;
+}
+
+/** The observed command of one getCommand answer. */
+export interface DeviceCommandObservation {
+  commandId: string;
+  /** PENDING, SENT_TO_CLIENT, ACKED_BY_CLIENT, EXECUTED_BY_CLIENT, EXPIRED, or another value. */
+  state: string;
+  issuedAt: string | null;
+  expiresAt: string | null;
+  /** The result of EXECUTED_BY_CLIENT, when Google reports one. */
+  result: string | null;
+  executedAt: string | null;
+  errorMessage: string | null;
+}
+
+const issuedCommand = z.object({
+  commandId: z.string().regex(commandIdPattern),
+});
+
+/** A getCommand answer. A state outside the five passes through for the caller to report. */
+const commandResource = z.object({
+  commandId: z.string().regex(commandIdPattern),
+  state: z.string().min(1).max(64),
+  issueTime: z.string().max(64).optional(),
+  commandExpireTime: z.string().max(64).optional(),
+  commandResult: z
+    .object({
+      result: z.string().min(1).max(64),
+      executeTime: z.string().max(64).optional(),
+      errorMessage: z.string().max(4096).optional(),
+    })
+    .optional(),
+});
+
+const statusElement = z.object({
+  deviceId: z.string().min(1).max(128),
+  response: z.object({}).optional(),
+  error: z
+    .object({
+      code: z.number().int(),
+      message: z.string().max(4096).optional(),
+    })
+    .optional(),
+});
+
+const statusBody = z.object({
+  changeChromeOsDeviceStatusResults: z.array(z.unknown()).optional(),
+});
+
+/**
+ * Read one batchChangeStatus answer (design section 3). Google answers HTTP 200
+ * even when every device fails, so each requested device reads its own element.
+ */
+export function statusResults(
+  body: unknown,
+  deviceIds: readonly string[],
+): DeviceStatusResult[] {
+  const invalid = (deviceId: string): DeviceStatusResult => ({
+    deviceId,
+    outcome: 'unknown',
+    reason: 'invalid-response',
+    googleReason: null,
+  });
+  const parsed = statusBody.safeParse(body);
+  if (!parsed.success) return deviceIds.map((deviceId) => invalid(deviceId));
+  const elements = (
+    parsed.data.changeChromeOsDeviceStatusResults ?? []
+  ).flatMap((raw) => {
+    const element = statusElement.safeParse(raw);
+    return element.success ? [element.data] : [];
+  });
+  return deviceIds.map((deviceId) => {
+    const matches = elements.filter((element) => element.deviceId === deviceId);
+    if (matches.length !== 1) return invalid(deviceId);
+    const element = matches[0];
+    if (element.error !== undefined && element.response !== undefined)
+      return invalid(deviceId);
+    if (element.error !== undefined) {
+      const code = element.error.code;
+      return {
+        deviceId,
+        outcome: 'failed',
+        reason:
+          code === 5
+            ? 'not-found'
+            : code === 9
+              ? 'status-conflict'
+              : 'rejected',
+        googleReason: element.error.message ?? null,
+      };
+    }
+    if (element.response === undefined) return invalid(deviceId);
+    return { deviceId, outcome: 'succeeded', reason: null, googleReason: null };
+  });
+}
+
+/** Group changes into parts of up to 50 devices. A new action starts a new part. */
+function statusParts(
+  changes: readonly DeviceStatusChange[],
+): DeviceStatusPart[] {
+  const parts: DeviceStatusPart[] = [];
+  const seen = new Set<string>();
+  for (const change of changes) {
+    if (seen.has(change.deviceId))
+      throw new GoogleConnectionError('invalid-response');
+    seen.add(change.deviceId);
+    const last = parts[parts.length - 1];
+    if (
+      last !== undefined &&
+      last.action === change.action &&
+      last.deviceIds.length < statusPartLimit
+    ) {
+      last.deviceIds.push(change.deviceId);
+      continue;
+    }
+    parts.push({
+      id: `status-${parts.length + 1}`,
+      action: change.action,
+      deviceIds: [change.deviceId],
+    });
+  }
+  return parts;
+}
+
 /** One read-back answer per device. */
 export type DeviceState =
   | { deviceId: string; status: 'found'; device: DeviceObservation }
@@ -486,6 +703,231 @@ export class GoogleDeviceReader {
     // the code as the job failure (design section 7.2).
     if (mint.failure && !signal.aborted) throw mint.failure;
     return result;
+  }
+
+  /**
+   * One issueCommand POST per device through the batch service. The write scope comes
+   * from the `device-changes` capability. A quota answer never repeats: a second POST
+   * sends a second command. A 2xx answer without a digit commandId fails as
+   * `invalid-response`, which the caller reports as unknown.
+   */
+  async issueDeviceCommands(
+    credential: DelegatedCredential,
+    customerId: string,
+    commands: readonly DeviceCommandIssue[],
+    signal: AbortSignal,
+    options: DeviceBatchOptions<IssuedDeviceCommand> = {},
+  ): Promise<BatchResult<IssuedDeviceCommand>> {
+    googleCustomerIdSchema.parse(customerId);
+    if (commands.length > batchLimit)
+      throw new GoogleConnectionError('invalid-response');
+    const mint: { failure?: GoogleConnectionError } = {};
+    const result = await this.batch.execute<IssuedDeviceCommand>({
+      batchUrl: batchEndpoint,
+      requests: commands.map((command) => ({
+        id: command.deviceId,
+        method: 'POST' as const,
+        path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(command.deviceId)}:issueCommand`,
+        body: {
+          commandType: command.commandType,
+          ...(command.payload === undefined
+            ? {}
+            : { payload: command.payload }),
+        },
+      })),
+      parse: (body) => issuedCommand.parse(body),
+      getClient: async (runSignal) => {
+        try {
+          return await scopedClient(
+            credential,
+            scopeFor('device-changes'),
+            runSignal,
+            batchResponseLimit,
+          );
+        } catch (error) {
+          mint.failure = failure(error, 'token');
+          throw mint.failure;
+        }
+      },
+      signal,
+      options: {
+        batchSize: options.batchSize ?? BATCH_DEFAULTS.batchSize,
+        // A repeat of an accepted POST sends a second command (design section 3).
+        maxQuotaRetries: 0,
+      },
+      ...(options.onSend ? { onSend: options.onSend } : {}),
+      ...(options.onResponse ? { onResponse: options.onResponse } : {}),
+      ...(options.onBatch ? { onBatch: options.onBatch } : {}),
+    });
+    if (mint.failure && !signal.aborted) throw mint.failure;
+    return result;
+  }
+
+  /**
+   * One getCommand GET per operation through the batch service. The read-only inventory
+   * token serves every poll, so a later write-scope removal stops no poll. Quota and
+   * transient answers keep the default retries; a GET repeats safely.
+   */
+  async deviceCommands(
+    credential: DelegatedCredential,
+    customerId: string,
+    polls: readonly DeviceCommandPoll[],
+    signal: AbortSignal,
+    options: DeviceBatchOptions<DeviceCommandObservation> = {},
+  ): Promise<BatchResult<DeviceCommandObservation>> {
+    googleCustomerIdSchema.parse(customerId);
+    if (polls.length > batchLimit)
+      throw new GoogleConnectionError('invalid-response');
+    for (const poll of polls)
+      if (!commandIdPattern.test(poll.commandId))
+        throw new GoogleConnectionError('invalid-response');
+    const polled = new Map(
+      polls.map((poll) => [poll.deviceId, poll.commandId]),
+    );
+    const mint: { failure?: GoogleConnectionError } = {};
+    const result = await this.batch.execute<DeviceCommandObservation>({
+      batchUrl: batchEndpoint,
+      requests: polls.map((poll) => ({
+        id: poll.deviceId,
+        method: 'GET' as const,
+        path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(poll.deviceId)}/commands/${poll.commandId}`,
+      })),
+      parse: (body, request) => {
+        const resource = commandResource.parse(body);
+        // A poll settles the operation that issued the command, not another one.
+        if (polled.get(request.id) !== resource.commandId)
+          throw new GoogleConnectionError('invalid-response');
+        return {
+          commandId: resource.commandId,
+          state: resource.state,
+          issuedAt: instant(resource.issueTime),
+          expiresAt: instant(resource.commandExpireTime),
+          result: resource.commandResult?.result ?? null,
+          executedAt: instant(resource.commandResult?.executeTime),
+          errorMessage: resource.commandResult?.errorMessage ?? null,
+        };
+      },
+      getClient: async (runSignal) => {
+        try {
+          return await scopedClient(
+            credential,
+            scopeFor('device-inventory'),
+            runSignal,
+            batchResponseLimit,
+          );
+        } catch (error) {
+          mint.failure = failure(error, 'token');
+          throw mint.failure;
+        }
+      },
+      signal,
+      options: { batchSize: options.batchSize ?? BATCH_DEFAULTS.batchSize },
+      ...(options.onSend ? { onSend: options.onSend } : {}),
+      ...(options.onResponse ? { onResponse: options.onResponse } : {}),
+      ...(options.onBatch ? { onBatch: options.onBatch } : {}),
+    });
+    if (mint.failure && !signal.aborted) throw mint.failure;
+    return result;
+  }
+
+  /**
+   * One batchChangeStatus POST part per group of up to 50 devices, in request order.
+   * Google answers HTTP 200 even when every device fails, so `statusResults` reads
+   * each device element. A failed part returns its failure for every device it held.
+   */
+  async changeDeviceStatus(
+    credential: DelegatedCredential,
+    customerId: string,
+    changes: readonly DeviceStatusChange[],
+    signal: AbortSignal,
+    options: DeviceStatusBatchOptions = {},
+  ): Promise<DeviceStatusBatch> {
+    googleCustomerIdSchema.parse(customerId);
+    const parts = statusParts(changes);
+    const partById = new Map(parts.map((part) => [part.id, part]));
+    const send = options.onSend;
+    const mint: { failure?: GoogleConnectionError } = {};
+    const result = await this.batch.execute<DeviceStatusResult[]>({
+      batchUrl: batchEndpoint,
+      requests: parts.map((part) => ({
+        id: part.id,
+        method: 'POST' as const,
+        path: `${directoryPath}/customer/${customerId}/devices/chromeos:batchChangeStatus`,
+        body: {
+          deviceIds: part.deviceIds,
+          changeChromeOsDeviceStatusAction: statusActionNames[part.action],
+        },
+      })),
+      parse: (body, request) =>
+        statusResults(body, partById.get(request.id)?.deviceIds ?? []),
+      getClient: async (runSignal) => {
+        try {
+          return await scopedClient(
+            credential,
+            scopeFor('device-changes'),
+            runSignal,
+            batchResponseLimit,
+          );
+        } catch (error) {
+          mint.failure = failure(error, 'token');
+          throw mint.failure;
+        }
+      },
+      signal,
+      options: { batchSize: options.batchSize ?? BATCH_DEFAULTS.batchSize },
+      ...(send
+        ? {
+            onSend: async (ids: readonly string[]) => {
+              const sent = ids.flatMap((id) => {
+                const part = partById.get(id);
+                return part ? [part] : [];
+              });
+              await send(sent);
+            },
+          }
+        : {}),
+      ...(options.onResponse ? { onResponse: options.onResponse } : {}),
+      ...(options.onBatch ? { onBatch: options.onBatch } : {}),
+    });
+    if (mint.failure && !signal.aborted) throw mint.failure;
+    const answers = new Map<string, DeviceStatusAnswer>();
+    for (const part of parts) {
+      const pages = result.succeeded.get(part.id);
+      if (pages) {
+        for (const answer of pages[pages.length - 1])
+          answers.set(answer.deviceId, {
+            deviceId: answer.deviceId,
+            result: answer,
+            failure: null,
+          });
+        continue;
+      }
+      const failure = result.failed.get(part.id) ?? {
+        kind: 'invalid-response' as const,
+        status: 0,
+        reason: 'missing-part',
+        attempts: { quota: 0, transient: 0 },
+        body: null,
+      };
+      for (const deviceId of part.deviceIds)
+        answers.set(deviceId, { deviceId, result: null, failure });
+    }
+    return {
+      answers: changes.map(
+        (change) =>
+          answers.get(change.deviceId) ?? {
+            deviceId: change.deviceId,
+            result: {
+              deviceId: change.deviceId,
+              outcome: 'unknown',
+              reason: 'invalid-response',
+              googleReason: null,
+            },
+            failure: null,
+          },
+      ),
+      parts,
+    };
   }
 
   /**
