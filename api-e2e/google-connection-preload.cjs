@@ -29,7 +29,12 @@ const fleet = Array.from({ length: 450 }, (_, index) => ({
   lastSync: new Date(Date.UTC(2026, 9, 5, 16) - index * 60_000).toISOString(),
   ...(index % 4 === 0 ? { annotatedLocation: 'Science wing' } : {}),
   ...(index === 0 ? { notes: 'Review battery during support visit' } : {}),
-  status: 'ACTIVE',
+  status:
+    index % 10 === 0
+      ? 'DEPROVISIONED'
+      : index % 5 === 0
+        ? 'DISABLED'
+        : 'ACTIVE',
   capacity: index % 10 === 9 ? null : capacities[index % 3],
 }));
 const telemetry = ({ deviceId, capacity }) =>

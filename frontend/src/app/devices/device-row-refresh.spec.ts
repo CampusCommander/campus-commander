@@ -11,6 +11,7 @@ const rowFor = (deviceId: string, stale: boolean): DeviceRow => ({
   lastContact: null,
   annotatedLocation: null,
   notes: null,
+  status: 'ACTIVE',
   battery: { status: 'no-report' },
   lastEntitySync: '2026-10-06T11:00:00.000Z',
   stale,

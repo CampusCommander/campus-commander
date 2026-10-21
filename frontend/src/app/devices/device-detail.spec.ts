@@ -15,6 +15,7 @@ const device = (extra: Partial<DeviceDetail> = {}): DeviceDetail => ({
   lastContact: '2026-10-05T11:58:00.000Z',
   annotatedLocation: 'Science wing',
   notes: null,
+  status: 'ACTIVE',
   battery: {
     status: 'reported',
     health: 'replace-soon',

@@ -67,6 +67,8 @@ const recordShape = {
   lastContact: timestamp.nullable(),
   annotatedLocation: z.string().max(4096).nullable(),
   notes: z.string().max(4096).nullable(),
+  /** Google's device status: ACTIVE, DISABLED, DEPROVISIONED, another value, or null. */
+  status: z.string().max(64).nullable(),
   battery: deviceBatterySchema,
   /** When Campus Commander last read this device from Google. */
   lastEntitySync: timestamp,
@@ -118,6 +120,7 @@ export const deviceSortFieldSchema = z.enum([
   'model',
   'assetTag',
   'orgUnitPath',
+  'status',
   'battery',
   'lastContact',
   'annotatedLocation',
@@ -129,6 +132,11 @@ export const batteryFilterValueSchema = z.enum([
   'replace-now',
   'no-report',
   'unavailable',
+]);
+export const deviceStatusFilterValueSchema = z.enum([
+  'ACTIVE',
+  'DISABLED',
+  'DEPROVISIONED',
 ]);
 
 const filterText = z.string().trim().min(1).max(256);
@@ -153,6 +161,11 @@ export const devicePredicateSchema = z.union([
     field: z.literal('battery'),
     operator: z.literal('is'),
     values: z.array(batteryFilterValueSchema).max(5),
+  }),
+  z.strictObject({
+    field: z.literal('status'),
+    operator: z.literal('is'),
+    values: z.array(deviceStatusFilterValueSchema).max(3),
   }),
   z.strictObject({
     field: z.literal('lastContact'),

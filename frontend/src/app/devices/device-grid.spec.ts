@@ -34,6 +34,7 @@ const row: DeviceRow = {
   lastContact: '2026-10-05T11:58:00Z',
   annotatedLocation: null,
   notes: null,
+  status: 'ACTIVE',
   battery: {
     status: 'reported',
     health: 'replace-soon',

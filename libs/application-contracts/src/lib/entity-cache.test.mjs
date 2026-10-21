@@ -102,6 +102,7 @@ test('the Redis record schema accepts cc.device_record output without removedAt 
     lastContact: '2026-10-05T12:00:00+00:00',
     annotatedLocation: null,
     notes: null,
+    status: 'ACTIVE',
     battery: {
       status: 'reported',
       health: 'replace-soon',
@@ -133,6 +134,7 @@ test('the Redis entry schema carries the entry version and a record without remo
     lastContact: '2026-10-05T12:00:00+00:00',
     annotatedLocation: null,
     notes: null,
+    status: 'ACTIVE',
     battery: {
       status: 'reported',
       health: 'replace-soon',
