@@ -118,9 +118,11 @@ prototype.request = async function (options) {
             ? 'synthetic-ou-token'
             : scope.endsWith('device.chromeos.readonly')
               ? 'synthetic-device-token'
-              : scope.endsWith('telemetry.readonly')
-                ? 'synthetic-telemetry-token'
-                : 'synthetic-domain-token',
+              : scope.endsWith('device.chromeos')
+                ? 'synthetic-changes-token'
+                : scope.endsWith('telemetry.readonly')
+                  ? 'synthetic-telemetry-token'
+                  : 'synthetic-domain-token',
       expires_in: 3600,
       token_type: 'Bearer',
     };
@@ -137,9 +139,11 @@ prototype.request = async function (options) {
               ? 'https://www.googleapis.com/auth/admin.directory.orgunit.readonly'
               : authorization === 'Bearer synthetic-device-token'
                 ? 'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly'
-                : authorization === 'Bearer synthetic-telemetry-token'
-                  ? 'https://www.googleapis.com/auth/chrome.management.telemetry.readonly'
-                  : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
+                : authorization === 'Bearer synthetic-changes-token'
+                  ? 'https://www.googleapis.com/auth/admin.directory.device.chromeos'
+                  : authorization === 'Bearer synthetic-telemetry-token'
+                    ? 'https://www.googleapis.com/auth/chrome.management.telemetry.readonly'
+                    : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
       expires_in: 3500,
     };
   } else if (url.pathname.endsWith('/my_customer'))
@@ -242,7 +246,15 @@ prototype.request = async function (options) {
     url.pathname === '/admin/directory/v1/customer/C0123456/devices/chromeos'
   ) {
     if (fault === 'device-privilege-denied') throw forbidden(options);
-    const { items, next } = pageOf(options, url, 300);
+    // Google returns at most the requested number of records. The health check
+    // asks for one; device browsing asks for a page.
+    const { items, next } = pageOf(
+      options,
+      url,
+      Number(
+        options.params?.maxResults ?? url.searchParams.get('maxResults') ?? 300,
+      ),
+    );
     data = {
       chromeosdevices: items.map(
         ({ capacity: _capacity, ...device }) => device,
