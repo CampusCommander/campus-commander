@@ -2,7 +2,7 @@
 
 Status: owner-confirmed on 2026-10-21. The owner chose the answer "Confirmed: build it as written".
 Source: owner decisions of 2026-10-21, quoted under [Owner decisions](#owner-decisions--2026-10-21).
-Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the node links under [Design](#design), plus the approved side-sheet mockup. Design gaps remain.
+Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the node links under [Design](#design), plus the owner-approved composition. Design gaps remain.
 Replaces: none.
 
 ## User and outcome
@@ -91,6 +91,7 @@ Each item names its sources. The owner confirmed these choices with this record 
 5. Reboot sends no user-session delay.
 6. Sheet step labels: Choose, Review, Confirm.
 7. The Status column is optional and hidden by default, like the Annotated location column. The [device browsing record](device-browsing.md) keeps its default columns.
+8. Re-enable copy: an active device reads "already active", not "already enabled". `2026-10-21-device-commands-07-reenable-no-eligible.png` keeps the Figma copy "already enabled". This default governs. Source: eng-lead wording default, 2026-10-21.
 
 ## Design
 
@@ -98,6 +99,10 @@ Figma page 09 (`94:2`) holds these frames in the file `lqZx6qpWevsN3AAfWkworl`.
 Inspected on 2026-10-21 through the eng-lead notes and the exported PNGs.
 The 2026-10-20 side-sheet decision governs every composition. The frames supply content and copy only.
 The approved mockup `docs/ui/designs/2026-10-20-bulk-action-sheet.html` supplies the sheet composition.
+On 2026-10-21 the owner approved the step 5 screens: "That looks good".
+The owner-approved composition is the [mockup HTML](../ui/designs/2026-10-21-device-commands.html) and its ten state PNGs.
+The PNGs run from [01-bulk-actions-menu](../ui/designs/2026-10-21-device-commands-01-bulk-actions-menu.png) to [10-status-column-filter](../ui/designs/2026-10-21-device-commands-10-status-column-filter.png).
+The [mockup notes](../ui/designs/2026-10-21-device-commands-notes.md) list every state, its background, and each copy source.
 Job pages stay pages.
 
 | Node                                                                                                | Frame name                         | Use                                                         |
@@ -124,7 +129,7 @@ Design gaps:
 6. No Reboot or Disable job detail. Command state has no designed place in the operations grid.
 7. No pending command rows or waiting job status inside the job detail. `104:657` is a standalone page.
 8. No uncertain command issuance frame. Only the update variant `104:254` exists.
-9. No Status column or status filter in the device grid (`216:4309`).
+9. No Status column or status filter in the device grid (`216:4309`). The approved mockup of 2026-10-21, state 10, supplies the column position and the filter chip.
 10. No activity-area entries for command jobs. The approved mockup is the design source.
 11. No single job ID scheme. Figma uses CMD-, REB-, DIS-, and STATUS-.
 

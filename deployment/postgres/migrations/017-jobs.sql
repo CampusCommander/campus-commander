@@ -917,6 +917,9 @@ CREATE FUNCTION cc.settle_device_update_operations(p_customer text,p_job uuid,p_
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; bad integer; provenance text;
   before text; after text; first_batch integer; element jsonb:=NULL; candidates integer[];
+  -- The cached field of the action: an annotated-location update writes its column and a status
+  -- change writes `status` (addendum section 5).
+  write_field text;
   settled jsonb:='[]'::jsonb; devices jsonb:='[]'::jsonb; removed jsonb:='[]'::jsonb;
 BEGIN
   -- S2 (round 2, F2): a null kind never matches NOT IN, so the kind rejects explicitly before any lock.
@@ -1017,6 +1020,9 @@ BEGIN
   IF candidates IS NULL THEN
     RETURN jsonb_build_object('outcome','settled','settled',settled,'publication',NULL);
   END IF;
+  -- The action names the observation field. A value fits the device column of 016 in both cases.
+  write_field:=CASE detail.action WHEN 'disable' THEN 'status' WHEN 'reenable' THEN 'status'
+    ELSE 'annotatedLocation' END;
   -- S1 (round 3): the overlay and publication rows reference the connection row, so their insert checks
   -- take a key-share lock on it. That lock comes here, before the device rows: a full-sync finish takes the
   -- connection row first and its device rows second (016, cc.finish_device_sync), so the two calls never
@@ -1036,7 +1042,7 @@ BEGIN
   -- S1 (round 3): a published success replaces the overlay of its device. The overlay rows lock in device_id
   -- order after the device rows, as every overlay writer takes them. No write below then waits, so the clock
   -- below reads after every wait of this call.
-  PERFORM 1 FROM cc.device_write_overlays w WHERE w.customer_id=p_customer AND w.field='annotatedLocation' AND
+  PERFORM 1 FROM cc.device_write_overlays w WHERE w.customer_id=p_customer AND w.field=write_field AND
       w.device_id IN (SELECT o.device_id FROM cc.device_update_operations o JOIN jsonb_array_elements(p_results) r
         ON o.operation_number=(r->>'operationNumber')::integer
       WHERE o.job_id=p_job AND o.operation_number=ANY(candidates) AND r->>'outcome'='succeeded')
@@ -1074,15 +1080,21 @@ BEGIN
     RETURNING o.operation_number,o.device_id,o.batch,o.status,e.value,e.r->>'verifiedBy' AS verified_by,
       e.r->>'outcomeReason' AS outcome_reason
   ), published AS (
-    UPDATE cc.devices d SET annotated_location=a.value,annotated_location_observed_at=p_observed_at
+    UPDATE cc.devices d SET
+      annotated_location=CASE WHEN write_field='annotatedLocation' THEN a.value ELSE d.annotated_location END,
+      annotated_location_observed_at=CASE WHEN write_field='annotatedLocation' THEN p_observed_at
+        ELSE d.annotated_location_observed_at END,
+      status=CASE WHEN write_field='status' THEN a.value ELSE d.status END,
+      status_observed_at=CASE WHEN write_field='status' THEN p_observed_at ELSE d.status_observed_at END
     FROM applied a WHERE a.status='succeeded' AND a.verified_by IN ('write-response','read-back') AND
       d.customer_id=p_customer AND d.device_id=a.device_id AND
-      (d.annotated_location_observed_at IS NULL OR p_observed_at>d.annotated_location_observed_at)
+      (CASE WHEN write_field='status' THEN (d.status_observed_at IS NULL OR p_observed_at>d.status_observed_at)
+        ELSE (d.annotated_location_observed_at IS NULL OR p_observed_at>d.annotated_location_observed_at) END)
     RETURNING d.device_id,a.value,a.operation_number,a.verified_by
   ), overlay AS (
     INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,
       operation_number,expires_at)
-    SELECT p_customer,p.device_id,'annotatedLocation',p.value,p_observed_at,p.verified_by,p_job,p.operation_number,
+    SELECT p_customer,p.device_id,write_field,p.value,p_observed_at,p.verified_by,p_job,p.operation_number,
       p_observed_at+interval '36 hours' FROM published p
     ON CONFLICT(customer_id,device_id,field) DO UPDATE SET value=EXCLUDED.value,observed_at=EXCLUDED.observed_at,
       source=EXCLUDED.source,job_id=EXCLUDED.job_id,operation_number=EXCLUDED.operation_number,
@@ -1195,7 +1207,7 @@ $$;
 CREATE FUNCTION cc.read_device_update_verification(p_customer text,p_job uuid,p_attempt uuid,p_operations jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; connection cc.google_connection; now_at timestamptz; operations jsonb;
+DECLARE job cc.jobs; detail cc.device_update_jobs; connection cc.google_connection; now_at timestamptz; operations jsonb;
 BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before its first lock. A null
   -- input names no operation to hold, so it never answers not-held.
@@ -1213,6 +1225,12 @@ BEGIN
   -- S1: the header reads without a lock. This call changes no job row.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer;
   IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN
+    RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
+  END IF;
+  -- The action of the job selects the compared field of a read-back (addendum section 5). The read
+  -- returns it to the caller, which compares `status` for a status job.
+  SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
+  IF detail.job_id IS NULL THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   -- The clock and the held operations read without a lock.
@@ -1240,7 +1258,7 @@ BEGIN
     AND o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e);
   IF operations IS NULL THEN RETURN jsonb_build_object('outcome','not-held'); END IF;
   RETURN jsonb_build_object('outcome','held','checkedAt',now_at,'generation',connection.generation,
-    'credentialId',connection.credential_id,
+    'credentialId',connection.credential_id,'action',detail.action,
     'envelope',(SELECT g.envelope FROM cc.google_credentials g WHERE g.id=connection.credential_id),
     'operations',operations);
 END;

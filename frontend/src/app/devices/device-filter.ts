@@ -21,6 +21,7 @@ import {
 import {
   BATTERY_LABELS,
   DATE_OPERATORS,
+  DEVICE_STATUS_LABELS,
   TEXT_OPERATORS,
   dateInputToIso,
   dateInputValue,
@@ -32,6 +33,7 @@ import {
   withUnit,
   type BatteryFilterValue,
   type DeviceField,
+  type DeviceStatusFilterValue,
 } from './device-fields';
 
 interface Suggestion {
@@ -71,12 +73,17 @@ export class DeviceFilter {
   protected readonly operator = signal('contains');
   protected readonly value = signal('');
   protected readonly battery = signal<readonly BatteryFilterValue[]>([]);
+  protected readonly status = signal<readonly DeviceStatusFilterValue[]>([]);
   protected readonly unitValues = signal<readonly string[]>([]);
   protected readonly unitSearch = signal('');
   protected readonly textOperators = TEXT_OPERATORS;
   protected readonly dateOperators = DATE_OPERATORS;
   protected readonly batteryOptions = Object.entries(BATTERY_LABELS) as [
     BatteryFilterValue,
+    string,
+  ][];
+  protected readonly statusOptions = Object.entries(DEVICE_STATUS_LABELS) as [
+    DeviceStatusFilterValue,
     string,
   ][];
 
@@ -122,21 +129,23 @@ export class DeviceFilter {
     const candidate =
       field.kind === 'battery'
         ? { field: field.id, operator: 'is', values: this.battery() }
-        : field.kind === 'orgUnit'
-          ? { field: field.id, operator: 'in', values: this.unitValues() }
-          : field.kind === 'date'
-            ? {
-                field: field.id,
-                operator: this.operator(),
-                value: dateInputToIso(this.value()),
-              }
-            : this.operator() === 'isEmpty'
-              ? { field: field.id, operator: 'isEmpty' }
-              : {
+        : field.kind === 'status'
+          ? { field: field.id, operator: 'is', values: this.status() }
+          : field.kind === 'orgUnit'
+            ? { field: field.id, operator: 'in', values: this.unitValues() }
+            : field.kind === 'date'
+              ? {
                   field: field.id,
                   operator: this.operator(),
-                  value: this.value(),
-                };
+                  value: dateInputToIso(this.value()),
+                }
+              : this.operator() === 'isEmpty'
+                ? { field: field.id, operator: 'isEmpty' }
+                : {
+                    field: field.id,
+                    operator: this.operator(),
+                    value: this.value(),
+                  };
     const parsed = devicePredicateSchema.safeParse(candidate);
     if (!parsed.success) return null;
     // Only grid set filters may be empty. A chip needs at least one value.
@@ -210,6 +219,7 @@ export class DeviceFilter {
     );
     this.value.set('');
     this.battery.set([]);
+    this.status.set([]);
     this.unitValues.set([]);
     this.unitSearch.set('');
     afterNextRender(
@@ -226,6 +236,7 @@ export class DeviceFilter {
     this.openField(fieldFor(predicate.field));
     this.operator.set(predicate.operator);
     if (predicate.field === 'battery') this.battery.set(predicate.values);
+    else if (predicate.field === 'status') this.status.set(predicate.values);
     else if (predicate.field === 'orgUnitPath')
       this.unitValues.set(predicate.values);
     else if (predicate.field === 'lastContact')
@@ -235,6 +246,17 @@ export class DeviceFilter {
 
   protected toggleBattery(value: BatteryFilterValue, checked: boolean): void {
     this.battery.update((values) =>
+      checked
+        ? [...values.filter((item) => item !== value), value]
+        : values.filter((item) => item !== value),
+    );
+  }
+
+  protected toggleStatus(
+    value: DeviceStatusFilterValue,
+    checked: boolean,
+  ): void {
+    this.status.update((values) =>
       checked
         ? [...values.filter((item) => item !== value), value]
         : values.filter((item) => item !== value),
