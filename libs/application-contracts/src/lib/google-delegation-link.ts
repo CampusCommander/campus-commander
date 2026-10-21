@@ -49,3 +49,28 @@ export function delegationLink(input: {
   if (input.domain) parameters.push(`dn=${input.domain}`);
   return `${GOOGLE_DELEGATION_CONSOLE_URL}?${parameters.join('&')}`;
 }
+
+/**
+ * Build a pre-filled link for one client, or null when the page cannot name a
+ * numeric client ID or a known scope.
+ *
+ * The scope list holds the requested scopes plus every verified scope, because
+ * Authorize replaces the whole scope list of the client.
+ */
+export function buildDelegationLink(input: {
+  clientId: string;
+  requested: readonly string[];
+  verified?: readonly string[];
+  domain?: string;
+}): string | null {
+  if (!/^[0-9]{1,32}$/.test(input.clientId)) return null;
+  try {
+    return delegationLink({
+      clientId: input.clientId,
+      scopes: delegationLinkScopes(input.requested, input.verified ?? []),
+      domain: input.domain,
+    });
+  } catch {
+    return null;
+  }
+}

@@ -211,7 +211,11 @@
     @for (action of availability.actions; track action) { @if (action ===
     'copy-scope') {
     <button mat-button type="button" (click)="copyScope()">Copy scope</button>
-    } @else if (action === 'recheck') {
+    @if (google.delegationHref(); as href) {
+    <a mat-button [href]="href" target="_blank" rel="noopener noreferrer"
+      >Open domain-wide delegation in the Google Admin console</a
+    >
+    } } @else if (action === 'recheck') {
     <button
       mat-button
       type="button"

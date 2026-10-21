@@ -40,6 +40,7 @@ import {
   REFRESH_SELECTED_SUPPORT,
 } from './device-refresh-messages';
 import { DeviceWriteAccessStore } from './device-write-access.store';
+import { GoogleHealthStore } from '../google-connection/health.store';
 
 @Component({
   selector: 'app-devices',
@@ -57,6 +58,8 @@ import { DeviceWriteAccessStore } from './device-write-access.store';
 export class DevicesPage implements OnInit, OnDestroy {
   protected readonly store = inject(DevicesStore);
   protected readonly writeAccess = inject(DeviceWriteAccessStore);
+  /** The one pre-filled delegation link that Diagnostics also shows. */
+  protected readonly google = inject(GoogleHealthStore);
   private readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);

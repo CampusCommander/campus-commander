@@ -11,12 +11,21 @@ import {
   GOOGLE_CAPABILITIES,
   GOOGLE_HEALTH_RECOVERY,
   GOOGLE_HEALTH_FRESH_SECONDS,
+  GOOGLE_SETUP_SCOPES,
+  buildDelegationLink,
   googleHealthResponseSchema,
   type GoogleHealth,
   type GoogleHealthCapability,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from './connection.store';
+
+/** The five capabilities that a fresh installation grants (GOOGLE_SETUP_SCOPES). */
+const SETUP_CAPABILITY_IDS = new Set(
+  GOOGLE_CAPABILITIES.filter((capability) =>
+    GOOGLE_SETUP_SCOPES.includes(capability.scope),
+  ).map((capability) => capability.id),
+);
 
 @Injectable({ providedIn: 'root' })
 export class GoogleHealthStore implements OnDestroy {
@@ -31,9 +40,35 @@ export class GoogleHealthStore implements OnDestroy {
   readonly error = signal('');
   readonly message = signal('');
   readonly recovery = GOOGLE_HEALTH_RECOVERY;
-  readonly capabilities = GOOGLE_CAPABILITIES.filter(
-    (item) => item.requiredForConnection,
-  ).filter((item) => item.enabled && item.qualified);
+  readonly capabilities = GOOGLE_CAPABILITIES.filter((item) => item.enabled);
+  /**
+   * The scopes of the capabilities that the last health answer verified. The
+   * delegation link must list each one, because Authorize replaces the list.
+   */
+  readonly verifiedScopes = computed(() => {
+    const results = this.health()?.capabilities;
+    if (!results) return [];
+    return GOOGLE_CAPABILITIES.filter((capability) =>
+      results.some(
+        (item) => item.capability === capability.id && item.scopeVerified,
+      ),
+    ).map((capability) => capability.scope);
+  });
+  /**
+   * The pre-filled Admin console link for the connected client. Null until the
+   * page reads both the client ID and a health answer. Diagnostics and Devices
+   * use this one link, so both list the same scopes.
+   */
+  readonly delegationHref = computed(() => {
+    const connection = this.connection.connection();
+    if (!connection || !this.health()) return null;
+    return buildDelegationLink({
+      clientId: connection.clientId,
+      requested: GOOGLE_SETUP_SCOPES,
+      verified: this.verifiedScopes(),
+      domain: connection.observation.primaryDomain,
+    });
+  });
   private readonly elapsed = signal(performance.now());
   private receivedAt = performance.now();
   private readonly timer = setInterval(
@@ -100,14 +135,17 @@ export class GoogleHealthStore implements OnDestroy {
     if (health.backgroundFailure)
       return 'Google background access needs attention';
     if (this.expired()) return 'Google check expired';
-    const failed = health.capabilities.filter(
-      (item) => item.failure !== null,
-    ).length;
+    // The School OU scope is disputed and a fresh installation does not grant
+    // it, so its row never counts as needing attention (owner decision 2026-10-19).
+    const setup = health.capabilities.filter((item) =>
+      SETUP_CAPABILITY_IDS.has(item.capability),
+    );
+    const failed = setup.filter((item) => item.failure !== null).length;
     if (failed)
-      return `Google: ${failed} of ${health.capabilities.length} capabilities need attention`;
-    if (health.capabilities.some((item) => this.stale(item.checkedAt)))
+      return `Google: ${failed} of ${setup.length} capabilities need attention`;
+    if (setup.some((item) => this.stale(item.checkedAt)))
       return 'Google results are out of date';
-    return `Google: ${health.capabilities.length} last checks passed`;
+    return `Google: ${setup.length} last checks passed`;
   });
 
   constructor() {

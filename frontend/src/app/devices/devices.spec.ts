@@ -10,7 +10,12 @@ import type {
   DeviceSyncState,
   DeviceWriteAccess,
 } from '@campus/application-contracts';
-import { DEVICE_WRITE_ACCESS_DENIED_MESSAGE } from '@campus/application-contracts';
+import {
+  DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+  GOOGLE_CAPABILITIES,
+  GOOGLE_SETUP_SCOPES,
+  buildDelegationLink,
+} from '@campus/application-contracts';
 import {
   DEVICE_WRITE_ACCESS_BUSY_MESSAGE,
   DEVICE_UPDATE_PERMISSION_MESSAGE,
@@ -20,6 +25,7 @@ import { DeviceGrid } from './device-grid';
 import { DevicesPage } from './devices';
 import { DevicesStore } from './devices.store';
 import { DeviceWriteAccessStore } from './device-write-access.store';
+import { GoogleHealthStore } from '../google-connection/health.store';
 import { AuthStore } from '../auth.store';
 
 @Component({
@@ -90,6 +96,8 @@ function setup(options: {
   /** Use the real store, so a second activation performs a second read. */
   realAccess?: boolean;
   request?: (path: string) => Promise<Response>;
+  /** The pre-filled delegation link that the health store supplies. */
+  delegationHref?: string | null;
 }) {
   const sync = signal(options.sync);
   const selectionSpec: DeviceSelectionSpec = {
@@ -116,6 +124,7 @@ function setup(options: {
     load: vi.fn().mockResolvedValue(access()),
     check,
   };
+  const delegationHref = signal<string | null>(options.delegationHref ?? null);
   const actions = new Set(options.actions ?? allActions);
   const store = {
     sync,
@@ -170,6 +179,10 @@ function setup(options: {
           can: (action: string) => actions.has(action),
           request: options.request ?? vi.fn(),
         },
+      },
+      {
+        provide: GoogleHealthStore,
+        useValue: { delegationHref },
       },
       ...(options.realAccess
         ? []
@@ -815,6 +828,48 @@ describe('Bulk Actions', () => {
     expect(button('Recheck')).toBeDefined();
     button('Recheck')?.click();
     expect(writeAccess.check).toHaveBeenCalled();
+  });
+
+  const DELEGATION_LINK_TEXT =
+    'Open domain-wide delegation in the Google Admin console';
+
+  it('shows the pre-filled delegation link after Copy scope when denied', () => {
+    const href = buildDelegationLink({
+      clientId: '123456789',
+      requested: GOOGLE_SETUP_SCOPES,
+      verified: GOOGLE_CAPABILITIES.map((capability) => capability.scope),
+      domain: 'example.org',
+    })!;
+    const { element, button } = setup({
+      sync: ready(),
+      page: counted,
+      access: { ...grantedAccess, state: 'denied', failure: 'scope-mismatch' },
+      delegationHref: href,
+    });
+    const note = element.querySelector('#bulk-note')!.parentElement!;
+    const link = note.querySelector<HTMLAnchorElement>('a');
+    expect(link).not.toBeNull();
+    expect(link!.textContent?.trim()).toBe(DELEGATION_LINK_TEXT);
+    expect(link!.getAttribute('href')).toBe(href);
+    expect(link!.getAttribute('target')).toBe('_blank');
+    expect(link!.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(
+      button('Copy scope')!.compareDocumentPosition(link!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('shows no delegation link when the page cannot read the client ID', () => {
+    const { element, button } = setup({
+      sync: ready(),
+      page: counted,
+      access: { ...grantedAccess, state: 'denied', failure: 'scope-mismatch' },
+    });
+    expect(element.textContent).toContain(DEVICE_WRITE_ACCESS_DENIED_MESSAGE);
+    expect(button('Copy scope')).toBeDefined();
+    expect(
+      element.querySelector('#bulk-note')!.parentElement!.querySelector('a'),
+    ).toBeNull();
   });
 
   it('shows the busy answer after Recheck', async () => {

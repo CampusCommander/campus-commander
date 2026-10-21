@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildDelegationLink,
   delegationLink,
   delegationLinkScopes,
 } from './google-delegation-link.ts';
@@ -82,4 +83,32 @@ test('the delegation scopes hold the sorted union without duplicates', () => {
     SCHOOL_OU,
     TELEMETRY,
   ]);
+});
+
+test('the shared link helper lists the requested and verified scopes once', () => {
+  assert.equal(
+    buildDelegationLink({
+      clientId: '123456789',
+      requested: [DOMAIN, CUSTOMER],
+      verified: [SCHOOL_OU, CUSTOMER],
+      domain: 'example.org',
+    }),
+    `${CONSOLE}?clientScopeToAdd=${CUSTOMER},${DOMAIN},${SCHOOL_OU}&clientIdToAdd=123456789&overwriteClientId=true&dn=example.org`,
+  );
+  assert.equal(
+    buildDelegationLink({ clientId: '123456789', requested: [CUSTOMER] }),
+    `${CONSOLE}?clientScopeToAdd=${CUSTOMER}&clientIdToAdd=123456789&overwriteClientId=true`,
+  );
+});
+
+test('the shared link helper returns null without a usable client ID', () => {
+  for (const clientId of ['', ' 123456789', '12345678a', '1'.repeat(33)])
+    assert.equal(
+      buildDelegationLink({ clientId, requested: [CUSTOMER] }),
+      null,
+    );
+  assert.equal(
+    buildDelegationLink({ clientId: '123456789', requested: [] }),
+    null,
+  );
 });

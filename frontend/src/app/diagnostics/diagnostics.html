@@ -132,7 +132,7 @@
   } @if (google.health(); as health) {
   <p>
     Customer <code>{{ health.customerId }}</code>. {{ google.capabilities.length
-    }} read-only Google checks available.
+    }} Google checks available.
   </p>
   <p>
     These results show the last check. Run another check to confirm access now.
@@ -250,19 +250,22 @@
   <details class="authorization">
     <summary>Configure required Google authorization</summary>
     <p>
-      Add these {{ googleScopes.length }} scopes to allow the checks on this
+      Add these {{ googleScopes().length }} scopes to allow the checks on this
       page.
     </p>
     <ol>
       <li>Enable the Admin SDK API in the service-account project.</li>
       <li>
-        Open
-        <a
-          href="https://admin.google.com/ac/owl/domainwidedelegation"
-          target="_blank"
-          rel="noopener noreferrer"
-          >domain-wide delegation in Google Admin console</a
+        @if (google.delegationHref(); as href) {
+        <a [href]="href" target="_blank" rel="noopener noreferrer"
+          >Open domain-wide delegation in the Google Admin console</a
         >.
+        <p class="secondary">
+          This link opens Google Admin with the client ID and these scopes
+          filled in. Authorize replaces the scope list of that client with the
+          listed scopes.
+        </p>
+        } @else { Open domain-wide delegation in the Google Admin console. }
       </li>
       <li>
         Add the service-account numeric client ID and the required scopes below.
@@ -280,9 +283,9 @@
       tabindex="0"
       aria-label="Required Google capability scopes"
     >
-{{ googleScopes.join(',\n') }}</pre
+{{ googleScopes().join(',\n') }}</pre
     >
-    <button mat-stroked-button (click)="copyGoogle(googleScopes.join(','))">
+    <button mat-stroked-button (click)="copyGoogle(googleScopes().join(','))">
       Copy required Google scopes
     </button>
     <p>
@@ -290,10 +293,9 @@
       the change takes effect.
     </p>
     <p>
-      To check organizational unit access, open Schools. These checks only cover
-      customer and domain access.
+      These checks read at most one record of each kind. They never change
+      Google data.
     </p>
-    <p>These checks do not list users or devices, or change Google data.</p>
   </details>
   }
 </section>

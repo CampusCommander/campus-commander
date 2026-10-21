@@ -97,8 +97,10 @@ export async function qualifyGoogleHealth({
     });
     await expect(customerPanel).toContainText('Last check passed');
     await expect(domainPanel).toContainText('Delegation not authorized');
+    // The health answer holds six results. The footer counts only the five
+    // setup capabilities, so a School OU result never needs attention.
     await expect(page.locator('footer')).toContainText(
-      '1 of 6 capabilities need attention',
+      '1 of 5 capabilities need attention',
     );
     await ready();
     await fault('domain-privilege-denied');
@@ -194,35 +196,25 @@ export async function qualifyGoogleHealth({
     await fault('');
     await page.getByRole('button', { name: 'Refresh Google status' }).click();
     await page.getByRole('button', { name: 'Check Google access' }).click();
-    // The page checks the two connection capabilities. The four optional
-    // scopes stay unchecked, so the footer reports results that are not current.
+    // Check Google access checks all six capabilities. Every result is current,
+    // and the footer counts only the five setup capabilities.
     await expect(page.locator('footer')).toContainText(
-      'Google results are out of date',
+      'Google: 5 last checks passed',
     );
     const recovered = await read();
-    for (const capability of ['customer-identity', 'domain-observations']) {
-      const item = capabilityResult(recovered, capability);
-      assert.equal(item.failure, null, capability);
-      assert.equal(item.scopeVerified, true, capability);
-    }
     for (const capability of [
+      'customer-identity',
+      'domain-observations',
       'school-ou-references',
       'device-inventory',
       'device-telemetry',
       'device-changes',
-    ])
-      assert.deepEqual(
-        capabilityResult(recovered, capability),
-        {
-          capability,
-          scopeVerified: false,
-          failure: null,
-          checkedAt: null,
-          lastSucceededAt: null,
-          correlationId: null,
-        },
-        `${capability} stays unchecked by a required-scope check`,
-      );
+    ]) {
+      const item = capabilityResult(recovered, capability);
+      assert.equal(item.failure, null, capability);
+      assert.equal(item.scopeVerified, true, capability);
+      assert.ok(item.checkedAt, `${capability} records a check time.`);
+    }
     assert.equal(recovered.backgroundFailure, null);
     assert.ok(recovered.check.finishedAt);
     await page
@@ -230,7 +222,12 @@ export async function qualifyGoogleHealth({
       .click();
     await expect(
       page.getByLabel('Required Google capability scopes'),
-    ).not.toContainText('orgunit');
+    ).toContainText('orgunit');
+    await expect(
+      page.getByRole('link', {
+        name: 'Open domain-wide delegation in the Google Admin console',
+      }),
+    ).toHaveAttribute('href', /orgunit/);
     for (const theme of ['light', 'dark']) {
       await page.getByRole('button', { name: 'Choose theme' }).click();
       await page.getByRole('menuitem', { name: `Use ${theme} theme` }).click();
