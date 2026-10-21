@@ -1,6 +1,6 @@
 # Reboot, disable, or re-enable selected devices
 
-Status: proposed. The owner reviews this record before implementation.
+Status: owner-confirmed on 2026-10-21. The owner chose the answer "Confirmed: build it as written".
 Source: owner decisions of 2026-10-21, quoted under [Owner decisions](#owner-decisions--2026-10-21).
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the node links under [Design](#design), plus the approved side-sheet mockup. Design gaps remain.
 Replaces: none.
@@ -82,7 +82,7 @@ Earlier owner decisions govern this record. The record cites them and does not r
 ## Implementation defaults — 2026-10-21
 
 These defaults are engineering choices, not owner decisions. Change them when the owner asks.
-Each item names its sources. The owner confirms these choices with this record.
+Each item names its sources. The owner confirmed these choices with this record on 2026-10-21.
 
 1. Permissions: two new permissions, "Send device commands" and "Change device status". Each also requires Device Bulk Actions. Only the Platform Admin role holds them, so no other role gains authority. Deprovision gets its own permission, "Device Deprovision", when it is built. Sources: `docs/workflows/platform-access.md:643, 659, 668`, `docs/workflow-gaps.md` row G15.
 2. Job IDs: `CMD-` for command jobs and `STS-` for status change jobs. Figma uses CMD-, REB-, DIS-, and STATUS- (design gap 11).
@@ -139,7 +139,7 @@ Excluded from this build:
 
 Open decisions:
 
-- The owner confirms the defaults of 2026-10-21. This record stays proposed until then.
+- The owner confirmed the defaults of 2026-10-21 on the same day.
 - Eligibility, reasons, expiry, and provider lifecycle need Google capability evidence before release (DEVICE-01).
 - Each design gap needs a composition before its screen is built.
 - Wipe, Powerwash, and Deprovision need their own record.
