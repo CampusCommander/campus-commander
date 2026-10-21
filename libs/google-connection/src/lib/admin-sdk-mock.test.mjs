@@ -13,7 +13,11 @@ import { GoogleDeviceReader } from './devices.ts';
 import { validateServiceAccount } from './credential.ts';
 
 /** The device readers request one exact scope per capability. */
-const readerScopes = ['device-inventory', 'device-telemetry'].map(
+const readerScopes = [
+  'device-inventory',
+  'device-telemetry',
+  'device-changes',
+].map(
   (id) => GOOGLE_CAPABILITIES.find((capability) => capability.id === id).scope,
 );
 const telemetryScope = readerScopes[1];
@@ -258,6 +262,187 @@ test('a batch get resolves known devices and reports an unknown device as remove
   );
   for (const device of devices)
     assert.deepEqual(device, expected.get(device.deviceId));
+});
+
+/** Active devices whose last contact is inside the mock's 24-hour online window. */
+function onlineDevices(count) {
+  const now = Date.now();
+  return inventory
+    .filter(
+      (device) =>
+        device.status === 'ACTIVE' &&
+        device.lastContact !== null &&
+        now - Date.parse(device.lastContact) <= 24 * 3_600_000,
+    )
+    .slice(0, count);
+}
+
+test('a reboot command is issued once and polled through its states', async () => {
+  const [early, late] = onlineDevices(2);
+  assert.ok(early && late, 'the seed holds two active online devices');
+  const issued = await reader.issueDeviceCommands(
+    credential,
+    domain.customerId,
+    [{ deviceId: early.deviceId, commandType: 'REBOOT' }],
+    AbortSignal.timeout(timeout),
+  );
+  const command = issued.succeeded.get(early.deviceId)[0];
+  assert.match(command.commandId, /^\d{1,20}$/);
+  const atOnce = await reader.deviceCommands(
+    credential,
+    domain.customerId,
+    [{ deviceId: early.deviceId, commandId: command.commandId }],
+    AbortSignal.timeout(timeout),
+  );
+  const first = atOnce.succeeded.get(early.deviceId)[0];
+  assert.equal(
+    first.state,
+    'PENDING',
+    'Google holds the command before delivery.',
+  );
+  assert.equal(first.commandId, command.commandId);
+  assert.ok(first.expiresAt, 'The answer carries the provider expiry.');
+
+  await mock.control('PUT', '/clock', { scale: 20 });
+  try {
+    const later = await reader.issueDeviceCommands(
+      credential,
+      domain.customerId,
+      [{ deviceId: late.deviceId, commandType: 'REBOOT' }],
+      AbortSignal.timeout(timeout),
+    );
+    const second = later.succeeded.get(late.deviceId)[0];
+    assert.match(second.commandId, /^\d{1,20}$/);
+    const order = [
+      'PENDING',
+      'SENT_TO_CLIENT',
+      'ACKED_BY_CLIENT',
+      'EXECUTED_BY_CLIENT',
+    ];
+    const states = [];
+    let observed;
+    const started = Date.now();
+    do {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const polled = await reader.deviceCommands(
+        credential,
+        domain.customerId,
+        [{ deviceId: late.deviceId, commandId: second.commandId }],
+        AbortSignal.timeout(timeout),
+      );
+      observed = polled.succeeded.get(late.deviceId)[0];
+      states.push(observed.state);
+    } while (
+      !['EXECUTED_BY_CLIENT', 'EXPIRED'].includes(observed.state) &&
+      Date.now() - started < 10_000
+    );
+    let reached = 0;
+    for (const state of states) {
+      const next = order.indexOf(state);
+      assert.ok(next >= 0, `a known command state: ${state}`);
+      assert.ok(
+        next >= reached,
+        `the states advance in order: ${states.join(', ')}`,
+      );
+      reached = next;
+    }
+    assert.equal(
+      observed.state,
+      'EXECUTED_BY_CLIENT',
+      `the online device executed after ${states.join(', ')}`,
+    );
+    assert.equal(observed.commandId, second.commandId);
+    assert.ok(observed.expiresAt);
+    assert.ok(observed.executedAt);
+    assert.ok(['SUCCESS', 'FAILURE'].includes(observed.result));
+  } finally {
+    await mock.control('PUT', '/clock', { scale: 1 });
+  }
+});
+
+test('an issue command for a disabled device fails with the provider refusal', async () => {
+  const device = inventory.find((entry) => entry.status === 'DISABLED');
+  assert.ok(device, 'the seed holds a disabled device');
+  const issued = await reader.issueDeviceCommands(
+    credential,
+    domain.customerId,
+    [{ deviceId: device.deviceId, commandType: 'REBOOT' }],
+    AbortSignal.timeout(timeout),
+  );
+  const failure = issued.failed.get(device.deviceId);
+  assert.deepEqual(
+    [failure.kind, failure.status, failure.reason],
+    ['rejected', 400, 'failedPrecondition'],
+  );
+  assert.equal(issued.succeeded.size, 0);
+});
+
+test('a status change answers per device, and a second disable is a status conflict', async () => {
+  const [device] = inventory.filter((entry) => entry.status === 'ACTIVE');
+  const first = await reader.changeDeviceStatus(
+    credential,
+    domain.customerId,
+    [
+      { deviceId: device.deviceId, action: 'disable' },
+      { deviceId: unknownDeviceId, action: 'disable' },
+    ],
+    AbortSignal.timeout(timeout),
+  );
+  assert.equal(first.answers[0].result.outcome, 'succeeded');
+  assert.deepEqual(
+    [
+      first.answers[1].result.outcome,
+      first.answers[1].result.reason,
+      first.answers[1].result.googleReason,
+    ],
+    ['failed', 'not-found', 'Device not found.'],
+  );
+  const second = await reader.changeDeviceStatus(
+    credential,
+    domain.customerId,
+    [{ deviceId: device.deviceId, action: 'disable' }],
+    AbortSignal.timeout(timeout),
+  );
+  assert.deepEqual(
+    [second.answers[0].result.outcome, second.answers[0].result.reason],
+    ['failed', 'status-conflict'],
+  );
+  assert.match(
+    second.answers[0].result.googleReason,
+    /does not allow this action/,
+  );
+  const reenabled = await reader.changeDeviceStatus(
+    credential,
+    domain.customerId,
+    [{ deviceId: device.deviceId, action: 'reenable' }],
+    AbortSignal.timeout(timeout),
+  );
+  assert.equal(reenabled.answers[0].result.outcome, 'succeeded');
+});
+
+test('a status change of 51 devices splits into parts of 50 and 1', async () => {
+  const ids = inventory
+    .filter((entry) => entry.status === 'ACTIVE')
+    .slice(0, 51)
+    .map((entry) => entry.deviceId);
+  assert.equal(ids.length, 51);
+  const result = await reader.changeDeviceStatus(
+    credential,
+    domain.customerId,
+    ids.map((deviceId) => ({ deviceId, action: 'disable' })),
+    AbortSignal.timeout(timeout),
+  );
+  assert.deepEqual(
+    result.parts.map((part) => part.deviceIds.length),
+    [50, 1],
+  );
+  assert.equal(result.answers.length, 51);
+  assert.deepEqual(
+    result.answers.flatMap((answer) =>
+      answer.result?.outcome === 'succeeded' ? [] : [answer.deviceId],
+    ),
+    [],
+  );
 });
 
 test('the mock releases every listener', async () => {

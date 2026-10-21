@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import { generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
+import { JWT, OAuth2Client } from 'google-auth-library';
 import { GoogleBatchService } from './batch.ts';
+import { GoogleDeviceReader } from './devices.ts';
 import { GoogleConnectionError } from './provider.ts';
-import { fakeGoogle, testClock, thing } from './batch-fake.mjs';
+import { fakeGoogle, testClock, thing, command } from './batch-fake.mjs';
 
 const batchUrl = 'https://www.googleapis.com/batch/admin/directory_v1';
 const ok = (key) => ({ status: 200, body: { name: key } });
@@ -41,9 +44,7 @@ test('an outer server error retries the whole batch, except a POST', async () =>
       round === 0 ? { status: 503, data: '{"error":{"code":503}}' } : undefined,
   });
   const { batch, clock } = setup();
-  const result = await batch.execute(
-    call(google, [thing('a'), thing('p', { method: 'POST', body: {} })]),
-  );
+  const result = await batch.execute(call(google, [thing('a'), command('p')]));
   assert.deepEqual(google.keys(), [['a', 'p'], ['a']]);
   assert.deepEqual(result.succeeded.get('a'), [{ name: 'a' }]);
   assert.deepEqual(
@@ -61,9 +62,7 @@ test('an outer 429 retries every part, a POST included, and honors Retry-After',
         : undefined,
   });
   const { batch, clock } = setup();
-  const result = await batch.execute(
-    call(google, [thing('a'), thing('p', { method: 'POST', body: {} })]),
-  );
+  const result = await batch.execute(call(google, [thing('a'), command('p')]));
   assert.deepEqual(google.keys(), [
     ['a', 'p'],
     ['a', 'p'],
@@ -217,4 +216,109 @@ test('a transport failure after a 2xx answer names the cause', async () => {
       error.code === 'malformed-response' &&
       /maxContentLength/.test(error.message),
   );
+});
+
+/** The retry rules of design section 3, proved through the device calls that send them. */
+const { privateKey } = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  privateKeyEncoding: { format: 'pem', type: 'pkcs8' },
+  publicKeyEncoding: { format: 'pem', type: 'spki' },
+});
+const credential = {
+  subject: 'fixture@example.invalid',
+  serviceAccount: {
+    client_email: 'fixture@project.iam.gserviceaccount.com',
+    private_key: privateKey,
+    private_key_id: 'fixture',
+  },
+};
+const throttle = {
+  status: 429,
+  body: { error: { code: 429, errors: [{ reason: 'rateLimitExceeded' }] } },
+};
+const unavailable = { status: 503, body: null };
+
+/** Run a reader call through the fake batch endpoint with a stubbed token. */
+function writer(t, answer) {
+  const google = fakeGoogle(answer);
+  const scopes = [];
+  t.mock.method(JWT.prototype, 'getAccessToken', async function () {
+    scopes.push(...this.scopes);
+    return { token: 'private-fixture-token' };
+  });
+  t.mock.method(JWT.prototype, 'getTokenInfo', async function () {
+    return { scopes: [...this.scopes], expiry_date: Date.now() + 3_500_000 };
+  });
+  t.mock.method(OAuth2Client.prototype, 'request', (options) =>
+    google.client.request(options),
+  );
+  const batch = new GoogleBatchService({
+    sleep: async () => undefined,
+    random: () => 0,
+  });
+  return { google, scopes, reader: new GoogleDeviceReader({ batch }) };
+}
+
+const commandSignal = () => AbortSignal.timeout(5_000);
+
+test('an issue command part never repeats a quota or transient refusal', async (t) => {
+  for (const [answer, kind] of [
+    [throttle, 'quota'],
+    [unavailable, 'transient'],
+  ]) {
+    const { google, scopes, reader } = writer(t, () => answer);
+    const result = await reader.issueDeviceCommands(
+      credential,
+      'C0123456',
+      [{ deviceId: 'd1', commandType: 'REBOOT' }],
+      commandSignal(),
+    );
+    assert.equal(
+      google.sent.length,
+      1,
+      `One POST left the worker for HTTP ${answer.status}.`,
+    );
+    assert.deepEqual(scopes, [
+      'https://www.googleapis.com/auth/admin.directory.device.chromeos',
+    ]);
+    assert.deepEqual(
+      [result.failed.get('d1').kind, result.failed.get('d1').attempts],
+      [kind, { quota: 0, transient: 0 }],
+    );
+  }
+});
+
+test('a status change part never repeats a transient refusal', async (t) => {
+  const { google, reader } = writer(t, () => unavailable);
+  const result = await reader.changeDeviceStatus(
+    credential,
+    'C0123456',
+    [{ deviceId: 'd1', action: 'disable' }],
+    commandSignal(),
+  );
+  assert.equal(google.sent.length, 1);
+  assert.deepEqual(
+    [result.answers[0].failure.kind, result.answers[0].failure.attempts],
+    ['transient', { quota: 0, transient: 0 }],
+  );
+});
+
+test('a command poll repeats a transient refusal', async (t) => {
+  let sent = 0;
+  const { google, reader } = writer(t, () =>
+    sent++ === 0
+      ? unavailable
+      : {
+          status: 200,
+          body: { commandId: '4100000001', state: 'PENDING' },
+        },
+  );
+  const result = await reader.deviceCommands(
+    credential,
+    'C0123456',
+    [{ deviceId: 'd1', commandId: '4100000001' }],
+    commandSignal(),
+  );
+  assert.equal(google.sent.length, 2);
+  assert.equal(result.succeeded.get('d1')[0].state, 'PENDING');
 });

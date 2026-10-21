@@ -19,11 +19,23 @@ export {
 } from './lib/provider';
 
 export { GoogleConnectionProvider, GoogleStoreError } from './lib/coordinator';
-export { GoogleDeviceReader } from './lib/devices';
+export { GoogleDeviceReader, statusResults } from './lib/devices';
 export type {
   AnnotatedLocationBatchOptions,
   AnnotatedLocationWrite,
+  DeviceBatchOptions,
+  DeviceCommandIssue,
+  DeviceCommandObservation,
+  DeviceCommandPoll,
   DeviceState,
+  DeviceStatusAction,
+  DeviceStatusAnswer,
+  DeviceStatusBatch,
+  DeviceStatusBatchOptions,
+  DeviceStatusChange,
+  DeviceStatusPart,
+  DeviceStatusResult,
+  IssuedDeviceCommand,
   WrittenDevice,
 } from './lib/devices';
 export type {
