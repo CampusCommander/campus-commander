@@ -45,8 +45,15 @@ export async function qualifyGoogleHealth({
   };
   const initial = await read();
   assert.equal(initial.customerId, input.customerId);
-  assert.equal(initial.capabilities.length, 2);
+  assert.equal(initial.capabilities.length, 6);
   assert.equal(JSON.stringify(initial).includes('envelope'), false);
+  const capabilityResult = (health, capability) => {
+    const result = health.capabilities.find(
+      (item) => item.capability === capability,
+    );
+    assert.ok(result, `The health state names ${capability}.`);
+    return result;
+  };
   assert.equal(
     (await admin.post(`${root}/health/check`, { data: input })).status(),
     403,
@@ -55,7 +62,7 @@ export async function qualifyGoogleHealth({
     (
       await admin.post(`${root}/health/check`, {
         headers,
-        data: { ...input, capabilities: ['school-ou-references'] },
+        data: { ...input, capabilities: ['users'] },
       })
     ).status(),
     400,
@@ -70,12 +77,14 @@ export async function qualifyGoogleHealth({
     await ready();
     await fault('domain-delegation-denied');
     const partial = await check();
-    assert.equal(partial.capabilities[0].failure, null);
-    assert.equal(partial.capabilities[1].failure, 'delegation-not-authorized');
-    assert.equal(partial.capabilities[1].scopeVerified, false);
+    const partialCustomer = capabilityResult(partial, 'customer-identity');
+    const partialDomain = capabilityResult(partial, 'domain-observations');
+    assert.equal(partialCustomer.failure, null);
+    assert.equal(partialDomain.failure, 'delegation-not-authorized');
+    assert.equal(partialDomain.scopeVerified, false);
     assert.equal(
-      partial.capabilities[1].lastSucceededAt,
-      initial.capabilities[1].lastSucceededAt,
+      partialDomain.lastSucceededAt,
+      capabilityResult(initial, 'domain-observations').lastSucceededAt,
     );
     await page.goto(`${publicOrigin}/diagnostics`);
     const customerPanel = page.getByRole('article', {
@@ -89,7 +98,7 @@ export async function qualifyGoogleHealth({
     await expect(customerPanel).toContainText('Last check passed');
     await expect(domainPanel).toContainText('Delegation not authorized');
     await expect(page.locator('footer')).toContainText(
-      '1 of 2 capabilities need attention',
+      '1 of 6 capabilities need attention',
     );
     await ready();
     await fault('domain-privilege-denied');
@@ -102,9 +111,13 @@ export async function qualifyGoogleHealth({
       page.locator('#google-health [role=status]').first(),
     ).toBeFocused();
     const denied = await read();
-    assert.equal(denied.capabilities[1].failure, 'permission-denied');
-    assert.equal(denied.capabilities[1].scopeVerified, true);
-    assert.deepEqual(denied.capabilities[0], partial.capabilities[0]);
+    const deniedDomain = capabilityResult(denied, 'domain-observations');
+    assert.equal(deniedDomain.failure, 'permission-denied');
+    assert.equal(deniedDomain.scopeVerified, true);
+    assert.deepEqual(
+      capabilityResult(denied, 'customer-identity'),
+      capabilityResult(partial, 'customer-identity'),
+    );
     await ready();
     const legacy = await admin.post(`${root}/check`, {
       headers,
@@ -130,17 +143,21 @@ export async function qualifyGoogleHealth({
       await ready();
       await fault(mode);
       const failed = await check(['domain-observations']);
-      assert.equal(failed.capabilities[1].failure, failure);
+      const failedDomain = capabilityResult(failed, 'domain-observations');
+      assert.equal(failedDomain.failure, failure);
       assert.equal(
-        failed.capabilities[1].lastSucceededAt,
-        initial.capabilities[1].lastSucceededAt,
+        failedDomain.lastSucceededAt,
+        capabilityResult(initial, 'domain-observations').lastSucceededAt,
       );
     }
     await ready();
     await fault('wrong-customer');
     const beforeWrong = await (await admin.get(root)).json();
     const wrong = await check();
-    assert.equal(wrong.capabilities[0].failure, 'wrong-customer');
+    assert.equal(
+      capabilityResult(wrong, 'customer-identity').failure,
+      'wrong-customer',
+    );
     assert.deepEqual(await (await admin.get(root)).json(), beforeWrong);
     await ready();
     await fault('delay-domain');
@@ -177,7 +194,7 @@ export async function qualifyGoogleHealth({
     await fault('');
     await page.getByRole('button', { name: 'Refresh Google status' }).click();
     await page.getByRole('button', { name: 'Check Google access' }).click();
-    await expect(page.locator('footer')).toContainText('2 last checks passed');
+    await expect(page.locator('footer')).toContainText('6 last checks passed');
     const recovered = await read();
     assert.ok(
       recovered.capabilities.every(
@@ -230,7 +247,7 @@ export async function qualifyGoogleHealth({
     const events = (
       await migrator.query(
         "SELECT detail FROM cc.security_events WHERE correlation_id=$1 AND event='connection-checked'",
-        [recovered.capabilities[0].correlationId],
+        [capabilityResult(recovered, 'customer-identity').correlationId],
       )
     ).rows.map((row) => row.detail);
     assert.ok(

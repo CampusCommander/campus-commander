@@ -315,7 +315,7 @@ export async function seedPhase3State(
       ],
     )
   ).rows[0].result;
-  assert.equal(health.capabilities.length, 2);
+  assert.equal(health.capabilities.length, 6);
   // Expire the synthetic cooldown before creating a pending lease for restore.
   await client.query(
     "UPDATE cc.google_health_checks SET retry_at=clock_timestamp()-interval '1 second'",

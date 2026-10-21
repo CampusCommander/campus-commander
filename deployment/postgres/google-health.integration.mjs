@@ -112,14 +112,54 @@ export async function qualifyGoogleHealth({
   await assert.rejects(claim(capabilities, reader), denied);
   for (const invalid of [
     [],
-    ['school-ou-references'],
+    ['users'],
     ['customer-identity', 'customer-identity'],
   ])
     await assert.rejects(claim(invalid), (error) => error.code === '22023');
   const initial = await read();
   assert.equal(initial.customerId, customerId);
-  assert.equal(initial.capabilities.length, 2);
+  assert.deepEqual(initial.capabilities.map((item) => item.capability).sort(), [
+    'customer-identity',
+    'device-changes',
+    'device-inventory',
+    'device-telemetry',
+    'domain-observations',
+    'school-ou-references',
+  ]);
   assert.equal(JSON.stringify(initial).includes('envelope'), false);
+  const all = [
+    'customer-identity',
+    'domain-observations',
+    'school-ou-references',
+    'device-inventory',
+    'device-telemetry',
+    'device-changes',
+  ];
+  const allLease = await claim(all);
+  const allHealth = await finish(
+    allLease,
+    all.map((capability) => ({
+      capability,
+      scopeVerified: true,
+      failure: null,
+    })),
+    connection.observation,
+  );
+  assert.equal(allHealth.capabilities.length, 6);
+  assert.ok(
+    allHealth.capabilities.every(
+      (item) => item.failure === null && item.scopeVerified,
+    ),
+  );
+  assert.deepEqual(
+    (
+      await migrator.query(
+        'SELECT observation FROM cc.google_connection WHERE singleton',
+      )
+    ).rows[0].observation,
+    connection.observation,
+  );
+  await clearWindow();
   const lease = await claim();
   assert.ok(lease.envelope);
   await assert.rejects(claim(), busy);
@@ -147,12 +187,13 @@ export async function qualifyGoogleHealth({
   const targetResult = await finish(target, [
     { capability: 'domain-observations', scopeVerified: true, failure: null },
   ]);
-  assert.deepEqual(
-    targetResult.capabilities.find(
-      (item) => item.capability === 'customer-identity',
-    ),
-    health.capabilities.find((item) => item.capability === 'customer-identity'),
+  const beforeTarget = new Map(
+    health.capabilities.map((item) => [item.capability, item]),
   );
+  for (const item of targetResult.capabilities) {
+    if (item.capability === 'domain-observations') continue;
+    assert.deepEqual(item, beforeTarget.get(item.capability), item.capability);
+  }
   assert.equal(
     targetResult.capabilities.find(
       (item) => item.capability === 'domain-observations',
