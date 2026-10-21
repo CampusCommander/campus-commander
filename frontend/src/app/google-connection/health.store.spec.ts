@@ -119,3 +119,21 @@ it('blocks duplicate checks and retains only historical results after an uncerta
   expect(store.unavailable()).toBe(true);
   expect(store.summary()).toBe('Google status unavailable');
 });
+
+it('reports a capability that was never checked as out of date', async () => {
+  const health = initial();
+  for (const item of health.capabilities)
+    if (
+      item.capability !== 'customer-identity' &&
+      item.capability !== 'domain-observations'
+    ) {
+      item.scopeVerified = false;
+      item.checkedAt = null;
+      item.lastSucceededAt = null;
+    }
+  const request = vi.fn().mockResolvedValue(Response.json({ health }));
+  const { store } = fixture(request);
+  await store.refresh();
+  expect(store.stale(null)).toBe(true);
+  expect(store.summary()).toBe('Google results are out of date');
+});

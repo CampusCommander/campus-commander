@@ -194,13 +194,35 @@ export async function qualifyGoogleHealth({
     await fault('');
     await page.getByRole('button', { name: 'Refresh Google status' }).click();
     await page.getByRole('button', { name: 'Check Google access' }).click();
-    await expect(page.locator('footer')).toContainText('6 last checks passed');
-    const recovered = await read();
-    assert.ok(
-      recovered.capabilities.every(
-        (item) => item.scopeVerified && item.failure === null,
-      ),
+    // The page checks the two connection capabilities. The four optional
+    // scopes stay unchecked, so the footer reports results that are not current.
+    await expect(page.locator('footer')).toContainText(
+      'Google results are out of date',
     );
+    const recovered = await read();
+    for (const capability of ['customer-identity', 'domain-observations']) {
+      const item = capabilityResult(recovered, capability);
+      assert.equal(item.failure, null, capability);
+      assert.equal(item.scopeVerified, true, capability);
+    }
+    for (const capability of [
+      'school-ou-references',
+      'device-inventory',
+      'device-telemetry',
+      'device-changes',
+    ])
+      assert.deepEqual(
+        capabilityResult(recovered, capability),
+        {
+          capability,
+          scopeVerified: false,
+          failure: null,
+          checkedAt: null,
+          lastSucceededAt: null,
+          correlationId: null,
+        },
+        `${capability} stays unchecked by a required-scope check`,
+      );
     assert.equal(recovered.backgroundFailure, null);
     assert.ok(recovered.check.finishedAt);
     await page

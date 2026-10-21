@@ -49,10 +49,12 @@ LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
     'check',CASE WHEN h.id IS NULL THEN NULL ELSE jsonb_build_object('id',h.id,'capabilities',h.capabilities,
       'expiresAt',h.expires_at,'finishedAt',h.finished_at,'retryAt',h.retry_at) END,
     'capabilities',(SELECT jsonb_agg(jsonb_build_object('capability',v.capability,
-      'scopeVerified',COALESCE(r.scope_verified,true),'failure',r.failure,
-      'checkedAt',COALESCE(r.checked_at,c.observed_at),'lastSucceededAt',COALESCE(r.last_succeeded_at,c.observed_at),
+      'scopeVerified',COALESCE(r.scope_verified,v.setup_verified AND c.observed_at IS NOT NULL),'failure',r.failure,
+      'checkedAt',COALESCE(r.checked_at,CASE WHEN v.setup_verified THEN c.observed_at END),
+      'lastSucceededAt',COALESCE(r.last_succeeded_at,CASE WHEN v.setup_verified THEN c.observed_at END),
       'correlationId',r.correlation_id) ORDER BY v.capability)
-      FROM unnest(ARRAY['customer-identity','domain-observations','school-ou-references','device-inventory','device-telemetry','device-changes']) AS v(capability)
+      FROM (VALUES ('customer-identity',true),('domain-observations',true),('school-ou-references',false),
+        ('device-inventory',false),('device-telemetry',false),('device-changes',false)) AS v(capability,setup_verified)
       LEFT JOIN cc.google_capability_health r ON r.customer_id=c.customer_id AND r.generation=c.generation AND r.capability=v.capability))
     FROM cc.google_connection c
     LEFT JOIN cc.google_health_checks h ON h.customer_id=c.customer_id AND h.generation=c.generation
@@ -134,7 +136,9 @@ BEGIN
     END IF;
     INSERT INTO cc.google_capability_health(customer_id,generation,capability,scope_verified,failure,checked_at,last_succeeded_at,correlation_id)
       VALUES(p_customer,p_generation,result->>'capability',(result->>'scopeVerified')::boolean,result->>'failure',observed,
-        CASE WHEN result->>'failure' IS NULL THEN observed ELSE connection.observed_at END,pending.correlation_id)
+        CASE WHEN result->>'failure' IS NULL THEN observed
+          WHEN result->>'capability' IN ('customer-identity','domain-observations') THEN connection.observed_at
+          ELSE NULL END,pending.correlation_id)
       ON CONFLICT(customer_id,generation,capability) DO UPDATE SET scope_verified=EXCLUDED.scope_verified,failure=EXCLUDED.failure,
         checked_at=EXCLUDED.checked_at,correlation_id=EXCLUDED.correlation_id,
         last_succeeded_at=CASE WHEN EXCLUDED.failure IS NULL THEN observed ELSE cc.google_capability_health.last_succeeded_at END;

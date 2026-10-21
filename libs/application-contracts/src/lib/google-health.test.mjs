@@ -115,6 +115,38 @@ test('the health state reports every capability once, with no missing result', (
   );
 });
 
+test('an unchecked capability carries no check time or successful history', () => {
+  const observedAt = new Date().toISOString();
+  const setup = ['customer-identity', 'domain-observations'];
+  const health = {
+    customerId: 'C0123456',
+    generation: 1,
+    observedAt,
+    backgroundFailure: null,
+    check: null,
+    capabilities: GOOGLE_HEALTH_CAPABILITY_IDS.map((capability) => ({
+      capability,
+      scopeVerified: setup.includes(capability),
+      failure: null,
+      checkedAt: setup.includes(capability) ? observedAt : null,
+      lastSucceededAt: setup.includes(capability) ? observedAt : null,
+      correlationId: null,
+    })),
+  };
+  assert.ok(googleHealthSchema.safeParse(health).success);
+  assert.equal(
+    googleHealthSchema.safeParse({
+      ...health,
+      capabilities: health.capabilities.map((item) => ({
+        ...item,
+        checkedAt: undefined,
+      })),
+    }).success,
+    false,
+    'a check time is null, never missing',
+  );
+});
+
 test('scope evidence remains distinct from successful operations and every failure has recovery guidance', () => {
   assert.equal(
     googleCapabilityResultSchema.safeParse({

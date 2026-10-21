@@ -74,7 +74,7 @@ export const googleHealthSchema = z.strictObject({
         capability: googleHealthCapabilitySchema,
         scopeVerified: z.boolean(),
         failure: googleHealthFailureSchema.nullable(),
-        checkedAt: z.iso.datetime({ offset: true }),
+        checkedAt: z.iso.datetime({ offset: true }).nullable(),
         lastSucceededAt: z.iso.datetime({ offset: true }).nullable(),
         correlationId: z.uuid().nullable(),
       }),
