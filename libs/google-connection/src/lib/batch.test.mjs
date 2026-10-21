@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GoogleBatchService } from './batch.ts';
-import { fakeGoogle, perKey, testClock, thing } from './batch-fake.mjs';
+import {
+  fakeGoogle,
+  perKey,
+  testClock,
+  thing,
+  command,
+} from './batch-fake.mjs';
 
 const batchUrl = 'https://www.googleapis.com/batch/admin/directory_v1';
 const ok = (key) => ({ status: 200, body: { name: key } });
@@ -172,7 +178,7 @@ test('a POST does not retry a server error unless the caller allows it', async (
         { status: 200, body: { created: true } },
       ],
     });
-  const post = (id) => thing(id, { method: 'POST', body: { name: id } });
+  const post = (id) => command(id, { body: { name: id } });
   let google = fakeGoogle(replies());
   let result = await setup().batch.execute(
     call(google, [post('p'), post('q')]),
@@ -417,7 +423,10 @@ test('onResponse reports every part outcome, including retries', async () => {
     pageIndex: 0,
     hasNextPage: false,
   });
-  assert.equal(events[1].request.path, '/admin/directory/v1/things/a');
+  assert.equal(
+    events[1].request.path,
+    '/admin/directory/v1/customer/C0123456/devices/chromeos/a',
+  );
   assert.equal(events[2].outcome.failure.kind, 'not-found');
 });
 
@@ -597,6 +606,9 @@ test('a hook that mutates its event cannot change the results (B11)', async () =
     }),
   );
   assert.equal(result.failed.get('a').kind, 'not-found');
-  assert.equal(google.sent[1][0].path, '/admin/directory/v1/things/a');
+  assert.equal(
+    google.sent[1][0].path,
+    '/admin/directory/v1/customer/C0123456/devices/chromeos/a',
+  );
   assert.deepEqual(frozen, [true, true]);
 });

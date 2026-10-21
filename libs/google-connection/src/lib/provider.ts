@@ -245,6 +245,43 @@ export function googleRequestAllowed(url: URL): boolean {
   );
 }
 
+/** One path segment. The colon stays out, so a method suffix stays separate. */
+const partSegment = '[^/?#:]+';
+/** The customer pattern of `googleRequestAllowed`. */
+const partCustomer = 'C[A-Za-z0-9]{4,31}';
+const partDevice = `/admin/directory/v1/customer/${partCustomer}/devices/chromeos/${partSegment}`;
+
+/**
+ * The part shapes a batch may carry. Each shape is one call the repository builds.
+ * The batch endpoint admits any part syntax, so this list is the only check on a part.
+ */
+const PART_PATHS: Readonly<Record<string, readonly RegExp[]>> = {
+  GET: [
+    new RegExp(
+      `^/admin/directory/v1/customer/${partCustomer}/orgunits/[^/?#]+$`,
+    ),
+    new RegExp(`^${partDevice}$`),
+    new RegExp(`^${partDevice}/commands/[0-9]{1,20}$`),
+  ],
+  PATCH: [new RegExp(`^${partDevice}$`)],
+  POST: [
+    new RegExp(`^${partDevice}:issueCommand$`),
+    new RegExp(
+      `^/admin/directory/v1/customer/${partCustomer}/devices/chromeos:batchChangeStatus$`,
+    ),
+  ],
+};
+
+/** The part allowlist. `validateRequests` refuses every part this function rejects. */
+export function googlePartAllowed(method: string, path: string): boolean {
+  const patterns = Object.hasOwn(PART_PATHS, method)
+    ? PART_PATHS[method]
+    : undefined;
+  return (
+    patterns !== undefined && patterns.some((pattern) => pattern.test(path))
+  );
+}
+
 /** Bound every SDK request, including signed token exchange and introspection. */
 function boundClient(
   client: OAuth2Client,

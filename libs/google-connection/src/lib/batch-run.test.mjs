@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GoogleBatchService } from './batch.ts';
 import { GoogleConnectionError } from './provider.ts';
-import { fakeGoogle, testClock, thing } from './batch-fake.mjs';
+import { fakeGoogle, testClock, thing, command } from './batch-fake.mjs';
 
 const batchUrl = 'https://www.googleapis.com/batch/admin/directory_v1';
 const ok = (key) => ({ status: 200, body: { name: key } });
@@ -42,7 +42,7 @@ test('an outer server error retries the whole batch, except a POST', async () =>
   });
   const { batch, clock } = setup();
   const result = await batch.execute(
-    call(google, [thing('a'), thing('p', { method: 'POST', body: {} })]),
+    call(google, [thing('a'), command('p')]),
   );
   assert.deepEqual(google.keys(), [['a', 'p'], ['a']]);
   assert.deepEqual(result.succeeded.get('a'), [{ name: 'a' }]);
@@ -62,7 +62,7 @@ test('an outer 429 retries every part, a POST included, and honors Retry-After',
   });
   const { batch, clock } = setup();
   const result = await batch.execute(
-    call(google, [thing('a'), thing('p', { method: 'POST', body: {} })]),
+    call(google, [thing('a'), command('p')]),
   );
   assert.deepEqual(google.keys(), [
     ['a', 'p'],
