@@ -46,12 +46,13 @@ const op = (number, deviceId, value = `Room ${number}`) => ({
   requestedValue: value,
 });
 
-const claimed = (operations, readBack = []) => ({
+const claimed = (operations, readBack = [], action = 'annotated-location') => ({
   outcome: 'claimed',
   generation: 1,
   credentialId: randomUUID(),
   envelope: { sealed: true },
   batchCount: 2,
+  action,
   operations,
   readBack,
 });
@@ -110,7 +111,7 @@ const part = (
  * `onSend`, each part answer, then `onBatch`. A fatal error throws after `onSend`
  * and before `onBatch`, as `send` does. An aborted signal sends nothing more.
  */
-function reader(rounds = [], states = []) {
+function reader(rounds = [], states = [], statusRounds = []) {
   return {
     calls: [],
     async patchAnnotatedLocations(
@@ -185,6 +186,95 @@ function reader(rounds = [], states = []) {
         });
       }
       return result;
+    },
+    async changeDeviceStatus(_credential, _customer, changes, signal, options) {
+      const call = {
+        name: 'changeDeviceStatus',
+        changes: changes.map((change) => ({ ...change })),
+        batchSize: options.batchSize,
+        aborted: false,
+        parts: [],
+        rounds: 0,
+      };
+      this.calls.push(call);
+      // Group the changes into parts of up to 50, in request order, as the real reader does.
+      const parts = [];
+      for (const change of changes) {
+        const last = parts[parts.length - 1];
+        if (
+          last !== undefined &&
+          last.action === change.action &&
+          last.deviceIds.length < 50
+        ) {
+          last.deviceIds.push(change.deviceId);
+          continue;
+        }
+        parts.push({
+          id: `status-${parts.length + 1}`,
+          action: change.action,
+          deviceIds: [change.deviceId],
+        });
+      }
+      const perRound = options.batchSize ?? 250;
+      let number = 0;
+      for (let start = 0; start < parts.length; start += perRound) {
+        if (signal.aborted) {
+          call.aborted = true;
+          break;
+        }
+        const round = statusRounds[number] ?? {};
+        number += 1;
+        call.rounds += 1;
+        const sent = parts.slice(start, start + perRound);
+        for (const part of sent)
+          call.parts.push({
+            id: part.id,
+            action: part.action,
+            deviceIds: [...part.deviceIds],
+          });
+        await options.onSend?.(sent);
+        for (const part of sent) {
+          if (round.failure) {
+            await options.onResponse?.({
+              id: part.id,
+              request: { id: part.id, method: 'POST', path: '' },
+              attempts: round.failure.attempts,
+              status: round.failure.status,
+              outcome: { kind: 'failed', failure: round.failure },
+            });
+            continue;
+          }
+          const page = part.deviceIds.map(
+            (deviceId) =>
+              round.results?.[deviceId] ?? {
+                deviceId,
+                outcome: 'succeeded',
+                reason: null,
+                googleReason: null,
+              },
+          );
+          await options.onResponse?.({
+            id: part.id,
+            request: { id: part.id, method: 'POST', path: '' },
+            attempts: { quota: 0, transient: 0 },
+            status: 200,
+            outcome: {
+              kind: 'success',
+              page,
+              pageIndex: 0,
+              hasNextPage: false,
+            },
+          });
+        }
+        await options.onBatch?.({
+          round: number,
+          sentCount: sent.length,
+          outerStatus: 200,
+          durationMs: 1,
+          pending: parts.length - start - sent.length,
+        });
+      }
+      return { answers: [], parts };
     },
     async deviceStates(_credential, _customer, ids, signal) {
       const call = {
@@ -872,6 +962,236 @@ test('a read-back compares blank and reports a missing device as not-found', asy
   );
 });
 
+test('a Disable claim sends one status part and settles each device element', async () => {
+  const db = database({
+    claim: () =>
+      claimed(
+        [op(1, 'd1', 'DISABLED'), op(2, 'd2', 'DISABLED')],
+        [],
+        'disable',
+      ),
+    settle: (values) => {
+      if (values[4] === 'read-back') return undefined;
+      const results = JSON.parse(values[5]);
+      return {
+        outcome: 'settled',
+        settled: results.map((result) => ({
+          operationNumber: result.operationNumber,
+          deviceId: result.operationNumber === 1 ? 'd1' : 'd2',
+          status: result.outcome,
+          batch: 0,
+        })),
+        published: ['d1'],
+        removed: [],
+        publication: {
+          publicationId: 9,
+          jobId,
+          displayId,
+          requestedBy,
+          revision: 1,
+          statusChanged: false,
+          deviceIds: ['d1'],
+          removedIds: [],
+          batch: 0,
+          batchCount: 1,
+        },
+      };
+    },
+  });
+  const source = reader(
+    [],
+    [],
+    [
+      {
+        results: {
+          d1: {
+            deviceId: 'd1',
+            outcome: 'succeeded',
+            reason: null,
+            googleReason: null,
+          },
+          d2: {
+            deviceId: 'd2',
+            outcome: 'failed',
+            reason: 'status-conflict',
+            googleReason:
+              'A device with status DISABLED does not allow this action.',
+          },
+        },
+      },
+    ],
+  );
+  const store = cache();
+  const { create } = jobs({ db, reader: source, cache: store });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.deepEqual(answer, {
+    outcome: 'settled',
+    failure: null,
+    published: 1,
+    removed: 0,
+  });
+  const call = source.calls.find((one) => one.name === 'changeDeviceStatus');
+  assert.deepEqual(call.changes, [
+    { deviceId: 'd1', action: 'disable' },
+    { deviceId: 'd2', action: 'disable' },
+  ]);
+  assert.equal(
+    call.batchSize,
+    250,
+    'One multipart request holds up to 250 status parts.',
+  );
+  // Both device IDs travel in one part of at most 50 (addendum section 5).
+  assert.deepEqual(
+    call.parts.map((one) => one.deviceIds),
+    [['d1', 'd2']],
+  );
+  assert.deepEqual(JSON.parse(settlements(db)[0].values[5]), [
+    {
+      operationNumber: 1,
+      outcome: 'succeeded',
+      verifiedBy: 'write-response',
+      googleStatus: null,
+      googleReason: null,
+      quotaRetries: 0,
+      transientRetries: 0,
+    },
+    {
+      operationNumber: 2,
+      outcome: 'failed',
+      outcomeReason: 'status-conflict',
+      googleReason: 'A device with status DISABLED does not allow this action.',
+      value: null,
+      googleStatus: null,
+      quotaRetries: 0,
+      transientRetries: 0,
+    },
+  ]);
+  // Only the accepted device enters the entity-batch publication of the grid.
+  const entity = JSON.parse(
+    store.calls.find((one) => one.name === 'publish').args[1],
+  );
+  assert.equal(entityEventSchema.parse(entity).type, 'entity-batch');
+  assert.deepEqual(entity.deviceIds, ['d1']);
+});
+
+test('a Re-enable claim sends the re-enable action', async () => {
+  const db = database({
+    claim: () => claimed([op(1, 'd1', 'ACTIVE')], [], 'reenable'),
+  });
+  const source = reader([], [], [{ results: {} }]);
+  const { create } = jobs({ db, reader: source });
+  await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.deepEqual(
+    source.calls.find((one) => one.name === 'changeDeviceStatus').changes,
+    [{ deviceId: 'd1', action: 'reenable' }],
+  );
+});
+
+test('a status read-back compares the device status', async () => {
+  const db = database({
+    claim: () =>
+      claimed(
+        [op(1, 'd1', 'DISABLED'), op(2, 'd2', 'DISABLED')],
+        [],
+        'disable',
+      ),
+  });
+  const source = reader(
+    [],
+    [
+      [
+        {
+          deviceId: 'd1',
+          status: 'found',
+          device: { deviceId: 'd1', status: 'DISABLED' },
+        },
+        {
+          deviceId: 'd2',
+          status: 'found',
+          device: { deviceId: 'd2', status: 'ACTIVE' },
+        },
+      ],
+    ],
+    [
+      {
+        failure: {
+          kind: 'transient',
+          status: 503,
+          reason: 'unavailable',
+          attempts: { quota: 0, transient: 0 },
+          body: null,
+        },
+      },
+    ],
+  );
+  const { create } = jobs({ db, reader: source, batchSize: 2 });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.deepEqual(
+    source.calls.find((one) => one.name === 'deviceStates').ids,
+    ['d1', 'd2'],
+  );
+  assert.deepEqual(JSON.parse(settlements(db).at(-1).values[5]), [
+    {
+      operationNumber: 1,
+      outcome: 'succeeded',
+      verifiedBy: 'read-back',
+      value: 'DISABLED',
+    },
+    {
+      operationNumber: 2,
+      outcome: 'failed',
+      outcomeReason: 'value-differs',
+      verifiedBy: 'read-back',
+      value: 'ACTIVE',
+    },
+  ]);
+});
+
+test('a failed status part settles every device it held by the step 4 rules', async () => {
+  const db = database({
+    claim: () =>
+      claimed([op(1, 'd1', 'ACTIVE'), op(2, 'd2', 'ACTIVE')], [], 'reenable'),
+  });
+  const source = reader(
+    [],
+    [],
+    [
+      {
+        failure: {
+          kind: 'transient',
+          status: 503,
+          reason: 'unavailable',
+          attempts: { quota: 2, transient: 0 },
+          body: null,
+        },
+      },
+    ],
+  );
+  const { create } = jobs({ db, reader: source, batchSize: 2 });
+  await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.deepEqual(JSON.parse(settlements(db)[0].values[5]), [
+    {
+      operationNumber: 1,
+      outcome: 'unknown',
+      outcomeReason: 'ambiguous',
+      googleStatus: 503,
+      googleReason: 'unavailable',
+      quotaRetries: 2,
+      transientRetries: 0,
+    },
+    {
+      operationNumber: 2,
+      outcome: 'unknown',
+      outcomeReason: 'ambiguous',
+      googleStatus: 503,
+      googleReason: 'unavailable',
+      quotaRetries: 2,
+      transientRetries: 0,
+    },
+  ]);
+});
+
 test('a failed read-back part leaves the operation unknown with verification-failed', async () => {
   const db = database({ claim: () => claimed([op(1, 'd1')]) });
   const source = reader(
@@ -1309,6 +1629,7 @@ test('the finish prepares, reads back a chunk, and returns the publication', asy
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 1,
@@ -1420,6 +1741,7 @@ test('reconcile with a number reads its operation and settles it', async () => {
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 3,
@@ -1487,6 +1809,7 @@ test('reconcile for all claims chunks until an empty claim', async () => {
         generation: 1,
         credentialId: randomUUID(),
         envelope: { sealed: true },
+        action: 'annotated-location',
         operations: [
           {
             operationNumber: number,
@@ -1756,6 +2079,7 @@ test('an envelope that cannot open is a read-back failure, not a request failure
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 1,
@@ -1913,6 +2237,7 @@ test('verifyAfter is measured on the database clock, not a worker clock ahead', 
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 3,
@@ -1993,6 +2318,7 @@ test('a read-back inside the 15 s lease margin settles unknown without a GET', a
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 3,
@@ -2044,6 +2370,7 @@ test('a delayed database clock read aborts the read-back GET at the lease-minus-
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 3,
