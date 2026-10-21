@@ -540,6 +540,100 @@ test('a dispatched operation reads pending on the page', () => {
   assert.equal(operation.operation, 'clear');
 });
 
+const commandOperationRow = (overrides = {}) => ({
+  operation_number: 4,
+  device_id: 'd4',
+  serial_number: 'C0A1-0004',
+  org_unit_path: '/Schools/A',
+  action: 'reboot',
+  mode: null,
+  baseline_value: 'ACTIVE',
+  requested_value: null,
+  status: 'issued',
+  outcome_reason: null,
+  google_status: null,
+  google_reason: null,
+  observed_value: null,
+  verified_by: null,
+  command_id: '4100000001',
+  command_state: 'acknowledged',
+  command_expires_at: new Date('2026-10-28T12:00:00.000Z'),
+  command_executed_at: null,
+  updated_at: new Date('2026-10-21T12:00:00.000Z'),
+  ...overrides,
+});
+
+test('an issued command exposes its last observation and keeps the command id', () => {
+  const operation = jobOperation(commandOperationRow(), 'CMD-006');
+  assert.equal(operation.operation, 'reboot');
+  assert.equal(operation.outcome, 'pending');
+  assert.equal(operation.commandId, '4100000001');
+  assert.equal(operation.commandState, 'acknowledged');
+  assert.equal(operation.commandExpiresAt, '2026-10-28T12:00:00.000Z');
+});
+
+test('a settled command hides the last observation and keeps the stored command id', () => {
+  for (const outcome of ['succeeded', 'failed', 'expired', 'unknown']) {
+    const operation = jobOperation(
+      commandOperationRow({ status: outcome }),
+      'CMD-006',
+    );
+    assert.equal(operation.outcome, outcome);
+    assert.equal(operation.commandState, null, `${outcome} reads null`);
+    assert.equal(operation.commandId, '4100000001');
+  }
+});
+
+test('status action filters map the public action onto its stored action in both queries', async () => {
+  const selections = [
+    { action: ['disable-devices'], stored: 'disable', kinds: ['device-status'] },
+    {
+      action: ['reenable-devices'],
+      stored: 'reenable',
+      kinds: ['device-status'],
+    },
+    {
+      action: ['disable-devices', 'reenable-devices'],
+      stored: null,
+      kinds: ['device-status'],
+    },
+    {
+      action: ['reboot-devices', 'disable-devices'],
+      stored: 'disable',
+      kinds: ['device-command', 'device-status'],
+    },
+  ];
+  for (const selection of selections) {
+    const db = database([
+      ['AS matching', [{ matching: 0, observed_at: new Date() }]],
+      ['ORDER BY j.created_at DESC', []],
+    ]);
+    await new Jobs(db).list(
+      session(),
+      'C0123456',
+      { action: selection.action },
+      undefined,
+      100,
+    );
+    assert.equal(db.calls.length, 2);
+    for (const [index, [text, values]] of db.calls.entries()) {
+      assert.deepEqual(values[3], selection.kinds);
+      const named = selection.stored === null ? 4 : 5;
+      assert.equal(values.length, named + (index === 1 ? 1 : 0));
+      if (selection.stored === null) {
+        assert.equal(
+          text.includes('u.action='),
+          false,
+          'Both status actions need no detail predicate.',
+        );
+      } else {
+        assert.ok(text.includes("j.kind<>'device-status' OR u.action=$5"));
+        assert.equal(values[4], selection.stored);
+      }
+    }
+  }
+});
+
 test('Latest activity keeps the counters from the header, not from the samples', () => {
   const activity = latestActivity(
     jobRow({ failed: 260, unknown: 40 }),

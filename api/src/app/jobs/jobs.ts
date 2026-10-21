@@ -134,6 +134,12 @@ const writeActions: Readonly<Record<string, JobAction>> = {
   reenable: 'reenable-devices',
 };
 
+/** The stored action of each public status action. The action filter needs this direction. */
+const storedStatusActions: Readonly<Record<string, string>> = {
+  'disable-devices': 'disable',
+  'reenable-devices': 'reenable',
+};
+
 /** One job header row as a summary of section 2.5. */
 export function jobSummary(row: Record<string, unknown>): JobSummary {
   const total =
@@ -213,8 +219,11 @@ export function jobOperation(
     observedValue: (row['observed_value'] as string | null) ?? null,
     verifiedBy: (row['verified_by'] as JobOperation['verifiedBy']) ?? null,
     commandId: (row['command_id'] as string | null) ?? null,
+    // The stored last observation stays as evidence. The API exposes it only while the command is issued.
     commandState:
-      (row['command_state'] as JobOperation['commandState']) ?? null,
+      status === 'issued'
+        ? ((row['command_state'] as JobOperation['commandState']) ?? null)
+        : null,
     commandExpiresAt: measuredAtOrNull(row['command_expires_at']),
     commandExecutedAt: measuredAtOrNull(row['command_executed_at']),
     updatedAt: measuredAt(row['updated_at']),
@@ -337,11 +346,8 @@ export class Jobs {
         where.push(`j.kind=ANY(${add(kinds)}::text[])`);
         // The two status actions share one kind, so the detail action decides when only one is chosen.
         const statusActions = filters.action
-          .filter(
-            (action) =>
-              action === 'disable-devices' || action === 'reenable-devices',
-          )
-          .map((action) => writeActions[action]);
+          .filter((action) => storedStatusActions[action] !== undefined)
+          .map((action) => storedStatusActions[action]);
         if (statusActions.length === 1)
           where.push(
             `(j.kind<>'device-status' OR u.action=${add(statusActions[0])})`,
