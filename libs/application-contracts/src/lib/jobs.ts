@@ -12,17 +12,25 @@ const displayName = z.string().min(1).max(200);
 const productCode = z.string().min(1).max(64);
 
 /** The display IDs of sections 1.4 and 1.6. The number carries at least three digits. */
-export const jobDisplayIdSchema = z.string().regex(/^(UPD|REF)-\d{3,}$/);
+export const jobDisplayIdSchema = z
+  .string()
+  .regex(/^(UPD|REF|CMD|STS)-\d{3,}$/);
 export type JobDisplayId = z.infer<typeof jobDisplayIdSchema>;
 export const previewDisplayIdSchema = z.string().regex(/^PV-\d{3,}$/);
 export type PreviewDisplayId = z.infer<typeof previewDisplayIdSchema>;
 
-/** The eight job statuses of section 1.2. */
+/** One operation ID. Its prefix and number repeat the display ID of its job (section 1.4). */
+export const jobOperationIdSchema = z
+  .string()
+  .regex(/^(UPD|CMD|STS)-\d{3,}-\d+$/);
+
+/** The nine job statuses of section 1.2. An awaiting-devices command job holds no write slot. */
 export const jobStatusSchema = z.enum([
   'accepted',
   'queued',
   'held',
   'running',
+  'awaiting-devices',
   'completed',
   'completed-with-errors',
   'failed',
@@ -30,14 +38,21 @@ export const jobStatusSchema = z.enum([
 ]);
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 
+/** The five job actions of section 1. A status job holds disable or re-enable. */
 export const jobActionSchema = z.enum([
   'update-device-annotations',
   'refresh-inventory',
+  'reboot-devices',
+  'disable-devices',
+  'reenable-devices',
 ]);
 export type JobAction = z.infer<typeof jobActionSchema>;
 export const JOB_ACTION_LABELS: Readonly<Record<JobAction, string>> = {
   'update-device-annotations': 'Update device annotations',
   'refresh-inventory': 'Refresh inventory',
+  'reboot-devices': 'Reboot devices',
+  'disable-devices': 'Disable devices',
+  'reenable-devices': 'Re-enable devices',
 };
 
 /** A running full sync knows no total. Its pending count stays unknown. */
@@ -48,6 +63,8 @@ export const jobProgressSchema = z
     failed: count,
     unknown: count,
     skipped: count,
+    /** A command that Google reports EXPIRED (section 1, terminal status). */
+    expired: count,
     pending: count.nullable(),
   })
   .refine(
@@ -96,26 +113,35 @@ export const jobSummarySchema = z.strictObject({
 });
 export type JobSummary = z.infer<typeof jobSummarySchema>;
 
-/** The operation outcomes that the API shows. A dispatched operation reads pending (section 2.2). */
+/** The operation outcomes that the API shows. A dispatched or issued operation reads pending. */
 export const jobOutcomeSchema = z.enum([
   'pending',
   'succeeded',
   'failed',
   'unknown',
   'skipped',
+  'expired',
 ]);
 export type JobOutcome = z.infer<typeof jobOutcomeSchema>;
 
 export const jobVerifiedBySchema = z.enum(['write-response', 'read-back']);
 export type JobVerifiedBy = z.infer<typeof jobVerifiedBySchema>;
 
-/** One operation of a write job (section 1.4). */
+/** The stored command states that one poll can observe (section 1, command operation states). */
+export const jobCommandStateSchema = z.enum([
+  'pending-delivery',
+  'sent',
+  'acknowledged',
+]);
+export type JobCommandState = z.infer<typeof jobCommandStateSchema>;
+
+/** One operation of a write job (section 1.4). The command fields stay null outside a command job. */
 export const jobOperationSchema = z.strictObject({
-  operationId: z.string().regex(/^UPD-\d{3,}-\d+$/),
+  operationId: jobOperationIdSchema,
   deviceId,
   serialNumber,
   orgUnitPath,
-  operation: z.enum(['replace', 'clear']),
+  operation: z.enum(['replace', 'clear', 'reboot', 'disable', 'reenable']),
   baselineValue: z.string().max(4096).nullable(),
   requestedValue: z.string().max(4096).nullable(),
   outcome: jobOutcomeSchema,
@@ -124,13 +150,22 @@ export const jobOperationSchema = z.strictObject({
   googleReason: z.string().min(1).max(256).nullable(),
   observedValue: z.string().max(4096).nullable(),
   verifiedBy: jobVerifiedBySchema.nullable(),
+  /** The Google command ID of an issued command (section 1, command operation states). */
+  commandId: z
+    .string()
+    .regex(/^[0-9]{1,20}$/)
+    .nullable(),
+  commandState: jobCommandStateSchema.nullable(),
+  /** The expiry that Google returned, or null before the first poll stores it. */
+  commandExpiresAt: timestamp.nullable(),
+  commandExecutedAt: timestamp.nullable(),
   updatedAt: timestamp,
 });
 export type JobOperation = z.infer<typeof jobOperationSchema>;
 
 /** One failed sample of the Latest activity line. */
 export const jobFailedActivityOperationSchema = z.strictObject({
-  operationId: z.string().regex(/^UPD-\d{3,}-\d+$/),
+  operationId: jobOperationIdSchema,
   deviceId,
   serialNumber,
   outcomeReason: productCode.nullable(),
@@ -144,7 +179,7 @@ export type JobFailedActivityOperation = z.infer<
 
 /** One unknown sample of the Latest activity line. */
 export const jobUnknownActivityOperationSchema = z.strictObject({
-  operationId: z.string().regex(/^UPD-\d{3,}-\d+$/),
+  operationId: jobOperationIdSchema,
   deviceId,
   serialNumber,
   updatedAt: timestamp,
@@ -173,6 +208,10 @@ export const jobDetailSchema = jobSummarySchema.extend({
   previewDisplayId: previewDisplayIdSchema.nullable(),
   field: z.literal('annotatedLocation').nullable(),
   mode: z.enum(['replace', 'clear']).nullable(),
+  /** The Google command of a command job. It stays null for another job. */
+  commandType: z.literal('REBOOT').nullable(),
+  /** The request of a status job. It stays null for another job. */
+  statusAction: z.enum(['disable', 'reenable']).nullable(),
   requestedValue: z.string().max(4096).nullable(),
   targetOrgUnitPaths: z.array(orgUnitPath).max(10000).nullable(),
   correlationId: z.uuid(),
