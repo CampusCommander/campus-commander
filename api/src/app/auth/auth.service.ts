@@ -21,14 +21,14 @@ import { EnrollmentService } from './enrollment.service';
 import { InvitationService } from './invitation.service';
 import { AccessChangedException } from './access-changed.errors';
 import { authorizeAction } from './authorize-action';
+import {
+  accessChangedEntry,
+  accessChangedSeconds,
+  readSessionEntry,
+  sessionSchema,
+} from './session-entry';
 import { retainSession } from './session-retention';
 
-const sessionSchema = z.strictObject({
-  principalId: z.uuid(),
-  permissionVersion: z.number().int(),
-  expiresAt: z.number().int(),
-  csrfToken: z.string().regex(/^[a-f0-9]{64}$/),
-});
 const loginSchema = z.strictObject({
   state: z.string(),
   nonce: z.string(),
@@ -239,7 +239,17 @@ export class AuthService {
     const raw = await this.cache.get(key('session', token));
     if (!raw)
       throw new UnauthorizedException('Your session expired. Sign in again.');
-    const session = sessionSchema.parse(JSON.parse(raw));
+    const entry = readSessionEntry(raw);
+    if (entry.kind === 'access-changed') {
+      await this.database.audit(
+        'access-denied',
+        correlationId,
+        entry.principalId,
+        'permission-version',
+      );
+      throw new AccessChangedException();
+    }
+    const session = entry.session;
     if (session.expiresAt <= Date.now()) {
       await this.cache.remove(key('session', token));
       await this.database.audit(
@@ -262,7 +272,13 @@ export class AuthService {
       !principal ||
       principal.permission_version !== session.permissionVersion
     ) {
-      await this.cache.remove(key('session', token));
+      // Keep the reason readable by every request with this cookie until the entry expires.
+      await this.cache.swap(
+        key('session', token),
+        raw,
+        accessChangedEntry(session.principalId),
+        accessChangedSeconds,
+      );
       await this.database.audit(
         'access-denied',
         correlationId,
