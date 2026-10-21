@@ -303,7 +303,7 @@ LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
       'scopeVerified',COALESCE(r.scope_verified,true),'failure',r.failure,
       'checkedAt',COALESCE(r.checked_at,c.observed_at),'lastSucceededAt',COALESCE(r.last_succeeded_at,c.observed_at),
       'correlationId',r.correlation_id) ORDER BY v.capability)
-      FROM unnest(ARRAY['customer-identity','domain-observations']) AS v(capability)
+      FROM unnest(ARRAY['customer-identity','domain-observations','school-ou-references','device-inventory','device-telemetry','device-changes']) AS v(capability)
       LEFT JOIN cc.google_capability_health r ON r.customer_id=c.customer_id AND r.generation=c.generation AND r.capability=v.capability))
     FROM cc.google_connection c
     LEFT JOIN cc.google_health_checks h ON h.customer_id=c.customer_id AND h.generation=c.generation

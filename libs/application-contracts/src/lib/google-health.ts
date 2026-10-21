@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { GOOGLE_CAPABILITIES } from './google-capabilities';
 import {
   googleCustomerIdSchema,
   googleFailureSchema,
@@ -7,10 +8,17 @@ import {
 // A passed observation becomes stale after five minutes. It never proves continuous access.
 export const GOOGLE_HEALTH_FRESH_SECONDS = 300;
 
-export const googleHealthCapabilitySchema = z.enum([
-  'customer-identity',
-  'domain-observations',
-]);
+/** Every capability the connection contract defines, in contract order. */
+export const GOOGLE_HEALTH_CAPABILITY_IDS = GOOGLE_CAPABILITIES.map(
+  (capability) => capability.id,
+) as [
+  (typeof GOOGLE_CAPABILITIES)[number]['id'],
+  ...(typeof GOOGLE_CAPABILITIES)[number]['id'][],
+];
+
+export const googleHealthCapabilitySchema = z.enum(
+  GOOGLE_HEALTH_CAPABILITY_IDS,
+);
 export type GoogleHealthCapability = z.infer<
   typeof googleHealthCapabilitySchema
 >;
@@ -39,7 +47,7 @@ export const googleHealthCheckSchema = z.strictObject({
   capabilities: z
     .array(googleHealthCapabilitySchema)
     .min(1)
-    .max(2)
+    .max(GOOGLE_HEALTH_CAPABILITY_IDS.length)
     .refine((items) => new Set(items).size === items.length),
 });
 export const googleHealthSchema = z.strictObject({
@@ -51,7 +59,10 @@ export const googleHealthSchema = z.strictObject({
   check: z
     .strictObject({
       id: z.uuid(),
-      capabilities: z.array(googleHealthCapabilitySchema).min(1).max(2),
+      capabilities: z
+        .array(googleHealthCapabilitySchema)
+        .min(1)
+        .max(GOOGLE_HEALTH_CAPABILITY_IDS.length),
       expiresAt: z.iso.datetime({ offset: true }),
       finishedAt: z.iso.datetime({ offset: true }).nullable(),
       retryAt: z.iso.datetime({ offset: true }),
@@ -68,9 +79,11 @@ export const googleHealthSchema = z.strictObject({
         correlationId: z.uuid().nullable(),
       }),
     )
-    .length(2)
+    .length(GOOGLE_HEALTH_CAPABILITY_IDS.length)
     .refine(
-      (items) => new Set(items.map((item) => item.capability)).size === 2,
+      (items) =>
+        new Set(items.map((item) => item.capability)).size ===
+        GOOGLE_HEALTH_CAPABILITY_IDS.length,
     ),
 });
 export const googleHealthResponseSchema = z.strictObject({
