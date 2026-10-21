@@ -1,6 +1,6 @@
 # Update asset tag, annotated user, notes, and organization unit on selected devices
 
-Status: proposed. The owner reviews this record before implementation.
+Status: owner-confirmed on 2026-10-21. Owner, in the main chat: "compete 81", which completes PR #81 with this record.
 Source: owner direction of 2026-10-21, quoted under [Owner direction](#owner-direction--2026-10-21). Earlier decisions govern the rest of this record.
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the node links under [Design](#design). Design gaps remain.
 Replaces: none. This record extends [Update the annotated location of selected devices](update-device-annotated-location.md).
@@ -81,7 +81,7 @@ Earlier decisions govern this record. This record cites them and does not restat
 
 ## Implementation defaults — 2026-10-21
 
-These defaults are engineering choices for owner review, not owner decisions. Change them when the owner asks.
+These defaults are engineering choices. The owner confirmed them with this record on 2026-10-21. Change them when the owner asks.
 Each item names its sources.
 
 1. One draft holds several fields, with a mode per field. The preview and the job detail carry one row per device and field. Sources: intake findings f.1, `docs/archive/ux/feature-review-notes-2026-09-03.md:26-32`.
@@ -122,7 +122,7 @@ Excluded from this build:
 
 Open decisions:
 
-- The owner confirms this record before implementation starts.
+- The owner confirmed this record on 2026-10-21.
 - The live check of step 5 (DEVICE-01) covers Clear on Asset tag before that mode ships.
 - Each design gap needs a composition before its screen is built.
 - Live Google device writes need their own test authorization.
