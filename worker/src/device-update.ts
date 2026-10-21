@@ -17,7 +17,10 @@ import {
   type BatchRoundEvent,
   type CredentialCipher,
   type DelegatedCredential,
+  type DeviceBatchOptions,
+  type DeviceCommandIssue,
   type DeviceState,
+  type IssuedDeviceCommand,
   type WrittenDevice,
 } from '@campus/google-connection';
 import { DeviceSyncError, type DeviceSyncDatabase } from './device-sync';
@@ -121,6 +124,8 @@ const claimSchema = z.object({
   credentialId: z.uuid(),
   envelope: z.unknown(),
   batchCount: z.number().int().min(1),
+  /** The job action: a command job issues commands, every other action writes a field. */
+  action: z.enum(['annotated-location', 'reboot', 'disable', 'reenable']),
   operations: z.array(claimedOperationSchema).max(1000),
   readBack: z.array(claimedOperationSchema).max(1000),
 });
@@ -128,7 +133,14 @@ const claimSchema = z.object({
 const settledOperationSchema = z.object({
   operationNumber,
   deviceId,
-  status: z.enum(['succeeded', 'failed', 'unknown', 'pending', 'skipped']),
+  status: z.enum([
+    'issued',
+    'succeeded',
+    'failed',
+    'unknown',
+    'pending',
+    'skipped',
+  ]),
   batch: z.number().int().min(0),
 });
 
@@ -180,6 +192,8 @@ const preparationSchema = z.object({
   outcome: z.enum(['ready', 'busy', 'superseded', 'finished']),
   status: z.string().optional(),
   failure: z.string().nullable().optional(),
+  /** The job action. A command job skips the read-back (section 4 step 4). */
+  action: z.string().optional(),
 });
 
 const finishSchema = z.object({
@@ -250,7 +264,7 @@ const emptySummary = (): DeviceUpdateReadBackSummary => ({
   unknown: 0,
 });
 
-/** One reader of the write path. `GoogleDeviceReader` implements both methods. */
+/** One reader of the write path. `GoogleDeviceReader` implements every method. */
 export interface DeviceUpdateReader {
   patchAnnotatedLocations(
     credential: DelegatedCredential,
@@ -266,6 +280,13 @@ export interface DeviceUpdateReader {
       onBatch?(event: BatchRoundEvent): void | Promise<void>;
     },
   ): Promise<BatchResult<WrittenDevice>>;
+  issueDeviceCommands(
+    credential: DelegatedCredential,
+    customerId: string,
+    commands: readonly DeviceCommandIssue[],
+    signal: AbortSignal,
+    options: DeviceBatchOptions<IssuedDeviceCommand>,
+  ): Promise<BatchResult<IssuedDeviceCommand>>;
   deviceStates(
     credential: DelegatedCredential,
     customerId: string,
@@ -350,9 +371,17 @@ export function isScopeFailure(
 /** One write result of a settlement (addendum contract C3). */
 export interface WriteOutcome {
   operationNumber: number;
-  outcome: 'succeeded' | 'failed' | 'unknown' | 'pending' | 'skipped';
+  outcome:
+    | 'issued'
+    | 'succeeded'
+    | 'failed'
+    | 'unknown'
+    | 'pending'
+    | 'skipped';
   outcomeReason?: string;
   verifiedBy?: 'write-response' | 'read-back';
+  /** The digit command ID of an accepted issue (section 4 step 3). */
+  commandId?: string;
   value?: string | null;
   googleStatus?: number | null;
   googleReason?: string | null;
@@ -372,6 +401,8 @@ interface TrackedWrite {
   value: string | null;
   /** True when the 2xx body named `annotatedLocation`. */
   hasValue: boolean;
+  /** The command ID of an accepted issue answer (section 4 step 3). */
+  commandId: string | null;
   status: number | null;
   attempts: { quota: number; transient: number };
   /** A final answer arrived. A scheduled retry is not final. */
@@ -411,16 +442,52 @@ function storeError(error: unknown): DeviceSyncError {
 }
 
 /**
+ * A command job issues one Google command per operation. Its action is `reboot` (design
+ * addendum section 1). Every other action writes the annotated location.
+ */
+function isCommandAction(action: string | undefined): boolean {
+  return action === 'reboot';
+}
+
+/**
  * Classify one operation from the final result, the retry history, and the facts of
  * `onSend` and `onResponse` (design section 7.1). A stopping job turns a
- * no-request operation into skipped with the job failure.
+ * no-request operation into skipped with the job failure. A command issue that Google
+ * accepts settles `issued`, not `succeeded` (addendum section 1).
  */
 export function classifyWrite(
   tracked: TrackedWrite,
   stopFailure: string | null,
+  command = false,
 ): { outcome: WriteOutcome; observedFailure: string | null } {
   const base = { operationNumber: tracked.operation.operationNumber };
-  if (tracked.succeeded)
+  if (tracked.succeeded) {
+    if (command)
+      // The reader accepts only a digit commandId, so a success without one is an
+      // unreadable answer (design section 3, issue answers).
+      return {
+        outcome:
+          tracked.commandId === null
+            ? {
+                ...base,
+                outcome: 'unknown',
+                outcomeReason: 'invalid-response',
+                googleStatus: tracked.status,
+                googleReason: null,
+                quotaRetries: tracked.attempts.quota,
+                transientRetries: tracked.attempts.transient,
+              }
+            : {
+                ...base,
+                outcome: 'issued',
+                commandId: tracked.commandId,
+                googleStatus: tracked.status,
+                googleReason: null,
+                quotaRetries: tracked.attempts.quota,
+                transientRetries: tracked.attempts.transient,
+              },
+        observedFailure: null,
+      };
     return {
       outcome: {
         ...base,
@@ -435,6 +502,7 @@ export function classifyWrite(
       },
       observedFailure: null,
     };
+  }
   const failed = tracked.final;
   if (failed) {
     const common = {
@@ -742,7 +810,7 @@ export class DeviceUpdateJobs {
     jobId: string,
     token: string | null,
     attempt: string,
-    kind: 'write' | 'read-back',
+    kind: 'write' | 'read-back' | 'issue',
     results: readonly WriteOutcome[],
     observedAt: Date,
     failureCode: string | null,
@@ -755,7 +823,7 @@ export class DeviceUpdateJobs {
           [
             customer,
             jobId,
-            kind === 'write' ? token : null,
+            kind === 'read-back' ? null : token,
             attempt,
             kind,
             JSON.stringify(results),
@@ -863,6 +931,8 @@ export class DeviceUpdateJobs {
       // established the lease (section 5.4).
       watchdog.arm(WRITE_WATCHDOG_MS - (this.now() - claimed.startedAt));
       const body = claimSchema.parse(claimed.answer);
+      /** A command job issues one POST per operation and never reads back (section 4 steps 2 and 4). */
+      const commandJob = isCommandAction(body.action);
       claimedOperations = body.operations;
       for (const operation of [...body.operations, ...body.readBack])
         tracked.set(operation.deviceId, {
@@ -871,6 +941,7 @@ export class DeviceUpdateJobs {
           succeeded: false,
           value: null,
           hasValue: false,
+          commandId: null,
           status: null,
           attempts: { quota: 0, transient: 0 },
           final: null,
@@ -913,7 +984,7 @@ export class DeviceUpdateJobs {
           const entry = tracked.get(id);
           if (entry === undefined || entry.settled) continue;
           if (!entry.succeeded && entry.final === null) continue;
-          const classified = classifyWrite(entry, failureCode);
+          const classified = classifyWrite(entry, failureCode, commandJob);
           entries.push({ entry, outcome: classified.outcome });
           if (classified.observedFailure !== null && failureCode === null)
             failureCode = classified.observedFailure;
@@ -925,7 +996,7 @@ export class DeviceUpdateJobs {
           input.jobId,
           input.dispatchToken,
           attempt,
-          'write',
+          commandJob ? 'issue' : 'write',
           results,
           stamp,
           failureCode,
@@ -996,75 +1067,99 @@ export class DeviceUpdateJobs {
       }, 30_000);
       if (credential !== null && claimedOperations.length > 0) {
         let roundIds: string[] = [];
+        /** The events of one write round. Both calls report them in the same order. */
+        const options = {
+          batchSize: this.batchSize,
+          onSend: (ids: readonly string[]) => {
+            roundIds = [...ids];
+            for (const id of ids) {
+              const entry = tracked.get(id);
+              if (entry) entry.sent = true;
+            }
+          },
+          onResponse: (
+            event: BatchResponseEvent<WrittenDevice & IssuedDeviceCommand>,
+          ) => {
+            const entry = tracked.get(event.id);
+            if (!entry) return;
+            reporter?.noteAnswer(event.id);
+            if (event.outcome.kind === 'success') {
+              const page = event.outcome.page;
+              entry.succeeded = true;
+              entry.final = null;
+              entry.status = event.status;
+              entry.attempts = event.attempts;
+              if (commandJob) {
+                // The reader accepts only a digit commandId, so this is always present.
+                entry.commandId =
+                  typeof page.commandId === 'string' ? page.commandId : null;
+                return;
+              }
+              // Keep Google's observation. An absent field names no value.
+              if (
+                page !== null &&
+                typeof page === 'object' &&
+                Object.hasOwn(page, 'annotatedLocation')
+              ) {
+                entry.hasValue = true;
+                entry.value = page.annotatedLocation ?? null;
+              }
+              return;
+            }
+            if (event.outcome.kind === 'retry') {
+              reporter?.noteRetry(event.id, event.outcome.failure.kind);
+              return;
+            }
+            entry.final = event.outcome.failure;
+          },
+          onBatch: async () => {
+            // The renewal after the round stamps its write responses (section 5.8).
+            if (callSignal.aborted) return;
+            let stamp: Date;
+            try {
+              stamp = await renewLease();
+            } catch (error) {
+              if (
+                error instanceof DeviceSyncError &&
+                error.code === 'attempt-fenced'
+              ) {
+                // A rejected renewal aborts the call through its signal.
+                fenced = true;
+                stop.abort();
+                return;
+              }
+              throw error;
+            }
+            const ids = roundIds;
+            roundIds = [];
+            await settleRound(ids, stamp);
+          },
+        };
         try {
-          await this.reader.patchAnnotatedLocations(
-            credential,
-            input.customerId,
-            claimedOperations.map((operation) => ({
-              deviceId: operation.deviceId,
-              value: operation.requestedValue,
-            })),
-            callSignal,
-            {
-              batchSize: this.batchSize,
-              onSend: (ids) => {
-                roundIds = [...ids];
-                for (const id of ids) {
-                  const entry = tracked.get(id);
-                  if (entry) entry.sent = true;
-                }
-              },
-              onResponse: (event) => {
-                const entry = tracked.get(event.id);
-                if (!entry) return;
-                reporter?.noteAnswer(event.id);
-                if (event.outcome.kind === 'success') {
-                  const page = event.outcome.page;
-                  entry.succeeded = true;
-                  entry.final = null;
-                  entry.status = event.status;
-                  entry.attempts = event.attempts;
-                  // Keep Google's observation. An absent field names no value.
-                  if (
-                    page !== null &&
-                    typeof page === 'object' &&
-                    Object.hasOwn(page, 'annotatedLocation')
-                  ) {
-                    entry.hasValue = true;
-                    entry.value = page.annotatedLocation ?? null;
-                  }
-                  return;
-                }
-                if (event.outcome.kind === 'retry') {
-                  reporter?.noteRetry(event.id, event.outcome.failure.kind);
-                  return;
-                }
-                entry.final = event.outcome.failure;
-              },
-              onBatch: async () => {
-                // The renewal after the round stamps its write responses (section 5.8).
-                if (callSignal.aborted) return;
-                let stamp: Date;
-                try {
-                  stamp = await renewLease();
-                } catch (error) {
-                  if (
-                    error instanceof DeviceSyncError &&
-                    error.code === 'attempt-fenced'
-                  ) {
-                    // A rejected renewal aborts the call through its signal.
-                    fenced = true;
-                    stop.abort();
-                    return;
-                  }
-                  throw error;
-                }
-                const ids = roundIds;
-                roundIds = [];
-                await settleRound(ids, stamp);
-              },
-            },
-          );
+          // A command job sends one issueCommand POST per operation. It never retries an
+          // accepted POST, and the reader sets no quota retry (section 3).
+          if (commandJob)
+            await this.reader.issueDeviceCommands(
+              credential,
+              input.customerId,
+              claimedOperations.map((operation) => ({
+                deviceId: operation.deviceId,
+                commandType: 'REBOOT',
+              })),
+              callSignal,
+              options,
+            );
+          else
+            await this.reader.patchAnnotatedLocations(
+              credential,
+              input.customerId,
+              claimedOperations.map((operation) => ({
+                deviceId: operation.deviceId,
+                value: operation.requestedValue,
+              })),
+              callSignal,
+              options,
+            );
         } catch (error) {
           // A fenced renewal owns the answer. A delayed store renewal is the
           // failure that the request reports.
@@ -1099,7 +1194,7 @@ export class DeviceUpdateJobs {
       for (const operation of claimedOperations) {
         const entry = tracked.get(operation.deviceId);
         if (entry === undefined || entry.settled) continue;
-        const classified = classifyWrite(entry, failureCode);
+        const classified = classifyWrite(entry, failureCode, commandJob);
         leftovers.push({ entry, outcome: classified.outcome });
         if (classified.observedFailure !== null && failureCode === null)
           failureCode = classified.observedFailure;
@@ -1113,7 +1208,7 @@ export class DeviceUpdateJobs {
           input.jobId,
           input.dispatchToken,
           attempt,
-          'write',
+          commandJob ? 'issue' : 'write',
           results,
           stamp,
           failureCode,
@@ -1139,7 +1234,8 @@ export class DeviceUpdateJobs {
       }
 
       // 3. The read-back of places 1 and 2, under the envelope of the batch claim.
-      if (!fenced && !signal.aborted && credential !== null) {
+      // A command job skips it: its unknown operations stay unknown for review (section 4 step 11).
+      if (!fenced && !signal.aborted && credential !== null && !commandJob) {
         const held: HeldOperation[] = [];
         for (const entry of tracked.values()) {
           const after = unknown.get(entry.operation.operationNumber);
@@ -1721,12 +1817,16 @@ export class DeviceUpdateJobs {
       return { ...prepared, readBack: emptySummary() };
     if (prepared.outcome !== 'ready') return prepared;
     const attempt = randomUUID();
-    const readBack = await this.readBackClaimed(
-      input.customerId,
-      input.jobId,
-      attempt,
-      signal,
-    );
+    // A command job skips the read-back: its unknown operations stay unknown for review
+    // (section 4 steps 4 and 11).
+    const readBack = isCommandAction(prepared.action)
+      ? emptySummary()
+      : await this.readBackClaimed(
+          input.customerId,
+          input.jobId,
+          attempt,
+          signal,
+        );
     const finished = finishSchema.parse(
       await this.call(
         'SELECT cc.finish_device_update_job($1,$2,$3,$4) AS result',
@@ -1752,7 +1852,12 @@ export class DeviceUpdateJobs {
     input: DeviceUpdateFinishRequest,
     signal: AbortSignal,
   ): Promise<
-    | { outcome: 'ready'; status?: string; failure: string | null }
+    | {
+        outcome: 'ready';
+        status?: string;
+        failure: string | null;
+        action?: string;
+      }
     | { outcome: 'superseded'; status?: string }
     | { outcome: 'finished'; status: string; failure: null }
     | { outcome: 'busy' }
@@ -1770,6 +1875,7 @@ export class DeviceUpdateJobs {
           outcome: 'ready',
           ...(answer.status ? { status: answer.status } : {}),
           failure: answer.failure ?? null,
+          ...(answer.action ? { action: answer.action } : {}),
         };
       if (
         answer.outcome === 'busy' &&
