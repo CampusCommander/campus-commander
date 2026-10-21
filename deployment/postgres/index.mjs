@@ -296,7 +296,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.accept_device_update_hold(text),
         cc.clean_device_update_hold(text,uuid),
         cc.purge_jobs(text,integer),
-        cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,jsonb,integer),
+        cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,text,jsonb,integer),
         cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
         cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid),
         cc.job_reader(uuid,integer),

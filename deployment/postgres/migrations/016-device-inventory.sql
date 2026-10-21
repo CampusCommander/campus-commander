@@ -51,6 +51,7 @@ CREATE TABLE cc.devices (
   last_entity_sync timestamptz NOT NULL,
   removed_at timestamptz,
   annotated_location_observed_at timestamptz,
+  status_observed_at timestamptz,
   -- Raises by one when any other column changes. See the trigger below.
   record_version bigint NOT NULL DEFAULT 1,
   CHECK((battery_status='reported')=(battery_health IS NOT NULL AND battery_reported_at IS NOT NULL)),
@@ -387,10 +388,11 @@ BEGIN
     ORDER BY e.value->>'deviceId',e.position DESC
   ), upserted AS (
     INSERT INTO cc.devices(customer_id,device_id,serial_number,model,asset_tag,org_unit_path,last_contact,
-      annotated_location,notes,status,last_entity_sync,annotated_location_observed_at)
+      annotated_location,notes,status,last_entity_sync,annotated_location_observed_at,status_observed_at)
     SELECT p_customer,i.device_id,i.row_value->>'serialNumber',i.row_value->>'model',i.row_value->>'assetTag',
       i.row_value->>'orgUnitPath',(i.row_value->>'lastContact')::timestamptz,i.row_value->>'annotatedLocation',
       i.row_value->>'notes',i.row_value->>'status',p_synced_at,
+      CASE WHEN p_observation='read' THEN p_synced_at END,
       CASE WHEN p_observation='read' THEN p_synced_at END
     FROM incoming i
     ON CONFLICT(customer_id,device_id) DO UPDATE SET
@@ -406,12 +408,21 @@ BEGIN
         ELSE cc.devices.last_contact END,
       notes=CASE WHEN cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync THEN EXCLUDED.notes
         ELSE cc.devices.notes END,
-      status=CASE WHEN cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync THEN EXCLUDED.status
+      status=CASE
+        WHEN p_observation='read' AND (cc.devices.status_observed_at IS NULL OR
+          EXCLUDED.last_entity_sync>cc.devices.status_observed_at) THEN EXCLUDED.status
+        WHEN p_observation='list' AND NOT EXISTS(SELECT 1 FROM cc.device_write_overlays o
+          WHERE o.customer_id=cc.devices.customer_id AND o.device_id=cc.devices.device_id AND
+            o.field='status' AND o.expires_at>clock_timestamp()) THEN EXCLUDED.status
         ELSE cc.devices.status END,
       last_entity_sync=CASE WHEN cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync THEN EXCLUDED.last_entity_sync
         ELSE cc.devices.last_entity_sync END,
       removed_at=CASE WHEN cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync THEN NULL
         ELSE cc.devices.removed_at END,
+      status_observed_at=CASE
+        WHEN p_observation='read' AND (cc.devices.status_observed_at IS NULL OR
+          EXCLUDED.last_entity_sync>cc.devices.status_observed_at) THEN EXCLUDED.last_entity_sync
+        ELSE cc.devices.status_observed_at END,
       annotated_location=CASE
         WHEN p_observation='read' AND (cc.devices.annotated_location_observed_at IS NULL OR
           EXCLUDED.last_entity_sync>cc.devices.annotated_location_observed_at) THEN EXCLUDED.annotated_location

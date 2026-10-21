@@ -49,7 +49,7 @@ export async function qualifyDeviceWriteJobs({
           WHERE lease_expires_at>clock_timestamp()`,
       );
       const rows = await admin(
-        "SELECT job_id FROM cc.jobs WHERE kind='device-update' AND status='running' ORDER BY created_at",
+        "SELECT job_id FROM cc.jobs WHERE kind IN ('device-update','device-command','device-status') AND status='running' ORDER BY created_at",
       );
       for (const row of rows)
         await migrator.query('SELECT cc.finalize_device_update_job($1,$2,$3)', [
@@ -231,8 +231,8 @@ export async function qualifyDeviceWriteJobs({
       ).permission_version;
       await admin(
         `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-          generation,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-        VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotatedLocation',$6,$7,$8,$8,0,0,
+          generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+        VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotated-location','annotatedLocation',$6,$7,$8,$8,0,0,
           'manifest-digest',clock_timestamp()+interval '1 hour')`,
         [
           previewId,
@@ -261,9 +261,9 @@ export async function qualifyDeviceWriteJobs({
         ],
       );
       await admin(
-        `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,confirmer_permission_version,
+        `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,confirmer_permission_version,
           delegated_subject,batch_size,batch_count)
-        VALUES($1,$2,'annotatedLocation',$3,$4,$5,$6,'admin@example.org',$7,$8)`,
+        VALUES($1,$2,'annotated-location','annotatedLocation',$3,$4,$5,$6,'admin@example.org',$7,$8)`,
         [
           jobId,
           previewId,
@@ -566,8 +566,8 @@ export async function qualifyDeviceWriteJobs({
         const previewId = randomUUID();
         await admin(
           `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-            generation,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,1,$4,'annotatedLocation','replace',
+            generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,1,$4,'annotated-location','annotatedLocation','replace',
             'Room 12',1,1,0,0,'manifest-digest',clock_timestamp()-interval '25 hours')`,
           [previewId, customer, confirmer, generation],
         );
@@ -8250,8 +8250,8 @@ export async function qualifyDeviceWriteJobs({
       'S2 the claim revalidation helper is not executable by PUBLIC or the application role',
       async () => {
         for (const signature of [
-          'cc.write_capable(uuid,text)',
-          'cc.device_update_stop_reason(text,uuid,integer,integer)',
+          'cc.write_capable(uuid,text,text)',
+          'cc.device_update_stop_reason(text,uuid,integer,integer,text)',
         ]) {
           const privileges = await adminRow(
             `SELECT count(p.oid)=1 AS present,
@@ -11353,6 +11353,157 @@ export async function qualifyDeviceWriteJobs({
           ),
           before.sync,
         );
+      },
+    );
+
+    // B1 (device actions, section 1): a command job takes the CMD display ID, waits in
+    // awaiting-devices without the write slot, and the terminal rule counts expired beside failed.
+    await check(
+      'B1 command jobs take their own ID and free the write slot to await devices',
+      async () => {
+        const version = (
+          await adminRow(
+            'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+            [confirmer],
+          )
+        ).permission_version;
+        const actionJob = async (action, kind, prefix, sequence, devices) => {
+          const previewId = randomUUID();
+          const jobId = randomUUID();
+          await admin(
+            `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+              generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+            VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,$6,NULL,NULL,NULL,$7,$7,0,0,
+              'manifest-digest',clock_timestamp()+interval '1 hour')`,
+            [
+              previewId,
+              customer,
+              confirmer,
+              version,
+              generation,
+              action,
+              devices.length,
+            ],
+          );
+          const displayId = (
+            await adminRow(
+              `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+                target_count,correlation_id)
+              VALUES($1,cc.job_display_id('${prefix}',nextval('${sequence}')),$2,'${kind}','devices','accepted',$3,$4,
+                $5,$6) RETURNING display_id`,
+              [
+                jobId,
+                customer,
+                confirmer,
+                generation,
+                devices.length,
+                randomUUID(),
+              ],
+            )
+          ).display_id;
+          await admin(
+            `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
+              confirmer_permission_version,delegated_subject,batch_size,batch_count)
+            VALUES($1,$2,$3,NULL,NULL,NULL,$4,$5,'admin@example.org',250,1)`,
+            [jobId, previewId, action, confirmer, version],
+          );
+          for (const [index, deviceId] of devices.entries())
+            await admin(
+              `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,
+                org_unit_path,baseline_value,requested_value,batch,status,command_id,command_state,poll_after,
+                poll_deadline_at)
+              VALUES($1,$2,$3,$4,'/School A','ACTIVE',NULL,0,$5,$6,$7,clock_timestamp(),
+                clock_timestamp()+interval '7 days')`,
+              [
+                jobId,
+                index + 1,
+                deviceId,
+                `SN-${deviceId}`,
+                kind === 'device-command' ? 'issued' : 'pending',
+                kind === 'device-command' ? '4100000001' : null,
+                kind === 'device-command' ? 'pending-delivery' : null,
+              ],
+            );
+          return { jobId, displayId };
+        };
+        const command = await actionJob(
+          'reboot',
+          'device-command',
+          'CMD',
+          'cc.job_number_cmd',
+          ['cmd-a'],
+        );
+        assert.match(command.displayId, /^CMD-[0-9]{3,}$/);
+        const commandAdmit = await admit();
+        assert.equal(commandAdmit.jobId, command.jobId);
+        const waiting = await result(
+          'SELECT cc.finish_device_update_job($1,$2,$3) AS result',
+          [customer, command.jobId, commandAdmit.dispatchToken],
+        );
+        assert.equal(waiting.status, 'awaiting-devices');
+        assert.equal(waiting.finishedAt, null);
+        assert.equal(
+          (
+            await adminRow('SELECT finished_at FROM cc.jobs WHERE job_id=$1', [
+              command.jobId,
+            ])
+          ).finished_at,
+          null,
+        );
+        // The write slot is free while the command waits, so the next write job admits at once.
+        const update = await makeJob({ devices: ['cmd-b'] });
+        const updateAdmit = await admit();
+        assert.equal(updateAdmit.jobId, update.jobId);
+        assert.equal(
+          (
+            await adminRow('SELECT status FROM cc.jobs WHERE job_id=$1', [
+              command.jobId,
+            ])
+          ).status,
+          'awaiting-devices',
+        );
+        // The partial unique index still admits one running write job only.
+        await rejects(
+          admin("UPDATE cc.jobs SET status='running' WHERE job_id=$1", [
+            command.jobId,
+          ]),
+          '23505',
+        );
+        // Release the update job, then settle a status job whose last operation expired.
+        assert.equal(
+          (
+            await result(
+              'SELECT cc.finalize_device_update_job($1,$2,$3) AS result',
+              [customer, update.jobId, null],
+            )
+          ).status,
+          'failed',
+        );
+        const status = await actionJob(
+          'disable',
+          'device-status',
+          'STS',
+          'cc.job_number_sts',
+          ['sts-a', 'sts-b'],
+        );
+        assert.match(status.displayId, /^STS-[0-9]{3,}$/);
+        const statusAdmit = await admit();
+        assert.equal(statusAdmit.jobId, status.jobId);
+        await admin(
+          "UPDATE cc.device_update_operations SET status='succeeded',observed_value='DISABLED' WHERE job_id=$1 AND operation_number=1",
+          [status.jobId],
+        );
+        await admin(
+          "UPDATE cc.device_update_operations SET status='expired' WHERE job_id=$1 AND operation_number=2",
+          [status.jobId],
+        );
+        const finished = await result(
+          'SELECT cc.finish_device_update_job($1,$2,$3) AS result',
+          [customer, status.jobId, statusAdmit.dispatchToken],
+        );
+        assert.equal(finished.status, 'completed-with-errors');
+        assert.equal(finished.expired, 1);
+        assert.notEqual(finished.finishedAt, null);
       },
     );
   } finally {

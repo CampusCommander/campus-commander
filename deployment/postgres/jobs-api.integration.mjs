@@ -212,15 +212,15 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     const previewId = randomUUID();
     await admin(
       `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-        generation,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,1,$4,'annotatedLocation',
+        generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,1,$4,'annotated-location','annotatedLocation',
         'replace','Room 12',$5,$5,0,0,'digest',clock_timestamp()+interval '1 hour')`,
       [previewId, customer, requestedBy, generation, operations],
     );
     await admin(
-      `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,
+      `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
         confirmer_permission_version,delegated_subject,batch_size,batch_count)
-      VALUES($1,$2,'annotatedLocation','replace','Room 12',$3,1,'admin@example.org',250,$4)`,
+      VALUES($1,$2,'annotated-location','annotatedLocation','replace','Room 12',$3,1,'admin@example.org',250,$4)`,
       [
         job.job_id,
         previewId,

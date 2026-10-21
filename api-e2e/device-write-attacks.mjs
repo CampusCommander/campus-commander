@@ -475,10 +475,10 @@ function createSeeder({ db, mock, customer }) {
     try {
       await db.query(
         `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,
-          permission_version,generation,field,mode,value,selected,eligible,unchanged,excluded,
+          permission_version,generation,action,field,mode,value,selected,eligible,unchanged,excluded,
           manifest_digest,expires_at)
          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,
-           'annotatedLocation',$6,$7,$8,$8,0,0,'manifest-digest',clock_timestamp()+interval '1 hour')`,
+           'annotated-location','annotatedLocation',$6,$7,$8,$8,0,0,'manifest-digest',clock_timestamp()+interval '1 hour')`,
         [
           previewId,
           customer,
@@ -505,9 +505,9 @@ function createSeeder({ db, mock, customer }) {
         ],
       );
       await db.query(
-        `INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,
+        `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
           confirmer_permission_version,delegated_subject,batch_size,batch_count)
-         VALUES($1,$2,'annotatedLocation',$3,$4,$5,$6,$7,$8,$9)`,
+         VALUES($1,$2,'annotated-location','annotatedLocation',$3,$4,$5,$6,$7,$8,$9)`,
         [
           jobId,
           previewId,
