@@ -1,6 +1,7 @@
 import {
   GOOGLE_CAPABILITIES,
   batteryFilterValueSchema,
+  deviceStatusFilterValueSchema,
   type DeviceBattery,
   type DeviceGroupField,
   type DeviceOrgUnit,
@@ -13,7 +14,14 @@ import {
 export type DeviceSortField = DeviceQuery['sort']['field'];
 export type BatteryFilterValue =
   (typeof batteryFilterValueSchema.options)[number];
-export type DeviceFieldKind = 'text' | 'orgUnit' | 'battery' | 'date';
+export type DeviceStatusFilterValue =
+  (typeof deviceStatusFilterValueSchema.options)[number];
+export type DeviceFieldKind =
+  | 'text'
+  | 'orgUnit'
+  | 'battery'
+  | 'status'
+  | 'date';
 
 export interface DeviceField {
   id: DeviceSortField;
@@ -32,6 +40,8 @@ export interface OrgUnitOption {
 /** Grid column and filter order from the field contract, without the School column. */
 export const DEVICE_FIELDS: readonly DeviceField[] = [
   { id: 'serialNumber', label: 'Serial', kind: 'text', optional: false },
+  // The mockup puts Status directly after Serial (device-commands record, default 7).
+  { id: 'status', label: 'Status', kind: 'status', optional: true },
   { id: 'model', label: 'Model', kind: 'text', optional: false },
   { id: 'assetTag', label: 'Asset tag', kind: 'text', optional: false },
   {
@@ -68,6 +78,14 @@ export const BATTERY_LABELS: Readonly<Record<BatteryFilterValue, string>> = {
   'no-report': 'No battery report',
   unavailable: 'Unavailable',
 };
+/** The three Google device states the filter offers, in the record's order. */
+export const DEVICE_STATUS_LABELS: Readonly<
+  Record<DeviceStatusFilterValue, string>
+> = {
+  ACTIVE: 'Active',
+  DISABLED: 'Disabled',
+  DEPROVISIONED: 'Deprovisioned',
+};
 
 export function fieldFor(id: DeviceSortField): DeviceField {
   const field = DEVICE_FIELDS.find((candidate) => candidate.id === id);
@@ -83,19 +101,22 @@ function day(iso: string): string {
   });
 }
 
+/** One readable value list for a set filter chip, such as "Disabled, Deprovisioned". */
+function setValuesText<T extends string>(
+  values: readonly T[],
+  labels: Readonly<Record<T, string>>,
+): string {
+  return values.length
+    ? values.map((value) => labels[value]).join(', ')
+    : 'none';
+}
+
 export function chipLabel(predicate: DevicePredicate): string {
-  // The Status column and filter arrive in a later change. The chip still reads its terms.
-  if (predicate.field === 'status')
-    return `Status · ${
-      predicate.values.length ? predicate.values.join(', ') : 'none'
-    }`;
   const label = fieldFor(predicate.field).label;
   if (predicate.field === 'battery')
-    return `${label} · ${
-      predicate.values.length
-        ? predicate.values.map((value) => BATTERY_LABELS[value]).join(', ')
-        : 'none'
-    }`;
+    return `${label} · ${setValuesText(predicate.values, BATTERY_LABELS)}`;
+  if (predicate.field === 'status')
+    return `${label} · ${setValuesText(predicate.values, DEVICE_STATUS_LABELS)}`;
   if (predicate.field === 'orgUnitPath')
     return `${label} · ${
       predicate.values.length === 0
@@ -214,6 +235,16 @@ export function batteryText(battery: DeviceBattery): string {
   return battery.status === 'reported'
     ? BATTERY_LABELS[battery.health]
     : BATTERY_LABELS[battery.status];
+}
+
+/**
+ * The three known Google states read as labels. Another Google value shows as Google sends it.
+ * A null status shows the grid's empty value.
+ */
+export function statusText(status: string | null): string {
+  if (status === null) return '';
+  const labels: Readonly<Record<string, string>> = DEVICE_STATUS_LABELS;
+  return labels[status] ?? status;
 }
 
 export function relativeTime(iso: string | null, now = Date.now()): string {

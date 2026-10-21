@@ -13,12 +13,15 @@ import type {
 import {
   BATTERY_LABELS,
   DEVICE_FIELDS,
+  DEVICE_STATUS_LABELS,
   batteryText,
   groupLabel,
   relativeTime,
+  statusText,
   type BatteryFilterValue,
   type DeviceField,
   type DeviceSortField,
+  type DeviceStatusFilterValue,
 } from './device-fields';
 import { GroupCellRenderer } from '@libregrid/row-grouping';
 import { DeviceDetailsCell } from './device-details-cell';
@@ -35,7 +38,7 @@ function value(row: DeviceRow, field: DeviceSortField, now: number): string {
     case 'orgUnitPath':
       return row.orgUnitPath;
     case 'status':
-      return row.status ?? '';
+      return statusText(row.status);
     case 'battery':
       return batteryText(row.battery);
     case 'lastContact':
@@ -147,6 +150,19 @@ function columnFilter(
           suppressSorting: true,
           valueFormatter: ({ value }: { value: BatteryFilterValue }) =>
             BATTERY_LABELS[value],
+          ...filterButtons,
+        },
+      };
+    case 'status':
+      return {
+        filter: 'agSetColumnFilter',
+        filterParams: {
+          // Only the three contract values. The filter cannot select a null status.
+          values: Object.keys(DEVICE_STATUS_LABELS),
+          // Keep the record's order: Active, Disabled, Deprovisioned.
+          suppressSorting: true,
+          valueFormatter: ({ value }: { value: DeviceStatusFilterValue }) =>
+            DEVICE_STATUS_LABELS[value],
           ...filterButtons,
         },
       };

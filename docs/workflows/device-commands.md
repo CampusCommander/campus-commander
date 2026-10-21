@@ -129,7 +129,7 @@ Design gaps:
 6. No Reboot or Disable job detail. Command state has no designed place in the operations grid.
 7. No pending command rows or waiting job status inside the job detail. `104:657` is a standalone page.
 8. No uncertain command issuance frame. Only the update variant `104:254` exists.
-9. No Status column or status filter in the device grid (`216:4309`).
+9. No Status column or status filter in the device grid (`216:4309`). The approved mockup of 2026-10-21, state 10, supplies the column position and the filter chip.
 10. No activity-area entries for command jobs. The approved mockup is the design source.
 11. No single job ID scheme. Figma uses CMD-, REB-, DIS-, and STATUS-.
 
