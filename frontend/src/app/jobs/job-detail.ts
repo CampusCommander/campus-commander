@@ -25,17 +25,17 @@ import {
   statusTone,
 } from './job-fields';
 import {
-  OUTCOME_LABELS,
   attentionCount,
   beforeText,
   canReconcile,
-  fieldLabel,
   formatTime,
   identityLine,
+  isCommandOperation,
   jobCounters,
   latestActivityLine,
+  operationChip,
+  operationLabel,
   operationsFooter,
-  outcomeTone,
   requestedText,
   scopeHeading,
   type JobCounter,
@@ -89,11 +89,11 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly actionLabel = actionLabel;
   protected readonly formatTimestamp = formatTimestamp;
   protected readonly formatTime = formatTime;
-  protected readonly fieldLabel = fieldLabel;
+  protected readonly operationLabel = operationLabel;
+  protected readonly operationChip = operationChip;
+  protected readonly isCommandOperation = isCommandOperation;
   protected readonly beforeText = beforeText;
   protected readonly requestedText = requestedText;
-  protected readonly outcomeTone = outcomeTone;
-  protected readonly outcomeLabels = OUTCOME_LABELS;
 
   protected readonly heading = computed(() => {
     const job = this.store.job();

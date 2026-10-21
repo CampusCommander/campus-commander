@@ -273,6 +273,63 @@ it('opens the dialog, marks the activity seen, and lists the sections', async ()
   expect(panel).toBe(document.activeElement);
 });
 
+it('names a command job and a status job', async () => {
+  configure({
+    summary: activity({
+      running: {
+        count: 1,
+        jobs: [
+          job({
+            displayId: 'CMD-001',
+            action: 'reboot-devices',
+            status: 'awaiting-devices',
+            scope: { kind: 'devices', deviceCount: 6 },
+            progress: {
+              total: 6,
+              succeeded: 1,
+              failed: 1,
+              unknown: 1,
+              skipped: 0,
+              expired: 1,
+              pending: 2,
+            },
+          }),
+        ],
+      },
+      recent: {
+        count: 1,
+        jobs: [
+          job({
+            jobId: '1f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+            displayId: 'STS-002',
+            action: 'disable-devices',
+            status: 'completed',
+            scope: { kind: 'devices', deviceCount: 6 },
+            finishedAt: '2026-10-19T11:58:00.000Z',
+            progress: {
+              total: 6,
+              succeeded: 6,
+              failed: 0,
+              unknown: 0,
+              skipped: 0,
+              expired: 0,
+              pending: 0,
+            },
+          }),
+        ],
+        nextExpiryAt: null,
+      },
+    }),
+  });
+  const fixture = await render();
+  await open(fixture);
+
+  const panel = dialog(fixture);
+  expect(panel?.textContent).toContain('CMD-001 · Reboot devices');
+  expect(panel?.textContent).toContain('STS-002 · Disable devices');
+  expect(panel?.textContent).toContain('1 of 6 complete · Maya Chen');
+});
+
 it('opens the running job and the Jobs page from the panel', async () => {
   configure({ summary: activity({ running: { count: 1, jobs: [job()] } }) });
   const fixture = await render();
