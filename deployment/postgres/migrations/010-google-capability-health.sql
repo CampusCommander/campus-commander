@@ -4,9 +4,10 @@ LANGUAGE plpgsql IMMUTABLE SET search_path=pg_catalog AS $$
 DECLARE item jsonb;
 BEGIN
   IF p_value IS NULL OR jsonb_typeof(p_value)<>'array' THEN RETURN false; END IF;
-  IF jsonb_array_length(p_value) NOT BETWEEN 1 AND 2 THEN RETURN false; END IF;
+  IF jsonb_array_length(p_value) NOT BETWEEN 1 AND 6 THEN RETURN false; END IF;
   FOR item IN SELECT * FROM jsonb_array_elements(p_value) LOOP
-    IF item NOT IN ('"customer-identity"'::jsonb,'"domain-observations"'::jsonb) THEN RETURN false; END IF;
+    IF item NOT IN ('"customer-identity"'::jsonb,'"domain-observations"'::jsonb,'"school-ou-references"'::jsonb,
+      '"device-inventory"'::jsonb,'"device-telemetry"'::jsonb,'"device-changes"'::jsonb) THEN RETURN false; END IF;
   END LOOP;
   RETURN (SELECT count(DISTINCT value)=jsonb_array_length(p_value) FROM jsonb_array_elements(p_value));
 END;
@@ -30,7 +31,7 @@ CREATE TABLE cc.google_health_checks (
 CREATE TABLE cc.google_capability_health (
   customer_id text NOT NULL,
   generation integer NOT NULL,
-  capability text NOT NULL CHECK(capability IN ('customer-identity','domain-observations')),
+  capability text NOT NULL CHECK(capability IN ('customer-identity','domain-observations','school-ou-references','device-inventory','device-telemetry','device-changes')),
   scope_verified boolean NOT NULL,
   failure text CHECK(failure IN ('credential-rejected','delegation-not-authorized','api-not-enabled','policy-restricted','network-failure','scope-mismatch','permission-denied','quota','provider-unavailable','invalid-response','wrong-customer','request-failed','license-restricted','key-unavailable')),
   checked_at timestamptz NOT NULL,
@@ -48,10 +49,12 @@ LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
     'check',CASE WHEN h.id IS NULL THEN NULL ELSE jsonb_build_object('id',h.id,'capabilities',h.capabilities,
       'expiresAt',h.expires_at,'finishedAt',h.finished_at,'retryAt',h.retry_at) END,
     'capabilities',(SELECT jsonb_agg(jsonb_build_object('capability',v.capability,
-      'scopeVerified',COALESCE(r.scope_verified,true),'failure',r.failure,
-      'checkedAt',COALESCE(r.checked_at,c.observed_at),'lastSucceededAt',COALESCE(r.last_succeeded_at,c.observed_at),
+      'scopeVerified',COALESCE(r.scope_verified,v.setup_verified AND c.observed_at IS NOT NULL),'failure',r.failure,
+      'checkedAt',COALESCE(r.checked_at,CASE WHEN v.setup_verified THEN c.observed_at END),
+      'lastSucceededAt',COALESCE(r.last_succeeded_at,CASE WHEN v.setup_verified THEN c.observed_at END),
       'correlationId',r.correlation_id) ORDER BY v.capability)
-      FROM unnest(ARRAY['customer-identity','domain-observations']) AS v(capability)
+      FROM (VALUES ('customer-identity',true),('domain-observations',true),('school-ou-references',false),
+        ('device-inventory',false),('device-telemetry',false),('device-changes',false)) AS v(capability,setup_verified)
       LEFT JOIN cc.google_capability_health r ON r.customer_id=c.customer_id AND r.generation=c.generation AND r.capability=v.capability))
     FROM cc.google_connection c
     LEFT JOIN cc.google_health_checks h ON h.customer_id=c.customer_id AND h.generation=c.generation
@@ -114,7 +117,7 @@ BEGIN
   IF p_results IS NULL OR jsonb_typeof(p_results)<>'array' THEN
     RAISE EXCEPTION 'The capability results are invalid.' USING ERRCODE='22023';
   END IF;
-  IF jsonb_array_length(p_results) NOT BETWEEN 0 AND 2 THEN
+  IF jsonb_array_length(p_results) NOT BETWEEN 0 AND 6 THEN
     RAISE EXCEPTION 'The capability result count is invalid.' USING ERRCODE='22023';
   END IF;
   -- An inconclusive combined read preserves every capability observation.
@@ -133,13 +136,16 @@ BEGIN
     END IF;
     INSERT INTO cc.google_capability_health(customer_id,generation,capability,scope_verified,failure,checked_at,last_succeeded_at,correlation_id)
       VALUES(p_customer,p_generation,result->>'capability',(result->>'scopeVerified')::boolean,result->>'failure',observed,
-        CASE WHEN result->>'failure' IS NULL THEN observed ELSE connection.observed_at END,pending.correlation_id)
+        CASE WHEN result->>'failure' IS NULL THEN observed
+          WHEN result->>'capability' IN ('customer-identity','domain-observations') THEN connection.observed_at
+          ELSE NULL END,pending.correlation_id)
       ON CONFLICT(customer_id,generation,capability) DO UPDATE SET scope_verified=EXCLUDED.scope_verified,failure=EXCLUDED.failure,
         checked_at=EXCLUDED.checked_at,correlation_id=EXCLUDED.correlation_id,
         last_succeeded_at=CASE WHEN EXCLUDED.failure IS NULL THEN observed ELSE cc.google_capability_health.last_succeeded_at END;
   END LOOP;
   IF p_observation IS NOT NULL THEN
-    IF jsonb_array_length(p_results)<>2 OR EXISTS(SELECT 1 FROM jsonb_array_elements(p_results) WHERE value->>'failure' IS NOT NULL) OR
+    IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(p_results) WHERE value->>'capability'='customer-identity' AND value->>'failure' IS NULL) OR
+      NOT EXISTS(SELECT 1 FROM jsonb_array_elements(p_results) WHERE value->>'capability'='domain-observations' AND value->>'failure' IS NULL) OR
       NOT cc.google_observation_valid(p_observation) OR p_observation->>'customerId' IS DISTINCT FROM p_customer THEN
       RAISE EXCEPTION 'The successful observation is invalid.' USING ERRCODE='22023';
     END IF;

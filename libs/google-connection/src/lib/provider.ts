@@ -24,6 +24,7 @@ import {
 
 export const GOOGLE_CONNECTION_SCOPES = GOOGLE_CUSTOMER_SCOPES;
 const directory = 'https://admin.googleapis.com/admin/directory/v1';
+const management = 'https://chromemanagement.googleapis.com/v1';
 const responseLimit = 262144;
 
 export class GoogleConnectionError extends Error {
@@ -175,6 +176,26 @@ const domainResponse = z.object({
     )
     .min(1)
     .max(1000),
+});
+
+/** A health read asks for the smallest page that proves API access. */
+const orgUnitHealthPage = z.object({
+  organizationUnits: z
+    .array(z.object({ orgUnitId: z.string().min(1).max(128) }))
+    .max(10000)
+    .optional(),
+});
+const deviceHealthPage = z.object({
+  chromeosdevices: z
+    .array(z.object({ deviceId: z.string().min(1).max(128) }))
+    .max(1)
+    .optional(),
+});
+const telemetryHealthPage = z.object({
+  devices: z
+    .array(z.object({ deviceId: z.string().min(1).max(128).optional() }))
+    .max(1)
+    .optional(),
 });
 
 function domainObservation(
@@ -352,8 +373,7 @@ export class GoogleCustomerVerifier {
     const results = await Promise.all(
       capabilities.map(async (capability): Promise<GoogleCapabilityResult> => {
         const record = GOOGLE_CAPABILITIES.find(
-          (record) =>
-            record.id === capability && record.enabled && record.qualified,
+          (record) => record.id === capability && record.enabled,
         );
         if (!record) throw new GoogleConnectionError('request-failed');
         let scopeVerified = false;
@@ -362,39 +382,87 @@ export class GoogleCustomerVerifier {
           const client = await scopedClient(credential, record.scope, signal);
           scopeVerified = true;
           stage = 'read';
-          if (capability === 'customer-identity') {
-            const result = customerResponse.parse(
-              (
-                await client.request({
-                  url: `${directory}/customers/my_customer`,
-                  method: 'GET',
-                  params: { fields: 'id,customerDomain' },
-                })
-              ).data,
-            );
-            if (result.id !== expectedCustomer)
-              throw new GoogleConnectionError('wrong-customer');
-            observedCustomer = result;
-          } else {
-            const result = domainResponse.parse(
-              (
-                await client.request({
-                  url: `${directory}/customer/${expectedCustomer}/domains`,
-                  method: 'GET',
-                  params: {
-                    fields:
-                      'domains(domainName,isPrimary,verified,domainAliases(domainAliasName,parentDomainName,verified))',
-                  },
-                })
-              ).data,
-            );
-            domainObservation(
-              expectedCustomer,
-              result.domains.find((domain) => domain.isPrimary)?.domainName ??
-                '',
-              result,
-            );
-            observedDomains = result;
+          switch (capability) {
+            case 'customer-identity': {
+              const result = customerResponse.parse(
+                (
+                  await client.request({
+                    url: `${directory}/customers/my_customer`,
+                    method: 'GET',
+                    params: { fields: 'id,customerDomain' },
+                  })
+                ).data,
+              );
+              if (result.id !== expectedCustomer)
+                throw new GoogleConnectionError('wrong-customer');
+              observedCustomer = result;
+              break;
+            }
+            case 'domain-observations': {
+              const result = domainResponse.parse(
+                (
+                  await client.request({
+                    url: `${directory}/customer/${expectedCustomer}/domains`,
+                    method: 'GET',
+                    params: {
+                      fields:
+                        'domains(domainName,isPrimary,verified,domainAliases(domainAliasName,parentDomainName,verified))',
+                    },
+                  })
+                ).data,
+              );
+              domainObservation(
+                expectedCustomer,
+                result.domains.find((domain) => domain.isPrimary)?.domainName ??
+                  '',
+                result,
+              );
+              observedDomains = result;
+              break;
+            }
+            case 'school-ou-references':
+              orgUnitHealthPage.parse(
+                (
+                  await client.request({
+                    url: `${directory}/customer/${expectedCustomer}/orgunits`,
+                    method: 'GET',
+                    params: {
+                      type: 'children',
+                      fields: 'organizationUnits(orgUnitId)',
+                    },
+                  })
+                ).data,
+              );
+              break;
+            case 'device-inventory':
+              deviceHealthPage.parse(
+                (
+                  await client.request({
+                    url: `${directory}/customer/${expectedCustomer}/devices/chromeos`,
+                    method: 'GET',
+                    params: {
+                      maxResults: 1,
+                      projection: 'BASIC',
+                      fields: 'chromeosdevices(deviceId)',
+                    },
+                  })
+                ).data,
+              );
+              break;
+            case 'device-telemetry':
+              telemetryHealthPage.parse(
+                (
+                  await client.request({
+                    url: `${management}/customers/${expectedCustomer}/telemetry/devices`,
+                    method: 'GET',
+                    params: { pageSize: 1, readMask: 'deviceId' },
+                  })
+                ).data,
+              );
+              break;
+            // device-changes checks its delegated token only. A health check never writes.
+            case 'device-changes':
+              break;
           }
           return { capability, scopeVerified, failure: null };
         } catch (error) {
@@ -415,7 +483,15 @@ export class GoogleCustomerVerifier {
           observedDomains,
         );
       } catch {
-        for (const result of results) result.failure = 'invalid-response';
+        // A combined response that contradicts the customer identity leaves only
+        // the customer/domain observation unproven. Every other capability keeps
+        // the result of its own check.
+        for (const result of results)
+          if (
+            result.capability === 'customer-identity' ||
+            result.capability === 'domain-observations'
+          )
+            result.failure = 'invalid-response';
       }
     }
     return { results, observation };

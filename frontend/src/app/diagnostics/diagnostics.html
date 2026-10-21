@@ -188,6 +188,7 @@
       {{ result.failure ? google.recovery[result.failure].label : 'Last check
       passed' }} @if (google.stale(result.checkedAt)) { · Out of date }
     </p>
+    @if (result.checkedAt) {
     <p class="secondary">
       <time
         [attr.datetime]="result.checkedAt"
@@ -195,6 +196,7 @@
         >Checked {{ google.age(result.checkedAt) }} seconds ago</time
       >
     </p>
+    }
     <p>
       Required scope: {{ result.scopeVerified ? 'Included in the last access
       check' : 'Not verified in the last check' }}.
@@ -231,7 +233,9 @@
           >Google {{ capability.method }} documentation</a
         >
       </p>
+      @if (result.checkedAt) {
       <p>Checked at: {{ result.checkedAt | date:'medium' }}.</p>
+      }
       <p>Test record: {{ capability.evidence }}.</p>
       <p>
         We tested this connection with a Google Super Admin. We have not yet

@@ -1,7 +1,10 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
-import { type GoogleHealth } from '@campus/application-contracts';
+import {
+  GOOGLE_HEALTH_CAPABILITY_IDS,
+  type GoogleHealth,
+} from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from './connection.store';
 import { GoogleHealthStore } from './health.store';
@@ -21,24 +24,14 @@ const initial = (): GoogleHealth => ({
   observedAt: new Date().toISOString(),
   backgroundFailure: null,
   check: null,
-  capabilities: [
-    {
-      capability: 'customer-identity',
-      scopeVerified: true,
-      failure: null,
-      checkedAt: new Date().toISOString(),
-      lastSucceededAt: null,
-      correlationId: null,
-    },
-    {
-      capability: 'domain-observations',
-      scopeVerified: true,
-      failure: null,
-      checkedAt: new Date().toISOString(),
-      lastSucceededAt: null,
-      correlationId: null,
-    },
-  ],
+  capabilities: GOOGLE_HEALTH_CAPABILITY_IDS.map((capability) => ({
+    capability,
+    scopeVerified: true,
+    failure: null,
+    checkedAt: new Date().toISOString(),
+    lastSucceededAt: null,
+    correlationId: null,
+  })),
 });
 function fixture(request: ReturnType<typeof vi.fn>) {
   const session = signal({
@@ -125,4 +118,22 @@ it('blocks duplicate checks and retains only historical results after an uncerta
   expect(store.disabled()).toBe(true);
   expect(store.unavailable()).toBe(true);
   expect(store.summary()).toBe('Google status unavailable');
+});
+
+it('reports a capability that was never checked as out of date', async () => {
+  const health = initial();
+  for (const item of health.capabilities)
+    if (
+      item.capability !== 'customer-identity' &&
+      item.capability !== 'domain-observations'
+    ) {
+      item.scopeVerified = false;
+      item.checkedAt = null;
+      item.lastSucceededAt = null;
+    }
+  const request = vi.fn().mockResolvedValue(Response.json({ health }));
+  const { store } = fixture(request);
+  await store.refresh();
+  expect(store.stale(null)).toBe(true);
+  expect(store.summary()).toBe('Google results are out of date');
 });

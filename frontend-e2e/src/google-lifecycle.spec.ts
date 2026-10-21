@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { test, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { GOOGLE_HEALTH_CAPABILITY_IDS } from '@campus/application-contracts';
 
 const customerId = 'C0123456',
   principal = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -99,16 +100,14 @@ async function fixture(page: Page, manage = true) {
           observedAt: new Date().toISOString(),
           backgroundFailure: null,
           check: null,
-          capabilities: ['customer-identity', 'domain-observations'].map(
-            (capability) => ({
-              capability,
-              scopeVerified: true,
-              failure: null,
-              checkedAt,
-              lastSucceededAt: checkedAt,
-              correlationId: null,
-            }),
-          ),
+          capabilities: GOOGLE_HEALTH_CAPABILITY_IDS.map((capability) => ({
+            capability,
+            scopeVerified: true,
+            failure: null,
+            checkedAt,
+            lastSucceededAt: checkedAt,
+            correlationId: null,
+          })),
         },
       },
     }),

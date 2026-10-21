@@ -112,14 +112,109 @@ export async function qualifyGoogleHealth({
   await assert.rejects(claim(capabilities, reader), denied);
   for (const invalid of [
     [],
-    ['school-ou-references'],
+    ['users'],
     ['customer-identity', 'customer-identity'],
   ])
     await assert.rejects(claim(invalid), (error) => error.code === '22023');
   const initial = await read();
   assert.equal(initial.customerId, customerId);
-  assert.equal(initial.capabilities.length, 2);
+  assert.deepEqual(initial.capabilities.map((item) => item.capability).sort(), [
+    'customer-identity',
+    'device-changes',
+    'device-inventory',
+    'device-telemetry',
+    'domain-observations',
+    'school-ou-references',
+  ]);
   assert.equal(JSON.stringify(initial).includes('envelope'), false);
+  // Only the two connection capabilities inherit the setup observation. An
+  // optional scope stays unchecked until its own check creates a row.
+  const setupCapabilities = ['customer-identity', 'domain-observations'];
+  for (const item of initial.capabilities.filter((entry) =>
+    setupCapabilities.includes(entry.capability),
+  )) {
+    assert.equal(item.scopeVerified, true, item.capability);
+    assert.ok(item.checkedAt, item.capability);
+    assert.equal(item.lastSucceededAt, item.checkedAt, item.capability);
+  }
+  for (const item of initial.capabilities.filter(
+    (entry) => !setupCapabilities.includes(entry.capability),
+  ))
+    assert.deepEqual(
+      item,
+      {
+        capability: item.capability,
+        scopeVerified: false,
+        failure: null,
+        checkedAt: null,
+        lastSucceededAt: null,
+        correlationId: null,
+      },
+      `${item.capability} starts unchecked`,
+    );
+  await clearWindow();
+  const optionalLease = await claim(['school-ou-references']);
+  const optionalDenied = await finish(optionalLease, [
+    {
+      capability: 'school-ou-references',
+      scopeVerified: false,
+      failure: 'delegation-not-authorized',
+    },
+  ]);
+  const deniedOptional = optionalDenied.capabilities.find(
+    (item) => item.capability === 'school-ou-references',
+  );
+  assert.equal(deniedOptional.failure, 'delegation-not-authorized');
+  assert.equal(deniedOptional.scopeVerified, false);
+  assert.ok(deniedOptional.checkedAt, 'a denied check records its time');
+  assert.equal(
+    deniedOptional.lastSucceededAt,
+    null,
+    'a denied first check records no successful history',
+  );
+  for (const item of optionalDenied.capabilities)
+    if (item.capability !== 'school-ou-references')
+      assert.deepEqual(
+        item,
+        initial.capabilities.find(
+          (entry) => entry.capability === item.capability,
+        ),
+        `${item.capability} keeps its setup evidence`,
+      );
+  await clearWindow();
+  const all = [
+    'customer-identity',
+    'domain-observations',
+    'school-ou-references',
+    'device-inventory',
+    'device-telemetry',
+    'device-changes',
+  ];
+  const allLease = await claim(all);
+  const allHealth = await finish(
+    allLease,
+    all.map((capability) => ({
+      capability,
+      scopeVerified: true,
+      failure: null,
+    })),
+    connection.observation,
+  );
+  assert.equal(allHealth.capabilities.length, 6);
+  assert.ok(
+    allHealth.capabilities.every(
+      (item) => item.failure === null && item.scopeVerified,
+    ),
+  );
+  assert.deepEqual(
+    (
+      await migrator.query(
+        'SELECT observation FROM cc.google_connection WHERE singleton',
+      )
+    ).rows[0].observation,
+    connection.observation,
+  );
+  await clearWindow();
   const lease = await claim();
   assert.ok(lease.envelope);
   await assert.rejects(claim(), busy);
@@ -147,18 +242,40 @@ export async function qualifyGoogleHealth({
   const targetResult = await finish(target, [
     { capability: 'domain-observations', scopeVerified: true, failure: null },
   ]);
-  assert.deepEqual(
-    targetResult.capabilities.find(
-      (item) => item.capability === 'customer-identity',
-    ),
-    health.capabilities.find((item) => item.capability === 'customer-identity'),
+  const beforeTarget = new Map(
+    health.capabilities.map((item) => [item.capability, item]),
   );
+  for (const item of targetResult.capabilities) {
+    if (item.capability === 'domain-observations') continue;
+    assert.deepEqual(item, beforeTarget.get(item.capability), item.capability);
+  }
   assert.equal(
     targetResult.capabilities.find(
       (item) => item.capability === 'domain-observations',
     ).failure,
     null,
   );
+  await clearWindow();
+  const optionalTarget = await claim(['device-changes']);
+  const optionalTargetResult = await finish(optionalTarget, [
+    { capability: 'device-changes', scopeVerified: true, failure: null },
+  ]);
+  for (const item of optionalTargetResult.capabilities) {
+    if (item.capability === 'device-changes') continue;
+    assert.deepEqual(
+      item,
+      targetResult.capabilities.find(
+        (entry) => entry.capability === item.capability,
+      ),
+      `${item.capability} is unchanged by the device-changes recheck`,
+    );
+  }
+  const rechecked = optionalTargetResult.capabilities.find(
+    (item) => item.capability === 'device-changes',
+  );
+  assert.equal(rechecked.failure, null);
+  assert.equal(rechecked.scopeVerified, true);
+  assert.ok(rechecked.lastSucceededAt);
 
   await clearWindow();
   const inconclusive = await claim();
@@ -167,7 +284,7 @@ export async function qualifyGoogleHealth({
     (error) => error.code === '22023',
   );
   const retained = await finish(inconclusive, []);
-  assert.deepEqual(retained.capabilities, targetResult.capabilities);
+  assert.deepEqual(retained.capabilities, optionalTargetResult.capabilities);
   assert.ok(retained.check.finishedAt);
   await assert.rejects(finish(inconclusive, []), changed);
 
@@ -247,6 +364,8 @@ export async function qualifyGoogleHealth({
   assert.deepEqual(revision, { generation, customer_id: customerId });
   return [
     'capability health requires current matching read or diagnostic grants and hides private tables: pass',
+    'fresh connections leave optional scopes unverified without success history: pass',
+    'a denied first optional check records no success history: pass',
     'partial scope failure preserves separate successful capabilities and historical success: pass',
     'targeted rechecks preserve unrelated capability observations: pass',
     'inconclusive combined checks preserve all capability evidence: pass',

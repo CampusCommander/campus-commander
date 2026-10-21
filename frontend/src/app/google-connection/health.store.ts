@@ -146,12 +146,15 @@ export class GoogleHealthStore implements OnDestroy {
       session === this.sessionKey()
     );
   }
-  age(timestamp: string) {
-    return Math.max(0, Math.floor((this.now() - Date.parse(timestamp)) / 1000));
+  age(timestamp: string | null) {
+    return timestamp === null
+      ? 0
+      : Math.max(0, Math.floor((this.now() - Date.parse(timestamp)) / 1000));
   }
-  stale(timestamp: string) {
+  stale(timestamp: string | null) {
     return (
       this.unavailable() ||
+      timestamp === null ||
       this.health()?.connectionState === 'disconnected' ||
       this.age(timestamp) >= GOOGLE_HEALTH_FRESH_SECONDS
     );

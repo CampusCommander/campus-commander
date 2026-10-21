@@ -5,10 +5,12 @@ import {
   GOOGLE_CUSTOMER_SCOPES,
 } from './google-capabilities.ts';
 import {
+  GOOGLE_HEALTH_CAPABILITY_IDS,
   GOOGLE_HEALTH_RECOVERY,
   googleHealthCheckSchema,
   googleCapabilityResultSchema,
   googleHealthFailureSchema,
+  googleHealthSchema,
 } from './google-health.ts';
 
 test('Phase 3 scope instructions exclude optional OUs and every inventory or mutation scope', () => {
@@ -52,9 +54,23 @@ test('Phase 3 scope instructions exclude optional OUs and every inventory or mut
     capabilities: ['customer-identity'],
   };
   assert.ok(googleHealthCheckSchema.safeParse(base).success);
+  assert.deepEqual(
+    GOOGLE_HEALTH_CAPABILITY_IDS,
+    GOOGLE_CAPABILITIES.map((capability) => capability.id),
+  );
+  assert.ok(
+    googleHealthCheckSchema.safeParse({
+      ...base,
+      capabilities: GOOGLE_HEALTH_CAPABILITY_IDS,
+    }).success,
+  );
+  for (const capability of GOOGLE_HEALTH_CAPABILITY_IDS)
+    assert.ok(
+      googleHealthCheckSchema.safeParse({ ...base, capabilities: [capability] })
+        .success,
+    );
   for (const capabilities of [
     [],
-    ['school-ou-references'],
     ['customer-identity', 'customer-identity'],
     ['users'],
   ])
@@ -62,6 +78,73 @@ test('Phase 3 scope instructions exclude optional OUs and every inventory or mut
       googleHealthCheckSchema.safeParse({ ...base, capabilities }).success,
       false,
     );
+});
+
+test('the health state reports every capability once, with no missing result', () => {
+  const observedAt = new Date().toISOString();
+  const capabilities = GOOGLE_HEALTH_CAPABILITY_IDS.map((capability) => ({
+    capability,
+    scopeVerified: true,
+    failure: null,
+    checkedAt: observedAt,
+    lastSucceededAt: null,
+    correlationId: null,
+  }));
+  const health = {
+    customerId: 'C0123456',
+    generation: 1,
+    observedAt,
+    backgroundFailure: null,
+    check: null,
+    capabilities,
+  };
+  assert.ok(googleHealthSchema.safeParse(health).success);
+  assert.equal(
+    googleHealthSchema.safeParse({
+      ...health,
+      capabilities: capabilities.slice(1),
+    }).success,
+    false,
+  );
+  assert.equal(
+    googleHealthSchema.safeParse({
+      ...health,
+      capabilities: [...capabilities, capabilities[0]],
+    }).success,
+    false,
+  );
+});
+
+test('an unchecked capability carries no check time or successful history', () => {
+  const observedAt = new Date().toISOString();
+  const setup = ['customer-identity', 'domain-observations'];
+  const health = {
+    customerId: 'C0123456',
+    generation: 1,
+    observedAt,
+    backgroundFailure: null,
+    check: null,
+    capabilities: GOOGLE_HEALTH_CAPABILITY_IDS.map((capability) => ({
+      capability,
+      scopeVerified: setup.includes(capability),
+      failure: null,
+      checkedAt: setup.includes(capability) ? observedAt : null,
+      lastSucceededAt: setup.includes(capability) ? observedAt : null,
+      correlationId: null,
+    })),
+  };
+  assert.ok(googleHealthSchema.safeParse(health).success);
+  assert.equal(
+    googleHealthSchema.safeParse({
+      ...health,
+      capabilities: health.capabilities.map((item) => ({
+        ...item,
+        checkedAt: undefined,
+      })),
+    }).success,
+    false,
+    'a check time is null, never missing',
+  );
 });
 
 test('scope evidence remains distinct from successful operations and every failure has recovery guidance', () => {

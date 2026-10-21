@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { test, expect, type Page } from '@playwright/test';
 import {
+  GOOGLE_HEALTH_CAPABILITY_IDS,
   googleHealthCheckSchema,
   type GoogleHealth,
 } from '@campus/application-contracts';
@@ -12,16 +13,14 @@ const initial = (): GoogleHealth => ({
   observedAt: new Date().toISOString(),
   backgroundFailure: null,
   check: null,
-  capabilities: (['customer-identity', 'domain-observations'] as const).map(
-    (capability) => ({
-      capability,
-      scopeVerified: true,
-      failure: null,
-      checkedAt: new Date().toISOString(),
-      lastSucceededAt: new Date().toISOString(),
-      correlationId: null,
-    }),
-  ),
+  capabilities: GOOGLE_HEALTH_CAPABILITY_IDS.map((capability) => ({
+    capability,
+    scopeVerified: true,
+    failure: null,
+    checkedAt: new Date().toISOString(),
+    lastSucceededAt: new Date().toISOString(),
+    correlationId: null,
+  })),
 });
 async function fixture(page: Page, diagnose = true, services = false) {
   let health = initial();
@@ -144,7 +143,7 @@ test('preserves partial access, uses only the selected scope, and shares the foo
   await expect(customer).toContainText('Last check passed');
   await expect(domains).toContainText('Delegation not authorized');
   await expect(page.locator('footer')).toContainText(
-    '1 of 2 capabilities need attention',
+    '1 of 6 capabilities need attention',
   );
   await page.route('**/api/google-connection/health/check', (route) => {
     const input = googleHealthCheckSchema.parse(route.request().postDataJSON());
@@ -158,7 +157,7 @@ test('preserves partial access, uses only the selected scope, and shares the foo
     .getByRole('button', { name: 'Recheck Customer domains', exact: true })
     .click();
   await expect(domains).toContainText('Last check passed');
-  await expect(page.locator('footer')).toContainText('2 last checks passed');
+  await expect(page.locator('footer')).toContainText('6 last checks passed');
   await expect(
     page.locator('#google-health [role=status]').first(),
   ).toBeFocused();
