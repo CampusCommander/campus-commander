@@ -196,6 +196,8 @@ interface ApiOptions {
   actions?: readonly string[];
   /** Drop the answer to the first confirmation, as a lost connection does. */
   loseFirstConfirmation?: boolean;
+  /** The answer to the first replay after a lost confirmation. */
+  replayFailure?: { status: number; reason?: string };
 }
 
 /** The Devices page and the command and status routes the sheets read. */
@@ -245,8 +247,16 @@ async function mockApi(page: Page, options: ApiOptions = {}) {
     )
       return route.fulfill({ json: reenablePreview });
     if (method === 'POST' && routePath.endsWith('/confirm')) {
-      if (options.loseFirstConfirmation && confirmations++ === 0)
+      const answer = confirmations++;
+      if (options.loseFirstConfirmation && answer === 0)
         return route.abort('failed');
+      if (options.replayFailure && answer === 1)
+        return route.fulfill({
+          status: options.replayFailure.status,
+          json: options.replayFailure.reason
+            ? { reason: options.replayFailure.reason }
+            : {},
+        });
       return route.fulfill({
         status: 201,
         json: routePath.includes('/status-changes/')
@@ -614,6 +624,84 @@ test('recovers a lost confirmation after a reload without another preview', asyn
   await expect(reopened.getByText('Job CMD-001 · Running')).toBeVisible();
   expect(previewPosts).toBe(1);
 });
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`keeps a lost confirmation through a named replay answer in the ${theme} theme`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 990 });
+    let previewPosts = 0;
+    page.on('request', (request) => {
+      if (
+        request.method() === 'POST' &&
+        new URL(request.url()).pathname === '/api/devices/commands/previews'
+      )
+        previewPosts++;
+    });
+    await mockApi(page, {
+      loseFirstConfirmation: true,
+      replayFailure: { status: 409, reason: 'connection-required' },
+    });
+    await openDevices(page);
+    await page.evaluate((value) => {
+      document.documentElement.dataset['theme'] = value;
+    }, theme);
+
+    const command = await openAction(page, 'command', 'Send command');
+    await command.getByRole('button', { name: 'Review Reboot' }).click();
+    await command
+      .getByRole('button', { name: 'Continue to confirmation' })
+      .click();
+    await command.getByRole('checkbox').check();
+    await command
+      .getByRole('button', { name: 'Send Reboot to 6 devices' })
+      .click();
+    await expect(
+      command.getByRole('heading', {
+        level: 1,
+        name: 'The confirmation did not finish',
+      }),
+    ).toBeVisible();
+    expect(previewPosts).toBe(1);
+
+    // The same tab reloads and the replay answers before the receipt lookup.
+    await page.reload();
+    await expect(
+      page.getByRole('heading', { name: 'Devices', exact: true }),
+    ).toBeVisible();
+    await page.evaluate((value) => {
+      document.documentElement.dataset['theme'] = value;
+    }, theme);
+    const reopened = await openAction(page, 'command', 'Send command');
+    await expect(
+      reopened.getByRole('heading', {
+        level: 1,
+        name: 'The command job may exist',
+      }),
+    ).toBeVisible();
+    await expect(
+      reopened.getByText('The receipt is unavailable'),
+    ).toBeVisible();
+    await expect(reopened.getByText('Check Jobs for this job')).toBeVisible();
+    await expect(
+      reopened.getByRole('button', { name: 'View jobs' }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
+    await page.waitForTimeout(300);
+    await screenshot(page, `10-replay-receipt-unavailable-${theme}.png`);
+    // The unresolved answer prepared no replacement preview.
+    expect(previewPosts).toBe(1);
+
+    await reopened.getByRole('button', { name: 'Close' }).click();
+    await expect(reopened).not.toHaveClass(/is-open/);
+    const recovered = await openAction(page, 'command', 'Send command');
+    await expect(
+      recovered.getByRole('heading', { level: 1, name: 'Command job created' }),
+    ).toBeVisible();
+    await expect(recovered.getByText('Job CMD-001 · Running')).toBeVisible();
+    expect(previewPosts).toBe(1);
+  });
+}
 
 test('disables each entry that the person cannot use and names the permission', async ({
   page,

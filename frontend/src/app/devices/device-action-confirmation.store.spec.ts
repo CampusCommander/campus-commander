@@ -91,20 +91,72 @@ it('clears an expired confirmation because no job exists', async () => {
   expect(store.pending('command')).toEqual([]);
 });
 
-it('reports a named answer and settles its record', async () => {
+it('reports a definitive named answer and settles its record', async () => {
   const { store, confirm } = setup();
   confirm.mockResolvedValue({
     ok: false,
-    answer: 'forbidden',
+    answer: 'preview-not-found',
     expiresAt: null,
   });
   store.retain(submitted);
   await expect(store.resolvePending('command')).resolves.toEqual({
     kind: 'problem',
-    answer: 'forbidden',
+    answer: 'preview-not-found',
     expiresAt: null,
   });
   expect(store.pending('command')).toEqual([]);
+});
+
+// These answers arrive before the API checks for an existing receipt. None of them
+// proves that the lost first request created no job.
+for (const answer of [
+  'forbidden',
+  'permission-changed',
+  'preview-changed',
+  'connection-required',
+] as const) {
+  it(`keeps the confirmation when a replay answers ${answer}`, async () => {
+    const { store, confirm } = setup();
+    confirm.mockResolvedValue({ ok: false, answer, expiresAt: null });
+    store.retain(submitted);
+    await expect(store.resolvePending('command')).resolves.toEqual({
+      kind: 'unresolved',
+      submitted,
+      answer,
+      expiresAt: null,
+    });
+    expect(store.pending('command')).toEqual([submitted]);
+  });
+}
+
+it('replays the retained identity until a receipt settles it', async () => {
+  const { store, confirm } = setup();
+  const statusSubmitted = { ...submitted, family: 'status' as const };
+  confirm.mockResolvedValueOnce({
+    ok: false,
+    answer: 'preview-changed',
+    expiresAt: null,
+  });
+  store.retain(statusSubmitted);
+  await store.resolvePending('status');
+  confirm.mockResolvedValueOnce({ ok: true, value: receipt });
+  await expect(store.resolvePending('status')).resolves.toEqual({
+    kind: 'receipt',
+    receipt,
+  });
+  expect(confirm).toHaveBeenNthCalledWith(
+    1,
+    'status',
+    previewId,
+    manifestDigest,
+  );
+  expect(confirm).toHaveBeenNthCalledWith(
+    2,
+    'status',
+    previewId,
+    manifestDigest,
+  );
+  expect(store.pending('status')).toEqual([]);
 });
 
 it('ignores and clears a malformed record', () => {

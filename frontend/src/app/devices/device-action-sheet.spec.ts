@@ -904,3 +904,258 @@ it('retries the preparation when Review has no preview', async () => {
     'Review 6 Reboot commands',
   );
 });
+
+it('keeps a lost command confirmation when a named replay answer may hide a job', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  let confirmations = 0;
+  let replayForbidden = false;
+  let commandPosts = 0;
+  const { fixture, element, button, acknowledge, settle, request } =
+    await setup({
+      request: (path) => {
+        if (path === '/api/devices/commands/previews') commandPosts++;
+        if (path.endsWith('/confirm')) {
+          confirmations++;
+          if (confirmations === 1)
+            return Promise.reject(new TypeError('The connection closed.'));
+          if (confirmations === 2 && replayForbidden)
+            return Response.json({}, { status: 403 });
+          return Response.json(receipt, { status: 201 });
+        }
+        return ordinary(path);
+      },
+    });
+  button('Review Reboot')?.click();
+  await settle();
+  button('Continue to confirmation')?.click();
+  await settle();
+  await acknowledge();
+  button('Send Reboot to 6 devices')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The confirmation did not finish',
+  );
+  const confirmed = () =>
+    request.mock.calls.filter(([path]) => path.endsWith('/confirm'));
+  expect(confirmed()).toHaveLength(1);
+  const postsAfterSubmit = commandPosts;
+
+  // The replay answers 403, which the API returns before the receipt lookup.
+  fixture.componentRef.setInput('open', false);
+  fixture.detectChanges();
+  replayForbidden = true;
+  fixture.componentRef.setInput('open', true);
+  await settle();
+
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The command job may exist',
+  );
+  expect(element.textContent).toContain('The receipt is unavailable');
+  expect(element.textContent).toContain('Check Jobs for this job');
+  expect(button('View jobs')).toBeDefined();
+  expect(button('Change action')).toBeUndefined();
+  expect(confirmed()).toHaveLength(2);
+  expect(confirmed()[1]?.[0]).toBe(confirmed()[0]?.[0]);
+  expect(confirmed()[1]?.[1]).toEqual(confirmed()[0]?.[1]);
+  expect(commandPosts).toBe(postsAfterSubmit);
+
+  // The identity survives another closure and settles on the receipt.
+  fixture.componentRef.setInput('open', false);
+  fixture.detectChanges();
+  replayForbidden = false;
+  fixture.componentRef.setInput('open', true);
+  await settle();
+
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Command job created',
+  );
+  expect(element.textContent).toContain('Job CMD-001 · Running');
+  expect(confirmed()).toHaveLength(3);
+  expect(confirmed()[2]?.[0]).toBe(confirmed()[0]?.[0]);
+  expect(confirmed()[2]?.[1]).toEqual(confirmed()[0]?.[1]);
+  expect(commandPosts).toBe(postsAfterSubmit);
+});
+
+it('keeps a lost status confirmation when a named replay answer may hide a job', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  let confirmations = 0;
+  let statusPosts = 0;
+  const { fixture, element, settle, request } = await setup({
+    family: 'status',
+    open: false,
+    request: (path, body) => {
+      if (path === '/api/devices/status-changes/previews') statusPosts++;
+      if (path.endsWith('/confirm')) {
+        confirmations++;
+        return confirmations === 1
+          ? Response.json({ reason: 'preview-changed' }, { status: 409 })
+          : Response.json(statusReceipt, { status: 201 });
+      }
+      return ordinary(path, body);
+    },
+  });
+  sessionStorage.setItem(
+    `${ACTION_CONFIRMATION_PREFIX}${principal}.status.${disablePreviewId}`,
+    JSON.stringify({
+      family: 'status',
+      previewId: disablePreviewId,
+      manifestDigest: disablePreview.manifestDigest,
+    }),
+  );
+  fixture.componentRef.setInput('open', true);
+  await settle();
+
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The status job may exist',
+  );
+  expect(element.textContent).toContain('The receipt is unavailable');
+  expect(element.textContent).toContain('Check Jobs for this job');
+  expect(confirmations).toBe(1);
+  expect(statusPosts).toBe(0);
+
+  fixture.componentRef.setInput('open', false);
+  fixture.detectChanges();
+  fixture.componentRef.setInput('open', true);
+  await settle();
+
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Status job created',
+  );
+  expect(element.textContent).toContain('Job STS-001 · Running');
+  expect(confirmations).toBe(2);
+  expect(statusPosts).toBe(0);
+  const confirmed = request.mock.calls.filter(([path]) =>
+    path.endsWith('/confirm'),
+  );
+  expect(confirmed[1]?.[0]).toBe(confirmed[0]?.[0]);
+  expect(confirmed[1]?.[1]).toEqual(confirmed[0]?.[1]);
+});
+
+for (const answer of [
+  'forbidden',
+  'permission-changed',
+  'preview-changed',
+  'connection-required',
+] as const) {
+  it(`keeps a command confirmation when its opening replay answers ${answer}`, async () => {
+    const ordinary = standardRequest(reenablePreview, reenableTargets);
+    let confirmations = 0;
+    let previewPosts = 0;
+    const { fixture, element, settle, request } = await setup({
+      open: false,
+      request: (path) => {
+        if (path === '/api/devices/commands/previews') previewPosts++;
+        if (path.endsWith('/confirm')) {
+          confirmations++;
+          if (confirmations === 1)
+            return Response.json(
+              answer === 'forbidden' ? {} : { reason: answer },
+              { status: answer === 'forbidden' ? 403 : 409 },
+            );
+          return Response.json(receipt, { status: 201 });
+        }
+        return ordinary(path);
+      },
+    });
+    sessionStorage.setItem(
+      `${ACTION_CONFIRMATION_PREFIX}${principal}.command.${commandPreviewId}`,
+      JSON.stringify({
+        family: 'command',
+        previewId: commandPreviewId,
+        manifestDigest: commandPreview.manifestDigest,
+      }),
+    );
+    fixture.componentRef.setInput('open', true);
+    await settle();
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'The command job may exist',
+    );
+    expect(element.textContent).toContain('Check Jobs for this job');
+    expect(confirmations).toBe(1);
+    expect(previewPosts).toBe(0);
+
+    fixture.componentRef.setInput('open', false);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('open', true);
+    await settle();
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'Command job created',
+    );
+    expect(confirmations).toBe(2);
+    expect(previewPosts).toBe(0);
+    const confirmed = request.mock.calls.filter(([path]) =>
+      path.endsWith('/confirm'),
+    );
+    expect(confirmed[1]?.[0]).toBe(confirmed[0]?.[0]);
+    expect(confirmed[1]?.[1]).toEqual(confirmed[0]?.[1]);
+  });
+}
+
+for (const family of ['command', 'status'] as const) {
+  it(`initializes Choose after a ${family} replay problem offers Change action`, async () => {
+    const ordinary = standardRequest(reenablePreview, reenableTargets);
+    const retainedPreviewId =
+      family === 'command' ? commandPreviewId : disablePreviewId;
+    const retainedDigest =
+      family === 'command'
+        ? commandPreview.manifestDigest
+        : disablePreview.manifestDigest;
+    let previewPosts = 0;
+    const { fixture, element, button, choose, settle } = await setup({
+      family,
+      open: false,
+      request: (path, body) => {
+        if (
+          path ===
+          (family === 'command'
+            ? '/api/devices/commands/previews'
+            : '/api/devices/status-changes/previews')
+        )
+          previewPosts++;
+        if (path.endsWith('/confirm'))
+          return Response.json(
+            { reason: 'preview-not-found' },
+            { status: 404 },
+          );
+        return ordinary(path, body);
+      },
+    });
+    sessionStorage.setItem(
+      `${ACTION_CONFIRMATION_PREFIX}${principal}.${family}.${retainedPreviewId}`,
+      JSON.stringify({
+        family,
+        previewId: retainedPreviewId,
+        manifestDigest: retainedDigest,
+      }),
+    );
+    fixture.componentRef.setInput('open', true);
+    await settle();
+
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'Preview not found',
+    );
+    expect(element.textContent).toContain('This preview is unavailable');
+    expect(previewPosts).toBe(0);
+
+    button('Change action')?.click();
+    await settle();
+    expect(element.textContent).not.toContain('Loading the selection…');
+    expect(
+      element.querySelectorAll('mat-radio-button input').length,
+    ).toBeGreaterThan(0);
+
+    if (family === 'command') {
+      button('Review Reboot')?.click();
+    } else {
+      await choose(0);
+      button('Review Disable')?.click();
+    }
+    await settle();
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      family === 'command'
+        ? 'Review 6 Reboot commands'
+        : 'Review 6 Disable status changes',
+    );
+    expect(previewPosts).toBe(family === 'command' ? 1 : 2);
+  });
+}
