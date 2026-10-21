@@ -333,7 +333,11 @@ export async function qualifyDeviceWriteJobs({
         ],
       );
       // The runner stops its batch after it records a page, so the lease clears.
-      if (kind === 'write' && settled.settled && settled.settled.length > 0)
+      if (
+        (kind === 'write' || kind === 'issue') &&
+        settled.settled &&
+        settled.settled.length > 0
+      )
         await stop(jobId, token, settled.settled[0].batch, attempt);
       return settled;
     };
@@ -11632,6 +11636,460 @@ export async function qualifyDeviceWriteJobs({
         assert.equal(finished.status, 'completed-with-errors');
         assert.equal(finished.expired, 1);
         assert.notEqual(finished.finishedAt, null);
+      },
+    );
+
+    // B5 (section 4 steps 3, 4, 11, and 12): the issue settlement stores Google's command and its
+    // first poll, the preparation names the action, and the finish frees the write slot.
+    await check(
+      'B5 an issue settlement stores the command and the finish frees the write slot',
+      async () => {
+        const commandConfirmer = await principal(
+          'command-confirmer@example.org',
+          [
+            ['devices:commands', district()],
+            ['devices:bulk-actions', district()],
+          ],
+        );
+        const version = (
+          await adminRow(
+            'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+            [commandConfirmer],
+          )
+        ).permission_version;
+        // A command job fixture: a reboot preview, a CMD header, and one pending operation per device.
+        const commandJob = async (devices) => {
+          const previewId = randomUUID();
+          const jobId = randomUUID();
+          await admin(
+            `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+              generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+            VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'reboot',NULL,NULL,NULL,$6,$6,0,0,
+              'manifest-digest',clock_timestamp()+interval '1 hour')`,
+            [
+              previewId,
+              customer,
+              commandConfirmer,
+              version,
+              generation,
+              devices.length,
+            ],
+          );
+          await admin(
+            `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+              target_count,correlation_id)
+            VALUES($1,cc.job_display_id('CMD',nextval('cc.job_number_cmd')),$2,'device-command','devices','accepted',$3,$4,$5,$6)`,
+            [
+              jobId,
+              customer,
+              commandConfirmer,
+              generation,
+              devices.length,
+              randomUUID(),
+            ],
+          );
+          await admin(
+            `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
+              confirmer_permission_version,delegated_subject,batch_size,batch_count)
+            VALUES($1,$2,'reboot',NULL,NULL,NULL,$3,$4,'admin@example.org',250,1)`,
+            [jobId, previewId, commandConfirmer, version],
+          );
+          for (const [index, deviceId] of devices.entries())
+            await admin(
+              `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,
+                org_unit_path,baseline_value,requested_value,batch,status)
+              VALUES($1,$2,$3,$4,'/School A','ACTIVE',NULL,0,'pending')`,
+              [jobId, index + 1, deviceId, `SN-${deviceId}`],
+            );
+          return { jobId };
+        };
+
+        const job = await commandJob(['cmd-issue-1']);
+        const admitted = await admit();
+        assert.equal(admitted.jobId, job.jobId);
+        const attempt = randomUUID();
+        const claimed = await claim(
+          job.jobId,
+          admitted.dispatchToken,
+          0,
+          attempt,
+        );
+        assert.equal(claimed.outcome, 'claimed');
+        assert.equal(claimed.action, 'reboot');
+        const observedAt = new Date();
+        const issued = await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'issue',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'issued',
+              commandId: '4100000001',
+              googleStatus: 200,
+            },
+          ],
+          observedAt,
+        );
+        assert.deepEqual(
+          issued.settled.map((row) => row.operationNumber),
+          [1],
+        );
+        // The issue shape rejects a missing command ID and a command ID on another outcome.
+        await rejects(
+          result(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              attempt,
+              'issue',
+              JSON.stringify([{ operationNumber: 1, outcome: 'issued' }]),
+              new Date(),
+            ],
+          ),
+          '22023',
+        );
+        await rejects(
+          result(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              attempt,
+              'issue',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'failed',
+                  commandId: '4100000001',
+                },
+              ]),
+              new Date(),
+            ],
+          ),
+          '22023',
+        );
+        // The poll waits 15 s from this settlement, and the 7-day cap counts from the answer.
+        const stored = await adminRow(
+          `SELECT status,command_id,command_state,poll_after,poll_deadline_at,verified_by
+            FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1`,
+          [job.jobId],
+        );
+        assert.equal(stored.status, 'issued');
+        assert.equal(stored.command_id, '4100000001');
+        assert.equal(stored.command_state, 'pending-delivery');
+        assert.equal(stored.verified_by, null);
+        assert.equal(
+          Math.round((stored.poll_after - observedAt) / 1000),
+          15,
+          'the first poll waits 15 s',
+        );
+        assert.equal(
+          Math.round((stored.poll_deadline_at - observedAt) / 86_400_000),
+          7,
+          'the poll deadline counts 7 days from the answer',
+        );
+        // The preparation names the action, so the worker skips its read-back (step 4).
+        const prepared = await prepareFinish(job.jobId, admitted.dispatchToken);
+        assert.equal(prepared.outcome, 'ready');
+        assert.equal(prepared.action, 'reboot');
+        const waiting = await result(
+          'SELECT cc.finish_device_update_job($1,$2,$3) AS result',
+          [customer, job.jobId, admitted.dispatchToken],
+        );
+        assert.equal(waiting.status, 'awaiting-devices');
+        assert.equal(waiting.finishedAt, null);
+        // The waiting command job keeps no write slot, so the next update job admits at once.
+        const update = await makeJob({ devices: ['cmd-issue-2'] });
+        const updateAdmit = await admit();
+        assert.equal(updateAdmit.jobId, update.jobId);
+        await endJob(update.jobId);
+      },
+    );
+
+    // B5 (section 4 step 11): a lost issue answer stays unknown, the job ends needs-review, and the
+    // reaper starts no read-back for it.
+    await check(
+      'B5 a lost issue answer ends needs-review and the reaper starts no read-back',
+      async () => {
+        const commandConfirmer = await principal(
+          'command-lost-confirmer@example.org',
+          [
+            ['devices:commands', district()],
+            ['devices:bulk-actions', district()],
+          ],
+        );
+        const version = (
+          await adminRow(
+            'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+            [commandConfirmer],
+          )
+        ).permission_version;
+        const previewId = randomUUID();
+        const jobId = randomUUID();
+        await admin(
+          `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+            generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'reboot',NULL,NULL,NULL,1,1,0,0,
+            'manifest-digest',clock_timestamp()+interval '1 hour')`,
+          [previewId, customer, commandConfirmer, version, generation],
+        );
+        await admin(
+          `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+            target_count,correlation_id)
+          VALUES($1,cc.job_display_id('CMD',nextval('cc.job_number_cmd')),$2,'device-command','devices','accepted',$3,$4,1,$5)`,
+          [jobId, customer, commandConfirmer, generation, randomUUID()],
+        );
+        await admin(
+          `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
+            confirmer_permission_version,delegated_subject,batch_size,batch_count)
+          VALUES($1,$2,'reboot',NULL,NULL,NULL,$3,$4,'admin@example.org',250,1)`,
+          [jobId, previewId, commandConfirmer, version],
+        );
+        await admin(
+          `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,
+            org_unit_path,baseline_value,requested_value,batch,status)
+          VALUES($1,1,'cmd-lost-1','SN-cmd-lost-1','/School A','ACTIVE',NULL,0,'pending')`,
+          [jobId],
+        );
+        const admitted = await admit();
+        assert.equal(admitted.jobId, jobId);
+        const attempt = randomUUID();
+        assert.equal(
+          (await claim(jobId, admitted.dispatchToken, 0, attempt)).outcome,
+          'claimed',
+        );
+        // The POST reached Google and no answer arrived. The rule sends no second POST.
+        const lost = await settle(
+          jobId,
+          admitted.dispatchToken,
+          attempt,
+          'issue',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              outcomeReason: 'ambiguous',
+              googleStatus: 0,
+            },
+          ],
+          new Date(),
+        );
+        assert.deepEqual(
+          lost.settled.map((row) => row.operationNumber),
+          [1],
+        );
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT status,outcome_reason,poll_after FROM cc.device_update_operations WHERE job_id=$1',
+              [jobId],
+            )
+          ).status,
+          'unknown',
+        );
+        // The runner died before its finish. The reaper takes the job after its heartbeat lapses.
+        await admin(
+          `UPDATE cc.device_update_jobs SET dispatch_count=3,
+            heartbeat_at=clock_timestamp()-interval '11 minutes' WHERE job_id=$1`,
+          [jobId],
+        );
+        const recovered = await recover();
+        assert.equal(
+          recovered.reconciles.includes(jobId),
+          false,
+          'the reaper starts no read-back for a command job',
+        );
+        const state = await adminRow(
+          'SELECT status,finished_at FROM cc.jobs WHERE job_id=$1',
+          [jobId],
+        );
+        assert.equal(state.status, 'needs-review');
+        assert.notEqual(state.finished_at, null);
+        // The unknown operation keeps its status for review.
+        const kept = await adminRow(
+          'SELECT status,outcome_reason FROM cc.device_update_operations WHERE job_id=$1',
+          [jobId],
+        );
+        assert.equal(kept.status, 'unknown');
+        assert.equal(kept.outcome_reason, 'ambiguous');
+      },
+    );
+
+    // B5 (review F1): command issuance reuses the write ownership contract. An issue settlement with a
+    // null or wrong dispatch token, a token rotated in a wait, or a terminal job fences before it
+    // changes anything. The current token still settles its operation.
+    await check(
+      'B5 an issue settlement obeys the dispatch-token fences and the job lifecycle and changes nothing',
+      async () => {
+        const commandConfirmer = await principal(
+          'command-fence-confirmer@example.org',
+          [
+            ['devices:commands', district()],
+            ['devices:bulk-actions', district()],
+          ],
+        );
+        const version = (
+          await adminRow(
+            'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+            [commandConfirmer],
+          )
+        ).permission_version;
+        const previewId = randomUUID();
+        const jobId = randomUUID();
+        await admin(
+          `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+            generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'reboot',NULL,NULL,NULL,1,1,0,0,
+            'manifest-digest',clock_timestamp()+interval '1 hour')`,
+          [previewId, customer, commandConfirmer, version, generation],
+        );
+        await admin(
+          `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+            target_count,correlation_id)
+          VALUES($1,cc.job_display_id('CMD',nextval('cc.job_number_cmd')),$2,'device-command','devices','accepted',$3,$4,1,$5)`,
+          [jobId, customer, commandConfirmer, generation, randomUUID()],
+        );
+        await admin(
+          `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
+            confirmer_permission_version,delegated_subject,batch_size,batch_count)
+          VALUES($1,$2,'reboot',NULL,NULL,NULL,$3,$4,'admin@example.org',250,1)`,
+          [jobId, previewId, commandConfirmer, version],
+        );
+        await admin(
+          `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,
+            org_unit_path,baseline_value,requested_value,batch,status)
+          VALUES($1,1,'cmd-fence-1','SN-cmd-fence-1','/School A','ACTIVE',NULL,0,'pending')`,
+          [jobId],
+        );
+        const admitted = await admit();
+        assert.equal(admitted.jobId, jobId);
+        const attempt = randomUUID();
+        assert.equal(
+          (await claim(jobId, admitted.dispatchToken, 0, attempt)).outcome,
+          'claimed',
+        );
+        // The snapshot holds every row that an issue settlement writes: the header and its counters,
+        // the detail metadata, the operation row, and the publication. The dispatch token is recorded
+        // apart, because the rotation probe changes it on purpose.
+        const snapshot = async () => {
+          const detail = await adminRow(
+            'SELECT * FROM cc.device_update_jobs WHERE job_id=$1',
+            [jobId],
+          );
+          const { dispatch_token: token, ...metadata } = detail;
+          return {
+            job: await adminRow('SELECT * FROM cc.jobs WHERE job_id=$1', [
+              jobId,
+            ]),
+            metadata,
+            token,
+            operations: await admin(
+              'SELECT * FROM cc.device_update_operations WHERE job_id=$1 ORDER BY operation_number',
+              [jobId],
+            ),
+            publications: await publications(jobId),
+          };
+        };
+        const issue = JSON.stringify([
+          {
+            operationNumber: 1,
+            outcome: 'unknown',
+            outcomeReason: 'ambiguous',
+            googleStatus: 0,
+          },
+        ]);
+        const settleIssue = (token) =>
+          result(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [customer, jobId, token, attempt, 'issue', issue, new Date()],
+          );
+        const before = await snapshot();
+        assert.equal(before.operations[0].status, 'dispatched');
+        // A null token fences the issue kind explicitly, as it fences the write kind.
+        assert.equal(
+          (await settleIssue(null)).outcome,
+          'fenced',
+          'A null dispatch token fences an issue settlement.',
+        );
+        assert.deepEqual(await snapshot(), before);
+        // A token of another attempt fences the same way.
+        assert.equal(
+          (await settleIssue(randomUUID())).outcome,
+          'fenced',
+          'A superseded dispatch token fences an issue settlement.',
+        );
+        assert.deepEqual(await snapshot(), before);
+        // The second guard repeats the token after the operation and detail waits. The holder blocks
+        // the operation row, the migration role rotates the token, and the released call fences.
+        const { answer: rotated } = await waitedOn({
+          rows: [heldOperationRow(jobId)],
+          sql: settleSql,
+          values: [
+            customer,
+            jobId,
+            admitted.dispatchToken,
+            attempt,
+            'issue',
+            issue,
+            new Date(),
+          ],
+          during: () => rotateToken(jobId),
+        });
+        assert.equal(rotated.code, undefined, rotated.message);
+        assert.equal(
+          rotated.rows[0].result.outcome,
+          'fenced',
+          'An issue settlement repeats its token after the operation wait.',
+        );
+        const afterRotation = await snapshot();
+        assert.notEqual(
+          afterRotation.token,
+          before.token,
+          'The probe rotated the dispatch token in the wait.',
+        );
+        assert.deepEqual(afterRotation.job, before.job);
+        assert.deepEqual(afterRotation.metadata, before.metadata);
+        assert.deepEqual(afterRotation.operations, before.operations);
+        assert.equal(afterRotation.publications, before.publications);
+        // The current token settles its operation, so the fences reject only a superseded call.
+        const settled = await settle(
+          jobId,
+          afterRotation.token,
+          attempt,
+          'issue',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              outcomeReason: 'ambiguous',
+              googleStatus: 0,
+            },
+          ],
+          new Date(),
+        );
+        assert.deepEqual(
+          settled.settled.map((row) => row.operationNumber),
+          [1],
+        );
+        const stored = (await operations(jobId))[0];
+        assert.equal(stored.status, 'unknown');
+        assert.equal(stored.outcome_reason, 'ambiguous');
+        // A terminal job fences the issue kind too, as the write guard does.
+        assert.equal((await endJob(jobId)).outcome, 'finalized');
+        const closed = await snapshot();
+        assert.equal(closed.job.status, 'needs-review');
+        assert.notEqual(closed.job.finished_at, null);
+        assert.equal(
+          (await settleIssue(closed.token)).outcome,
+          'fenced',
+          'A terminal job fences an issue settlement.',
+        );
+        assert.deepEqual(await snapshot(), closed);
       },
     );
   } finally {

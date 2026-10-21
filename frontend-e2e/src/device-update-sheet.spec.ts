@@ -286,20 +286,20 @@ async function openDevices(page: Page) {
 async function openSheet(page: Page) {
   await page.getByRole('button', { name: 'Bulk Actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Update device' }).click();
-  const sheet = page.locator('.bulk-sheet');
+  const sheet = page.locator('app-device-update-sheet .bulk-sheet');
   await expect(sheet).toHaveClass(/is-open/);
   await expect(sheet).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
   return sheet;
 }
 
 async function fillDraft(page: Page, value = 'North lab') {
-  const sheet = page.locator('.bulk-sheet');
+  const sheet = page.locator('app-device-update-sheet .bulk-sheet');
   await sheet.getByLabel('Annotated location').fill(value);
   await expect(sheet.getByLabel('Annotated location')).toHaveValue(value);
 }
 
 async function savePreview(page: Page) {
-  const sheet = page.locator('.bulk-sheet');
+  const sheet = page.locator('app-device-update-sheet .bulk-sheet');
   await sheet.getByRole('button', { name: 'Save and preview' }).click();
   await expect(
     sheet.getByRole('heading', { name: 'Review 6 device updates' }),
@@ -308,7 +308,7 @@ async function savePreview(page: Page) {
 }
 
 async function continueToConfirm(page: Page) {
-  const sheet = page.locator('.bulk-sheet');
+  const sheet = page.locator('app-device-update-sheet .bulk-sheet');
   await sheet.getByRole('button', { name: 'Continue to confirmation' }).click();
   await expect(
     sheet.getByRole('heading', { name: 'Confirm 6 device updates' }),
@@ -349,7 +349,9 @@ test('hides a sheet that starts closed at the first paint', async ({
       true,
     );
     const sample = () => {
-      const sheet = document.querySelector('.bulk-sheet');
+      const sheet = document.querySelector(
+        'app-device-update-sheet .bulk-sheet',
+      );
       if (sheet && !evidence.visibility) {
         evidence.visibility = getComputedStyle(sheet).visibility;
         return;
@@ -363,7 +365,9 @@ test('hides a sheet that starts closed at the first paint', async ({
   await expect(
     page.getByRole('button', { name: 'Bulk Actions', exact: true }),
   ).toBeVisible();
-  await expect(page.locator('.bulk-sheet')).toBeAttached();
+  await expect(
+    page.locator('app-device-update-sheet .bulk-sheet'),
+  ).toBeAttached();
   await page.waitForTimeout(300);
   const evidence = await page.evaluate(
     () =>
@@ -633,7 +637,7 @@ test('does not slide with reduced motion', async ({ page }) => {
   await openDevices(page);
   await openSheet(page);
   const duration = await page
-    .locator('.bulk-sheet')
+    .locator('app-device-update-sheet .bulk-sheet')
     .evaluate((element) => getComputedStyle(element).transitionDuration);
   expect(parseFloat(duration)).toBeLessThan(0.001);
 });

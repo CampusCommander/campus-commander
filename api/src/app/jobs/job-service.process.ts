@@ -49,7 +49,7 @@ export class JobServiceProcess
     await this.listen();
   }
 
-  /** A terminal `job-changed` cleans the hold at once. The tick repeats the work. */
+  /** A released `job-changed` cleans the hold at once. The tick repeats the work. */
   private async listen() {
     for (const customerId of await this.jobs.customers().catch(() => [])) {
       if (this.listening.has(customerId)) continue;

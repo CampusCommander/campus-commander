@@ -656,6 +656,42 @@ it('replays a retained confirmation before creating a preview', async () => {
   ).toBe(false);
 });
 
+it('keeps a replayed update confirmation when the replay needs the connection', async () => {
+  let confirmations = 0;
+  const { element, type, save, settle, acknowledge } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(preview, { status: 201 });
+      if (path === previewReadPath) return Response.json(preview);
+      if (path.includes('/targets'))
+        return Response.json({ targets, nextCursor: null });
+      if (path.endsWith('/confirm')) {
+        confirmations++;
+        return confirmations === 1
+          ? Promise.reject(new TypeError('The connection closed.'))
+          : Response.json({ reason: 'connection-required' }, { status: 409 });
+      }
+      if (path === '/api/jobs/UPD-006') return Response.json(job);
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await reachConfirm(element, type, save, settle);
+  await acknowledge();
+  clickButton(element, 'Create update job');
+  await settle();
+  expect(element.textContent).toContain('The confirmation did not finish');
+  const key = `cc.device-update-confirmation.${principal}.${previewId}`;
+  expect(sessionStorage.getItem(key)).not.toBeNull();
+
+  // The replay answer arrives before the API reads the existing receipt.
+  clickButton(element, 'Retry');
+  await settle();
+  expect(confirmations).toBe(2);
+  expect(element.textContent).toContain('The update job may exist');
+  expect(element.textContent).toContain('Check Jobs for the update job');
+  expect(sessionStorage.getItem(key)).not.toBeNull();
+});
+
 it('shows the receipt answers of a clear job as removals', async () => {
   const clearJob: JobDetail = {
     ...job,

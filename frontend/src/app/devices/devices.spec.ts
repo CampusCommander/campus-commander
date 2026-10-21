@@ -20,6 +20,10 @@ import {
   DEVICE_WRITE_ACCESS_BUSY_MESSAGE,
   DEVICE_UPDATE_PERMISSION_MESSAGE,
 } from './device-update-messages';
+import {
+  CHANGE_STATUS_PERMISSION_MESSAGE,
+  SEND_COMMAND_PERMISSION_MESSAGE,
+} from './device-action-messages';
 import { DeviceFilter } from './device-filter';
 import { DeviceGrid } from './device-grid';
 import { DevicesPage } from './devices';
@@ -71,6 +75,8 @@ const ready = (extra: Partial<DeviceSyncState> = {}): DeviceSyncState => ({
 const allActions = [
   'devices:read',
   'devices:write',
+  'devices:commands',
+  'devices:status',
   'devices:bulk-actions',
   'connection:diagnose',
 ];
@@ -232,6 +238,11 @@ function setup(options: {
     fixture.detectChanges();
   };
   const openBulk = () => openMenu('Bulk Actions');
+  /** One of the two mounted action sheets, by its family. */
+  const actionSheet = (family: 'command' | 'status') =>
+    element.querySelector<HTMLElement>(
+      `app-device-action-sheet[family="${family}"]`,
+    );
   return {
     store,
     element,
@@ -242,6 +253,7 @@ function setup(options: {
     refreshLabels,
     openMenu,
     openBulk,
+    actionSheet,
     writeAccess,
     fixture,
     render: () => fixture.detectChanges(),
@@ -661,16 +673,21 @@ describe('Bulk Actions', () => {
     expect(writeAccess.load).toHaveBeenCalled();
   });
 
-  it('does not read the write access state without devices:write', () => {
+  it('does not read the write access state without a device write action', () => {
     const { writeAccess } = setup({
       sync: ready(),
       page: counted,
-      actions: allActions.filter((action) => action !== 'devices:write'),
+      actions: allActions.filter(
+        (action) =>
+          !['devices:write', 'devices:commands', 'devices:status'].includes(
+            action,
+          ),
+      ),
     });
     expect(writeAccess.load).not.toHaveBeenCalled();
   });
 
-  it('offers one item, Update device', async () => {
+  it('offers the three built items in order', async () => {
     const { openBulk, menuItem } = setup({ sync: ready(), page: counted });
     await openBulk();
     const items = [
@@ -678,11 +695,11 @@ describe('Bulk Actions', () => {
     ];
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       'Update device',
+      'Send command',
+      'Change status',
     ]);
     expect(menuItem('Import')).toBeUndefined();
     expect(menuItem('Export')).toBeUndefined();
-    expect(menuItem('Send command')).toBeUndefined();
-    expect(menuItem('Change status')).toBeUndefined();
   });
 
   it('opens the bulk action sheet from Update device', async () => {
@@ -743,6 +760,95 @@ describe('Bulk Actions', () => {
     );
     await openBulk();
     expect(menuItem('Update device')?.disabled).toBe(true);
+  });
+
+  it('opens the command sheet from Send command', async () => {
+    const { openBulk, menuItem, fixture, actionSheet } = setup({
+      sync: ready(),
+      page: counted,
+    });
+    await openBulk();
+    expect(menuItem('Send command')?.disabled).toBe(false);
+    menuItem('Send command')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const panel = actionSheet('command')?.querySelector(
+      'section[role="dialog"]',
+    );
+    expect(panel?.classList.contains('is-open')).toBe(true);
+    expect(panel?.querySelector('h1')?.textContent?.trim()).toBe(
+      'Choose a device command',
+    );
+  });
+
+  it('opens the status sheet from Change status', async () => {
+    const { openBulk, menuItem, fixture, actionSheet } = setup({
+      sync: ready(),
+      page: counted,
+    });
+    await openBulk();
+    expect(menuItem('Change status')?.disabled).toBe(false);
+    menuItem('Change status')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const panel = actionSheet('status')?.querySelector(
+      'section[role="dialog"]',
+    );
+    expect(panel?.classList.contains('is-open')).toBe(true);
+    expect(panel?.querySelector('h1')?.textContent?.trim()).toBe(
+      'Change device status',
+    );
+  });
+
+  it('disables Send command without devices:commands and names the permission', async () => {
+    const { element, openBulk, menuItem } = setup({
+      sync: ready(),
+      page: counted,
+      actions: allActions.filter((action) => action !== 'devices:commands'),
+    });
+    expect(element.textContent).toContain(SEND_COMMAND_PERMISSION_MESSAGE);
+    await openBulk();
+    expect(menuItem('Send command')?.disabled).toBe(true);
+    expect(menuItem('Change status')?.disabled).toBe(false);
+  });
+
+  it('disables Change status without devices:status and names the permission', async () => {
+    const { element, openBulk, menuItem } = setup({
+      sync: ready(),
+      page: counted,
+      actions: allActions.filter((action) => action !== 'devices:status'),
+    });
+    expect(element.textContent).toContain(CHANGE_STATUS_PERMISSION_MESSAGE);
+    await openBulk();
+    expect(menuItem('Change status')?.disabled).toBe(true);
+    expect(menuItem('Send command')?.disabled).toBe(false);
+  });
+
+  it('names both action permissions while devices:bulk-actions is missing', async () => {
+    const { element, button } = setup({
+      sync: ready(),
+      page: counted,
+      actions: allActions.filter((action) => action !== 'devices:bulk-actions'),
+    });
+    expect(element.textContent).toContain(SEND_COMMAND_PERMISSION_MESSAGE);
+    expect(element.textContent).toContain(CHANGE_STATUS_PERMISSION_MESSAGE);
+    expect(button('Bulk Actions')).toMatchObject({ disabled: true });
+  });
+
+  it('reads the write access state when only devices:commands is held', () => {
+    const { writeAccess } = setup({
+      sync: ready(),
+      page: counted,
+      actions: allActions.filter(
+        (action) =>
+          ['devices:read', 'devices:commands', 'devices:bulk-actions'].includes(
+            action,
+          ) === true,
+      ),
+    });
+    expect(writeAccess.load).toHaveBeenCalled();
   });
 
   it.each(['devices:read', 'devices:write'])(
