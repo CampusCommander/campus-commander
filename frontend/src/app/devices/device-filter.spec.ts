@@ -126,6 +126,47 @@ it('applies the chosen battery classes', () => {
   ]);
 });
 
+it('applies the chosen statuses', () => {
+  const { element, applied, click, button, start } = setup();
+  start('status');
+  click(element.querySelectorAll('[role="option"]')[0]);
+  expect(element.querySelector('h2')?.textContent?.trim()).toBe('Status');
+  const box = (label: string) =>
+    [...element.querySelectorAll('label')]
+      .find((candidate) => candidate.textContent?.trim() === label)!
+      .querySelector('input');
+  expect(
+    [...element.querySelectorAll('legend')].map((legend) =>
+      legend.textContent?.trim(),
+    ),
+  ).toEqual(['Device status']);
+  click(box('Disabled'));
+  click(box('Deprovisioned'));
+  click(button('Apply'));
+  expect(applied).toEqual([
+    { field: 'status', operator: 'is', values: ['DISABLED', 'DEPROVISIONED'] },
+  ]);
+});
+
+it('reopens a status chip with its values checked', () => {
+  const fixture = TestBed.createComponent(DeviceFilter);
+  fixture.componentRef.setInput('editing', {
+    field: 'status',
+    operator: 'is',
+    values: ['DISABLED'],
+  });
+  fixture.detectChanges();
+  const element: HTMLElement = fixture.nativeElement;
+  const boxes = [
+    ...element.querySelectorAll<HTMLInputElement>('fieldset input'),
+  ];
+  expect(boxes.map((input) => input.checked)).toEqual([false, true, false]);
+  const apply = [...element.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent?.trim() === 'Apply',
+  )!;
+  expect(apply.disabled).toBe(false);
+});
+
 it('applies an organization unit with the units inside it', () => {
   const { element, applied, click, button, start } = setup([
     { path: '/School A', devices: 5 },

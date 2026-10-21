@@ -44,7 +44,8 @@ function predicateFor(field: DeviceField, model: unknown): unknown {
   const set = setModel.parse(model);
   return {
     field: field.id,
-    operator: field.kind === 'battery' ? 'is' : 'in',
+    // Organization units match the chosen subtrees. The other set filters match exact values.
+    operator: field.kind === 'orgUnit' ? 'in' : 'is',
     values: set.values,
   };
 }
@@ -72,11 +73,8 @@ export function filterModelFromPredicates(
 ): FilterModel {
   const model: FilterModel = {};
   for (const predicate of predicates) {
-    if (
-      predicate.field === 'battery' ||
-      predicate.field === 'orgUnitPath' ||
-      predicate.field === 'status'
-    )
+    // Every set predicate holds the exact values the grid's set filter selects.
+    if ('values' in predicate)
       model[predicate.field] = {
         filterType: 'set',
         values: [...predicate.values],

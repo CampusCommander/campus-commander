@@ -20,6 +20,10 @@ import {
   type DeviceBatchOptions,
   type DeviceCommandIssue,
   type DeviceState,
+  type DeviceStatusBatch,
+  type DeviceStatusBatchOptions,
+  type DeviceStatusChange,
+  type DeviceStatusResult,
   type IssuedDeviceCommand,
   type WrittenDevice,
 } from '@campus/google-connection';
@@ -118,14 +122,22 @@ const claimedOperationSchema = z.object({
 });
 export type ClaimedOperation = z.infer<typeof claimedOperationSchema>;
 
+/** The action of one job. The claim names it, so the batch route sends the calls of that action. */
+const deviceUpdateActionSchema = z.enum([
+  'annotated-location',
+  'reboot',
+  'disable',
+  'reenable',
+]);
+export type DeviceUpdateAction = z.infer<typeof deviceUpdateActionSchema>;
+
 const claimSchema = z.object({
   outcome: z.literal('claimed'),
   generation: z.number().int().positive(),
   credentialId: z.uuid(),
   envelope: z.unknown(),
   batchCount: z.number().int().min(1),
-  /** The job action: a command job issues commands, every other action writes a field. */
-  action: z.enum(['annotated-location', 'reboot', 'disable', 'reenable']),
+  action: deviceUpdateActionSchema,
   operations: z.array(claimedOperationSchema).max(1000),
   readBack: z.array(claimedOperationSchema).max(1000),
 });
@@ -185,6 +197,7 @@ const verificationReadSchema = z.object({
   generation: z.number().int().positive(),
   credentialId: z.uuid(),
   envelope: z.unknown(),
+  action: deviceUpdateActionSchema,
   operations: z.array(heldOperationSchema).min(1).max(250),
 });
 
@@ -280,6 +293,14 @@ export interface DeviceUpdateReader {
       onBatch?(event: BatchRoundEvent): void | Promise<void>;
     },
   ): Promise<BatchResult<WrittenDevice>>;
+  /** One part of up to 50 device IDs per status action (addendum section 5). */
+  changeDeviceStatus(
+    credential: DelegatedCredential,
+    customerId: string,
+    changes: readonly DeviceStatusChange[],
+    signal: AbortSignal,
+    options: DeviceStatusBatchOptions,
+  ): Promise<DeviceStatusBatch>;
   issueDeviceCommands(
     credential: DelegatedCredential,
     customerId: string,
@@ -403,6 +424,8 @@ interface TrackedWrite {
   hasValue: boolean;
   /** The command ID of an accepted issue answer (section 4 step 3). */
   commandId: string | null;
+  /** The per-device answer of a 2xx status part (addendum section 5). */
+  statusResult: DeviceStatusResult | null;
   status: number | null;
   attempts: { quota: number; transient: number };
   /** A final answer arrived. A scheduled retry is not final. */
@@ -641,6 +664,70 @@ export function classifyWrite(
       stopFailure === null
         ? { ...base, outcome: 'pending' }
         : { ...base, outcome: 'skipped', outcomeReason: stopFailure },
+    observedFailure: null,
+  };
+}
+
+/**
+ * The cached device field of one action. A status action writes `status`; an annotated-location
+ * update writes `annotatedLocation` (addendum section 5).
+ */
+export function cacheField(
+  action: DeviceUpdateAction,
+): 'annotatedLocation' | 'status' {
+  return action === 'disable' || action === 'reenable'
+    ? 'status'
+    : 'annotatedLocation';
+}
+
+/**
+ * Classify one status operation. A 2xx part answers per device (addendum section 3), so the
+ * per-device element decides the outcome. The element code is a google.rpc.Code, not an HTTP
+ * status, so `googleStatus` stays null. A failed part settles each device it held by the step 4
+ * rules, through `classifyWrite`.
+ */
+export function classifyStatus(
+  tracked: TrackedWrite,
+  stopFailure: string | null,
+): { outcome: WriteOutcome; observedFailure: string | null } {
+  const result = tracked.statusResult;
+  if (result === null) return classifyWrite(tracked, stopFailure);
+  const base = {
+    operationNumber: tracked.operation.operationNumber,
+    googleStatus: null,
+    quotaRetries: tracked.attempts.quota,
+    transientRetries: tracked.attempts.transient,
+  };
+  if (result.outcome === 'succeeded')
+    return {
+      outcome: {
+        ...base,
+        outcome: 'succeeded',
+        verifiedBy: 'write-response',
+        googleReason: null,
+      },
+      observedFailure: null,
+    };
+  if (result.outcome === 'failed')
+    return {
+      outcome: {
+        ...base,
+        outcome: 'failed',
+        outcomeReason: result.reason ?? 'rejected',
+        googleReason: result.googleReason,
+        // Google answered with a refusal, so it observed no new status.
+        value: null,
+      },
+      observedFailure: null,
+    };
+  return {
+    outcome: {
+      ...base,
+      outcome: 'unknown',
+      outcomeReason: 'invalid-response',
+      googleReason: null,
+      value: null,
+    },
     observedFailure: null,
   };
 }
@@ -934,6 +1021,13 @@ export class DeviceUpdateJobs {
       /** A command job issues one POST per operation and never reads back (section 4 steps 2 and 4). */
       const commandJob = isCommandAction(body.action);
       claimedOperations = body.operations;
+      const action = body.action;
+      const field = cacheField(action);
+      /** The classifier of the job action: a status element, a command issue, or a write. */
+      const classify = (entry: TrackedWrite, stopFailure: string | null) =>
+        field === 'status'
+          ? classifyStatus(entry, stopFailure)
+          : classifyWrite(entry, stopFailure, commandJob);
       for (const operation of [...body.operations, ...body.readBack])
         tracked.set(operation.deviceId, {
           operation,
@@ -942,6 +1036,7 @@ export class DeviceUpdateJobs {
           value: null,
           hasValue: false,
           commandId: null,
+          statusResult: null,
           status: null,
           attempts: { quota: 0, transient: 0 },
           final: null,
@@ -983,8 +1078,14 @@ export class DeviceUpdateJobs {
         for (const id of ids) {
           const entry = tracked.get(id);
           if (entry === undefined || entry.settled) continue;
-          if (!entry.succeeded && entry.final === null) continue;
-          const classified = classifyWrite(entry, failureCode, commandJob);
+          // A status element is an answer even when Google refused that device.
+          if (
+            !entry.succeeded &&
+            entry.final === null &&
+            entry.statusResult === null
+          )
+            continue;
+          const classified = classify(entry, failureCode);
           entries.push({ entry, outcome: classified.outcome });
           if (classified.observedFailure !== null && failureCode === null)
             failureCode = classified.observedFailure;
@@ -1067,6 +1168,29 @@ export class DeviceUpdateJobs {
       }, 30_000);
       if (credential !== null && claimedOperations.length > 0) {
         let roundIds: string[] = [];
+        /** The device IDs of each part sent in the current round, by part ID. */
+        const partDevices = new Map<string, readonly string[]>();
+        /** The renewal of the last round, and the settlement of the round that ended. */
+        const settleParts = async (): Promise<void> => {
+          if (callSignal.aborted) return;
+          let stamp: Date;
+          try {
+            stamp = await renewLease();
+          } catch (error) {
+            if (
+              error instanceof DeviceSyncError &&
+              error.code === 'attempt-fenced'
+            ) {
+              fenced = true;
+              stop.abort();
+              return;
+            }
+            throw error;
+          }
+          const ids = roundIds;
+          roundIds = [];
+          await settleRound(ids, stamp);
+        };
         /** The events of one write round. Both calls report them in the same order. */
         const options = {
           batchSize: this.batchSize,
@@ -1112,28 +1236,7 @@ export class DeviceUpdateJobs {
             }
             entry.final = event.outcome.failure;
           },
-          onBatch: async () => {
-            // The renewal after the round stamps its write responses (section 5.8).
-            if (callSignal.aborted) return;
-            let stamp: Date;
-            try {
-              stamp = await renewLease();
-            } catch (error) {
-              if (
-                error instanceof DeviceSyncError &&
-                error.code === 'attempt-fenced'
-              ) {
-                // A rejected renewal aborts the call through its signal.
-                fenced = true;
-                stop.abort();
-                return;
-              }
-              throw error;
-            }
-            const ids = roundIds;
-            roundIds = [];
-            await settleRound(ids, stamp);
-          },
+          onBatch: settleParts,
         };
         try {
           // A command job sends one issueCommand POST per operation. It never retries an
@@ -1148,6 +1251,61 @@ export class DeviceUpdateJobs {
               })),
               callSignal,
               options,
+            );
+          // One POST part per at most 50 device IDs, in operation order (section 5).
+          else if (field === 'status')
+            await this.reader.changeDeviceStatus(
+              credential,
+              input.customerId,
+              claimedOperations.map((operation) => ({
+                deviceId: operation.deviceId,
+                action: action === 'reenable' ? 'reenable' : 'disable',
+              })),
+              callSignal,
+              {
+                batchSize: this.batchSize,
+                onSend: (parts) => {
+                  roundIds = [];
+                  for (const part of parts) {
+                    partDevices.set(part.id, part.deviceIds);
+                    roundIds.push(...part.deviceIds);
+                  }
+                  for (const id of roundIds) {
+                    const entry = tracked.get(id);
+                    if (entry) entry.sent = true;
+                  }
+                },
+                onResponse: (event) => {
+                  const ids = partDevices.get(event.id) ?? [];
+                  if (event.outcome.kind === 'success') {
+                    // Google answers 2xx even when every device fails, so each
+                    // element carries its own answer (addendum section 3).
+                    for (const answer of event.outcome.page) {
+                      const entry = tracked.get(answer.deviceId);
+                      if (!entry) continue;
+                      entry.statusResult = answer;
+                      entry.status = event.status;
+                      entry.attempts = event.attempts;
+                      reporter?.noteAnswer(answer.deviceId);
+                    }
+                    return;
+                  }
+                  if (event.outcome.kind === 'retry') {
+                    for (const id of ids) {
+                      reporter?.noteRetry(id, event.outcome.failure.kind);
+                    }
+                    return;
+                  }
+                  for (const id of ids) {
+                    const entry = tracked.get(id);
+                    if (!entry) continue;
+                    entry.status = event.status;
+                    entry.attempts = event.attempts;
+                    entry.final = event.outcome.failure;
+                  }
+                },
+                onBatch: settleParts,
+              },
             );
           else
             await this.reader.patchAnnotatedLocations(
@@ -1194,7 +1352,7 @@ export class DeviceUpdateJobs {
       for (const operation of claimedOperations) {
         const entry = tracked.get(operation.deviceId);
         if (entry === undefined || entry.settled) continue;
-        const classified = classifyWrite(entry, failureCode, commandJob);
+        const classified = classify(entry, failureCode);
         leftovers.push({ entry, outcome: classified.outcome });
         if (classified.observedFailure !== null && failureCode === null)
           failureCode = classified.observedFailure;
@@ -1273,6 +1431,7 @@ export class DeviceUpdateJobs {
             held,
             signal,
             claimed.readBackBounds,
+            field,
           );
       }
     } catch (error) {
@@ -1406,6 +1565,7 @@ export class DeviceUpdateJobs {
     operations: readonly HeldOperation[],
     signal: AbortSignal,
     bounds: { verifyAfter: Date; leaseEnd: Date },
+    field: 'annotatedLocation' | 'status',
   ): Promise<DeviceUpdateReadBackSummary> {
     const summary = emptySummary();
     for (let start = 0; start < operations.length; start += 250) {
@@ -1419,6 +1579,7 @@ export class DeviceUpdateJobs {
         signal,
         summary,
         bounds,
+        field,
       );
     }
     return summary;
@@ -1477,6 +1638,7 @@ export class DeviceUpdateJobs {
         signal,
         summary,
         this.readBounds(read),
+        cacheField(read.action),
       );
     }
     return summary;
@@ -1521,6 +1683,7 @@ export class DeviceUpdateJobs {
       signal,
       summary,
       this.readBounds(read),
+      cacheField(read.action),
     );
     return summary;
   }
@@ -1672,6 +1835,7 @@ export class DeviceUpdateJobs {
     signal: AbortSignal,
     summary: DeviceUpdateReadBackSummary,
     bounds: { verifyAfter: Date; leaseEnd: Date } | null = null,
+    field: 'annotatedLocation' | 'status' = 'annotatedLocation',
   ): Promise<void> {
     const chunk = operations.slice(0, 250);
     if (chunk.length === 0) return;
@@ -1760,7 +1924,10 @@ export class DeviceUpdateJobs {
         summary.failed += 1;
         continue;
       }
-      const observed = state.device.annotatedLocation;
+      const observed =
+        field === 'status'
+          ? state.device.status
+          : state.device.annotatedLocation;
       const matches =
         operation.requestedValue === null
           ? observed === null

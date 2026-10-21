@@ -20,6 +20,19 @@
     >
     }
   </fieldset>
+  } @case ('status') {
+  <fieldset>
+    <legend>Device status</legend>
+    @for (option of statusOptions; track option[0]) {
+    <label class="check"
+      ><input
+        type="checkbox"
+        [checked]="status().includes(option[0])"
+        (change)="toggleStatus(option[0], $any($event.target).checked)"
+      />{{ option[1] }}</label
+    >
+    }
+  </fieldset>
   } @case ('orgUnit') {
   <label class="field"
     >Find an organization unit
