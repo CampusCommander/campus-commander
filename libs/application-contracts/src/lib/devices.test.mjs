@@ -35,6 +35,7 @@ const row = {
   lastContact: null,
   annotatedLocation: null,
   notes: null,
+  status: 'ACTIVE',
   lastEntitySync: '2026-10-05T12:00:00.000Z',
   stale: false,
 };
@@ -108,6 +109,66 @@ test('queries bound page size, predicate count, and unknown keys', () => {
     false,
   );
   assert.equal(deviceQuerySchema.safeParse({ extra: true }).success, false);
+});
+
+test('status filters take the three Google values and a status sort', () => {
+  const ok = (value) => devicePredicateSchema.safeParse(value).success;
+  assert.equal(
+    ok({
+      field: 'status',
+      operator: 'is',
+      values: ['ACTIVE', 'DISABLED', 'DEPROVISIONED'],
+    }),
+    true,
+  );
+  assert.equal(
+    ok({ field: 'status', operator: 'is', values: ['DISABLED'] }),
+    true,
+  );
+  // An empty set filter is valid. It matches no devices.
+  assert.equal(ok({ field: 'status', operator: 'is', values: [] }), true);
+  assert.equal(
+    ok({ field: 'status', operator: 'is', values: ['RETIRED'] }),
+    false,
+  );
+  assert.equal(
+    ok({ field: 'status', operator: 'is', values: ['disabled'] }),
+    false,
+  );
+  assert.equal(
+    ok({
+      field: 'status',
+      operator: 'is',
+      values: ['ACTIVE', 'DISABLED', 'DEPROVISIONED', 'ACTIVE'],
+    }),
+    false,
+  );
+  assert.equal(
+    ok({ field: 'status', operator: 'contains', value: 'ACTIVE' }),
+    false,
+  );
+  assert.equal(
+    deviceQuerySchema.safeParse({
+      sort: { field: 'status', direction: 'desc' },
+    }).success,
+    true,
+  );
+});
+
+test('a device row carries the Google status, including an unknown value and null', () => {
+  const battery = { status: 'no-report' };
+  for (const status of ['ACTIVE', 'DISABLED', 'DEPROVISIONED', 'RETIRED', null])
+    assert.equal(
+      deviceRowSchema.safeParse({ ...row, status, battery }).success,
+      true,
+    );
+  const missing = Object.fromEntries(
+    Object.entries(row).filter(([key]) => key !== 'status'),
+  );
+  assert.equal(
+    deviceRowSchema.safeParse({ ...missing, battery }).success,
+    false,
+  );
 });
 
 test('battery values distinguish reported, missing, and unavailable data', () => {

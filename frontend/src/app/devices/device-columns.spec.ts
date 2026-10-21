@@ -11,6 +11,7 @@ const row = (stale: boolean): DeviceRow => ({
   lastContact: '2026-10-05T12:00:00.000Z',
   annotatedLocation: null,
   notes: null,
+  status: 'ACTIVE',
   battery: { status: 'no-report' },
   lastEntitySync: '2026-10-04T12:00:00.000Z',
   stale,

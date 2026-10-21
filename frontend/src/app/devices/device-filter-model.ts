@@ -72,7 +72,11 @@ export function filterModelFromPredicates(
 ): FilterModel {
   const model: FilterModel = {};
   for (const predicate of predicates) {
-    if (predicate.field === 'battery' || predicate.field === 'orgUnitPath')
+    if (
+      predicate.field === 'battery' ||
+      predicate.field === 'orgUnitPath' ||
+      predicate.field === 'status'
+    )
       model[predicate.field] = {
         filterType: 'set',
         values: [...predicate.values],

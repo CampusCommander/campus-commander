@@ -5,12 +5,15 @@ Updated: 2026-10-20.
 ## Authorized now
 
 On 2026-10-20 the owner signed off development order step 4 after a walkthrough of the review build.
-On 2026-10-19 the owner queued two items after the bulk-actions stage. These items are authorized now:
+On 2026-10-21 the owner authorized development order step 5 with device commands first.
+The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
+The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
+The [device commands record](workflows/device-commands.md) defines this build.
+On 2026-10-19 the owner queued two items after the bulk-actions stage. PRs #70 and #71 built them:
 
 1. Verify every Google scope that Campus Commander uses in the Google health check. Show the result in Diagnostics.
 2. Then add pre-filled delegation links to Diagnostics and to the denied prompt on the Devices page.
 
-Step 5 requires its own authorization.
 Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
 
 ### Device update record (signed off 2026-10-20)

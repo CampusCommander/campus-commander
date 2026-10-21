@@ -18,6 +18,7 @@ const dbRow = (id, extra = {}) => ({
   last_contact: null,
   annotated_location: null,
   notes: null,
+  status: null,
   battery_status: 'no-report',
   battery_health: null,
   battery_capacity_percent: null,
@@ -36,6 +37,7 @@ const recordObject = (id) => ({
   lastContact: null,
   annotatedLocation: null,
   notes: null,
+  status: null,
   battery: { status: 'no-report' },
   lastEntitySync: '2026-10-06T11:30:00.000Z',
 });
