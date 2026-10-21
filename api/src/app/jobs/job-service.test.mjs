@@ -693,6 +693,46 @@ test('a terminal job-changed runs cleanup and admission, and another status runs
   assert.deepEqual(idleOrchestration.calls, []);
 });
 
+test('an awaiting-devices command job releases its hold and admits the next job', async () => {
+  const database = databaseOf([
+    ['SELECT 1 FROM cc.jobs j WHERE', () => [{ '?column?': 1 }]],
+    [
+      'SELECT j.job_id FROM cc.jobs j JOIN cc.device_update_jobs u',
+      () => [{ job_id: JOB }],
+    ],
+    ['SELECT cc.clean_device_update_hold', () => [{ result: true }]],
+    ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],
+    ['SELECT cc.admit_device_update_job', () => [{ result: admitted() }]],
+    [
+      'SELECT batch_count FROM cc.device_update_jobs',
+      () => [{ batch_count: 1 }],
+    ],
+    ['SELECT p.publication_id,p.job_id', () => []],
+    ['SELECT cc.record_device_update_start', () => [{ result: null }]],
+  ]);
+  const cache = cacheOf();
+  const orchestration = orchestrationOf();
+  const service = serviceOf({ database, cache, orchestration });
+  await service.changed(CUSTOMER, JOB);
+  // A command job in awaiting-devices still waits for Google. It keeps no write slot, so its
+  // hold is released and the next job admits (design section 1, section 4 step 4).
+  const changedCall = database.calls.find((call) =>
+    call.text.includes('SELECT 1 FROM cc.jobs j WHERE'),
+  );
+  assert.ok(changedCall.text.includes("'awaiting-devices'"));
+  const cleanupCall = database.calls.find((call) =>
+    call.text.includes(
+      'SELECT j.job_id FROM cc.jobs j JOIN cc.device_update_jobs u',
+    ),
+  );
+  assert.ok(cleanupCall.text.includes("'awaiting-devices'"));
+  assert.deepEqual(
+    cache.calls.map((call) => call.name),
+    ['release'],
+  );
+  assert.equal(orchestration.calls.length, 1);
+});
+
 test('a slow tick never delays the relay', async () => {
   let finishStart;
   const starting = new Promise((resolve) => {

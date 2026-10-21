@@ -1,0 +1,37 @@
+/* The Choose options and the destructive confirmation of the action sheets. */
+
+.action-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-md);
+  margin-block-start: var(--cc-space-sm);
+}
+
+.action-option {
+  display: block;
+}
+
+/* The radio sits beside the first line, as the mockup draws it. */
+.action-option ::ng-deep .mdc-form-field {
+  align-items: flex-start;
+}
+
+.option-label {
+  display: block;
+  color: var(--cc-text-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.option-line {
+  display: block;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The filled Disable confirmation of frame 114:503 (UI-05). */
+.destructive {
+  --mat-button-filled-container-color: var(--cc-status-error);
+  --mat-button-filled-label-text-color: var(--cc-text-on-accent);
+}
