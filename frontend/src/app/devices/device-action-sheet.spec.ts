@@ -10,6 +10,7 @@ import type {
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from '../google-connection/connection.store';
+import { ACTION_CONFIRMATION_PREFIX } from './device-action-confirmation.store';
 import { DeviceActionSheet } from './device-action-sheet';
 import { DevicesStore } from './devices.store';
 
@@ -160,10 +161,64 @@ function jobOf(
 const commandJob = jobOf('CMD-001', 'reboot-devices', null);
 const statusJob = jobOf('STS-001', 'disable-devices', 'disable');
 
+/** A second command preview, prepared after a selection change or an expiry. */
+const replacementPreviewId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab';
+const replacementPreview = {
+  ...preview(replacementPreviewId, 'reboot', 8, 4),
+  displayId: 'PV-007',
+};
+/** A second Disable preview, prepared after an expiry. */
+const replacementDisableId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbc';
+const replacementDisable = {
+  ...preview(replacementDisableId, 'disable', 8, 4),
+  displayId: 'PV-008',
+};
+
 type RequestHandler = (
   path: string,
-  body: unknown,
+  body?: unknown,
 ) => Promise<Response> | Response;
+
+/** The ordinary routes of both families. A test handler wraps this function. */
+function standardRequest(
+  reenablePreviewValue: DeviceActionPreview,
+  reenableTargetValues: DeviceActionTarget[],
+): RequestHandler {
+  return (path, body) => {
+    if (path === '/api/devices/commands/previews')
+      return Response.json(commandPreview, { status: 201 });
+    if (path === '/api/devices/status-changes/previews') {
+      const action = (body as { statusAction?: string } | undefined)
+        ?.statusAction;
+      return Response.json(
+        action === 'reenable' ? reenablePreviewValue : disablePreview,
+        { status: 201 },
+      );
+    }
+    if (path === `/api/devices/commands/previews/${commandPreviewId}`)
+      return Response.json(commandPreview);
+    if (path === `/api/devices/status-changes/previews/${disablePreviewId}`)
+      return Response.json(disablePreview);
+    if (path === `/api/devices/status-changes/previews/${reenablePreviewId}`)
+      return Response.json(reenablePreviewValue);
+    if (path.includes(`${reenablePreviewId}/targets`))
+      return Response.json({
+        targets: reenableTargetValues,
+        nextCursor: null,
+      });
+    if (path.includes('/targets'))
+      return Response.json({ targets: commandTargets, nextCursor: null });
+    if (path.endsWith('/confirm')) {
+      return Response.json(
+        path.includes('/api/devices/status-changes/') ? statusReceipt : receipt,
+        { status: 201 },
+      );
+    }
+    if (path === '/api/jobs/CMD-001') return Response.json(commandJob);
+    if (path === '/api/jobs/STS-001') return Response.json(statusJob);
+    return Response.json({}, { status: 404 });
+  };
+}
 
 interface SetupOptions {
   family?: 'command' | 'status';
@@ -203,43 +258,11 @@ async function setup(options: SetupOptions = {}) {
   };
   const reenablePreviewValue = options.reenable ?? reenablePreview;
   const reenableTargetValues = options.reenableTargets ?? reenableTargets;
+  const ordinary = standardRequest(reenablePreviewValue, reenableTargetValues);
   const request = vi.fn(
     async (path: string, body?: unknown): Promise<Response> => {
       if (options.request) return options.request(path, body);
-      if (path === '/api/devices/commands/previews')
-        return Response.json(commandPreview, { status: 201 });
-      if (path === '/api/devices/status-changes/previews') {
-        const action = (body as { statusAction?: string } | undefined)
-          ?.statusAction;
-        return Response.json(
-          action === 'reenable' ? reenablePreviewValue : disablePreview,
-          { status: 201 },
-        );
-      }
-      if (path === `/api/devices/commands/previews/${commandPreviewId}`)
-        return Response.json(commandPreview);
-      if (path === `/api/devices/status-changes/previews/${disablePreviewId}`)
-        return Response.json(disablePreview);
-      if (path === `/api/devices/status-changes/previews/${reenablePreviewId}`)
-        return Response.json(reenablePreviewValue);
-      if (path.includes(`${reenablePreviewId}/targets`))
-        return Response.json({
-          targets: reenableTargetValues,
-          nextCursor: null,
-        });
-      if (path.includes('/targets'))
-        return Response.json({ targets: commandTargets, nextCursor: null });
-      if (path.endsWith('/confirm')) {
-        return Response.json(
-          path.includes('/api/devices/status-changes/')
-            ? statusReceipt
-            : receipt,
-          { status: 201 },
-        );
-      }
-      if (path === '/api/jobs/CMD-001') return Response.json(commandJob);
-      if (path === '/api/jobs/STS-001') return Response.json(statusJob);
-      return Response.json({}, { status: 404 });
+      return ordinary(path, body);
     },
   );
   TestBed.configureTestingModule({
@@ -589,5 +612,295 @@ it('shows the three step labels with the active step', async () => {
   expect(steps[0].getAttribute('aria-current')).toBe('step');
   expect(element.querySelector('ol.stepper')?.getAttribute('aria-label')).toBe(
     'Send command steps',
+  );
+});
+
+it('replays a lost confirmation when the sheet reopens', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  let confirmations = 0;
+  const { fixture, element, button, acknowledge, settle, request } =
+    await setup({
+      request: (path) => {
+        if (path.endsWith('/confirm')) {
+          confirmations++;
+          return confirmations === 1
+            ? Promise.reject(new TypeError('The connection closed.'))
+            : Response.json(receipt, { status: 201 });
+        }
+        return ordinary(path);
+      },
+    });
+  button('Review Reboot')?.click();
+  await settle();
+  button('Continue to confirmation')?.click();
+  await settle();
+  await acknowledge();
+  button('Send Reboot to 6 devices')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The confirmation did not finish',
+  );
+  const confirmed = () =>
+    request.mock.calls.filter(([path]) => path.endsWith('/confirm'));
+  expect(confirmed()).toHaveLength(1);
+  const previewPosts = request.mock.calls.filter(
+    ([path]) => path === '/api/devices/commands/previews',
+  ).length;
+
+  // Close the sheet and open it again in the same tab.
+  fixture.componentRef.setInput('open', false);
+  fixture.detectChanges();
+  fixture.componentRef.setInput('open', true);
+  await settle();
+
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Command job created',
+  );
+  expect(element.textContent).toContain('Job CMD-001 · Running');
+  expect(confirmed()).toHaveLength(2);
+  const [first, second] = confirmed();
+  expect(second?.[0]).toBe(first?.[0]);
+  expect(second?.[1]).toEqual(first?.[1]);
+  expect(first?.[1]).toEqual({
+    manifestDigest: commandPreview.manifestDigest,
+    acknowledged: true,
+  });
+  // The replay answered before the sheet prepared another preview.
+  expect(
+    request.mock.calls.filter(
+      ([path]) => path === '/api/devices/commands/previews',
+    ),
+  ).toHaveLength(previewPosts);
+});
+
+it('recovers a status receipt without a chosen option', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  const { fixture, element, settle } = await setup({
+    family: 'status',
+    open: false,
+    request: (path) => {
+      if (path.endsWith('/confirm'))
+        return Response.json(statusReceipt, { status: 201 });
+      return ordinary(path);
+    },
+  });
+  sessionStorage.setItem(
+    `${ACTION_CONFIRMATION_PREFIX}${principal}.status.${disablePreviewId}`,
+    JSON.stringify({
+      family: 'status',
+      previewId: disablePreviewId,
+      manifestDigest: disablePreview.manifestDigest,
+    }),
+  );
+  fixture.componentRef.setInput('open', true);
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Status job created',
+  );
+  expect(element.textContent).toContain('Job STS-001 · Running');
+  expect(element.textContent).toContain(
+    '6 devices · 6 status changes. Google changes have not completed.',
+  );
+});
+
+it('prepares a new preview when the selection changes under Choose', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  let commandPosts = 0;
+  const { element, button, spec, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/commands/previews') {
+        commandPosts++;
+        return Response.json(
+          commandPosts === 1 ? commandPreview : replacementPreview,
+          { status: 201 },
+        );
+      }
+      if (path === `/api/devices/commands/previews/${replacementPreviewId}`)
+        return Response.json(replacementPreview);
+      if (path.includes(`${replacementPreviewId}/targets`))
+        return Response.json({
+          targets: commandTargets.slice(0, 4),
+          nextCursor: null,
+        });
+      return ordinary(path);
+    },
+  });
+  // The same device count with another scope is still another selection.
+  spec.set({ ...selection(8), added: 7, excluded: 1 });
+  await settle();
+  button('Review Reboot')?.click();
+  await settle();
+  expect(commandPosts).toBe(2);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 4 Reboot commands',
+  );
+  expect(element.textContent).not.toContain(
+    'The selection changed after this preview.',
+  );
+});
+
+it('keeps the frozen scope when Back to preview follows a selection change', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  let commandPosts = 0;
+  const { element, button, spec, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/commands/previews') {
+        commandPosts++;
+        return Response.json(
+          commandPosts === 1 ? commandPreview : replacementPreview,
+          { status: 201 },
+        );
+      }
+      if (path === `/api/devices/commands/previews/${replacementPreviewId}`)
+        return Response.json(replacementPreview);
+      if (path.includes(`${replacementPreviewId}/targets`))
+        return Response.json({
+          targets: commandTargets.slice(0, 4),
+          nextCursor: null,
+        });
+      return ordinary(path);
+    },
+  });
+  button('Review Reboot')?.click();
+  await settle();
+  button('Continue to confirmation')?.click();
+  await settle();
+  spec.set({ ...selection(8), added: 7, excluded: 1 });
+  await settle();
+  button('Back to preview')?.click();
+  await settle();
+  // The reviewed scope stays frozen; a new selection needs Change action.
+  expect(commandPosts).toBe(1);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 6 Reboot commands',
+  );
+  expect(element.textContent).toContain(
+    'The selection changed after this preview.',
+  );
+});
+
+it('prepares a fresh command preview after the cached one expires', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  let commandPosts = 0;
+  let expiredReads = 0;
+  const { element, button, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/commands/previews') {
+        commandPosts++;
+        return Response.json(
+          commandPosts === 1 ? commandPreview : replacementPreview,
+          { status: 201 },
+        );
+      }
+      if (path === `/api/devices/commands/previews/${commandPreviewId}`) {
+        expiredReads++;
+        return Response.json(
+          { reason: 'preview-expired', expiresAt: '2026-10-20T19:17:00.000Z' },
+          { status: 410 },
+        );
+      }
+      if (path === `/api/devices/commands/previews/${replacementPreviewId}`)
+        return Response.json(replacementPreview);
+      if (path.includes(`${replacementPreviewId}/targets`))
+        return Response.json({
+          targets: commandTargets.slice(0, 4),
+          nextCursor: null,
+        });
+      return ordinary(path);
+    },
+  });
+  button('Review Reboot')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Preview expired',
+  );
+  button('Change action')?.click();
+  await settle();
+  button('Review Reboot')?.click();
+  await settle();
+  expect(expiredReads).toBe(1);
+  expect(commandPosts).toBe(2);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 4 Reboot commands',
+  );
+});
+
+it('prepares a fresh Disable preview after the cached one expires', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  let disablePosts = 0;
+  let expiredReads = 0;
+  const { element, button, choose, settle } = await setup({
+    family: 'status',
+    request: (path, body) => {
+      if (path === '/api/devices/status-changes/previews') {
+        const action = (body as { statusAction?: string } | undefined)
+          ?.statusAction;
+        if (action === 'disable') {
+          disablePosts++;
+          return Response.json(
+            disablePosts === 1 ? disablePreview : replacementDisable,
+            { status: 201 },
+          );
+        }
+        return Response.json(reenablePreview, { status: 201 });
+      }
+      if (path === `/api/devices/status-changes/previews/${disablePreviewId}`) {
+        expiredReads++;
+        return Response.json({ reason: 'preview-expired' }, { status: 410 });
+      }
+      if (
+        path === `/api/devices/status-changes/previews/${replacementDisableId}`
+      )
+        return Response.json(replacementDisable);
+      if (path.includes(`${replacementDisableId}/targets`))
+        return Response.json({
+          targets: commandTargets.slice(0, 4),
+          nextCursor: null,
+        });
+      return ordinary(path, body);
+    },
+  });
+  await choose(0);
+  button('Review Disable')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Preview expired',
+  );
+  button('Change action')?.click();
+  await settle();
+  button('Review Disable')?.click();
+  await settle();
+  expect(expiredReads).toBe(1);
+  expect(disablePosts).toBe(2);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 4 Disable status changes',
+  );
+});
+
+it('retries the preparation when Review has no preview', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  let commandPosts = 0;
+  const { element, button, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/commands/previews') {
+        commandPosts++;
+        return commandPosts < 3
+          ? Response.json({ reason: 'unavailable' }, { status: 503 })
+          : Response.json(commandPreview, { status: 201 });
+      }
+      return ordinary(path);
+    },
+  });
+  button('Review Reboot')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The preview is unavailable',
+  );
+  expect(commandPosts).toBe(2);
+  button('Retry')?.click();
+  await settle();
+  expect(commandPosts).toBe(3);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 6 Reboot commands',
   );
 });

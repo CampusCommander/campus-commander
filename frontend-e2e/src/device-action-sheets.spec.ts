@@ -194,11 +194,14 @@ const statusJob = job({
 interface ApiOptions {
   /** The grants of the signed-in person. */
   actions?: readonly string[];
+  /** Drop the answer to the first confirmation, as a lost connection does. */
+  loseFirstConfirmation?: boolean;
 }
 
 /** The Devices page and the command and status routes the sheets read. */
 async function mockApi(page: Page, options: ApiOptions = {}) {
   const actions = options.actions ?? grants.map((grant) => grant.action);
+  let confirmations = 0;
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const routePath = new URL(request.url()).pathname;
@@ -242,6 +245,8 @@ async function mockApi(page: Page, options: ApiOptions = {}) {
     )
       return route.fulfill({ json: reenablePreview });
     if (method === 'POST' && routePath.endsWith('/confirm')) {
+      if (options.loseFirstConfirmation && confirmations++ === 0)
+        return route.abort('failed');
       return route.fulfill({
         status: 201,
         json: routePath.includes('/status-changes/')
@@ -564,6 +569,51 @@ for (const theme of ['light', 'dark'] as const) {
     ).toBeFocused();
   });
 }
+
+test('recovers a lost confirmation after a reload without another preview', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 990 });
+  let previewPosts = 0;
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname === '/api/devices/commands/previews'
+    )
+      previewPosts++;
+  });
+  await mockApi(page, { loseFirstConfirmation: true });
+  await openDevices(page);
+
+  const command = await openAction(page, 'command', 'Send command');
+  await command.getByRole('button', { name: 'Review Reboot' }).click();
+  await command
+    .getByRole('button', { name: 'Continue to confirmation' })
+    .click();
+  await command.getByRole('checkbox').check();
+  await command
+    .getByRole('button', { name: 'Send Reboot to 6 devices' })
+    .click();
+  await expect(
+    command.getByRole('heading', {
+      level: 1,
+      name: 'The confirmation did not finish',
+    }),
+  ).toBeVisible();
+  expect(previewPosts).toBe(1);
+
+  // The same tab reloads. The retained confirmation answers before any new preview.
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Devices', exact: true }),
+  ).toBeVisible();
+  const reopened = await openAction(page, 'command', 'Send command');
+  await expect(
+    reopened.getByRole('heading', { level: 1, name: 'Command job created' }),
+  ).toBeVisible();
+  await expect(reopened.getByText('Job CMD-001 · Running')).toBeVisible();
+  expect(previewPosts).toBe(1);
+});
 
 test('disables each entry that the person cannot use and names the permission', async ({
   page,
