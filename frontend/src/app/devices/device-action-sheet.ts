@@ -181,6 +181,8 @@ export class DeviceActionSheet {
   protected readonly selectionError = signal('');
   protected readonly chooseOffline = signal(false);
   private readonly loadedCount = signal<number | null>(null);
+  /** The initial selection read of this opening has finished, one way or another. */
+  private readonly selectionLoaded = signal(false);
   /** The selection that the frozen preview was prepared from. */
   private readonly frozenSelection = signal<string | null>(null);
   /** Late answers for an earlier open or step entry are dropped. */
@@ -464,6 +466,7 @@ export class DeviceActionSheet {
     this.chooseOffline.set(false);
     this.loadedCount.set(null);
     this.loadingSelection.set(true);
+    this.selectionLoaded.set(false);
     // Send command preselected Reboot, the only command (mockup choice 3).
     this.selected.set(this.family() === 'command' ? 'reboot' : null);
     afterNextRender(() => this.sheetTitle()?.nativeElement.focus(), {
@@ -489,6 +492,14 @@ export class DeviceActionSheet {
       this.submitted.set(replay.submitted);
       this.step.set('confirm');
       this.showProblem('confirm-uncertain', generation);
+      return;
+    }
+    if (replay.kind === 'unresolved') {
+      // The answer cannot prove that the first request created no job. Keep the
+      // identity for another replay and send the person to the Jobs recovery.
+      this.submitted.set(replay.submitted);
+      this.step.set('confirm');
+      this.showProblem('confirm-receipt-unavailable', generation);
       return;
     }
     if (replay.kind === 'problem') {
@@ -524,7 +535,10 @@ export class DeviceActionSheet {
           'Campus Commander could not read the device selection.',
         );
     } finally {
-      if (generation === this.generation) this.loadingSelection.set(false);
+      if (generation === this.generation) {
+        this.loadingSelection.set(false);
+        this.selectionLoaded.set(true);
+      }
     }
   }
 
@@ -640,6 +654,13 @@ export class DeviceActionSheet {
       this.showProblem('confirm-uncertain', generation);
       return;
     }
+    if (replay.kind === 'unresolved') {
+      this.preparing.set(false);
+      this.submitted.set(replay.submitted);
+      this.step.set('confirm');
+      this.showProblem('confirm-receipt-unavailable', generation);
+      return;
+    }
     if (replay.kind === 'problem') {
       this.preparing.set(false);
       this.showProblem(replay.answer, generation, {
@@ -698,6 +719,9 @@ export class DeviceActionSheet {
     this.status.set('ready');
     this.targets.set([]);
     this.step.set('choose');
+    // An opening replay can send the sheet to Confirm before the initial selection
+    // read runs. Change action completes that read before Choose shows its options.
+    if (!this.selectionLoaded()) void this.loadSelection();
   }
 
   protected setAcknowledged(checked: boolean): void {

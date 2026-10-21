@@ -4,7 +4,10 @@ import { z } from 'zod';
 import { AuthStore } from '../auth.store';
 import { DeviceActionFlow } from './device-action-flow';
 import type { DeviceActionFamily } from './device-action-messages';
-import type { FlowProblemKind } from './device-update-flow';
+import {
+  confirmationMayExist,
+  type FlowProblemKind,
+} from './device-update-flow';
 
 /** The storage prefix of one person's uncertain action confirmations in this tab. */
 export const ACTION_CONFIRMATION_PREFIX = 'cc.device-action-confirmation.';
@@ -19,12 +22,20 @@ export type SubmittedActionConfirmation = z.infer<typeof submittedActionSchema>;
 
 /**
  * The answer to a replay of a retained confirmation. `none` means the person holds
- * no record. `expired` means a 410 proved that no job exists.
+ * no record. `expired` means a 410 proved that no job exists. `unresolved` means the
+ * answer arrives before the API's existing-receipt lookup, so it cannot prove that
+ * the first request created no job.
  */
 export type ActionConfirmationReplay =
   | { kind: 'none' }
   | { kind: 'receipt'; receipt: DeviceActionJobReceipt }
   | { kind: 'expired' }
+  | {
+      kind: 'unresolved';
+      submitted: SubmittedActionConfirmation;
+      answer: FlowProblemKind;
+      expiresAt: string | null;
+    }
   | { kind: 'problem'; answer: FlowProblemKind; expiresAt: string | null }
   | { kind: 'uncertain'; submitted: SubmittedActionConfirmation };
 
@@ -93,7 +104,8 @@ export class DeviceActionConfirmationStore {
   /**
    * Replay every uncertain confirmation of this person and family. A 410 proves
    * that no job exists, so its record clears and the caller proceeds. Any other
-   * answer ends the replay: a receipt, the named problem, or the uncertain state.
+   * answer ends the replay: a receipt, an unresolved answer that may hide a job, the
+   * named problem, or the uncertain state.
    */
   async resolvePending(
     family: DeviceActionFamily,
@@ -127,8 +139,18 @@ export class DeviceActionConfirmationStore {
     if (result.answer === 'confirm-uncertain') {
       return { kind: 'uncertain', submitted };
     }
-    // A named answer is definitive. The design names every 4xx it returns, so the
-    // record clears and the sheet shows that answer.
+    // Some named answers arrive before the API checks for an existing receipt. They
+    // cannot prove that the first request created no job, so the identity stays.
+    if (confirmationMayExist(result.answer)) {
+      return {
+        kind: 'unresolved',
+        submitted,
+        answer: result.answer,
+        expiresAt: result.expiresAt,
+      };
+    }
+    // A definitive named answer settles the record. The design names every 4xx it
+    // returns after the receipt lookup, so the sheet shows that answer.
     this.release(submitted.family, submitted.previewId);
     return {
       kind: 'problem',
