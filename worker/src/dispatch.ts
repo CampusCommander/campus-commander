@@ -12,6 +12,7 @@ import type { GoogleWorker } from './google-connection';
 import { EntityCacheError } from './entity-cache';
 import { DeviceSyncError, deviceSyncRequestSchema } from './device-sync';
 import {
+  deviceCommandPollRequestSchema,
   deviceUpdateBatchRequestSchema,
   deviceUpdateFinishRequestSchema,
   deviceUpdateReconcileRequestSchema,
@@ -259,6 +260,10 @@ const deviceUpdateReconcileDispatchSchema =
     executionId: executionIdSchema,
   });
 
+const deviceCommandPollDispatchSchema = deviceCommandPollRequestSchema.extend({
+  executionId: executionIdSchema,
+});
+
 /** One write batch. Every Google outcome and every fenced result answers 200. */
 export async function handleDeviceUpdateBatchDispatch(
   request: IncomingMessage,
@@ -350,6 +355,36 @@ export async function handleDeviceUpdateReconcileDispatch(
     });
   } catch (error) {
     respondUpdateError(response, error, 'device-update-unavailable');
+  }
+  return true;
+}
+
+/** One poll run. Every GET answer and every fenced result answers 200. */
+export async function handleDeviceCommandPollDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (
+    request.method !== 'POST' ||
+    request.url !== '/dispatch/device-command-poll'
+  )
+    return false;
+  if (rejected(request, response, context)) return true;
+  try {
+    const { executionId, ...input } = deviceCommandPollDispatchSchema.parse(
+      await readJson(request),
+    );
+    const answer = await google.pollDeviceCommands(input, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status: answer.outcome === 'completed' ? 'completed' : 'settled',
+      ...answer,
+    });
+  } catch (error) {
+    respondUpdateError(response, error, 'device-command-poll-unavailable');
   }
   return true;
 }
