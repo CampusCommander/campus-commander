@@ -291,7 +291,7 @@ test('a reboot command is issued once and polled through its states', async () =
   const atOnce = await reader.deviceCommands(
     credential,
     domain.customerId,
-    [command && { deviceId: early.deviceId, commandId: command.commandId }],
+    [{ deviceId: early.deviceId, commandId: command.commandId }],
     AbortSignal.timeout(timeout),
   );
   const first = atOnce.succeeded.get(early.deviceId)[0];
