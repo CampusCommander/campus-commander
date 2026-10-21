@@ -76,7 +76,8 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     method: 'chromeosdevices.patch',
     source:
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/patch',
-    evidence: 'admin-sdk-mock v0.2.0 only. No live write check.',
+    evidence:
+      'admin-sdk-mock v0.2.0 only. Methods: chromeosdevices.patch, customer.devices.chromeos.issueCommand, customer.devices.chromeos.commands.get, customer.devices.chromeos.batchChangeStatus.',
   },
 ] as const);
 
