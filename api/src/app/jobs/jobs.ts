@@ -121,6 +121,23 @@ export function decodeCursor(
 const actionKinds: Readonly<Record<JobAction, string>> = {
   'update-device-annotations': 'device-update',
   'refresh-inventory': 'inventory-refresh',
+  'reboot-devices': 'device-command',
+  'disable-devices': 'device-status',
+  'reenable-devices': 'device-status',
+};
+
+/** The job action of one write row. A missing action reads as the annotated-location update. */
+const writeActions: Readonly<Record<string, JobAction>> = {
+  'annotated-location': 'update-device-annotations',
+  reboot: 'reboot-devices',
+  disable: 'disable-devices',
+  reenable: 'reenable-devices',
+};
+
+/** The stored action of each public status action. The action filter needs this direction. */
+const storedStatusActions: Readonly<Record<string, string>> = {
+  'disable-devices': 'disable',
+  'reenable-devices': 'reenable',
 };
 
 /** One job header row as a summary of section 2.5. */
@@ -131,6 +148,7 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
   const failed = counted(row['failed']);
   const unknown = counted(row['unknown']);
   const skipped = counted(row['skipped']);
+  const expired = counted(row['expired']);
   return jobSummarySchema.parse({
     jobId: row['job_id'],
     displayId: row['display_id'],
@@ -138,7 +156,7 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
     action:
       row['kind'] === 'inventory-refresh'
         ? 'refresh-inventory'
-        : 'update-device-annotations',
+        : (writeActions[String(row['action'])] ?? 'update-device-annotations'),
     status: row['status'],
     scope: { kind: row['scope_kind'], deviceCount: total },
     requestedBy: {
@@ -154,16 +172,29 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
       failed,
       unknown,
       skipped,
+      expired,
       pending:
         total === null
           ? null
-          : Math.max(0, total - succeeded - failed - unknown - skipped),
+          : Math.max(
+              0,
+              total - succeeded - failed - unknown - skipped - expired,
+            ),
     },
     failure: row['failure'],
   });
 }
 
-/** One operation row. A dispatched operation reads pending (section 2.2). */
+/** The operation word of one row: the write action, or the annotated-location mode. */
+function operationOf(row: Record<string, unknown>): JobOperation['operation'] {
+  const action = writeActions[String(row['action'])];
+  if (action === 'reboot-devices') return 'reboot';
+  if (action === 'disable-devices') return 'disable';
+  if (action === 'reenable-devices') return 'reenable';
+  return row['mode'] === 'clear' ? 'clear' : 'replace';
+}
+
+/** One operation row. A dispatched or issued operation reads pending (section 2.2). */
 export function jobOperation(
   row: Record<string, unknown>,
   displayId: string,
@@ -174,17 +205,27 @@ export function jobOperation(
     deviceId: String(row['device_id']),
     serialNumber: String(row['serial_number'] ?? ''),
     orgUnitPath: String(row['org_unit_path'] ?? ''),
-    operation: row['mode'] === 'clear' ? 'clear' : 'replace',
+    operation: operationOf(row),
     baselineValue: (row['baseline_value'] as string | null) ?? null,
     requestedValue: (row['requested_value'] as string | null) ?? null,
     outcome:
-      status === 'dispatched' ? 'pending' : (status as JobOperation['outcome']),
+      status === 'dispatched' || status === 'issued'
+        ? 'pending'
+        : (status as JobOperation['outcome']),
     outcomeReason: (row['outcome_reason'] as string | null) ?? null,
     googleStatus:
       row['google_status'] == null ? null : Number(row['google_status']),
     googleReason: (row['google_reason'] as string | null) ?? null,
     observedValue: (row['observed_value'] as string | null) ?? null,
     verifiedBy: (row['verified_by'] as JobOperation['verifiedBy']) ?? null,
+    commandId: (row['command_id'] as string | null) ?? null,
+    // The stored last observation stays as evidence. The API exposes it only while the command is issued.
+    commandState:
+      status === 'issued'
+        ? ((row['command_state'] as JobOperation['commandState']) ?? null)
+        : null,
+    commandExpiresAt: measuredAtOrNull(row['command_expires_at']),
+    commandExecutedAt: measuredAtOrNull(row['command_executed_at']),
     updatedAt: measuredAt(row['updated_at']),
   };
 }
@@ -298,10 +339,20 @@ export class Jobs {
       if (filters.jobId) where.push(`j.display_id=${add(filters.jobId)}`);
       if (filters.status?.length)
         where.push(`j.status=ANY(${add(filters.status)}::text[])`);
-      if (filters.action?.length)
-        where.push(
-          `j.kind=ANY(${add(filters.action.map((action) => actionKinds[action]))}::text[])`,
-        );
+      if (filters.action?.length) {
+        const kinds = [
+          ...new Set(filters.action.map((action) => actionKinds[action])),
+        ];
+        where.push(`j.kind=ANY(${add(kinds)}::text[])`);
+        // The two status actions share one kind, so the detail action decides when only one is chosen.
+        const statusActions = filters.action
+          .filter((action) => storedStatusActions[action] !== undefined)
+          .map((action) => storedStatusActions[action]);
+        if (statusActions.length === 1)
+          where.push(
+            `(j.kind<>'device-status' OR u.action=${add(statusActions[0])})`,
+          );
+      }
       if (filters.entityType?.length && !filters.entityType.includes('device'))
         where.push('false');
       if (filters.requestedBy?.length)
@@ -324,15 +375,17 @@ export class Jobs {
     const countedRow = (
       await this.rows(
         `SELECT count(*)::int AS matching, clock_timestamp() AS observed_at
-          FROM cc.jobs j WHERE ${countedQuery.where}`,
+          FROM cc.jobs j LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+          WHERE ${countedQuery.where}`,
         countedQuery.values,
       )
     )[0];
     const pageQuery = build(true);
     const rows = await this.rows(
-      `SELECT j.*, p.display_name AS requested_by_name,
+      `SELECT j.*, u.action, p.display_name AS requested_by_name,
         to_char(j.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_cursor
         FROM cc.jobs j JOIN cc.application_principals p ON p.id=j.requested_by
+        LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
         WHERE ${pageQuery.where}
         ORDER BY j.created_at DESC, j.display_id DESC
         LIMIT $${pageQuery.values.length + 1}`,
@@ -359,7 +412,7 @@ export class Jobs {
     return (
       await this.rows(
         `SELECT j.*, p.display_name AS requested_by_name,
-          u.confirmed_by, u.field, u.mode, u.value AS requested_value,
+          u.confirmed_by, u.action, u.field, u.mode, u.value AS requested_value,
           cp.display_name AS confirmed_by_name, pr.display_id AS preview_display_id
         FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
@@ -409,6 +462,11 @@ export class Jobs {
       previewDisplayId: job['preview_display_id'] ?? null,
       field: job['field'] ?? null,
       mode: job['mode'] ?? null,
+      commandType: job['action'] === 'reboot' ? 'REBOOT' : null,
+      statusAction:
+        job['action'] === 'disable' || job['action'] === 'reenable'
+          ? job['action']
+          : null,
       requestedValue: job['requested_value'] ?? null,
       targetOrgUnitPaths: job['target_org_unit_paths'] ?? null,
       correlationId: job['correlation_id'],
@@ -436,7 +494,7 @@ export class Jobs {
     if (cursor && !Number.isInteger(after))
       throw new NotFoundException({ reason: 'job-not-found' });
     const rows = await this.rows(
-      `SELECT o.*, u.mode FROM cc.device_update_operations o
+      `SELECT o.*, u.action, u.mode FROM cc.device_update_operations o
         JOIN cc.jobs j ON j.job_id=o.job_id
         LEFT JOIN cc.device_update_jobs u ON u.job_id=o.job_id
         WHERE j.customer_id=$3 AND j.display_id=$4
@@ -481,7 +539,7 @@ export class Jobs {
     const jobId = String(job['job_id']);
     const row = (
       await this.rows(
-        `SELECT o.*, u.mode FROM cc.device_update_operations o
+        `SELECT o.*, u.action, u.mode FROM cc.device_update_operations o
           JOIN cc.jobs j ON j.job_id=o.job_id
           JOIN cc.device_update_jobs u ON u.job_id=o.job_id
           WHERE j.customer_id=$3 AND j.display_id=$4
@@ -544,14 +602,15 @@ export class Jobs {
     const seenAt = measuredAtOrNull(seenRow?.['seen_at']);
     const runningCount = (
       await this.rows(
-        `SELECT count(*)::int AS count FROM cc.jobs j WHERE ${visible} AND j.status='running'`,
+        `SELECT count(*)::int AS count FROM cc.jobs j WHERE ${visible} AND j.status IN ('running','awaiting-devices')`,
         [...actor, customerId],
       )
     )[0];
     const running = await this.rows(
-      `SELECT j.*, p.display_name AS requested_by_name FROM cc.jobs j
+      `SELECT j.*, u.action, p.display_name AS requested_by_name FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
-        WHERE ${visible} AND j.status='running'
+        LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        WHERE ${visible} AND j.status IN ('running','awaiting-devices')
         ORDER BY j.created_at DESC, j.display_id DESC LIMIT ${ACTIVITY_RUNNING_ROWS}`,
       [...actor, customerId],
     );
@@ -563,8 +622,9 @@ export class Jobs {
       )
     )[0];
     const waiting = await this.rows(
-      `SELECT j.*, p.display_name AS requested_by_name FROM cc.jobs j
+      `SELECT j.*, u.action, p.display_name AS requested_by_name FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
+        LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
         WHERE ${visible} AND j.status IN ('accepted','queued','held')
         ORDER BY j.target_count ASC NULLS LAST, j.created_at ASC, j.display_id ASC
         LIMIT ${ACTIVITY_WAITING_ROWS}`,
@@ -581,8 +641,9 @@ export class Jobs {
       )
     )[0];
     const recent = await this.rows(
-      `SELECT j.*, p.display_name AS requested_by_name FROM cc.jobs j
+      `SELECT j.*, u.action, p.display_name AS requested_by_name FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
+        LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
         WHERE ${visible} AND j.finished_at IS NOT NULL
           AND j.finished_at >= clock_timestamp() - interval '${ACTIVITY_WINDOW}'
         ORDER BY j.finished_at DESC LIMIT ${ACTIVITY_RECENT_ROWS}`,

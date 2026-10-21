@@ -192,6 +192,7 @@ const finishSchema = z.object({
   failed: z.number().int().min(0).optional(),
   unknown: z.number().int().min(0).optional(),
   skipped: z.number().int().min(0).optional(),
+  expired: z.number().int().min(0).optional(),
   finishedAt: z.string().nullable().optional(),
   publication: publicationElementSchema.nullable().optional(),
 });

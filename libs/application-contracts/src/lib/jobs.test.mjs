@@ -5,14 +5,17 @@ import {
   JOB_ACTION_LABELS,
   jobActionSchema,
   jobActivitySchema,
+  jobCommandStateSchema,
   jobDetailSchema,
   jobDisplayIdSchema,
   jobEventSchema,
   jobEventsChannel,
   jobLatestActivitySchema,
   jobListSchema,
+  jobOperationIdSchema,
   jobOperationSchema,
   jobOperationsPageSchema,
+  jobOutcomeSchema,
   jobProgressSchema,
   jobRequestersSchema,
   jobSeenSchema,
@@ -41,6 +44,7 @@ const summary = {
     failed: 1,
     unknown: 0,
     skipped: 0,
+    expired: 0,
     pending: 7,
   },
   failure: null,
@@ -60,11 +64,22 @@ const operation = {
   googleReason: null,
   observedValue: null,
   verifiedBy: null,
+  commandId: null,
+  commandState: null,
+  commandExpiresAt: null,
+  commandExecutedAt: null,
   updatedAt: at,
 };
 
 test('display IDs and statuses carry the job vocabulary', () => {
-  for (const id of ['UPD-006', 'REF-031', 'UPD-1000'])
+  for (const id of [
+    'UPD-006',
+    'REF-031',
+    'UPD-1000',
+    'CMD-001',
+    'STS-001',
+    'CMD-1000',
+  ])
     assert.equal(jobDisplayIdSchema.safeParse(id).success, true);
   for (const id of ['PV-006', 'UPD-06', 'UPD-006-3', 'upd-006', 'UPD'])
     assert.equal(jobDisplayIdSchema.safeParse(id).success, false);
@@ -73,6 +88,7 @@ test('display IDs and statuses carry the job vocabulary', () => {
     'queued',
     'held',
     'running',
+    'awaiting-devices',
     'completed',
     'completed-with-errors',
     'failed',
@@ -81,11 +97,74 @@ test('display IDs and statuses carry the job vocabulary', () => {
   assert.deepEqual(jobActionSchema.options, [
     'update-device-annotations',
     'refresh-inventory',
+    'reboot-devices',
+    'disable-devices',
+    'reenable-devices',
   ]);
   assert.deepEqual(JOB_ACTION_LABELS, {
     'update-device-annotations': 'Update device annotations',
     'refresh-inventory': 'Refresh inventory',
+    'reboot-devices': 'Reboot devices',
+    'disable-devices': 'Disable devices',
+    'reenable-devices': 'Re-enable devices',
   });
+});
+
+test('the command and status vocabulary is accepted', () => {
+  // Display IDs of the two new kinds, and a command operation ID of each kind.
+  assert.equal(jobDisplayIdSchema.safeParse('CMD-001').success, true);
+  assert.equal(jobDisplayIdSchema.safeParse('STS-001').success, true);
+  assert.equal(jobStatusSchema.safeParse('awaiting-devices').success, true);
+  assert.equal(jobOutcomeSchema.safeParse('expired').success, true);
+  assert.equal(jobCommandStateSchema.safeParse('sent').success, true);
+  assert.equal(jobCommandStateSchema.safeParse('delivered').success, false);
+  for (const operationId of ['CMD-001-1', 'STS-001-12', 'UPD-006-3'])
+    assert.equal(jobOperationIdSchema.safeParse(operationId).success, true);
+  for (const operationId of ['REF-001-1', 'CMD-01-1', 'CMD-001'])
+    assert.equal(jobOperationIdSchema.safeParse(operationId).success, false);
+  // One command summary and one operation carry the new fields.
+  const command = {
+    ...summary,
+    displayId: 'CMD-001',
+    action: 'reboot-devices',
+    status: 'awaiting-devices',
+    progress: {
+      ...summary.progress,
+      total: 1,
+      succeeded: 0,
+      failed: 0,
+      pending: 1,
+    },
+  };
+  assert.equal(jobSummarySchema.safeParse(command).success, true);
+  const issued = {
+    ...operation,
+    operationId: 'CMD-001-1',
+    operation: 'reboot',
+    requestedValue: null,
+    baselineValue: 'ACTIVE',
+    commandId: '4100000001',
+    commandState: 'pending-delivery',
+    commandExpiresAt: at,
+    commandExecutedAt: null,
+  };
+  assert.deepEqual(jobOperationSchema.parse(issued), issued);
+  assert.equal(
+    jobOperationSchema.safeParse({ ...issued, commandId: 'abc' }).success,
+    false,
+  );
+  assert.equal(
+    jobOperationSchema.safeParse({ ...issued, commandState: 'expired' })
+      .success,
+    false,
+  );
+  const expired = {
+    ...operation,
+    operationId: 'STS-001-2',
+    operation: 'disable',
+    outcome: 'expired',
+  };
+  assert.equal(jobOperationSchema.safeParse(expired).success, true);
 });
 
 test('job summaries are strict objects', () => {
@@ -127,6 +206,7 @@ test('progress counts total and pending together', () => {
     failed: 0,
     unknown: 1,
     skipped: 0,
+    expired: 0,
     pending: null,
   };
   assert.equal(jobProgressSchema.safeParse(running).success, true);
@@ -182,6 +262,8 @@ test('job detail extends the summary with the write fields', () => {
     previewDisplayId: 'PV-006',
     field: 'annotatedLocation',
     mode: 'replace',
+    commandType: null,
+    statusAction: null,
     requestedValue: 'Room 12',
     targetOrgUnitPaths: ['/School A'],
     correlationId: jobId,
@@ -213,6 +295,35 @@ test('job detail extends the summary with the write fields', () => {
     targetOrgUnitPaths: null,
   };
   assert.equal(jobDetailSchema.safeParse(refresh).success, true);
+  const command = {
+    ...detail,
+    displayId: 'CMD-001',
+    action: 'reboot-devices',
+    field: null,
+    mode: null,
+    commandType: 'REBOOT',
+    requestedValue: null,
+  };
+  assert.equal(jobDetailSchema.safeParse(command).success, true);
+  assert.equal(
+    jobDetailSchema.safeParse({ ...command, commandType: 'POWERWASH' }).success,
+    false,
+  );
+  const status = {
+    ...detail,
+    displayId: 'STS-001',
+    action: 'disable-devices',
+    field: null,
+    mode: null,
+    statusAction: 'disable',
+    requestedValue: 'DISABLED',
+  };
+  assert.equal(jobDetailSchema.safeParse(status).success, true);
+  assert.equal(
+    jobDetailSchema.safeParse({ ...status, statusAction: 'deprovision' })
+      .success,
+    false,
+  );
 });
 
 test('activity caps rows and reports a null window', () => {

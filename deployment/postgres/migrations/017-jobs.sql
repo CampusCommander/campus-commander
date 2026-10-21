@@ -2,20 +2,24 @@
 -- 016 keeps the device inventory and the refresh job model. This file adds new objects only.
 -- The only statement below that alters a 016 object is the dependency-forced foreign key of cc.entity_sync_jobs.
 INSERT INTO cc.application_actions(action,scope_kinds) VALUES('devices:write',ARRAY['platform','district']),
-  ('devices:bulk-actions',ARRAY['platform','district']),('jobs:read',ARRAY['platform','district']);
+  ('devices:bulk-actions',ARRAY['platform','district']),('jobs:read',ARRAY['platform','district']),
+  ('devices:commands',ARRAY['platform','district']),('devices:status',ARRAY['platform','district']);
 
 CREATE SEQUENCE cc.job_number_upd;
 CREATE SEQUENCE cc.job_number_ref;
+CREATE SEQUENCE cc.job_number_cmd;
+CREATE SEQUENCE cc.job_number_sts;
 CREATE SEQUENCE cc.preview_number_pv;
 
 -- One header row per background job. Refresh jobs keep cc.entity_sync_jobs as their detail table.
+-- Every device write kind shares the tables below: an update, a command, or a status change.
 CREATE TABLE cc.jobs (
   job_id uuid PRIMARY KEY,
-  display_id text NOT NULL UNIQUE CHECK(display_id ~ '^(UPD|REF)-[0-9]{3,}$'),
+  display_id text NOT NULL UNIQUE CHECK(display_id ~ '^(UPD|REF|CMD|STS)-[0-9]{3,}$'),
   customer_id text NOT NULL REFERENCES cc.google_connection(customer_id),
-  kind text NOT NULL CHECK(kind IN ('inventory-refresh','device-update')),
+  kind text NOT NULL CHECK(kind IN ('inventory-refresh','device-update','device-command','device-status')),
   scope_kind text NOT NULL CHECK(scope_kind IN ('devices','all-devices')),
-  status text NOT NULL CHECK(status IN ('accepted','queued','held','running','completed',
+  status text NOT NULL CHECK(status IN ('accepted','queued','held','running','awaiting-devices','completed',
     'completed-with-errors','failed','needs-review')),
   requested_by uuid NOT NULL REFERENCES cc.application_principals(id),
   generation integer NOT NULL,
@@ -25,6 +29,7 @@ CREATE TABLE cc.jobs (
   failed integer NOT NULL DEFAULT 0 CHECK(failed>=0),
   unknown integer NOT NULL DEFAULT 0 CHECK(unknown>=0),
   skipped integer NOT NULL DEFAULT 0 CHECK(skipped>=0),
+  expired integer NOT NULL DEFAULT 0 CHECK(expired>=0),
   failure text CHECK(failure IN ('credential-rejected','delegation-not-authorized','api-not-enabled',
     'policy-restricted','network-failure','scope-mismatch','permission-denied','quota','provider-unavailable',
     'invalid-response','wrong-customer','request-failed','key-unavailable','interrupted','orchestration-unavailable',
@@ -39,10 +44,11 @@ CREATE TABLE cc.jobs (
   CHECK(scope_kind<>'devices' OR (target_count IS NOT NULL AND target_count BETWEEN 1 AND 100000))
 );
 CREATE INDEX jobs_recent ON cc.jobs(customer_id,created_at DESC,display_id DESC);
+-- The write slot: one running device write job per customer. An awaiting-devices command job holds none.
 CREATE UNIQUE INDEX jobs_one_running ON cc.jobs(customer_id)
-  WHERE kind='device-update' AND status='running';
+  WHERE kind IN ('device-update','device-command','device-status') AND status='running';
 CREATE INDEX jobs_admission ON cc.jobs(customer_id,target_count,created_at,display_id)
-  WHERE kind='device-update' AND status IN ('accepted','queued','held');
+  WHERE kind IN ('device-update','device-command','device-status') AND status IN ('accepted','queued','held');
 CREATE INDEX jobs_finished ON cc.jobs(customer_id,finished_at DESC) WHERE finished_at IS NOT NULL;
 
 -- The refresh detail row shares the header identity. 016 defines the detail table, so 017 adds this constraint.
@@ -58,7 +64,8 @@ CREATE TABLE cc.job_targets (
   PRIMARY KEY(job_id,device_id)
 );
 
--- One prepared preview of an annotated-location update.
+-- One prepared preview of a device write. An annotated-location update carries field and mode; a
+-- command or status preview carries neither and freezes the action alone.
 CREATE TABLE cc.device_update_previews (
   preview_id uuid PRIMARY KEY,
   display_id text NOT NULL UNIQUE CHECK(display_id ~ '^PV-[0-9]{3,}$'),
@@ -66,8 +73,9 @@ CREATE TABLE cc.device_update_previews (
   created_by uuid NOT NULL REFERENCES cc.application_principals(id),
   permission_version integer NOT NULL,
   generation integer NOT NULL,
-  field text NOT NULL CHECK(field IN ('annotatedLocation')),
-  mode text NOT NULL CHECK(mode IN ('replace','clear')),
+  action text NOT NULL CHECK(action IN ('annotated-location','reboot','disable','reenable')),
+  field text CHECK(field IN ('annotatedLocation')),
+  mode text CHECK(mode IN ('replace','clear')),
   value text,
   action_version integer NOT NULL DEFAULT 1 CHECK(action_version>=1),
   selected integer NOT NULL CHECK(selected>=0),
@@ -80,10 +88,12 @@ CREATE TABLE cc.device_update_previews (
   expires_at timestamptz NOT NULL,
   job_id uuid UNIQUE REFERENCES cc.jobs(job_id),
   CHECK(selected=eligible+unchanged+excluded),
-  CHECK((mode='clear')=(value IS NULL))
+  CHECK((action='annotated-location')=(field IS NOT NULL AND mode IS NOT NULL)),
+  CHECK(action<>'annotated-location' OR (mode='clear')=(value IS NULL))
 );
 
--- The frozen target list of one preview.
+-- The frozen target list of one preview. For a command or a status change, observed_value holds the
+-- cached device status. Section 2 names the exclusion reasons; the column stays open text.
 CREATE TABLE cc.device_update_preview_targets (
   preview_id uuid NOT NULL REFERENCES cc.device_update_previews(preview_id) ON DELETE CASCADE,
   ordinal integer NOT NULL CHECK(ordinal>=0),
@@ -103,8 +113,9 @@ CREATE TABLE cc.device_update_preview_targets (
 CREATE TABLE cc.device_update_jobs (
   job_id uuid PRIMARY KEY REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
   preview_id uuid NOT NULL UNIQUE REFERENCES cc.device_update_previews(preview_id),
-  field text NOT NULL CHECK(field IN ('annotatedLocation')),
-  mode text NOT NULL CHECK(mode IN ('replace','clear')),
+  action text NOT NULL CHECK(action IN ('annotated-location','reboot','disable','reenable')),
+  field text CHECK(field IN ('annotatedLocation')),
+  mode text CHECK(mode IN ('replace','clear')),
   value text,
   confirmed_by uuid NOT NULL REFERENCES cc.application_principals(id),
   confirmer_permission_version integer NOT NULL,
@@ -115,6 +126,9 @@ CREATE TABLE cc.device_update_jobs (
   dispatch_count integer NOT NULL DEFAULT 0 CHECK(dispatch_count>=0),
   start_deadline_at timestamptz,
   kestra_execution_id text,
+  -- The lease of the one poll flow of a command job (section 4 step 5).
+  poll_execution_id text,
+  poll_lease_expires_at timestamptz,
   first_claimed_at timestamptz,
   heartbeat_at timestamptz,
   backoff_attempt uuid,
@@ -128,7 +142,8 @@ CREATE TABLE cc.device_update_jobs (
   result_artifact_id text,
   scope_observations integer NOT NULL DEFAULT 0 CHECK(scope_observations>=0),
   scope_failure text CHECK(scope_failure IS NULL OR scope_failure IN ('delegation-not-authorized','scope-mismatch')),
-  CHECK((scope_observations=0)=(scope_failure IS NULL))
+  CHECK((scope_observations=0)=(scope_failure IS NULL)),
+  CHECK((action='annotated-location')=(field IS NOT NULL AND mode IS NOT NULL))
 );
 CREATE INDEX device_update_jobs_scope_observations ON cc.device_update_jobs(job_id)
   WHERE scope_observations>0;
@@ -155,7 +170,7 @@ CREATE TABLE cc.device_update_operations (
   baseline_value text,
   requested_value text,
   batch integer NOT NULL CHECK(batch>=0),
-  status text NOT NULL CHECK(status IN ('pending','dispatched','succeeded','failed','unknown','skipped')),
+  status text NOT NULL CHECK(status IN ('pending','dispatched','issued','succeeded','failed','unknown','skipped','expired')),
   attempt_id uuid,
   google_status integer,
   google_reason text,
@@ -165,20 +180,33 @@ CREATE TABLE cc.device_update_operations (
   observed_at timestamptz,
   verified_by text CHECK(verified_by IN ('write-response','read-back')),
   outcome_reason text,
+  -- The Google command of an issued operation (section 1, command operation states).
+  command_id text CHECK(command_id ~ '^[0-9]{1,20}$'),
+  command_state text CHECK(command_state IN ('pending-delivery','sent','acknowledged')),
+  command_expires_at timestamptz,
+  command_executed_at timestamptz,
+  poll_after timestamptz,
+  poll_deadline_at timestamptz,
+  poll_attempt uuid,
+  poll_lease_expires_at timestamptz,
   verify_attempt uuid,
   verify_lease_expires_at timestamptz,
   verify_after timestamptz,
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-  PRIMARY KEY(job_id,operation_number)
+  PRIMARY KEY(job_id,operation_number),
+  CHECK(status<>'issued' OR (command_id IS NOT NULL AND poll_after IS NOT NULL))
 );
 CREATE INDEX device_update_operations_activity
   ON cc.device_update_operations(job_id,status,updated_at DESC,operation_number);
+-- The poll claim reads the due issued operations of one job (section 4 step 6).
+CREATE INDEX device_update_operations_polls ON cc.device_update_operations(job_id,poll_after)
+  WHERE status='issued';
 
 -- The accepted value of one device, until a list converges or the overlay expires.
 CREATE TABLE cc.device_write_overlays (
   customer_id text NOT NULL REFERENCES cc.google_connection(customer_id),
   device_id text NOT NULL,
-  field text NOT NULL CHECK(field IN ('annotatedLocation')),
+  field text NOT NULL CHECK(field IN ('annotatedLocation','status')),
   value text,
   observed_at timestamptz NOT NULL,
   source text NOT NULL CHECK(source IN ('write-response','read-back','refresh-read')),
@@ -317,17 +345,18 @@ BEGIN
     succeeded=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='succeeded'),
     failed=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='failed'),
     unknown=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='unknown'),
-    skipped=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='skipped')
+    skipped=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='skipped'),
+    expired=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='expired')
   WHERE j.job_id=p_job;
 END;
 $$;
 
--- The status rule of section 5.10. It reads only counters.
+-- The status rule of section 5.10, with expired beside failed. It reads only counters.
 CREATE FUNCTION cc.device_update_terminal_status(p_job uuid) RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT CASE WHEN j.unknown>0 THEN 'needs-review'
     WHEN j.succeeded=j.target_count THEN 'completed'
-    WHEN j.succeeded>0 AND j.failed+j.skipped>0 THEN 'completed-with-errors'
+    WHEN j.succeeded>0 AND j.failed+j.expired+j.skipped>0 THEN 'completed-with-errors'
     ELSE 'failed' END
   FROM cc.jobs j WHERE j.job_id=p_job;
 $$;
@@ -390,11 +419,17 @@ BEGIN
 END;
 $$;
 
--- The confirmer of a write job still holds both write actions at the connection scope.
-CREATE FUNCTION cc.write_capable(p_actor uuid,p_customer text) RETURNS boolean
+-- The confirmer of a write job still holds both write actions at the connection scope. The job action
+-- names the action permission: an update needs devices:write, a command devices:commands, and a status
+-- change devices:status. An unknown action holds no pair, so the answer is false.
+CREATE FUNCTION cc.write_capable(p_actor uuid,p_customer text,p_action text) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT count(DISTINCT g.action)=2 FROM cc.application_grants g
-  WHERE g.principal_id=p_actor AND g.action IN ('devices:write','devices:bulk-actions')
+  WHERE g.principal_id=p_actor AND g.action IN ('devices:bulk-actions',
+      CASE p_action WHEN 'annotated-location' THEN 'devices:write'
+        WHEN 'reboot' THEN 'devices:commands'
+        WHEN 'disable' THEN 'devices:status'
+        WHEN 'reenable' THEN 'devices:status' END)
     AND (g.scope='{"kind":"platform"}'::jsonb OR
     (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer));
 $$;
@@ -403,11 +438,11 @@ $$;
 -- A batch claim reads it under the header lock and again after its waits (round 2, F1). It reads without a
 -- lock, and it returns null when the claim may dispatch.
 CREATE FUNCTION cc.device_update_stop_reason(p_customer text,p_confirmer uuid,p_version integer,
-  p_generation integer) RETURNS text
+  p_generation integer,p_action text) RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT CASE
     WHEN NOT EXISTS(SELECT 1 FROM cc.application_principals p WHERE p.id=p_confirmer AND p.enabled AND
-        p.permission_version=p_version) OR NOT cc.write_capable(p_confirmer,p_customer) THEN 'permission-changed'
+        p.permission_version=p_version) OR NOT cc.write_capable(p_confirmer,p_customer,p_action) THEN 'permission-changed'
     WHEN NOT EXISTS(SELECT 1 FROM cc.google_connection c WHERE c.customer_id=p_customer AND
         c.generation=p_generation AND c.active) THEN 'connection-changed'
   END;
@@ -436,7 +471,7 @@ BEGIN
   END IF;
   PERFORM pg_advisory_xact_lock(hashtext('cc.job-admission:'||p_customer)::bigint);
   -- S1: every pending header locks first, in admission order.
-  FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update'
+  FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind IN ('device-update','device-command','device-status')
       AND j.status IN ('accepted','queued','held') ORDER BY j.target_count,j.created_at,j.display_id FOR UPDATE LOOP
     candidates:=candidates||job;
   END LOOP;
@@ -445,7 +480,7 @@ BEGIN
   now_at:=clock_timestamp();
   -- S1 (round 2): the one-running flag reads after every header wait, so a job that ended in a wait
   -- leaves the write slot free for this admission.
-  SELECT EXISTS(SELECT 1 FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND j.status='running')
+  SELECT EXISTS(SELECT 1 FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind IN ('device-update','device-command','device-status') AND j.status='running')
     INTO running;
   -- S1 (round 3): a status change publishes, and the publication row references the connection row. A
   -- credential read holds that row FOR UPDATE (008), so the connection row locks here, after the validation,
@@ -453,7 +488,7 @@ BEGIN
   IF cardinality(candidates)>0 THEN
     PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
     now_at:=clock_timestamp();
-    SELECT EXISTS(SELECT 1 FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND
+    SELECT EXISTS(SELECT 1 FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind IN ('device-update','device-command','device-status') AND
       j.status='running') INTO running;
   END IF;
   label:=CASE WHEN p_held THEN 'held' ELSE 'queued' END;
@@ -499,7 +534,7 @@ BEGIN
   END IF;
   -- S1: the header row locks before the detail row, as every other write-job writer takes them.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   -- S1: the clock reads after the header lock. The first fence reads the detail row without a lock,
@@ -534,7 +569,7 @@ BEGIN
   END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   -- S1: a missing scoped header returns at once, before the unscoped detail lock (round 6, R6-6).
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN RETURN; END IF;
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN RETURN; END IF;
   -- S1: the closure clock reads after the header lock, and the fence reads the detail row without a
   -- lock, so a superseded call rejects before it waits on that row.
   now_at:=clock_timestamp();
@@ -575,7 +610,7 @@ BEGIN
   IF p_customer IS NULL THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
-  FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND j.status='running'
+  FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind IN ('device-update','device-command','device-status') AND j.status='running'
       ORDER BY j.created_at FOR UPDATE LOOP
     -- S1: the tick reads its clock after the job row lock (review F3).
     now_at:=clock_timestamp();
@@ -642,7 +677,7 @@ BEGIN
   -- 7240173008), so the claim takes that lock first, before any row lock.
   PERFORM pg_advisory_xact_lock(7240173008);
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
@@ -659,7 +694,7 @@ BEGIN
   -- Revalidation before dispatch (section 5.6). A recorded job failure is the first stop reason
   -- (B2c ruling 4): the job never dispatches again after the settlement that recorded it.
   stopped:=COALESCE(job.failure,cc.device_update_stop_reason(p_customer,detail.confirmed_by,
-    detail.confirmer_permission_version,job.generation));
+        detail.confirmer_permission_version,job.generation,detail.action));
   IF stopped IS NULL THEN
     -- S1/R6-2: the batch ownership and its lease eligibility read under the header, before the batch
     -- lock. A duplicate claim answers busy instead of waiting on the held batch row.
@@ -708,13 +743,13 @@ BEGIN
       RETURN jsonb_build_object('outcome','superseded');
     END IF;
     stopped:=cc.device_update_stop_reason(p_customer,detail.confirmed_by,detail.confirmer_permission_version,
-      job.generation);
+      job.generation,detail.action);
     IF stopped IS NULL THEN
       -- The credential read locks the connection row last and rejects a changed generation (015). The
       -- revalidation repeats after that wait, so no access change in any wait reaches a dispatch.
       connection:=cc.google_current_generation(p_customer,job.generation);
       stopped:=cc.device_update_stop_reason(p_customer,detail.confirmed_by,detail.confirmer_permission_version,
-        job.generation);
+        job.generation,detail.action);
     END IF;
     -- The claim writes read the clock after every wait.
     now_at:=clock_timestamp();
@@ -786,7 +821,7 @@ BEGIN
   RETURN jsonb_build_object('outcome','claimed','generation',connection.generation,
     'credentialId',connection.credential_id,
     'envelope',(SELECT envelope FROM cc.google_credentials WHERE id=connection.credential_id),
-    'batchCount',detail.batch_count,'operations',claim,'readBack',readback);
+    'batchCount',detail.batch_count,'action',detail.action,'operations',claim,'readBack',readback);
 END;
 $$;
 
@@ -801,7 +836,7 @@ BEGIN
   END IF;
   -- S1: the customer-scoped header locks first. A missing scoped header blocks the renewal.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
@@ -848,7 +883,7 @@ BEGIN
   END IF;
   -- S1: the customer-scoped header locks first. A missing scoped header blocks the release.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN
     RAISE EXCEPTION 'The device update attempt is fenced.' USING DETAIL='attempt-fenced';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
@@ -941,7 +976,7 @@ BEGIN
   now_at:=clock_timestamp();
   -- S2: a write settlement rejects a null token explicitly. A read-back settlement stays
   -- attempt-fenced and token-independent, so a terminal job can settle its review (section 5.7).
-  IF p_kind='write' AND (p_token IS NULL OR detail.job_id IS NULL OR job.kind<>'device-update' OR
+  IF p_kind='write' AND (p_token IS NULL OR detail.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') OR
       job.status<>'running' OR job.finished_at IS NOT NULL OR detail.dispatch_token IS DISTINCT FROM p_token) THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
@@ -1177,7 +1212,7 @@ BEGIN
   PERFORM pg_advisory_xact_lock(7240173008);
   -- S1: the header reads without a lock. This call changes no job row.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer;
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   -- The clock and the held operations read without a lock.
@@ -1223,7 +1258,7 @@ BEGIN
     RAISE EXCEPTION 'The device update failure is invalid.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
@@ -1282,7 +1317,7 @@ BEGIN
     RAISE EXCEPTION 'The device update failure is invalid.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
@@ -1323,6 +1358,21 @@ BEGIN
     UPDATE cc.jobs SET failure=COALESCE(failure,p_failure) WHERE job_id=p_job;
   END IF;
   PERFORM cc.refresh_device_update_counters(p_job);
+  -- A command job that still waits for Google keeps no write slot and no finished time (section 1).
+  -- The issue settlement leaves its accepted operations issued, so this branch frees the slot.
+  IF job.kind='device-command' AND EXISTS(SELECT 1 FROM cc.device_update_operations o
+      WHERE o.job_id=p_job AND o.status='issued') THEN
+    after:='awaiting-devices';
+    UPDATE cc.jobs SET status=after WHERE job_id=p_job;
+    element:=cc.record_job_change(p_job,after IS DISTINCT FROM before);
+    RETURN jsonb_build_object('jobId',p_job,'status',after,
+      'succeeded',(SELECT j.succeeded FROM cc.jobs j WHERE j.job_id=p_job),
+      'failed',(SELECT j.failed FROM cc.jobs j WHERE j.job_id=p_job),
+      'unknown',(SELECT j.unknown FROM cc.jobs j WHERE j.job_id=p_job),
+      'skipped',(SELECT j.skipped FROM cc.jobs j WHERE j.job_id=p_job),
+      'expired',(SELECT j.expired FROM cc.jobs j WHERE j.job_id=p_job),
+      'finishedAt',NULL,'publication',element);
+  END IF;
   after:=cc.device_update_terminal_status(p_job);
   UPDATE cc.jobs SET status=after,finished_at=COALESCE(finished_at,now_at) WHERE job_id=p_job;
   -- B2c ruling 6: the terminal answer carries the element of the publication row that this call records,
@@ -1333,6 +1383,7 @@ BEGIN
     'failed',(SELECT j.failed FROM cc.jobs j WHERE j.job_id=p_job),
     'unknown',(SELECT j.unknown FROM cc.jobs j WHERE j.job_id=p_job),
     'skipped',(SELECT j.skipped FROM cc.jobs j WHERE j.job_id=p_job),
+    'expired',(SELECT j.expired FROM cc.jobs j WHERE j.job_id=p_job),
     'finishedAt',(SELECT j.finished_at FROM cc.jobs j WHERE j.job_id=p_job),'publication',element);
 END;
 $$;
@@ -1349,7 +1400,7 @@ BEGIN
   END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   -- S1: the finalizer validates the job kind under the header lock. A refresh header stays untouched.
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN
     RAISE EXCEPTION 'The device update job does not exist.' USING ERRCODE='22023';
   END IF;
   -- S1: the clock reads after the header lock, before the lifecycle and grace validation (review F3, round 3).
@@ -1383,6 +1434,20 @@ BEGIN
   PERFORM cc.skip_device_update_pending(p_job,
     COALESCE((SELECT j.failure FROM cc.jobs j WHERE j.job_id=p_job),'interrupted'));
   PERFORM cc.refresh_device_update_counters(p_job);
+  -- A command job that still waits for Google leaves the reaper in awaiting-devices (section 1).
+  IF job.kind='device-command' AND EXISTS(SELECT 1 FROM cc.device_update_operations o
+      WHERE o.job_id=p_job AND o.status='issued') THEN
+    after:='awaiting-devices';
+    UPDATE cc.jobs SET status=after WHERE job_id=p_job;
+    PERFORM cc.record_job_change(p_job,after IS DISTINCT FROM before);
+    RETURN jsonb_build_object('outcome','finalized','jobId',p_job,'status',after,
+      'succeeded',(SELECT j.succeeded FROM cc.jobs j WHERE j.job_id=p_job),
+      'failed',(SELECT j.failed FROM cc.jobs j WHERE j.job_id=p_job),
+      'unknown',(SELECT j.unknown FROM cc.jobs j WHERE j.job_id=p_job),
+      'skipped',(SELECT j.skipped FROM cc.jobs j WHERE j.job_id=p_job),
+      'expired',(SELECT j.expired FROM cc.jobs j WHERE j.job_id=p_job),
+      'finishedAt',NULL);
+  END IF;
   after:=cc.device_update_terminal_status(p_job);
   UPDATE cc.jobs SET status=after,finished_at=now_at WHERE job_id=p_job;
   PERFORM cc.record_job_change(p_job,true);
@@ -1391,6 +1456,7 @@ BEGIN
     'failed',(SELECT j.failed FROM cc.jobs j WHERE j.job_id=p_job),
     'unknown',(SELECT j.unknown FROM cc.jobs j WHERE j.job_id=p_job),
     'skipped',(SELECT j.skipped FROM cc.jobs j WHERE j.job_id=p_job),
+    'expired',(SELECT j.expired FROM cc.jobs j WHERE j.job_id=p_job),
     'finishedAt',(SELECT j.finished_at FROM cc.jobs j WHERE j.job_id=p_job));
 END;
 $$;
@@ -1406,7 +1472,7 @@ BEGIN
     RAISE EXCEPTION 'The backoff report is invalid.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN RETURN false; END IF;
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN RETURN false; END IF;
   -- S1/R6-7: the clock reads after the header lock, and the fence reads the detail and batch rows
   -- without a lock, so a superseded report rejects before it waits on the detail row.
   now_at:=clock_timestamp();
@@ -1454,7 +1520,7 @@ BEGIN
     RAISE EXCEPTION 'The hold report is invalid.' USING ERRCODE='22023';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtext('cc.job-admission:'||p_customer)::bigint);
-  FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind='device-update' AND
+  FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND j.kind IN ('device-update','device-command','device-status') AND
       j.status='running' ORDER BY j.created_at FOR UPDATE LOOP
     -- The lease fence reads the clock after the job row lock (review F3).
     now_at:=clock_timestamp();
@@ -1501,7 +1567,7 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext('cc.job-admission:'||p_customer)::bigint);
   -- S1: the header row locks before the detail row, as every other write-job writer takes them.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
-  IF job.job_id IS NULL OR job.kind<>'device-update' THEN RETURN false; END IF;
+  IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN RETURN false; END IF;
   -- The caller's own filter names these four terminal statuses. The fence repeats it here, so a direct
   -- call never marks the registry entry of a live job (round 2, eng-lead ruling 3).
   IF job.status NOT IN ('completed','completed-with-errors','failed','needs-review') THEN RETURN false; END IF;
@@ -1522,13 +1588,14 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT jsonb_build_object('jobId',j.job_id,'displayId',j.display_id,'status','accepted',
     'deviceCount',j.target_count,
     'updateCount',(SELECT count(*)::integer FROM cc.device_update_operations o WHERE o.job_id=j.job_id))
-  FROM cc.jobs j WHERE j.job_id=p_job AND j.kind='device-update';
+  FROM cc.jobs j WHERE j.job_id=p_job AND j.kind IN ('device-update','device-command','device-status');
 $$;
 
 -- One prepared preview and its frozen targets, in one transaction. The caller resolves the stored
 -- selection and computes the values and the digest. This function freezes that result.
+-- An annotated-location update carries a mode and a value. A command or status preview carries neither.
 CREATE FUNCTION cc.create_device_update_preview(p_actor uuid,p_version integer,p_customer text,
-  p_generation integer,p_mode text,p_value text,p_digest text,p_targets jsonb,p_expires_minutes integer)
+  p_generation integer,p_action text,p_mode text,p_value text,p_digest text,p_targets jsonb,p_expires_minutes integer)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE preview cc.device_update_previews; now_at timestamptz; selected integer; eligible integer;
@@ -1536,14 +1603,20 @@ DECLARE preview cc.device_update_previews; now_at timestamptz; selected integer;
 BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_generation IS NULL OR
-    p_mode IS NULL OR p_mode NOT IN ('replace','clear') OR p_digest IS NULL OR
+    p_action IS NULL OR p_action NOT IN ('annotated-location','reboot','disable','reenable') OR
+    p_digest IS NULL OR
     p_digest !~ '^[a-f0-9]{64}$' OR p_targets IS NULL OR jsonb_typeof(p_targets)<>'array' OR
     p_expires_minutes IS NULL OR p_expires_minutes NOT BETWEEN 1 AND 1440 THEN
     RAISE EXCEPTION 'The preview request is invalid.' USING ERRCODE='22023';
   END IF;
-  IF (p_mode='clear') <> (p_value IS NULL) OR
-    (p_mode='replace' AND (char_length(p_value) NOT BETWEEN 1 AND 200 OR btrim(p_value)='')) THEN
-    RAISE EXCEPTION 'The preview value is invalid.' USING ERRCODE='22023';
+  IF p_action='annotated-location' THEN
+    IF p_mode IS NULL OR p_mode NOT IN ('replace','clear') OR
+      (p_mode='clear') <> (p_value IS NULL) OR
+      (p_mode='replace' AND (char_length(p_value) NOT BETWEEN 1 AND 200 OR btrim(p_value)='')) THEN
+      RAISE EXCEPTION 'The preview value is invalid.' USING ERRCODE='22023';
+    END IF;
+  ELSIF p_mode IS NOT NULL OR p_value IS NOT NULL THEN
+    RAISE EXCEPTION 'The preview request is invalid.' USING ERRCODE='22023';
   END IF;
   IF jsonb_array_length(p_targets)>100000 THEN
     RAISE EXCEPTION 'The preview selection is too large.' USING ERRCODE='22023';
@@ -1583,7 +1656,7 @@ BEGIN
   -- The person check of the preview route. A caller without both write actions receives no preview.
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
-    NOT cc.write_capable(p_actor,p_customer) THEN
+    NOT cc.write_capable(p_actor,p_customer,p_action) THEN
     RETURN jsonb_build_object('outcome','forbidden');
   END IF;
   SELECT count(*),count(*) FILTER (WHERE e->>'disposition'='eligible'),
@@ -1595,10 +1668,11 @@ BEGIN
   now_at:=clock_timestamp();
   number:=nextval('cc.preview_number_pv');
   INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-    generation,field,mode,value,selected,eligible,unchanged,excluded,oldest_observed_at,manifest_digest,
+    generation,action,field,mode,value,selected,eligible,unchanged,excluded,oldest_observed_at,manifest_digest,
     prepared_at,expires_at)
   VALUES(gen_random_uuid(),cc.job_display_id('PV',number),p_customer,p_actor,p_version,p_generation,
-    'annotatedLocation',p_mode,p_value,selected,eligible,unchanged,excluded,oldest,p_digest,now_at,
+    p_action,CASE WHEN p_action='annotated-location' THEN 'annotatedLocation' END,p_mode,p_value,
+    selected,eligible,unchanged,excluded,oldest,p_digest,now_at,
     now_at+make_interval(mins=>p_expires_minutes))
   RETURNING * INTO preview;
   INSERT INTO cc.device_update_preview_targets(preview_id,ordinal,device_id,serial_number,org_unit_path,
@@ -1631,7 +1705,7 @@ BEGIN
   -- no artifact and creates no job.
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
-    NOT cc.write_capable(p_actor,p_customer) OR preview.permission_version<>p_version THEN
+    NOT cc.write_capable(p_actor,p_customer,preview.action) OR preview.permission_version<>p_version THEN
     RETURN jsonb_build_object('outcome','permission-changed');
   END IF;
   -- The current action version of this slice is 1. A preview prepared under other semantics never
@@ -1651,7 +1725,7 @@ BEGIN
     jsonb_build_object('previewId',preview.preview_id,'displayId',preview.display_id,
       'customerId',preview.customer_id,'createdBy',preview.created_by,
       'permissionVersion',preview.permission_version,'generation',preview.generation,
-      'field',preview.field,'mode',preview.mode,'value',preview.value,
+      'action',preview.action,'field',preview.field,'mode',preview.mode,'value',preview.value,
       'selected',preview.selected,'eligible',preview.eligible,'unchanged',preview.unchanged,
       'excluded',preview.excluded,'oldestObservedAt',preview.oldest_observed_at,
       'preparedAt',preview.prepared_at,'expiresAt',preview.expires_at,
@@ -1667,6 +1741,7 @@ CREATE FUNCTION cc.confirm_device_update_preview(p_actor uuid,p_version integer,
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE preview cc.device_update_previews; connection cc.google_connection; job cc.jobs;
   subject text; eligible integer; now_at timestamptz; number bigint; artifact cc.artifacts;
+  job_kind text; prefix text;
 BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before any lock.
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_preview IS NULL OR
@@ -1688,7 +1763,7 @@ BEGIN
   -- principal, or an obsolete version never receives the receipt of a job it no longer may see.
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
-    NOT cc.write_capable(p_actor,p_customer) OR preview.permission_version<>p_version THEN
+    NOT cc.write_capable(p_actor,p_customer,preview.action) OR preview.permission_version<>p_version THEN
     RETURN jsonb_build_object('outcome','permission-changed');
   END IF;
   -- R1-F1 (round 3): the preview's frozen action version must still be current. This slice runs
@@ -1738,25 +1813,33 @@ BEGIN
   IF preview.expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
   END IF;
-  number:=nextval('cc.job_number_upd');
+  -- The action names the header kind, the display prefix, and the number sequence (section 1).
+  job_kind:=CASE preview.action WHEN 'annotated-location' THEN 'device-update'
+    WHEN 'reboot' THEN 'device-command' ELSE 'device-status' END;
+  prefix:=CASE preview.action WHEN 'annotated-location' THEN 'UPD' WHEN 'reboot' THEN 'CMD' ELSE 'STS' END;
+  number:=CASE preview.action WHEN 'annotated-location' THEN nextval('cc.job_number_upd')
+    WHEN 'reboot' THEN nextval('cc.job_number_cmd') ELSE nextval('cc.job_number_sts') END;
   INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
     target_count,target_org_unit_paths,correlation_id)
-  VALUES(gen_random_uuid(),cc.job_display_id('UPD',number),p_customer,'device-update','devices','accepted',
+  VALUES(gen_random_uuid(),cc.job_display_id(prefix,number),p_customer,job_kind,'devices','accepted',
     p_actor,preview.generation,eligible,
     (SELECT COALESCE(array_agg(DISTINCT t.org_unit_path ORDER BY t.org_unit_path),'{}'::text[])
       FROM cc.device_update_preview_targets t
       WHERE t.preview_id=p_preview AND t.disposition='eligible'),
     p_correlation)
   RETURNING * INTO job;
-  INSERT INTO cc.device_update_jobs(job_id,preview_id,field,mode,value,confirmed_by,
+  INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
     confirmer_permission_version,delegated_subject,batch_size,batch_count,manifest_artifact_id)
-  VALUES(job.job_id,p_preview,preview.field,preview.mode,preview.value,p_actor,p_version,subject,250,
+  VALUES(job.job_id,p_preview,preview.action,preview.field,preview.mode,preview.value,p_actor,p_version,subject,250,
     ceil(eligible/250.0),p_artifact);
   INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
     baseline_value,requested_value,batch,status)
   SELECT job.job_id,(row_number() OVER (ORDER BY t.ordinal))::integer,t.device_id,t.serial_number,
     t.org_unit_path,t.observed_value,
-    CASE WHEN preview.mode='clear' THEN NULL ELSE preview.value END,
+    CASE preview.action WHEN 'annotated-location' THEN
+        CASE WHEN preview.mode='clear' THEN NULL ELSE preview.value END
+      WHEN 'disable' THEN 'DISABLED'
+      WHEN 'reenable' THEN 'ACTIVE' END,
     ((row_number() OVER (ORDER BY t.ordinal)-1)/250)::integer,'pending'
   FROM cc.device_update_preview_targets t
   WHERE t.preview_id=p_preview AND t.disposition='eligible' ORDER BY t.ordinal;
@@ -1900,8 +1983,8 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.record_job_change(uuid,boolean,jsonb,jsonb,integer),cc.read_job_publications(text,integer),
   cc.complete_job_publications(text,jsonb),cc.refresh_device_update_counters(uuid),
   cc.device_update_terminal_status(uuid),cc.fence_device_update_operations(uuid,uuid,jsonb,timestamptz,interval),
-  cc.skip_device_update_pending(uuid,text),cc.close_refresh_job(uuid,text),cc.write_capable(uuid,text),
-  cc.device_update_stop_reason(text,uuid,integer,integer),cc.job_failure_known(text),
+  cc.skip_device_update_pending(uuid,text),cc.close_refresh_job(uuid,text),cc.write_capable(uuid,text,text),
+  cc.device_update_stop_reason(text,uuid,integer,integer,text),cc.job_failure_known(text),
   cc.admit_device_update_job(text,boolean),cc.record_device_update_start(text,uuid,uuid,text),
   cc.abandon_device_update_start(text,uuid,uuid),cc.recover_device_update_jobs(text),
   cc.claim_device_update_batch(text,uuid,uuid,integer,uuid,text),
@@ -1915,7 +1998,7 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.report_device_update_backoff(text,uuid,uuid,integer,uuid,integer),cc.accept_device_update_hold(text),
   cc.clean_device_update_hold(text,uuid),
   cc.purge_jobs(text,integer),cc.device_update_receipt(uuid),
-  cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,jsonb,integer),
+  cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,text,jsonb,integer),
   cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
   cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid),
   cc.job_reader(uuid,integer),cc.record_job_activity_seen(uuid,integer) FROM PUBLIC;

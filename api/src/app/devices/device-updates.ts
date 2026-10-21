@@ -39,7 +39,7 @@ const PREVIEW_MINUTES = 15;
 export const MAX_PREVIEW_TARGETS = 100_000;
 /** Device IDs travel into Google request paths. Only plain identifiers enter a job. */
 const plainDeviceId = /^[A-Za-z0-9_-]{1,128}$/;
-const measuredAt = (value: unknown) =>
+export const measuredAt = (value: unknown) =>
   value instanceof Date
     ? value.toISOString()
     : typeof value === 'string'
@@ -159,6 +159,35 @@ function summary(row: PreviewRow, now = Date.now()): DeviceUpdatePreview {
   });
 }
 
+/** Map one write-function outcome to the status and code of section 2.4. */
+export function deviceWriteFunctionError(
+  result: Record<string, unknown>,
+): never {
+  const outcome = String(result['outcome']);
+  if (outcome === 'forbidden')
+    throw new ForbiddenException('This action requires additional permission.');
+  if (outcome === 'not-found')
+    throw new NotFoundException({ reason: 'preview-not-found' });
+  if (outcome === 'preview-expired')
+    throw new GoneException({
+      reason: 'preview-expired',
+      expiresAt: measuredAt(result['expiresAt']),
+    });
+  if (outcome === 'nothing-to-update')
+    throw new UnprocessableEntityException({ reason: outcome });
+  if (outcome === 'artifact-missing')
+    throw new InternalServerErrorException(
+      'The manifest artifact is unavailable.',
+    );
+  if (
+    outcome === 'preview-changed' ||
+    outcome === 'permission-changed' ||
+    outcome === 'connection-changed'
+  )
+    throw new ConflictException({ reason: outcome });
+  throw new Error(`The device update function returned ${outcome}.`);
+}
+
 function receiptOf(value: unknown): DeviceUpdateJobReceipt {
   return deviceUpdateJobReceiptSchema.parse(value);
 }
@@ -212,12 +241,13 @@ export class DeviceUpdates {
     const result = await this.call<Record<string, unknown>>(
       this.database.connection,
       `SELECT cc.create_device_update_preview($1::uuid,$2::integer,$3::text,$4::integer,
-        $5::text,$6::text,$7::text,$8::jsonb,$9::integer) AS result`,
+        $5::text,$6::text,$7::text,$8::text,$9::jsonb,$10::integer) AS result`,
       [
         session.identity.id,
         session.identity.permissionVersion,
         current.customerId,
         current.generation,
+        'annotated-location',
         input.mode,
         value,
         digest,
@@ -318,31 +348,7 @@ export class DeviceUpdates {
 
   /** Map one function outcome to the status and code of section 2.4. */
   private functionError(result: Record<string, unknown>): never {
-    const outcome = String(result['outcome']);
-    if (outcome === 'forbidden')
-      throw new ForbiddenException(
-        'This action requires additional permission.',
-      );
-    if (outcome === 'not-found')
-      throw new NotFoundException({ reason: 'preview-not-found' });
-    if (outcome === 'preview-expired')
-      throw new GoneException({
-        reason: 'preview-expired',
-        expiresAt: measuredAt(result['expiresAt']),
-      });
-    if (outcome === 'nothing-to-update')
-      throw new UnprocessableEntityException({ reason: outcome });
-    if (outcome === 'artifact-missing')
-      throw new InternalServerErrorException(
-        'The manifest artifact is unavailable.',
-      );
-    if (
-      outcome === 'preview-changed' ||
-      outcome === 'permission-changed' ||
-      outcome === 'connection-changed'
-    )
-      throw new ConflictException({ reason: outcome });
-    throw new Error(`The device update function returned ${outcome}.`);
+    return deviceWriteFunctionError(result);
   }
 
   async confirm(

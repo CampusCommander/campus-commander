@@ -19,6 +19,7 @@ export const OUTCOME_LABELS: Readonly<Record<JobOutcome, string>> = {
   failed: 'Failed',
   unknown: 'Unknown',
   skipped: 'Skipped',
+  expired: 'Expired',
 };
 
 export function outcomeTone(outcome: JobOutcome): OutcomeTone {
@@ -71,6 +72,12 @@ export function jobCounters(progress: JobProgress): readonly JobCounter[] {
       key: 'skipped',
       label: 'Skipped',
       value: progress.skipped,
+      tone: 'neutral',
+    },
+    {
+      key: 'expired',
+      label: 'Expired',
+      value: progress.expired,
       tone: 'neutral',
     },
     { key: 'cancelled', label: 'Cancelled', value: 0, tone: 'neutral' },

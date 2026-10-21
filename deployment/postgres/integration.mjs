@@ -3,6 +3,7 @@ import { qualifyDeviceInventory } from './device-inventory.integration.mjs';
 import { qualifyDeviceWriteJobs } from './device-write-jobs.integration.mjs';
 import { qualifyDeviceWriteAccess } from './device-write-access.integration.mjs';
 import { qualifyDeviceUpdates } from './device-updates.integration.mjs';
+import { qualifyDeviceActions } from './device-actions.integration.mjs';
 import { qualifyEntityEntries } from './entity-entries.integration.mjs';
 import { qualifyWorkerWrites } from './worker-write.integration.mjs';
 import { qualifyJobsApi } from './jobs-api.integration.mjs';
@@ -575,6 +576,14 @@ try {
   );
   results.push(
     ...(await qualifyDeviceUpdates({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyDeviceActions({
       runtime,
       migrator: migrators[0],
       connect,

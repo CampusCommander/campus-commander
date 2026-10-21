@@ -144,7 +144,7 @@ export class JobService {
   async customers(): Promise<string[]> {
     const rows = await this.rows(
       `SELECT DISTINCT j.customer_id FROM cc.jobs j
-        WHERE j.kind='device-update' AND (j.status IN ('accepted','queued','held','running')
+        WHERE j.kind IN ('device-update','device-command','device-status') AND (j.status IN ('accepted','queued','held','running')
           OR EXISTS(SELECT 1 FROM cc.device_update_jobs u WHERE u.job_id=j.job_id
             AND u.hold_written_at IS NOT NULL AND u.hold_cleaned_at IS NULL))
         ORDER BY j.customer_id`,
@@ -181,7 +181,7 @@ export class JobService {
     await this.exclusive(async () => {
       const rows = await this.rows(
         `SELECT 1 FROM cc.jobs j WHERE j.customer_id=$1 AND j.job_id=$2
-          AND j.kind='device-update' AND j.status IN ${terminal}`,
+          AND j.kind IN ('device-update','device-command','device-status') AND j.status IN ${terminal}`,
         [customerId, jobId],
       );
       // Cleanup filters its own registry rows, and admission sees the freed write slot.
@@ -352,7 +352,7 @@ export class JobService {
   private async cleanupLocked(customerId: string): Promise<number> {
     const rows = await this.rows(
       `SELECT j.job_id FROM cc.jobs j JOIN cc.device_update_jobs u ON u.job_id=j.job_id
-        WHERE j.customer_id=$1 AND j.kind='device-update' AND j.status IN ${terminal}
+        WHERE j.customer_id=$1 AND j.kind IN ('device-update','device-command','device-status') AND j.status IN ${terminal}
           AND u.hold_written_at IS NOT NULL AND u.hold_cleaned_at IS NULL
         ORDER BY j.finished_at, j.display_id`,
       [customerId],
@@ -406,7 +406,7 @@ export class JobService {
     const rows = await this.rows(
       `SELECT p.publication_id,p.job_id,j.display_id,j.revision,j.requested_by
         FROM cc.job_publications p JOIN cc.jobs j ON j.job_id=p.job_id
-        WHERE p.customer_id=$1 AND p.publication_id>$2::bigint AND j.kind='device-update'
+        WHERE p.customer_id=$1 AND p.publication_id>$2::bigint AND j.kind IN ('device-update','device-command','device-status')
           AND p.status_changed AND jsonb_array_length(p.device_ids)=0 AND jsonb_array_length(p.removed_ids)=0
         ORDER BY p.publication_id`,
       [customerId, after],

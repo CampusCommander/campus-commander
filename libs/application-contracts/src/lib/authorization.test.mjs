@@ -78,7 +78,13 @@ test('school grants require the exact school and customer without path inference
 });
 
 test('the device write actions take platform and district scopes', () => {
-  for (const action of ['devices:write', 'devices:bulk-actions', 'jobs:read']) {
+  for (const action of [
+    'devices:write',
+    'devices:commands',
+    'devices:status',
+    'devices:bulk-actions',
+    'jobs:read',
+  ]) {
     assert.ok(
       actionSchema.options.includes(action),
       `${action} is a declared action`,
