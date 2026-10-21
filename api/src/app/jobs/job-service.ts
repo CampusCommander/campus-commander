@@ -89,7 +89,12 @@ interface PublicationElement {
   batchCount: number | null;
 }
 
-const terminal = `('completed','completed-with-errors','failed','needs-review')`;
+/**
+ * A job that keeps no write slot. A terminal job released it, and a command job in
+ * `awaiting-devices` released it when issuing ended (design section 1). Its hold and the
+ * next admission therefore run without waiting for the last command.
+ */
+const holdReleased = `('completed','completed-with-errors','failed','needs-review','awaiting-devices')`;
 
 /**
  * The job service of design section 6 and the relay of section 3.6. It runs inside the API process as
@@ -181,7 +186,7 @@ export class JobService {
     await this.exclusive(async () => {
       const rows = await this.rows(
         `SELECT 1 FROM cc.jobs j WHERE j.customer_id=$1 AND j.job_id=$2
-          AND j.kind IN ('device-update','device-command','device-status') AND j.status IN ${terminal}`,
+          AND j.kind IN ('device-update','device-command','device-status') AND j.status IN ${holdReleased}`,
         [customerId, jobId],
       );
       // Cleanup filters its own registry rows, and admission sees the freed write slot.
@@ -352,7 +357,7 @@ export class JobService {
   private async cleanupLocked(customerId: string): Promise<number> {
     const rows = await this.rows(
       `SELECT j.job_id FROM cc.jobs j JOIN cc.device_update_jobs u ON u.job_id=j.job_id
-        WHERE j.customer_id=$1 AND j.kind IN ('device-update','device-command','device-status') AND j.status IN ${terminal}
+        WHERE j.customer_id=$1 AND j.kind IN ('device-update','device-command','device-status') AND j.status IN ${holdReleased}
           AND u.hold_written_at IS NOT NULL AND u.hold_cleaned_at IS NULL
         ORDER BY j.finished_at, j.display_id`,
       [customerId],

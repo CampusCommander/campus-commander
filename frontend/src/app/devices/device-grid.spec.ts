@@ -51,6 +51,7 @@ it('orders columns after the details icon and hides optional fields', () => {
   expect(columns.map((column) => column.colId)).toEqual([
     'details',
     'serialNumber',
+    'status',
     'model',
     'assetTag',
     'orgUnitPath',
@@ -64,7 +65,7 @@ it('orders columns after the details icon and hides optional fields', () => {
   expect(columns[0].lockPosition).toBe('left');
   expect(
     columns.filter((column) => column.hide).map((column) => column.colId),
-  ).toEqual(['annotatedLocation', 'notes']);
+  ).toEqual(['status', 'annotatedLocation', 'notes']);
   const value = (id: string) =>
     (columns.find((column) => column.colId === id)!.valueGetter as Getter)({
       data: row,

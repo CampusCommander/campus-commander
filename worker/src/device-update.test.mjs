@@ -46,12 +46,13 @@ const op = (number, deviceId, value = `Room ${number}`) => ({
   requestedValue: value,
 });
 
-const claimed = (operations, readBack = []) => ({
+const claimed = (operations, readBack = [], action = 'annotated-location') => ({
   outcome: 'claimed',
   generation: 1,
   credentialId: randomUUID(),
   envelope: { sealed: true },
   batchCount: 2,
+  action,
   operations,
   readBack,
 });
@@ -63,6 +64,7 @@ const part = (
     status = 200,
     reason = null,
     value = undefined,
+    commandId = undefined,
     quota = 0,
     transient = 0,
   } = {},
@@ -75,9 +77,11 @@ const part = (
       ? {
           kind: 'success',
           page:
-            value === undefined
-              ? { deviceId: id }
-              : { deviceId: id, annotatedLocation: value },
+            commandId !== undefined
+              ? { commandId }
+              : value === undefined
+                ? { deviceId: id }
+                : { deviceId: id, annotatedLocation: value },
           pageIndex: 0,
           hasNextPage: false,
         }
@@ -110,7 +114,7 @@ const part = (
  * `onSend`, each part answer, then `onBatch`. A fatal error throws after `onSend`
  * and before `onBatch`, as `send` does. An aborted signal sends nothing more.
  */
-function reader(rounds = [], states = []) {
+function reader(rounds = [], states = [], statusRounds = []) {
   return {
     calls: [],
     async patchAnnotatedLocations(
@@ -185,6 +189,176 @@ function reader(rounds = [], states = []) {
         });
       }
       return result;
+    },
+    /** The command issue path: one POST part per operation, each 2xx naming a command ID. */
+    async issueDeviceCommands(
+      _credential,
+      _customer,
+      commands,
+      signal,
+      options,
+    ) {
+      const call = {
+        name: 'issueDeviceCommands',
+        commands: commands.map((command) => ({ ...command })),
+        batchSize: options.batchSize,
+        aborted: false,
+        rounds: 0,
+      };
+      this.calls.push(call);
+      const result = { succeeded: new Map(), failed: new Map() };
+      let next = 0;
+      let number = 0;
+      let lastIds = [];
+      let commandNumber = 4_100_000_000;
+      for (const round of rounds) {
+        if (signal.aborted) {
+          call.aborted = true;
+          break;
+        }
+        number += 1;
+        if (round.mint) throw round.mint;
+        if (round.gate) await round.gate;
+        const size = round.size ?? options.batchSize ?? 250;
+        const ids = round.reuse
+          ? lastIds
+          : commands
+              .slice(next, next + size)
+              .map((command) => command.deviceId);
+        if (!round.reuse) next += ids.length;
+        lastIds = ids;
+        await options.onSend?.(ids);
+        call.rounds += 1;
+        if (round.gate) await round.gate;
+        if (round.abortBeforeAnswer) {
+          call.aborted = true;
+          break;
+        }
+        if (round.hang) {
+          await new Promise((resolve) =>
+            signal.addEventListener('abort', resolve, { once: true }),
+          );
+          call.aborted = true;
+          break;
+        }
+        if (round.fatal) throw round.fatal;
+        for (const id of ids) {
+          commandNumber += 1;
+          const answer = round.parts?.[id] ?? {
+            kind: 'success',
+            commandId: String(commandNumber),
+          };
+          const event = {
+            ...part(id, answer),
+            request: {
+              id,
+              method: 'POST',
+              path: `/admin/directory/v1/customer/${customerId}/devices/chromeos/${id}:issueCommand`,
+            },
+          };
+          if (event.outcome.kind === 'success')
+            result.succeeded.set(id, [event.outcome.page]);
+          else result.failed.set(id, event.outcome.failure);
+          await options.onResponse?.(event);
+        }
+        await options.onBatch?.({
+          round: number,
+          sentCount: ids.length,
+          outerStatus: 200,
+          durationMs: 1,
+          pending: commands.length - next,
+        });
+      }
+      return result;
+    },
+    async changeDeviceStatus(_credential, _customer, changes, signal, options) {
+      const call = {
+        name: 'changeDeviceStatus',
+        changes: changes.map((change) => ({ ...change })),
+        batchSize: options.batchSize,
+        aborted: false,
+        parts: [],
+        rounds: 0,
+      };
+      this.calls.push(call);
+      // Group the changes into parts of up to 50, in request order, as the real reader does.
+      const parts = [];
+      for (const change of changes) {
+        const last = parts[parts.length - 1];
+        if (
+          last !== undefined &&
+          last.action === change.action &&
+          last.deviceIds.length < 50
+        ) {
+          last.deviceIds.push(change.deviceId);
+          continue;
+        }
+        parts.push({
+          id: `status-${parts.length + 1}`,
+          action: change.action,
+          deviceIds: [change.deviceId],
+        });
+      }
+      const perRound = options.batchSize ?? 250;
+      let number = 0;
+      for (let start = 0; start < parts.length; start += perRound) {
+        if (signal.aborted) {
+          call.aborted = true;
+          break;
+        }
+        const round = statusRounds[number] ?? {};
+        number += 1;
+        call.rounds += 1;
+        const sent = parts.slice(start, start + perRound);
+        for (const part of sent)
+          call.parts.push({
+            id: part.id,
+            action: part.action,
+            deviceIds: [...part.deviceIds],
+          });
+        await options.onSend?.(sent);
+        for (const part of sent) {
+          if (round.failure) {
+            await options.onResponse?.({
+              id: part.id,
+              request: { id: part.id, method: 'POST', path: '' },
+              attempts: round.failure.attempts,
+              status: round.failure.status,
+              outcome: { kind: 'failed', failure: round.failure },
+            });
+            continue;
+          }
+          const page = part.deviceIds.map(
+            (deviceId) =>
+              round.results?.[deviceId] ?? {
+                deviceId,
+                outcome: 'succeeded',
+                reason: null,
+                googleReason: null,
+              },
+          );
+          await options.onResponse?.({
+            id: part.id,
+            request: { id: part.id, method: 'POST', path: '' },
+            attempts: { quota: 0, transient: 0 },
+            status: 200,
+            outcome: {
+              kind: 'success',
+              page,
+              pageIndex: 0,
+              hasNextPage: false,
+            },
+          });
+        }
+        await options.onBatch?.({
+          round: number,
+          sentCount: sent.length,
+          outerStatus: 200,
+          durationMs: 1,
+          pending: parts.length - start - sent.length,
+        });
+      }
+      return { answers: [], parts };
     },
     async deviceStates(_credential, _customer, ids, signal) {
       const call = {
@@ -872,6 +1046,236 @@ test('a read-back compares blank and reports a missing device as not-found', asy
   );
 });
 
+test('a Disable claim sends one status part and settles each device element', async () => {
+  const db = database({
+    claim: () =>
+      claimed(
+        [op(1, 'd1', 'DISABLED'), op(2, 'd2', 'DISABLED')],
+        [],
+        'disable',
+      ),
+    settle: (values) => {
+      if (values[4] === 'read-back') return undefined;
+      const results = JSON.parse(values[5]);
+      return {
+        outcome: 'settled',
+        settled: results.map((result) => ({
+          operationNumber: result.operationNumber,
+          deviceId: result.operationNumber === 1 ? 'd1' : 'd2',
+          status: result.outcome,
+          batch: 0,
+        })),
+        published: ['d1'],
+        removed: [],
+        publication: {
+          publicationId: 9,
+          jobId,
+          displayId,
+          requestedBy,
+          revision: 1,
+          statusChanged: false,
+          deviceIds: ['d1'],
+          removedIds: [],
+          batch: 0,
+          batchCount: 1,
+        },
+      };
+    },
+  });
+  const source = reader(
+    [],
+    [],
+    [
+      {
+        results: {
+          d1: {
+            deviceId: 'd1',
+            outcome: 'succeeded',
+            reason: null,
+            googleReason: null,
+          },
+          d2: {
+            deviceId: 'd2',
+            outcome: 'failed',
+            reason: 'status-conflict',
+            googleReason:
+              'A device with status DISABLED does not allow this action.',
+          },
+        },
+      },
+    ],
+  );
+  const store = cache();
+  const { create } = jobs({ db, reader: source, cache: store });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.deepEqual(answer, {
+    outcome: 'settled',
+    failure: null,
+    published: 1,
+    removed: 0,
+  });
+  const call = source.calls.find((one) => one.name === 'changeDeviceStatus');
+  assert.deepEqual(call.changes, [
+    { deviceId: 'd1', action: 'disable' },
+    { deviceId: 'd2', action: 'disable' },
+  ]);
+  assert.equal(
+    call.batchSize,
+    250,
+    'One multipart request holds up to 250 status parts.',
+  );
+  // Both device IDs travel in one part of at most 50 (addendum section 5).
+  assert.deepEqual(
+    call.parts.map((one) => one.deviceIds),
+    [['d1', 'd2']],
+  );
+  assert.deepEqual(JSON.parse(settlements(db)[0].values[5]), [
+    {
+      operationNumber: 1,
+      outcome: 'succeeded',
+      verifiedBy: 'write-response',
+      googleStatus: null,
+      googleReason: null,
+      quotaRetries: 0,
+      transientRetries: 0,
+    },
+    {
+      operationNumber: 2,
+      outcome: 'failed',
+      outcomeReason: 'status-conflict',
+      googleReason: 'A device with status DISABLED does not allow this action.',
+      value: null,
+      googleStatus: null,
+      quotaRetries: 0,
+      transientRetries: 0,
+    },
+  ]);
+  // Only the accepted device enters the entity-batch publication of the grid.
+  const entity = JSON.parse(
+    store.calls.find((one) => one.name === 'publish').args[1],
+  );
+  assert.equal(entityEventSchema.parse(entity).type, 'entity-batch');
+  assert.deepEqual(entity.deviceIds, ['d1']);
+});
+
+test('a Re-enable claim sends the re-enable action', async () => {
+  const db = database({
+    claim: () => claimed([op(1, 'd1', 'ACTIVE')], [], 'reenable'),
+  });
+  const source = reader([], [], [{ results: {} }]);
+  const { create } = jobs({ db, reader: source });
+  await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.deepEqual(
+    source.calls.find((one) => one.name === 'changeDeviceStatus').changes,
+    [{ deviceId: 'd1', action: 'reenable' }],
+  );
+});
+
+test('a status read-back compares the device status', async () => {
+  const db = database({
+    claim: () =>
+      claimed(
+        [op(1, 'd1', 'DISABLED'), op(2, 'd2', 'DISABLED')],
+        [],
+        'disable',
+      ),
+  });
+  const source = reader(
+    [],
+    [
+      [
+        {
+          deviceId: 'd1',
+          status: 'found',
+          device: { deviceId: 'd1', status: 'DISABLED' },
+        },
+        {
+          deviceId: 'd2',
+          status: 'found',
+          device: { deviceId: 'd2', status: 'ACTIVE' },
+        },
+      ],
+    ],
+    [
+      {
+        failure: {
+          kind: 'transient',
+          status: 503,
+          reason: 'unavailable',
+          attempts: { quota: 0, transient: 0 },
+          body: null,
+        },
+      },
+    ],
+  );
+  const { create } = jobs({ db, reader: source, batchSize: 2 });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.deepEqual(
+    source.calls.find((one) => one.name === 'deviceStates').ids,
+    ['d1', 'd2'],
+  );
+  assert.deepEqual(JSON.parse(settlements(db).at(-1).values[5]), [
+    {
+      operationNumber: 1,
+      outcome: 'succeeded',
+      verifiedBy: 'read-back',
+      value: 'DISABLED',
+    },
+    {
+      operationNumber: 2,
+      outcome: 'failed',
+      outcomeReason: 'value-differs',
+      verifiedBy: 'read-back',
+      value: 'ACTIVE',
+    },
+  ]);
+});
+
+test('a failed status part settles every device it held by the step 4 rules', async () => {
+  const db = database({
+    claim: () =>
+      claimed([op(1, 'd1', 'ACTIVE'), op(2, 'd2', 'ACTIVE')], [], 'reenable'),
+  });
+  const source = reader(
+    [],
+    [],
+    [
+      {
+        failure: {
+          kind: 'transient',
+          status: 503,
+          reason: 'unavailable',
+          attempts: { quota: 2, transient: 0 },
+          body: null,
+        },
+      },
+    ],
+  );
+  const { create } = jobs({ db, reader: source, batchSize: 2 });
+  await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.deepEqual(JSON.parse(settlements(db)[0].values[5]), [
+    {
+      operationNumber: 1,
+      outcome: 'unknown',
+      outcomeReason: 'ambiguous',
+      googleStatus: 503,
+      googleReason: 'unavailable',
+      quotaRetries: 2,
+      transientRetries: 0,
+    },
+    {
+      operationNumber: 2,
+      outcome: 'unknown',
+      outcomeReason: 'ambiguous',
+      googleStatus: 503,
+      googleReason: 'unavailable',
+      quotaRetries: 2,
+      transientRetries: 0,
+    },
+  ]);
+});
+
 test('a failed read-back part leaves the operation unknown with verification-failed', async () => {
   const db = database({ claim: () => claimed([op(1, 'd1')]) });
   const source = reader(
@@ -1309,6 +1713,7 @@ test('the finish prepares, reads back a chunk, and returns the publication', asy
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 1,
@@ -1392,6 +1797,187 @@ test('the finish polls a busy preparation every 10 s', async () => {
   assert.deepEqual(sleeps, [10_000]);
 });
 
+test('a command issue classifies its accepted, refused, and lost answers', () => {
+  const tracked = (extra = {}) => ({
+    operation: op(1, 'd1'),
+    sent: true,
+    succeeded: false,
+    value: null,
+    hasValue: false,
+    commandId: null,
+    status: null,
+    attempts: { quota: 0, transient: 0 },
+    final: null,
+    settled: false,
+    ...extra,
+  });
+  const failed = (
+    kind,
+    status,
+    reason,
+    attempts = { quota: 0, transient: 0 },
+  ) => ({ kind, status, reason, attempts, body: null });
+  const run = (entry) => classifyWrite(entry, null, true).outcome;
+  assert.deepEqual(
+    run(tracked({ succeeded: true, status: 200, commandId: '4100000001' })),
+    {
+      operationNumber: 1,
+      outcome: 'issued',
+      commandId: '4100000001',
+      googleStatus: 200,
+      googleReason: null,
+      quotaRetries: 0,
+      transientRetries: 0,
+    },
+  );
+  // A success without a command ID cannot be stored as issued (section 3).
+  const unreadable = run(tracked({ succeeded: true, status: 200 }));
+  assert.equal(unreadable.outcome, 'unknown');
+  assert.equal(unreadable.outcomeReason, 'invalid-response');
+  // A 503 part tells nothing about whether Google stored the command.
+  const transient = run(
+    tracked({ final: failed('transient', 503, 'backendError') }),
+  );
+  assert.equal(transient.outcome, 'unknown');
+  assert.equal(transient.outcomeReason, 'ambiguous');
+  // A final quota answer fails the operation. It never repeats the POST.
+  const quota = run(
+    tracked({ final: failed('quota', 429, 'rateLimitExceeded') }),
+  );
+  assert.equal(quota.outcome, 'failed');
+  assert.equal(quota.outcomeReason, 'quota');
+  // A sent POST with no answer stays ambiguous.
+  const lost = run(tracked());
+  assert.equal(lost.outcome, 'unknown');
+  assert.equal(lost.outcomeReason, 'ambiguous');
+  assert.equal(lost.googleStatus, 0);
+});
+
+test('a command batch issues one POST part per operation and settles issued', async () => {
+  const db = database({
+    claim: () => claimed([op(1, 'd1'), op(2, 'd2')], [], 'reboot'),
+  });
+  const source = reader([
+    {
+      parts: {
+        d1: { kind: 'success', commandId: '4100000001' },
+        d2: { kind: 'success', commandId: '4100000002' },
+      },
+    },
+  ]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(answer.failure, null);
+  assert.equal(source.calls[0].name, 'issueDeviceCommands');
+  assert.deepEqual(source.calls[0].commands, [
+    { deviceId: 'd1', commandType: 'REBOOT' },
+    { deviceId: 'd2', commandType: 'REBOOT' },
+  ]);
+  // One settlement carries both answers under the issue kind.
+  const [settlement] = settlements(db);
+  assert.equal(settlement.values[4], 'issue');
+  assert.deepEqual(
+    JSON.parse(settlement.values[5]).map((result) => [
+      result.operationNumber,
+      result.outcome,
+      result.commandId ?? null,
+      result.outcomeReason ?? null,
+    ]),
+    [
+      [1, 'issued', '4100000001', null],
+      [2, 'issued', '4100000002', null],
+    ],
+  );
+  // The write path never reads a command back.
+  assert.equal(
+    names(db.calls).includes('claim_device_update_verification'),
+    false,
+  );
+  assert.equal(
+    source.calls.some((call) => call.name === 'deviceStates'),
+    false,
+  );
+});
+
+test('a command finish skips the read-back and answers awaiting-devices', async () => {
+  const db = database({
+    claim: () => claimed([op(1, 'd1')], [], 'reboot'),
+    prepare: () => ({ outcome: 'ready', failure: null, action: 'reboot' }),
+    finish: () => ({
+      jobId,
+      status: 'awaiting-devices',
+      succeeded: 0,
+      failed: 0,
+      unknown: 0,
+      skipped: 0,
+      expired: 0,
+      finishedAt: null,
+      publication: null,
+    }),
+  });
+  const { create } = jobs({ db });
+  const answer = await create.runFinish(
+    { customerId, jobId, dispatchToken, correlationId },
+    AbortSignal.timeout(5000),
+  );
+  assert.equal(answer.outcome, 'finished');
+  assert.equal(answer.status, 'awaiting-devices');
+  assert.deepEqual(answer.readBack, {
+    claimed: 0,
+    notHeld: 0,
+    settled: 0,
+    verified: 0,
+    failed: 0,
+    unknown: 0,
+  });
+  assert.deepEqual(
+    names(db.calls).filter((name) => name !== 'clock_timestamp'),
+    ['prepare_device_update_finish', 'finish_device_update_job'],
+  );
+});
+
+test('a transient command refusal settles unknown ambiguous without a retry', async () => {
+  const db = database({ claim: () => claimed([op(1, 'd1')], [], 'reboot') });
+  const source = reader([
+    {
+      parts: { d1: { kind: 'transient', status: 503, reason: 'backendError' } },
+    },
+  ]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(source.calls[0].rounds, 1, 'A refused POST is not repeated.');
+  const [settlement] = settlements(db);
+  assert.equal(settlement.values[4], 'issue');
+  assert.deepEqual(
+    JSON.parse(settlement.values[5]).map((result) => [
+      result.outcome,
+      result.outcomeReason,
+      result.googleStatus,
+    ]),
+    [['unknown', 'ambiguous', 503]],
+  );
+});
+
+test('a command POST with no answer settles unknown ambiguous', async () => {
+  const db = database({ claim: () => claimed([op(1, 'd1')], [], 'reboot') });
+  const source = reader([{ abortBeforeAnswer: true }]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  const [settlement] = settlements(db);
+  assert.equal(settlement.values[4], 'issue');
+  assert.deepEqual(
+    JSON.parse(settlement.values[5]).map((result) => [
+      result.outcome,
+      result.outcomeReason,
+      result.googleStatus,
+    ]),
+    [['unknown', 'ambiguous', 0]],
+  );
+});
+
 test('reconcile with a number answers not-held when the attempt holds nothing', async () => {
   const db = database({ verificationRead: () => ({ outcome: 'not-held' }) });
   const source = reader();
@@ -1420,6 +2006,7 @@ test('reconcile with a number reads its operation and settles it', async () => {
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 3,
@@ -1487,6 +2074,7 @@ test('reconcile for all claims chunks until an empty claim', async () => {
         generation: 1,
         credentialId: randomUUID(),
         envelope: { sealed: true },
+        action: 'annotated-location',
         operations: [
           {
             operationNumber: number,
@@ -1756,6 +2344,7 @@ test('an envelope that cannot open is a read-back failure, not a request failure
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 1,
@@ -1913,6 +2502,7 @@ test('verifyAfter is measured on the database clock, not a worker clock ahead', 
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 3,
@@ -1993,6 +2583,7 @@ test('a read-back inside the 15 s lease margin settles unknown without a GET', a
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 3,
@@ -2044,6 +2635,7 @@ test('a delayed database clock read aborts the read-back GET at the lease-minus-
       generation: 1,
       credentialId: randomUUID(),
       envelope: { sealed: true },
+      action: 'annotated-location',
       operations: [
         {
           operationNumber: 3,

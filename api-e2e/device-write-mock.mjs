@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import https from 'node:https';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const terminalStates = new Set([
@@ -13,6 +14,59 @@ const terminalStates = new Set([
 
 /** The one channel that carries the write path's entity events. */
 const entityChannel = (customer) => `cc:entity-events:${customer}`;
+
+/** Mint an access token for the mock's administrator through the control API. */
+async function mockToken(mock, scope) {
+  const response = await fetch(
+    `${mock.controlUrl}/domains/${mock.customerId}/tokens`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ subject: mock.adminEmail, scopes: [scope] }),
+    },
+  );
+  assert.equal(
+    response.status,
+    200,
+    `The mock token request answered ${response.status}.`,
+  );
+  return (await response.json()).access_token;
+}
+
+/** Read one Google path through the mock's published Google port. */
+function mockGoogleGet({ mock, host, path, token }) {
+  return new Promise((resolve, reject) => {
+    const request = https.request(
+      {
+        host,
+        port: mock.googlePort,
+        path,
+        method: 'GET',
+        ca: mock.ca,
+        servername: host,
+        lookup: (_name, _options, done) =>
+          done(null, [{ address: '127.0.0.1', family: 4 }]),
+        headers: {
+          host,
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        timeout: 20_000,
+      },
+      (response) => {
+        let text = '';
+        response.on('data', (chunk) => (text += chunk));
+        response.on('end', () =>
+          resolve({ status: response.statusCode, text }),
+        );
+      },
+    );
+    request.on('error', reject);
+    request.on('timeout', () =>
+      request.destroy(new Error('The mock Google request timed out.')),
+    );
+    request.end();
+  });
+}
 
 /**
  * Design section 8.3, items 5, 9, 14, 15, and 24 on the mock stack.
@@ -116,9 +170,20 @@ export async function qualifyDeviceWritesOnMock({
     'The mock stack holds two devices to write.',
   );
 
-  const seedJob = async ({ devices, value, mode = 'replace', beforeStart }) => {
+  const seedJob = async ({
+    devices,
+    value,
+    mode = 'replace',
+    command = false,
+    beforeStart,
+  }) => {
     const jobId = randomUUID();
     const previewId = randomUUID();
+    // A command job carries the reboot action and no field, mode, or value.
+    const action = command ? 'reboot' : 'annotated-location';
+    const kind = command ? 'device-command' : 'device-update';
+    const prefix = command ? 'CMD' : 'UPD';
+    const sequence = command ? 'cc.job_number_cmd' : 'cc.job_number_upd';
     // One transaction: the preview, the header, the detail, and the operations become visible together.
     // A tick that runs during the seed cannot admit a half-written job (R1-F2).
     await migrator.query('BEGIN');
@@ -126,7 +191,7 @@ export async function qualifyDeviceWritesOnMock({
       await migrator.query(
         `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
         generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotated-location','annotatedLocation',$6,$7,$8,$8,0,0,
+      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,0,0,
         'manifest-digest',clock_timestamp()+interval '1 hour')`,
         [
           previewId,
@@ -134,15 +199,17 @@ export async function qualifyDeviceWritesOnMock({
           principal.id,
           principal.permission_version,
           connection.generation,
-          mode,
-          mode === 'clear' ? null : value,
+          action,
+          command ? null : 'annotatedLocation',
+          command ? null : mode,
+          command ? null : mode === 'clear' ? null : value,
           devices.length,
         ],
       );
       await migrator.query(
         `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
         target_count,correlation_id,created_at)
-      VALUES($1,cc.job_display_id('UPD',nextval('cc.job_number_upd')),$2,'device-update','devices','accepted',$3,$4,
+      VALUES($1,cc.job_display_id('${prefix}',nextval('${sequence}')),$2,'${kind}','devices','accepted',$3,$4,
         $5,$6,clock_timestamp())`,
         [
           jobId,
@@ -156,12 +223,14 @@ export async function qualifyDeviceWritesOnMock({
       await migrator.query(
         `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,confirmer_permission_version,
         delegated_subject,batch_size,batch_count)
-      VALUES($1,$2,'annotated-location','annotatedLocation',$3,$4,$5,$6,$7,$8,1)`,
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)`,
         [
           jobId,
           previewId,
-          mode,
-          mode === 'clear' ? null : value,
+          action,
+          command ? null : 'annotatedLocation',
+          command ? null : mode,
+          command ? null : mode === 'clear' ? null : value,
           principal.id,
           principal.permission_version,
           mock.adminEmail,
@@ -178,7 +247,7 @@ export async function qualifyDeviceWritesOnMock({
             index + 1,
             deviceId,
             `SN-${deviceId}`,
-            mode === 'clear' ? null : value,
+            command ? null : mode === 'clear' ? null : value,
           ],
         );
       // The fault exists before the job becomes visible, so the started worker always meets it.
@@ -251,7 +320,8 @@ export async function qualifyDeviceWritesOnMock({
   const operations = async (jobId) =>
     (
       await migrator.query(
-        `SELECT operation_number,device_id,status,outcome_reason,verified_by,observed_value
+        `SELECT operation_number,device_id,status,outcome_reason,verified_by,observed_value,
+          google_status,command_id,command_state
           FROM cc.device_update_operations WHERE job_id=$1 ORDER BY operation_number`,
         [jobId],
       )
@@ -288,6 +358,157 @@ export async function qualifyDeviceWritesOnMock({
   };
 
   await clearFaults();
+
+  // B5 acceptance 2 and 3 (design section 8, lost issue answer): a 12 s hang loses the answer of a
+  // command that Google stored. The rule sends no second POST, the operation settles unknown with
+  // ambiguous, the job ends needs-review, and Reconcile answers 409.
+  {
+    let hang;
+    const { jobId, executionId } = await seedJob({
+      devices: [deviceIds[0]],
+      command: true,
+      beforeStart: async () => {
+        const { scale } = await control('/clock');
+        assert.ok(
+          scale <= 50,
+          `The hang test needs a scale of at most 50: ${scale}`,
+        );
+        hang = await addFault({
+          kind: 'hang',
+          method: 'directory.chromeos.issueCommand',
+          ms: Math.ceil(12_000 * scale),
+          count: 2,
+        });
+      },
+    });
+    try {
+      const started = Date.now();
+      const execution = await waitExecution(executionId);
+      const elapsed = Date.now() - started;
+      assert.equal(
+        execution.state.current,
+        'SUCCESS',
+        JSON.stringify(execution),
+      );
+      assert.ok(
+        elapsed >= 10_000,
+        `The issue request met the 10 s timeout: ${elapsed} ms`,
+      );
+      const rule = (await faults()).find((one) => one.id === hang.id);
+      assert.equal(
+        rule.remaining,
+        1,
+        'The rule accepted exactly one issue POST.',
+      );
+      const state = await job(jobId);
+      assert.equal(state.status, 'needs-review', JSON.stringify(state));
+      const [operation] = await operations(jobId);
+      assert.deepEqual(
+        [operation.status, operation.outcome_reason, operation.command_id],
+        ['unknown', 'ambiguous', null],
+      );
+      const displayId = (
+        await migrator.query('SELECT display_id FROM cc.jobs WHERE job_id=$1', [
+          jobId,
+        ])
+      ).rows[0].display_id;
+      const reconciled = await call(
+        `/api/jobs/${displayId}/operations/1/reconcile`,
+        { method: 'POST', headers: headers(), body: {} },
+      );
+      assert.equal(reconciled.status, 409, reconciled.text);
+      assert.equal(
+        JSON.parse(reconciled.text).reason,
+        'reconcile-unsupported',
+        'A command operation has no Reconcile.',
+      );
+      // The mock stored the command that the worker could not read back.
+      const token = await mockToken(mock, writeScope);
+      const host = 'admin.googleapis.com';
+      const commandPath = (id) =>
+        `/admin/directory/v1/customer/${customer}/devices/chromeos/${encodeURIComponent(deviceIds[0])}/commands/${id}`;
+      let stored;
+      const deadline = Date.now() + 15_000;
+      for (;;) {
+        const answer = await mockGoogleGet({
+          mock,
+          host,
+          path: commandPath('4100000001'),
+          token,
+        });
+        if (answer.status === 200) {
+          stored = JSON.parse(answer.text);
+          break;
+        }
+        assert.ok(Date.now() < deadline, answer.text);
+        await delay(250);
+      }
+      assert.equal(stored.commandId, '4100000001');
+      assert.equal(stored.type, 'REBOOT');
+      // No second command exists, so the rule accepted one POST.
+      const second = await mockGoogleGet({
+        mock,
+        host,
+        path: commandPath('4100000002'),
+        token,
+      });
+      assert.equal(second.status, 404, second.text);
+      results.push(
+        'a 12 s hang on a Reboot issue sends one POST, stores one command the get reads, settles unknown ambiguous, ends needs-review, and refuses Reconcile with 409: pass',
+      );
+    } finally {
+      await clearFaults();
+    }
+  }
+
+  // B5 acceptance 4 (design section 8, transient refusal): a 503 with count 2 ends at remaining 1
+  // and the operation settles unknown with ambiguous.
+  {
+    let refusal;
+    const { jobId, executionId } = await seedJob({
+      devices: [deviceIds[0]],
+      command: true,
+      beforeStart: async () => {
+        refusal = await addFault({
+          kind: 'status',
+          method: 'directory.chromeos.issueCommand',
+          status: 503,
+          reason: 'backendError',
+          count: 2,
+        });
+      },
+    });
+    try {
+      const execution = await waitExecution(executionId);
+      assert.equal(
+        execution.state.current,
+        'SUCCESS',
+        JSON.stringify(execution),
+      );
+      const rule = (await faults()).find((one) => one.id === refusal.id);
+      assert.equal(rule.remaining, 1, 'A refused issue POST is not repeated.');
+      const state = await job(jobId);
+      assert.equal(state.status, 'needs-review', JSON.stringify(state));
+      const rows = await migrator.query(
+        `SELECT status,outcome_reason,google_status,command_id
+          FROM cc.device_update_operations WHERE job_id=$1`,
+        [jobId],
+      );
+      assert.deepEqual(rows.rows, [
+        {
+          status: 'unknown',
+          outcome_reason: 'ambiguous',
+          google_status: 503,
+          command_id: null,
+        },
+      ]);
+      results.push(
+        'a 503 refusal on a Reboot issue sends one POST, settles unknown ambiguous, and ends needs-review: pass',
+      );
+    } finally {
+      await clearFaults();
+    }
+  }
 
   // Item 24: Kestra runs device_update against the real worker; the job reaches
   // its terminal status through the mock.
