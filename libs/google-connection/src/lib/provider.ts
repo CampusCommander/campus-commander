@@ -483,7 +483,15 @@ export class GoogleCustomerVerifier {
           observedDomains,
         );
       } catch {
-        for (const result of results) result.failure = 'invalid-response';
+        // A combined response that contradicts the customer identity leaves only
+        // the customer/domain observation unproven. Every other capability keeps
+        // the result of its own check.
+        for (const result of results)
+          if (
+            result.capability === 'customer-identity' ||
+            result.capability === 'domain-observations'
+          )
+            result.failure = 'invalid-response';
       }
     }
     return { results, observation };

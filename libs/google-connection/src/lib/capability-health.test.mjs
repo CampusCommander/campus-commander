@@ -27,7 +27,13 @@ const scopeOf = (id) =>
 /** Record every token and API request the verifier sends. */
 function stub(
   t,
-  { tokenFailure, readFailure, infoScopes, observedCustomer = customer } = {},
+  {
+    tokenFailure,
+    readFailure,
+    infoScopes,
+    observedCustomer = customer,
+    observedDomains = domains,
+  } = {},
 ) {
   const calls = [];
   t.mock.method(JWT.prototype, 'getAccessToken', async function () {
@@ -49,7 +55,7 @@ function stub(
     });
     if (options.url.endsWith('/my_customer')) return { data: observedCustomer };
     if (readFailure) throw readFailure;
-    if (options.url.endsWith('/domains')) return { data: domains };
+    if (options.url.endsWith('/domains')) return { data: observedDomains };
     if (options.url.endsWith('/orgunits')) return { data: orgUnits };
     if (options.url.endsWith('/devices/chromeos')) return { data: devices };
     if (options.url.endsWith('/telemetry/devices')) return { data: telemetry };
@@ -301,4 +307,52 @@ test('a denied org unit scope fails school-ou-references only', async (t) => {
         : null,
     ]),
   );
+});
+
+test('an inconsistent customer/domain observation keeps every other capability result', async (t) => {
+  stub(t, {
+    // The domains read names example.invalid as primary, so the combined
+    // observation contradicts the customer identity answer.
+    observedCustomer: { ...customer, customerDomain: 'other.example.invalid' },
+    tokenFailure: (scope) =>
+      scope === scopeOf('device-changes')
+        ? {
+            response: { status: 401, data: { error: 'unauthorized_client' } },
+          }
+        : undefined,
+  });
+  const result = await check(capabilities);
+  assert.deepEqual(result.results, [
+    {
+      capability: 'customer-identity',
+      scopeVerified: true,
+      failure: 'invalid-response',
+    },
+    {
+      capability: 'domain-observations',
+      scopeVerified: true,
+      failure: 'invalid-response',
+    },
+    {
+      capability: 'school-ou-references',
+      scopeVerified: true,
+      failure: null,
+    },
+    {
+      capability: 'device-inventory',
+      scopeVerified: true,
+      failure: null,
+    },
+    {
+      capability: 'device-telemetry',
+      scopeVerified: true,
+      failure: null,
+    },
+    {
+      capability: 'device-changes',
+      scopeVerified: false,
+      failure: 'delegation-not-authorized',
+    },
+  ]);
+  assert.equal(result.observation, null);
 });
