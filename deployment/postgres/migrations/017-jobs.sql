@@ -651,7 +651,9 @@ BEGIN
         END IF;
       ELSE
         PERFORM cc.finalize_device_update_job(p_customer,job.job_id,NULL);
-        IF EXISTS(SELECT 1 FROM cc.device_update_operations o WHERE o.job_id=job.job_id AND o.status='unknown') THEN
+        -- A command job keeps its unknown operations. Record default 4 gives it no Reconcile and no
+        -- repeat, so the reaper starts no read-back for it (section 4 step 11).
+        IF job.kind<>'device-command' AND EXISTS(SELECT 1 FROM cc.device_update_operations o WHERE o.job_id=job.job_id AND o.status='unknown') THEN
           reconciles:=reconciles||jsonb_build_array(job.job_id::text);
         END IF;
       END IF;
@@ -923,7 +925,8 @@ DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; bad integ
   settled jsonb:='[]'::jsonb; devices jsonb:='[]'::jsonb; removed jsonb:='[]'::jsonb;
 BEGIN
   -- S2 (round 2, F2): a null kind never matches NOT IN, so the kind rejects explicitly before any lock.
-  IF p_kind IS NULL OR p_kind NOT IN ('write','read-back') OR jsonb_typeof(p_results) IS DISTINCT FROM 'array' OR
+  -- `issue` records the answer of one command POST (section 4 step 3).
+  IF p_kind IS NULL OR p_kind NOT IN ('write','read-back','issue') OR jsonb_typeof(p_results) IS DISTINCT FROM 'array' OR
     p_observed_at IS NULL OR p_attempt IS NULL THEN
     RAISE EXCEPTION 'The settlement is invalid.' USING ERRCODE='22023';
   END IF;
@@ -937,7 +940,8 @@ BEGIN
     RAISE EXCEPTION 'The settlement is invalid.' USING ERRCODE='22023';
   END IF;
   -- The observation source of each kind: a 2xx write answer (section 7.1) or a read (section 5.7).
-  provenance:=CASE p_kind WHEN 'write' THEN 'write-response' ELSE 'read-back' END;
+  -- An issue answer is a write answer too.
+  provenance:=CASE p_kind WHEN 'read-back' THEN 'read-back' ELSE 'write-response' END;
   -- S2/R6-1, round 2 F2, round 3 R2-F1: every result field holds a value of its domain, or the call rejects
   -- before any lock and changes nothing. No cast or CHECK below can then fail after a lock.
   -- 1. The operation number is a whole number from 1 to the integer limit.
@@ -953,6 +957,7 @@ BEGIN
         THEN (r->>'operationNumber')::integer<1 ELSE true END OR
       jsonb_typeof(r->'outcome') IS DISTINCT FROM 'string' OR
       (p_kind='write' AND r->>'outcome' NOT IN ('succeeded','failed','unknown','pending','skipped')) OR
+      (p_kind='issue' AND r->>'outcome' NOT IN ('issued','failed','unknown','pending','skipped')) OR
       (p_kind='read-back' AND r->>'outcome' NOT IN ('succeeded','failed','unknown')) OR
       (r->>'verifiedBy' IS NOT NULL AND r->'verifiedBy' IS DISTINCT FROM to_jsonb(provenance)) OR
       (r->>'outcome'='succeeded' AND r->'verifiedBy' IS DISTINCT FROM to_jsonb(provenance)) OR
@@ -966,7 +971,10 @@ BEGIN
         WHEN jsonb_typeof(r->'transientRetries')='number' AND pg_input_is_valid(r->>'transientRetries','integer')
         THEN (r->>'transientRetries')::integer<0 ELSE true END OR
       CASE WHEN r->>'verifyAfter' IS NULL THEN false
-        ELSE jsonb_typeof(r->'verifyAfter')<>'string' OR NOT pg_input_is_valid(r->>'verifyAfter','timestamptz') END;
+        ELSE jsonb_typeof(r->'verifyAfter')<>'string' OR NOT pg_input_is_valid(r->>'verifyAfter','timestamptz') END OR
+      -- An issued result names the digit command ID of its 2xx answer. No other issue result names one.
+      CASE WHEN r->'commandId' IS NULL THEN r->>'outcome'='issued'
+        ELSE jsonb_typeof(r->'commandId')<>'string' OR r->>'commandId' !~ '^[0-9]{1,20}$' OR r->>'outcome'<>'issued' END;
   IF bad>0 THEN
     RAISE EXCEPTION 'The settlement results are invalid.' USING ERRCODE='22023';
   END IF;
@@ -977,9 +985,10 @@ BEGIN
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
   -- S1: the clock and the header fence read under the header lock, before the descendant locks.
   now_at:=clock_timestamp();
-  -- S2: a write settlement rejects a null token explicitly. A read-back settlement stays
+  -- S2: a write or issue settlement rejects a null token explicitly. A read-back settlement stays
   -- attempt-fenced and token-independent, so a terminal job can settle its review (section 5.7).
-  IF p_kind='write' AND (p_token IS NULL OR detail.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') OR
+  -- Review F1: command issuance reuses this ownership contract, so the issue kind takes every fence.
+  IF p_kind IN ('write','issue') AND (p_token IS NULL OR detail.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') OR
       job.status<>'running' OR job.finished_at IS NOT NULL OR detail.dispatch_token IS DISTINCT FROM p_token) THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
@@ -990,7 +999,7 @@ BEGIN
   FROM cc.device_update_operations o JOIN jsonb_array_elements(p_results) r
       ON o.operation_number=(r->>'operationNumber')::integer
     WHERE o.job_id=p_job AND (
-      (p_kind='write' AND o.status='dispatched' AND o.attempt_id=p_attempt AND
+      (p_kind IN ('write','issue') AND o.status='dispatched' AND o.attempt_id=p_attempt AND
         EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=o.job_id AND b.batch=o.batch AND
           b.attempt_id=p_attempt AND b.lease_expires_at>now_at)) OR
       (p_kind='read-back' AND o.status='unknown' AND o.verify_attempt=p_attempt AND
@@ -1005,14 +1014,15 @@ BEGIN
     ORDER BY o.operation_number FOR UPDATE;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
   -- S1 (round 2): after those waits the clock reads again. The token repeats on the locked detail row, and
-  -- a result whose lease lapsed in a wait leaves the device lock set.
+  -- a result whose lease lapsed in a wait leaves the device lock set. Review F1: an issue settlement
+  -- repeats the token here too; read-back remains the one token-independent kind.
   now_at:=clock_timestamp();
-  IF p_kind='write' AND (detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token) THEN
+  IF p_kind IN ('write','issue') AND (detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token) THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   SELECT array_agg(o.operation_number ORDER BY o.operation_number) INTO candidates
   FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.operation_number=ANY(candidates) AND (
-      (p_kind='write' AND o.status='dispatched' AND o.attempt_id=p_attempt AND
+      (p_kind IN ('write','issue') AND o.status='dispatched' AND o.attempt_id=p_attempt AND
         EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=o.job_id AND b.batch=o.batch AND
           b.attempt_id=p_attempt AND b.lease_expires_at>now_at)) OR
       (p_kind='read-back' AND o.status='unknown' AND o.verify_attempt=p_attempt AND
@@ -1056,7 +1066,7 @@ BEGIN
       CASE WHEN res.r ? 'value' THEN res.r->>'value' ELSE o.requested_value END AS value
     FROM results res JOIN cc.device_update_operations o ON o.job_id=p_job AND o.operation_number=res.operation_number
     -- Only a locked candidate settles, so no write below takes a row lock that the prefix did not decide.
-    WHERE o.operation_number=ANY(candidates) AND ((p_kind='write' AND o.status='dispatched' AND o.attempt_id=p_attempt AND
+    WHERE o.operation_number=ANY(candidates) AND ((p_kind IN ('write','issue') AND o.status='dispatched' AND o.attempt_id=p_attempt AND
         -- The attempt owns the batch of the operation with a live lease (section 5.4, review F3).
         EXISTS(SELECT 1 FROM cc.device_update_batches b WHERE b.job_id=o.job_id AND b.batch=o.batch AND
           b.attempt_id=p_attempt AND b.lease_expires_at>now_at)) OR
@@ -1070,6 +1080,12 @@ BEGIN
       observed_value=e.value,
       observed_at=CASE WHEN e.r->>'outcome'='succeeded' THEN p_observed_at ELSE o.observed_at END,
       verified_by=e.r->>'verifiedBy',outcome_reason=e.r->>'outcomeReason',updated_at=now_at,
+      -- An accepted issue stores Google's command and its first poll (section 4 step 3). The poll waits
+      -- 15 s from this settlement, and the 7-day cap counts from the issue answer.
+      command_id=CASE WHEN p_kind='issue' AND e.r->>'outcome'='issued' THEN e.r->>'commandId' ELSE o.command_id END,
+      command_state=CASE WHEN p_kind='issue' AND e.r->>'outcome'='issued' THEN 'pending-delivery' ELSE o.command_state END,
+      poll_after=CASE WHEN p_kind='issue' AND e.r->>'outcome'='issued' THEN now_at+interval '15 seconds' ELSE o.poll_after END,
+      poll_deadline_at=CASE WHEN p_kind='issue' AND e.r->>'outcome'='issued' THEN p_observed_at+interval '7 days' ELSE o.poll_deadline_at END,
       -- An open request keeps the read-back of this attempt and its delay (section 5.7, review F5).
       verify_attempt=CASE WHEN p_kind='write' AND e.r->>'outcome'='unknown' THEN p_attempt END,
       verify_lease_expires_at=CASE WHEN p_kind='write' AND e.r->>'outcome'='unknown'
@@ -1318,8 +1334,9 @@ BEGIN
     COALESCE((SELECT j.failure FROM cc.jobs j WHERE j.job_id=p_job),'interrupted'));
   PERFORM cc.refresh_device_update_counters(p_job);
   PERFORM cc.record_job_change(p_job,false);
+  -- A command job skips the read-back, so the caller learns the action here (section 4 step 4).
   RETURN jsonb_build_object('outcome','ready',
-    'failure',(SELECT j.failure FROM cc.jobs j WHERE j.job_id=p_job));
+    'failure',(SELECT j.failure FROM cc.jobs j WHERE j.job_id=p_job),'action',detail.action);
 END;
 $$;
 
