@@ -57,8 +57,9 @@ Disable and Re-enable results update the column in place.
 All scopes use the `https://www.googleapis.com/auth/` prefix.
 Setup already lists the device write scope (step 4 decision D2). The write-access check and its note apply unchanged.
 Google accepts 1 to 50 devices per status change and answers per device. A command takes one device per call.
-A person needs the device write scope and the two permissions named in the [implementation defaults](#implementation-defaults--2026-10-21).
-Evidence is admin-sdk-mock v0.2.0 only.
+Each action requires the device write scope, Device Bulk Actions, and its action-specific permission.
+Evidence is admin-sdk-mock v0.2.0 only. `mock:` names the installed admin-sdk-mock package.
+Sources: `mock:package.json:3`, `mock:dist/src/routes.js:66-67`, `mock:dist/src/auth/scopes.js:45-46`, `mock:dist/src/directory/device-writes.js:8, 18-26, 171-175`.
 Live Google device writes need their own owner test authorization ([current work](../current-work.md#authorized-now)).
 
 ## Owner decisions — 2026-10-21
