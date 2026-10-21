@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -421,6 +422,103 @@ test('the activity answer caps each section and derives the window and attention
     !attentionCall[0].includes('$4::timestamptz IS NULL'),
     'The rounded wire time never decides attention.',
   );
+});
+
+test('reconcile refuses a command operation with reconcile-unsupported', async () => {
+  const db = database([
+    [
+      'p.display_name AS requested_by_name',
+      [
+        jobRow({
+          kind: 'device-command',
+          action: 'reboot',
+          status: 'needs-review',
+        }),
+      ],
+    ],
+    [
+      'o.operation_number=$5',
+      [
+        {
+          operation_number: 1,
+          device_id: 'device-1',
+          status: 'unknown',
+          action: 'reboot',
+          mode: null,
+        },
+      ],
+    ],
+  ]);
+  const orchestration = {
+    started: [],
+    async startDeviceUpdateReconcile(input) {
+      this.started.push(input);
+      return 'execution';
+    },
+  };
+  await assert.rejects(
+    new Jobs(db).reconcile(
+      session(),
+      'C0123456',
+      'CMD-001',
+      1,
+      '55555555-5555-4555-8555-555555555555',
+      orchestration,
+    ),
+    (error) =>
+      error instanceof ConflictException &&
+      error.getResponse().reason === 'reconcile-unsupported',
+  );
+  assert.deepEqual(orchestration.started, []);
+  // A command operation claims nothing, so no read-back starts.
+  assert.equal(
+    db.calls.some(([text]) =>
+      text.includes('claim_device_update_verification'),
+    ),
+    false,
+  );
+});
+
+test('reconcile claims an unknown update operation and starts its read-back', async () => {
+  const db = database([
+    [
+      'p.display_name AS requested_by_name',
+      [jobRow({ kind: 'device-update', action: 'annotated-location' })],
+    ],
+    [
+      'o.operation_number=$5',
+      [
+        {
+          operation_number: 1,
+          status: 'unknown',
+          action: 'annotated-location',
+          mode: 'replace',
+        },
+      ],
+    ],
+    [
+      'claim_device_update_verification',
+      [{ result: [{ operationNumber: 1 }] }],
+    ],
+  ]);
+  const orchestration = {
+    started: [],
+    async startDeviceUpdateReconcile(input) {
+      this.started.push(input);
+      return 'execution';
+    },
+  };
+  const operation = await new Jobs(db).reconcile(
+    session(),
+    'C0123456',
+    'UPD-001',
+    1,
+    '55555555-5555-4555-8555-555555555555',
+    orchestration,
+  );
+  assert.equal(operation.operationId, 'UPD-001-1');
+  assert.equal(orchestration.started.length, 1);
+  assert.equal(orchestration.started[0].operationNumber, 1);
 });
 
 test('an empty activity window gives a null next expiry', async () => {
