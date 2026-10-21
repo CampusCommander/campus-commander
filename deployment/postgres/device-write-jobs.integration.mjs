@@ -49,7 +49,7 @@ export async function qualifyDeviceWriteJobs({
           WHERE lease_expires_at>clock_timestamp()`,
       );
       const rows = await admin(
-        "SELECT job_id FROM cc.jobs WHERE kind IN ('device-update','device-command','device-status') AND status='running' ORDER BY created_at",
+        "SELECT job_id FROM cc.jobs WHERE kind IN ('device-update','device-command','device-status') AND status IN ('accepted','queued','held','running') ORDER BY created_at",
       );
       for (const row of rows)
         await migrator.query('SELECT cc.finalize_device_update_job($1,$2,$3)', [
@@ -411,16 +411,18 @@ export async function qualifyDeviceWriteJobs({
       adminRow('SELECT * FROM cc.jobs WHERE job_id=$1', [jobId]);
     const deviceRow = (deviceId) =>
       adminRow(
-        'SELECT annotated_location,annotated_location_observed_at,removed_at FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+        `SELECT annotated_location,annotated_location_observed_at,status,status_observed_at,removed_at
+          FROM cc.devices WHERE customer_id=$1 AND device_id=$2`,
         [customer, deviceId],
       );
-    const overlay = async (deviceId) =>
+    const overlayOf = async (deviceId, field) =>
       (
         await admin(
-          'SELECT * FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id=$2',
-          [customer, deviceId],
+          'SELECT * FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id=$2 AND field=$3',
+          [customer, deviceId, field],
         )
       )[0];
+    const overlay = (deviceId) => overlayOf(deviceId, 'annotatedLocation');
     const publications = (jobId) =>
       result(
         'SELECT count(*)::int AS result FROM cc.job_publications WHERE job_id=$1',
@@ -1440,6 +1442,124 @@ export async function qualifyDeviceWriteJobs({
           (await deviceRow('y1')).annotated_location_observed_at.getTime(),
           readAt.getTime(),
         );
+      },
+    );
+
+    // Section 5 of the addendum: the status field follows the same overlay and observation rules.
+    await check(
+      'a status list converges its overlay and leaves a different annotated-location overlay',
+      async () => {
+        const listed = new Date(Date.now() - 60 * 60 * 1000);
+        await upsert(
+          [device('st1', { annotatedLocation: 'Room 12', status: 'DISABLED' })],
+          listed,
+        );
+        const job = await makeJob({ devices: ['st1'] });
+        const writtenAt = new Date(Date.now() - 30 * 60 * 1000);
+        await admin(
+          `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
+          VALUES($1,'st1','annotatedLocation','Room 12',$2::timestamptz,'write-response',$3,$2::timestamptz+interval '36 hours'),
+            ($1,'st1','status','DISABLED',$2::timestamptz,'write-response',$3,$2::timestamptz+interval '36 hours')`,
+          [customer, writtenAt, job.jobId],
+        );
+        const laggedAt = new Date();
+        await upsert(
+          [device('st1', { annotatedLocation: 'old', status: 'DISABLED' })],
+          laggedAt,
+        );
+        assert.equal(
+          await overlayOf('st1', 'status'),
+          undefined,
+          'The matching status list converges the status overlay.',
+        );
+        assert.ok(
+          await overlayOf('st1', 'annotatedLocation'),
+          'The different annotated-location list keeps that overlay.',
+        );
+        assert.equal((await deviceRow('st1')).status, 'DISABLED');
+        await upsert(
+          [device('st1', { annotatedLocation: 'old', status: 'ACTIVE' })],
+          new Date(laggedAt.getTime() + 1000),
+        );
+        assert.equal(
+          (await deviceRow('st1')).status,
+          'ACTIVE',
+          'The next ACTIVE list reads ACTIVE again.',
+        );
+        assert.equal((await deviceRow('st1')).annotated_location, 'Room 12');
+        await finalize(job.jobId);
+      },
+    );
+
+    await check(
+      'a refresh read moves the live status overlay and its stamp',
+      async () => {
+        const listed = new Date(Date.now() - 60 * 60 * 1000);
+        await upsert([device('st2', { status: 'ACTIVE' })], listed);
+        const job = await makeJob({ devices: ['st2'] });
+        const writtenAt = new Date(Date.now() - 45 * 60 * 1000);
+        await admin(
+          `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
+          VALUES($1,'st2','status','DISABLED',$2::timestamptz,'write-response',$3,$2::timestamptz+interval '36 hours')`,
+          [customer, writtenAt, job.jobId],
+        );
+        const readAt = new Date();
+        await upsert([device('st2', { status: 'DISABLED' })], readAt, 'read');
+        const first = await overlayOf('st2', 'status');
+        assert.equal(first.value, 'DISABLED');
+        assert.equal(first.source, 'refresh-read');
+        assert.equal(first.observed_at.getTime(), readAt.getTime());
+        assert.equal((await deviceRow('st2')).status, 'DISABLED');
+        assert.equal(
+          (await deviceRow('st2')).status_observed_at.getTime(),
+          readAt.getTime(),
+        );
+        const nextRead = new Date(readAt.getTime() + 1000);
+        await upsert([device('st2', { status: 'ACTIVE' })], nextRead, 'read');
+        const second = await overlayOf('st2', 'status');
+        assert.equal(second.value, 'ACTIVE');
+        assert.equal(second.source, 'refresh-read');
+        assert.equal(second.observed_at.getTime(), nextRead.getTime());
+        assert.equal((await deviceRow('st2')).status, 'ACTIVE');
+        await finalize(job.jobId);
+      },
+    );
+
+    await check(
+      'a current status read between divergent field stamps writes the observed status',
+      async () => {
+        const listed = new Date(Date.now() - 60 * 60 * 1000);
+        await upsert(
+          [device('st3', { annotatedLocation: 'old', status: 'ACTIVE' })],
+          listed,
+        );
+        const newer = new Date();
+        const older = new Date(newer.getTime() - 30 * 60 * 1000);
+        await admin(
+          `UPDATE cc.devices SET annotated_location='Room 12',annotated_location_observed_at=$2,
+            status='ACTIVE',status_observed_at=$3,last_entity_sync=$2
+          WHERE customer_id=$1 AND device_id='st3'`,
+          [customer, newer, older],
+        );
+        const readAt = new Date(newer.getTime() - 60 * 1000);
+        assert.equal(
+          await upsert(
+            [device('st3', { annotatedLocation: 'ignored', status: 'DISABLED' })],
+            readAt,
+            'read',
+          ),
+          1,
+          'The status stamp admits the current read.',
+        );
+        const row = await deviceRow('st3');
+        assert.equal(row.status, 'DISABLED');
+        assert.equal(row.status_observed_at.getTime(), readAt.getTime());
+        assert.equal(
+          row.annotated_location,
+          'Room 12',
+          'The newer annotated-location observation wins.',
+        );
+        assert.equal(row.annotated_location_observed_at.getTime(), newer.getTime());
       },
     );
 

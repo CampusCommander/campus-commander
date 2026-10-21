@@ -435,22 +435,31 @@ BEGIN
           EXCLUDED.last_entity_sync>cc.devices.annotated_location_observed_at) THEN EXCLUDED.last_entity_sync
         ELSE cc.devices.annotated_location_observed_at END
     WHERE cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync OR (p_observation='read' AND
-      (cc.devices.annotated_location_observed_at IS NULL OR
-        EXCLUDED.last_entity_sync>cc.devices.annotated_location_observed_at))
-    RETURNING cc.devices.device_id AS device_id,cc.devices.annotated_location AS value,
+      ((cc.devices.annotated_location_observed_at IS NULL OR
+        EXCLUDED.last_entity_sync>cc.devices.annotated_location_observed_at) OR
+       (cc.devices.status_observed_at IS NULL OR
+        EXCLUDED.last_entity_sync>cc.devices.status_observed_at)))
+    RETURNING cc.devices.device_id AS device_id,
+      cc.devices.annotated_location AS annotated_location_value,cc.devices.status AS status_value,
       (p_observation='read' AND cc.devices.annotated_location_observed_at IS NOT DISTINCT FROM p_synced_at)
-        AS moved
+        AS annotated_location_moved,
+      (p_observation='read' AND cc.devices.status_observed_at IS NOT DISTINCT FROM p_synced_at)
+        AS status_moved
   ), converged AS (
     DELETE FROM cc.device_write_overlays o USING upserted u,incoming i
     WHERE p_observation='list' AND o.customer_id=p_customer AND o.device_id=u.device_id AND
-      o.field='annotatedLocation' AND o.expires_at>clock_timestamp() AND i.device_id=u.device_id AND
-      o.value IS NOT DISTINCT FROM (i.row_value->>'annotatedLocation')
+      o.expires_at>clock_timestamp() AND i.device_id=u.device_id AND
+      ((o.field='annotatedLocation' AND o.value IS NOT DISTINCT FROM (i.row_value->>'annotatedLocation')) OR
+       (o.field='status' AND o.value IS NOT DISTINCT FROM (i.row_value->>'status')))
   ), moved AS (
-    UPDATE cc.device_write_overlays o SET value=u.value,observed_at=p_synced_at,source='refresh-read',
-      expires_at=p_synced_at+interval '36 hours'
+    UPDATE cc.device_write_overlays o SET
+      value=CASE WHEN o.field='status' THEN u.status_value ELSE u.annotated_location_value END,
+      observed_at=p_synced_at,source='refresh-read',expires_at=p_synced_at+interval '36 hours'
     FROM upserted u
-    WHERE p_observation='read' AND u.moved AND o.customer_id=p_customer AND o.device_id=u.device_id AND
-      o.field='annotatedLocation' AND o.expires_at>clock_timestamp()
+    WHERE p_observation='read' AND o.customer_id=p_customer AND o.device_id=u.device_id AND
+      o.expires_at>clock_timestamp() AND
+      ((o.field='annotatedLocation' AND u.annotated_location_moved) OR
+       (o.field='status' AND u.status_moved))
   )
   SELECT count(*) INTO written FROM upserted;
   RETURN written;
