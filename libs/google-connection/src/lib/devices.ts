@@ -262,6 +262,13 @@ const statusBody = z.object({
   changeChromeOsDeviceStatusResults: z.array(z.unknown()).optional(),
 });
 
+/** The device ID one raw status element names, or null when it names none. */
+function statusElementId(raw: unknown): string | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const deviceId = (raw as { deviceId?: unknown }).deviceId;
+  return typeof deviceId === 'string' ? deviceId : null;
+}
+
 /**
  * Read one batchChangeStatus answer (design section 3). Google answers HTTP 200
  * even when every device fails, so each requested device reads its own element.
@@ -278,16 +285,16 @@ export function statusResults(
   });
   const parsed = statusBody.safeParse(body);
   if (!parsed.success) return deviceIds.map((deviceId) => invalid(deviceId));
-  const elements = (
-    parsed.data.changeChromeOsDeviceStatusResults ?? []
-  ).flatMap((raw) => {
-    const element = statusElement.safeParse(raw);
-    return element.success ? [element.data] : [];
-  });
+  const rawElements = parsed.data.changeChromeOsDeviceStatusResults ?? [];
+  const rawIds = rawElements.map(statusElementId);
   return deviceIds.map((deviceId) => {
-    const matches = elements.filter((element) => element.deviceId === deviceId);
-    if (matches.length !== 1) return invalid(deviceId);
-    const element = matches[0];
+    // Count raw elements before parsing. A malformed duplicate still repeats the ID.
+    const index = rawIds.indexOf(deviceId);
+    if (index === -1 || rawIds.indexOf(deviceId, index + 1) !== -1)
+      return invalid(deviceId);
+    const parsedElement = statusElement.safeParse(rawElements[index]);
+    if (!parsedElement.success) return invalid(deviceId);
+    const element = parsedElement.data;
     if (element.error !== undefined && element.response !== undefined)
       return invalid(deviceId);
     if (element.error !== undefined) {

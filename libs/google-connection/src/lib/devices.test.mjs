@@ -856,6 +856,42 @@ test('statusResults reports a repeated, unparseable, or absent element as unknow
   );
 });
 
+test('statusResults reports a malformed duplicate as unknown beside an unaffected device', () => {
+  const invalid = (deviceId) => ({
+    deviceId,
+    outcome: 'unknown',
+    reason: 'invalid-response',
+    googleReason: null,
+  });
+  const valid = { deviceId: 'd1', response: {} };
+  const malformed = {
+    deviceId: 'd1',
+    error: { code: '9', message: 'Conflict' },
+  };
+  const unaffected = { deviceId: 'd2', response: {} };
+  for (const order of [
+    [valid, malformed],
+    [malformed, valid],
+  ]) {
+    assert.deepEqual(
+      statusResults(
+        { changeChromeOsDeviceStatusResults: [...order, unaffected] },
+        ['d1', 'd2'],
+      ),
+      [
+        invalid('d1'),
+        {
+          deviceId: 'd2',
+          outcome: 'succeeded',
+          reason: null,
+          googleReason: null,
+        },
+      ],
+      'A valid element and a malformed duplicate are two elements.',
+    );
+  }
+});
+
 test('changeDeviceStatus sends parts of up to 50 devices with the write scope', async (t) => {
   const ids = Array.from({ length: 51 }, (_, index) => `d${index + 1}`);
   const { google, scopes } = stubBatch(t, (part) => ({
@@ -1021,6 +1057,69 @@ test('changeDeviceStatus refuses a repeated device before it sends', async (t) =
     { name: 'GoogleConnectionError', code: 'invalid-response' },
   );
   assert.equal(google.sent.length, 0);
+});
+
+test('changeDeviceStatus reports a malformed duplicate as unknown on both surfaces', async (t) => {
+  const invalid = (deviceId) => ({
+    deviceId,
+    outcome: 'unknown',
+    reason: 'invalid-response',
+    googleReason: null,
+  });
+  const orders = [
+    [
+      { deviceId: 'd1', response: {} },
+      { deviceId: 'd1', error: { code: '9', message: 'Conflict' } },
+    ],
+    [
+      { deviceId: 'd1', error: { code: '9', message: 'Conflict' } },
+      { deviceId: 'd1', response: {} },
+    ],
+  ];
+  let round = 0;
+  stubBatch(t, () => ({
+    status: 200,
+    body: {
+      changeChromeOsDeviceStatusResults: [
+        ...orders[round++],
+        { deviceId: 'd2', response: {} },
+      ],
+    },
+  }));
+  const expected = [
+    invalid('d1'),
+    { deviceId: 'd2', outcome: 'succeeded', reason: null, googleReason: null },
+  ];
+  for (let attempt = 0; attempt < orders.length; attempt += 1) {
+    const pages = [];
+    const result = await new GoogleDeviceReader({
+      batch: fastBatch(),
+    }).changeDeviceStatus(
+      credential,
+      'C0123456',
+      [
+        { deviceId: 'd1', action: 'disable' },
+        { deviceId: 'd2', action: 'disable' },
+      ],
+      signal(),
+      {
+        onResponse: (event) => {
+          if (event.outcome.kind === 'success')
+            pages.push(...event.outcome.page);
+        },
+      },
+    );
+    assert.deepEqual(
+      pages,
+      expected,
+      'The onResponse page reports the malformed duplicate as unknown.',
+    );
+    assert.deepEqual(
+      result.answers.map((answer) => answer.result),
+      expected,
+      'The returned answers report the malformed duplicate as unknown.',
+    );
+  }
 });
 
 test('issueDeviceCommands sends one POST part per device with the write scope', async (t) => {
