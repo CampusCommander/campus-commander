@@ -11919,6 +11919,179 @@ export async function qualifyDeviceWriteJobs({
         assert.equal(kept.outcome_reason, 'ambiguous');
       },
     );
+
+    // B5 (review F1): command issuance reuses the write ownership contract. An issue settlement with a
+    // null or wrong dispatch token, a token rotated in a wait, or a terminal job fences before it
+    // changes anything. The current token still settles its operation.
+    await check(
+      'B5 an issue settlement obeys the dispatch-token fences and the job lifecycle and changes nothing',
+      async () => {
+        const commandConfirmer = await principal(
+          'command-fence-confirmer@example.org',
+          [
+            ['devices:commands', district()],
+            ['devices:bulk-actions', district()],
+          ],
+        );
+        const version = (
+          await adminRow(
+            'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+            [commandConfirmer],
+          )
+        ).permission_version;
+        const previewId = randomUUID();
+        const jobId = randomUUID();
+        await admin(
+          `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+            generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'reboot',NULL,NULL,NULL,1,1,0,0,
+            'manifest-digest',clock_timestamp()+interval '1 hour')`,
+          [previewId, customer, commandConfirmer, version, generation],
+        );
+        await admin(
+          `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+            target_count,correlation_id)
+          VALUES($1,cc.job_display_id('CMD',nextval('cc.job_number_cmd')),$2,'device-command','devices','accepted',$3,$4,1,$5)`,
+          [jobId, customer, commandConfirmer, generation, randomUUID()],
+        );
+        await admin(
+          `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
+            confirmer_permission_version,delegated_subject,batch_size,batch_count)
+          VALUES($1,$2,'reboot',NULL,NULL,NULL,$3,$4,'admin@example.org',250,1)`,
+          [jobId, previewId, commandConfirmer, version],
+        );
+        await admin(
+          `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,
+            org_unit_path,baseline_value,requested_value,batch,status)
+          VALUES($1,1,'cmd-fence-1','SN-cmd-fence-1','/School A','ACTIVE',NULL,0,'pending')`,
+          [jobId],
+        );
+        const admitted = await admit();
+        assert.equal(admitted.jobId, jobId);
+        const attempt = randomUUID();
+        assert.equal(
+          (await claim(jobId, admitted.dispatchToken, 0, attempt)).outcome,
+          'claimed',
+        );
+        // The snapshot holds every row that an issue settlement writes: the header and its counters,
+        // the detail metadata, the operation row, and the publication. The dispatch token is recorded
+        // apart, because the rotation probe changes it on purpose.
+        const snapshot = async () => {
+          const detail = await adminRow(
+            'SELECT * FROM cc.device_update_jobs WHERE job_id=$1',
+            [jobId],
+          );
+          const { dispatch_token: token, ...metadata } = detail;
+          return {
+            job: await adminRow('SELECT * FROM cc.jobs WHERE job_id=$1', [
+              jobId,
+            ]),
+            metadata,
+            token,
+            operations: await admin(
+              'SELECT * FROM cc.device_update_operations WHERE job_id=$1 ORDER BY operation_number',
+              [jobId],
+            ),
+            publications: await publications(jobId),
+          };
+        };
+        const issue = JSON.stringify([
+          {
+            operationNumber: 1,
+            outcome: 'unknown',
+            outcomeReason: 'ambiguous',
+            googleStatus: 0,
+          },
+        ]);
+        const settleIssue = (token) =>
+          result(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [customer, jobId, token, attempt, 'issue', issue, new Date()],
+          );
+        const before = await snapshot();
+        assert.equal(before.operations[0].status, 'dispatched');
+        // A null token fences the issue kind explicitly, as it fences the write kind.
+        assert.equal(
+          (await settleIssue(null)).outcome,
+          'fenced',
+          'A null dispatch token fences an issue settlement.',
+        );
+        assert.deepEqual(await snapshot(), before);
+        // A token of another attempt fences the same way.
+        assert.equal(
+          (await settleIssue(randomUUID())).outcome,
+          'fenced',
+          'A superseded dispatch token fences an issue settlement.',
+        );
+        assert.deepEqual(await snapshot(), before);
+        // The second guard repeats the token after the operation and detail waits. The holder blocks
+        // the operation row, the migration role rotates the token, and the released call fences.
+        const { answer: rotated } = await waitedOn({
+          rows: [heldOperationRow(jobId)],
+          sql: settleSql,
+          values: [
+            customer,
+            jobId,
+            admitted.dispatchToken,
+            attempt,
+            'issue',
+            issue,
+            new Date(),
+          ],
+          during: () => rotateToken(jobId),
+        });
+        assert.equal(rotated.code, undefined, rotated.message);
+        assert.equal(
+          rotated.rows[0].result.outcome,
+          'fenced',
+          'An issue settlement repeats its token after the operation wait.',
+        );
+        const afterRotation = await snapshot();
+        assert.notEqual(
+          afterRotation.token,
+          before.token,
+          'The probe rotated the dispatch token in the wait.',
+        );
+        assert.deepEqual(afterRotation.job, before.job);
+        assert.deepEqual(afterRotation.metadata, before.metadata);
+        assert.deepEqual(afterRotation.operations, before.operations);
+        assert.equal(afterRotation.publications, before.publications);
+        // The current token settles its operation, so the fences reject only a superseded call.
+        const settled = await settle(
+          jobId,
+          afterRotation.token,
+          attempt,
+          'issue',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              outcomeReason: 'ambiguous',
+              googleStatus: 0,
+            },
+          ],
+          new Date(),
+        );
+        assert.deepEqual(
+          settled.settled.map((row) => row.operationNumber),
+          [1],
+        );
+        const stored = (await operations(jobId))[0];
+        assert.equal(stored.status, 'unknown');
+        assert.equal(stored.outcome_reason, 'ambiguous');
+        // A terminal job fences the issue kind too, as the write guard does.
+        assert.equal((await endJob(jobId)).outcome, 'finalized');
+        const closed = await snapshot();
+        assert.equal(closed.job.status, 'needs-review');
+        assert.notEqual(closed.job.finished_at, null);
+        assert.equal(
+          (await settleIssue(closed.token)).outcome,
+          'fenced',
+          'A terminal job fences an issue settlement.',
+        );
+        assert.deepEqual(await snapshot(), closed);
+      },
+    );
   } finally {
     await migrator.query('UPDATE cc.google_connection SET active=$1', [
       wasActive,

@@ -982,9 +982,10 @@ BEGIN
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
   -- S1: the clock and the header fence read under the header lock, before the descendant locks.
   now_at:=clock_timestamp();
-  -- S2: a write settlement rejects a null token explicitly. A read-back settlement stays
+  -- S2: a write or issue settlement rejects a null token explicitly. A read-back settlement stays
   -- attempt-fenced and token-independent, so a terminal job can settle its review (section 5.7).
-  IF p_kind='write' AND (p_token IS NULL OR detail.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') OR
+  -- Review F1: command issuance reuses this ownership contract, so the issue kind takes every fence.
+  IF p_kind IN ('write','issue') AND (p_token IS NULL OR detail.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') OR
       job.status<>'running' OR job.finished_at IS NOT NULL OR detail.dispatch_token IS DISTINCT FROM p_token) THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
@@ -1010,9 +1011,10 @@ BEGIN
     ORDER BY o.operation_number FOR UPDATE;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
   -- S1 (round 2): after those waits the clock reads again. The token repeats on the locked detail row, and
-  -- a result whose lease lapsed in a wait leaves the device lock set.
+  -- a result whose lease lapsed in a wait leaves the device lock set. Review F1: an issue settlement
+  -- repeats the token here too; read-back remains the one token-independent kind.
   now_at:=clock_timestamp();
-  IF p_kind='write' AND (detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token) THEN
+  IF p_kind IN ('write','issue') AND (detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token) THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   SELECT array_agg(o.operation_number ORDER BY o.operation_number) INTO candidates
