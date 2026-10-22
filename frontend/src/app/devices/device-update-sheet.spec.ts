@@ -4,6 +4,7 @@ import { Router, provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
   DeviceSelectionSpec,
+  DeviceUpdateField,
   DeviceUpdatePreview,
   DeviceUpdateTarget,
   DeviceUpdateTextField,
@@ -52,6 +53,42 @@ const preview: DeviceUpdatePreview = {
 };
 
 const previewReadPath = `/api/devices/updates/previews/${previewId}`;
+
+/** The organization unit tree of the granted read (design section 6). */
+const orgUnitTree = {
+  state: 'granted' as const,
+  scope: 'https://www.googleapis.com/auth/admin.directory.orgunit.readonly',
+  failure: null,
+  orgUnits: [
+    {
+      orgUnitId: 'ou-root',
+      name: 'example.org',
+      orgUnitPath: '/',
+      parentOrgUnitId: null,
+    },
+    {
+      orgUnitId: 'ou-chrome',
+      name: 'Chrome Devices',
+      orgUnitPath: '/Chrome Devices',
+      parentOrgUnitId: 'ou-root',
+    },
+    {
+      orgUnitId: 'ou-cart',
+      name: 'Cart Devices',
+      orgUnitPath: '/Chrome Devices/Cart Devices',
+      parentOrgUnitId: 'ou-chrome',
+    },
+  ],
+  observedAt: '2026-10-21T12:00:00.000Z',
+};
+
+/** The answer of a read without the organization unit scope. */
+const deniedOrgUnitTree = {
+  ...orgUnitTree,
+  state: 'denied' as const,
+  failure: 'scope-mismatch' as const,
+  orgUnits: null,
+};
 
 const targets = [
   {
@@ -233,6 +270,8 @@ async function setup(options: SetupOptions = {}) {
   const request = vi.fn(
     async (path: string, body?: unknown): Promise<Response> => {
       if (options.request) return options.request(path, body);
+      if (path === '/api/devices/updates/org-units')
+        return Response.json(orgUnitTree);
       if (path === '/api/devices/updates/previews')
         return Response.json(preview, { status: 201 });
       if (path === `/api/devices/updates/previews/${previewId}`)
@@ -291,7 +330,7 @@ async function setup(options: SetupOptions = {}) {
       (candidate) =>
         candidate.textContent?.replace(/\s+/g, ' ').trim() === name,
     );
-  const block = (field: DeviceUpdateTextField) =>
+  const block = (field: DeviceUpdateField) =>
     element.querySelector<HTMLElement>(`.field-block[data-field="${field}"]`);
   const valueInput = (field: DeviceUpdateTextField = 'annotatedLocation') =>
     block(field)?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
@@ -332,6 +371,43 @@ async function setup(options: SetupOptions = {}) {
     box.click();
     await settle();
   };
+  /** The Organization unit field block and its mode select. */
+  const orgBlock = () => block('orgUnitPath');
+  const orgSelect = () =>
+    orgBlock()?.querySelector<HTMLElement>('.mat-mdc-select-trigger') ?? null;
+  const option = (label: string) =>
+    [...document.querySelectorAll<HTMLElement>('mat-option')].find(
+      (candidate) => candidate.textContent?.trim() === label,
+    );
+  /** Open the mode select and choose one option, as a pointer does. */
+  const chooseOrgMode = async (label: string) => {
+    orgSelect()?.click();
+    await settle();
+    const found = option(label);
+    if (!found) throw new Error(`The ${label} option is missing.`);
+    found.click();
+    await settle();
+  };
+  const picker = () =>
+    element.querySelector<HTMLElement>('app-device-org-unit-picker');
+  const treeItem = (name: string) =>
+    [
+      ...(picker()?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? []),
+    ].find((row) => row.textContent?.trim() === name);
+  const pickerButton = (label: string) =>
+    [...(picker()?.querySelectorAll('button') ?? [])].find(
+      (candidate) =>
+        candidate.textContent?.replace(/\s+/g, ' ').trim() === label,
+    );
+  const search = () =>
+    picker()?.querySelector<HTMLInputElement>('input[type="search"]') ?? null;
+  const typeSearch = async (value: string) => {
+    const input = search();
+    if (!input) throw new Error('The organization unit search is missing.');
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    await settle();
+  };
   return {
     fixture,
     element,
@@ -351,30 +427,43 @@ async function setup(options: SetupOptions = {}) {
     close,
     save,
     acknowledge,
+    orgBlock,
+    orgSelect,
+    chooseOrgMode,
+    picker,
+    treeItem,
+    pickerButton,
+    search,
+    typeSearch,
     draft: TestBed.inject(DeviceUpdateDraftStore),
   };
 }
 
-it('opens at Edit with the selection count and no Organization unit', async () => {
+it('opens at Edit with the selection count and the four fields', async () => {
   const { element, button, block, input } = await setup();
   const heading = element.querySelector('h1');
   expect(heading?.textContent?.trim()).toBe('Update 6 devices');
   expect(element.textContent).toContain(
     '6 devices · 0 changed fields · Not submitted',
   );
-  expect(element.textContent).not.toContain('Organization unit');
   expect(element.textContent).not.toContain('Asset tag');
-  expect(element.querySelectorAll('.field-block')).toHaveLength(3);
+  expect(element.querySelectorAll('.field-block')).toHaveLength(4);
   expect(
     [...element.querySelectorAll('.field-block mat-label')].map((label) =>
       label.textContent?.trim(),
     ),
-  ).toEqual(['Annotated location', 'Annotated user', 'Notes']);
+  ).toEqual([
+    'Annotated location',
+    'Annotated user',
+    'Notes',
+    'Organization unit',
+  ]);
   // Each field starts at Leave unchanged, so no value field is shown.
   for (const field of [
     'annotatedLocation',
     'annotatedUser',
     'notes',
+    'orgUnitPath',
   ] as const) {
     expect(block(field)?.textContent).toContain('Leave unchanged');
     expect(
@@ -384,6 +473,10 @@ it('opens at Edit with the selection count and no Organization unit', async () =
     ).toBeNull();
   }
   expect(input()).toBeNull();
+  // The granted read leaves the Organization unit field usable.
+  expect(block('orgUnitPath')?.textContent).not.toContain(
+    'Google denied the organization unit tree',
+  );
   expect(button('Save and preview')?.disabled).toBe(true);
   expect(button('Reset')?.disabled).toBe(true);
 });
@@ -650,7 +743,9 @@ it('lists one confirmation sentence per changed field and names the unchanged fi
     'Set the annotated location to North lab on 5 devices.',
     'Set the notes to Cart 7 loaner pool on 5 devices.',
   ]);
-  expect(element.textContent).toContain('Annotated user remains unchanged.');
+  expect(element.textContent).toContain(
+    'Annotated user and organization unit remain unchanged.',
+  );
   expect(element.textContent).toContain(
     'Preview PV-006 · 6 devices · 10 field changes',
   );
@@ -692,7 +787,7 @@ it('counts each confirmation sentence from its field rows when eligibility diffe
   ]);
 });
 
-it('omits the unchanged sentence when every field changes', async () => {
+it('names the unchanged field when the draft changes three of four fields', async () => {
   const { element, type, save, settle } = await setup({
     request: (path) => {
       if (path === '/api/devices/updates/previews')
@@ -708,7 +803,8 @@ it('omits the unchanged sentence when every field changes', async () => {
   clickButton(element, 'Continue to confirmation');
   await settle();
   expect(element.querySelectorAll('.change-list li')).toHaveLength(3);
-  expect(element.textContent).not.toContain('unchanged.');
+  // Organization unit keeps its value, so the sentence names it.
+  expect(element.textContent).toContain('Organization unit remains unchanged.');
 });
 
 it('shows the receipt for several fields', async () => {
@@ -1488,4 +1584,351 @@ it('keeps an uncertain confirmation out of a later opening', async () => {
       `cc.device-update-confirmation.${principal}.${previewId}`,
     ),
   ).not.toBeNull();
+});
+/** A Move preview: five eligible devices and one removed from the inventory. */
+const movePreview: DeviceUpdatePreview = {
+  ...preview,
+  changes: [
+    {
+      field: 'orgUnitPath',
+      mode: 'move',
+      value: '/Chrome Devices/Cart Devices',
+    },
+  ],
+  fieldChanges: 5,
+  selected: 6,
+  eligible: 5,
+  unchanged: 0,
+  excluded: 1,
+};
+
+const moveSource = '/Chrome Devices/Lowell Academy/One to One';
+
+const moveTargets: DeviceUpdateTarget[] = [
+  ...[1, 2, 3, 4, 5].map((index) => ({
+    deviceId: `synthetic-device-${index}`,
+    serialNumber: `C0A1-000${index}`,
+    field: 'orgUnitPath' as const,
+    observedValue: moveSource,
+    approvedValue: '/Chrome Devices/Cart Devices',
+    disposition: 'eligible' as const,
+    exclusionReason: null,
+  })),
+  {
+    deviceId: 'synthetic-device-6',
+    serialNumber: 'C0A1-0006',
+    field: 'orgUnitPath' as const,
+    observedValue: null,
+    approvedValue: null,
+    disposition: 'excluded' as const,
+    exclusionReason: 'removed',
+  },
+];
+
+/** The tree row of one unit. The row's own label names the unit, not its expand icon. */
+function treeRow(input: HTMLElement | null | undefined, name: string) {
+  return [
+    ...(input?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? []),
+  ].find((row) => row.querySelector('.label')?.textContent?.trim() === name);
+}
+
+/** Answer every other read of the sheet, so a custom handler can own one route. */
+function otherAnswers(path: string, preview_: DeviceUpdatePreview) {
+  if (path === '/api/devices/updates/org-units')
+    return Response.json(orgUnitTree);
+  if (path === previewReadPath) return Response.json(preview_);
+  if (path.includes('/targets'))
+    return Response.json({ targets: moveTargets, nextCursor: null });
+  return Response.json({}, { status: 404 });
+}
+
+it('opens the picker on Move and sets the read-only Destination', async () => {
+  const { orgBlock, picker, pickerButton, chooseOrgMode, settle, draft } =
+    await setup();
+  await chooseOrgMode('Move to an organization unit');
+
+  const dialog = picker()?.querySelector<HTMLElement>('[role="dialog"]');
+  expect(dialog?.getAttribute('aria-modal')).toBe('true');
+  expect(picker()?.textContent).toContain('Choose organization unit');
+  expect(picker()?.textContent).toContain('Find an organization unit');
+  // The current line counts the selected devices.
+  expect(picker()?.querySelector('.current')?.textContent?.trim()).toBe(
+    '6 devices',
+  );
+  // The tree starts at the top-level unit, so a nested unit is not shown yet.
+  expect(treeRow(picker(), 'Root organizational unit')).toBeTruthy();
+  expect(treeRow(picker(), 'Chrome Devices')).toBeTruthy();
+  expect(treeRow(picker(), 'Cart Devices')).toBeUndefined();
+  // Choose waits for a highlighted unit.
+  expect(pickerButton('Choose')?.disabled).toBe(true);
+
+  picker()
+    ?.querySelector<HTMLElement>('[aria-label="Expand Chrome Devices"]')
+    ?.click();
+  await settle();
+  expect(treeRow(picker(), 'Cart Devices')).toBeTruthy();
+  treeRow(picker(), 'Cart Devices')?.click();
+  await settle();
+  expect(picker()?.querySelector('.selected-path')?.textContent?.trim()).toBe(
+    'Selected: /Chrome Devices/Cart Devices',
+  );
+  expect(pickerButton('Choose')?.disabled).toBe(false);
+
+  pickerButton('Choose')?.click();
+  await settle();
+  expect(picker()?.querySelector('[role="dialog"]')).toBeNull();
+  const destination =
+    orgBlock()?.querySelector<HTMLTextAreaElement>('textarea');
+  expect(destination?.value).toBe('/Chrome Devices/Cart Devices');
+  // The Destination is read-only; its button reopens the picker.
+  expect(destination?.readOnly).toBe(true);
+  expect(
+    orgBlock()?.querySelector('[aria-label="Choose organization unit"]'),
+  ).toBeTruthy();
+  expect(draft.changes()).toEqual([
+    {
+      field: 'orgUnitPath',
+      mode: 'move',
+      value: '/Chrome Devices/Cart Devices',
+    },
+  ]);
+  // The draft keeps the stable identity of the destination (TREE-01).
+  expect(draft.orgUnitId()).toBe('ou-cart');
+});
+
+it('searches the tree by path and shows the match with its ancestors', async () => {
+  const { picker, chooseOrgMode, typeSearch, settle } = await setup();
+  await chooseOrgMode('Move to an organization unit');
+  await typeSearch('cart');
+
+  // One query names a nested category, and its ancestors show with it.
+  expect(treeRow(picker(), 'Cart Devices')).toBeTruthy();
+  expect(treeRow(picker(), 'Chrome Devices')).toBeTruthy();
+  // A search shows every match, so no expansion control appears.
+  expect(
+    picker()?.querySelector('[aria-label="Expand Chrome Devices"]'),
+  ).toBeNull();
+
+  await typeSearch('no such unit');
+  expect(picker()?.textContent).toContain('No organization units match.');
+
+  await typeSearch('');
+  expect(treeRow(picker(), 'Cart Devices')).toBeUndefined();
+  expect(
+    picker()?.querySelector('[aria-label="Expand Chrome Devices"]'),
+  ).toBeTruthy();
+  await settle();
+});
+
+it('returns the field to Leave unchanged when the first pick is cancelled', async () => {
+  const { block, button, picker, pickerButton, chooseOrgMode, settle, draft } =
+    await setup();
+  await chooseOrgMode('Move to an organization unit');
+  pickerButton('Cancel')?.click();
+  await settle();
+
+  expect(picker()?.querySelector('[role="dialog"]')).toBeNull();
+  expect(draft.modeOf('orgUnitPath')).toBe('unchanged');
+  expect(draft.changed()).toBe(false);
+  expect(block('orgUnitPath')?.textContent).not.toContain('Destination');
+  expect(button('Save and preview')?.disabled).toBe(true);
+});
+
+it('closes the picker with Escape and keeps the sheet open', async () => {
+  const { element, picker, chooseOrgMode, settle, draft } = await setup();
+  await chooseOrgMode('Move to an organization unit');
+  picker()
+    ?.querySelector('[role="dialog"]')
+    ?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+  await settle();
+
+  expect(picker()?.querySelector('[role="dialog"]')).toBeNull();
+  expect(draft.modeOf('orgUnitPath')).toBe('unchanged');
+  expect(
+    element.querySelector('.bulk-sheet')?.classList.contains('is-open'),
+  ).toBe(true);
+});
+
+it('reopens the picker from the Destination button and keeps the chosen path', async () => {
+  const { block, picker, pickerButton, chooseOrgMode, settle, draft } =
+    await setup();
+  await chooseOrgMode('Move to an organization unit');
+  picker()
+    ?.querySelector<HTMLElement>('[aria-label="Expand Chrome Devices"]')
+    ?.click();
+  await settle();
+  treeRow(picker(), 'Cart Devices')?.click();
+  await settle();
+  pickerButton('Choose')?.click();
+  await settle();
+
+  block('orgUnitPath')
+    ?.querySelector<HTMLElement>('[aria-label="Choose organization unit"]')
+    ?.click();
+  await settle();
+  // The chosen unit is highlighted, so Choose is ready again.
+  expect(picker()?.querySelector('.selected-path')?.textContent?.trim()).toBe(
+    'Selected: /Chrome Devices/Cart Devices',
+  );
+  expect(pickerButton('Choose')?.disabled).toBe(false);
+
+  // Cancel keeps the earlier destination.
+  pickerButton('Cancel')?.click();
+  await settle();
+  expect(draft.valueOf('orgUnitPath')).toBe('/Chrome Devices/Cart Devices');
+  expect(draft.modeOf('orgUnitPath')).toBe('move');
+});
+
+it('sends a Move with its path and shows the source and destination rows', async () => {
+  let posted: { changes?: unknown } = {};
+  const { element, picker, pickerButton, chooseOrgMode, settle, save } =
+    await setup({
+      request: (path, body) => {
+        if (path === '/api/devices/updates/previews') {
+          posted = body as { changes?: unknown };
+          return Response.json(movePreview, { status: 201 });
+        }
+        return otherAnswers(path, movePreview);
+      },
+    });
+  await chooseOrgMode('Move to an organization unit');
+  picker()
+    ?.querySelector<HTMLElement>('[aria-label="Expand Chrome Devices"]')
+    ?.click();
+  await settle();
+  treeRow(picker(), 'Cart Devices')?.click();
+  await settle();
+  pickerButton('Choose')?.click();
+  await settle();
+  expect(element.textContent).toContain(
+    '6 devices · 1 changed field · Not submitted',
+  );
+  await save();
+
+  expect(posted.changes).toEqual([
+    {
+      field: 'orgUnitPath',
+      mode: 'move',
+      value: '/Chrome Devices/Cart Devices',
+    },
+  ]);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 5 device updates',
+  );
+  expect(element.textContent).toContain(
+    '6 devices · 5 field changes · 1 excluded',
+  );
+  const first = element.querySelectorAll('.targets tbody')[0]!;
+  expect(first.querySelector('th[scope="row"]')?.textContent?.trim()).toBe(
+    'Organization unit',
+  );
+  // The source OU and the destination OU, in the same row.
+  expect(first.querySelector('td')?.textContent).toContain(moveSource);
+  expect(first.textContent).toContain('/Chrome Devices/Cart Devices');
+  // Each path breaks after a slash (design note 17).
+  expect(first.querySelectorAll('wbr').length).toBeGreaterThan(1);
+
+  clickButton(element, 'Continue to confirmation');
+  await settle();
+  const sentence = element.querySelector('.change-list li');
+  expect(sentence?.textContent?.trim()).toBe(
+    'Move 5 devices into /Chrome Devices/Cart Devices. Destination policies apply.',
+  );
+  expect(sentence?.querySelector('wbr')).toBeTruthy();
+  expect(element.textContent).toContain(
+    'Annotated location, annotated user, and notes remain unchanged.',
+  );
+});
+
+it('disables the field and names the read scope without the scope', async () => {
+  const treeRequests: string[] = [];
+  const { block, picker, orgSelect, button, request, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/org-units') {
+        treeRequests.push(path);
+        return Response.json(deniedOrgUnitTree);
+      }
+      return otherAnswers(path, preview);
+    },
+  });
+  const orgBlock = block('orgUnitPath');
+  expect(orgBlock?.textContent).toContain(
+    'Google denied the organization unit tree. Add https://www.googleapis.com/auth/admin.directory.orgunit.readonly to the delegation client in the Google Admin Console.',
+  );
+  expect(orgBlock?.querySelector('.mat-form-field-disabled')).not.toBeNull();
+  // The select opens no panel while the read is refused.
+  orgSelect()?.click();
+  await settle();
+  expect(
+    [...document.querySelectorAll('mat-option')].some(
+      (option) => option.textContent?.trim() === 'Move to an organization unit',
+    ),
+  ).toBe(false);
+  expect(picker()?.querySelector('[role="dialog"]')).toBeNull();
+  expect(button('Save and preview')?.disabled).toBe(true);
+
+  // Copy scope copies the scope that the note names.
+  const writeText = vi.fn(async () => undefined);
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText },
+    configurable: true,
+  });
+  clickButton(orgBlock!, 'Copy scope');
+  await settle();
+  expect(writeText).toHaveBeenCalledWith(
+    'https://www.googleapis.com/auth/admin.directory.orgunit.readonly',
+  );
+  expect(orgBlock?.textContent).toContain(
+    'Copied the Google organization unit scope.',
+  );
+
+  // Recheck reads the tree again.
+  expect(treeRequests).toHaveLength(1);
+  clickButton(orgBlock!, 'Recheck');
+  await settle();
+  expect(treeRequests).toHaveLength(2);
+  expect(request).toHaveBeenCalledWith('/api/devices/updates/org-units');
+});
+
+it('shows the failure note and a Recheck action when the read is unavailable', async () => {
+  const { block } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/org-units')
+        return Response.json({
+          ...orgUnitTree,
+          state: 'unavailable',
+          failure: 'network-failure',
+          orgUnits: null,
+        });
+      return otherAnswers(path, preview);
+    },
+  });
+  const orgBlock = block('orgUnitPath');
+  expect(orgBlock?.textContent).toContain(
+    'Google connection unavailable. Check outbound connectivity and DNS. Retry after the connection returns.',
+  );
+  expect(orgBlock?.querySelector('.mat-form-field-disabled')).not.toBeNull();
+  expect(orgBlock?.textContent).toContain('Recheck');
+  // An unavailable read offers no scope to copy.
+  expect(orgBlock?.textContent).not.toContain('Copy scope');
+});
+
+it('keeps the Destination usable after the picker closes', async () => {
+  const { block, picker, pickerButton, chooseOrgMode, settle } = await setup();
+  await chooseOrgMode('Move to an organization unit');
+  picker()
+    ?.querySelector<HTMLElement>('[aria-label="Expand Chrome Devices"]')
+    ?.click();
+  await settle();
+  treeRow(picker(), 'Cart Devices')?.click();
+  await settle();
+  pickerButton('Choose')?.click();
+  await settle();
+
+  const destination = block('orgUnitPath')?.querySelector('textarea');
+  expect(destination?.getAttribute('readonly')).not.toBeNull();
+  // The focus returns to the control that opened the picker.
+  expect(document.activeElement?.tagName.toLowerCase()).toBe('mat-select');
 });

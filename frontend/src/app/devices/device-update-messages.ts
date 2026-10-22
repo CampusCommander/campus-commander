@@ -4,6 +4,8 @@ import {
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
   GOOGLE_CAPABILITIES,
   GOOGLE_HEALTH_RECOVERY,
+  deviceOrgUnitTreeMessage,
+  type DeviceOrgUnitTree,
   type DeviceUpdateTextField,
   type DeviceWriteAccess,
   type GoogleFailure,
@@ -17,6 +19,12 @@ export const DEVICE_WRITE_ACCESS_BUSY_MESSAGE =
 export const DEVICE_WRITE_SCOPE =
   GOOGLE_CAPABILITIES.find((capability) => capability.id === 'device-changes')
     ?.scope ?? '';
+
+/** The scope that the organization unit field names (design section 6). */
+export const DEVICE_ORG_UNIT_SCOPE =
+  GOOGLE_CAPABILITIES.find(
+    (capability) => capability.id === 'school-ou-references',
+  )?.scope ?? '';
 
 export const DEVICE_UPDATE_PERMISSION_MESSAGE =
   'You need the devices:read, devices:write, and devices:bulk-actions permissions to update devices. Ask your administrator for access.';
@@ -84,11 +92,45 @@ export interface UpdateDeviceAvailability {
   permissionMessage?: string;
 }
 
-function accessFailureText(failure: GoogleFailure | null): string {
+function accessFailureText(
+  failure: GoogleFailure | null,
+  fallback = 'Google write access is unavailable.',
+): string {
   const entry = failure ? GOOGLE_HEALTH_RECOVERY[failure] : undefined;
-  return entry
-    ? `${entry.label}. ${entry.recovery}`
-    : 'Google write access is unavailable.';
+  return entry ? `${entry.label}. ${entry.recovery}` : fallback;
+}
+
+/**
+ * The note under the Organization unit field, in the shape of the Devices write-access note
+ * (design choice 14). A missing read scope names that scope. A failed read offers Recheck.
+ */
+export function updateDeviceOrgUnitNote(
+  tree: DeviceOrgUnitTree | null,
+  message: string,
+): UpdateDeviceNote | null {
+  if (!tree)
+    return message
+      ? { text: message, actions: ['recheck'], error: true }
+      : null;
+  switch (tree.state) {
+    case 'granted':
+      return null;
+    case 'denied': {
+      const denied = deviceOrgUnitTreeMessage(tree);
+      return denied
+        ? { text: denied, actions: ['copy-scope', 'recheck'], error: true }
+        : null;
+    }
+    case 'unavailable':
+      return {
+        text: accessFailureText(
+          tree.failure,
+          'Google organization unit reads are unavailable.',
+        ),
+        actions: ['recheck'],
+        error: true,
+      };
+  }
 }
 
 /**
