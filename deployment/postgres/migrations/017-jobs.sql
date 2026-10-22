@@ -210,7 +210,7 @@ CREATE INDEX device_update_operations_polls ON cc.device_update_operations(job_i
 CREATE TABLE cc.device_write_overlays (
   customer_id text NOT NULL REFERENCES cc.google_connection(customer_id),
   device_id text NOT NULL,
-  field text NOT NULL CHECK(field IN ('annotatedLocation','status')),
+  field text NOT NULL CHECK(field IN ('annotatedLocation','annotatedUser','notes','orgUnitPath','status')),
   value text,
   observed_at timestamptz NOT NULL,
   source text NOT NULL CHECK(source IN ('write-response','read-back','refresh-read')),

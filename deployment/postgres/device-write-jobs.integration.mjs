@@ -419,6 +419,13 @@ export async function qualifyDeviceWriteJobs({
           FROM cc.devices WHERE customer_id=$1 AND device_id=$2`,
         [customer, deviceId],
       );
+    // The three fields of section 2 keep their own current-value stamp beside the location stamp.
+    const lagRow = (deviceId) =>
+      adminRow(
+        `SELECT annotated_user,annotated_user_observed_at,notes,notes_observed_at,org_unit_path,
+          org_unit_path_observed_at FROM cc.devices WHERE customer_id=$1 AND device_id=$2`,
+        [customer, deviceId],
+      );
     const overlayOf = async (deviceId, field) =>
       (
         await admin(
@@ -1525,6 +1532,243 @@ export async function qualifyDeviceWriteJobs({
         assert.equal(second.source, 'refresh-read');
         assert.equal(second.observed_at.getTime(), nextRead.getTime());
         assert.equal((await deviceRow('st2')).status, 'ACTIVE');
+        await finalize(job.jobId);
+      },
+    );
+
+    // Section 8, List lag row: each of the three fields keeps its value through a lagged list, an
+    // equal list deletes the overlay, and a path converges without case. The write path that
+    // publishes the value and creates the overlay arrives in U5, so the fixtures set the row and
+    // insert the overlay directly.
+    await check(
+      'a lagged list keeps the annotated-user, notes, and organization-unit overlays',
+      async () => {
+        const old = {
+          annotatedUser: 'old@example.org',
+          notes: 'Old note',
+          orgUnitPath: '/School A',
+        };
+        const written = {
+          annotatedUser: 'new@example.org',
+          notes: 'New note',
+          orgUnitPath: '/School B',
+        };
+        await upsert(
+          [device('lu1', written)],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const job = await makeJob({ devices: ['lu1'] });
+        const writtenAt = new Date();
+        for (const [field, value] of Object.entries(written))
+          await admin(
+            `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
+              VALUES($1,'lu1',$2,$3,$4::timestamptz,'write-response',$5,$4::timestamptz+interval '36 hours')`,
+            [customer, field, value, writtenAt, job.jobId],
+          );
+        await upsert([device('lu1', old)], new Date());
+        const row = await lagRow('lu1');
+        assert.equal(
+          row.annotated_user,
+          'new@example.org',
+          'The lagged list keeps the annotated-user value.',
+        );
+        assert.equal(
+          row.notes,
+          'New note',
+          'The lagged list keeps the notes value.',
+        );
+        assert.equal(
+          row.org_unit_path,
+          '/School B',
+          'The lagged list keeps the destination organization unit.',
+        );
+        assert.equal(
+          row.annotated_user_observed_at,
+          null,
+          'A list never sets the annotated-user stamp.',
+        );
+        assert.equal(
+          row.notes_observed_at,
+          null,
+          'A list never sets the notes stamp.',
+        );
+        assert.equal(
+          row.org_unit_path_observed_at,
+          null,
+          'A list never sets the organization-unit stamp.',
+        );
+        assert.ok(await overlayOf('lu1', 'annotatedUser'));
+        assert.ok(await overlayOf('lu1', 'notes'));
+        assert.ok(await overlayOf('lu1', 'orgUnitPath'));
+        await finalize(job.jobId);
+      },
+    );
+
+    await check(
+      'an equal list deletes each annotation overlay and keeps its value',
+      async () => {
+        const written = {
+          annotatedUser: 'new@example.org',
+          notes: 'New note',
+          orgUnitPath: '/School B',
+        };
+        await upsert(
+          [device('lu2', written)],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const job = await makeJob({ devices: ['lu2'] });
+        const writtenAt = new Date();
+        for (const [field, value] of Object.entries(written))
+          await admin(
+            `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
+              VALUES($1,'lu2',$2,$3,$4::timestamptz,'write-response',$5,$4::timestamptz+interval '36 hours')`,
+            [customer, field, value, writtenAt, job.jobId],
+          );
+        await upsert([device('lu2', written)], new Date());
+        const row = await lagRow('lu2');
+        assert.equal(row.annotated_user, 'new@example.org');
+        assert.equal(row.notes, 'New note');
+        assert.equal(row.org_unit_path, '/School B');
+        assert.equal(await overlayOf('lu2', 'annotatedUser'), undefined);
+        assert.equal(await overlayOf('lu2', 'notes'), undefined);
+        assert.equal(await overlayOf('lu2', 'orgUnitPath'), undefined);
+        assert.equal(
+          row.annotated_user_observed_at,
+          null,
+          'The converging list sets no stamp.',
+        );
+        assert.equal(row.notes_observed_at, null);
+        assert.equal(row.org_unit_path_observed_at, null);
+        await upsert(
+          [
+            device('lu2', {
+              annotatedUser: 'later@example.org',
+              notes: 'Later note',
+              orgUnitPath: '/School C',
+            }),
+          ],
+          new Date(Date.now() + 1000),
+        );
+        const later = await lagRow('lu2');
+        assert.equal(
+          later.annotated_user,
+          'later@example.org',
+          'Without an overlay the next list sets the annotated user.',
+        );
+        assert.equal(later.notes, 'Later note');
+        assert.equal(later.org_unit_path, '/School C');
+        await finalize(job.jobId);
+      },
+    );
+
+    await check(
+      'a list of the destination path in other case converges the organization-unit overlay',
+      async () => {
+        await upsert(
+          [device('lu3', { orgUnitPath: '/School A' })],
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+        const job = await makeJob({ devices: ['lu3'] });
+        const writtenAt = new Date();
+        await admin(
+          `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
+            VALUES($1,'lu3','orgUnitPath','/School A',$2::timestamptz,'write-response',$3,$2::timestamptz+interval '36 hours')`,
+          [customer, writtenAt, job.jobId],
+        );
+        await upsert([device('lu3', { orgUnitPath: '/school a' })], new Date());
+        const row = await lagRow('lu3');
+        assert.equal(
+          row.org_unit_path,
+          '/School A',
+          'The converging list keeps Google casing of the written path.',
+        );
+        assert.equal(
+          await overlayOf('lu3', 'orgUnitPath'),
+          undefined,
+          'A path converges without case.',
+        );
+        await finalize(job.jobId);
+      },
+    );
+
+    await check(
+      'a current read sets each new stamp and an older read leaves the value and the stamp',
+      async () => {
+        await upsert([device('lu4')], new Date(Date.now() - 60 * 60 * 1000));
+        const readAt = new Date();
+        assert.equal(
+          await upsert(
+            [
+              device('lu4', {
+                annotatedUser: 'read@example.org',
+                notes: 'Read note',
+                orgUnitPath: '/School B',
+              }),
+            ],
+            readAt,
+            'read',
+          ),
+          1,
+        );
+        const row = await lagRow('lu4');
+        assert.equal(row.annotated_user, 'read@example.org');
+        assert.equal(row.notes, 'Read note');
+        assert.equal(row.org_unit_path, '/School B');
+        assert.equal(
+          row.annotated_user_observed_at.getTime(),
+          readAt.getTime(),
+        );
+        assert.equal(row.notes_observed_at.getTime(), readAt.getTime());
+        assert.equal(row.org_unit_path_observed_at.getTime(), readAt.getTime());
+        assert.equal(
+          await upsert(
+            [
+              device('lu4', {
+                annotatedUser: 'older@example.org',
+                notes: 'Older note',
+                orgUnitPath: '/School C',
+              }),
+            ],
+            new Date(readAt.getTime() - 60 * 1000),
+            'read',
+          ),
+          0,
+          'Every new stamp admits its own order.',
+        );
+        const kept = await lagRow('lu4');
+        assert.equal(kept.annotated_user, 'read@example.org');
+        assert.equal(kept.notes, 'Read note');
+        assert.equal(kept.org_unit_path, '/School B');
+        assert.equal(
+          kept.annotated_user_observed_at.getTime(),
+          readAt.getTime(),
+        );
+        assert.equal(kept.notes_observed_at.getTime(), readAt.getTime());
+        assert.equal(
+          kept.org_unit_path_observed_at.getTime(),
+          readAt.getTime(),
+        );
+      },
+    );
+
+    await check(
+      'the overlay field check accepts the three fields and refuses an unknown one',
+      async () => {
+        const job = await makeJob({ devices: ['lu5'] });
+        for (const field of ['annotatedUser', 'notes', 'orgUnitPath'])
+          await admin(
+            `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
+              VALUES($1,'lu5',$2,'value',clock_timestamp(),'write-response',$3,clock_timestamp()+interval '36 hours')`,
+            [customer, field, job.jobId],
+          );
+        await rejects(
+          admin(
+            `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
+              VALUES($1,'lu5','serialNumber','value',clock_timestamp(),'write-response',$2,clock_timestamp()+interval '36 hours')`,
+            [customer, job.jobId],
+          ),
+          '23514',
+        );
         await finalize(job.jobId);
       },
     );
