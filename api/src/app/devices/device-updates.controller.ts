@@ -16,10 +16,12 @@ import {
   deviceUpdateConfirmRequestSchema,
   deviceUpdatePreviewRequestSchema,
 } from '@campus/application-contracts';
+import { GoogleDeviceReader } from '@campus/google-connection';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { JobService } from '../jobs/job-service';
 import { requireDeviceUpdateActions } from './device-updates-actions';
+import { DeviceOrgUnitTreeRoute } from './device-org-unit-tree';
 import { DeviceUpdatesService } from './device-updates.service';
 import { DeviceWriteAccessRoutes } from './device-write-access-routes';
 import { DeviceWriteAccessService } from './device-write-access.service';
@@ -39,6 +41,7 @@ export class DeviceUpdatesController {
   private readonly updates: DeviceUpdatesService;
   private readonly auth: AuthService;
   private readonly writeAccess: DeviceWriteAccessRoutes;
+  private readonly orgUnits: DeviceOrgUnitTreeRoute;
   private readonly jobs: JobService;
 
   constructor(
@@ -52,6 +55,20 @@ export class DeviceUpdatesController {
     this.updates = updates;
     this.auth = auth;
     this.writeAccess = new DeviceWriteAccessRoutes(access);
+    const reader = new GoogleDeviceReader();
+    this.orgUnits = new DeviceOrgUnitTreeRoute({
+      connection: (session) => access.connection(session),
+      authorize: (session, customerId, correlationId) =>
+        requireDeviceUpdateActions(
+          this.auth,
+          session,
+          customerId,
+          correlationId,
+        ),
+      credential: (session, context) => access.credential(session, context),
+      read: (credential, customerId, signal) =>
+        reader.readOrgUnitTree(credential, customerId, signal),
+    });
     this.jobs = jobs;
   }
 
@@ -76,6 +93,12 @@ export class DeviceUpdatesController {
   @Post('access/check')
   async accessCheck(@Req() request: AuthenticatedRequest) {
     return this.writeAccess.check(request.session, request.correlationId);
+  }
+
+  /** The organization unit tree of the connected customer (design section 6). */
+  @Get('org-units')
+  async orgUnitTree(@Req() request: AuthenticatedRequest) {
+    return this.orgUnits.read(request.session, request.correlationId);
   }
 
   @Post('previews')

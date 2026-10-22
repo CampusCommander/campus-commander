@@ -82,7 +82,7 @@ const jobWrite = new RegExp(
   `^/api/jobs/(?:activity/seen|${jobDisplayIdPath}/operations/[1-9]\\d{0,8}/reconcile)$`,
 );
 const deviceUpdateRead = new RegExp(
-  `^/api/devices/updates/(?:access|previews/${previewIdPath}(?:/targets)?)$`,
+  `^/api/devices/updates/(?:access|org-units|previews/${previewIdPath}(?:/targets)?)$`,
 );
 const deviceUpdateWrite = new RegExp(
   `^/api/devices/updates/(?:access/check|previews|previews/${previewIdPath}/confirm)$`,
