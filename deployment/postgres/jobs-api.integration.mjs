@@ -291,6 +291,20 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     }
     return job;
   };
+  /** One field row of one operation: its baseline and its request (addendum section 2). */
+  const addFieldRow = (
+    jobId,
+    operationNumber,
+    field,
+    baselineValue,
+    requestedValue,
+  ) =>
+    admin(
+      `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+        baseline_value,requested_value)
+      VALUES($1,$2,$3,$4,$5)`,
+      [jobId, operationNumber, field, baselineValue, requestedValue],
+    );
 
   // --- The live stream harness: the production controllers, a real fanout on a test Redis, and
   // --- the jobs and Devices reads through the runtime role.
@@ -1248,6 +1262,132 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           3,
           'The second page holds the failed operations beyond operation 100.',
         );
+      },
+    );
+
+    await check(
+      "the operations route follows the cursor it returned across one device's fields",
+      async () => {
+        await reset();
+        const job = await writeJob({
+          requestedBy: auditor,
+          operations: 2,
+          status: 'running',
+        });
+        // Two fields of operation 1 and one field of operation 2 (addendum section 2).
+        await addFieldRow(
+          job.job_id,
+          1,
+          'annotatedLocation',
+          'Room 1',
+          'Room 4',
+        );
+        await addFieldRow(job.job_id, 1, 'annotatedUser', null, 'Ada Lovelace');
+        await addFieldRow(job.job_id, 2, 'notes', null, 'Front desk');
+        const controller = new JobsController(jobsService, streamAuth, {}, {});
+        const request = {
+          session: auditorSession,
+          correlationId: randomUUID(),
+        };
+        const first = await controller.operations(request, job.display_id, {
+          limit: '1',
+        });
+        assert.deepEqual(
+          first.operations.map((operation) => operation.operationId),
+          [`${job.display_id}-1-annotatedLocation`],
+        );
+        // The route answers a cursor within operation 1, and accepts it back.
+        assert.equal(first.nextCursor, '1:1');
+        const second = await controller.operations(request, job.display_id, {
+          cursor: first.nextCursor,
+          limit: '1',
+        });
+        assert.deepEqual(
+          second.operations.map((operation) => operation.operationId),
+          [`${job.display_id}-1-annotatedUser`],
+        );
+        assert.equal(second.nextCursor, '1:2');
+        const third = await controller.operations(request, job.display_id, {
+          cursor: second.nextCursor,
+          limit: '1',
+        });
+        assert.deepEqual(
+          third.operations.map((operation) => operation.operationId),
+          [`${job.display_id}-2-notes`],
+        );
+        assert.equal(third.nextCursor, null);
+      },
+    );
+
+    await check(
+      'the operations route accepts a command or status cursor at position zero',
+      async () => {
+        await reset();
+        const job = await writeJob({
+          requestedBy: auditor,
+          action: 'disable',
+          operations: 2,
+          status: 'running',
+        });
+        const controller = new JobsController(jobsService, streamAuth, {}, {});
+        const request = {
+          session: auditorSession,
+          correlationId: randomUUID(),
+        };
+        const first = await controller.operations(request, job.display_id, {
+          limit: '1',
+        });
+        assert.deepEqual(
+          first.operations.map((operation) => operation.operationId),
+          [`${job.display_id}-1`],
+        );
+        assert.equal(first.nextCursor, '1:0');
+        const second = await controller.operations(request, job.display_id, {
+          cursor: first.nextCursor,
+          limit: '1',
+        });
+        assert.deepEqual(
+          second.operations.map((operation) => operation.operationId),
+          [`${job.display_id}-2`],
+        );
+        assert.equal(second.nextCursor, null);
+      },
+    );
+
+    await check(
+      'a settled no-answer operation reads through the job routes with a null Google status',
+      async () => {
+        await reset();
+        // The worker stores null when no HTTP answer arrived (fix D1). The routes must read it.
+        const job = await writeJob({
+          requestedBy: auditor,
+          operations: 1,
+          unknown: 1,
+          status: 'needs-review',
+        });
+        await addFieldRow(job.job_id, 1, 'annotatedUser', null, 'Ada Lovelace');
+        await addFieldRow(job.job_id, 1, 'notes', null, 'Front desk');
+        const detail = await jobs.detail(
+          auditorSession,
+          customer,
+          job.display_id,
+        );
+        assert.equal(detail.status, 'needs-review');
+        const page = await jobs.operations(
+          auditorSession,
+          customer,
+          job.display_id,
+          false,
+          undefined,
+          100,
+        );
+        assert.equal(page.operations.length, 2);
+        for (const operation of page.operations) {
+          assert.equal(operation.outcome, 'unknown');
+          assert.equal(operation.outcomeReason, 'ambiguous');
+          assert.equal(operation.googleStatus, null);
+          assert.ok(operation.field);
+        }
       },
     );
 

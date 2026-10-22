@@ -27,7 +27,7 @@ import { streamEvents } from '../devices/device-events';
 import { requireReconcileActions } from '../devices/device-updates-actions';
 import { OrchestrationService } from '../orchestration/orchestration.service';
 import { JobsService } from './jobs.service';
-import { seesEveryJob } from './jobs';
+import { operationCursorSchema, seesEveryJob } from './jobs';
 import { recheckJobStream } from './jobs-stream';
 
 /** A repeated query key or a comma-separated value. */
@@ -63,7 +63,8 @@ const operationsQuerySchema = z.strictObject({
     .enum(['true', 'false'])
     .transform((value) => value === 'true')
     .optional(),
-  cursor: z.string().regex(/^\d+$/).optional(),
+  // The route answers "<operation>:<fieldPosition>", so it accepts the cursor that it returned.
+  cursor: operationCursorSchema.optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 

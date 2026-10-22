@@ -14,6 +14,7 @@ import {
   latestActivity,
   Jobs,
   operationCursor,
+  operationCursorSchema,
 } from './jobs.ts';
 
 const REQUESTER = '22222222-2222-4222-8222-222222222222';
@@ -426,6 +427,68 @@ test('an operation cursor that is not two positions answers job-not-found', asyn
       `The cursor ${cursor} must be refused.`,
     );
   }
+});
+
+test('the operations route schema accepts the cursor format the route answers', () => {
+  // The service answers "<operation>:<fieldPosition>", with position 0 for a command or status row.
+  assert.equal(operationCursorSchema.parse('1:0'), '1:0');
+  assert.equal(operationCursorSchema.parse('1002:4'), '1002:4');
+  for (const cursor of ['3', '3:0:1', 'x:0', '3:-1', ''])
+    assert.equal(
+      operationCursorSchema.safeParse(cursor).success,
+      false,
+      `The route must refuse ${cursor}.`,
+    );
+});
+
+test('each annotation row reports its own replace or clear mode', () => {
+  const row = (field, requested, mode = 'replace') => ({
+    operation_number: 4,
+    device_id: 'd4',
+    serial_number: 'C0A1-0004',
+    org_unit_path: '/Schools/A',
+    status: 'succeeded',
+    action: 'annotated-location',
+    mode,
+    field,
+    baseline_value: 'Room 1',
+    requested_value: 'Room 4',
+    field_baseline_value: 'Room 1',
+    field_requested_value: requested,
+    field_observed_value: requested,
+    field_position: 1,
+    observed_value: null,
+    verified_by: 'write-response',
+    updated_at: new Date('2026-10-06T12:04:00.000Z'),
+  });
+  assert.equal(
+    jobOperation(row('annotatedLocation', 'Room 4'), 'UPD-006').operation,
+    'replace',
+  );
+  // A null request is Clear, whatever the job-wide header says (addendum section 2).
+  assert.equal(
+    jobOperation(row('notes', null, 'replace'), 'UPD-006').operation,
+    'clear',
+  );
+  assert.equal(
+    jobOperation(row('annotatedLocation', 'Room 4', 'clear'), 'UPD-006')
+      .operation,
+    'replace',
+  );
+  assert.equal(
+    jobOperation(row('orgUnitPath', '/Schools/B'), 'UPD-006').operation,
+    'move',
+  );
+  // A command and a status row keep the name of their action.
+  assert.equal(
+    jobOperation({ ...row(null, null), action: 'reboot' }, 'CMD-001').operation,
+    'reboot',
+  );
+  assert.equal(
+    jobOperation({ ...row(null, 'DISABLED'), action: 'disable' }, 'STS-002')
+      .operation,
+    'disable',
+  );
 });
 
 test('a field row reads its own values and names its field position', () => {

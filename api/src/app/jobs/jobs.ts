@@ -201,6 +201,13 @@ export function operationCursor(row: Record<string, unknown>): string {
   return `${String(row['operation_number'])}:${Number(row['field_position'] ?? 0)}`;
 }
 
+/**
+ * The cursor shape of the operations route. The route answers `<number>:<position>`, so the query
+ * schema accepts the cursor that the route itself returned. `decodeOperationCursor` bounds each
+ * position and answers `job-not-found` for a cursor outside the domain.
+ */
+export const operationCursorSchema = z.string().regex(/^\d+:\d+$/);
+
 export function decodeOperationCursor(
   cursor: string | undefined,
 ): { number: number; position: number } | null {
@@ -230,6 +237,10 @@ function operationOf(
   if (action === 'reenable-devices') return 'reenable';
   // Organization unit offers Move alone (design addendum section 1).
   if (field === 'orgUnitPath') return 'move';
+  // Each annotation field row carries its own request, and a null request is the Clear mode
+  // (addendum section 2). The job-wide header names one field until U6, so it cannot decide a row.
+  if (field !== null)
+    return row['field_requested_value'] == null ? 'clear' : 'replace';
   return row['mode'] === 'clear' ? 'clear' : 'replace';
 }
 
