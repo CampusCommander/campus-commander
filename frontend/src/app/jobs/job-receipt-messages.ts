@@ -15,8 +15,10 @@ export function receiptSubtitle(job: JobDetail): string {
 export function receiptCountLine(job: JobDetail): string {
   const devices = job.scope.deviceCount ?? job.progress.total ?? 0;
   const updates = job.progress.total ?? job.scope.deviceCount ?? 0;
+  // The receipt names the one change of the step 4 sheet. F2 names each field.
+  const mode = job.changes?.length === 1 ? job.changes[0].mode : null;
   const noun =
-    job.mode === 'clear'
+    mode === 'clear'
       ? 'annotated-location removals'
       : 'annotated-location updates';
   return `${deviceCountText(devices)} · ${updates.toLocaleString(

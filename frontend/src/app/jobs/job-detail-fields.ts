@@ -1,4 +1,5 @@
 import {
+  DEVICE_UPDATE_FIELD_LABELS,
   jobOperationFieldSchema,
   type JobCommandState,
   type JobDetail,
@@ -144,16 +145,13 @@ export function scopeHeading(job: JobDetail): string {
     : `${job.displayId} · ${deviceCountText(count)}`;
 }
 
-/** "Annotated location". The only write field of this slice. */
-export function fieldLabel(field: JobDetail['field']): string {
-  return field === 'annotatedLocation' ? 'Annotated location' : '—';
+/** "Annotated location". The label of each writable field, or a dash without one. */
+export function fieldLabel(field: JobOperation['field']): string {
+  return field === null ? '—' : DEVICE_UPDATE_FIELD_LABELS[field];
 }
 
 /** The Operation cell of one row. A command or status row names its action. */
-export function operationLabel(
-  job: JobDetail,
-  operation: JobOperation,
-): string {
+export function operationLabel(operation: JobOperation): string {
   switch (operation.operation) {
     case 'reboot':
       return 'Reboot';
@@ -162,7 +160,7 @@ export function operationLabel(
     case 'reenable':
       return 'Re-enable';
     default:
-      return fieldLabel(job.field);
+      return fieldLabel(operation.field);
   }
 }
 

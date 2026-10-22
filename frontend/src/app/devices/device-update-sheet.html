@@ -245,7 +245,7 @@
               [class.approved]="target.disposition === 'eligible'"
               [class.not-updated]="target.disposition === 'excluded'"
             >
-              {{ approved(target, activePreview.mode) }} @if (note(target)) {
+              {{ approved(target, modeOf(target.field)) }} @if (note(target)) {
               <span class="line">{{ note(target) }}</span>
               }
             </td>

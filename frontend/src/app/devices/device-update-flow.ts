@@ -4,6 +4,7 @@ import {
   deviceUpdateJobReceiptSchema,
   deviceUpdatePreviewSchema,
   deviceUpdateTargetsPageSchema,
+  type DeviceUpdateChange,
   type DeviceUpdateConfirmRequest,
   type DeviceUpdateJobReceipt,
   type DeviceUpdateMode,
@@ -426,9 +427,22 @@ export function staleWarning(): string {
   } hours old. Review them before you continue.`;
 }
 
+/**
+ * The one change of the step 4 sheet. F2 replaces the draft with several fields, so this helper
+ * names the change that the one-field sheet sends and reads.
+ */
+export function annotatedLocationChange(
+  preview: Pick<DeviceUpdatePreview, 'changes'>,
+): DeviceUpdateChange | null {
+  return (
+    preview.changes.find((change) => change.field === 'annotatedLocation') ??
+    null
+  );
+}
+
 /** The confirmation card heading of frame 97:57. */
 export function confirmationHeading(preview: DeviceUpdatePreview): string {
-  return preview.mode === 'clear'
+  return annotatedLocationChange(preview)?.mode === 'clear'
     ? `Clear the location on ${deviceCountText(preview.eligible)}`
     : `Update the location on ${deviceCountText(preview.eligible)}`;
 }
@@ -441,11 +455,12 @@ export function confirmationSentence(
   preview: DeviceUpdatePreview,
   targets: readonly DeviceUpdateTarget[],
 ): string {
-  if (preview.mode === 'clear')
+  const change = annotatedLocationChange(preview);
+  if (change?.mode === 'clear')
     return `Annotated location is cleared on ${deviceCountText(
       preview.eligible,
     )}. Other fields remain unchanged.`;
-  const approved = preview.value ?? 'the approved value';
+  const approved = change?.value ?? 'the approved value';
   const observed = new Set(
     targets
       .filter((target) => target.disposition === 'eligible')
@@ -622,10 +637,12 @@ export class DeviceUpdateFlow {
   async prepareFromDraft(): Promise<FlowRead<DeviceUpdatePreview>> {
     const mode = this.draft.mode();
     const key = { gridId: DEVICE_GRID_ID, tabId: this.devices.selectionTab };
-    const request: DeviceUpdatePreviewRequest =
+    // The step 4 sheet sends one change. F2 sends the whole draft.
+    const change: DeviceUpdateChange =
       mode === 'clear'
-        ? { ...key, mode }
-        : { ...key, mode, value: this.draft.value() };
+        ? { field: 'annotatedLocation', mode }
+        : { field: 'annotatedLocation', mode, value: this.draft.value() };
+    const request: DeviceUpdatePreviewRequest = { ...key, changes: [change] };
     try {
       const response = await this.auth.request(
         '/api/devices/updates/previews',
