@@ -395,8 +395,14 @@ mat-form-field {
   table-layout: fixed;
 }
 
-.targets col.col-field {
+/* The Update device review table (F2) gives each field its own group row. */
+.targets.targets-update col.col-field {
   width: 104px;
+}
+
+/* The Send command and Change status review tables (signed off 2026-10-22). */
+.targets col.col-device {
+  width: 112px;
 }
 
 .targets col.col-arrow {
@@ -426,14 +432,19 @@ mat-form-field {
 }
 
 /* One row group per device. The group row carries the serial and any exclusion reason. */
-.targets tbody tr.device-row th {
+.targets.targets-update tbody tr.device-row th {
   background: var(--cc-surface-hover);
   color: var(--cc-text-primary);
   font-weight: 500;
 }
 
-.targets tbody tr.device-row .line {
+.targets.targets-update tbody tr.device-row .line {
   font-weight: 400;
+}
+
+/* The Send command and Change status review tables shade alternate rows. */
+.targets:not(.targets-update) tbody tr:nth-child(odd) {
+  background: var(--cc-surface-hover);
 }
 
 .targets .arrow-cell {
