@@ -45,6 +45,8 @@ function value(row: DeviceRow, field: DeviceSortField, now: number): string {
       return relativeTime(row.lastContact, now);
     case 'annotatedLocation':
       return row.annotatedLocation ?? '';
+    case 'annotatedUser':
+      return row.annotatedUser ?? '';
     case 'notes':
       return row.notes ?? '';
   }
