@@ -89,7 +89,8 @@ interface QueryAnswer {
 }
 
 /** The Devices page needs the session, a published inventory, and the write access state. */
-async function signIn(page: Page) {
+async function signIn(page: Page, detailOverrides: Partial<DeviceDetail> = {}) {
+  const detailAnswer: DeviceDetail = { ...detail, ...detailOverrides };
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/application')
@@ -176,8 +177,8 @@ async function signIn(page: Page) {
         },
       });
     }
-    if (path === `/api/devices/${detail.deviceId}`)
-      return route.fulfill({ json: { device: detail } });
+    if (path === `/api/devices/${detailAnswer.deviceId}`)
+      return route.fulfill({ json: { device: detailAnswer } });
     if (path === '/api/devices/freshness')
       return route.fulfill({
         json: { freshness: { stale: 0, refreshing: false } },
@@ -221,8 +222,11 @@ async function lightTheme(page: Page) {
   await page.evaluate(() => document.fonts.ready);
 }
 
-async function openDevices(page: Page) {
-  await signIn(page);
+async function openDevices(
+  page: Page,
+  detailOverrides: Partial<DeviceDetail> = {},
+) {
+  await signIn(page, detailOverrides);
   await page.goto('/devices');
   await lightTheme(page);
   await expect(
@@ -374,4 +378,59 @@ test('shows Annotated user between Annotated location and Notes in the details',
 
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await screenshot(page, testInfo, 'device-annotated-user-details-light.png');
+});
+
+test('wraps a long Annotated user inside the identity card', async ({
+  page,
+}, testInfo) => {
+  // The contract accepts long values, and this one has no natural break point.
+  const longUser = `${'w'.repeat(64)}@${'w'.repeat(23)}.example.org`;
+  expect(longUser).toHaveLength(100);
+  await openDevices(page, { annotatedUser: longUser });
+  await page
+    .getByRole('button', { name: 'Open details for C0A1-0003', exact: true })
+    .click();
+  await lightTheme(page);
+  await expect(
+    page.getByRole('heading', { name: detail.serialNumber, exact: true }),
+  ).toBeVisible();
+
+  const annotations = page.locator('.annotations');
+  const identityCard = page
+    .locator('section.card')
+    .filter({ has: annotations })
+    .first();
+  const annotationRows = annotations.locator('.annotation');
+  await expect(annotationRows).toHaveCount(3);
+  await expect(annotationRows.nth(1).locator('dd')).toHaveText(longUser);
+
+  // Each annotation row, not only its own text box, stays inside the card.
+  const card = (await identityCard.boundingBox())!;
+  const list = (await annotations.boundingBox())!;
+  for (let index = 0; index < 3; index += 1) {
+    const row = annotationRows.nth(index);
+    const rowBox = (await row.boundingBox())!;
+    const valueBox = (await row.locator('dd').boundingBox())!;
+    expect(rowBox.width).toBeLessThanOrEqual(list.width + 0.5);
+    expect(rowBox.x).toBeGreaterThanOrEqual(card.x - 0.5);
+    expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(
+      card.x + card.width + 0.5,
+    );
+    expect(valueBox.x + valueBox.width).toBeLessThanOrEqual(
+      card.x + card.width + 0.5,
+    );
+  }
+
+  // The full value renders and wraps, so no part of it is clipped.
+  const userValue = annotationRows.nth(1).locator('dd');
+  expect(
+    await userValue.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth + 1,
+    ),
+  ).toBe(true);
+  await screenshot(
+    page,
+    testInfo,
+    'device-annotated-user-long-value-light.png',
+  );
 });
