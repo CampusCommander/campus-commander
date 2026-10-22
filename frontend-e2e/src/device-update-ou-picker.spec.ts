@@ -345,8 +345,12 @@ test('regression: a retained Move waits for the organization unit read', async (
   await expect(save).toBeDisabled();
   await expect(picker(page)).toHaveCount(0);
   // No preview left the page with the disabled Move.
-  expect(mock.posted.changes).toBeUndefined();
+  await expect(mock.posted.changes).toBeUndefined();
   await expectNoAxeViolations(page);
+  // The blocked note sits below the scope note; scroll it into the evidence frame.
+  await orgUnit
+    .getByRole('button', { name: 'Discard move', exact: true })
+    .scrollIntoViewIfNeeded();
   await screenshot(page, 'f3-r1-blocked-move.png');
 
   // A granted Recheck lets the retained destination travel unchanged.
