@@ -288,11 +288,12 @@ test('job detail extends the summary with the write fields', () => {
     ...summary,
     confirmedBy: { id: requesterId, displayName: 'Alex Rivera' },
     previewDisplayId: 'PV-006',
-    field: 'annotatedLocation',
-    mode: 'replace',
+    changes: [
+      { field: 'annotatedUser', mode: 'replace', value: 'A person' },
+      { field: 'notes', mode: 'clear' },
+    ],
     commandType: null,
     statusAction: null,
-    requestedValue: 'Room 12',
     targetOrgUnitPaths: ['/School A'],
     correlationId: jobId,
     latestActivity: {
@@ -311,15 +312,31 @@ test('job detail extends the summary with the write fields', () => {
       .success,
     false,
   );
+  assert.equal(
+    jobDetailSchema.safeParse({
+      ...detail,
+      changes: [{ field: 'notes', mode: 'clear', value: 'Room 12' }],
+    }).success,
+    false,
+    'A clear change carries no value.',
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({ ...detail, changes: [] }).success,
+    false,
+    'A write job carries at least one change.',
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({ ...detail, changes: null }).success,
+    true,
+    'A command or status job carries no changes.',
+  );
   const refresh = {
     ...detail,
     displayId: 'REF-031',
     action: 'refresh-inventory',
     confirmedBy: null,
     previewDisplayId: null,
-    field: null,
-    mode: null,
-    requestedValue: null,
+    changes: null,
     targetOrgUnitPaths: null,
   };
   assert.equal(jobDetailSchema.safeParse(refresh).success, true);
@@ -327,10 +344,8 @@ test('job detail extends the summary with the write fields', () => {
     ...detail,
     displayId: 'CMD-001',
     action: 'reboot-devices',
-    field: null,
-    mode: null,
+    changes: null,
     commandType: 'REBOOT',
-    requestedValue: null,
   };
   assert.equal(jobDetailSchema.safeParse(command).success, true);
   assert.equal(
@@ -341,10 +356,8 @@ test('job detail extends the summary with the write fields', () => {
     ...detail,
     displayId: 'STS-001',
     action: 'disable-devices',
-    field: null,
-    mode: null,
+    changes: null,
     statusAction: 'disable',
-    requestedValue: 'DISABLED',
   };
   assert.equal(jobDetailSchema.safeParse(status).success, true);
   assert.equal(

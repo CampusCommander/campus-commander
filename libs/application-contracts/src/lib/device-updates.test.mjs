@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  DEVICE_UPDATE_FIELD_LABELS,
+  DEVICE_UPDATE_FIELD_LIMITS,
+  deviceUpdateChangeSchema,
+  deviceUpdateChangesInOrder,
+} from './devices.ts';
+import {
   DEVICE_UPDATE_VALUE_MAX,
   DEVICE_WRITE_ACCESS_BUSY_ANSWER,
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
@@ -22,6 +28,8 @@ const jobId = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
 const at = '2026-10-17T12:00:00.000Z';
 const digest = 'c'.repeat(64);
 const key = { gridId: 'devices', tabId };
+const change = (field, mode, value) =>
+  value === undefined ? { field, mode } : { field, mode, value };
 
 test('preview values hold 1 to 200 code points', () => {
   // U+1D306 is one code point and two UTF-16 units.
@@ -41,28 +49,145 @@ test('preview values hold 1 to 200 code points', () => {
   assert.equal(deviceUpdateValueSchema.safeParse('').success, false);
 });
 
-test('a clear preview takes no value', () => {
-  const ok = (body) => deviceUpdatePreviewRequestSchema.safeParse(body).success;
-  assert.equal(ok({ ...key, mode: 'replace', value: 'Room 12' }), true);
-  assert.equal(ok({ ...key, mode: 'clear' }), true);
-  assert.equal(ok({ ...key, mode: 'clear', value: 'Room 12' }), false);
-  assert.equal(ok({ ...key, mode: 'replace' }), false);
-  assert.equal(
-    ok({ ...key, mode: 'replace', value: 'Room 12', extra: true }),
-    false,
+test('each field refuses a value over its limit and names its label', () => {
+  const fourByteCharacter = '\u{1D306}';
+  const cases = [
+    ['annotatedLocation', 200],
+    ['annotatedUser', 100],
+    ['notes', 500],
+  ];
+  for (const [field, limit] of cases) {
+    assert.equal(DEVICE_UPDATE_FIELD_LIMITS[field], limit);
+    const label = DEVICE_UPDATE_FIELD_LABELS[field];
+    // A supplementary character counts as one code point and two UTF-16 units.
+    const full = change(field, 'replace', fourByteCharacter.repeat(limit));
+    assert.equal(deviceUpdateChangeSchema.safeParse(full).success, true);
+    const over = deviceUpdateChangeSchema.safeParse(
+      change(field, 'replace', fourByteCharacter.repeat(limit + 1)),
+    );
+    assert.equal(over.success, false);
+    assert.match(over.error.issues[0].message, new RegExp(label));
+    assert.match(over.error.issues[0].message, new RegExp(String(limit)));
+  }
+  assert.equal(DEVICE_UPDATE_FIELD_LIMITS.orgUnitPath, 4096);
+  assert.match(
+    deviceUpdateChangeSchema.safeParse(
+      change('orgUnitPath', 'move', `/${'a'.repeat(4096)}`),
+    ).error.issues[0].message,
+    /Organization unit/,
   );
-  assert.equal(ok({ gridId: 'users', tabId, mode: 'clear' }), false);
 });
 
-test('preview summaries carry the counts and the digest', () => {
+test('an over-limit value answers the preview request with the field label', () => {
+  const over = deviceUpdatePreviewRequestSchema.safeParse({
+    ...key,
+    changes: [change('notes', 'replace', 'x'.repeat(501))],
+  });
+  assert.equal(over.success, false);
+  assert.match(over.error.issues[0].message, /Notes holds 1 to 500 characters\./);
+  const empty = deviceUpdatePreviewRequestSchema.safeParse({
+    ...key,
+    changes: [change('annotatedUser', 'replace', '   ')],
+  });
+  assert.equal(empty.success, false);
+  assert.match(empty.error.issues[0].message, /Annotated user needs a visible/);
+});
+
+test('a clear change takes no value and a move takes a path', () => {
+  const ok = (body) => deviceUpdatePreviewRequestSchema.safeParse(body).success;
+  assert.equal(
+    ok({ ...key, changes: [change('annotatedLocation', 'replace', 'Room 12')] }),
+    true,
+  );
+  assert.equal(
+    ok({ ...key, changes: [change('annotatedLocation', 'clear')] }),
+    true,
+  );
+  assert.equal(
+    ok({ ...key, changes: [change('annotatedUser', 'clear')] }),
+    true,
+  );
+  assert.equal(
+    ok({ ...key, changes: [change('notes', 'clear', 'Room 12')] }),
+    false,
+    'A clear change carries no value.',
+  );
+  assert.equal(
+    ok({ ...key, changes: [change('notes', 'replace')] }),
+    false,
+    'A replace change needs a value.',
+  );
+  assert.equal(
+    ok({ ...key, changes: [change('orgUnitPath', 'move', '/High School')] }),
+    true,
+  );
+  assert.equal(
+    ok({ ...key, changes: [change('orgUnitPath', 'move', 'High School')] }),
+    false,
+    'A move needs a leading slash.',
+  );
+  assert.equal(
+    ok({ ...key, changes: [change('orgUnitPath', 'replace', '/High School')] }),
+    false,
+    'Organization unit offers Move only.',
+  );
+  assert.equal(
+    ok({ ...key, changes: [change('notes', 'move', '/High School')] }),
+    false,
+    'A text field offers no Move.',
+  );
+  assert.equal(
+    ok({ ...key, changes: [{ ...change('notes', 'clear'), extra: true }] }),
+    false,
+  );
+  assert.equal(ok({ gridId: 'users', tabId, changes: [] }), false);
+});
+
+test('a preview holds one to four changes and each field once', () => {
+  const ok = (changes) =>
+    deviceUpdatePreviewRequestSchema.safeParse({ ...key, changes }).success;
+  assert.equal(ok([]), false);
+  assert.equal(ok([change('notes', 'clear')]), true);
+  assert.equal(
+    ok([
+      change('annotatedLocation', 'clear'),
+      change('annotatedUser', 'clear'),
+      change('notes', 'clear'),
+      change('orgUnitPath', 'move', '/School A'),
+    ]),
+    true,
+  );
+  assert.equal(
+    ok([
+      change('notes', 'clear'),
+      change('notes', 'replace', 'Room 12'),
+      change('annotatedUser', 'clear'),
+      change('annotatedUser', 'clear'),
+      change('orgUnitPath', 'move', '/School A'),
+    ]),
+    false,
+    'Five changes fail.',
+  );
+  assert.equal(
+    ok([change('notes', 'clear'), change('notes', 'replace', 'Room 12')]),
+    false,
+    'A repeated field fails.',
+  );
+});
+
+test('preview summaries carry the changes, fieldChanges, and the counts', () => {
+  const changes = [
+    change('annotatedUser', 'replace', 'A person'),
+    change('notes', 'replace', 'Room 12'),
+  ];
   const preview = {
     previewId,
     displayId: 'PV-006',
-    mode: 'replace',
-    value: 'Room 12',
+    changes,
+    fieldChanges: 11,
     selected: 12,
-    eligible: 10,
-    unchanged: 1,
+    eligible: 6,
+    unchanged: 5,
     excluded: 1,
     oldestObservedAt: at,
     stale: false,
@@ -86,30 +211,45 @@ test('preview summaries carry the counts and the digest', () => {
     false,
   );
   assert.equal(
-    deviceUpdatePreviewSchema.safeParse({ ...preview, mode: 'clear' }).success,
+    deviceUpdatePreviewSchema.safeParse({ ...preview, changes: [] }).success,
     false,
+    'A preview carries at least one change.',
   );
   assert.equal(
-    deviceUpdatePreviewSchema.safeParse({
-      ...preview,
-      mode: 'clear',
-      value: null,
-    }).success,
-    true,
+    deviceUpdatePreviewSchema.safeParse({ ...preview, fieldChanges: -1 })
+      .success,
+    false,
   );
   assert.equal(
     deviceUpdatePreviewSchema.safeParse({ ...preview, extra: true }).success,
     false,
   );
+  assert.equal(
+    deviceUpdatePreviewSchema.safeParse({ ...preview, mode: 'replace' })
+      .success,
+    false,
+    'The summary no longer carries one mode.',
+  );
 });
 
-test('preview targets carry the frozen rows', () => {
+test('changes sort into contract order', () => {
+  assert.deepEqual(
+    deviceUpdateChangesInOrder([
+      change('orgUnitPath', 'move', '/School A'),
+      change('notes', 'clear'),
+      change('annotatedLocation', 'replace', 'Room 12'),
+    ]).map((entry) => entry.field),
+    ['annotatedLocation', 'notes', 'orgUnitPath'],
+  );
+});
+
+test('preview targets carry the frozen rows of one field', () => {
   const target = {
     deviceId: 'device-1',
     serialNumber: 'C0A1-7F2D',
-    field: 'annotatedLocation',
-    observedValue: 'Room 7',
-    approvedValue: 'Room 12',
+    field: 'annotatedUser',
+    observedValue: 'A person',
+    approvedValue: 'Another person',
     disposition: 'eligible',
     exclusionReason: null,
   };
@@ -117,6 +257,26 @@ test('preview targets carry the frozen rows', () => {
   assert.equal(
     deviceUpdateTargetSchema.safeParse({ ...target, disposition: 'pending' })
       .success,
+    false,
+  );
+  assert.equal(
+    deviceUpdateTargetSchema.safeParse({ ...target, field: 'assetTag' })
+      .success,
+    false,
+  );
+  assert.equal(
+    deviceUpdateTargetSchema.safeParse({
+      ...target,
+      approvedValue: 'a'.repeat(4096),
+    }).success,
+    true,
+    'An approved value widens to 4,096 UTF-16 units.',
+  );
+  assert.equal(
+    deviceUpdateTargetSchema.safeParse({
+      ...target,
+      approvedValue: 'a'.repeat(4097),
+    }).success,
     false,
   );
   assert.equal(

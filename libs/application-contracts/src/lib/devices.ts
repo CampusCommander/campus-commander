@@ -381,3 +381,115 @@ export const deviceOrgUnitSchema = z.strictObject({
 });
 export type DeviceOrgUnit = z.infer<typeof deviceOrgUnitSchema>;
 export const deviceOrgUnitsSchema = z.array(deviceOrgUnitSchema).max(10000);
+
+/** The four writable fields of Update device, in contract order (addendum section 1). */
+export const DEVICE_UPDATE_FIELD_ORDER = [
+  'annotatedLocation',
+  'annotatedUser',
+  'notes',
+  'orgUnitPath',
+] as const;
+export const deviceUpdateFieldSchema = z.enum(DEVICE_UPDATE_FIELD_ORDER);
+export type DeviceUpdateField = z.infer<typeof deviceUpdateFieldSchema>;
+/** The three fields that a text value writes. Organization unit moves to a path. */
+export const DEVICE_UPDATE_TEXT_FIELDS = [
+  'annotatedLocation',
+  'annotatedUser',
+  'notes',
+] as const;
+export const deviceUpdateTextFieldSchema = z.enum(DEVICE_UPDATE_TEXT_FIELDS);
+export type DeviceUpdateTextField = z.infer<typeof deviceUpdateTextFieldSchema>;
+
+/**
+ * The write limit of each field (addendum section 1). A text limit counts code points. The path
+ * limit counts UTF-16 units, as every path reader does.
+ */
+export const DEVICE_UPDATE_FIELD_LIMITS: Readonly<
+  Record<DeviceUpdateField, number>
+> = Object.freeze({
+  annotatedLocation: 200,
+  annotatedUser: 100,
+  notes: 500,
+  orgUnitPath: 4096,
+});
+
+/** The label of each field. A refusal names the label of its field. */
+export const DEVICE_UPDATE_FIELD_LABELS: Readonly<
+  Record<DeviceUpdateField, string>
+> = Object.freeze({
+  annotatedLocation: 'Annotated location',
+  annotatedUser: 'Annotated user',
+  notes: 'Notes',
+  orgUnitPath: 'Organization unit',
+});
+
+/** The mode of each change. A text field replaces or clears. Organization unit moves. */
+export const deviceUpdateModeSchema = z.enum(['replace', 'clear', 'move']);
+export type DeviceUpdateMode = z.infer<typeof deviceUpdateModeSchema>;
+
+/**
+ * One field change of a preview or a job. Clear (and only Clear) carries no value. A text value
+ * keeps the step 4 rule: 1 to its limit of code points, a visible character, and no trim. A Move
+ * carries a path that starts with `/`.
+ */
+export const deviceUpdateChangeSchema = z
+  .strictObject({
+    field: deviceUpdateFieldSchema,
+    mode: deviceUpdateModeSchema,
+    // The field limit in the refinement names the label. This bound only refuses an absurd body.
+    value: z.string().max(65_536).optional(),
+  })
+  .superRefine((change, context) => {
+    const label = DEVICE_UPDATE_FIELD_LABELS[change.field];
+    const limit = DEVICE_UPDATE_FIELD_LIMITS[change.field];
+    const refuse = (message: string) =>
+      context.addIssue({ code: 'custom', message, path: ['value'] });
+    if (change.field === 'orgUnitPath') {
+      if (change.mode !== 'move') return refuse(`${label} offers Move only.`);
+      if (change.value === undefined) return refuse(`${label} needs a path.`);
+      if (
+        change.value.length < 1 ||
+        change.value.length > limit ||
+        !change.value.startsWith('/')
+      )
+        return refuse(
+          `${label} needs a path that starts with / and holds at most ${limit} characters.`,
+        );
+      return;
+    }
+    if (change.mode === 'move') return refuse(`${label} offers Replace or Clear.`);
+    if (change.mode === 'clear') {
+      if (change.value !== undefined)
+        return refuse(`A Clear change of ${label} carries no value.`);
+      return;
+    }
+    if (change.value === undefined) return refuse(`${label} needs a value.`);
+    const length = [...change.value].length;
+    if (length < 1 || length > limit)
+      return refuse(`${label} holds 1 to ${limit} characters.`);
+    if (change.value.trim().length === 0)
+      return refuse(`${label} needs a visible character.`);
+  });
+export type DeviceUpdateChange = z.infer<typeof deviceUpdateChangeSchema>;
+
+/** The changes of one draft, in contract order, with each field once. */
+export const deviceUpdateChangesSchema = z
+  .array(deviceUpdateChangeSchema)
+  .min(1)
+  .max(DEVICE_UPDATE_FIELD_ORDER.length)
+  .refine(
+    (changes) =>
+      new Set(changes.map((change) => change.field)).size === changes.length,
+    { message: 'A field occurs once.' },
+  );
+
+/** Sort changes into contract order. The rows, the bodies, and the digest use that order. */
+export function deviceUpdateChangesInOrder(
+  changes: readonly DeviceUpdateChange[],
+): DeviceUpdateChange[] {
+  return [...changes].sort(
+    (left, right) =>
+      DEVICE_UPDATE_FIELD_ORDER.indexOf(left.field) -
+      DEVICE_UPDATE_FIELD_ORDER.indexOf(right.field),
+  );
+}

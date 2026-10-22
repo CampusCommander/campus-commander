@@ -1,5 +1,10 @@
 import * as z from 'zod';
-import { deviceSelectionKeySchema } from './devices';
+import {
+  DEVICE_UPDATE_FIELD_LIMITS,
+  deviceSelectionKeySchema,
+  deviceUpdateChangesSchema,
+  deviceUpdateFieldSchema,
+} from './devices';
 import { googleFailureSchema } from './google-connection';
 import { jobDisplayIdSchema, previewDisplayIdSchema } from './jobs';
 
@@ -12,15 +17,10 @@ const selectionKeyShape = {
   tabId: deviceSelectionKeySchema.shape.tabId,
 };
 
-/** The only writable field of this slice. */
-export const deviceUpdateFieldSchema = z.literal('annotatedLocation');
-export type DeviceUpdateField = z.infer<typeof deviceUpdateFieldSchema>;
-
-export const deviceUpdateModeSchema = z.enum(['replace', 'clear']);
-export type DeviceUpdateMode = z.infer<typeof deviceUpdateModeSchema>;
-
+/** The annotated-location limit that the step 4 sheet counts against. */
+export const DEVICE_UPDATE_VALUE_MAX =
+  DEVICE_UPDATE_FIELD_LIMITS.annotatedLocation;
 /** The value bounds of section 2.3. The count is code points, not UTF-16 units. */
-export const DEVICE_UPDATE_VALUE_MAX = 200;
 export const deviceUpdateValueSchema = z
   .string()
   .refine(
@@ -28,27 +28,20 @@ export const deviceUpdateValueSchema = z
       const length = [...value].length;
       return length >= 1 && length <= DEVICE_UPDATE_VALUE_MAX;
     },
-    { message: 'A value holds 1 to 200 characters.' },
+    { message: 'Annotated location holds 1 to 200 characters.' },
   )
   .refine((value) => value.trim().length > 0, {
-    message: 'A value needs a visible character.',
+    message: 'Annotated location needs a visible character.',
   });
 export type DeviceUpdateValue = z.infer<typeof deviceUpdateValueSchema>;
 
 const manifestDigest = z.string().regex(/^[a-f0-9]{64}$/);
 
-/** The preview request of section 2.3. Clear carries no value. */
-export const deviceUpdatePreviewRequestSchema = z.discriminatedUnion('mode', [
-  z.strictObject({
-    ...selectionKeyShape,
-    mode: z.literal('replace'),
-    value: deviceUpdateValueSchema,
-  }),
-  z.strictObject({
-    ...selectionKeyShape,
-    mode: z.literal('clear'),
-  }),
-]);
+/** The preview request of section 2.3. It carries one to four changes, each field once. */
+export const deviceUpdatePreviewRequestSchema = z.strictObject({
+  ...selectionKeyShape,
+  changes: deviceUpdateChangesSchema,
+});
 export type DeviceUpdatePreviewRequest = z.infer<
   typeof deviceUpdatePreviewRequestSchema
 >;
@@ -58,8 +51,10 @@ export const deviceUpdatePreviewSchema = z
   .strictObject({
     previewId: z.uuid(),
     displayId: previewDisplayIdSchema,
-    mode: deviceUpdateModeSchema,
-    value: deviceUpdateValueSchema.nullable(),
+    /** The frozen changes, in contract order. */
+    changes: deviceUpdateChangesSchema,
+    /** The number of eligible device-field rows. */
+    fieldChanges: count,
     selected: count,
     eligible: count,
     unchanged: count,
@@ -77,12 +72,6 @@ export const deviceUpdatePreviewSchema = z
     {
       message: 'Selected equals the sum of eligible, unchanged, and excluded.',
     },
-  )
-  .refine(
-    (preview) => (preview.mode === 'clear') === (preview.value === null),
-    {
-      message: 'Only a clear preview holds a null value.',
-    },
   );
 export type DeviceUpdatePreview = z.infer<typeof deviceUpdatePreviewSchema>;
 
@@ -92,7 +81,7 @@ export const deviceUpdateTargetSchema = z.strictObject({
   serialNumber,
   field: deviceUpdateFieldSchema,
   observedValue: z.string().max(4096).nullable(),
-  approvedValue: deviceUpdateValueSchema.nullable(),
+  approvedValue: z.string().max(4096).nullable(),
   disposition: z.enum(['eligible', 'unchanged', 'excluded']),
   /** Present for an excluded target only: for example `removed`. */
   exclusionReason: z.string().min(1).max(64).nullable(),

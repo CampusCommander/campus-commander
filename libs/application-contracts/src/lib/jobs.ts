@@ -1,5 +1,5 @@
 import * as z from 'zod';
-import { deviceSyncFailureSchema } from './devices';
+import { deviceSyncFailureSchema, deviceUpdateChangeSchema } from './devices';
 
 const timestamp = z.iso.datetime({ offset: true });
 const count = z.number().int().min(0);
@@ -227,13 +227,12 @@ export type JobLatestActivity = z.infer<typeof jobLatestActivitySchema>;
 export const jobDetailSchema = jobSummarySchema.extend({
   confirmedBy: jobPersonSchema.nullable(),
   previewDisplayId: previewDisplayIdSchema.nullable(),
-  field: z.literal('annotatedLocation').nullable(),
-  mode: z.enum(['replace', 'clear']).nullable(),
+  /** The frozen changes of a write job, in contract order. Null outside an update job. */
+  changes: z.array(deviceUpdateChangeSchema).min(1).max(4).nullable(),
   /** The Google command of a command job. It stays null for another job. */
   commandType: z.literal('REBOOT').nullable(),
   /** The request of a status job. It stays null for another job. */
   statusAction: z.enum(['disable', 'reenable']).nullable(),
-  requestedValue: z.string().max(4096).nullable(),
   targetOrgUnitPaths: z.array(orgUnitPath).max(10000).nullable(),
   correlationId: z.uuid(),
   latestActivity: jobLatestActivitySchema,
