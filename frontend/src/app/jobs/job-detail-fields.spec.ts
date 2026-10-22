@@ -657,9 +657,15 @@ describe('job detail fields', () => {
     expect(operationNumber('UPD-1000-1')).toBe('1');
     expect(operationNumber('STS-002-3')).toBe('3');
     expect(operationNumber('STS-1000-12')).toBe('12');
+    // An update row names its field, and the field never changes the number (addendum section 1).
+    expect(operationNumber('UPD-006-12-annotatedLocation')).toBe('12');
+    expect(operationNumber('UPD-006-1-annotatedUser')).toBe('1');
+    expect(operationNumber('UPD-006-2-notes')).toBe('2');
+    expect(operationNumber('UPD-006-3-orgUnitPath')).toBe('3');
     // Commands offer no reconciliation (record default 4), so their IDs stay invalid.
     expect(operationNumber('CMD-001-2')).toBeNull();
     expect(operationNumber('UPD-006')).toBeNull();
+    expect(operationNumber('UPD-006-1status')).toBeNull();
     expect(operationNumber('XPD-006-1')).toBeNull();
   });
 

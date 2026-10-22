@@ -469,6 +469,27 @@ describe('Reconcile', () => {
     expect(store.reconciling().has('STS-003-1')).toBe(true);
   });
 
+  it('reconciles a field-suffixed update operation through its numbered endpoint', async () => {
+    // The API names one update row per device and field (addendum section 1).
+    const target = operation({ operationId: 'UPD-006-4-annotatedLocation' });
+    const { store, requestMock } = setup(async (path, body) => {
+      if (body !== undefined) return new Response(null, { status: 202 });
+      return path.includes('/operations')
+        ? Response.json(operationsPage([target]))
+        : Response.json(detail());
+    });
+    await store.init('UPD-006');
+    requestMock.mockClear();
+    await store.reconcile(target);
+    expect(requestMock).toHaveBeenCalledWith(
+      '/api/jobs/UPD-006/operations/4/reconcile',
+      {},
+    );
+    expect(store.notice()).toBe('Reconcile started for C0A1-7F84.');
+    expect(store.reconciling().has('UPD-006-4-annotatedLocation')).toBe(true);
+    expect(store.reconcileError()).toBe('');
+  });
+
   it('does not reconcile a command operation', async () => {
     const { store, requestMock } = setup(async (path, body) => {
       if (body !== undefined) return new Response(null, { status: 202 });

@@ -1,11 +1,12 @@
-import type {
-  JobCommandState,
-  JobDetail,
-  JobFailedActivityOperation,
-  JobOperation,
-  JobOutcome,
-  JobProgress,
-  JobUnknownActivityOperation,
+import {
+  jobOperationFieldSchema,
+  type JobCommandState,
+  type JobDetail,
+  type JobFailedActivityOperation,
+  type JobOperation,
+  type JobOutcome,
+  type JobProgress,
+  type JobUnknownActivityOperation,
 } from '@campus/application-contracts';
 import type { AuthStore } from '../auth.store';
 import { statusText } from '../devices/device-fields';
@@ -211,10 +212,18 @@ export function formatTime(iso: string): string {
   });
 }
 
-/** The operation number of an update or status ID (`STS-002-12` gives `12`). */
+/**
+ * The operation number of an update or status ID (`STS-002-12` gives `12`, `UPD-001-2-notes`
+ * gives `2`). An update row names its field, and the field never changes the number.
+ */
 export function operationNumber(operationId: string): string | null {
   // Commands offer no reconciliation (record default 4), so a CMD- ID stays invalid.
-  return /^(?:UPD|STS)-\d{3,}-(\d+)$/.exec(operationId)?.[1] ?? null;
+  const match = /^(?:UPD|STS)-\d{3,}-(\d+)(?:-(.+))?$/.exec(operationId);
+  if (!match) return null;
+  const field = match[2];
+  if (field !== undefined && !jobOperationFieldSchema.safeParse(field).success)
+    return null;
+  return match[1] ?? null;
 }
 
 /** Reconcile needs jobs:read and devices:write (design 2.1, OQ6). */
