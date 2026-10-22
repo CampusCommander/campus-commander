@@ -1,5 +1,12 @@
 import type { DeviceUpdatePreview } from '@campus/application-contracts';
-import { previewCountLine } from './device-update-flow';
+import {
+  changeSentences,
+  confirmationHeading,
+  confirmationMetaLine,
+  previewCountLine,
+  targetGroups,
+  unchangedSentence,
+} from './device-update-flow';
 
 const preview = (
   fields: Partial<DeviceUpdatePreview>,
@@ -42,4 +49,143 @@ it('keeps one field change singular', () => {
   expect(previewCountLine(preview({ fieldChanges: 1 }))).toBe(
     '6 devices · 1 field change · 0 excluded',
   );
+});
+
+it('counts the changed fields and the eligible devices in the heading', () => {
+  expect(
+    confirmationHeading(
+      preview({
+        changes: [
+          { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+          {
+            field: 'annotatedUser',
+            mode: 'replace',
+            value: 'maya@example.org',
+          },
+          { field: 'notes', mode: 'clear' },
+        ],
+        eligible: 5,
+      }),
+    ),
+  ).toBe('Update 3 fields on 5 devices');
+  expect(
+    confirmationHeading(
+      preview({
+        changes: [{ field: 'notes', mode: 'clear' }],
+        eligible: 1,
+      }),
+    ),
+  ).toBe('Update 1 field on 1 device');
+});
+
+it('writes one confirmation sentence per changed field', () => {
+  expect(
+    changeSentences(
+      preview({
+        changes: [
+          { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+          {
+            field: 'annotatedUser',
+            mode: 'replace',
+            value: 'maya.chen@example.org',
+          },
+          { field: 'notes', mode: 'clear' },
+        ],
+        eligible: 5,
+      }),
+    ),
+  ).toEqual([
+    'Set the annotated location to North lab on 5 devices.',
+    'Set the annotated user to maya.chen@example.org on 5 devices.',
+    'Clear the notes on 5 devices.',
+  ]);
+});
+
+it('names the fields that keep their value', () => {
+  expect(
+    unchangedSentence(
+      preview({ changes: [{ field: 'notes', mode: 'clear' }] }),
+    ),
+  ).toBe('Annotated location and annotated user remain unchanged.');
+  expect(
+    unchangedSentence(
+      preview({
+        changes: [
+          { field: 'notes', mode: 'clear' },
+          { field: 'annotatedUser', mode: 'clear' },
+        ],
+      }),
+    ),
+  ).toBe('Annotated location remains unchanged.');
+  expect(
+    unchangedSentence(
+      preview({
+        changes: [
+          { field: 'annotatedLocation', mode: 'clear' },
+          { field: 'annotatedUser', mode: 'clear' },
+          { field: 'notes', mode: 'clear' },
+        ],
+      }),
+    ),
+  ).toBe('');
+});
+
+it('counts the field changes of the frozen preview in the confirmation meta line', () => {
+  expect(
+    confirmationMetaLine(
+      preview({ selected: 6, eligible: 5, fieldChanges: 15 }),
+    ),
+  ).toBe('Preview PV-006 · 6 devices · 15 field changes');
+});
+
+it('groups the frozen targets by device, with the exclusion reason once', () => {
+  const groups = targetGroups([
+    {
+      deviceId: 'device-1',
+      serialNumber: '01P0T1V',
+      field: 'annotatedLocation',
+      observedValue: 'Science wing',
+      approvedValue: 'North lab',
+      disposition: 'eligible',
+      exclusionReason: null,
+    },
+    {
+      deviceId: 'device-1',
+      serialNumber: '01P0T1V',
+      field: 'notes',
+      observedValue: null,
+      approvedValue: 'Cart 7 loaner pool',
+      disposition: 'eligible',
+      exclusionReason: null,
+    },
+    {
+      deviceId: 'device-2',
+      serialNumber: '02A1MB6',
+      field: 'annotatedLocation',
+      observedValue: null,
+      approvedValue: null,
+      disposition: 'excluded',
+      exclusionReason: 'removed',
+    },
+    {
+      deviceId: 'device-2',
+      serialNumber: '02A1MB6',
+      field: 'notes',
+      observedValue: null,
+      approvedValue: null,
+      disposition: 'excluded',
+      exclusionReason: 'removed',
+    },
+  ]);
+  expect(groups.map((group) => group.serialNumber)).toEqual([
+    '01P0T1V',
+    '02A1MB6',
+  ]);
+  expect(groups[0].rows.map((row) => row.field)).toEqual([
+    'annotatedLocation',
+    'notes',
+  ]);
+  expect(groups[0].excluded).toBeNull();
+  expect(groups[1].excluded).toBe('Excluded · Removed from inventory');
+  expect(groups[1].rows).toHaveLength(2);
 });
